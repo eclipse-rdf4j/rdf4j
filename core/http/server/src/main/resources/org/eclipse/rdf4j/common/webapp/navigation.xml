@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<navigation id="">
+	<!-- Default prefixes and suffixes -->
+	
+	<!-- for views -->
+	<path-prefix></path-prefix>
+	<path-separator>/</path-separator>
+	<view-suffix>.view</view-suffix>
+	
+	<!-- for icons -->
+	<icon-prefix>/images/icons/</icon-prefix>
+	<icon-separator>_</icon-separator>
+	<icon-suffix>.png</icon-suffix>
+	
+	<!-- for I18N keys -->
+	<i18n-prefix></i18n-prefix>
+	<i18n-separator>.</i18n-separator>
+	<i18n-suffix>.title</i18n-suffix>
+</navigation>

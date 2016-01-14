@@ -1,0 +1,30 @@
+# Input file for SeRQL CfwQuery test
+
+<foo:subj> <foo:predA> "1".
+<foo:subj> <foo:predA> "2".
+<foo:subj> <foo:predA> "3".
+<foo:subj> <foo:predA> "4".
+<foo:subj> <foo:predA> "5".
+<foo:subj> <foo:predA> "6".
+<foo:subj> <foo:predA> "7".
+<foo:subj> <foo:predA> "8".
+<foo:subj> <foo:predA> "9".
+<foo:subj> <foo:predA> "10".
+<foo:subj> <foo:predA> "11".
+<foo:subj> <foo:predA> "12".
+<foo:subj> <foo:predA> "13".
+<foo:subj> <foo:predA> "14".
+<foo:subj> <foo:predA> "15".
+<foo:subj> <foo:predA> "16".
+<foo:subj> <foo:predA> "17".
+<foo:subj> <foo:predA> "18".
+<foo:subj> <foo:predA> "19".
+<foo:subj> <foo:predA> "20".
+<foo:subj> <foo:predA> "21".
+<foo:subj> <foo:predA> "22".
+<foo:subj> <foo:predA> "23".
+<foo:subj> <foo:predA> "24".
+<foo:subj> <foo:predA> "25".
+<foo:subj> <foo:predB> "1B".
+<foo:subj> <foo:predB> "2B".
+<foo:subj> <foo:predB> "3B".

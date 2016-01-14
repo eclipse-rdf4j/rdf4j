@@ -1,0 +1,9 @@
+# SERVICE test non-ASCII char handling in service SES-1056
+
+SELECT ?x
+WHERE {
+  BIND ("(抗真菌薬;イミダゾール系) ケトコナゾール"@ja AS ?sf)
+  SERVICE <http://localhost:18080/openrdf/repositories/endpoint1> {
+    ?x rdfs:label ?sf .
+  } 
+}

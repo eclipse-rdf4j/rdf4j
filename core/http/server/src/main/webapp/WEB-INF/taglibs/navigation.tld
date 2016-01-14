@@ -1,0 +1,17 @@
+<taglib xmlns="http://java.sun.com/xml/ns/j2ee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee web-jsptaglibrary_2_0.xsd" version="2.0">
+	
+	<description>Tag Library for webapp navigation</description>
+	<tlib-version>1.0-SNAPSHOT</tlib-version>
+	<short-name>navigation</short-name>
+	<uri>/info.aduna/webapp/navigation</uri>
+
+	<function>
+		<name>isParent</name>
+		<function-class>info.aduna.webapp.navigation.functions.NavigationFunctions</function-class>
+		<function-signature>
+			boolean isParent(info.aduna.webapp.navigation.NavigationNode,
+			info.aduna.webapp.navigation.NavigationNode)
+		</function-signature>
+	</function>
+</taglib>

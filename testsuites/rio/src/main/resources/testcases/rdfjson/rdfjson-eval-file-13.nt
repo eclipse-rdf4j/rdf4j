@@ -1,0 +1,4 @@
+_:anna <http://xmlns.com/foaf/0.1/name> "Anna" .
+_:anna <http://xmlns.com/foaf/0.1/homepage> <http://example.org/anna> .
+<http://example.org/about> <http://purl.org/dc/terms/creator> _:anna .
+<http://example.org/about> <http://purl.org/dc/terms/title> "Anna's Homepage"@en .

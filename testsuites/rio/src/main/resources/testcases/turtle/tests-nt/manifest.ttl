@@ -1,0 +1,329 @@
+# N-Triples Syntax tests
+
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> .
+@prefix qt:     <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> .
+
+@prefix rdft:   <http://www.w3.org/ns/rdftest#> .
+
+<>  rdf:type mf:Manifest ;
+    rdfs:comment "N-Triples tests" ;
+    mf:entries
+    (
+    <#nt-syntax-file-01>
+    <#nt-syntax-file-02>
+    <#nt-syntax-file-03>
+    <#nt-syntax-uri-01>
+    <#nt-syntax-uri-02>
+    <#nt-syntax-uri-03>
+    <#nt-syntax-uri-04>
+    <#nt-syntax-string-01>
+    <#nt-syntax-string-02>
+    <#nt-syntax-string-03>
+    <#nt-syntax-str-esc-01>
+    <#nt-syntax-str-esc-02>
+    <#nt-syntax-str-esc-03>
+    <#nt-syntax-bnode-01>
+    <#nt-syntax-bnode-02>
+    <#nt-syntax-datatypes-01>
+    <#nt-syntax-datatypes-02>
+    <#nt-syntax-bad-uri-01>
+    <#nt-syntax-bad-uri-02>
+    <#nt-syntax-bad-uri-03>
+    <#nt-syntax-bad-uri-04>
+    <#nt-syntax-bad-uri-05>
+    <#nt-syntax-bad-uri-06>
+    <#nt-syntax-bad-uri-07>
+    <#nt-syntax-bad-uri-08>
+    <#nt-syntax-bad-uri-09>
+    <#nt-syntax-bad-prefix-01>
+    <#nt-syntax-bad-base-01>
+    <#nt-syntax-bad-struct-01>
+    <#nt-syntax-bad-struct-02>
+    <#nt-syntax-bad-lang-01>
+    <#nt-syntax-bad-esc-01>
+    <#nt-syntax-bad-esc-02>
+    <#nt-syntax-bad-esc-03>
+    <#nt-syntax-bad-string-01>
+    <#nt-syntax-bad-string-02>
+    <#nt-syntax-bad-string-03>
+    <#nt-syntax-bad-string-04>
+    <#nt-syntax-bad-string-05>
+    <#nt-syntax-bad-string-06>
+    <#nt-syntax-bad-string-07>
+    <#nt-syntax-bad-num-01>
+    <#nt-syntax-bad-num-02>
+    <#nt-syntax-bad-num-03>
+    <#nt-syntax-subm-01>
+    ) .
+
+<#nt-syntax-file-01> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-file-01" ;
+   rdfs:comment "Empty file" ;
+   mf:action    <nt-syntax-file-01.nt> ;
+   .
+
+<#nt-syntax-file-02> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-file-02" ;
+   rdfs:comment "Only comment" ;
+   mf:action    <nt-syntax-file-02.nt> ;
+   .
+
+<#nt-syntax-file-03> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-file-03" ;
+   rdfs:comment "One comment, one empty line" ;
+   mf:action    <nt-syntax-file-03.nt> ;
+   .
+
+<#nt-syntax-uri-01> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-uri-01" ;
+   rdfs:comment "Only IRIs" ;
+   mf:action    <nt-syntax-uri-01.nt> ;
+   .
+
+<#nt-syntax-uri-02> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-uri-02" ;
+   rdfs:comment "IRIs with Unicode escape" ;
+   mf:action    <nt-syntax-uri-02.nt> ;
+   .
+
+<#nt-syntax-uri-03> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-uri-03" ;
+   rdfs:comment "IRIs with long Unicode escape" ;
+   mf:action    <nt-syntax-uri-03.nt> ;
+   .
+
+<#nt-syntax-uri-04> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-uri-04" ;
+   rdfs:comment "Legal IRIs" ;
+   mf:action    <nt-syntax-uri-04.nt> ;
+   .
+
+<#nt-syntax-string-01> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-string-01" ;
+   rdfs:comment "string literal" ;
+   mf:action    <nt-syntax-string-01.nt> ;
+   .
+
+<#nt-syntax-string-02> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-string-02" ;
+   rdfs:comment "langString literal" ;
+   mf:action    <nt-syntax-string-02.nt> ;
+   .
+
+<#nt-syntax-string-03> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-string-03" ;
+   rdfs:comment "langString literal with region" ;
+   mf:action    <nt-syntax-string-03.nt> ;
+   .
+
+<#nt-syntax-str-esc-01> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-str-esc-01" ;
+   rdfs:comment "string literal with escaped newline" ;
+   mf:action    <nt-syntax-str-esc-01.nt> ;
+   .
+
+<#nt-syntax-str-esc-02> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-str-esc-02" ;
+   rdfs:comment "string literal with Unicode escape" ;
+   mf:action    <nt-syntax-str-esc-02.nt> ;
+   .
+
+<#nt-syntax-str-esc-03> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-str-esc-03" ;
+   rdfs:comment "string literal with long Unicode escape" ;
+   mf:action    <nt-syntax-str-esc-03.nt> ;
+   .
+
+<#nt-syntax-bnode-01> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-bnode-01" ;
+   rdfs:comment "bnode subject" ;
+   mf:action    <nt-syntax-bnode-01.nt> ;
+   .
+
+<#nt-syntax-bnode-02> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-bnode-02" ;
+   rdfs:comment "bnode object" ;
+   mf:action    <nt-syntax-bnode-02.nt> ;
+   .
+
+<#nt-syntax-datatypes-01> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-datatypes-01" ;
+   rdfs:comment "xsd:byte literal" ;
+   mf:action    <nt-syntax-datatypes-01.nt> ;
+   .
+
+<#nt-syntax-datatypes-02> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-datatypes-02" ;
+   rdfs:comment "integer as xsd:string" ;
+   mf:action    <nt-syntax-datatypes-02.nt> ;
+   .
+
+<#nt-syntax-bad-uri-01> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-uri-01" ;
+   rdfs:comment "Bad IRI : space (negative test)" ;
+   mf:action    <nt-syntax-bad-uri-01.nt> ;
+   .
+
+<#nt-syntax-bad-uri-02> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-uri-02" ;
+   rdfs:comment "Bad IRI : bad escape (negative test)" ;
+   mf:action    <nt-syntax-bad-uri-02.nt> ;
+   .
+
+<#nt-syntax-bad-uri-03> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-uri-03" ;
+   rdfs:comment "Bad IRI : bad long escape (negative test)" ;
+   mf:action    <nt-syntax-bad-uri-03.nt> ;
+   .
+
+<#nt-syntax-bad-uri-04> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-uri-04" ;
+   rdfs:comment "Bad IRI : character escapes not allowed (negative test)" ;
+   mf:action    <nt-syntax-bad-uri-04.nt> ;
+   .
+
+<#nt-syntax-bad-uri-05> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-uri-05" ;
+   rdfs:comment "Bad IRI : character escapes not allowed (2) (negative test)" ;
+   mf:action    <nt-syntax-bad-uri-05.nt> ;
+   .
+
+<#nt-syntax-bad-uri-06> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-uri-06" ;
+   rdfs:comment "Bad IRI : relative IRI not allowed in subject (negative test)" ;
+   mf:action    <nt-syntax-bad-uri-06.nt> ;
+   .
+
+<#nt-syntax-bad-uri-07> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-uri-07" ;
+   rdfs:comment "Bad IRI : relative IRI not allowed in predicate (negative test)" ;
+   mf:action    <nt-syntax-bad-uri-07.nt> ;
+   .
+
+<#nt-syntax-bad-uri-08> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-uri-08" ;
+   rdfs:comment "Bad IRI : relative IRI not allowed in object (negative test)" ;
+   mf:action    <nt-syntax-bad-uri-08.nt> ;
+   .
+
+<#nt-syntax-bad-uri-09> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-uri-09" ;
+   rdfs:comment "Bad IRI : relative IRI not allowed in datatype (negative test)" ;
+   mf:action    <nt-syntax-bad-uri-09.nt> ;
+   .
+
+<#nt-syntax-bad-prefix-01> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-prefix-01" ;
+   rdfs:comment "@prefix not allowed in n-triples (negative test)" ;
+   mf:action    <nt-syntax-bad-prefix-01.nt> ;
+   .
+
+<#nt-syntax-bad-base-01> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-base-01" ;
+   rdfs:comment "@base not allowed in N-Triples (negative test)" ;
+   mf:action    <nt-syntax-bad-base-01.nt> ;
+   .
+
+<#nt-syntax-bad-struct-01> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-struct-01" ;
+   rdfs:comment "N-Triples does not have objectList (negative test)" ;
+   mf:action    <nt-syntax-bad-struct-01.nt> ;
+   .
+
+<#nt-syntax-bad-struct-02> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-struct-02" ;
+   rdfs:comment "N-Triples does not have predicateObjectList (negative test)" ;
+   mf:action    <nt-syntax-bad-struct-02.nt> ;
+   .
+
+<#nt-syntax-bad-lang-01> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-lang-01" ;
+   rdfs:comment "langString with bad lang (negative test)" ;
+   mf:action    <nt-syntax-bad-lang-01.nt> ;
+   .
+
+<#nt-syntax-bad-esc-01> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-esc-01" ;
+   rdfs:comment "Bad string escape (negative test)" ;
+   mf:action    <nt-syntax-bad-esc-01.nt> ;
+   .
+
+<#nt-syntax-bad-esc-02> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-esc-02" ;
+   rdfs:comment "Bad string escape (negative test)" ;
+   mf:action    <nt-syntax-bad-esc-02.nt> ;
+   .
+
+<#nt-syntax-bad-esc-03> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-esc-03" ;
+   rdfs:comment "Bad string escape (negative test)" ;
+   mf:action    <nt-syntax-bad-esc-03.nt> ;
+   .
+
+<#nt-syntax-bad-string-01> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-string-01" ;
+   rdfs:comment "mismatching string literal open/close (negative test)" ;
+   mf:action    <nt-syntax-bad-string-01.nt> ;
+   .
+
+<#nt-syntax-bad-string-02> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-string-02" ;
+   rdfs:comment "mismatching string literal open/close (negative test)" ;
+   mf:action    <nt-syntax-bad-string-02.nt> ;
+   .
+
+<#nt-syntax-bad-string-03> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-string-03" ;
+   rdfs:comment "single quotes (negative test)" ;
+   mf:action    <nt-syntax-bad-string-03.nt> ;
+   .
+
+<#nt-syntax-bad-string-04> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-string-04" ;
+   rdfs:comment "long single string literal (negative test)" ;
+   mf:action    <nt-syntax-bad-string-04.nt> ;
+   .
+
+<#nt-syntax-bad-string-05> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-string-05" ;
+   rdfs:comment "long double string literal (negative test)" ;
+   mf:action    <nt-syntax-bad-string-05.nt> ;
+   .
+
+<#nt-syntax-bad-string-06> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-string-06" ;
+   rdfs:comment "string literal with no end (negative test)" ;
+   mf:action    <nt-syntax-bad-string-06.nt> ;
+   .
+
+<#nt-syntax-bad-string-07> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-string-07" ;
+   rdfs:comment "string literal with no start (negative test)" ;
+   mf:action    <nt-syntax-bad-string-07.nt> ;
+   .
+
+<#nt-syntax-bad-num-01> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-num-01" ;
+   rdfs:comment "no numbers in N-Triples (integer) (negative test)" ;
+   mf:action    <nt-syntax-bad-num-01.nt> ;
+   .
+
+<#nt-syntax-bad-num-02> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-num-02" ;
+   rdfs:comment "no numbers in N-Triples (decimal) (negative test)" ;
+   mf:action    <nt-syntax-bad-num-02.nt> ;
+   .
+
+<#nt-syntax-bad-num-03> rdf:type rdft:TestNTriplesNegativeSyntax ;
+   mf:name    "nt-syntax-bad-num-03" ;
+   rdfs:comment "no numbers in N-Triples (float) (negative test)" ;
+   mf:action    <nt-syntax-bad-num-03.nt> ;
+   .
+
+<#nt-syntax-subm-01> rdf:type rdft:TestNTriplesPositiveSyntax ;
+   mf:name    "nt-syntax-subm-01" ;
+   rdfs:comment "Submission test from Original RDF Test Cases" ;
+   mf:action    <nt-syntax-subm-01.nt> ;
+   .

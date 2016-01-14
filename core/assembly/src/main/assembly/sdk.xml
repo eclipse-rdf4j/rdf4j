@@ -1,0 +1,59 @@
+<assembly>
+	<id>sdk</id>
+
+	<formats>
+		<format>tar.gz</format>
+		<format>zip</format>
+	</formats>
+
+	<baseDirectory>openrdf-sesame-${project.version}</baseDirectory>
+
+	<dependencySets>
+	    <dependencySet>
+		<useProjectArtifact>false</useProjectArtifact>
+		<outputDirectory>lib</outputDirectory>
+	    </dependencySet>
+	</dependencySets>
+
+	<fileSets>
+		<fileSet>
+			<directory>..</directory>
+			<outputDirectory/>
+			<includes>
+				<include>*.txt</include>
+			</includes>
+		</fileSet>
+
+		<fileSet>
+			<directory>../target/apidocs</directory>
+			<outputDirectory>docs/apidocs</outputDirectory>
+		</fileSet>
+
+	</fileSets>
+
+	<files>
+		<file>
+		    <source>../http/server/target/openrdf-sesame.war</source>
+			<outputDirectory>war</outputDirectory>
+		</file>
+		<file>
+		    <source>../http/workbench/target/openrdf-workbench.war</source>
+			<outputDirectory>war</outputDirectory>
+		</file>
+
+		<file>
+			<source>src/main/dist/bin/console.bat</source>
+			<outputDirectory>bin</outputDirectory>
+			<lineEnding>dos</lineEnding>
+			<filtered>true</filtered>
+		</file>
+		<file>
+			<source>src/main/dist/bin/console.sh</source>
+			<outputDirectory>bin</outputDirectory>
+			<fileMode>755</fileMode>
+			<lineEnding>unix</lineEnding>
+			<filtered>true</filtered>
+		</file>
+	</files>
+
+</assembly>

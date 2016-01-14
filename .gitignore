@@ -1,0 +1,29 @@
+# Eclipse settings
+.project
+**/.project
+.classpath
+**/.classpath
+.settings
+**/.settings
+bin
+**/bin
+
+# Eclipse Plug-In Settings
+.pmd
+
+# Maven generated stuff
+target/
+*/target/
+pom.xml.versionsBackup
+
+# GEdit generated stuff
+*.*~
+
+# IntelliJ files
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Mac nonsense
+.DS_Store

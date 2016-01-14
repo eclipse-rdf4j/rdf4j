@@ -1,0 +1,35 @@
+#
+# Sesame configuration template for a native RDF repository with
+# a custom graph query inference rule.
+#
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix sr: <http://www.openrdf.org/config/repository/sail#>.
+@prefix sail: <http://www.openrdf.org/config/sail#>.
+@prefix ns: <http://www.openrdf.org/config/sail/native#>.
+@prefix cgqi: <http://www.openrdf.org/config/sail/customGraphQueryInferencer#>.
+@prefix sp: <http://spinrdf.org/sp#>.
+
+[] a rep:Repository ;
+   rep:repositoryID "{%Repository ID|native-customrule%}" ;
+   rdfs:label "{%Repository title|Native store with custom graph query inferencing rule%}" ;
+   rep:repositoryImpl [
+      rep:repositoryType "openrdf:SailRepository" ;
+      sr:sailImpl [
+         sail:sailType "openrdf:CustomGraphQueryInferencer" ;
+         cgqi:queryLanguage "{%Query Language|SPARQL%}" ;
+         cgqi:ruleQuery [
+         	a sp:Construct ;
+         	sp:text '''{%Rule query|insert rule query here%}'''
+         ];
+         cgqi:matcherQuery [
+         	a sp:Construct ;
+         	sp:text '''{%Matcher query (optional)|%}'''
+         ];
+         sail:delegate [
+            sail:sailType "openrdf:NativeStore" ;
+	    sail:iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
+            ns:tripleIndexes "{%Triple indexes|spoc,posc%}"
+         ]
+      ]
+   ].

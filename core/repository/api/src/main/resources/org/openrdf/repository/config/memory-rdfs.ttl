@@ -1,0 +1,25 @@
+#
+# Sesame configuration template for a main-memory repository with
+# RDF Schema inferencing
+#
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix sr: <http://www.openrdf.org/config/repository/sail#>.
+@prefix sail: <http://www.openrdf.org/config/sail#>.
+@prefix ms: <http://www.openrdf.org/config/sail/memory#>.
+
+[] a rep:Repository ;
+   rep:repositoryID "{%Repository ID|memory-rdfs%}" ;
+   rdfs:label "{%Repository title|Memory store with RDF Schema inferencing%}" ;
+   rep:repositoryImpl [
+      rep:repositoryType "openrdf:SailRepository" ;
+      sr:sailImpl [
+         sail:sailType "openrdf:ForwardChainingRDFSInferencer" ;
+         sail:delegate [
+            sail:sailType "openrdf:MemoryStore" ;
+	    sail:iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
+            ms:persist {%Persist|true|false%} ;
+            ms:syncDelay {%Sync delay|0%}
+         ]
+      ]
+   ].

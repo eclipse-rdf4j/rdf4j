@@ -1,0 +1,10 @@
+{
+  ":_about" : {
+      "http://purl.org/dc/terms/creator" : [ { "value" : "http://example.org/anna", 
+                                               "type" : "uri" } ] 
+  },
+  ":_anna" : {
+      "http://xmlns.com/foaf/0.1/name" : [ { "value" : "Anna", 
+                                             "type" : "literal" } ] 
+  }
+}                                               

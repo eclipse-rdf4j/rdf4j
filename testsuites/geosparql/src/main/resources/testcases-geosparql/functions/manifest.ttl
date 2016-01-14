@@ -1,0 +1,84 @@
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix : <http://www.w3.org/2001/sw/DataAccess/tests/data-r2/cast/manifest#> .
+@prefix rdfs:	<http://www.w3.org/2000/01/rdf-schema#> .
+@prefix mf:     <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> .
+@prefix qt:     <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> .
+@prefix dawgt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#> .
+
+<>	rdf:type mf:Manifest ;
+	rdfs:label "functions" ;
+	mf:entries (
+		:distance
+		:union
+		:intersection
+		:symDifference
+		:difference
+		:convexHull
+		:boundary
+		:envelope
+		:srid
+	) .
+
+:distance rdf:type mf:QueryEvaluationTest ;
+	mf:name "distance" ;
+	mf:action
+	[ qt:query <q-distance.rq> ;
+	 qt:data <data.ttl> ];
+	mf:result <result-distance.srx> .
+
+:union rdf:type mf:QueryEvaluationTest ;
+	mf:name "union" ;
+	mf:action
+	[ qt:query <q-union.rq> ;
+	 qt:data <data.ttl> ];
+	mf:result <result-union.srx> .
+
+:intersection rdf:type mf:QueryEvaluationTest ;
+	mf:name "intersection" ;
+	mf:action
+	[ qt:query <q-intersection.rq> ;
+	 qt:data <data.ttl> ];
+	mf:result <result-intersection.srx> .
+
+:symDifference rdf:type mf:QueryEvaluationTest ;
+	mf:name "symDifference" ;
+	mf:action
+	[ qt:query <q-symDifference.rq> ;
+	 qt:data <data.ttl> ];
+	mf:result <result-symDifference.srx> .
+
+:difference rdf:type mf:QueryEvaluationTest ;
+	mf:name "difference" ;
+	mf:action
+	[ qt:query <q-difference.rq> ;
+	 qt:data <data.ttl> ];
+	mf:result <result-difference.srx> .
+
+:convexHull rdf:type mf:QueryEvaluationTest ;
+	mf:name "convexHull" ;
+	mf:action
+	[ qt:query <q-convexHull.rq> ;
+	 qt:data <data.ttl> ];
+	mf:result <result-convexHull.srx> .
+
+:boundary rdf:type mf:QueryEvaluationTest ;
+	mf:name "boundary" ;
+	mf:action
+	[ qt:query <q-boundary.rq> ;
+	 qt:data <data.ttl> ];
+	mf:result <result-boundary.srx> .
+
+:envelope rdf:type mf:QueryEvaluationTest ;
+	mf:name "envelope" ;
+	mf:action
+	[ qt:query <q-envelope.rq> ;
+	 qt:data <data.ttl> ];
+	mf:result <result-envelope.srx> .
+
+:srid rdf:type mf:QueryEvaluationTest ;
+	mf:name "srid" ;
+	mf:action
+	[ qt:query <q-srid.rq> ;
+	 qt:data <data.ttl> ];
+	mf:result <result-srid.srx> .
+	

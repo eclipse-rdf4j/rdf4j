@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<project name="sesame2" basedir=".">
+    <target name="create-service-files">
+	<antcall target="concat-service-file">
+	    <param name="service" value="org.openrdf.query.algebra.evaluation.function.Function"/>
+	</antcall>
+	<antcall target="concat-service-file">
+	    <param name="service" value="org.openrdf.query.parser.QueryParserFactory"/>
+	</antcall>
+	<antcall target="concat-service-file">
+	    <param name="service" value="org.openrdf.query.resultio.BooleanQueryResultParserFactory"/>
+	</antcall>
+	<antcall target="concat-service-file">
+	    <param name="service" value="org.openrdf.query.resultio.BooleanQueryResultWriterFactory"/>
+	</antcall>
+	<antcall target="concat-service-file">
+	    <param name="service" value="org.openrdf.query.resultio.TupleQueryResultParserFactory"/>
+	</antcall>
+	<antcall target="concat-service-file">
+	    <param name="service" value="org.openrdf.query.resultio.TupleQueryResultWriterFactory"/>
+	</antcall>
+	<antcall target="concat-service-file">
+	    <param name="service" value="org.openrdf.repository.config.RepositoryFactory"/>
+	</antcall>
+	<antcall target="concat-service-file">
+	    <param name="service" value="org.openrdf.rio.RDFParserFactory"/>
+	</antcall>
+	<antcall target="concat-service-file">
+	    <param name="service" value="org.openrdf.rio.RDFWriterFactory"/>
+	</antcall>
+	<antcall target="concat-service-file">
+	    <param name="service" value="org.openrdf.sail.config.SailFactory"/>
+	</antcall>
+    </target>
+
+    <target name="concat-service-file">
+	<dirname property="antfile.dir" file="${ant.file}"/>
+	<echo message="META-INF/services/${service}"/>
+	<concat destfile="target/services/META-INF/services/${service}" fixlastline="yes">
+	    <fileset dir="${antfile.dir}/.." includes="**/src/main/resources/META-INF/services/${service}"/>
+	</concat>
+    </target>
+</project>

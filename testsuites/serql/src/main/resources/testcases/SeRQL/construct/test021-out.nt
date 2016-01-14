@@ -1,0 +1,5 @@
+<http://www.example.org/grandparent1> <http://www.example.org/parentOf> _:parent1.
+_:parent1 <http://www.example.org/parentOf> <http://www.example.org/child1>.
+
+<http://www.example.org/grandparent2> <http://www.example.org/parentOf> _:parent2.
+_:parent2 <http://www.example.org/parentOf> <http://www.example.org/child2>.

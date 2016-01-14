@@ -1,0 +1,6 @@
+CONSTRUCT
+  *
+FROM
+  {X} <http://example.org/propA> {L} 
+WHERE 
+  xsd:integer(L) < "10"^^xsd:int

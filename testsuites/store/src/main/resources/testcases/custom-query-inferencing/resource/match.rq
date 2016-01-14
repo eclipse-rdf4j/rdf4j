@@ -1,0 +1,10 @@
+PREFIX : <http://foo.org/bar#>
+
+CONSTRUCT 
+{ 
+	?p :relatesTo :Cryptography 
+} 
+WHERE 
+{ 
+	?p :relatesTo :Cryptography  
+}

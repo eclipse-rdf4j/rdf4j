@@ -1,0 +1,6 @@
+@prefix :        <http://example/> .
+
+[] :foo "A".
+
+[] :foo "A";
+   :bar "B".

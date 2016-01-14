@@ -1,0 +1,3 @@
+# Output file for RDF Model Theory inferencer test case
+# The inferred triples should NOT contain the following triple(s):
+<http://example.org/subj> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "Hello World!".

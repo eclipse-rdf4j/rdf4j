@@ -1,0 +1,50 @@
+The OpenRDF Sesame Framework 
+Copyright 2001-2013 Aduna
+-------------------------------------------------------------------------------
+
+Source code contributions
+-------------------------
+
+This software includes code developed by Aduna
+(http://www.aduna-software.com/).
+
+This software includes code developed by Ontotext AD
+(http://www.ontotext.com/). 
+
+This software includes code developed by 3 Round Stones
+(http://www.3roundstones.com/).
+
+This software includes code developed by Fluid Operations
+(http://www.fluidops.com/).
+
+This software includes code developed by the Information Management Group at
+Food & Biobased Research, Wageningen University (http://www.fbr.wur.nl/).
+
+This software includes code developed by Clark & Parsia
+(http://clarkparsia.com/).
+
+This software includes code developed by the Institute for Defense Analyses
+(IDA) (http://www.ida.org/).
+
+This software includes code developed by Atos (http://www.atos.net/).
+
+This software includes code developed by Peter Ansell.
+
+The above parties have licensed their code contributions to Aduna under the 
+terms of a contributor license agreement (CLA).
+
+Third party libraries
+---------------------
+
+This product includes software developed by The Apache Software Foundation
+(http://www.apache.org/). License: http://www.apache.org/licenses/LICENSE-2.0
+
+This product includes software developed by the JUnit project
+(http://www.junit.org/). License: http://junit.sourceforge.net/cpl-v10.html
+
+Parts of this product use software developed by JSON.org 
+(http://www.json.org/). License: http://www.json.org/license.html
+
+Parts of this product use software developed by the Mockito project
+(https://code.google.com/p/mockito/). 
+License: https://github.com/mockito/mockito/blob/master/LICENSE

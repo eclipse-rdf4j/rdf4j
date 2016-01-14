@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<config>
+	<luceneMatchVersion>5.0.0</luceneMatchVersion>
+
+	<dataDir>target/test-data</dataDir>
+
+	<requestHandler name="/select" class="solr.SearchHandler">
+	</requestHandler>
+
+	<requestHandler name="/get" class="solr.RealTimeGetHandler">
+	</requestHandler>
+</config>

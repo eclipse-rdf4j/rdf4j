@@ -1,0 +1,21 @@
+#
+# Sesame configuration template for a main-memory repository
+#
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix sr: <http://www.openrdf.org/config/repository/sail#>.
+@prefix sail: <http://www.openrdf.org/config/sail#>.
+@prefix ms: <http://www.openrdf.org/config/sail/memory#>.
+
+[] a rep:Repository ;
+   rep:repositoryID "{%Repository ID|memory%}" ;
+   rdfs:label "{%Repository title|Memory store%}" ;
+   rep:repositoryImpl [
+      rep:repositoryType "openrdf:SailRepository" ;
+      sr:sailImpl [
+         sail:sailType "openrdf:MemoryStore" ;
+	 sail:iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
+         ms:persist {%Persist|true|false%} ;
+         ms:syncDelay {%Sync delay|0%}
+      ]
+   ].

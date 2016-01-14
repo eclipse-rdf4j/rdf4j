@@ -1,0 +1,6 @@
+{
+  "http://example.org/about" : {
+      "http://purl.org/dc/terms/title" : [ { "value" : "Anna's Homepage", 
+                                             "type" : "literal"} ] 
+  }
+}

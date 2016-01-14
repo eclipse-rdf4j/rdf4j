@@ -1,0 +1,6 @@
+# Output file for SeRQL CfwQuery test
+# description: query for datatyped literals.
+<http://example.org/A> <http://example.org/propA> "11".
+<http://example.org/A> <http://example.org/propA> "8"^^<http://www.w3.org/2001/XMLSchema#int>.
+<http://example.org/A> <http://example.org/propA> "8.5".
+<http://example.org/A> <http://example.org/propA> "3.5"^^<http://www.w3.org/2001/XMLSchema#float>.

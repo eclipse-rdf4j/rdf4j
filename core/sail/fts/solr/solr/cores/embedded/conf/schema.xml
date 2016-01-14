@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<schema name="LuceneSail" version="1.5">
+   <!-- Valid attributes for fields:
+     name: mandatory - the name for the field
+     type: mandatory - the name of a field type from the 
+       <types> fieldType section
+     indexed: true if this field should be indexed (searchable or sortable)
+     stored: true if this field should be retrievable
+     docValues: true if this field should have doc values. Doc values are
+       useful for faceting, grouping, sorting and function queries. Although not
+       required, doc values will make the index faster to load, more
+       NRT-friendly and more memory-efficient. They however come with some
+       limitations: they are currently only supported by StrField, UUIDField
+       and all Trie*Fields, and depending on the field type, they might
+       require the field to be single-valued, be required or have a default
+       value (check the documentation of the field type you're interested in
+       for more information)
+     multiValued: true if this field may contain multiple values per document
+     omitNorms: (expert) set to true to omit the norms associated with
+       this field (this disables length normalization and index-time
+       boosting for the field, and saves some memory).  Only full-text
+       fields or fields that need an index-time boost need norms.
+       Norms are omitted for primitive (non-analyzed) types by default.
+     termVectors: [false] set to true to store the term vector for a
+       given field.
+       When using MoreLikeThis, fields used for similarity should be
+       stored for best performance.
+     termPositions: Store position information with the term vector.  
+       This will increase storage costs.
+     termOffsets: Store offset information with the term vector. This 
+       will increase storage costs.
+     required: The field is required.  It will throw an error if the
+       value does not exist
+     default: a value that should be used if no value is specified
+       when adding a document.
+   -->
+
+   <field name="_version_" type="long" indexed="true" stored="true"/>
+
+   <field name="id" type="string" required="true"/> 
+   <field name="uri" type="string" required="true"/>
+   <field name="context" type="string" required="false" default="null"/>
+   <field name="text" type="text"/>
+   <field name="http://www.opengis.net/ont/geosparql#asWKT" type="geo" required="false"/>
+
+   <dynamicField name="*" type="text"/>
+
+   <uniqueKey>id</uniqueKey>
+
+   <fieldType name="string" class="solr.StrField" indexed="true" docValues="true" stored="true" multiValued="false" omitNorms="true" omitTermFreqAndPositions="true" sortMissingLast="true" />
+
+   <fieldType name="text" class="solr.TextField" indexed="true" stored="true" multiValued="true" omitNorms="false" omitTermFreqAndPositions="false" positionIncrementGap="100">
+     <analyzer type="index">
+       <tokenizer class="solr.StandardTokenizerFactory"/>
+       <!-- 
+       <filter class="solr.StopFilterFactory" ignoreCase="true" words="stopwords.txt" />
+        -->
+       <filter class="solr.LowerCaseFilterFactory"/>
+     </analyzer>
+     <analyzer type="query">
+       <tokenizer class="solr.StandardTokenizerFactory"/>
+       <!-- 
+       <filter class="solr.StopFilterFactory" ignoreCase="true" words="stopwords.txt" />
+       <filter class="solr.SynonymFilterFactory" synonyms="synonyms.txt" ignoreCase="true" expand="true"/>
+        -->
+       <filter class="solr.LowerCaseFilterFactory"/>
+     </analyzer>
+   </fieldType>
+
+   <fieldType name="geo" class="solr.SpatialRecursivePrefixTreeFieldType" indexed="true" stored="true" distanceUnits="kilometers"/>
+
+   <!-- 
+   <fieldType name="geo_jts" class="solr.SpatialRecursivePrefixTreeFieldType" indexed="true" stored="true" distanceUnits="kilometers"
+   spatialContextFactory="com.spatial4j.core.context.jts.JtsSpatialContextFactory"/>
+   -->
+
+   <fieldType name="int" class="solr.TrieIntField" precisionStep="0" positionIncrementGap="0"/>
+   <fieldType name="float" class="solr.TrieFloatField" precisionStep="0" positionIncrementGap="0"/>
+   <fieldType name="long" class="solr.TrieLongField" precisionStep="0" positionIncrementGap="0"/>
+   <fieldType name="double" class="solr.TrieDoubleField" precisionStep="0" positionIncrementGap="0"/>
+</schema>
