@@ -1,0 +1,19 @@
+@prefix shared:<urn:shared:> .		# subject namespace in all members
+@prefix one:<urn:member:one:> .		# subject namespace in only member 1
+@prefix two:<urn:member:two:> .		# subject namespace in only member 2
+@prefix three:<urn:member:three:> .	# subject namespace in only member 3
+@prefix a:<urn:schema:a:> .			# all members
+@prefix b:<urn:schema:b:> .			# each subject is described in only one member
+@prefix c:<urn:schema:c:> .			# member 2 exclusively
+@prefix d:<urn:schema:d:> .			# member 2 exclusively and declared as local
+
+three:john a:parentOf shared:bell .
+three:john a:spouse two:margret .
+three:john b:name "John" .
+three:john b:desc "John, Mother of Bell" .
+three:john b:interests one:family .
+
+shared:bell a:mother two:margret .
+
+shared:james b:name "James" .
+shared:james b:desc "James, husband of Bell" .

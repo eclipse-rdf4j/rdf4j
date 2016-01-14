@@ -1,0 +1,6 @@
+CONSTRUCT
+  *
+FROM
+  {X} <http://example.org/propA> {Y}
+WHERE
+  datatype(Y) = <http://www.w3.org/2001/XMLSchema#integer>

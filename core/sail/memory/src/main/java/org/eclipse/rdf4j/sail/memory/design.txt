@@ -1,0 +1,13 @@
+- Currently does not support concurrent transactions, new transactions will
+  block if another transaction is active.
+  
+- Data structure uses from- and till-snapshots (integers) for transaction
+  isolation. New statements are added directly to the data structure with a
+  from-snapshot that is higher than the current snapshot. Upon commit, the
+  current snapshot is raised by 1.
+  
+- Transactions are not allowed to remove statement objects from the data
+  structure as that potentially changes the iteration order (due to the
+  implementation of MemStatementList), which can cause active iterations to
+  miss some of the current statements. Such statements are flagged with a
+  till-snapshot that will make them invisible to future iterations instead.

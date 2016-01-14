@@ -1,0 +1,6 @@
+CONSTRUCT
+  *
+FROM
+  {X} <http://example.org/propA> {L} 
+WHERE 
+  xsd:string(L) < "9"^^xsd:string

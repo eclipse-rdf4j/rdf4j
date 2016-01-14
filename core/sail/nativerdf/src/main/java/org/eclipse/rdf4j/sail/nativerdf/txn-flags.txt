@@ -1,0 +1,22 @@
+Tables describing flag modifications for update operations
+----------------------------------------------------------
+
+Flags: added|removed|toggle|explicit
+ae = add explicit
+ai = add inferred
+re = remove explicit
+ri = remove inferred
+
+Current  ae    ai    re    ri
+0000    0010  0000  0000  0100
+0001    0001  0001  0101  0001
+0010    0010  0010  0100  0010
+0011    0001  0011  0011  0101
+
+01?0    0010  0000  0100  0100
+01?1    0001  0011  0101  0101
+
+1000    1001  1000  1000  1100
+1001    1001  1001  1101  1001
+
+11??    1001  1000  11??  11??

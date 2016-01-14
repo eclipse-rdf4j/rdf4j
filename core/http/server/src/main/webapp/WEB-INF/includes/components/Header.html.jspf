@@ -1,0 +1,5 @@
+<div id="header">
+	<div id="logo">
+		<a href="${path}/"><img src="${path}/images/logo.png" alt="Home" /></a><img class="productgroup" src="${path}/images/productgroup.png" alt="" />
+	</div>
+</div>

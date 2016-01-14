@@ -1,0 +1,7 @@
+# Test creation of new bnodes in CONSTRUCT-clause
+CONSTRUCT
+    {x} ex:parentOf {} ex:parentOf {y}
+FROM
+	{x} ex:grandParentOf {y}
+USING NAMESPACE
+    ex = <http://www.example.org/>

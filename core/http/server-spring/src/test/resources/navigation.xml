@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<navigation id="admin">
+	<!-- Default prefixes and suffixes -->
+	
+	<!-- for views -->
+	<path-prefix></path-prefix>
+	<path-separator>/</path-separator>
+	<view-suffix>.view</view-suffix>
+	
+	<!-- for icons -->
+	<icon-prefix>/images/icons/</icon-prefix>
+	<icon-separator>_</icon-separator>
+	<icon-suffix>.png</icon-suffix>
+	
+	<!-- for I18N keys -->
+	<i18n-prefix></i18n-prefix>
+	<i18n-separator>.</i18n-separator>
+	<i18n-suffix>.title</i18n-suffix>
+
+	<!-- Group definitions -->	
+	<group id="system">
+		<group id="logging" hidden="true">
+			<view id="overview" enabled="false" />
+		</group> 
+		<view id="overview" />
+		<view id="logging" view-suffix=".form" />
+	</group>
+</navigation>

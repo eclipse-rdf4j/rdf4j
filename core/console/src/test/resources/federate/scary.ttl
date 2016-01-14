@@ -1,0 +1,21 @@
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix dc:      <http://purl.org/dc/elements/1.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix imdb:    <http://www.imdb.com/title/> .
+@prefix fake:    <http://www.dale.visser.com/genres/> .
+
+imdb:tt0175142 dc:title           "Scary Movie"@en ;
+               dc:date            "2000-07-07T00:00:00Z"^^xsd:dateTime ;
+	           dc:type            fake:comedy ;
+               dcterms:references imdb:tt0119345 ;
+               dcterms:references imdb:tt0117571 .
+imdb:tt0119345 dc:title           "I Know What You Did Last Summer"@en ;
+               dc:date            "1997-10-17T00:00:00Z"^^xsd:dateTime ;
+               dc:type            fake:thriller .
+imdb:tt0117571 dc:title           "Scream"@en ;
+               dc:date            "1996-12-20T00:00:00Z"^^xsd:dateTime ;
+               dc:type            fake:thriller .
+
+
+               
+

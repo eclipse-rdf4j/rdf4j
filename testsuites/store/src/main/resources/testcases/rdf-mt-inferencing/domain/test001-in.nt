@@ -1,0 +1,9 @@
+# Input file for RDF Model Theory inferencer test case base on the RDF MT
+# specification of 23 January 2003
+# Description: In a statement, the subject has any domain restrictions on the
+# property as it's type.
+# Relevant inferencing rules: rdfs2
+# Author: Arjohn Kampman (arjohn.kampman@aidministrator.nl)
+<http://example.org/prop> <http://www.w3.org/2000/01/rdf-schema#domain> <http://example.org/DomainClass>.
+<http://example.org/prop> <http://www.w3.org/2000/01/rdf-schema#domain> _:DomainClass.
+<http://example.org/subj> <http://example.org/prop> <http://example.org/obj>.

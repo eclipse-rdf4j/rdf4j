@@ -1,0 +1,6 @@
+CONSTRUCT
+  *
+FROM
+  {X} <http://example.org/propA> {Y}
+WHERE
+  lang(Y) = "en"

@@ -1,0 +1,27 @@
+# default behaviour for when user does not have core.autocrlf set when set to
+# 'auto', all line endings are normalized to LF (unix line endings) on checkin
+* text=auto
+
+# Explicitly declare text files you want to always be normalized and converted
+# to native line endings on checkout.
+*.java text
+*.jsp text
+*.jspf text
+*.txt text
+*.html text
+*.xml text
+*.css text
+*.tld text
+*.ts text
+*.js text
+*.tag text
+*.sh text
+
+# dos batch files should retain windows line endings
+*.bat text eol=crlf
+
+# binaries that should never be modified
+*.png binary
+*.jpg binary
+*.gif binary
+

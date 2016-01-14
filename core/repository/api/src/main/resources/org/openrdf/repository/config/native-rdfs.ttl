@@ -1,0 +1,24 @@
+#
+# Sesame configuration template for a native RDF repository with
+# RDF Schema inferencing
+#
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rep: <http://www.openrdf.org/config/repository#>.
+@prefix sr: <http://www.openrdf.org/config/repository/sail#>.
+@prefix sail: <http://www.openrdf.org/config/sail#>.
+@prefix ns: <http://www.openrdf.org/config/sail/native#>.
+
+[] a rep:Repository ;
+   rep:repositoryID "{%Repository ID|native-rdfs%}" ;
+   rdfs:label "{%Repository title|Native store with RDF Schema inferencing%}" ;
+   rep:repositoryImpl [
+      rep:repositoryType "openrdf:SailRepository" ;
+      sr:sailImpl [
+         sail:sailType "openrdf:ForwardChainingRDFSInferencer" ;
+         sail:delegate [
+            sail:sailType "openrdf:NativeStore" ;
+	    sail:iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
+            ns:tripleIndexes "{%Triple indexes|spoc,posc%}"
+         ]
+      ]
+   ].

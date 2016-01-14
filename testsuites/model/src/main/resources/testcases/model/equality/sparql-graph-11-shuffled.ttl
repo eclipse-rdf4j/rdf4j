@@ -1,0 +1,209 @@
+@prefix : <http://example/> .
+@prefix rs: <http://www.w3.org/2001/sw/DataAccess/tests/result-set#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+_:node12elfnq4bx27 rs:binding _:node12elfnq4bx32 .
+
+_:node12elfnq4bx41 rs:variable "p" .
+
+_:node12elfnq4bx1 rs:resultVariable "s" .
+
+_:node12elfnq4bx40 rs:value :a .
+
+_:node12elfnq4bx25 rs:variable "p" .
+
+_:node12elfnq4bx38 rs:value :p .
+
+_:node12elfnq4bx37 rs:value <file:/C:/devel/aduna/projects/org.openrdf/sesame2/openrdf-repository/openrdf-repository-api/target/test-classes/testcases/repository/equality/data-g3.ttl> .
+
+_:node12elfnq4bx9 rs:value :p .
+
+_:node12elfnq4bx27 rs:binding _:node12elfnq4bx29 .
+
+_:node12elfnq4bx32 rs:variable "p" .
+
+_:node12elfnq4bx23 rs:binding _:node12elfnq4bx25 .
+
+_:node12elfnq4bx10 rs:value "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+_:node12elfnq4bx23 rs:binding _:node12elfnq4bx24 .
+
+_:node12elfnq4bx18 rs:binding _:node12elfnq4bx20 .
+
+_:node12elfnq4bx13 rs:binding _:node12elfnq4bx17 .
+
+_:node12elfnq4bx16 rs:variable "p" .
+
+_:node12elfnq4bx20 rs:value "2"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+_:node12elfnq4bx8 rs:binding _:node12elfnq4bx9 .
+
+_:node12elfnq4bx15 rs:value :a .
+
+_:node12elfnq4bx1 rs:solution _:node12elfnq4bx33 .
+
+_:node12elfnq4bx7 rs:variable "p" .
+
+_:node12elfnq4bx14 rs:value <file:/C:/devel/aduna/projects/org.openrdf/sesame2/openrdf-repository/openrdf-repository-api/target/test-classes/testcases/repository/equality/data-g1.ttl> .
+
+_:node12elfnq4bx41 rs:value :p .
+
+_:node12elfnq4bx26 rs:variable "o" .
+
+_:node12elfnq4bx2 rs:binding _:node12elfnq4bx4 .
+
+_:node12elfnq4bx33 rs:binding _:node12elfnq4bx34 .
+
+_:node12elfnq4bx1 rs:solution _:node12elfnq4bx23 .
+
+_:node12elfnq4bx5 rs:value _:node12elfnq4bx6 .
+
+_:node12elfnq4bx9 rs:variable "p" .
+
+_:node12elfnq4bx29 rs:variable "o" .
+
+_:node12elfnq4bx18 rs:binding _:node12elfnq4bx21 .
+
+_:node12elfnq4bx25 rs:value :p .
+
+_:node12elfnq4bx39 rs:binding _:node12elfnq4bx41 .
+
+_:node12elfnq4bx42 rs:variable "o" .
+
+_:node12elfnq4bx4 rs:value "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+_:node12elfnq4bx13 rs:binding _:node12elfnq4bx16 .
+
+_:node12elfnq4bx5 rs:variable "s" .
+
+_:node12elfnq4bx39 rs:binding _:node12elfnq4bx40 .
+
+_:node12elfnq4bx11 rs:variable "g" .
+
+_:node12elfnq4bx7 rs:value :p .
+
+_:node12elfnq4bx1 rs:solution _:node12elfnq4bx39 .
+
+_:node12elfnq4bx16 rs:value :p .
+
+_:node12elfnq4bx17 rs:value "9"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+_:node12elfnq4bx13 rs:binding _:node12elfnq4bx15 .
+
+_:node12elfnq4bx27 rs:binding _:node12elfnq4bx28 .
+
+_:node12elfnq4bx19 rs:variable "s" .
+
+_:node12elfnq4bx1 rs:resultVariable "p" .
+
+_:node12elfnq4bx19 rs:value :x .
+
+_:node12elfnq4bx36 rs:variable "o" .
+
+_:node12elfnq4bx8 rs:binding _:node12elfnq4bx12 .
+
+_:node12elfnq4bx37 rs:variable "g" .
+
+_:node12elfnq4bx26 rs:value "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+_:node12elfnq4bx8 rs:binding _:node12elfnq4bx10 .
+
+_:node12elfnq4bx3 rs:value <file:/C:/devel/aduna/projects/org.openrdf/sesame2/openrdf-repository/openrdf-repository-api/target/test-classes/testcases/repository/equality/data-g3.ttl> .
+
+_:node12elfnq4bx24 rs:variable "s" .
+
+_:node12elfnq4bx33 rs:binding _:node12elfnq4bx38 .
+
+_:node12elfnq4bx13 rs:binding _:node12elfnq4bx14 .
+
+_:node12elfnq4bx24 rs:value :x .
+
+_:node12elfnq4bx1 rs:solution _:node12elfnq4bx27 .
+
+_:node12elfnq4bx23 rs:binding _:node12elfnq4bx26 .
+
+_:node12elfnq4bx17 rs:variable "o" .
+
+_:node12elfnq4bx21 rs:value :q .
+
+_:node12elfnq4bx36 rs:value "9"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+_:node12elfnq4bx10 rs:variable "o" .
+
+_:node12elfnq4bx34 rs:variable "s" .
+
+_:node12elfnq4bx21 rs:variable "p" .
+
+_:node12elfnq4bx12 rs:value :x .
+
+_:node12elfnq4bx40 rs:variable "s" .
+
+_:node12elfnq4bx18 rs:binding _:node12elfnq4bx19 .
+
+_:node12elfnq4bx30 rs:variable "s" .
+
+_:node12elfnq4bx22 rs:variable "g" .
+
+_:node12elfnq4bx1 rs:solution _:node12elfnq4bx2 .
+
+_:node12elfnq4bx4 rs:variable "o" .
+
+_:node12elfnq4bx8 rs:binding _:node12elfnq4bx11 .
+
+_:node12elfnq4bx11 rs:value <file:/C:/devel/aduna/projects/org.openrdf/sesame2/openrdf-repository/openrdf-repository-api/target/test-classes/testcases/repository/equality/data-g1.ttl> .
+
+_:node12elfnq4bx28 rs:value <file:/C:/devel/aduna/projects/org.openrdf/sesame2/openrdf-repository/openrdf-repository-api/target/test-classes/testcases/repository/equality/data-g4.ttl> .
+
+_:node12elfnq4bx42 rs:value "9"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+_:node12elfnq4bx1 rs:resultVariable "g" .
+
+_:node12elfnq4bx29 rs:value "2"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+_:node12elfnq4bx33 rs:binding _:node12elfnq4bx36 .
+
+_:node12elfnq4bx1 a rs:ResultSet .
+
+_:node12elfnq4bx12 rs:variable "s" .
+
+_:node12elfnq4bx1 rs:resultVariable "o" .
+
+_:node12elfnq4bx15 rs:variable "s" .
+
+_:node12elfnq4bx1 rs:solution _:node12elfnq4bx18 .
+
+_:node12elfnq4bx2 rs:binding _:node12elfnq4bx3 .
+
+_:node12elfnq4bx1 rs:solution _:node12elfnq4bx13 .
+
+_:node12elfnq4bx39 rs:binding _:node12elfnq4bx42 .
+
+_:node12elfnq4bx3 rs:variable "g" .
+
+_:node12elfnq4bx30 rs:value _:node12elfnq4bx31 .
+
+_:node12elfnq4bx34 rs:value _:node12elfnq4bx35 .
+
+_:node12elfnq4bx2 rs:binding _:node12elfnq4bx7 .
+
+_:node12elfnq4bx18 rs:binding _:node12elfnq4bx22 .
+
+_:node12elfnq4bx32 rs:value :q .
+
+_:node12elfnq4bx14 rs:variable "g" .
+
+_:node12elfnq4bx2 rs:binding _:node12elfnq4bx5 .
+
+_:node12elfnq4bx27 rs:binding _:node12elfnq4bx30 .
+
+_:node12elfnq4bx28 rs:variable "g" .
+
+_:node12elfnq4bx33 rs:binding _:node12elfnq4bx37 .
+
+_:node12elfnq4bx1 rs:solution _:node12elfnq4bx8 .
+
+_:node12elfnq4bx20 rs:variable "o" .
+
+_:node12elfnq4bx38 rs:variable "p" .
+
+_:node12elfnq4bx22 rs:value <file:/C:/devel/aduna/projects/org.openrdf/sesame2/openrdf-repository/openrdf-repository-api/target/test-classes/testcases/repository/equality/data-g2.ttl> .

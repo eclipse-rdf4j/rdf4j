@@ -1,0 +1,8 @@
+# Test serql:directSubPropertyOf
+CONSTRUCT
+    {x} rdfs:subPropertyOf {y}
+FROM
+	{x} serql:directSubPropertyOf {y}
+WHERE namespace(x) = ex: and namespace(y) = ex:
+USING NAMESPACE
+    ex = <http://www.example.org/>

@@ -1,0 +1,5 @@
+CONSTRUCT
+  *
+FROM
+  {X} rdf:type {<http://example.org/Foo>};
+     [<http://example.org/propA> {Y}]

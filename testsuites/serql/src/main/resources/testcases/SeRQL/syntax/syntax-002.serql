@@ -1,0 +1,4 @@
+SELECT
+  S, P
+FROM
+  {S} P {"foo bar"}

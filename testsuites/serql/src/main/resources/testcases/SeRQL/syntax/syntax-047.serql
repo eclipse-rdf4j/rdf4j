@@ -1,0 +1,6 @@
+SELECT
+  S, P, O
+FROM
+  {S} P {O} 
+WHERE
+  regex(O, "bla") AND regex(str(S), "^http", "i")

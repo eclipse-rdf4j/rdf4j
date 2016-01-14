@@ -1,0 +1,9 @@
+# Input file for RDF Model Theory inferencer test case base on the RDF MT
+# specification of 23 January 2003
+# Description: rdfs:subClassOf is transitive
+# Relevant inferencing rules: rdfs8
+# Author: Arjohn Kampman (arjohn.kampman@aidministrator.nl)
+<http://example.org/A> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/B>.
+<http://example.org/B> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/C>.
+_:A <http://www.w3.org/2000/01/rdf-schema#subClassOf> _:B.
+_:B <http://www.w3.org/2000/01/rdf-schema#subClassOf> _:C.

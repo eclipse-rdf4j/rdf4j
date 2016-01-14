@@ -1,0 +1,11 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ex: <http://example.org/> .
+
+ex:a a ex:Foo .
+ex:b a ex:Foo .
+ex:b ex:value '''^M'''.
+ex:c 
+    :foo ex:Foo .
+ex:a ex:value 1.0 .
+ex:a ex:value 3.0 .

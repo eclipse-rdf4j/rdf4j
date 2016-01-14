@@ -1,0 +1,8 @@
+# Test serql:directSubclassOf
+CONSTRUCT
+    {x} rdfs:subClassOf {y}
+FROM
+	{x} serql:directSubClassOf {y}
+WHERE namespace(x) = ex: and namespace(y) = ex:
+USING NAMESPACE
+    ex = <http://www.example.org/>

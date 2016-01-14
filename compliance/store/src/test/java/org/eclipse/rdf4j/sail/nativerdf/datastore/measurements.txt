@@ -1,0 +1,26 @@
+Performance test results of DataStorePerfTest. Average times in micro seconds.
+Results gathered on Dell Latitude D610 w/ 1.73GHz Pentium M, 1 GB mem @800MHz,
+Toshiba MK6026GAX 60GB hard drive @5400rpm.
+
+===Baseline times===
+#str     store  getID  getData
+1000000   93     17     14
+2000000  268     17     14
+
+===2005-12-21: hash file stores IDs instead of offsets; removed ID from data file===
+#str     store  getID  getData
+1000000   87     21     13
+2000000  136     21     13
+3000000  166     21     14
+
+===2005-12-22: replaced hash file with btree w/ 2048 byte nodes===
+#str     store  getID  getData
+1000000   91     31     14
+2000000  116     36     14
+3000000  247     43     14
+
+===2006-01-05: hash file, bug fixed IDIterator loops===
+#str     store  getID  getData
+1000000   85     21     14
+2000000  106     21     14
+3000000  250     22     14
