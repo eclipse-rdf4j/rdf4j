@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
-import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.OpenRDFException;
 import org.eclipse.rdf4j.model.Value;
 
 /**
@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.Value;
  * 
  * @author Arjohn Kampman
  */
-public class ModelException extends RuntimeException {
+public class ModelException extends OpenRDFException {
 
 	private static final long serialVersionUID = 3886967415616842867L;
 
