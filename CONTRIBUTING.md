@@ -9,17 +9,17 @@ RDF4J is a project governed by the [Eclipse Foundation](http://www.eclipse.org/)
 
 In order for any contributions to RDF4J to be accepted, you MUST do the following things:
 
-# Sign the [Eclipse Foundation Contributor License Agreement](http://www.eclipse.org/legal/CLA.php).
+1. Sign the [Eclipse Foundation Contributor License Agreement](http://www.eclipse.org/legal/CLA.php).
 To sign the Eclipse CLA you need to:
 
-  # Obtain an Eclipse Foundation userid. If you already use Eclipse Bugzilla or Gerrit you already have one of those. If you don’t, you need to
+  * Obtain an Eclipse Foundation userid. If you already use Eclipse Bugzilla or Gerrit you already have one of those. If you don’t, you need to
 [register](https://dev.eclipse.org/site_login/createaccount.php).
 
-  # Login into the [projects portal](https://projects.eclipse.org/), select “My Account”, and then the “Contributor License Agreement” tab.
+  * Login into the [projects portal](https://projects.eclipse.org/), select “My Account”, and then the “Contributor License Agreement” tab.
 
-  # Add your github username in your Eclipse Foundation account settings. Log in it to Eclipse and go to account settings.
+  * Add your github username in your Eclipse Foundation account settings. Log in it to Eclipse and go to account settings.
 
-# "Sign-off" your commits
+2. "Sign-off" your commits
 
 Every commit you make in your patch or pull request MUST be "signed off".
 You do this by adding the `-s` flag when you make the commit(s).
@@ -43,16 +43,16 @@ Eclipse workspace and make sure they are applied to your code contributions.
 Once the legalities are out of the way and you're up-to-date on developer guidelines, you can 
 start coding. Here's how:
 
-# Fork the repository on GitHub
-# Create a new branch for your changes (see the Developer Guidelines above for details)
-# Make your changes
-# Make sure you include tests
-# Make sure the test suite passes after your changes
-# Commit your changes into that branch
-# Use descriptive and meaningful commit messages
-# If you have a lot of commits squash them into a single commit
-# Sign off every commit you do, as explained above.
-# Push your changes to your branch in your forked repository
+1. Fork the repository on GitHub
+2. Create a new branch for your changes (see the Developer Guidelines above for details)
+3. Make your changes
+4. Make sure you include tests
+5. Make sure the test suite passes after your changes
+6. Commit your changes into that branch
+7. Use descriptive and meaningful commit messages
+8. If you have a lot of commits squash them into a single commit
+9. Sign off every commit you do, as explained above.
+10. Push your changes to your branch in your forked repository
 
 ## Submitting the changes
 
