@@ -17,7 +17,7 @@ To sign the Eclipse CLA you need to:
 
   * Login into the [projects portal](https://projects.eclipse.org/), select “My Account”, and then the “Contributor License Agreement” tab.
 
-  * Add your github username in your Eclipse Foundation account settings. Log in it to Eclipse and go to account settings.
+2. Add your github username in your Eclipse Foundation account settings. Log in it to Eclipse and go to account settings.
 
 2. "Sign-off" your commits
 
@@ -26,9 +26,16 @@ You do this by adding the `-s` flag when you make the commit(s).
 
 ## Developer Guidelines
 
-RDF4J feature development takes place in the master branch, which is a branch for the next minor or major release. In addition, each minor release has its own release branch (e.g. `releases/2.8.x`, and releases/4.0.x`), on which hotfixes/patches can be submitted.
+RDF4J feature development takes place on the `master` branch, which is a branch for the next minor or major release. In addition, each minor release has its own release branch (e.g. `releases/2.8.x`, and `releases/4.0.x`), on which hotfixes/patches are done.
 
-Every issue, no matter how small, gets its own branch. New features are usually developed on branches from the master branch. Patches or hotfixes for existing releases are developed on a branch split off from the releveant release branch. Issue branch names are always prefixed with `issue/`, followed by the issue number in the GitHub issue tracker, followed by one or two dash-separated keywords. For example: `issues/#6-sparql-npe` is the branch for a fix for GitHub issue #6, which has to do with SPARQL and a NullPointerException.
+Every issue, no matter how small, gets its own branch. New features are usually
+developed on branches from the master branch. Patches or hotfixes for existing
+releases are developed on a branch split off from the releveant release branch.
+Issue branch names are always prefixed with `issues/`, followed by the issue
+number in the [GitHub issue tracker](https://github.com/eclipse/rdf4j/issues),
+followed by one or two dash-separated keywords for the issue. For example:
+`issues/#6-sparql-npe` is the branch for a fix for GitHub issue #6, which has
+to do with SPARQL and a NullPointerException.
 
 If you're unsure on which branch a contribution should be made, please ask!
 
