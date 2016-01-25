@@ -2,7 +2,7 @@
 
 This is the main code repository for the Eclipse RDF4J project. Please see
 [RDF4J.org](http://rdf4j.org) for detailed information about RDF4J, including
-user documentation and donwload links.
+user documentation and download links.
 
 ## Keen to contribute?
 
