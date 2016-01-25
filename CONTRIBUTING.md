@@ -57,7 +57,6 @@ start coding. Here's how:
 5. Make sure the test suite passes after your changes
 6. Commit your changes into that branch
 7. Use descriptive and meaningful commit messages
-8. If you have a lot of commits squash them into a single commit
 9. Sign off every commit you do, as explained above.
 10. Push your changes to your branch in your forked repository
 
