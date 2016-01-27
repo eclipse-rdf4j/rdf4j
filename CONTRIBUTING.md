@@ -56,8 +56,9 @@ start coding. Here's how:
 4. Make sure you include tests
 5. Make sure the test suite passes after your changes
 6. Commit your changes into that branch
-7. Use descriptive and meaningful commit messages
+7. Use descriptive and meaningful commit messages. Reference the issue number in the commit message (for example " #6 added null check")
 9. Sign off every commit you do, as explained above.
+10. Optionally squash your commits (not necessary, but if you want to clean your commit history a bit, _this_ is the point to do it).
 10. Push your changes to your branch in your forked repository
 
 ## Submitting the changes
