@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.sail.lucene;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -127,7 +129,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 */
 	protected ReaderMonitor currentMonitor;
 
-	private Function<? super String,? extends SpatialStrategy> geoStrategyMapper;
+	private Function<? super String, ? extends SpatialStrategy> geoStrategyMapper;
 
 	public LuceneIndex() {
 	}
@@ -149,7 +151,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	{
 		this.directory = directory;
 		this.analyzer = analyzer;
-		this.geoStrategyMapper = createSpatialStrategyMapper(Collections.<String, String>emptyMap());
+		this.geoStrategyMapper = createSpatialStrategyMapper(Collections.<String, String> emptyMap());
 
 		postInit();
 	}
@@ -169,7 +171,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		postInit();
 	}
 
-	// this method uses java.nio.Path which is a Java 7 feature. We ignore this as the Lucene modules 
+	// this method uses java.nio.Path which is a Java 7 feature. We ignore this
+	// as the Lucene modules
 	// are marked as an exception to the rule that we are Java 6-compatible.
 	@IgnoreJRERequirement
 	protected Directory createDirectory(Properties parameters)
@@ -196,7 +199,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	{
 		Analyzer analyzer;
 		if (parameters.containsKey(LuceneSail.ANALYZER_CLASS_KEY)) {
-			analyzer = (Analyzer)Class.forName(parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY)).newInstance();
+			analyzer = (Analyzer)Class.forName(
+					parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY)).newInstance();
 		}
 		else {
 			analyzer = new StandardAnalyzer();
@@ -219,18 +223,19 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		}
 	}
 
-	protected Function<String, ? extends SpatialStrategy> createSpatialStrategyMapper(Map<String,String> parameters) {
+	protected Function<String, ? extends SpatialStrategy> createSpatialStrategyMapper(
+			Map<String, String> parameters)
+	{
 		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 		SpatialContext geoContext = SpatialContextFactory.makeSpatialContext(parameters, classLoader);
-		final SpatialPrefixTree spt = SpatialPrefixTreeFactory.makeSPT(parameters,
-				classLoader, geoContext);
-		return new Function<String,SpatialStrategy>()
-		{
+		final SpatialPrefixTree spt = SpatialPrefixTreeFactory.makeSPT(parameters, classLoader, geoContext);
+		return new Function<String, SpatialStrategy>() {
+
 			@Override
 			public SpatialStrategy apply(String field) {
 				return new RecursivePrefixTreeStrategy(spt, GEO_FIELD_PREFIX + field);
 			}
-			
+
 		};
 	}
 
@@ -663,8 +668,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	// //////////////////////////////// Methods for querying the index
 
 	/**
-	 * Parse the passed query.
-	 * To be removed, no longer used.
+	 * Parse the passed query. To be removed, no longer used.
+	 * 
 	 * @param query
 	 *        string
 	 * @return the parsed query
@@ -673,7 +678,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 */
 	@Override
 	@Deprecated
-	protected SearchQuery parseQuery(String query, URI propertyURI) throws MalformedQueryException
+	protected SearchQuery parseQuery(String query, URI propertyURI)
+		throws MalformedQueryException
 	{
 		Query q;
 		try {
@@ -697,7 +703,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	@Override
 	protected Iterable<? extends DocumentScore> query(Resource subject, String query, URI propertyURI,
 			boolean highlight)
-		throws MalformedQueryException, IOException
+				throws MalformedQueryException, IOException
 	{
 		Query q;
 		try {
@@ -734,21 +740,21 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentDistance> geoQuery(final URI geoProperty,
-			Point p, final URI units, double distance, String distanceVar, Var contextVar)
-		throws MalformedQueryException, IOException
+	protected Iterable<? extends DocumentDistance> geoQuery(final URI geoProperty, Point p, final URI units,
+			double distance, String distanceVar, Var contextVar)
+				throws MalformedQueryException, IOException
 	{
 		double degs = GeoUnits.toDegrees(distance, units);
 		final String geoField = SearchFields.getPropertyField(geoProperty);
 		SpatialStrategy strategy = getSpatialStrategyMapper().apply(geoField);
 		final Shape boundingCircle = strategy.getSpatialContext().makeCircle(p, degs);
 		Query q = strategy.makeQuery(new SpatialArgs(SpatialOperation.Intersects, boundingCircle));
-		if(contextVar != null) {
-			q = addContextTerm(q, (Resource) contextVar.getValue());
+		if (contextVar != null) {
+			q = addContextTerm(q, (Resource)contextVar.getValue());
 		}
 
-		TopDocs docs = search(new CustomScoreQuery(q, new FunctionQuery(
-				strategy.makeRecipDistanceValueSource(boundingCircle))));
+		TopDocs docs = search(new CustomScoreQuery(q,
+				new FunctionQuery(strategy.makeRecipDistanceValueSource(boundingCircle))));
 		final boolean requireContext = (contextVar != null && !contextVar.hasValue());
 		return Iterables.transform(Arrays.asList(docs.scoreDocs), new Function<ScoreDoc, DocumentDistance>() {
 
@@ -762,8 +768,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	private Query addContextTerm(Query q, Resource ctx) {
 		BooleanQuery combinedQuery = new BooleanQuery();
-		TermQuery idQuery = new TermQuery(new Term(SearchFields.CONTEXT_FIELD_NAME,
-				SearchFields.getContextID(ctx)));
+		TermQuery idQuery = new TermQuery(
+				new Term(SearchFields.CONTEXT_FIELD_NAME, SearchFields.getContextID(ctx)));
 		// the specified named graph or not the unnamed graph
 		combinedQuery.add(idQuery, ctx != null ? Occur.MUST : Occur.MUST_NOT);
 		combinedQuery.add(q, Occur.MUST);
@@ -771,25 +777,25 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation,
-			URI geoProperty, Shape shape, Var contextVar)
-		throws MalformedQueryException, IOException
+	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, URI geoProperty,
+			Shape shape, Var contextVar)
+				throws MalformedQueryException, IOException
 	{
 		SpatialOperation op = toSpatialOp(relation);
-		if(op == null) {
+		if (op == null) {
 			return null;
 		}
 
 		final String geoField = SearchFields.getPropertyField(geoProperty);
 		SpatialStrategy strategy = getSpatialStrategyMapper().apply(geoField);
 		Query q = strategy.makeQuery(new SpatialArgs(op, shape));
-		if(contextVar != null) {
-			q = addContextTerm(q, (Resource) contextVar.getValue());
+		if (contextVar != null) {
+			q = addContextTerm(q, (Resource)contextVar.getValue());
 		}
 
 		TopDocs docs = search(q);
 		final Set<String> fields = Sets.newHashSet(SearchFields.URI_FIELD_NAME, geoField);
-		if(contextVar != null && !contextVar.hasValue()) {
+		if (contextVar != null && !contextVar.hasValue()) {
 			fields.add(SearchFields.CONTEXT_FIELD_NAME);
 		}
 		return Iterables.transform(Arrays.asList(docs.scoreDocs), new Function<ScoreDoc, DocumentResult>() {
@@ -802,22 +808,22 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	private SpatialOperation toSpatialOp(String relation) {
-		if(GEOF.SF_INTERSECTS.stringValue().equals(relation)) {
+		if (GEOF.SF_INTERSECTS.stringValue().equals(relation)) {
 			return SpatialOperation.Intersects;
 		}
-		else if(GEOF.SF_DISJOINT.stringValue().equals(relation)) {
+		else if (GEOF.SF_DISJOINT.stringValue().equals(relation)) {
 			return SpatialOperation.IsDisjointTo;
 		}
-		else if(GEOF.SF_EQUALS.stringValue().equals(relation)) {
+		else if (GEOF.SF_EQUALS.stringValue().equals(relation)) {
 			return SpatialOperation.IsEqualTo;
 		}
-		else if(GEOF.SF_OVERLAPS.stringValue().equals(relation)) {
+		else if (GEOF.SF_OVERLAPS.stringValue().equals(relation)) {
 			return SpatialOperation.Overlaps;
 		}
-		else if(GEOF.EH_COVERED_BY.stringValue().equals(relation)) {
+		else if (GEOF.EH_COVERED_BY.stringValue().equals(relation)) {
 			return SpatialOperation.IsWithin;
 		}
-		else if(GEOF.EH_COVERS.stringValue().equals(relation)) {
+		else if (GEOF.EH_COVERS.stringValue().equals(relation)) {
 			return SpatialOperation.Contains;
 		}
 		return null;
@@ -880,8 +886,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		throws IOException
 	{
 		// rewrite the query
-		TermQuery idQuery = new TermQuery(new Term(SearchFields.URI_FIELD_NAME,
-				SearchFields.getResourceID(resource)));
+		TermQuery idQuery = new TermQuery(
+				new Term(SearchFields.URI_FIELD_NAME, SearchFields.getResourceID(resource)));
 		BooleanQuery combinedQuery = new BooleanQuery();
 		combinedQuery.add(idQuery, Occur.MUST);
 		combinedQuery.add(query, Occur.MUST);
@@ -928,7 +934,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		throws IOException
 	{
 
-		// logger.warn("Clearing contexts operation did not change the index: contexts are not indexed at the moment");
+		// logger.warn("Clearing contexts operation did not change the index:
+		// contexts are not indexed at the moment");
 
 		logger.debug("deleting contexts: {}", Arrays.toString(contexts));
 		// these resources have to be read from the underlying rdf store
@@ -1081,22 +1088,23 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		}
 
 		@Override
-		public void stringField(FieldInfo fieldInfo, String value) {
+		public void stringField(FieldInfo fieldInfo, byte[] value) {
+			final String stringValue = new String(value, StandardCharsets.UTF_8);
 			String name = fieldInfo.name;
 			if (SearchFields.ID_FIELD_NAME.equals(name)) {
-				addIDField(value, document);
+				addIDField(stringValue, document);
 			}
 			else if (SearchFields.CONTEXT_FIELD_NAME.equals(name)) {
-				addContextField(value, document);
+				addContextField(stringValue, document);
 			}
 			else if (SearchFields.URI_FIELD_NAME.equals(name)) {
-				addResourceField(value, document);
+				addResourceField(stringValue, document);
 			}
 			else if (SearchFields.TEXT_FIELD_NAME.equals(name)) {
-				addTextField(value, document);
+				addTextField(stringValue, document);
 			}
 			else {
-				addPredicateField(name, value, document);
+				addPredicateField(name, stringValue, document);
 			}
 		}
 

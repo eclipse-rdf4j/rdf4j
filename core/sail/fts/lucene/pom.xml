@@ -14,7 +14,7 @@
 	<description>StackableSail implementation offering full-text search on literals, based on Apache Lucene.</description>
 
 	<properties>
-		<lucene.version>5.1.0</lucene.version>
+		<lucene.version>5.2.1</lucene.version>
 	</properties>
 
 	<dependencies>
