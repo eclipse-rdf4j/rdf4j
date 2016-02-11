@@ -10,9 +10,6 @@ package org.eclipse.rdf4j.sail.lucene;
 import java.io.IOException;
 import java.util.Arrays;
 
-import com.google.common.base.Function;
-import com.google.common.collect.Iterables;
-
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
@@ -22,9 +19,9 @@ import org.apache.lucene.search.highlight.QueryScorer;
 import org.apache.lucene.search.highlight.SimpleHTMLFormatter;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.URI;
-import org.eclipse.rdf4j.sail.lucene.DocumentScore;
-import org.eclipse.rdf4j.sail.lucene.SearchFields;
-import org.eclipse.rdf4j.sail.lucene.SearchQuery;
+
+import com.google.common.base.Function;
+import com.google.common.collect.Iterables;
 
 /**
  * To be removed, no longer used.
@@ -36,12 +33,14 @@ public class LuceneQuery implements SearchQuery
 	private final LuceneIndex index;
 	private Highlighter highlighter;
 
+	@Deprecated
 	public LuceneQuery(Query q, LuceneIndex index) {
 		this.query = q;
 		this.index = index;
 	}
 
 	@Override
+	@Deprecated
 	public Iterable<? extends DocumentScore> query(Resource resource) throws IOException {
 		TopDocs docs;
 		if(resource != null) {
@@ -60,6 +59,7 @@ public class LuceneQuery implements SearchQuery
 	}
 
 	@Override
+	@Deprecated
 	public void highlight(URI property) {
 		Formatter formatter = new SimpleHTMLFormatter(SearchFields.HIGHLIGHTER_PRE_TAG, SearchFields.HIGHLIGHTER_POST_TAG);
 		highlighter = new Highlighter(formatter, new QueryScorer(query));

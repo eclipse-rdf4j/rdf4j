@@ -1,0 +1,30 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <ex:>.
+
+[ a       sp:Modify ;
+	sp:text """
+PREFIX ex: <ex:>
+INSERT {
+	?this ex:grandParent ?grandParent .
+}
+WHERE {
+	?parent ex:child ?this .
+	?grandParent ex:child ?parent .
+}
+""";
+  sp:insertPattern ([ sp:object _:grandParent ;
+              sp:predicate ex:grandParent ;
+              sp:subject spin:_this
+            ]) ;
+  sp:where ([ sp:object spin:_this ;
+              sp:predicate ex:child ;
+              sp:subject _:parent
+  			] [ sp:object _:parent ;
+              sp:predicate ex:child ;
+              sp:subject _:grandParent
+  			]) ;
+].
+
+_:parent sp:varName "parent" .
+_:grandParent sp:varName "grandParent" .

@@ -9,9 +9,6 @@ package org.eclipse.rdf4j.common.iteration;
 
 import java.util.Collections;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.FilterIteration;
-
 public class FilterIterationTest extends CloseableIterationTest {
 
 	@Override

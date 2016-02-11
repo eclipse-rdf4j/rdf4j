@@ -133,7 +133,7 @@ public class FederationStrategy extends SimpleEvaluationStrategy {
 	{
 		CloseableIteration<BindingSet, QueryEvaluationException> result = expr.evaluate(dataset, bindings);
 		if (result == null) {
-			TripleSource source = new RepositoryTripleSource(expr.getOwner());
+			TripleSource source = new org.eclipse.rdf4j.repository.evaluation.RepositoryTripleSource(expr.getOwner());
 			EvaluationStrategy eval = new FederationStrategy(executor, source, dataset, serviceResolver);
 			result = eval.evaluate(expr.getArg(), bindings);
 		}

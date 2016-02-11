@@ -9,11 +9,8 @@ package org.eclipse.rdf4j.repository.config;
 
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.DELEGATE;
 
-import org.eclipse.rdf4j.model.Graph;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.util.GraphUtil;
-import org.eclipse.rdf4j.model.util.GraphUtilException;
 import org.eclipse.rdf4j.model.util.Models;
 
 /**

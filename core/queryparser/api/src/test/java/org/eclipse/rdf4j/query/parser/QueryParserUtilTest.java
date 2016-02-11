@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser;
 
-import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.Assert;
 import org.junit.Test;
 

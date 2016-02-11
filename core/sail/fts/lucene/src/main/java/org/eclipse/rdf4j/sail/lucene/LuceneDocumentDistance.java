@@ -13,8 +13,6 @@ import java.util.Set;
 
 import org.apache.lucene.search.ScoreDoc;
 import org.eclipse.rdf4j.model.URI;
-import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
-import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.lucene.util.GeoUnits;
 
 import com.google.common.collect.Sets;

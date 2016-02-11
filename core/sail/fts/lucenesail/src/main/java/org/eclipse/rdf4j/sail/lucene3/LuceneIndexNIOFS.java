@@ -23,10 +23,14 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSail;
  * readvint</a>).
  * 
  * @author andriy.nikolov
+ * @deprecated since 4.1.0. Use the LuceneSail in package
+ *             {@code org.openrdf.sail.lucene} instead.
  */
+@Deprecated
 public class LuceneIndexNIOFS extends LuceneIndex {
 
 	@Override
+	@Deprecated
 	protected Directory createDirectory(Properties parameters)
 		throws IOException
 	{

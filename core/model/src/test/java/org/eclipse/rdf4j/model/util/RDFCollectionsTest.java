@@ -23,9 +23,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
-import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.model.util.ModelException;
-import org.eclipse.rdf4j.model.util.RDFCollections;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.junit.Before;
 import org.junit.Test;
@@ -71,6 +68,7 @@ public class RDFCollectionsTest {
 
 	}
 
+	@Test
 	public void testNonWellformedCollection() {
 		Resource head = vf.createBNode();
 		Model m = RDFCollections.asRDF(values, head, new TreeModel());
@@ -102,6 +100,39 @@ public class RDFCollectionsTest {
 		catch (ModelException e) {
 			// fall through, expected
 		}
+	}
 
+	@Test
+	public void testExtract() {
+		Resource head = vf.createBNode();
+		Model m = RDFCollections.asRDF(values, head, new TreeModel());
+
+		// add something to the model that is not part of the RDF collection.
+		m.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+
+		Model collection = RDFCollections.getCollection(m, head, new TreeModel());
+		assertNotNull(collection);
+		assertFalse(collection.contains(RDF.TYPE, RDF.TYPE, RDF.PROPERTY));
+		assertTrue(collection.contains(null, RDF.FIRST, a));
+		assertTrue(collection.contains(null, RDF.FIRST, b));
+		assertTrue(collection.contains(null, RDF.FIRST, c));
+	}
+	
+	@Test 
+	public void testRemove() {
+		Resource head = vf.createBNode();
+		Model m = RDFCollections.asRDF(values, head, new TreeModel());
+
+		// add something to the model that is not part of the RDF collection.
+		m.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+
+		// remove the entire collection
+		RDFCollections.extract(m, head, st -> m.remove(st));
+		
+		assertFalse(m.contains(null, RDF.FIRST, a));
+		assertFalse(m.contains(null, RDF.FIRST, b));
+		assertFalse(m.contains(null, RDF.FIRST, c));
+		assertFalse(m.contains(head, null, null));
+		assertTrue(m.contains(RDF.TYPE, RDF.TYPE, RDF.PROPERTY));
 	}
 }

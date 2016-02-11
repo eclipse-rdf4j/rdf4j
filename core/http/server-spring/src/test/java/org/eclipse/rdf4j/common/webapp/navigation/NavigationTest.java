@@ -16,9 +16,6 @@ import static org.junit.Assert.assertTrue;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.common.webapp.navigation.Group;
-import org.eclipse.rdf4j.common.webapp.navigation.NavigationModel;
-import org.eclipse.rdf4j.common.webapp.navigation.View;
 import org.junit.Before;
 import org.junit.Test;
 

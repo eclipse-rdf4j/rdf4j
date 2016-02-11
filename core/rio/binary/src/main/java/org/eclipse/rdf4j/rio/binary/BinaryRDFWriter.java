@@ -16,7 +16,6 @@ import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.LANG_LITERAL_VALUE
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.MAGIC_NUMBER;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.NAMESPACE_DECL;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.NULL_VALUE;
-import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.PLAIN_LITERAL_VALUE;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.STATEMENT;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.URI_VALUE;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.VALUE_REF;

@@ -668,6 +668,26 @@ public abstract class SPARQLUpdateTest {
 		assertFalse(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph2));
 		assertFalse(message, con.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true));
 	}
+	
+	@Test
+	public void testInsertWhereUsingWith()
+		throws Exception
+	{
+
+		logger.debug("executing testInsertWhereUsingWith");
+		StringBuilder update = new StringBuilder();
+		update.append(getNamespaceDeclarations());
+		update.append("WITH ex:graph2 INSERT {?x rdfs:label ?y . } USING ex:graph1 WHERE {?x foaf:name ?y }");
+
+		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
+
+		operation.execute();
+
+		String message = "label should have been inserted in graph2, for ex:bob only";
+		assertTrue(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph2));
+		assertFalse(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true, graph1));
+		assertFalse(message, con.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true));
+	}
 
 	@Test
 	public void testInsertWhereWith()

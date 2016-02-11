@@ -1183,6 +1183,12 @@ public class XMLDatatypeUtil {
 			// Example mantissas: 0.0, -0.1, 0.00345 and 0.09
 			// search first non-zero digit
 			int nonZeroIdx = 2;
+			boolean negative = false;
+			if (mantissa.charAt(0) == '-') {
+				nonZeroIdx++;
+				negative = true;
+			}
+			
 			while (nonZeroIdx < mantissa.length() && mantissa.charAt(nonZeroIdx) == '0') {
 				nonZeroIdx++;
 			}
@@ -1190,6 +1196,9 @@ public class XMLDatatypeUtil {
 			// 0.0 does not need any normalization:
 			if (nonZeroIdx < mantissa.length()) {
 				StringBuilder sb = new StringBuilder(mantissa.length());
+				if (negative) {
+					sb.append('-');
+				}
 				sb.append(mantissa.charAt(nonZeroIdx));
 				sb.append('.');
 				if (nonZeroIdx == mantissa.length() - 1) {
@@ -1201,7 +1210,9 @@ public class XMLDatatypeUtil {
 				}
 
 				mantissa = sb.toString();
-				shift = nonZeroIdx - 1;
+				
+				// subtract position for minus sign from shift if a negative number 
+				shift = negative ? nonZeroIdx - 2 : nonZeroIdx - 1;
 			}
 		}
 

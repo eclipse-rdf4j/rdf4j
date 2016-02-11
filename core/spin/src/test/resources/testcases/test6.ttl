@@ -1,0 +1,24 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+
+[ a       sp:Select ;
+	sp:text """
+SELECT (COUNT(distinct ?object) AS ?count)
+WHERE {
+	?this ?arg1 ?object
+}
+""";
+  sp:resultVariables (_:count) ;
+  sp:where ([ sp:object _:object ;
+              sp:predicate spin:_arg1 ;
+              sp:subject spin:_this
+            ])
+].
+
+_:object sp:varName "object" .
+_:count sp:varName "count" .
+_:count sp:expression [
+			a       sp:Count ;
+			sp:distinct true ;
+		 	sp:expression _:object
+		] .

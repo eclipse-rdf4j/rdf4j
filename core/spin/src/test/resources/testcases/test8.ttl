@@ -1,0 +1,29 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <ex:>.
+
+[ a sp:Select ;
+	sp:text """
+PREFIX ex: <ex:>
+
+SELECT *
+WHERE {
+	BIND (2008 - ?birthYear AS ?age) .
+}
+""";
+    sp:resultVariables  (
+    	_:birthYear 
+    	_:age );
+	sp:where (
+    [ a       sp:Bind ;
+      sp:variable _:age ;
+      sp:expression
+              [ a       sp:sub ;
+                sp:arg1 2008 ;
+                sp:arg2 _:birthYear
+              ]
+    ]);
+].
+
+_:age		sp:varName "age"^^xsd:string .
+_:birthYear	sp:varName "birthYear"^^xsd:string .

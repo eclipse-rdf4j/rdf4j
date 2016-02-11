@@ -18,6 +18,11 @@ import org.eclipse.rdf4j.sail.lucene.util.GeoUnits;
 
 import com.google.common.collect.Sets;
 
+/**
+ * @deprecated since 4.1.0 Use the LuceneSail in package
+ *             {@code org.openrdf.sail.lucene} instead.
+ */
+@Deprecated
 public class LuceneDocumentDistance extends LuceneDocumentResult implements DocumentDistance {
 
 	private final URI units;
@@ -26,7 +31,7 @@ public class LuceneDocumentDistance extends LuceneDocumentResult implements Docu
 
 	private static Set<String> requiredFields(String geoProperty, boolean includeContext) {
 		Set<String> fields = Sets.newHashSet(SearchFields.URI_FIELD_NAME, geoProperty);
-		if(includeContext) {
+		if (includeContext) {
 			fields.add(SearchFields.CONTEXT_FIELD_NAME);
 		}
 		return fields;

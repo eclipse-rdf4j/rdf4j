@@ -92,14 +92,19 @@ import com.spatial4j.core.shape.Shape;
  * a way that is suitable for a LuceneSail.
  * 
  * @see LuceneSail
+ * @deprecated since 4.1.0. Use the LuceneSail in package
+ *             {@code org.openrdf.sail.lucene} instead.
  */
+@Deprecated
 public class LuceneIndex extends AbstractLuceneIndex {
 
 	static {
-		// do NOT set this to Integer.MAX_VALUE, because this breaks fuzzy queries
+		// do NOT set this to Integer.MAX_VALUE, because this breaks fuzzy
+		// queries
 		BooleanQuery.setMaxClauseCount(1024 * 1024);
 	}
 
+	@Deprecated
 	public static final String GEOHASH_FIELD_PREFIX = "_geohash_";
 
 	private final Logger logger = LoggerFactory.getLogger(getClass());
@@ -127,8 +132,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 */
 	protected ReaderMonitor currentMonitor;
 
-	private Function<? super String,? extends SpatialStrategy> geoStrategyMapper;
+	private Function<? super String, ? extends SpatialStrategy> geoStrategyMapper;
 
+	@Deprecated
 	public LuceneIndex() {
 	}
 
@@ -144,17 +150,19 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * @throws IOException
 	 *         When the Directory could not be unlocked.
 	 */
+	@Deprecated
 	public LuceneIndex(Directory directory, Analyzer analyzer)
 		throws IOException
 	{
 		this.directory = directory;
 		this.analyzer = analyzer;
-		this.geoStrategyMapper = createSpatialStrategyMapper(Collections.<String, String>emptyMap());
+		this.geoStrategyMapper = createSpatialStrategyMapper(Collections.<String, String> emptyMap());
 
 		postInit();
 	}
 
 	@Override
+	@Deprecated
 	public void initialize(Properties parameters)
 		throws Exception
 	{
@@ -193,7 +201,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	{
 		Analyzer analyzer;
 		if (parameters.containsKey(LuceneSail.ANALYZER_CLASS_KEY)) {
-			analyzer = (Analyzer)Class.forName(parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY)).newInstance();
+			analyzer = (Analyzer)Class.forName(
+					parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY)).newInstance();
 		}
 		else {
 			analyzer = new StandardAnalyzer(Version.LUCENE_35);
@@ -223,7 +232,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		}
 	}
 
-	protected Function<String, ? extends SpatialStrategy> createSpatialStrategyMapper(Map<String,String> parameters) {
+	protected Function<String, ? extends SpatialStrategy> createSpatialStrategyMapper(
+			Map<String, String> parameters)
+	{
 		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 		final SpatialContext geoContext = SpatialContextFactory.makeSpatialContext(parameters, classLoader);
 		String minMileProp = parameters.get("minMiles");
@@ -233,8 +244,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		final int minTier = (maxMileProp != null) ? SpatialStrategy.getTier(Double.parseDouble(maxMileProp))
 				: SpatialStrategy.DEFAULT_MIN_TIER;
 
-		return new Function<String,SpatialStrategy>()
-		{
+		return new Function<String, SpatialStrategy>() {
+
 			@Override
 			public SpatialStrategy apply(String field) {
 				return new SpatialStrategy(field, minTier, maxTier, geoContext);
@@ -248,15 +259,18 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	// //////////////////////////////// Setters and getters
-
+	
+	@Deprecated
 	public Directory getDirectory() {
 		return directory;
 	}
 
+	@Deprecated
 	public Analyzer getAnalyzer() {
 		return analyzer;
 	}
 
+	@Deprecated
 	public Function<? super String, ? extends SpatialStrategy> getSpatialStrategyMapper() {
 		return geoStrategyMapper;
 	}
@@ -267,12 +281,14 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	// ReaderMonitor directly to be able to close the reader when they
 	// are done.
 
+	@Deprecated
 	public IndexReader getIndexReader()
 		throws IOException
 	{
 		return getIndexSearcher().getIndexReader();
 	}
 
+	@Deprecated
 	public IndexSearcher getIndexSearcher()
 		throws IOException
 	{
@@ -280,16 +296,18 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	/**
-	 * Current monitor holds instance of IndexReader and IndexSearcher It is used
-	 * to keep track of readers
+	 * Current monitor holds instance of IndexReader and IndexSearcher It is
+	 * used to keep track of readers
 	 */
 	@Override
+	@Deprecated
 	public ReaderMonitor getCurrentMonitor() {
 		if (currentMonitor == null)
 			currentMonitor = new ReaderMonitor(this, directory);
 		return currentMonitor;
 	}
 
+	@Deprecated
 	public IndexWriter getIndexWriter()
 		throws IOException
 	{
@@ -302,6 +320,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
+	@Deprecated
 	public void shutDown()
 		throws IOException
 	{
@@ -439,8 +458,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Returns a list of Documents representing the specified Resource (empty
 	 * when no such Document exists yet). Each document represent a set of
-	 * statements with the specified Resource as a subject, which are stored in a
-	 * specific context
+	 * statements with the specified Resource as a subject, which are stored in
+	 * a specific context
 	 */
 	private List<Document> getDocuments(Term uriTerm)
 		throws IOException
@@ -467,6 +486,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * Returns a Document representing the specified Resource & Context
 	 * combination, or null when no such Document exists yet.
 	 */
+	@Deprecated
 	public Document getDocument(Resource subject, Resource context)
 		throws IOException
 	{
@@ -480,9 +500,10 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Returns a list of Documents representing the specified Resource (empty
 	 * when no such Document exists yet). Each document represent a set of
-	 * statements with the specified Resource as a subject, which are stored in a
-	 * specific context
+	 * statements with the specified Resource as a subject, which are stored in
+	 * a specific context
 	 */
+	@Deprecated
 	public List<Document> getDocuments(Resource subject)
 		throws IOException
 	{
@@ -494,6 +515,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Stores and indexes an ID in a Document.
 	 */
+	@Deprecated
 	public static void addIDField(String id, Document document) {
 		document.add(new Field(SearchFields.ID_FIELD_NAME, id, Field.Store.YES,
 				Field.Index.NOT_ANALYZED_NO_NORMS));
@@ -509,6 +531,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * @param ifNotExists
 	 *        check if this context exists
 	 */
+	@Deprecated
 	public static void addContextField(String context, Document document) {
 		if (context != null) {
 			document.add(new Field(SearchFields.CONTEXT_FIELD_NAME, context, Field.Store.YES,
@@ -519,16 +542,19 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Stores and indexes the resource ID in a Document.
 	 */
+	@Deprecated
 	public static void addResourceField(String resourceId, Document document) {
 		document.add(new Field(SearchFields.URI_FIELD_NAME, resourceId, Field.Store.YES,
 				Field.Index.NOT_ANALYZED_NO_NORMS));
 	}
 
+	@Deprecated
 	public static void addPredicateField(String predicate, String text, Document document) {
 		// store this predicate
 		addPredicateField(predicate, text, document, Field.Index.ANALYZED);
 	}
 
+	@Deprecated
 	public static void addStoredOnlyPredicateField(String predicate, String text, Document document) {
 		// store this predicate
 		addPredicateField(predicate, text, document, Field.Index.NO);
@@ -541,6 +567,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		document.add(new Field(predicate, text, Field.Store.YES, indexOptions));
 	}
 
+	@Deprecated
 	public static void addTextField(String text, Document document) {
 		// and in TEXT_FIELD_NAME
 		document.add(new Field(SearchFields.TEXT_FIELD_NAME, text, Field.Store.YES, Field.Index.ANALYZED));
@@ -559,9 +586,11 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		synchronized (oldmonitors) {
 			// Move current monitor to old monitors and set null
 			if (currentMonitor != null)
-				// we do NOT close it directly as it may be used by an open result
+				// we do NOT close it directly as it may be used by an open
+				// result
 				// iterator, hence moving it to the
-				// list of oldmonitors where it is handled as other older monitors
+				// list of oldmonitors where it is handled as other older
+				// monitors
 				oldmonitors.add(currentMonitor);
 			currentMonitor = null;
 
@@ -577,7 +606,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			if (oldmonitors.isEmpty()) {
 				logger.debug("Deleting unused files from Lucene index");
 
-				// clean up unused files (marked as 'deletable' in Luke Filewalker)
+				// clean up unused files (marked as 'deletable' in Luke
+				// Filewalker)
 				getIndexWriter().deleteUnusedFiles();
 
 				// logIndexStats();
@@ -612,7 +642,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 				logger.info("Total documents in the index: " + reader.numDocs()
 						+ ", number of deletable documents in the index: " + reader.numDeletedDocs()
 						+ ", valid documents: " + count + ", total fields in all documents: " + totalFields
-						+ ", average number of fields per document: " + ((double)totalFields) / reader.numDocs());
+						+ ", average number of fields per document: "
+						+ ((double)totalFields) / reader.numDocs());
 				logger.info("Distinct ids in the index: " + ids.size());
 
 			}
@@ -630,6 +661,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
+	@Deprecated
 	public void begin()
 		throws IOException
 	{
@@ -643,6 +675,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * committed/rollbacked.
 	 */
 	@Override
+	@Deprecated
 	public void commit()
 		throws IOException
 	{
@@ -652,6 +685,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
+	@Deprecated
 	public void rollback()
 		throws IOException
 	{
@@ -661,8 +695,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	// //////////////////////////////// Methods for querying the index
 
 	/**
-	 * Parse the passed query.
-	 * To be removed, no longer used.
+	 * Parse the passed query. To be removed, no longer used.
+	 * 
 	 * @param query
 	 *        string
 	 * @return the parsed query
@@ -671,7 +705,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 */
 	@Override
 	@Deprecated
-	protected SearchQuery parseQuery(String query, URI propertyURI) throws MalformedQueryException
+	protected SearchQuery parseQuery(String query, URI propertyURI)
+		throws MalformedQueryException
 	{
 		Query q;
 		try {
@@ -695,7 +730,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	@Override
 	protected Iterable<? extends DocumentScore> query(Resource subject, String query, URI propertyURI,
 			boolean highlight)
-		throws MalformedQueryException, IOException
+				throws MalformedQueryException, IOException
 	{
 		Query q;
 		try {
@@ -732,9 +767,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentDistance> geoQuery(final URI geoProperty,
-			Point p, final URI units, double distance, String distanceVar, Var contextVar)
-		throws MalformedQueryException, IOException
+	protected Iterable<? extends DocumentDistance> geoQuery(final URI geoProperty, Point p, final URI units,
+			double distance, String distanceVar, Var contextVar)
+				throws MalformedQueryException, IOException
 	{
 		final double miles = GeoUnits.toMiles(distance, units);
 		double lon = p.getX();
@@ -749,13 +784,14 @@ public class LuceneIndex extends AbstractLuceneIndex {
 				GEOHASH_FIELD_PREFIX + geoField);
 
 		Query q;
-		if(contextVar != null) {
-			Resource ctx = (Resource) contextVar.getValue();
-			q = new TermQuery(new Term(SearchFields.CONTEXT_FIELD_NAME,
-					SearchFields.getContextID(ctx)));
-			if(ctx == null) {
+		if (contextVar != null) {
+			Resource ctx = (Resource)contextVar.getValue();
+			q = new TermQuery(new Term(SearchFields.CONTEXT_FIELD_NAME, SearchFields.getContextID(ctx)));
+			if (ctx == null) {
 				BooleanQuery notQuery = new BooleanQuery();
-				notQuery.add(new MatchAllDocsQuery(), Occur.MUST); // required for negation
+				notQuery.add(new MatchAllDocsQuery(), Occur.MUST); // required
+																	// for
+																	// negation
 				notQuery.add(q, Occur.MUST_NOT);
 				q = notQuery;
 			}
@@ -764,6 +800,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			q = new MatchAllDocsQuery();
 		}
 		CustomScoreQuery customScore = new CustomScoreQuery(q) {
+
 			private static final long serialVersionUID = -4637297669739149113L;
 
 			@Override
@@ -790,15 +827,16 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 			@Override
 			public DocumentDistance apply(ScoreDoc doc) {
-				return new LuceneDocumentDistance(doc, geoField, units, distanceFilter, requireContext, LuceneIndex.this);
+				return new LuceneDocumentDistance(doc, geoField, units, distanceFilter, requireContext,
+						LuceneIndex.this);
 			}
 		});
 	}
 
 	@Override
-	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation,
-			URI geoProperty, Shape shape, Var contextVar)
-		throws MalformedQueryException, IOException
+	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, URI geoProperty,
+			Shape shape, Var contextVar)
+				throws MalformedQueryException, IOException
 	{
 		// not supported
 		return null;
@@ -811,6 +849,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 *        the id of the document to return
 	 * @return the requested hit, or null if it fails
 	 */
+	@Deprecated
 	public Document getDocument(int docId, Set<String> fieldsToLoad) {
 		try {
 			return readDocument(getIndexReader(), docId, fieldsToLoad);
@@ -825,6 +864,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		}
 	}
 
+	@Deprecated
 	public String getSnippet(String fieldName, String text, Highlighter highlighter) {
 		String snippet;
 		try {
@@ -857,12 +897,13 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Evaluates the given query only for the given resource.
 	 */
+	@Deprecated
 	public TopDocs search(Resource resource, Query query)
 		throws IOException
 	{
 		// rewrite the query
-		TermQuery idQuery = new TermQuery(new Term(SearchFields.URI_FIELD_NAME,
-				SearchFields.getResourceID(resource)));
+		TermQuery idQuery = new TermQuery(
+				new Term(SearchFields.URI_FIELD_NAME, SearchFields.getResourceID(resource)));
 		BooleanQuery combinedQuery = new BooleanQuery();
 		combinedQuery.add(idQuery, Occur.MUST);
 		combinedQuery.add(query, Occur.MUST);
@@ -872,6 +913,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Evaluates the given query and returns the results as a TopDocs instance.
 	 */
+	@Deprecated
 	public TopDocs search(Query query)
 		throws IOException
 	{
@@ -894,32 +936,37 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	private QueryParser getQueryParser(URI propertyURI) {
 		// check out which query parser to use, based on the given property URI
 		if (propertyURI == null)
-			// if we have no property given, we create a default query parser which
+			// if we have no property given, we create a default query parser
+			// which
 			// has the TEXT_FIELD_NAME as the default field
 			return new QueryParser(Version.LUCENE_35, SearchFields.TEXT_FIELD_NAME, this.queryAnalyzer);
 		else
 			// otherwise we create a query parser that has the given property as
 			// the default field
-			return new QueryParser(Version.LUCENE_35, SearchFields.getPropertyField(propertyURI), this.queryAnalyzer);
+			return new QueryParser(Version.LUCENE_35, SearchFields.getPropertyField(propertyURI),
+					this.queryAnalyzer);
 	}
 
 	/**
 	 * @param contexts
 	 * @param sail
-	 *        - the underlying native sail where to read the missing triples from
-	 *        after deletion
+	 *        - the underlying native sail where to read the missing triples
+	 *        from after deletion
 	 * @throws SailException
 	 */
 	@Override
+	@Deprecated
 	public synchronized void clearContexts(Resource... contexts)
 		throws IOException
 	{
 
-		// logger.warn("Clearing contexts operation did not change the index: contexts are not indexed at the moment");
+		// logger.warn("Clearing contexts operation did not change the index:
+		// contexts are not indexed at the moment");
 
 		logger.debug("deleting contexts: {}", Arrays.toString(contexts));
 		// these resources have to be read from the underlying rdf store
-		// and their triples have to be added to the luceneindex after deletion of
+		// and their triples have to be added to the luceneindex after deletion
+		// of
 		// documents
 		// HashSet<Resource> resourcesToUpdate = new HashSet<Resource>();
 
@@ -957,7 +1004,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			// if (c.equals(otherContextOfDocument))
 			// isAlsoDeleted = true;
 			// }
-			// // the otherContextOfDocument is now eihter marked for deletion or
+			// // the otherContextOfDocument is now eihter marked for deletion
+			// or
 			// not
 			// if (!isAlsoDeleted) {
 			// // get ID of document
@@ -1000,6 +1048,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * 
 	 */
 	@Override
+	@Deprecated
 	public synchronized void clear()
 		throws IOException
 	{
@@ -1029,8 +1078,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	private static Document readDocument(IndexReader reader, int docId, Set<String> fieldsToLoad)
 		throws IOException
 	{
-		return (fieldsToLoad == null) ? reader.document(docId) : reader.document(docId,
-				new DocumentFieldSelector(fieldsToLoad));
+		return (fieldsToLoad == null) ? reader.document(docId)
+				: reader.document(docId, new DocumentFieldSelector(fieldsToLoad));
 	}
 
 	static class DocumentFieldSelector implements FieldSelector {

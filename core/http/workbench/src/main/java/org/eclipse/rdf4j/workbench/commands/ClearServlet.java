@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.util.Arrays;
 
 import javax.servlet.http.HttpServletResponse;

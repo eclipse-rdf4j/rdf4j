@@ -40,8 +40,8 @@ public interface BindingSet extends Iterable<Binding>, Serializable {
 	 * 
 	 * @param bindingName
 	 *        The name of the binding.
-	 * @return The binding with the specified name, or <tt>null</tt> if there
-	 *         is no such binding in this BindingSet.
+	 * @return The binding with the specified name, or <tt>null</tt> if there is
+	 *         no such binding in this BindingSet.
 	 */
 	public Binding getBinding(String bindingName);
 
@@ -50,8 +50,8 @@ public interface BindingSet extends Iterable<Binding>, Serializable {
 	 * 
 	 * @param bindingName
 	 *        The name of the binding.
-	 * @return <tt>true</tt> if this BindingSet has a binding with the
-	 *         specified name, <tt>false</tt> otherwise.
+	 * @return <tt>true</tt> if this BindingSet has a binding with the specified
+	 *         name, <tt>false</tt> otherwise.
 	 */
 	public boolean hasBinding(String bindingName);
 
@@ -90,12 +90,13 @@ public interface BindingSet extends Iterable<Binding>, Serializable {
 	 * 
 	 * <pre>
 	 * int hashCode = 0;
+	 *
 	 * for (Binding binding : this) {
-	 * 	hashCode &circ;= binding.hashCode();
+	 * 	hashCode &circ;= binding.getName().hashCode() &circ; binding.getValue().hashCode();
 	 * }
 	 * </pre>
 	 * 
-	 * Note: the calculated hash code intentionally does not dependent on the
+	 * Note: the calculated hash code intentionally does not depend on the
 	 * order in which the bindings are iterated over.
 	 * 
 	 * @return A hash code for the BindingSet.

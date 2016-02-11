@@ -9,10 +9,6 @@ package org.eclipse.rdf4j.model.util;
 
 import java.util.AbstractMap;
 import java.util.AbstractMap.SimpleImmutableEntry;
-
-import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -21,6 +17,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 
 /**
  * A utility class to perform operations on {@link Namespace}s.

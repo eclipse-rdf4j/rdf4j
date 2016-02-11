@@ -28,10 +28,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.serql.SeRQLParser;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.lucene.QuerySpec;
-import org.eclipse.rdf4j.sail.lucene.QuerySpecBuilder;
-import org.eclipse.rdf4j.sail.lucene.SearchQueryEvaluator;
-import org.eclipse.rdf4j.sail.lucene.SearchQueryInterpreter;
 import org.junit.Before;
 import org.junit.Test;
 

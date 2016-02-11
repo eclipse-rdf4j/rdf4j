@@ -10,10 +10,10 @@ package org.eclipse.rdf4j.query.algebra.evaluation.util;
 import java.util.Map;
 import java.util.UUID;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
-
-import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 
 /**
  * Registry for currently active {@link EvaluationStrategy} objects. The

@@ -63,8 +63,7 @@ public class Connections {
 	{
 		GetStatementOptional statementSupplier = (s, p, o, c) -> getStatement(conn, s, p, o, c);
 		Function<String, Supplier<RepositoryException>> exceptionSupplier = Repositories::repositoryException;
-		RDFCollections.consumeValues(statementSupplier, head, collectionConsumer, exceptionSupplier,
-				contexts);
+		RDFCollections.extract(statementSupplier, head, collectionConsumer, exceptionSupplier, contexts);
 	}
 
 	/**
@@ -138,4 +137,5 @@ public class Connections {
 		}
 	}
 
+}
 }

@@ -10,9 +10,6 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.MinusIteration;
-
 public class MinusIterationTest extends CloseableIterationTest {
 
 	@Override

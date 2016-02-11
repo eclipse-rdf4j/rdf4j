@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.query.resultio.sparqljson;
 
 import java.io.OutputStream;
 
-import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 

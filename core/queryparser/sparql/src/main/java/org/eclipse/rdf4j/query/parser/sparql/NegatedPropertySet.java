@@ -10,9 +10,9 @@ package org.eclipse.rdf4j.query.parser.sparql;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 
 /**
  * A negated property set is a SPARQL construction of the form {?X !(uri|^uri)

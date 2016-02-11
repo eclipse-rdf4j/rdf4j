@@ -12,7 +12,6 @@ import static org.junit.Assert.assertEquals;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.junit.Test;
 
 /**

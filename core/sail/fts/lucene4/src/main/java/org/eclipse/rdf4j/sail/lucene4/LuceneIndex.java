@@ -104,6 +104,7 @@ import com.spatial4j.core.shape.Shape;
  * 
  * @see LuceneSail
  */
+@Deprecated
 public class LuceneIndex extends AbstractLuceneIndex {
 
 	static {
@@ -140,6 +141,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	private Function<? super String,? extends SpatialStrategy> geoStrategyMapper;
 
+	@Deprecated
 	public LuceneIndex() {
 	}
 
@@ -155,6 +157,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * @throws IOException
 	 *         When the Directory could not be unlocked.
 	 */
+	@Deprecated
 	public LuceneIndex(Directory directory, Analyzer analyzer)
 		throws IOException
 	{
@@ -166,6 +169,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
+	@Deprecated
 	public void initialize(Properties parameters)
 		throws Exception
 	{
@@ -249,14 +253,17 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	// //////////////////////////////// Setters and getters
 
+	@Deprecated
 	public Directory getDirectory() {
 		return directory;
 	}
-
+	
+	@Deprecated
 	public Analyzer getAnalyzer() {
 		return analyzer;
 	}
 
+	@Deprecated
 	public Function<? super String, ? extends SpatialStrategy> getSpatialStrategyMapper() {
 		return geoStrategyMapper;
 	}
@@ -267,12 +274,14 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	// ReaderMonitor directly to be able to close the reader when they
 	// are done.
 
+	@Deprecated
 	public IndexReader getIndexReader()
 		throws IOException
 	{
 		return getIndexSearcher().getIndexReader();
 	}
 
+	@Deprecated
 	public IndexSearcher getIndexSearcher()
 		throws IOException
 	{
@@ -284,12 +293,14 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * to keep track of readers
 	 */
 	@Override
+	@Deprecated
 	public ReaderMonitor getCurrentMonitor() {
 		if (currentMonitor == null)
 			currentMonitor = new ReaderMonitor(this, directory);
 		return currentMonitor;
 	}
 
+	@Deprecated
 	public IndexWriter getIndexWriter()
 		throws IOException
 	{
@@ -302,6 +313,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
+	@Deprecated
 	public void shutDown()
 		throws IOException
 	{
@@ -487,6 +499,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * Returns a Document representing the specified Resource & Context
 	 * combination, or null when no such Document exists yet.
 	 */
+	@Deprecated
 	public Document getDocument(Resource subject, Resource context)
 		throws IOException
 	{
@@ -503,6 +516,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * statements with the specified Resource as a subject, which are stored in a
 	 * specific context
 	 */
+	@Deprecated
 	public List<Document> getDocuments(Resource subject)
 		throws IOException
 	{
@@ -514,6 +528,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Stores and indexes an ID in a Document.
 	 */
+	@Deprecated
 	public static void addIDField(String id, Document document) {
 		document.add(new StringField(SearchFields.ID_FIELD_NAME, id, Store.YES));
 	}
@@ -528,6 +543,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * @param ifNotExists
 	 *        check if this context exists
 	 */
+	@Deprecated
 	public static void addContextField(String context, Document document) {
 		if (context != null) {
 			document.add(new StringField(SearchFields.CONTEXT_FIELD_NAME, context, Store.YES));
@@ -537,20 +553,24 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Stores and indexes the resource ID in a Document.
 	 */
+	@Deprecated
 	public static void addResourceField(String resourceId, Document document) {
 		document.add(new StringField(SearchFields.URI_FIELD_NAME, resourceId, Store.YES));
 	}
 
+	@Deprecated
 	public static void addPredicateField(String predicate, String text, Document document) {
 		// store this predicate
 		document.add(new TextField(predicate, text, Store.YES));
 	}
 
+	@Deprecated
 	public static void addStoredOnlyPredicateField(String predicate, String text, Document document) {
 		// store this predicate
 		document.add(new StoredField(predicate, text));
 	}
 
+	@Deprecated
 	public static void addTextField(String text, Document document) {
 		// and in TEXT_FIELD_NAME
 		document.add(new TextField(SearchFields.TEXT_FIELD_NAME, text, Store.YES));
@@ -640,6 +660,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
+	@Deprecated
 	public void begin()
 		throws IOException
 	{
@@ -653,6 +674,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * committed/rollbacked.
 	 */
 	@Override
+	@Deprecated
 	public void commit()
 		throws IOException
 	{
@@ -662,6 +684,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
+	@Deprecated
 	public void rollback()
 		throws IOException
 	{
@@ -838,6 +861,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 *        the id of the document to return
 	 * @return the requested hit, or null if it fails
 	 */
+	@Deprecated
 	public Document getDocument(int docId, Set<String> fieldsToLoad) {
 		try {
 			return readDocument(getIndexReader(), docId, fieldsToLoad);
@@ -852,6 +876,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		}
 	}
 
+	@Deprecated
 	public String getSnippet(String fieldName, String text, Highlighter highlighter) {
 		String snippet;
 		try {
@@ -884,6 +909,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Evaluates the given query only for the given resource.
 	 */
+	@Deprecated
 	public TopDocs search(Resource resource, Query query)
 		throws IOException
 	{
@@ -899,6 +925,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Evaluates the given query and returns the results as a TopDocs instance.
 	 */
+	@Deprecated
 	public TopDocs search(Query query)
 		throws IOException
 	{
@@ -932,6 +959,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * @throws SailException
 	 */
 	@Override
+	@Deprecated
 	public synchronized void clearContexts(Resource... contexts)
 		throws IOException
 	{
@@ -1021,6 +1049,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * 
 	 */
 	@Override
+	@Deprecated
 	public synchronized void clear()
 		throws IOException
 	{

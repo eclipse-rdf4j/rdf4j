@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.sail.lucene.AbstractReaderMonitor;
  * 
  * @author Tomasz Trela, DFKI Gmbh
  */
+@Deprecated
 public class ReaderMonitor extends AbstractReaderMonitor {
 
 	/**
@@ -38,6 +39,7 @@ public class ReaderMonitor extends AbstractReaderMonitor {
 	 * @param directory
 	 *        Initializes IndexReader
 	 */
+	@Deprecated
 	public ReaderMonitor(final LuceneIndex index, Directory directory) {
 		super(index);
 		try {

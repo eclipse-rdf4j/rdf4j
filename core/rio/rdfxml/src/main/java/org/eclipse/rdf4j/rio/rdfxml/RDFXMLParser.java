@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.rio.rdfxml;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -18,7 +17,6 @@ import java.util.Iterator;
 import java.util.Set;
 import java.util.Stack;
 
-import javax.xml.XMLConstants;
 import javax.xml.transform.sax.SAXResult;
 
 import org.apache.commons.io.input.BOMInputStream;

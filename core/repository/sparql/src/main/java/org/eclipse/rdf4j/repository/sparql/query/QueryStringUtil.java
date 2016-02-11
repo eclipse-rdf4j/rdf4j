@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.repository.sparql.query;
 
 import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;

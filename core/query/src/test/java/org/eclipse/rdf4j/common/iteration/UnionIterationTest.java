@@ -9,9 +9,6 @@ package org.eclipse.rdf4j.common.iteration;
 
 import static org.junit.Assert.assertTrue;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.SingletonIteration;
-import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.junit.Test;
 
 public class UnionIterationTest extends CloseableIterationTest {

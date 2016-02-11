@@ -9,8 +9,6 @@ package org.eclipse.rdf4j.query.parser.sparql.manifest;
 
 import java.util.Map;
 
-import junit.framework.Test;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11ManifestTest;
 import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQLUpdateConformanceTest;
@@ -18,6 +16,8 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.contextaware.ContextAwareRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+
+import junit.framework.Test;
 
 
 /**
@@ -50,12 +50,12 @@ public class W3CApprovedSPARQL11UpdateTest extends SPARQLUpdateConformanceTest {
 	}
 
 	@Override
-	protected ContextAwareRepository newRepository()
+	protected Repository newRepository()
 		throws Exception
 	{
 		SailRepository repo = new SailRepository(new MemoryStore());
 
-		return new ContextAwareRepository(repo);
+		return repo;
 	}
 
 }

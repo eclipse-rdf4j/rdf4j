@@ -23,7 +23,6 @@ import static org.eclipse.rdf4j.http.protocol.Protocol.getRepositoryLocation;
 import static org.eclipse.rdf4j.http.protocol.Protocol.getServerLocation;
 import static org.junit.Assert.assertEquals;
 
-import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;

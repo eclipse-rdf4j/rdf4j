@@ -25,9 +25,6 @@ import java.util.Collections;
 import java.util.List;
 
 import org.eclipse.rdf4j.OpenRDFException;
-import org.eclipse.rdf4j.console.ConsoleState;
-import org.eclipse.rdf4j.console.Federate;
-import org.eclipse.rdf4j.console.PrintHelp;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;

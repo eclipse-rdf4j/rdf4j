@@ -7,9 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.fail;
 
-import org.eclipse.rdf4j.http.client.SesameSession;
 import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;

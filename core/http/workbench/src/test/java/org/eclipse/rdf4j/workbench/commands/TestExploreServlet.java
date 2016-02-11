@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.workbench.commands.ExploreServlet;
 import org.eclipse.rdf4j.workbench.commands.ExploreServlet.ResultCursor;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.junit.After;

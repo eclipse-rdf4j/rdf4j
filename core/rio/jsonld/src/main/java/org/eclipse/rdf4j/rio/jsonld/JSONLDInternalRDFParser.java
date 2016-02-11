@@ -9,9 +9,6 @@ package org.eclipse.rdf4j.rio.jsonld;
 
 import java.util.Set;
 
-import com.github.jsonldjava.core.JsonLdError;
-import com.github.jsonldjava.core.RDFDataset;
-
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Graph;
 import org.eclipse.rdf4j.model.IRI;
@@ -23,6 +20,9 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+
+import com.github.jsonldjava.core.JsonLdError;
+import com.github.jsonldjava.core.RDFDataset;
 
 /**
  * A package private internal implementation class.

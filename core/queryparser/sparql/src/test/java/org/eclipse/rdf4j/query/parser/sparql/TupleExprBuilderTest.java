@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.parser.sparql;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -16,16 +15,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
-import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Order;
-import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.parser.ParsedQuery;
-import org.eclipse.rdf4j.query.parser.sparql.AbstractASTVisitor;
-import org.eclipse.rdf4j.query.parser.sparql.TupleExprBuilder;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAskQuery;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTServiceGraphPattern;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ParseException;

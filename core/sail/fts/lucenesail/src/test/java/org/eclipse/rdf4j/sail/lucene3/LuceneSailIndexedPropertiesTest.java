@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.sail.lucene3;
 
 import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailIndexedPropertiesTest;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
-import org.eclipse.rdf4j.sail.lucene3.LuceneIndex;
 
 public class LuceneSailIndexedPropertiesTest extends AbstractLuceneSailIndexedPropertiesTest {
 	protected void configure(LuceneSail sail)

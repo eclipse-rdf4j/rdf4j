@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
+import java.util.NoSuchElementException;
+
 /**
  * An Iteration is a typed Iterator-like object that can throw (typed)
  * Exceptions while iterating. This is used in cases where the iteration is lazy

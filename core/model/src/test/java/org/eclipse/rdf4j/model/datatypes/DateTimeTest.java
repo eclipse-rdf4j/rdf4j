@@ -7,9 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.datatypes;
 
-import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.datatypes.XMLDateTime;
-
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;

@@ -11,7 +11,6 @@ import java.io.File;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchIndex;
 import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailIndexedPropertiesTest;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.elasticsearch.common.io.FileSystemUtils;

@@ -7,42 +7,27 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.Add;
-import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.Clear;
 import org.eclipse.rdf4j.query.algebra.Copy;
 import org.eclipse.rdf4j.query.algebra.Create;
 import org.eclipse.rdf4j.query.algebra.DeleteData;
-import org.eclipse.rdf4j.query.algebra.EmptySet;
-import org.eclipse.rdf4j.query.algebra.Extension;
-import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.Load;
 import org.eclipse.rdf4j.query.algebra.Modify;
 import org.eclipse.rdf4j.query.algebra.Move;
-import org.eclipse.rdf4j.query.algebra.MultiProjection;
-import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.ProjectionElem;
-import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
-import org.eclipse.rdf4j.query.algebra.Reduced;
-import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
-import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAdd;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTClear;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCopy;
@@ -54,7 +39,6 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDrop;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphOrDefault;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphPatternGroup;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphRefAll;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIRI;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInsertClause;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInsertData;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLoad;
@@ -319,18 +303,6 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	public Modify visit(ASTModify node, Object data)
 		throws VisitorException
 	{
-
-		ValueConstant with = null;
-		ASTIRI withNode = node.getWithClause();
-		if (withNode != null) {
-			with = (ValueConstant)withNode.jjtAccept(this, data);
-		}
-
-		if (with != null) {
-			graphPattern.setContextVar(mapValueExprToVar(with));
-			graphPattern.setStatementPatternScope(Scope.NAMED_CONTEXTS);
-		}
-
 		ASTGraphPatternGroup whereClause = node.getWhereClause();
 
 		TupleExpr where = null;

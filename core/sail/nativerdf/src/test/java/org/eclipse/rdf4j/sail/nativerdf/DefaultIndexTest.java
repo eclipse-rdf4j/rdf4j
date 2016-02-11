@@ -15,7 +15,6 @@ import java.io.InputStream;
 import java.util.Properties;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
-import org.eclipse.rdf4j.sail.nativerdf.TripleStore;
 import org.junit.Test;
 
 public class DefaultIndexTest {

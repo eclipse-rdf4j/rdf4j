@@ -21,8 +21,8 @@ import org.eclipse.rdf4j.sail.model.SailModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public abstract class AbstractForwardChainingInferencerConnection extends InferencerConnectionWrapper implements
-		SailConnectionListener
+public abstract class AbstractForwardChainingInferencerConnection extends InferencerConnectionWrapper
+		implements SailConnectionListener
 {
 
 	/*-----------*
@@ -90,19 +90,22 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	public void flushUpdates()
 		throws SailException
 	{
-		super.flushUpdates();
-
 		if (statementsRemoved) {
 			logger.debug("statements removed, starting inferencing from scratch");
 			clearInferred();
+			super.flushUpdates();
+
 			addAxiomStatements();
+			super.flushUpdates();
 
 			newStatements = new SailModel(getWrappedConnection(), true);
-
 			statementsRemoved = false;
 		}
+		else {
+			super.flushUpdates();
+		}
 
-		if(hasNewStatements()) {
+		if (hasNewStatements()) {
 			doInferencing();
 		}
 
@@ -147,7 +150,8 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	 * Adds all basic set of axiom statements from which the complete set can be
 	 * inferred to the underlying Sail.
 	 */
-	protected abstract void addAxiomStatements() throws SailException;
+	protected abstract void addAxiomStatements()
+		throws SailException;
 
 	protected void doInferencing()
 		throws SailException
@@ -168,7 +172,11 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 		}
 	}
 
-	protected abstract int applyRules(Model iteration) throws SailException;
+	/**
+	 * Returns the number of newly inferred statements.
+	 */
+	protected abstract int applyRules(Model iteration)
+		throws SailException;
 
 	protected Model prepareIteration() {
 		Model newThisIteration = newStatements;
@@ -177,6 +185,6 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	}
 
 	protected boolean hasNewStatements() {
-		return newStatements != null && !newStatements.isEmpty();
+		return newStatements != null;
 	}
 }

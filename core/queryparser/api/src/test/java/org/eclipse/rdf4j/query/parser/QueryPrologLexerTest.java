@@ -14,7 +14,6 @@ import static org.junit.Assert.fail;
 
 import java.util.List;
 
-import org.eclipse.rdf4j.query.parser.QueryPrologLexer;
 import org.eclipse.rdf4j.query.parser.QueryPrologLexer.Token;
 import org.eclipse.rdf4j.query.parser.QueryPrologLexer.TokenType;
 import org.junit.Test;

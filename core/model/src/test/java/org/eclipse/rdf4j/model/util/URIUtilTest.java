@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.model.util;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import org.eclipse.rdf4j.model.util.URIUtil;
 import org.junit.Test;
 
 /**

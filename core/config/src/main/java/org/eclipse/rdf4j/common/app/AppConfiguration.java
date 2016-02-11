@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.common.app.config.Configuration;
 import org.eclipse.rdf4j.common.app.logging.LogConfiguration;
 import org.eclipse.rdf4j.common.app.net.ProxySettings;
 import org.eclipse.rdf4j.common.app.util.ConfigurationUtil;
-import org.eclipse.rdf4j.common.io.MavenUtil;
 import org.eclipse.rdf4j.common.platform.PlatformFactory;
 
 /**

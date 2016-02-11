@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.sail.config.SailFactory;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
 import org.eclipse.rdf4j.sail.lucene.LuceneIndex;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
-import org.eclipse.rdf4j.sail.lucene.config.AbstractLuceneSailConfig;
 
 /**
  * A {@link SailFactory} that creates {@link LuceneSail}s based on RDF

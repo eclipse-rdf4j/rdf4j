@@ -7,9 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.iteration;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-
 public class CloseableIteratorIterationTest extends CloseableIterationTest {
 
 	@Override

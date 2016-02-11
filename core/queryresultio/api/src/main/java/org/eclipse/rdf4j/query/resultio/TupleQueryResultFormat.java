@@ -8,14 +8,10 @@
 package org.eclipse.rdf4j.query.resultio;
 
 import java.nio.charset.Charset;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Represents the concept of an tuple query result serialization format. Tuple

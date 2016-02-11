@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
-import java.util.List;
-
 public abstract class ASTQuery extends ASTOperation {
 
 	public ASTQuery(int id) {

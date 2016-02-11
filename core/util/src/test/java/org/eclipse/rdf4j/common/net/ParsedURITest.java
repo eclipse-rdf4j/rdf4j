@@ -14,7 +14,6 @@ import static org.junit.Assert.assertTrue;
 
 import java.net.URISyntaxException;
 
-import org.eclipse.rdf4j.common.net.ParsedURI;
 import org.junit.Test;
 
 /**

@@ -1,0 +1,35 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix my: <my:>.
+
+[ a       sp:Ask ;
+	sp:text """
+PREFIX my: <my:>
+
+# must be at least 18 years old
+ASK WHERE {
+	?this my:age ?age .
+	FILTER (?age > 0 && ?age < 18) .
+}
+""";
+#    rdfs:comment "must be at least 18 years old"^^xsd:string ;
+    sp:where ([ sp:object _:age ;
+                sp:predicate my:age ;
+                sp:subject spin:_this
+              ] [ a       sp:Filter ;
+                sp:expression
+                	[ a sp:and;
+                		sp:arg1
+                        [ sp:arg1 _:age ;
+                          sp:arg2 0 ;
+                          a sp:gt
+                        ];
+                		sp:arg2
+                        [ sp:arg1 _:age ;
+                          sp:arg2 18 ;
+                          a sp:lt
+                        ]
+					]
+              ])
+  ].
+  _:age sp:varName "age" .

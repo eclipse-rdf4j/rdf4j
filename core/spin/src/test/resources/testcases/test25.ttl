@@ -1,0 +1,30 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <ex:>.
+
+[ a       sp:InsertData ;
+	sp:text """
+INSERT DATA {
+	GRAPH <ex:g> {
+		<ex:subj> <ex:pred> <ex:obj> .
+	}
+	GRAPH <ex:h> {
+		<ex:subj> <ex:pred> <ex:obj> .
+	}
+}
+""";
+  sp:data ([ a sp:NamedGraph ;
+			sp:graphNameNode ex:g ;
+  			sp:elements ([sp:object ex:obj ;
+	              sp:predicate ex:pred ;
+	              sp:subject ex:subj
+	            ]) ;
+			]
+			[ a sp:NamedGraph ;
+			sp:graphNameNode ex:h ;
+  			sp:elements ([sp:object ex:obj ;
+	              sp:predicate ex:pred ;
+	              sp:subject ex:subj
+	            ]) ;
+			]) ;
+].

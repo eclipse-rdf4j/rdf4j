@@ -7,6 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.nquads;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.Writer;
+
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -14,10 +18,6 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesUtil;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesWriter;
-
-import java.io.OutputStream;
-import java.io.Writer;
-import java.io.IOException;
 
 /**
  * RDFWriter implementation for the {@link org.eclipse.rdf4j.rio.RDFFormat#NQUADS

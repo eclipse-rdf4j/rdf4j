@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.eclipse.rdf4j.rio.jsonld.JSONLDInternalTripleCallback;
 import org.junit.Test;
 
 import com.github.jsonldjava.core.JsonLdError;

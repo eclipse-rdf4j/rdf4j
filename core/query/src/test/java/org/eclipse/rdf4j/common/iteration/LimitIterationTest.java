@@ -11,10 +11,6 @@ import static org.junit.Assert.assertEquals;
 
 import java.util.List;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.common.iteration.LimitIteration;
 import org.junit.Test;
 
 public class LimitIterationTest extends CloseableIterationTest {

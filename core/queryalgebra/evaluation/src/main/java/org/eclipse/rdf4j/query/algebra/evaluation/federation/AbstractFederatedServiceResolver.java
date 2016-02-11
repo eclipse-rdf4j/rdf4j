@@ -11,22 +11,18 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * Base class for {@link FederatedServiceResolver} which takes care for lifecycle
- * management of produced {@link FederatedService}s.<p>
- * 
+ * Base class for {@link FederatedServiceResolver} which takes care for
+ * lifecycle management of produced {@link FederatedService}s.
+ * <p>
  * Specific implementation can implement {@link #createService(String)}.
  * 
  * @author Andreas Schwarte
- *
  */
 public abstract class AbstractFederatedServiceResolver implements FederatedServiceResolver {
 
-	
 	/**
 	 * Map service URL to the corresponding initialized {@link FederatedService}
 	 */
@@ -39,8 +35,10 @@ public abstract class AbstractFederatedServiceResolver implements FederatedServi
 	 * @param serviceUrl
 	 * @param service
 	 */
-	public synchronized void registerService(String serviceUrl, FederatedService service) {
-		endpointToService.put(serviceUrl, service);
+	public void registerService(String serviceUrl, FederatedService service) {
+		synchronized (endpointToService) {
+			endpointToService.put(serviceUrl, service);
+		}
 	}
 
 	/**
@@ -65,14 +63,15 @@ public abstract class AbstractFederatedServiceResolver implements FederatedServi
 
 	/**
 	 * Retrieve the {@link FederatedService} registered for serviceUrl. If there
-	 * is no service registered for serviceUrl, a new
-	 * {@link FederatedService} is created and registered.
+	 * is no service registered for serviceUrl, a new {@link FederatedService}
+	 * is created and registered.
 	 * 
 	 * @param serviceUrl
 	 *        locator for the federation service
 	 * @return the {@link FederatedService}, created fresh if necessary
 	 * @throws RepositoryException
 	 */
+	@Override
 	public FederatedService getService(String serviceUrl)
 		throws QueryEvaluationException
 	{
@@ -89,17 +88,34 @@ public abstract class AbstractFederatedServiceResolver implements FederatedServi
 		}
 		return service;
 	}
-	
+
 	/**
-	 * Create a new {@link FederatedService} for the given serviceUrl. This method
-	 * is invoked, if no {@link FederatedService} has been created yet for the
-	 * serviceUrl. 
+	 * Verify if a registered {@link FederatedService} exists for the given
+	 * serviceUrul.
 	 * 
-	 * @param serviceUrl the service IRI
+	 * @param serviceUrl
+	 *        locator for the federation service.
+	 * @return {@code true} iff the FederatedService has been registered,
+	 *         {@code false} otherwise.
+	 */
+	public boolean hasService(String serviceUrl) {
+		synchronized (endpointToService) {
+			return endpointToService.containsKey(serviceUrl);
+		}
+	}
+
+	/**
+	 * Create a new {@link FederatedService} for the given serviceUrl. This
+	 * method is invoked, if no {@link FederatedService} has been created yet
+	 * for the serviceUrl.
+	 * 
+	 * @param serviceUrl
+	 *        the service IRI
 	 * @return a non-null {@link FederatedService}
 	 * @throws QueryEvaluationException
 	 */
-	protected abstract FederatedService createService(String serviceUrl) throws QueryEvaluationException;
+	protected abstract FederatedService createService(String serviceUrl)
+		throws QueryEvaluationException;
 
 	public void unregisterAll() {
 		synchronized (endpointToService) {
@@ -116,6 +132,6 @@ public abstract class AbstractFederatedServiceResolver implements FederatedServi
 	}
 
 	public void shutDown() {
-		unregisterAll();		
+		unregisterAll();
 	}
 }

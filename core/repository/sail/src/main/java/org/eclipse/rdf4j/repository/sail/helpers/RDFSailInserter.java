@@ -7,29 +7,22 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail.helpers;
 
-import java.util.HashMap;
-import java.util.Map;
-
-import org.eclipse.rdf4j.OpenRDFUtil;
-import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.OpenRDFException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.rio.RDFHandlerException;
-import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
+import org.eclipse.rdf4j.repository.util.AbstractRDFInserter;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
 
 /**
- * An RDFHandler that adds RDF data to a repository.
+ * An RDFHandler that adds RDF data to a sail.
  * 
  * @author jeen
  */
-public class RDFSailInserter extends AbstractRDFHandler {
+public class RDFSailInserter extends AbstractRDFInserter {
 
 	/*-----------*
 	 * Variables *
@@ -40,32 +33,7 @@ public class RDFSailInserter extends AbstractRDFHandler {
 	 */
 	private final SailConnection con;
 
-	private final ValueFactory vf;
-
 	private final UpdateContext uc;
-
-	/**
-	 * The contexts to add the statements to. If this variable is a non-empty
-	 * array, statements will be added to the corresponding contexts.
-	 */
-	private Resource[] contexts = new Resource[0];
-
-	/**
-	 * Flag indicating whether blank node IDs should be preserved.
-	 */
-	private boolean preserveBNodeIDs;
-
-	/**
-	 * Map that stores namespaces that are reported during the evaluation of the
-	 * query. Key is the namespace prefix, value is the namespace name.
-	 */
-	private final Map<String, String> namespaceMap;
-
-	/**
-	 * Map used to keep track of which blank node IDs have been mapped to which
-	 * BNode object in case preserveBNodeIDs is false.
-	 */
-	private final Map<String, BNode> bNodesMap;
 
 	/*--------------*
 	 * Constructors *
@@ -79,165 +47,56 @@ public class RDFSailInserter extends AbstractRDFHandler {
 	 *        The connection to use for the add operations.
 	 */
 	public RDFSailInserter(SailConnection con, ValueFactory vf, UpdateContext uc) {
+		super(vf);
 		this.con = con;
-		this.vf = vf;
 		this.uc = uc;
-		preserveBNodeIDs = true;
-		namespaceMap = new HashMap<String, String>();
-		bNodesMap = new HashMap<String, BNode>();
+	}
+
+	public RDFSailInserter(SailConnection con, ValueFactory vf) {
+		this(con, vf, null);
 	}
 
 	/*---------*
 	 * Methods *
 	 *---------*/
 
-	/**
-	 * Sets whether this RDFInserter should preserve blank node IDs.
-	 * 
-	 * @param preserveBNodeIDs
-	 *        The new value for this flag.
-	 */
-	public void setPreserveBNodeIDs(boolean preserveBNodeIDs) {
-		this.preserveBNodeIDs = preserveBNodeIDs;
-	}
-
-	/**
-	 * Checks whether this RDFInserter preserves blank node IDs.
-	 */
-	public boolean preservesBNodeIDs() {
-		return preserveBNodeIDs;
-	}
-
-	/**
-	 * Enforces the supplied contexts upon all statements that are reported to
-	 * this RDFInserter.
-	 * 
-	 * @param contexts
-	 *        the contexts to use. Use an empty array (not null!) to indicate no
-	 *        context(s) should be enforced.
-	 */
-	public void enforceContext(Resource... contexts) {
-		OpenRDFUtil.verifyContextNotNull(contexts);
-		this.contexts = contexts;
-	}
-
-	/**
-	 * Checks whether this RDFInserter enforces its contexts upon all statements
-	 * that are reported to it.
-	 * 
-	 * @return <tt>true</tt> if it enforces its contexts, <tt>false</tt>
-	 *         otherwise.
-	 */
-	public boolean enforcesContext() {
-		return contexts.length != 0;
-	}
-
-	/**
-	 * Gets the contexts that this RDFInserter enforces upon all statements that
-	 * are reported to it (in case <tt>enforcesContext()</tt> returns
-	 * <tt>true</tt>).
-	 * 
-	 * @return A Resource[] identifying the contexts, or <tt>null</tt> if no
-	 *         contexts is enforced.
-	 */
-	public Resource[] getContexts() {
-		return contexts;
-	}
-
 	@Override
-	public void endRDF()
-		throws RDFHandlerException
+	protected void addNamespace(String prefix, String name) throws OpenRDFException
 	{
-		for (Map.Entry<String, String> entry : namespaceMap.entrySet()) {
-			String prefix = entry.getKey();
-			String name = entry.getValue();
-
-			try {
-				if (con.getNamespace(prefix) == null) {
-					con.setNamespace(prefix, name);
-				}
-			}
-			catch (SailException e) {
-				throw new RDFHandlerException(e);
-			}
-		}
-
-		namespaceMap.clear();
-		bNodesMap.clear();
-	}
-
-	@Override
-	public void handleNamespace(String prefix, String name) {
-		// FIXME: set namespaces directly when they are properly handled wrt
-		// rollback
-		// don't replace earlier declarations
-		if (prefix != null && !namespaceMap.containsKey(prefix)) {
-			namespaceMap.put(prefix, name);
+		if (con.getNamespace(prefix) == null) {
+			con.setNamespace(prefix, name);
 		}
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-		throws RDFHandlerException
+	protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) throws OpenRDFException
 	{
-		Resource subj = st.getSubject();
-		IRI pred = st.getPredicate();
-		Value obj = st.getObject();
-		Resource ctxt = st.getContext();
-
-		if (!preserveBNodeIDs) {
-			if (subj instanceof BNode) {
-				subj = mapBNode((BNode)subj);
-			}
-
-			if (obj instanceof BNode) {
-				obj = mapBNode((BNode)obj);
-			}
-
-			if (!enforcesContext() && ctxt instanceof BNode) {
-				ctxt = mapBNode((BNode)ctxt);
-			}
+		if (enforcesContext()) {
+			addStatement(uc, subj, pred, obj, contexts);
 		}
-
-		try {
-			if (enforcesContext()) {
-				con.addStatement(uc, subj, pred, obj, contexts);
-			}
-			else {
-				if (ctxt == null) {
+		else {
+			if (uc != null && ctxt == null) {
 					final IRI insertGraph = uc.getDataset().getDefaultInsertGraph();
-					if (insertGraph != null) {
-						con.addStatement(uc, subj, pred, obj, insertGraph);
-					}
-					else {
-						con.addStatement(uc, subj, pred, obj);
-					}
+				if (insertGraph != null) {
+					addStatement(uc, subj, pred, obj, insertGraph);
 				}
 				else {
-					con.addStatement(uc, subj, pred, obj, ctxt);
+					addStatement(uc, subj, pred, obj);
 				}
 			}
-		}
-		catch (SailException e) {
-			throw new RDFHandlerException(e);
+			else {
+				addStatement(uc, subj, pred, obj, ctxt);
+			}
 		}
 	}
 
-	/**
-	 * Maps the supplied BNode, which comes from the data, to a new BNode object.
-	 * Consecutive calls with equal BNode objects returns the same object
-	 * everytime.
-	 * 
-	 * @throws RepositoryException
-	 */
-	private BNode mapBNode(BNode bNode) {
-		BNode result = bNodesMap.get(bNode.getID());
-
-		if (result == null) {
-			result = vf.createBNode();
-			bNodesMap.put(bNode.getID(), result);
+	private void addStatement(UpdateContext uc, Resource subj, IRI pred, Value obj, Resource... ctxts) throws SailException
+	{
+		if(uc != null) {
+			con.addStatement(uc, subj, pred, obj, ctxts);
 		}
-
-		return result;
+		else {
+			con.addStatement(subj, pred, obj, ctxts);
+		}
 	}
 }

@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.rio.turtle;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFParserFactory;
-import org.eclipse.rdf4j.rio.turtle.TurtleParser;
 
 /**
  * An {@link RDFParserFactory} for Turtle parsers.
