@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.query.algebra;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /**

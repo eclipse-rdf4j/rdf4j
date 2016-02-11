@@ -48,7 +48,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConjunctiveConstraintSpli
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -57,7 +56,6 @@ import org.eclipse.rdf4j.repository.sail.config.RepositoryResolver;
 import org.eclipse.rdf4j.repository.sail.config.RepositoryResolverClient;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.federation.evaluation.FederationStrategy;
 import org.eclipse.rdf4j.sail.federation.optimizers.EmptyPatternOptimizer;
 import org.eclipse.rdf4j.sail.federation.optimizers.FederationJoinOptimizer;
 import org.eclipse.rdf4j.sail.federation.optimizers.OwnedTupleExprPruner;
@@ -68,7 +66,6 @@ import org.eclipse.rdf4j.sail.helpers.AbstractSail;
 import org.eclipse.rdf4j.sail.helpers.AbstractSailConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 /**
  * Unions the results from multiple {@link RepositoryConnection} into one
  * {@link SailConnection}.

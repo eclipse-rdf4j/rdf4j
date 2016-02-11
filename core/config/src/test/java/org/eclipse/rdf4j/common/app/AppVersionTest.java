@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.app;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
-import org.eclipse.rdf4j.common.app.AppVersion;
 import org.junit.Test;
 
 

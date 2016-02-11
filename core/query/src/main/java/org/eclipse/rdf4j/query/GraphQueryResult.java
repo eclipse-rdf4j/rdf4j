@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.query;
 
 import java.util.Map;
 
-import org.eclipse.rdf4j.model.Graph;
 import org.eclipse.rdf4j.model.Statement;
 
 /**

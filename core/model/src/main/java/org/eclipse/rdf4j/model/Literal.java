@@ -13,6 +13,8 @@ import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+
 /**
  * An RDF literal consisting of a label (the lexical value), a datatype, and optionally a language
  * tag.

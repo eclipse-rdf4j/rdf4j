@@ -18,9 +18,6 @@ import org.apache.lucene.store.RAMDirectory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailTest;
-import org.eclipse.rdf4j.sail.lucene.LuceneIndex;
-import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.junit.Test;
 
 public class LuceneSailTest extends AbstractLuceneSailTest {

@@ -9,10 +9,6 @@ package org.eclipse.rdf4j.query;
 
 import java.util.List;
 
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.TupleQueryResultHandler;
-import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
-
 /**
  * Base class for {@link TupleQueryResultHandler}s with dummy implementations of
  * all methods. This class is a useful superclass for classes that implement

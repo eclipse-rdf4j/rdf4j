@@ -33,9 +33,9 @@ class ASTModify extends ASTUpdate {
 	  return jjtGetChild(ASTDeleteClause.class);
   }
   
-  public ASTIRI getWithClause() {
-	  if (jjtGetChild(0) instanceof ASTIRI) {
-		  return (ASTIRI)jjtGetChild(0);
+  public ASTDatasetClause getWithClause() {
+	  if (jjtGetChild(0) instanceof ASTDatasetClause) {
+		  return (ASTDatasetClause)jjtGetChild(0);
 	  }
 	  else {
 		  return null;

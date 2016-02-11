@@ -10,6 +10,9 @@ package org.eclipse.rdf4j.common.app.logging.logback;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.logging.LogReader;
+import org.xml.sax.Attributes;
+
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.Appender;
 import ch.qos.logback.core.joran.action.Action;
@@ -17,9 +20,6 @@ import ch.qos.logback.core.joran.spi.ElementSelector;
 import ch.qos.logback.core.joran.spi.InterpretationContext;
 import ch.qos.logback.core.joran.spi.RuleStore;
 import ch.qos.logback.core.util.OptionHelper;
-
-import org.eclipse.rdf4j.common.logging.LogReader;
-import org.xml.sax.Attributes;
 
 /**
  * @author alex

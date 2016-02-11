@@ -10,11 +10,6 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.Arrays;
 import java.util.List;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
-
 public class ConvertingIterationTest extends CloseableIterationTest {
 
 	private static final List<Integer> intList = Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);

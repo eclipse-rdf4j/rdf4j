@@ -1,0 +1,15 @@
+org.openrdf.spin.function.Add
+org.openrdf.spin.function.Subtract
+org.openrdf.spin.function.Multiply
+org.openrdf.spin.function.Divide
+org.openrdf.spin.function.And
+org.openrdf.spin.function.Or
+org.openrdf.spin.function.Not
+org.openrdf.spin.function.EqualTo
+org.openrdf.spin.function.NotEqualTo
+org.openrdf.spin.function.LessThan
+org.openrdf.spin.function.LessThanOrEqualTo
+org.openrdf.spin.function.GreaterThan
+org.openrdf.spin.function.GreaterThanOrEqualTo
+org.openrdf.spin.function.Localname
+org.openrdf.spin.function.ObjectFunction

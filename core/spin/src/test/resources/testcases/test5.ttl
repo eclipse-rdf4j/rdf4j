@@ -1,0 +1,29 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix ex: <ex:>.
+
+[ a sp:Select ;
+	sp:text """
+PREFIX ex: <ex:>
+
+SELECT ?country ?code
+WHERE {
+    VALUES (?country ?code) {
+        (ex:Germany "de")
+        (ex:Norway "no")
+        (ex:Endor UNDEF)
+    } .
+}
+""";
+    sp:resultVariables  ( 
+        [ sp:varName  "country"^^xsd:string ]
+        [ sp:varName  "code"^^xsd:string ] ) ;
+    sp:where            ( 
+        [   a  sp:Values ;
+            sp:bindings  ( 
+                ( ex:Germany "de" )
+                ( ex:Norway "no" ) 
+                ( ex:Endor sp:undef ) 
+            ) ;
+            sp:varNames  ( "country"^^xsd:string "code"^^xsd:string )
+        ] )
+].

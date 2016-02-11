@@ -1,0 +1,25 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+
+[ a       sp:Select ;
+	sp:text """
+SELECT DISTINCT ?y
+WHERE {
+    ?class rdfs:label ?y 
+}
+ORDER BY ?class
+LIMIT 5
+OFFSET 20
+""";
+        sp:resultVariables (_:b2) ;
+        sp:where ([ sp:object _:b2 ;
+                    sp:predicate rdfs:label ;
+                    sp:subject _:b1
+                  ]) ;
+        sp:orderBy ([ a sp:Asc; sp:expression _:b1]) ;
+        sp:distinct true ;
+        sp:limit 5 ;
+        sp:offset 20 ;
+      ].
+
+_:b1 sp:varName "class" .
+_:b2 sp:varName "y" .

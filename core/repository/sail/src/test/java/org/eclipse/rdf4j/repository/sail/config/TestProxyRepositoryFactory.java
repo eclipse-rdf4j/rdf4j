@@ -16,7 +16,6 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.OpenRDFException;
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.GraphUtil;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -24,9 +23,6 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
 import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.sail.ProxyRepository;
-import org.eclipse.rdf4j.repository.sail.config.ProxyRepositoryConfig;
-import org.eclipse.rdf4j.repository.sail.config.ProxyRepositoryFactory;
-import org.eclipse.rdf4j.repository.sail.config.RepositoryResolver;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.junit.Test;

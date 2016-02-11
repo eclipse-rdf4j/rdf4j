@@ -18,12 +18,9 @@ import java.net.URL;
 
 import org.eclipse.rdf4j.OpenRDFException;
 import org.eclipse.rdf4j.common.io.IOUtil;
-import org.eclipse.rdf4j.console.ConsoleIO;
-import org.eclipse.rdf4j.model.Graph;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
-import org.eclipse.rdf4j.model.util.GraphUtil;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.Repository;

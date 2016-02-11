@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import com.google.common.base.Function;
 import com.spatial4j.core.shape.Shape;
 
+@Deprecated
 public class LuceneDocument implements SearchDocument {
 
 	private final Document doc;
@@ -37,15 +38,18 @@ public class LuceneDocument implements SearchDocument {
 		this(null);
 	}
 
+	@Deprecated
 	public LuceneDocument(Function<? super String, ? extends SpatialStrategy> geoStrategyMapper) {
 		this(new Document(), geoStrategyMapper);
 	}
 
+	@Deprecated
 	public LuceneDocument(Document doc, Function<? super String, ? extends SpatialStrategy> geoStrategyMapper) {
 		this.doc = doc;
 		this.geoStrategyMapper = geoStrategyMapper;
 	}
 
+	@Deprecated
 	public LuceneDocument(String id, String resourceId, String context, Function<? super String, ? extends SpatialStrategy> geoStrategyMapper)
 	{
 		this(geoStrategyMapper);
@@ -54,38 +58,46 @@ public class LuceneDocument implements SearchDocument {
 		setContext(context);
 	}
 
+	@Deprecated
 	private void setId(String id) {
 		LuceneIndex.addIDField(id, doc);
 	}
 
+	@Deprecated
 	private void setContext(String context) {
 		LuceneIndex.addContextField(context, doc);
 	}
 
+	@Deprecated
 	private void setResource(String resourceId) {
 		LuceneIndex.addResourceField(resourceId, doc);
 	}
 
+	@Deprecated
 	public Document getDocument() {
 		return doc;
 	}
 
 	@Override
+	@Deprecated
 	public String getId() {
 		return doc.get(SearchFields.ID_FIELD_NAME);
 	}
 
 	@Override
+	@Deprecated
 	public String getResource() {
 		return doc.get(SearchFields.URI_FIELD_NAME);
 	}
 
 	@Override
+	@Deprecated
 	public String getContext() {
 		return doc.get(SearchFields.CONTEXT_FIELD_NAME);
 	}
 
 	@Override
+	@Deprecated
 	public Set<String> getPropertyNames() {
 		List<IndexableField> fields = doc.getFields();
 		Set<String> names = new HashSet<String>();
@@ -98,6 +110,7 @@ public class LuceneDocument implements SearchDocument {
 	}
 
 	@Override
+	@Deprecated
 	public void addProperty(String name) {
 		// don't need to do anything
 	}
@@ -113,6 +126,7 @@ public class LuceneDocument implements SearchDocument {
 	 * @see LuceneSail
 	 */
 	@Override
+	@Deprecated
 	public void addProperty(String name, String text) {
 		LuceneIndex.addPredicateField(name, text, doc);
 		LuceneIndex.addTextField(text, doc);
@@ -122,6 +136,7 @@ public class LuceneDocument implements SearchDocument {
 	 * Checks whether a field occurs with a specified value in a Document.
 	 */
 	@Override
+	@Deprecated
 	public boolean hasProperty(String fieldName, String value) {
 		String[] fields = doc.getValues(fieldName);
 		if (fields != null) {
@@ -136,11 +151,13 @@ public class LuceneDocument implements SearchDocument {
 	}
 
 	@Override
+	@Deprecated
 	public List<String> getProperty(String name) {
 		return Arrays.asList(doc.getValues(name));
 	}
 
 	@Override
+	@Deprecated
 	public void addGeoProperty(String field, String value) {
 		LuceneIndex.addStoredOnlyPredicateField(field, value, doc);
 		try {

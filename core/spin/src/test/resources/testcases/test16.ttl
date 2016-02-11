@@ -1,0 +1,32 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <ex:>.
+
+[ a       sp:Ask ;
+	sp:text """
+PREFIX ex: <ex:>
+
+ASK WHERE {
+	?this ex:score ?score .
+	FILTER (!(?score+5 != 0)) .
+}
+""";
+    sp:where ([ sp:object _:score ;
+                sp:predicate ex:score ;
+                sp:subject spin:_this
+              ] [ a       sp:Filter ;
+                sp:expression
+                        [ sp:arg1 [
+                        	a sp:ne ;
+                        	sp:arg1 [
+                        		a sp:add ;
+                        		sp:arg1 _:score ;
+                        		sp:arg2 +5 # workaround for SES-2234
+                        	];
+                        	sp:arg2 0
+                          ];
+                          a sp:not
+                        ]
+              ])
+  ].
+  _:score sp:varName "score" .

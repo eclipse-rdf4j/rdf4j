@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
-import org.eclipse.rdf4j.workbench.util.ValueDecoder;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;

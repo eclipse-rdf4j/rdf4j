@@ -1,0 +1,33 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+
+[ a       sp:Select ;
+	sp:text """
+SELECT ?y
+WHERE {
+    ?class a rdfs:Class .
+    {
+        SELECT ?y
+        WHERE {
+            ?class rdfs:label ?y .
+        }
+    } .
+}
+""";
+        sp:resultVariables (_:b2) ;
+        sp:where ([ sp:object rdfs:Class ;
+                    sp:predicate rdf:type ;
+                    sp:subject _:b1
+                  ] [ a       sp:SubQuery ;
+                    sp:query
+                            [ a       sp:Select ;
+                              sp:resultVariables (_:b2) ;
+                              sp:where ([ sp:object _:b2 ;
+                                          sp:predicate rdfs:label ;
+                                          sp:subject _:b1
+                                        ])
+                            ]
+                  ])
+      ].
+
+_:b1 sp:varName "class" .
+_:b2 sp:varName "y" .

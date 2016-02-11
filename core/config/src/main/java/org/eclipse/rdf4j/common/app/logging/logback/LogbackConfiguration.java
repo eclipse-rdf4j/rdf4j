@@ -10,10 +10,6 @@ package org.eclipse.rdf4j.common.app.logging.logback;
 import java.io.File;
 import java.io.IOException;
 
-import ch.qos.logback.classic.LoggerContext;
-import ch.qos.logback.core.joran.spi.JoranException;
-import ch.qos.logback.core.util.StatusPrinter;
-
 import org.eclipse.rdf4j.common.app.logging.base.AbstractLogConfiguration;
 import org.eclipse.rdf4j.common.app.util.ConfigurationUtil;
 import org.eclipse.rdf4j.common.io.IOUtil;
@@ -21,6 +17,10 @@ import org.eclipse.rdf4j.common.logging.LogReader;
 import org.eclipse.rdf4j.common.logging.file.logback.FileLogReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.core.joran.spi.JoranException;
+import ch.qos.logback.core.util.StatusPrinter;
 
 public class LogbackConfiguration extends AbstractLogConfiguration {
 

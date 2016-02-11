@@ -13,9 +13,6 @@ import static org.junit.Assert.assertNull;
 import java.io.File;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
-import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
-import org.eclipse.rdf4j.sail.nativerdf.TripleStore;
-import org.eclipse.rdf4j.sail.nativerdf.TxnStatusFile;
 import org.eclipse.rdf4j.sail.nativerdf.TxnStatusFile.TxnStatus;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
 import org.junit.After;

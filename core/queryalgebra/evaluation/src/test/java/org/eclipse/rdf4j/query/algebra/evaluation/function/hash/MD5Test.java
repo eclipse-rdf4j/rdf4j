@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function.hash;
 
 
-import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.MD5;
 import org.junit.Before;
 
 /**

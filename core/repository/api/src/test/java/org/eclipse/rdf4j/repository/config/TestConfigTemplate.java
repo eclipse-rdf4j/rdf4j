@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.repository.config;
 
 import static org.junit.Assert.assertEquals;
 
-import org.eclipse.rdf4j.repository.config.ConfigTemplate;
 import org.junit.Test;
 
 /**

@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.repository.http;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.http.client.SesameSession;
 import org.eclipse.rdf4j.http.client.SparqlSession;
 import org.eclipse.rdf4j.http.client.query.AbstractHTTPQuery;
 import org.eclipse.rdf4j.http.protocol.Protocol;

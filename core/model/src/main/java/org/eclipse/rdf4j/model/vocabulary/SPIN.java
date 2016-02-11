@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * @since 2.7.3
- * @version 1.3.0
+ * @version 1.4.0
  */
 public class SPIN {
 
@@ -22,7 +22,9 @@ public class SPIN {
 	 * constraints and rules to RDFS classes, and to encapsulate reusable SPARQL
 	 * queries into functions and templates.
 	 */
-	private static String NAMESPACE = "http://spinrdf.org/spin#";
+	public static final String NAMESPACE = "http://spinrdf.org/spin#";
+
+	public static final String PREFIX = "spin";
 
 	/**
 	 * http://spinrdf.org/spin#Function Metaclass for functions that can be used
@@ -223,7 +225,7 @@ public class SPIN {
 	/**
 	 * http://spinrdf.org/spin#violationPath An optional attribute of
 	 * ConstraintViolations to provide a path expression from the root resource
-	 * to the value that is invalid. If this is a URI then the path represents
+	 * to the value that is invalid. If this is a IRI then the path represents
 	 * the predicate of a subject/predicate combination. Otherwise it should be a
 	 * blank node of type sp:Path.
 	 */
@@ -342,7 +344,9 @@ public class SPIN {
 	 * first a property name, and then a value. These name/value pairs will be
 	 * pre-bound variables for the execution of the expression.
 	 */
-	public static IRI EVAL_CLASS;
+	public static final IRI EVAL_FUNCTION;
+	@Deprecated
+	public static final IRI EVAL_CLASS;
 
 	/**
 	 * http://spinrdf.org/spin#Functions An abstract base class for all defined
@@ -390,6 +394,24 @@ public class SPIN {
 	 * the instance.
 	 */
 	public static IRI RULE_PROPERTY;
+
+	public static final IRI VIOLATION_VALUE_PROPERTY;
+	public static final IRI VIOLATION_LEVEL_PROPERTY;
+	public static final IRI INFO_VIOLATION_LEVEL;
+	public static final IRI WARNING_VIOLATION_LEVEL;
+	public static final IRI ERROR_VIOLATION_LEVEL;
+	public static final IRI FATAL_VIOLATION_LEVEL;
+
+	public static final IRI ARG1_INSTANCE;
+	public static final IRI ARG2_INSTANCE;
+	public static final IRI ARG3_INSTANCE;
+	public static final IRI ARG4_INSTANCE;
+	public static final IRI ARG5_INSTANCE;
+
+	public static final IRI ASK_FUNCTION;
+	public static final IRI CONSTRUCT_PROPERTY;
+	public static final IRI SELECT_PROPERTY;
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 		FUNCTION_CLASS = factory.createIRI(NAMESPACE, "Function");
@@ -442,5 +464,24 @@ public class SPIN {
 		THIS_CONTEXT_INSTANCE = factory.createIRI(NAMESPACE, "_this");
 		UPDATE_TEMPLATES_CLASS = factory.createIRI(NAMESPACE, "UpdateTemplates");
 		RULE_PROPERTY = factory.createIRI(NAMESPACE, "rule");
+
+		VIOLATION_VALUE_PROPERTY = factory.createIRI(NAMESPACE, "violationValue");
+		VIOLATION_LEVEL_PROPERTY = factory.createIRI(NAMESPACE, "violationLevel");
+
+		INFO_VIOLATION_LEVEL = factory.createIRI(NAMESPACE, "Info");
+		WARNING_VIOLATION_LEVEL = factory.createIRI(NAMESPACE, "Warning");
+		ERROR_VIOLATION_LEVEL = factory.createIRI(NAMESPACE, "Error");
+		FATAL_VIOLATION_LEVEL = factory.createIRI(NAMESPACE, "Fatal");
+
+		ARG1_INSTANCE = factory.createIRI(NAMESPACE, "_arg1");
+		ARG2_INSTANCE = factory.createIRI(NAMESPACE, "_arg2");
+		ARG3_INSTANCE = factory.createIRI(NAMESPACE, "_arg3");
+		ARG4_INSTANCE = factory.createIRI(NAMESPACE, "_arg4");
+		ARG5_INSTANCE = factory.createIRI(NAMESPACE, "_arg5");
+
+		EVAL_FUNCTION = factory.createIRI(NAMESPACE, "eval");
+		ASK_FUNCTION = factory.createIRI(NAMESPACE, "ask");
+		CONSTRUCT_PROPERTY = factory.createIRI(NAMESPACE, "construct");
+		SELECT_PROPERTY = factory.createIRI(NAMESPACE, "select");
 	}
 }

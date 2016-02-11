@@ -29,7 +29,6 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
-import org.eclipse.rdf4j.repository.event.NotifyingRepositoryConnection;
 import org.eclipse.rdf4j.repository.event.base.NotifyingRepositoryConnectionWrapper;
 import org.eclipse.rdf4j.repository.event.base.RepositoryConnectionListenerAdapter;
 import org.junit.Test;

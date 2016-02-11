@@ -14,7 +14,6 @@ import java.util.TimerTask;
 
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -27,7 +26,6 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
-import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 
 /**
  * An implementation of the Sail interface that stores its data in main memory
@@ -393,7 +391,9 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 				}
 
 				if (syncTimerTask != null) {
-					logger.error("syncTimerTask is not null");
+					// sync task from (concurrent) other transaction exists. 
+					// cancel and replace with newly scheduled sync task.
+					syncTimerTask.cancel();
 				}
 
 				syncTimerTask = new TimerTask() {

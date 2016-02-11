@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.Iterator;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -33,8 +34,6 @@ import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.util.NonSerializables;
-
-import java.util.Optional;
 
 /**
  * Model implementation for a {@link org.eclipse.rdf4j.sail.SailConnection}. All

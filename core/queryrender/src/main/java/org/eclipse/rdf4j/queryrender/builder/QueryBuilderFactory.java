@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.openrdf.query.parser.ParsedDescribeQuery;
 
 /**
  * <p>
@@ -90,7 +91,7 @@ public class QueryBuilderFactory {
 	 */
 	public static QueryBuilder<ParsedGraphQuery> describe(String[] theVars, Resource... theValues) {
 		QueryBuilder<ParsedGraphQuery> aBuilder = new AbstractQueryBuilder<ParsedGraphQuery>(
-				new ParsedGraphQuery());
+				new ParsedDescribeQuery());
 
 		aBuilder.reduced();
 		aBuilder.addProjectionVar("descr_subj", "descr_pred", "descr_obj");

@@ -1,0 +1,12 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <ex:>.
+
+[ a       sp:Load ;
+	sp:text """
+PREFIX ex: <ex:>
+LOAD ex:g INTO GRAPH ex:h
+""";
+	sp:document ex:g ;
+	sp:into ex:h ;
+].

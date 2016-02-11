@@ -38,6 +38,9 @@ public class Group extends UnaryTupleOperator {
 	 * Constructors *
 	 *--------------*/
 
+	public Group() {
+	}
+
 	public Group(TupleExpr arg) {
 		super(arg);
 	}
@@ -112,6 +115,7 @@ public class Group extends UnaryTupleOperator {
 		return bindingNames;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

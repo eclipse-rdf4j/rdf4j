@@ -11,7 +11,6 @@ package org.eclipse.rdf4j.query.parser.sparql.ast;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 public
 class ASTGroupClause extends SimpleNode {

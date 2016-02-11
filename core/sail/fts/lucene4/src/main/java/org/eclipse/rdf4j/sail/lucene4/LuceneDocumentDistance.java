@@ -21,6 +21,7 @@ import com.google.common.collect.Sets;
 import com.spatial4j.core.shape.Point;
 import com.spatial4j.core.shape.Shape;
 
+@Deprecated
 public class LuceneDocumentDistance extends LuceneDocumentResult implements DocumentDistance {
 
 	private final String geoProperty;
@@ -37,6 +38,7 @@ public class LuceneDocumentDistance extends LuceneDocumentResult implements Docu
 		return fields;
 	}
 
+	@Deprecated
 	public LuceneDocumentDistance(ScoreDoc doc, String geoProperty, URI units, Point origin, boolean includeContext, LuceneIndex index)
 	{
 		super(doc, index, requiredFields(geoProperty, includeContext));
@@ -46,6 +48,7 @@ public class LuceneDocumentDistance extends LuceneDocumentResult implements Docu
 	}
 
 	@Override
+	@Deprecated
 	public double getDistance() {
 		List<String> wkts = getDocument().getProperty(geoProperty);
 		double min = Double.POSITIVE_INFINITY;

@@ -14,9 +14,6 @@ import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
 
-import junit.framework.TestCase;
-import junit.framework.TestSuite;
-
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.text.StringUtil;
@@ -25,7 +22,6 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -40,15 +36,15 @@ import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.repository.contextaware.ContextAwareConnection;
-import org.eclipse.rdf4j.repository.contextaware.ContextAwareRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.util.Repositories;
-import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import junit.framework.TestCase;
+import junit.framework.TestSuite;
 
 /**
  * A SPARQL 1.1 Update test, created by reading in a W3C working-group style
@@ -72,7 +68,7 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 	 * Variables *
 	 *-----------*/
 
-	protected ContextAwareRepository dataRep;
+	protected Repository dataRep;
 
 	protected Repository expectedResultRepo;
 
@@ -91,7 +87,8 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 	 *--------------*/
 
 	public SPARQLUpdateConformanceTest(String testURI, String name, String requestFile, IRI defaultGraphURI,
-			Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI, Map<String, IRI> resultNamedGraphs)
+			Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
+			Map<String, IRI> resultNamedGraphs)
 	{
 		super(name);
 
@@ -102,21 +99,22 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 		this.resultDefaultGraph = resultDefaultGraphURI;
 		this.resultNamedGraphs = resultNamedGraphs;
 
-		if (this.inputNamedGraphs.size() > 0) {
-			SimpleDataset ds = new SimpleDataset();
-			ds.addDefaultGraph(null);
-			ds.addDefaultRemoveGraph(null);
-			ds.setDefaultInsertGraph(null);
+		final SimpleDataset ds = new SimpleDataset();
 
+		// This ensures that the repository operates in 'exclusive
+		// mode': the default graph _only_ consists of the null-context (instead
+		// of the entire repository).
+		ds.addDefaultGraph(null);
+		ds.addDefaultRemoveGraph(null);
+		ds.setDefaultInsertGraph(null);
+
+		if (this.inputNamedGraphs.size() > 0) {
 			for (String ng : inputNamedGraphs.keySet()) {
 				IRI namedGraph = SimpleValueFactory.getInstance().createIRI(ng);
 				ds.addNamedGraph(namedGraph);
 			}
-			this.dataset = ds;
 		}
-		else {
-			this.dataset = null;
-		}
+		this.dataset = ds;
 	}
 
 	/*---------*
@@ -140,8 +138,10 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 
 			for (String ng : inputNamedGraphs.keySet()) {
 				URL graphURL = new URL(inputNamedGraphs.get(ng).stringValue());
-				conn.add(graphURL, null, Rio.getParserFormatForFileName(graphURL.toString()).orElseThrow(
-						Rio.unsupportedFormat(graphURL.toString())), dataRep.getValueFactory().createIRI(ng));
+				conn.add(graphURL, null,
+						Rio.getParserFormatForFileName(graphURL.toString()).orElseThrow(
+								Rio.unsupportedFormat(graphURL.toString())),
+						dataRep.getValueFactory().createIRI(ng));
 			}
 		}
 
@@ -158,16 +158,18 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 
 			for (String ng : resultNamedGraphs.keySet()) {
 				URL graphURL = new URL(resultNamedGraphs.get(ng).stringValue());
-				conn.add(graphURL, null, Rio.getParserFormatForFileName(graphURL.toString()).orElseThrow(
-						Rio.unsupportedFormat(graphURL.toString())), dataRep.getValueFactory().createIRI(ng));
+				conn.add(graphURL, null,
+						Rio.getParserFormatForFileName(graphURL.toString()).orElseThrow(
+								Rio.unsupportedFormat(graphURL.toString())),
+						dataRep.getValueFactory().createIRI(ng));
 			}
 		}
 	}
 
-	protected ContextAwareRepository createRepository()
+	protected Repository createRepository()
 		throws Exception
 	{
-		ContextAwareRepository repo = newRepository();
+		Repository repo = newRepository();
 		repo.initialize();
 
 		Repositories.consume(repo, con -> {
@@ -178,7 +180,7 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 		return repo;
 	}
 
-	protected abstract ContextAwareRepository newRepository()
+	protected abstract Repository newRepository()
 		throws Exception;
 
 	@Override
@@ -195,18 +197,15 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 	protected void runTest()
 		throws Exception
 	{
-		ContextAwareConnection con = dataRep.getConnection();
+		RepositoryConnection con = dataRep.getConnection();
 		RepositoryConnection erCon = expectedResultRepo.getConnection();
 		try {
 			String updateString = readUpdateString();
 
 			con.begin();
-			con.setReadContexts((IRI)null);
 
 			Update update = con.prepareUpdate(QueryLanguage.SPARQL, updateString, requestFileURL);
-			if (this.dataset != null) {
-				update.setDataset(this.dataset);
-			}
+			update.setDataset(dataset);
 			update.execute();
 
 			con.commit();
@@ -308,7 +307,8 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 
 		suite.setName(getManifestName(manifestRep, con, manifestFileURL));
 
-		// Extract test case information from the manifest file. Note that we only
+		// Extract test case information from the manifest file. Note that we
+		// only
 		// select those test cases that are mentioned in the list.
 		StringBuilder query = new StringBuilder(512);
 		query.append(
@@ -388,8 +388,8 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 			}
 
 			SPARQLUpdateConformanceTest test = factory.createSPARQLUpdateConformanceTest(testURI.toString(),
-					testName, requestFile.toString(), defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
-					resultNamedGraphs);
+					testName, requestFile.toString(), defaultGraphURI, inputNamedGraphs,
+					resultDefaultGraphURI, resultNamedGraphs);
 
 			if (test != null) {
 				suite.addTest(test);

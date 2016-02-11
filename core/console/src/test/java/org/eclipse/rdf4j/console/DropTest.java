@@ -13,18 +13,14 @@ import static org.junit.Assert.assertThat;
 import static org.mockito.Matchers.anyBoolean;
 import static org.mockito.Matchers.startsWith;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.never;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 
 import org.eclipse.rdf4j.OpenRDFException;
-import org.eclipse.rdf4j.console.Close;
-import org.eclipse.rdf4j.console.ConsoleState;
-import org.eclipse.rdf4j.console.Drop;
-import org.eclipse.rdf4j.console.LockRemover;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;

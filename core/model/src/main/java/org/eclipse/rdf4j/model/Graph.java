@@ -11,6 +11,9 @@ import java.io.Serializable;
 import java.util.Collection;
 import java.util.Iterator;
 
+import org.eclipse.rdf4j.OpenRDFUtil;
+import org.eclipse.rdf4j.model.util.GraphUtil;
+
 /**
  * An RDF graph, represented as a collection of {@link Statement}s.
  * 

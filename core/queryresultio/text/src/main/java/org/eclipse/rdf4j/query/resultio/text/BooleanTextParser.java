@@ -14,7 +14,6 @@ import java.io.Reader;
 import java.nio.charset.Charset;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
-import org.eclipse.rdf4j.query.QueryResultHandler;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;

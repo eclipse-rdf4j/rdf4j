@@ -14,6 +14,7 @@ import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstan
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.xml.SimpleSAXAdapter;
+import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.xml.sax.SAXException;
 
 class SPARQLBooleanSAXParser extends SimpleSAXAdapter {
@@ -29,26 +30,25 @@ class SPARQLBooleanSAXParser extends SimpleSAXAdapter {
 	 *---------*/
 
 	@Override
-	public void startTag(String tagName, Map<String, String> atts, String text)
-		throws SAXException
-	{
+	public void startTag(String tagName, Map<String, String> atts, String text) throws SAXException {
 		if (BOOLEAN_TAG.equals(tagName)) {
-			if (BOOLEAN_TRUE.equals(text)) {
+			if (BOOLEAN_TRUE.equalsIgnoreCase(text)) {
 				value = true;
-			}
-			else if (BOOLEAN_FALSE.equals(text)) {
+			} else if (BOOLEAN_FALSE.equalsIgnoreCase(text)) {
 				value = false;
-			}
-			else {
+			} else {
 				throw new SAXException("Illegal value for element " + BOOLEAN_TAG + ": " + text);
 			}
+		} else if (SPARQLResultsXMLConstants.RESULT_SET_TAG.equals(tagName)
+				|| SPARQLResultsXMLConstants.RESULT_TAG.equals(tagName)) {
+			QueryResultParseException realException = new QueryResultParseException(
+					"Found tuple results in boolean parser");
+			throw new SAXException(realException);
 		}
 	}
 
 	@Override
-	public void endDocument()
-		throws SAXException
-	{
+	public void endDocument() throws SAXException {
 		if (value == null) {
 			throw new SAXException("Malformed document, " + BOOLEAN_TAG + " element not found");
 		}

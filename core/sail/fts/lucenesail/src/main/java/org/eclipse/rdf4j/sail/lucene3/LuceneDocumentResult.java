@@ -14,6 +14,7 @@ import org.apache.lucene.search.ScoreDoc;
 import org.eclipse.rdf4j.sail.lucene.DocumentResult;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 
+@Deprecated
 public class LuceneDocumentResult implements DocumentResult {
 
 	protected final ScoreDoc scoreDoc;
@@ -24,14 +25,15 @@ public class LuceneDocumentResult implements DocumentResult {
 
 	private LuceneDocument fullDoc;
 
-	public LuceneDocumentResult(ScoreDoc doc, LuceneIndex index, Set<String> fields)
-	{
+	@Deprecated
+	public LuceneDocumentResult(ScoreDoc doc, LuceneIndex index, Set<String> fields) {
 		this.scoreDoc = doc;
 		this.index = index;
 		this.fields = fields;
 	}
 
 	@Override
+	@Deprecated
 	public SearchDocument getDocument() {
 		if (fullDoc == null) {
 			Document doc = index.getDocument(scoreDoc.doc, fields);

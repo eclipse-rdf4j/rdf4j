@@ -10,9 +10,6 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.HashSet;
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.IntersectIteration;
-
 public class DistinctIntersectionIterationTest extends CloseableIterationTest {
 
 	@Override

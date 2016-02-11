@@ -13,8 +13,6 @@ import org.eclipse.rdf4j.http.client.SesameClient;
 import org.eclipse.rdf4j.http.client.SesameClientDependent;
 import org.eclipse.rdf4j.http.client.SesameClientImpl;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 
 /**
  * The {@link FederatedServiceResolverImpl} is used to manage a set of

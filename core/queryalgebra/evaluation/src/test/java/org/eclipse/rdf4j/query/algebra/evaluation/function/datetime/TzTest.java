@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.datetime;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.fail;
 
 import org.eclipse.rdf4j.model.Literal;
@@ -17,7 +16,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Tz;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;

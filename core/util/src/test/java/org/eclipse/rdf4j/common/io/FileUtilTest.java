@@ -11,7 +11,6 @@ import static org.junit.Assert.assertEquals;
 
 import java.io.File;
 
-import org.eclipse.rdf4j.common.io.FileUtil;
 import org.junit.Test;
 
 

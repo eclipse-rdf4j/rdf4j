@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 
@@ -22,7 +23,7 @@ import org.eclipse.rdf4j.query.BindingSet;
  * 
  * @author Arjohn Kampman
  */
-public class ListBindingSet implements BindingSet {
+public class ListBindingSet extends AbstractBindingSet {
 
 	private static final long serialVersionUID = -2907809218835403743L;
 
@@ -107,72 +108,6 @@ public class ListBindingSet implements BindingSet {
 		}
 
 		return size;
-	}
-
-	@Override
-	public boolean equals(Object other) {
-		if (this == other) {
-			return true;
-		}
-
-		if (other instanceof BindingSet) {
-			int otherSize = 0;
-
-			// Compare other's bindings to own
-			for (Binding binding : (BindingSet)other) {
-				Value ownValue = getValue(binding.getName());
-
-				if (!binding.getValue().equals(ownValue)) {
-					// Unequal bindings for this name
-					return false;
-				}
-
-				otherSize++;
-			}
-
-			// All bindings have been matched, sets are equal if this solution
-			// doesn't have any additional bindings.
-			int thisSize = 0;
-			for (Value value : values) {
-				if (value != null) {
-					thisSize++;
-				}
-			}
-
-			return thisSize == otherSize;
-		}
-
-		return false;
-	}
-
-	@Override
-	public int hashCode() {
-		int hashCode = 0;
-
-		for (Binding binding : this) {
-			hashCode ^= binding.hashCode();
-		}
-
-		return hashCode;
-	}
-
-	@Override
-	public String toString() {
-		StringBuilder sb = new StringBuilder(32 * size());
-
-		sb.append('[');
-
-		Iterator<Binding> iter = iterator();
-		while (iter.hasNext()) {
-			sb.append(iter.next().toString());
-			if (iter.hasNext()) {
-				sb.append(';');
-			}
-		}
-
-		sb.append(']');
-
-		return sb.toString();
 	}
 
 	/*------------------------------------*

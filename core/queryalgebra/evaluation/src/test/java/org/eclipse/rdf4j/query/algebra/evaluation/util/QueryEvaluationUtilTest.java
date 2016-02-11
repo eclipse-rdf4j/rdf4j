@@ -7,8 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
-import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.*;
-import static org.junit.Assert.*;
+import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.EQ;
+import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.NE;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -16,7 +19,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.junit.Before;
 import org.junit.Test;
 

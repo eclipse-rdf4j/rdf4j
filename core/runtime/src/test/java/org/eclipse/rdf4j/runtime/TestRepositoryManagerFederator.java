@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
-import org.eclipse.rdf4j.runtime.RepositoryManagerFederator;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;

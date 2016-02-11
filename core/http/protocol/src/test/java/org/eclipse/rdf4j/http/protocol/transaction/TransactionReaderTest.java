@@ -17,8 +17,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
-import org.eclipse.rdf4j.http.protocol.transaction.TransactionReader;
-import org.eclipse.rdf4j.http.protocol.transaction.TransactionWriter;
 import org.eclipse.rdf4j.http.protocol.transaction.operations.AddStatementOperation;
 import org.eclipse.rdf4j.http.protocol.transaction.operations.TransactionOperation;
 import org.eclipse.rdf4j.model.IRI;

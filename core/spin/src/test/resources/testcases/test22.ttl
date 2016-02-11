@@ -1,0 +1,48 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <ex:>.
+
+[ a       sp:Ask ;
+	sp:text """
+PREFIX ex: <ex:>
+
+ASK WHERE {
+	?this ex:prop ?object
+	FILTER(isIRI(?object))
+	FILTER(isBlank(?object))
+	FILTER(isLiteral(?object))
+	FILTER(isNumeric(?object))
+}
+""";
+  sp:where ([ sp:object _:object ;
+              sp:predicate ex:prop ;
+              sp:subject spin:_this
+            ]
+            [ a sp:Filter ;
+            	sp:expression [
+            		a	sp:isIRI ;
+            		sp:arg1 _:object
+            	]
+            ]
+            [ a sp:Filter ;
+            	sp:expression [
+            		a	sp:isBlank ;
+            		sp:arg1 _:object
+            	]
+            ]
+            [ a sp:Filter ;
+            	sp:expression [
+            		a	sp:isLiteral ;
+            		sp:arg1 _:object
+            	]
+            ]
+            [ a sp:Filter ;
+            	sp:expression [
+            		a	sp:isNumeric ;
+            		sp:arg1 _:object
+            	]
+            ]
+            )
+].
+
+_:object sp:varName "object" .

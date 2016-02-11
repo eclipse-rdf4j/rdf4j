@@ -20,7 +20,11 @@ import org.apache.lucene.spatial.tier.projections.IProjector;
 
 /**
  * Fixed version of CartesianPolyFilterBuilder.
+ * 
+ * @deprecated since 4.1.0. Use the LuceneSail in package
+ *             {@code org.openrdf.sail.lucene} instead.
  */
+@Deprecated
 public class FixedCartesianPolyFilterBuilder {
 
 	// Finer granularity than 1 mile isn't accurate with
@@ -45,12 +49,14 @@ public class FixedCartesianPolyFilterBuilder {
 	 * @param maxTierIndexed
 	 *        The maximum tier level indexed
 	 */
+	@Deprecated
 	public FixedCartesianPolyFilterBuilder(String tierPrefix, int minTierIndexed, int maxTierIndexed) {
 		this.tierPrefix = tierPrefix;
 		this.minTier = minTierIndexed;
 		this.maxTier = maxTierIndexed;
 	}
 
+	@Deprecated
 	public Shape getBoxShape(double latitude, double longitude, double miles) {
 		if (miles < MILES_FLOOR) {
 			miles = MILES_FLOOR;
@@ -126,6 +132,7 @@ public class FixedCartesianPolyFilterBuilder {
 		return shape;
 	}
 
+	@Deprecated
 	public Shape getShapeLoop(Shape shape, CartesianTierPlotter ctp, double latX, double longX, double latY,
 			double longY)
 	{
@@ -176,6 +183,7 @@ public class FixedCartesianPolyFilterBuilder {
 		return shape;
 	}
 
+	@Deprecated
 	public Filter getBoundingArea(double latitude, double longitude, double miles) {
 		Shape shape = getBoxShape(latitude, longitude, miles);
 		return new CartesianShapeFilter(shape, shape.getTierId());

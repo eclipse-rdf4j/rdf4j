@@ -12,7 +12,6 @@ import static org.junit.Assert.fail;
 
 import java.util.NoSuchElementException;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.junit.Test;
 
 /**

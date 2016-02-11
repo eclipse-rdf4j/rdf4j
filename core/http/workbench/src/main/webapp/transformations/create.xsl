@@ -3,8 +3,8 @@
    <!ENTITY xsd  "http://www.w3.org/2001/XMLSchema#" >
  ]>
 <xsl:stylesheet version="1.0"
-	xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
-	xmlns:sparql="http://www.w3.org/2005/sparql-results#" xmlns="http://www.w3.org/1999/xhtml">
+	xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:sparql="http://www.w3.org/2005/sparql-results#"
+	xmlns="http://www.w3.org/1999/xhtml">
 
 	<xsl:include href="../locale/messages.xsl" />
 
@@ -35,6 +35,12 @@
 									Direct Type
 									Hierarchy
 								</option>
+								<option value="memory-spin">
+									In Memory Java Store with basic SPIN support
+								</option>
+								<option value="native-spin-rdfs">
+									In Memory Store with RDFS+SPIN support
+								</option>
 								<option value="memory-customrule">
 									In Memory Store Custom Graph Query
 									Inference
@@ -52,7 +58,14 @@
 								</option>
 								<option value="native-customrule">
 									Native Java Store Custom
-									Graph Query Inference
+									Graph Query
+									Inference
+								</option>
+								<option value="native-spin">
+									Native Java Store with basic SPIN support
+								</option>
+								<option value="native-spin-rdfs">
+									Native Java Store with RDFS+SPIN support
 								</option>
 								<option value="remote">
 									Remote RDF Store
@@ -88,7 +101,7 @@
 						<td>
 							<input type="button" value="{$cancel.label}" style="float:right"
 								data-href="repositories"
-                                onclick="document.location.href=this.getAttribute('data-href')" />
+								onclick="document.location.href=this.getAttribute('data-href')" />
 							<input type="submit" name="next" value="{$next.label}" />
 						</td>
 					</tr>

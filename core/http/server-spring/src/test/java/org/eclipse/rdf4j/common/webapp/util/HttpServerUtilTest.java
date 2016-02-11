@@ -27,9 +27,7 @@ import javax.servlet.http.HttpSession;
 
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
-import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 

@@ -18,7 +18,6 @@ import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SNIPPET;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;

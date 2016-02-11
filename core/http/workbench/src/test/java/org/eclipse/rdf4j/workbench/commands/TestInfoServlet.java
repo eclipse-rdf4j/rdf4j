@@ -7,8 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.commands;
 
-import static org.junit.Assert.fail;
-import static org.mockito.Mockito.*;
+import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletResponse;
@@ -16,7 +17,6 @@ import javax.servlet.http.HttpServletResponse;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
-import org.eclipse.rdf4j.workbench.commands.InfoServlet;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.Before;
 import org.junit.Test;

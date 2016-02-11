@@ -13,8 +13,6 @@ import static org.junit.Assert.fail;
 
 import java.util.Optional;
 
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.junit.After;
 import org.junit.Before;

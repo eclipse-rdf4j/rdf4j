@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSail;
  * 
  * @author andriy.nikolov
  */
+@Deprecated
 public class LuceneIndexNIOFS extends LuceneIndex {
 
 	@Override

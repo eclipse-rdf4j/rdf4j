@@ -10,9 +10,6 @@ package org.eclipse.rdf4j.sail.lucene4;
 import java.io.IOException;
 import java.util.Arrays;
 
-import com.google.common.base.Function;
-import com.google.common.collect.Iterables;
-
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
@@ -25,6 +22,9 @@ import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.sail.lucene.DocumentScore;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.lucene.SearchQuery;
+
+import com.google.common.base.Function;
+import com.google.common.collect.Iterables;
 
 /**
  * To be removed, no longer used.

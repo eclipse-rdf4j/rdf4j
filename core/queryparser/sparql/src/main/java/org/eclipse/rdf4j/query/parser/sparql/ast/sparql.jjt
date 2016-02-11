@@ -1863,10 +1863,16 @@ void UsingClause() #DatasetClause :
     <USING> [<NAMED> {jjtThis.setNamed(true);}] IRIref()
 }
 
+void WithClause() #DatasetClause :
+{}
+{
+    <WITH> IRIref()
+}
+
 void Modify() :
 {}
 {
-    [<WITH> IRIref()] 
+    [ WithClause() ] 
     ( DeleteClause() [InsertClause()] | InsertClause() ) (UsingClause())* 
     <WHERE> GroupGraphPattern()
 }

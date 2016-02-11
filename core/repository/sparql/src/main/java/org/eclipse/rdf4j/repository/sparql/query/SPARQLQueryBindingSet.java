@@ -6,7 +6,6 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql.query;
-
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -14,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.util.iterators.ConvertingIterator;
  * included here to avoid a circular dependency between the algebra-evaluation
  * module and the sparql-repository module.
  */
-public class SPARQLQueryBindingSet implements BindingSet {
+public class SPARQLQueryBindingSet extends AbstractBindingSet {
 
 	private static final long serialVersionUID = -2010715346095527301L;
 
@@ -148,63 +148,11 @@ public class SPARQLQueryBindingSet implements BindingSet {
 
 	@Override
 	public boolean equals(Object other) {
-		if (this == other) {
-			return true;
-		}
-		else if (other instanceof SPARQLQueryBindingSet) {
+		if (other instanceof SPARQLQueryBindingSet) {
 			return bindings.equals(((SPARQLQueryBindingSet)other).bindings);
 		}
-		else if (other instanceof BindingSet) {
-			int otherSize = 0;
-
-			// Compare other's bindings to own
-			for (Binding binding : (BindingSet)other) {
-				Value ownValue = getValue(binding.getName());
-
-				if (!binding.getValue().equals(ownValue)) {
-					// Unequal bindings for this name
-					return false;
-				}
-
-				otherSize++;
-			}
-
-			// All bindings have been matched, sets are equal if this binding
-			// set
-			// doesn't have any additional bindings.
-			return otherSize == bindings.size();
+		else {
+			return super.equals(other);
 		}
-
-		return false;
-	}
-
-	@Override
-	public int hashCode() {
-		int hashCode = 0;
-
-		for (Map.Entry<String, Value> entry : bindings.entrySet()) {
-			hashCode ^= entry.getKey().hashCode() ^ entry.getValue().hashCode();
-		}
-
-		return hashCode;
-	}
-
-	@Override
-	public String toString() {
-		StringBuilder sb = new StringBuilder(32 * size());
-
-		sb.append('[');
-
-		Iterator<Binding> iter = iterator();
-		while (iter.hasNext()) {
-			sb.append(iter.next().toString());
-			if (iter.hasNext()) {
-				sb.append(';');
-			}
-		}
-
-		sb.append(']');
-
-		return sb.toString();
 	}
 }

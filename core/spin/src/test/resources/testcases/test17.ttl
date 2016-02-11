@@ -1,0 +1,70 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <ex:>.
+
+[ a       sp:Construct ;
+	sp:text """
+PREFIX ex: <ex:>
+
+CONSTRUCT {
+	?subj ex:name ?name .
+	?subj ex:prop ?value .
+}
+WHERE {
+	{
+		?subj ex:firstName ?fname .
+		?subj ex:surname ?sname .
+		BIND (concat(?fname, ' ', ?sname) as ?name) .
+	}
+	{
+		?subj ex:related ?_anon .
+		?_anon ex:prop2 ?value .
+	}
+}
+""";
+	sp:templates ([
+				sp:subject _:subj ;
+                sp:predicate ex:name ;
+                sp:object _:name
+                ] [
+				sp:subject _:subj ;
+                sp:predicate ex:prop ;
+                sp:object _:value
+                ]
+	);
+    sp:where (
+			    ([
+				sp:subject _:subj ;
+                sp:predicate ex:firstName ;
+                sp:object _:fname
+                ] [
+				sp:subject _:subj ;
+                sp:predicate ex:surname ;
+                sp:object _:sname
+                ] [ a       sp:Bind ;
+			      sp:variable _:name ;
+			      sp:expression
+			              [ a       sp:concat ;
+			                sp:arg1 _:fname ;
+			                sp:arg2 " " ;
+			                sp:arg3 _:sname
+			              ]
+			    ])
+                ([
+				sp:subject _:subj ;
+                sp:predicate ex:related ;
+                sp:object _:_anon
+                ] [
+				sp:subject _:_anon ;
+                sp:predicate ex:prop2 ;
+                sp:object _:value
+                ])
+			    );
+  ].
+  _:subj sp:varName "subj" .
+  _:name sp:varName "name" .
+  _:value sp:varName "value" .
+  _:fname sp:varName "fname" .
+  _:sname sp:varName "sname" .
+  _:_anon sp:varName "_anon" .
+  

@@ -11,8 +11,8 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.http.client.SparqlSession;
 import org.eclipse.rdf4j.http.client.query.AbstractHTTPUpdate;
-import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
+import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;

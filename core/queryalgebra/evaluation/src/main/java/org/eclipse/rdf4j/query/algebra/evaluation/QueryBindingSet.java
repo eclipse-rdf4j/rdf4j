@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -26,7 +27,7 @@ import org.eclipse.rdf4j.util.iterators.ConvertingIterator;
  * in that it maps variable names to Value objects and that the Binding objects
  * are created lazily.
  */
-public class QueryBindingSet implements BindingSet {
+public class QueryBindingSet extends AbstractBindingSet {
 
 	private static final long serialVersionUID = -2010715346095527301L;
 
@@ -144,62 +145,12 @@ public class QueryBindingSet implements BindingSet {
 
 	@Override
 	public boolean equals(Object other) {
-		if (this == other) {
-			return true;
-		}
-		else if (other instanceof QueryBindingSet) {
+		if (other instanceof QueryBindingSet) {
 			return bindings.equals(((QueryBindingSet)other).bindings);
 		}
-		else if (other instanceof BindingSet) {
-			int otherSize = 0;
-
-			// Compare other's bindings to own
-			for (Binding binding : (BindingSet)other) {
-				Value ownValue = getValue(binding.getName());
-
-				if (!binding.getValue().equals(ownValue)) {
-					// Unequal bindings for this name
-					return false;
-				}
-
-				otherSize++;
-			}
-
-			// All bindings have been matched, sets are equal if this binding set
-			// doesn't have any additional bindings.
-			return otherSize == bindings.size();
+		else {
+			return super.equals(other);
 		}
-
-		return false;
 	}
 
-	@Override
-	public int hashCode() {
-		int hashCode = 5;
-
-		for (Map.Entry<String, Value> entry : bindings.entrySet()) {
-			hashCode = 37 * hashCode + entry.hashCode();
-		}
-
-		return hashCode;
-	}
-
-	@Override
-	public String toString() {
-		StringBuilder sb = new StringBuilder(32 * size());
-
-		sb.append('[');
-
-		Iterator<Binding> iter = iterator();
-		while (iter.hasNext()) {
-			sb.append(iter.next().toString());
-			if (iter.hasNext()) {
-				sb.append(';');
-			}
-		}
-
-		sb.append(']');
-
-		return sb.toString();
-	}
 }

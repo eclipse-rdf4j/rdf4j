@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
-import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 
 /**
  * Parser for SPARQL-1.1 JSON Results Format documents

@@ -18,7 +18,10 @@ import org.eclipse.rdf4j.sail.lucene3.LuceneIndex;
 /**
  * A {@link SailFactory} that creates {@link LuceneSail}s based on RDF
  * configuration data.
+ * @deprecated since 4.1.0. Use the LuceneSail in package
+ *             {@code org.openrdf.sail.lucene} instead.
  */
+@Deprecated
 public class LuceneSailFactory implements SailFactory {
 
 	/**
@@ -26,12 +29,14 @@ public class LuceneSailFactory implements SailFactory {
 	 * 
 	 * @see SailFactory#getSailType()
 	 */
+	@Deprecated
 	public static final String SAIL_TYPE = "openrdf:LuceneSail/3";
 
 	/**
 	 * Returns the Sail's type: <tt>openrdf:LuceneSail/3</tt>.
 	 */
 	@Override
+	@Deprecated
 	public String getSailType() {
 		return SAIL_TYPE;
 	}
@@ -42,6 +47,7 @@ public class LuceneSailFactory implements SailFactory {
 	}
 
 	@Override
+	@Deprecated
 	public Sail getSail(SailImplConfig config)
 		throws SailConfigException
 	{

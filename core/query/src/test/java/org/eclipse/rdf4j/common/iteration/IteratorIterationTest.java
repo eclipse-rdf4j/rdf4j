@@ -7,9 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.iteration;
 
-import org.eclipse.rdf4j.common.iteration.Iteration;
-import org.eclipse.rdf4j.common.iteration.IteratorIteration;
-
 public class IteratorIterationTest extends IterationTest {
 
 	@Override

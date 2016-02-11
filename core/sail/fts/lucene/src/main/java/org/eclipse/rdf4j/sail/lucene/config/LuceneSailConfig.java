@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.sail.lucene.config;
 
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
-import org.eclipse.rdf4j.sail.lucene.config.AbstractLuceneSailConfig;
 
 public class LuceneSailConfig extends AbstractLuceneSailConfig {
 

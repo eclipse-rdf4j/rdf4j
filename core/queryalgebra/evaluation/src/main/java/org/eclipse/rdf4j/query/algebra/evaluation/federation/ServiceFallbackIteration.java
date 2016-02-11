@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.SilentIteration;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 

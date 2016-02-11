@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.http.server.repository.graph;
 
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import static javax.servlet.http.HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE;
+import static org.eclipse.rdf4j.http.protocol.Protocol.BASEURI_PARAM_NAME;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -44,7 +45,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContextException;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.AbstractController;
-
 /**
  * Handles requests for manipulating the named graphs in a repository.
  * 
@@ -96,8 +96,8 @@ public class GraphController extends AbstractController {
 			logger.info("DELETE data request finished.");
 		}
 		else {
-			throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED, "Method not allowed: "
-					+ reqMethod);
+			throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
+					"Method not allowed: " + reqMethod);
 		}
 		return result;
 	}
@@ -137,7 +137,7 @@ public class GraphController extends AbstractController {
 	 */
 	private ModelAndView getExportStatementsResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response)
-		throws ClientHTTPException
+				throws ClientHTTPException
 	{
 		ProtocolUtil.logRequestParameters(request);
 
@@ -162,7 +162,7 @@ public class GraphController extends AbstractController {
 	 */
 	private ModelAndView getAddDataResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response, boolean replaceCurrent)
-		throws IOException, ClientHTTPException, ServerHTTPException
+				throws IOException, ClientHTTPException, ServerHTTPException
 	{
 		ProtocolUtil.logRequestParameters(request);
 
@@ -172,30 +172,39 @@ public class GraphController extends AbstractController {
 				() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type: " + mimeType));
 
 		ValueFactory vf = repository.getValueFactory();
+		final IRI graph = getGraphName(request, vf);
 
-		IRI graph = getGraphName(request, vf);
+		IRI baseURI = ProtocolUtil.parseURIParam(request, BASEURI_PARAM_NAME, vf);
+		if (baseURI == null) {
+			baseURI = graph != null ? graph : vf.createIRI("foo:bar");
+			logger.info("no base URI specified, using '{}'", baseURI);
+		}
 
 		InputStream in = request.getInputStream();
 		try {
 			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
 			synchronized (repositoryCon) {
-				if (repositoryCon.isAutoCommit()) {
+				boolean localTransaction = !repositoryCon.isActive();
+
+				if (localTransaction) {
 					repositoryCon.begin();
 				}
 
 				if (replaceCurrent) {
 					repositoryCon.clear(graph);
 				}
-				repositoryCon.add(in, graph.toString(), rdfFormat, graph);
+				repositoryCon.add(in, baseURI.stringValue(), rdfFormat, graph);
 
-				repositoryCon.commit();
+				if (localTransaction) {
+					repositoryCon.commit();
+				}
 			}
 
 			return new ModelAndView(EmptySuccessView.getInstance());
 		}
 		catch (UnsupportedRDFormatException e) {
-			throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "No RDF parser available for format "
-					+ rdfFormat.getName());
+			throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,
+					"No RDF parser available for format " + rdfFormat.getName());
 		}
 		catch (RDFParseException e) {
 			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_DATA, e.getMessage());
@@ -214,7 +223,7 @@ public class GraphController extends AbstractController {
 	 */
 	private ModelAndView getDeleteDataResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response)
-		throws ClientHTTPException, ServerHTTPException
+				throws ClientHTTPException, ServerHTTPException
 	{
 		ProtocolUtil.logRequestParameters(request);
 

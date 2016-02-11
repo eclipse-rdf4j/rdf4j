@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser;
 
-import java.util.List;
-
 import org.eclipse.rdf4j.query.MalformedQueryException;
 
 /**

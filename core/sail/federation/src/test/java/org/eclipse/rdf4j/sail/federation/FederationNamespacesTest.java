@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.sail.federation.Federation;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.Test;
 

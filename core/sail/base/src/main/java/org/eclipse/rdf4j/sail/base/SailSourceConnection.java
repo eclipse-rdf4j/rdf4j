@@ -13,6 +13,7 @@ import java.util.Map;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -50,12 +51,13 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionBase;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
 /**
- * A {@link SailConnection} implementation that is based on an {@link SailStore}.
+ * A {@link SailConnection} implementation that is based on an {@link SailStore}
+ * .
  * 
  * @author James Leigh
  */
-public abstract class SailSourceConnection extends NotifyingSailConnectionBase implements
-		InferencerConnection, FederatedServiceResolverClient
+public abstract class SailSourceConnection extends NotifyingSailConnectionBase
+		implements InferencerConnection, FederatedServiceResolverClient
 {
 
 	/*-----------*
@@ -131,8 +133,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase i
 	 *--------------*/
 
 	/**
-	 * Creates a new {@link SailConnection}, using the given {@link SailStore} to
-	 * manage the state.
+	 * Creates a new {@link SailConnection}, using the given {@link SailStore}
+	 * to manage the state.
 	 * 
 	 * @param sail
 	 * @param store
@@ -165,7 +167,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase i
 	@Override
 	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
 			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
-		throws SailException
+				throws SailException
 	{
 		flush();
 		logger.trace("Incoming query model:\n{}", tupleExpr);
@@ -196,7 +198,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase i
 			new SameTermFilterOptimizer().optimize(tupleExpr, dataset, bindings);
 			new QueryModelNormalizer().optimize(tupleExpr, dataset, bindings);
 			new QueryJoinOptimizer(store.getEvaluationStatistics()).optimize(tupleExpr, dataset, bindings);
-			// new SubSelectJoinOptimizer().optimize(tupleExpr, dataset, bindings);
+			// new SubSelectJoinOptimizer().optimize(tupleExpr, dataset,
+			// bindings);
 			new IterativeEvaluationOptimizer().optimize(tupleExpr, dataset, bindings);
 			new FilterOptimizer().optimize(tupleExpr, dataset, bindings);
 			new OrderLimitOptimizer().optimize(tupleExpr, dataset, bindings);
@@ -240,7 +243,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase i
 	@Override
 	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj,
 			IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-		throws SailException
+				throws SailException
 	{
 		flush();
 		SailSource branch = branch(includeInferred);
@@ -254,8 +257,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase i
 		throws SailException
 	{
 		flush();
-		CloseableIteration<? extends Statement, SailException> iter = getStatementsInternal(null, null, null,
-				false, contexts);
+		CloseableIteration<? extends Statement, SailException> iter = new DistinctIteration<Statement, SailException>(
+				getStatementsInternal(null, null, null, false, contexts));
 
 		try {
 			long size = 0L;
@@ -491,7 +494,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase i
 				if (!hasStatement(explicitOnlyDataset, subj, pred, obj, null)) {
 					// only add inferred statements that aren't already explicit
 					if (!hasStatement(inferredDataset, subj, pred, obj, null)) {
-						// only report inferred statements that don't already exist
+						// only report inferred statements that don't already
+						// exist
 						notifyStatementAdded(vf.createStatement(subj, pred, obj));
 						modified = true;
 					}
@@ -501,9 +505,11 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase i
 			else {
 				for (Resource ctx : contexts) {
 					if (!hasStatement(explicitOnlyDataset, subj, pred, obj, ctx)) {
-						// only add inferred statements that aren't already explicit
+						// only add inferred statements that aren't already
+						// explicit
 						if (!hasStatement(inferredDataset, subj, pred, obj, ctx)) {
-							// only report inferred statements that don't already exist
+							// only report inferred statements that don't
+							// already exist
 							notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
 							modified = true;
 						}
@@ -517,7 +523,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase i
 
 	private boolean add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink,
 			Resource... contexts)
-		throws SailException
+				throws SailException
 	{
 		boolean modified = false;
 		if (contexts.length == 0) {
@@ -559,7 +565,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase i
 
 	private boolean remove(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink,
 			Resource... contexts)
-		throws SailException
+				throws SailException
 	{
 		boolean statementsRemoved = false;
 		CloseableIteration<? extends Statement, SailException> iter;
@@ -707,8 +713,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase i
 		}
 		else if (includeinferred && active) {
 			// don't actually branch source
-			return new UnionSailSource(store.getInferredSailSource(),
-					store.getExplicitSailSource());
+			return new UnionSailSource(store.getInferredSailSource(), store.getExplicitSailSource());
 		}
 		else if (active) {
 			// don't actually branch source

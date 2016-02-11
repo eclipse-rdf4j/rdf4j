@@ -14,7 +14,6 @@ import org.apache.lucene.store.RAMDirectory;
 import org.apache.lucene.util.Version;
 import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailGeoSPARQLTest;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
-import org.eclipse.rdf4j.sail.lucene3.LuceneIndex;
 
 public class LuceneSailGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLTest {
 	private LuceneIndex index;

@@ -14,7 +14,6 @@ import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailIndexedPropertiesTest;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
-import org.eclipse.rdf4j.sail.solr.SolrIndex;
 
 public class SolrSailIndexedPropertiesTest extends AbstractLuceneSailIndexedPropertiesTest {
 

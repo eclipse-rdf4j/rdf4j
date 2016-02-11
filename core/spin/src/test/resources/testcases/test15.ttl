@@ -1,0 +1,39 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <ex:>.
+
+[ a       sp:Ask ;
+	sp:text """
+PREFIX ex: <ex:>
+
+ASK WHERE {
+	?this ex:word ?word .
+	FILTER (strlen(?word) < 5 || strlen(?word) >= 30) .
+}
+""";
+    sp:where ([ sp:object _:word ;
+                sp:predicate ex:word ;
+                sp:subject spin:_this
+              ] [ a       sp:Filter ;
+                sp:expression
+                	[ a sp:or;
+                	sp:arg1
+                        [ sp:arg1 [
+                        	a sp:strlen ;
+                        	sp:arg1 _:word ;
+                        	];
+                          sp:arg2 5 ;
+                          a sp:lt
+                        ];
+                	sp:arg2
+                        [ sp:arg1 [
+                        	a sp:strlen ;
+                        	sp:arg1 _:word ;
+                        	];
+                          sp:arg2 30 ;
+                          a sp:ge
+                        ]
+					]
+              ])
+  ].
+  _:word sp:varName "word" .

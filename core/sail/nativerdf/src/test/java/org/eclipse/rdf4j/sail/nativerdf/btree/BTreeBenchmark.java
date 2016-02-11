@@ -13,8 +13,6 @@ import java.util.Random;
 
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.common.io.FileUtil;
-import org.eclipse.rdf4j.sail.nativerdf.btree.BTree;
-import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;

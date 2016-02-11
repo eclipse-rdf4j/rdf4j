@@ -36,12 +36,12 @@ import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 import org.eclipse.rdf4j.query.algebra.Max;
 import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
-import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -467,7 +467,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			}
 			else {
 				// wildcard count
-				if (distinctBindingSet(s)) {
+				if (s.size() > 0 && distinctBindingSet(s)) {
 					count++;
 				}
 			}
@@ -508,7 +508,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			throws QueryEvaluationException
 		{
 			Value v = evaluate(s);
-			if (distinctValue(v)) {
+			if (v != null && distinctValue(v)) {
 				if (min == null) {
 					min = v;
 				}
@@ -539,7 +539,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			throws QueryEvaluationException
 		{
 			Value v = evaluate(s);
-			if (distinctValue(v)) {
+			if (v != null && distinctValue(v)) {
 				if (max == null) {
 					max = v;
 				}
@@ -688,7 +688,10 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			// we flip a coin to determine if we keep the current value or set a
 			// new value to report.
 			if (sample == null || random.nextFloat() < 0.5f) {
-				sample = evaluate(s);
+				final Value newValue = evaluate(s);
+				if (newValue != null) {
+					sample = newValue;
+				}
 			}
 		}
 
