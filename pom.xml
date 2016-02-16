@@ -3,12 +3,6 @@
 
 	<modelVersion>4.0.0</modelVersion>
 
-	<parent>
-		<groupId>org.sonatype.oss</groupId>
-		<artifactId>oss-parent</artifactId>
-		<version>7</version>
-	</parent>
-
 	<groupId>org.eclipse.rdf4j</groupId>
 	<artifactId>rdf4j</artifactId>
 	<version>4.1.1-SNAPSHOT</version>
@@ -697,9 +691,9 @@
 	</repositories>
 	
 	<scm>
-		<connection>scm:git:git@bitbucket.org:openrdf/sesame.git</connection>
-		<developerConnection>scm:git:git@bitbucket.org:openrdf/sesame.git</developerConnection>
-		<url>https://bitbucket.org/openrdf/sesame/src</url>
+		<connection>scm:git:git@github.com:eclipse/rdf4j.git</connection>
+		<developerConnection>scm:git:git@github.com:eclipse/rdf4j.git</developerConnection>
+		<url>https://github.com/eclipse/rdf4j</url>
 	</scm>
 
 </project>
