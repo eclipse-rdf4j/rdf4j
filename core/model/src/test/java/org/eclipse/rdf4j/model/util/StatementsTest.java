@@ -56,11 +56,11 @@ public class StatementsTest {
 		}
 
 		try {
-			Statements.consume(vf, null, RDF.TYPE, RDF.PROPERTY, st -> fail("should have resulted in Exception"));
+			Statements.consume(vf, null, RDF.TYPE, RDF.PROPERTY,
+					st -> fail("should have resulted in Exception"));
 		}
 		catch (NullPointerException e) {
 			// fall through.
 		}
 	}
-}
 }
