@@ -1,2 +1,0 @@
-org.openrdf.query.resultio.text.csv.SPARQLResultsCSVParserFactory
-org.openrdf.query.resultio.text.tsv.SPARQLResultsTSVParserFactory
