@@ -5,12 +5,11 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.openrdf.query.parser;
+package org.eclipse.rdf4j.query.parser;
 
 import java.util.Map;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 
 /**
  * A ParsedGraphQuery to identify DESCRIBE queries.

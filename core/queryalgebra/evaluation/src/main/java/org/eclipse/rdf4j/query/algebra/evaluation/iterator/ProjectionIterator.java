@@ -12,12 +12,15 @@ import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
-public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException>
+public class ProjectionIterator
+		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException>
 {
 
 	/*-----------*
@@ -28,17 +31,31 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 	private final BindingSet parentBindings;
 
+	private final boolean isOuterProjection;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
 	public ProjectionIterator(Projection projection,
 			CloseableIteration<BindingSet, QueryEvaluationException> iter, BindingSet parentBindings)
-		throws QueryEvaluationException
+				throws QueryEvaluationException
 	{
 		super(iter);
 		this.projection = projection;
 		this.parentBindings = parentBindings;
+		this.isOuterProjection = determineOuterProjection();
+	}
+
+	private final boolean determineOuterProjection() {
+		QueryModelNode ancestor = projection;
+		while (ancestor.getParentNode() != null) {
+			ancestor = ancestor.getParentNode();
+			if (ancestor instanceof Projection || ancestor instanceof MultiProjection) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/*---------*
@@ -49,18 +66,27 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	protected BindingSet convert(BindingSet sourceBindings)
 		throws QueryEvaluationException
 	{
-
-		return project(projection.getProjectionElemList(), sourceBindings, parentBindings);
+		return project(projection.getProjectionElemList(), sourceBindings, parentBindings,
+				!isOuterProjection);
 	}
 
 	public static BindingSet project(ProjectionElemList projElemList, BindingSet sourceBindings,
 			BindingSet parentBindings)
 	{
-		QueryBindingSet resultBindings = new QueryBindingSet();
+		return project(projElemList, sourceBindings, parentBindings, false);
+	}
+
+	public static BindingSet project(ProjectionElemList projElemList, BindingSet sourceBindings,
+			BindingSet parentBindings, boolean includeAllParentBindings)
+	{
+		final QueryBindingSet resultBindings = new QueryBindingSet();
+		if (includeAllParentBindings) {
+			resultBindings.addAll(parentBindings);
+		}
 
 		for (ProjectionElem pe : projElemList.getElements()) {
 			Value targetValue = sourceBindings.getValue(pe.getSourceName());
-			if (targetValue == null) {
+			if (!includeAllParentBindings && targetValue == null) {
 				targetValue = parentBindings.getValue(pe.getSourceName());
 			}
 			if (targetValue != null) {

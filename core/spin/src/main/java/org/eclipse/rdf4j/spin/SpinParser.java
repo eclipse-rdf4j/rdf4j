@@ -127,6 +127,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.Statements;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelVisitorBase;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
+import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedOperation;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -142,7 +143,6 @@ import org.eclipse.rdf4j.spin.function.SpinTupleFunctionAsFunctionParser;
 import org.eclipse.rdf4j.spin.function.SpinTupleFunctionParser;
 import org.eclipse.rdf4j.spin.function.SpinxFunctionParser;
 import org.eclipse.rdf4j.spin.function.TupleFunctionParser;
-import org.openrdf.query.parser.ParsedDescribeQuery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -323,7 +323,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 			}
 			else {
 				CloseableIteration<? extends Statement, SailException> cursor = getStatements(null, null, null,
-						true, contexts);
+						false, contexts);
 				try {
 					long size = 0;
 					while (cursor.hasNext()) {
