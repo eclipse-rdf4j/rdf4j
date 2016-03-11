@@ -1,0 +1,5 @@
+org.eclipse.rdf4j.rio.datatypes.XMLSchemaDatatypeHandler
+org.eclipse.rdf4j.rio.datatypes.RDFDatatypeHandler
+org.eclipse.rdf4j.rio.datatypes.DBPediaDatatypeHandler
+org.eclipse.rdf4j.rio.datatypes.VirtuosoGeometryDatatypeHandler
+org.eclipse.rdf4j.rio.datatypes.GeoSPARQLDatatypeHandler
