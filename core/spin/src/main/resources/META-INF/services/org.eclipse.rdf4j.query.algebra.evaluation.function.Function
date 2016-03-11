@@ -1,0 +1,15 @@
+org.eclipse.rdf4j.spin.function.Add
+org.eclipse.rdf4j.spin.function.Subtract
+org.eclipse.rdf4j.spin.function.Multiply
+org.eclipse.rdf4j.spin.function.Divide
+org.eclipse.rdf4j.spin.function.And
+org.eclipse.rdf4j.spin.function.Or
+org.eclipse.rdf4j.spin.function.Not
+org.eclipse.rdf4j.spin.function.EqualTo
+org.eclipse.rdf4j.spin.function.NotEqualTo
+org.eclipse.rdf4j.spin.function.LessThan
+org.eclipse.rdf4j.spin.function.LessThanOrEqualTo
+org.eclipse.rdf4j.spin.function.GreaterThan
+org.eclipse.rdf4j.spin.function.GreaterThanOrEqualTo
+org.eclipse.rdf4j.spin.function.Localname
+org.eclipse.rdf4j.spin.function.ObjectFunction

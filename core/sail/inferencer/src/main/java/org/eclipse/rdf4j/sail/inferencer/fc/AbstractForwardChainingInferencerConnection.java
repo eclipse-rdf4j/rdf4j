@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnectionWrapper;
 import org.eclipse.rdf4j.sail.model.SailModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 public abstract class AbstractForwardChainingInferencerConnection extends InferencerConnectionWrapper
 		implements SailConnectionListener
 {

@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.http.server.repository.graph;
 
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import static javax.servlet.http.HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE;
-import static org.eclipse.rdf4j.http.protocol.Protocol.BASEURI_PARAM_NAME;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -21,6 +20,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
 import org.eclipse.rdf4j.common.webapp.views.EmptySuccessView;
+import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
 import org.eclipse.rdf4j.http.protocol.error.ErrorType;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
@@ -174,7 +174,7 @@ public class GraphController extends AbstractController {
 		ValueFactory vf = repository.getValueFactory();
 		final IRI graph = getGraphName(request, vf);
 
-		IRI baseURI = ProtocolUtil.parseURIParam(request, BASEURI_PARAM_NAME, vf);
+		IRI baseURI = ProtocolUtil.parseURIParam(request, Protocol.BASEURI_PARAM_NAME, vf);
 		if (baseURI == null) {
 			baseURI = graph != null ? graph : vf.createIRI("foo:bar");
 			logger.info("no base URI specified, using '{}'", baseURI);

@@ -23,5 +23,4 @@ public class EvaluationStrategyImpl extends SimpleEvaluationStrategy {
 	{
 		super(tripleSource, dataset, serviceResolver);
 	}
-
 }
