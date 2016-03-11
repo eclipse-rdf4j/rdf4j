@@ -6,7 +6,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-core</artifactId>
-		<version>4.1.1-SNAPSHOT</version>
+		<version>4.1.2-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>rdf4j-runtime</artifactId>
@@ -231,6 +231,18 @@
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-sail-memory</artifactId>
+			<version>${project.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>sesame-sail-spin</artifactId>
+			<version>${project.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+						<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>sesame-sail-spin</artifactId>
 			<version>${project.version}</version>
 			<scope>runtime</scope>
 		</dependency>
