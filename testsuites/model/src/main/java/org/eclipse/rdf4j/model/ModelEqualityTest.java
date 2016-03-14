@@ -39,12 +39,13 @@ public abstract class ModelEqualityTest {
 		testFilesEqual("test001a.ttl", "test001b.ttl");
 	}
 
-	@Test
-	public void testFoafExampleAdvanced()
-		throws Exception
-	{
-		testFilesEqual("foaf-example-advanced.rdf", "foaf-example-advanced.rdf");
-	}
+// TODO find foaf test example that we have a right to use.
+//	@Test
+//	public void testFoafExampleAdvanced()
+//		throws Exception
+//	{
+//		testFilesEqual("foaf-example-advanced.rdf", "foaf-example-advanced.rdf");
+//	}
 
 	@Test
 	public void testSparqlGraph11()

@@ -1,0 +1,1074 @@
+%{
+# START TokenBlock
+my $GT_DOT = "\\.";
+my $GT_SEMI = ";";
+my $GT_COMMA = ",";
+my $GT_LBRACKET = "\\[";
+my $GT_RBRACKET = "\\]";
+my $GT_LPAREN = "\\(";
+my $GT_RPAREN = "\\)";
+my $GT_DTYPE = "\\^\\^";
+my $IT_true = "true";
+my $IT_false = "false";
+my $SPARQL_PREFIX = "[Pp][Rr][Ee][Ff][Ii][Xx]";
+my $SPARQL_BASE = "[Bb][Aa][Ss][Ee]";
+my $BASE = "\@[Bb][Aa][Ss][Ee]";
+my $PREFIX = "\@[Pp][Rr][Ee][Ff][Ii][Xx]";
+my $RDF_TYPE = "a";
+my $LANGTAG = "\@(?:[A-Za-z])+(?:(?:-(?:[0-9A-Za-z])+))*";
+my $INTEGER = "(?:[\\+-])?(?:[0-9])+";
+my $DECIMAL = "(?:[\\+-])?(?:[0-9])*\\.(?:[0-9])+";
+my $EXPONENT = "[Ee](?:[\\+-])?(?:[0-9])+";
+my $DOUBLE = "(?:[\\+-])?(?:(?:(?:[0-9])+\\.(?:[0-9])*(?:${EXPONENT}))|(?:(?:\\.)?(?:[0-9])+(?:${EXPONENT})))";
+my $ECHAR = "\\\\[\\\"\\'\\\\bfnrt]";
+my $WS = "(?: )|(?:(?:\\t)|(?:(?:\\r)|(?:\\n)))";
+my $ANON = "\\[(?:(?:${WS}))*\\]";
+my $PN_CHARS_BASE = "(?:[A-Z])|(?:(?:[a-z])|(?:(?:[\x{00C0}-\x{00D6}])|(?:(?:[\x{00D8}-\x{00F6}])|(?:(?:[\x{00F8}-\x{02FF}])|(?:(?:[\x{0370}-\x{037D}])|(?:(?:[\x{037F}-\x{1FFF}])|(?:(?:[\x{200C}-\x{200D}])|(?:(?:[\x{2070}-\x{218F}])|(?:(?:[\x{2C00}-\x{2FEF}])|(?:(?:[\x{3001}-\x{D7FF}])|(?:(?:[\x{F900}-\x{FDCF}])|(?:(?:[\x{FDF0}-\x{FFFD}])|(?:[\x{10000}-\x{EFFFF}])))))))))))))";
+my $PN_CHARS_U = "(?:(?:${PN_CHARS_BASE}))|(?:_)";
+my $PN_CHARS = "(?:(?:${PN_CHARS_U}))|(?:(?:-)|(?:(?:[0-9])|(?:(?:[\x{00B7}])|(?:(?:[\x{0300}-\x{036F}])|(?:[\x{203F}-\x{2040}])))))";
+my $BLANK_NODE_LABEL = "_:(?:(?:(?:${PN_CHARS_U}))|(?:[0-9]))(?:(?:(?:(?:(?:(?:${PN_CHARS}))|(?:\\.)))*(?:${PN_CHARS})))?";
+my $PN_PREFIX = "(?:${PN_CHARS_BASE})(?:(?:(?:(?:(?:(?:${PN_CHARS}))|(?:\\.)))*(?:${PN_CHARS})))?";
+my $PNAME_NS = "(?:(?:${PN_PREFIX}))?:";
+my $HEX = "(?:[0-9])|(?:(?:[A-F])|(?:[a-f]))";
+my $PERCENT = "\%(?:${HEX})(?:${HEX})";
+my $UCHAR = "(?:\\\\u(?:${HEX})(?:${HEX})(?:${HEX})(?:${HEX}))|(?:\\\\U(?:${HEX})(?:${HEX})(?:${HEX})(?:${HEX})(?:${HEX})(?:${HEX})(?:${HEX})(?:${HEX}))";
+my $STRING_LITERAL1 = "\\'(?:(?:(?:[\x{0000}-\\t\x{000B}-\x{000C}\x{000E}-&\\(-\\[\\]-\x{10FFFD}])|(?:(?:(?:${ECHAR}))|(?:(?:${UCHAR})))))*\\'";
+my $STRING_LITERAL2 = "\\\"(?:(?:(?:[\x{0000}-\\t\x{000B}-\x{000C}\x{000E}-!#-\\[\\]-\x{10FFFD}])|(?:(?:(?:${ECHAR}))|(?:(?:${UCHAR})))))*\\\"";
+my $STRING_LITERAL_LONG1 = "\\'\\'\\'(?:(?:(?:(?:(?:\\')|(?:\\'\\')))?(?:(?:[\x{0000}-&\\(-\\[\\]-\x{10FFFD}])|(?:(?:(?:${ECHAR}))|(?:(?:${UCHAR}))))))*\\'\\'\\'";
+my $STRING_LITERAL_LONG2 = "\\\"\\\"\\\"(?:(?:(?:(?:(?:\\\")|(?:\\\"\\\")))?(?:(?:[\x{0000}-!#-\\[\\]-\x{10FFFD}])|(?:(?:(?:${ECHAR}))|(?:(?:${UCHAR}))))))*\\\"\\\"\\\"";
+my $IRIREF = "<(?:(?:(?:[!#-;=\\?-\\[\\]_a-z~-\x{10FFFD}])|(?:(?:${UCHAR}))))*>";
+my $PN_LOCAL_ESC = "\\\\(?:(?:_)|(?:(?:~)|(?:(?:\\.)|(?:(?:-)|(?:(?:!)|(?:(?:\\\$)|(?:(?:&)|(?:(?:\\')|(?:(?:\\()|(?:(?:\\))|(?:(?:\\*)|(?:(?:\\+)|(?:(?:,)|(?:(?:;)|(?:(?:=)|(?:(?:\\/)|(?:(?:\\?)|(?:(?:#)|(?:(?:\@)|(?:\%))))))))))))))))))))";
+my $PLX = "(?:(?:${PERCENT}))|(?:(?:${PN_LOCAL_ESC}))";
+my $PN_LOCAL = "(?:(?:(?:${PN_CHARS_U}))|(?:(?::)|(?:(?:[0-9])|(?:(?:${PLX})))))(?:(?:(?:(?:(?:(?:${PN_CHARS}))|(?:(?:\\.)|(?:(?::)|(?:(?:${PLX}))))))*(?:(?:(?:${PN_CHARS}))|(?:(?::)|(?:(?:${PLX}))))))?";
+my $PNAME_LN = "(?:${PNAME_NS})(?:${PN_LOCAL})";
+my $PASSED_TOKENS = "(?:(?:[\\t\\n\\r ])+)|(?:#(?:[\x{0000}-\\t\x{000B}-\x{000C}\x{000E}-\x{10FFFD}])*)";
+
+my $Tokens = [[0, qr/$PASSED_TOKENS/, undef],
+              [0, qr/$GT_DOT/i, 'GT_DOT'],
+              [0, qr/$GT_SEMI/i, 'GT_SEMI'],
+              [0, qr/$GT_COMMA/i, 'GT_COMMA'],
+              [0, qr/$GT_LBRACKET/i, 'GT_LBRACKET'],
+              [0, qr/$GT_RBRACKET/i, 'GT_RBRACKET'],
+              [0, qr/$GT_LPAREN/i, 'GT_LPAREN'],
+              [0, qr/$GT_RPAREN/i, 'GT_RPAREN'],
+              [0, qr/$GT_DTYPE/i, 'GT_DTYPE'],
+              [0, qr/$IT_true/i, 'IT_true'],
+              [0, qr/$IT_false/i, 'IT_false'],
+              [0, qr/$SPARQL_PREFIX/, 'SPARQL_PREFIX'],
+              [0, qr/$SPARQL_BASE/, 'SPARQL_BASE'],
+              [0, qr/$BASE/, 'BASE'],
+              [0, qr/$PREFIX/, 'PREFIX'],
+              [0, qr/$RDF_TYPE/, 'RDF_TYPE'],
+              [0, qr/$IRIREF/, 'IRIREF'],
+              [0, qr/$PNAME_NS/, 'PNAME_NS'],
+              [0, qr/$PNAME_LN/, 'PNAME_LN'],
+              [0, qr/$BLANK_NODE_LABEL/, 'BLANK_NODE_LABEL'],
+              [0, qr/$LANGTAG/, 'LANGTAG'],
+              [0, qr/$INTEGER/, 'INTEGER'],
+              [0, qr/$DECIMAL/, 'DECIMAL'],
+              [0, qr/$DOUBLE/, 'DOUBLE'],
+              [0, qr/$STRING_LITERAL1/, 'STRING_LITERAL1'],
+              [0, qr/$STRING_LITERAL2/, 'STRING_LITERAL2'],
+              [0, qr/$STRING_LITERAL_LONG1/, 'STRING_LITERAL_LONG1'],
+              [0, qr/$STRING_LITERAL_LONG2/, 'STRING_LITERAL_LONG2'],
+              [0, qr/$ANON/, 'ANON'],
+];
+# END TokenBlock
+
+# START ClassBlock
+@turtleDoc::ISA = qw(_Production);
+@_Qstatement_E_Star::ISA = qw(_GenProduction);
+@statement::ISA = qw(_Production);
+@directive::ISA = qw(_Production);
+@prefixID::ISA = qw(_Production);
+@base::ISA = qw(_Production);
+@sparqlPrefix::ISA = qw(_Production);
+@sparqlBase::ISA = qw(_Production);
+@triples::ISA = qw(_Production);
+@_QpredicateObjectList_E_Opt::ISA = qw(_GenProduction);
+@predicateObjectList::ISA = qw(_Production);
+@_O_Qverb_E_S_QobjectList_E_C::ISA = qw(_GenProduction);
+@_Q_O_Qverb_E_S_QobjectList_E_C_E_Opt::ISA = qw(_GenProduction);
+@_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C::ISA = qw(_GenProduction);
+@_Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star::ISA = qw(_GenProduction);
+@objectList::ISA = qw(_Production);
+@_O_QGT_COMMA_E_S_Qobject_E_C::ISA = qw(_GenProduction);
+@_Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star::ISA = qw(_GenProduction);
+@verb::ISA = qw(_Production);
+@subject::ISA = qw(_Production);
+@predicate::ISA = qw(_Production);
+@object::ISA = qw(_Production);
+@literal::ISA = qw(_Production);
+@blankNodePropertyList::ISA = qw(_Production);
+@collection::ISA = qw(_Production);
+@_Qobject_E_Star::ISA = qw(_GenProduction);
+@NumericLiteral::ISA = qw(_Production);
+@RDFLiteral::ISA = qw(_Production);
+@_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C::ISA = qw(_GenProduction);
+@_Q_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C_E_Opt::ISA = qw(_GenProduction);
+@BooleanLiteral::ISA = qw(_Production);
+@String::ISA = qw(_Production);
+@iri::ISA = qw(_Production);
+@PrefixedName::ISA = qw(_Production);
+@BlankNode::ISA = qw(_Production);
+
+@GT_DOT::ISA = qw(_Constant);
+@GT_SEMI::ISA = qw(_Constant);
+@GT_COMMA::ISA = qw(_Constant);
+@GT_LBRACKET::ISA = qw(_Constant);
+@GT_RBRACKET::ISA = qw(_Constant);
+@GT_LPAREN::ISA = qw(_Constant);
+@GT_RPAREN::ISA = qw(_Constant);
+@GT_DTYPE::ISA = qw(_Constant);
+@IT_true::ISA = qw(_Constant);
+@IT_false::ISA = qw(_Constant);
+@SPARQL_PREFIX::ISA = qw(_Terminal);
+@SPARQL_BASE::ISA = qw(_Terminal);
+@BASE::ISA = qw(_Terminal);
+@PREFIX::ISA = qw(_Terminal);
+@RDF_TYPE::ISA = qw(_Terminal);
+@IRIREF::ISA = qw(_Terminal);
+@PNAME_NS::ISA = qw(_Terminal);
+@PNAME_LN::ISA = qw(_Terminal);
+@BLANK_NODE_LABEL::ISA = qw(_Terminal);
+@LANGTAG::ISA = qw(_Terminal);
+@INTEGER::ISA = qw(_Terminal);
+@DECIMAL::ISA = qw(_Terminal);
+@DOUBLE::ISA = qw(_Terminal);
+@STRING_LITERAL1::ISA = qw(_Terminal);
+@STRING_LITERAL2::ISA = qw(_Terminal);
+@STRING_LITERAL_LONG1::ISA = qw(_Terminal);
+@STRING_LITERAL_LONG2::ISA = qw(_Terminal);
+@ANON::ISA = qw(_Terminal);
+
+# END ClassBlock
+%}
+
+%% #*** Grammar Rules ***
+
+ #*** BEGIN turtleAwesome - Change the grammar rules below ***
+turtleDoc:
+    _Qstatement_E_Star	{
+    my ($self, $_Qstatement_E_Star) = @_;
+    my $ret = new turtleDoc($_Qstatement_E_Star);
+    $self->traceProduction('turtleDoc', '_Qstatement_E_Star', $_Qstatement_E_Star);
+    return $ret;
+};
+
+_Qstatement_E_Star:
+    {
+    my ($self, ) = @_;
+    my $ret = new _Qstatement_E_Star();
+    $self->traceProduction('_Qstatement_E_Star');
+    return $ret;
+}
+    | _Qstatement_E_Star statement	{
+    my ($self, $_Qstatement_E_Star, $statement) = @_;
+    my $ret = new _Qstatement_E_Star($_Qstatement_E_Star, $statement);
+    $self->traceProduction('_Qstatement_E_Star', '_Qstatement_E_Star', $_Qstatement_E_Star, 'statement', $statement);
+    return $ret;
+};
+
+statement:
+    directive	{
+    my ($self, $directive) = @_;
+    my $ret = new statement($directive);
+    $self->traceProduction('statement', 'directive', $directive);
+    return $ret;
+}
+    | triples GT_DOT	{
+    my ($self, $triples, $GT_DOT) = @_;
+    my $ret = new statement($triples, $GT_DOT);
+    $self->traceProduction('statement', 'triples', $triples, 'GT_DOT', $GT_DOT);
+    return $ret;
+};
+
+directive:
+    prefixID	{
+    my ($self, $prefixID) = @_;
+    my $ret = new directive($prefixID);
+    $self->traceProduction('directive', 'prefixID', $prefixID);
+    return $ret;
+}
+    | base	{
+    my ($self, $base) = @_;
+    my $ret = new directive($base);
+    $self->traceProduction('directive', 'base', $base);
+    return $ret;
+}
+    | sparqlPrefix	{
+    my ($self, $sparqlPrefix) = @_;
+    my $ret = new directive($sparqlPrefix);
+    $self->traceProduction('directive', 'sparqlPrefix', $sparqlPrefix);
+    return $ret;
+}
+    | sparqlBase	{
+    my ($self, $sparqlBase) = @_;
+    my $ret = new directive($sparqlBase);
+    $self->traceProduction('directive', 'sparqlBase', $sparqlBase);
+    return $ret;
+};
+
+#[4]     prefixID              ::= '@prefix' PNAME_NS IRIREF '.'
+
+
+#[5]     base                  ::= '@base' IRIREF '.'
+
+prefixID:
+    PREFIX PNAME_NS IRIREF GT_DOT	{
+    my ($self, $PREFIX, $PNAME_NS, $IRIREF, $GT_DOT) = @_;
+    my $ret = new prefixID($PREFIX, $PNAME_NS, $IRIREF, $GT_DOT);
+    $self->traceProduction('prefixID', 'PREFIX', $PREFIX, 'PNAME_NS', $PNAME_NS, 'IRIREF', $IRIREF, 'GT_DOT', $GT_DOT);
+    return $ret;
+};
+
+base:
+    BASE IRIREF GT_DOT	{
+    my ($self, $BASE, $IRIREF, $GT_DOT) = @_;
+    my $ret = new base($BASE, $IRIREF, $GT_DOT);
+    $self->traceProduction('base', 'BASE', $BASE, 'IRIREF', $IRIREF, 'GT_DOT', $GT_DOT);
+    return $ret;
+};
+
+#[28*]   sparqlPrefix          ::= [Pp] [Rr] [Ee] [Ff] [Ii] [Xx] PNAME_NS IRIREF
+
+
+#[29*]   sparqlBase            ::= [Bb] [Aa] [Ss] [Ee] IRIREF
+
+sparqlPrefix:
+    SPARQL_PREFIX PNAME_NS IRIREF	{
+    my ($self, $SPARQL_PREFIX, $PNAME_NS, $IRIREF) = @_;
+    my $ret = new sparqlPrefix($SPARQL_PREFIX, $PNAME_NS, $IRIREF);
+    $self->traceProduction('sparqlPrefix', 'SPARQL_PREFIX', $SPARQL_PREFIX, 'PNAME_NS', $PNAME_NS, 'IRIREF', $IRIREF);
+    return $ret;
+};
+
+sparqlBase:
+    SPARQL_BASE IRIREF	{
+    my ($self, $SPARQL_BASE, $IRIREF) = @_;
+    my $ret = new sparqlBase($SPARQL_BASE, $IRIREF);
+    $self->traceProduction('sparqlBase', 'SPARQL_BASE', $SPARQL_BASE, 'IRIREF', $IRIREF);
+    return $ret;
+};
+
+triples:
+    subject predicateObjectList	{
+    my ($self, $subject, $predicateObjectList) = @_;
+    my $ret = new triples($subject, $predicateObjectList);
+    $self->traceProduction('triples', 'subject', $subject, 'predicateObjectList', $predicateObjectList);
+    return $ret;
+}
+    | blankNodePropertyList _QpredicateObjectList_E_Opt	{
+    my ($self, $blankNodePropertyList, $_QpredicateObjectList_E_Opt) = @_;
+    my $ret = new triples($blankNodePropertyList, $_QpredicateObjectList_E_Opt);
+    $self->traceProduction('triples', 'blankNodePropertyList', $blankNodePropertyList, '_QpredicateObjectList_E_Opt', $_QpredicateObjectList_E_Opt);
+    return $ret;
+};
+
+_QpredicateObjectList_E_Opt:
+    {
+    my ($self, ) = @_;
+    my $ret = new _QpredicateObjectList_E_Opt();
+    $self->traceProduction('_QpredicateObjectList_E_Opt');
+    return $ret;
+}
+    | predicateObjectList	{
+    my ($self, $predicateObjectList) = @_;
+    my $ret = new _QpredicateObjectList_E_Opt($predicateObjectList);
+    $self->traceProduction('_QpredicateObjectList_E_Opt', 'predicateObjectList', $predicateObjectList);
+    return $ret;
+};
+
+predicateObjectList:
+    verb objectList _Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star	{
+    my ($self, $verb, $objectList, $_Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star) = @_;
+    my $ret = new predicateObjectList($verb, $objectList, $_Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star);
+    $self->traceProduction('predicateObjectList', 'verb', $verb, 'objectList', $objectList, '_Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star', $_Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star);
+    return $ret;
+};
+
+_O_Qverb_E_S_QobjectList_E_C:
+    verb objectList	{
+    my ($self, $verb, $objectList) = @_;
+    my $ret = new _O_Qverb_E_S_QobjectList_E_C($verb, $objectList);
+    $self->traceProduction('_O_Qverb_E_S_QobjectList_E_C', 'verb', $verb, 'objectList', $objectList);
+    return $ret;
+};
+
+_Q_O_Qverb_E_S_QobjectList_E_C_E_Opt:
+    {
+    my ($self, ) = @_;
+    my $ret = new _Q_O_Qverb_E_S_QobjectList_E_C_E_Opt();
+    $self->traceProduction('_Q_O_Qverb_E_S_QobjectList_E_C_E_Opt');
+    return $ret;
+}
+    | _O_Qverb_E_S_QobjectList_E_C	{
+    my ($self, $_O_Qverb_E_S_QobjectList_E_C) = @_;
+    my $ret = new _Q_O_Qverb_E_S_QobjectList_E_C_E_Opt($_O_Qverb_E_S_QobjectList_E_C);
+    $self->traceProduction('_Q_O_Qverb_E_S_QobjectList_E_C_E_Opt', '_O_Qverb_E_S_QobjectList_E_C', $_O_Qverb_E_S_QobjectList_E_C);
+    return $ret;
+};
+
+_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C:
+    GT_SEMI _Q_O_Qverb_E_S_QobjectList_E_C_E_Opt	{
+    my ($self, $GT_SEMI, $_Q_O_Qverb_E_S_QobjectList_E_C_E_Opt) = @_;
+    my $ret = new _O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C($GT_SEMI, $_Q_O_Qverb_E_S_QobjectList_E_C_E_Opt);
+    $self->traceProduction('_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C', 'GT_SEMI', $GT_SEMI, '_Q_O_Qverb_E_S_QobjectList_E_C_E_Opt', $_Q_O_Qverb_E_S_QobjectList_E_C_E_Opt);
+    return $ret;
+};
+
+_Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star:
+    {
+    my ($self, ) = @_;
+    my $ret = new _Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star();
+    $self->traceProduction('_Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star');
+    return $ret;
+}
+    | _Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star _O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C	{
+    my ($self, $_Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star, $_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C) = @_;
+    my $ret = new _Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star($_Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star, $_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C);
+    $self->traceProduction('_Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star', '_Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star', $_Q_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C_E_Star, '_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C', $_O_QGT_SEMI_E_S_Qverb_E_S_QobjectList_E_Opt_C);
+    return $ret;
+};
+
+#[7]     predicateObjectList   ::= verb objectList (';' predicateObjectList?)*
+
+
+#[7]     predicateObjectList   ::= verb objectList (';' verb objectList)* ';'?
+
+objectList:
+    object _Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star	{
+    my ($self, $object, $_Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star) = @_;
+    my $ret = new objectList($object, $_Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star);
+    $self->traceProduction('objectList', 'object', $object, '_Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star', $_Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star);
+    return $ret;
+};
+
+_O_QGT_COMMA_E_S_Qobject_E_C:
+    GT_COMMA object	{
+    my ($self, $GT_COMMA, $object) = @_;
+    my $ret = new _O_QGT_COMMA_E_S_Qobject_E_C($GT_COMMA, $object);
+    $self->traceProduction('_O_QGT_COMMA_E_S_Qobject_E_C', 'GT_COMMA', $GT_COMMA, 'object', $object);
+    return $ret;
+};
+
+_Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star:
+    {
+    my ($self, ) = @_;
+    my $ret = new _Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star();
+    $self->traceProduction('_Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star');
+    return $ret;
+}
+    | _Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star _O_QGT_COMMA_E_S_Qobject_E_C	{
+    my ($self, $_Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star, $_O_QGT_COMMA_E_S_Qobject_E_C) = @_;
+    my $ret = new _Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star($_Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star, $_O_QGT_COMMA_E_S_Qobject_E_C);
+    $self->traceProduction('_Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star', '_Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star', $_Q_O_QGT_COMMA_E_S_Qobject_E_C_E_Star, '_O_QGT_COMMA_E_S_Qobject_E_C', $_O_QGT_COMMA_E_S_Qobject_E_C);
+    return $ret;
+};
+
+verb:
+    predicate	{
+    my ($self, $predicate) = @_;
+    my $ret = new verb($predicate);
+    $self->traceProduction('verb', 'predicate', $predicate);
+    return $ret;
+}
+    | RDF_TYPE	{
+    my ($self, $RDF_TYPE) = @_;
+    my $ret = new verb($RDF_TYPE);
+    $self->traceProduction('verb', 'RDF_TYPE', $RDF_TYPE);
+    return $ret;
+};
+
+subject:
+    iri	{
+    my ($self, $iri) = @_;
+    my $ret = new subject($iri);
+    $self->traceProduction('subject', 'iri', $iri);
+    return $ret;
+}
+    | BlankNode	{
+    my ($self, $BlankNode) = @_;
+    my $ret = new subject($BlankNode);
+    $self->traceProduction('subject', 'BlankNode', $BlankNode);
+    return $ret;
+}
+    | collection	{
+    my ($self, $collection) = @_;
+    my $ret = new subject($collection);
+    $self->traceProduction('subject', 'collection', $collection);
+    return $ret;
+};
+
+predicate:
+    iri	{
+    my ($self, $iri) = @_;
+    my $ret = new predicate($iri);
+    $self->traceProduction('predicate', 'iri', $iri);
+    return $ret;
+};
+
+object:
+    iri	{
+    my ($self, $iri) = @_;
+    my $ret = new object($iri);
+    $self->traceProduction('object', 'iri', $iri);
+    return $ret;
+}
+    | BlankNode	{
+    my ($self, $BlankNode) = @_;
+    my $ret = new object($BlankNode);
+    $self->traceProduction('object', 'BlankNode', $BlankNode);
+    return $ret;
+}
+    | collection	{
+    my ($self, $collection) = @_;
+    my $ret = new object($collection);
+    $self->traceProduction('object', 'collection', $collection);
+    return $ret;
+}
+    | blankNodePropertyList	{
+    my ($self, $blankNodePropertyList) = @_;
+    my $ret = new object($blankNodePropertyList);
+    $self->traceProduction('object', 'blankNodePropertyList', $blankNodePropertyList);
+    return $ret;
+}
+    | literal	{
+    my ($self, $literal) = @_;
+    my $ret = new object($literal);
+    $self->traceProduction('object', 'literal', $literal);
+    return $ret;
+};
+
+literal:
+    RDFLiteral	{
+    my ($self, $RDFLiteral) = @_;
+    my $ret = new literal($RDFLiteral);
+    $self->traceProduction('literal', 'RDFLiteral', $RDFLiteral);
+    return $ret;
+}
+    | NumericLiteral	{
+    my ($self, $NumericLiteral) = @_;
+    my $ret = new literal($NumericLiteral);
+    $self->traceProduction('literal', 'NumericLiteral', $NumericLiteral);
+    return $ret;
+}
+    | BooleanLiteral	{
+    my ($self, $BooleanLiteral) = @_;
+    my $ret = new literal($BooleanLiteral);
+    $self->traceProduction('literal', 'BooleanLiteral', $BooleanLiteral);
+    return $ret;
+};
+
+blankNodePropertyList:
+    GT_LBRACKET predicateObjectList GT_RBRACKET	{
+    my ($self, $GT_LBRACKET, $predicateObjectList, $GT_RBRACKET) = @_;
+    my $ret = new blankNodePropertyList($GT_LBRACKET, $predicateObjectList, $GT_RBRACKET);
+    $self->traceProduction('blankNodePropertyList', 'GT_LBRACKET', $GT_LBRACKET, 'predicateObjectList', $predicateObjectList, 'GT_RBRACKET', $GT_RBRACKET);
+    return $ret;
+};
+
+collection:
+    GT_LPAREN _Qobject_E_Star GT_RPAREN	{
+    my ($self, $GT_LPAREN, $_Qobject_E_Star, $GT_RPAREN) = @_;
+    my $ret = new collection($GT_LPAREN, $_Qobject_E_Star, $GT_RPAREN);
+    $self->traceProduction('collection', 'GT_LPAREN', $GT_LPAREN, '_Qobject_E_Star', $_Qobject_E_Star, 'GT_RPAREN', $GT_RPAREN);
+    return $ret;
+};
+
+_Qobject_E_Star:
+    {
+    my ($self, ) = @_;
+    my $ret = new _Qobject_E_Star();
+    $self->traceProduction('_Qobject_E_Star');
+    return $ret;
+}
+    | _Qobject_E_Star object	{
+    my ($self, $_Qobject_E_Star, $object) = @_;
+    my $ret = new _Qobject_E_Star($_Qobject_E_Star, $object);
+    $self->traceProduction('_Qobject_E_Star', '_Qobject_E_Star', $_Qobject_E_Star, 'object', $object);
+    return $ret;
+};
+
+NumericLiteral:
+    INTEGER	{
+    my ($self, $INTEGER) = @_;
+    my $ret = new NumericLiteral($INTEGER);
+    $self->traceProduction('NumericLiteral', 'INTEGER', $INTEGER);
+    return $ret;
+}
+    | DECIMAL	{
+    my ($self, $DECIMAL) = @_;
+    my $ret = new NumericLiteral($DECIMAL);
+    $self->traceProduction('NumericLiteral', 'DECIMAL', $DECIMAL);
+    return $ret;
+}
+    | DOUBLE	{
+    my ($self, $DOUBLE) = @_;
+    my $ret = new NumericLiteral($DOUBLE);
+    $self->traceProduction('NumericLiteral', 'DOUBLE', $DOUBLE);
+    return $ret;
+};
+
+RDFLiteral:
+    String _Q_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C_E_Opt	{
+    my ($self, $String, $_Q_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C_E_Opt) = @_;
+    my $ret = new RDFLiteral($String, $_Q_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C_E_Opt);
+    $self->traceProduction('RDFLiteral', 'String', $String, '_Q_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C_E_Opt', $_Q_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C_E_Opt);
+    return $ret;
+};
+
+_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C:
+    LANGTAG	{
+    my ($self, $LANGTAG) = @_;
+    my $ret = new _O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C($LANGTAG);
+    $self->traceProduction('_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C', 'LANGTAG', $LANGTAG);
+    return $ret;
+}
+    | GT_DTYPE iri	{
+    my ($self, $GT_DTYPE, $iri) = @_;
+    my $ret = new _O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C($GT_DTYPE, $iri);
+    $self->traceProduction('_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C', 'GT_DTYPE', $GT_DTYPE, 'iri', $iri);
+    return $ret;
+};
+
+_Q_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C_E_Opt:
+    {
+    my ($self, ) = @_;
+    my $ret = new _Q_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C_E_Opt();
+    $self->traceProduction('_Q_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C_E_Opt');
+    return $ret;
+}
+    | _O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C	{
+    my ($self, $_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C) = @_;
+    my $ret = new _Q_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C_E_Opt($_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C);
+    $self->traceProduction('_Q_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C_E_Opt', '_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C', $_O_QLANGTAG_E_Or_QGT_DTYPE_E_S_Qiri_E_C);
+    return $ret;
+};
+
+BooleanLiteral:
+    IT_true	{
+    my ($self, $IT_true) = @_;
+    my $ret = new BooleanLiteral($IT_true);
+    $self->traceProduction('BooleanLiteral', 'IT_true', $IT_true);
+    return $ret;
+}
+    | IT_false	{
+    my ($self, $IT_false) = @_;
+    my $ret = new BooleanLiteral($IT_false);
+    $self->traceProduction('BooleanLiteral', 'IT_false', $IT_false);
+    return $ret;
+};
+
+#[18]    String                ::= STRING_LITERAL_QUOTE | STRING_LITERAL_SINGLE_QUOTE | STRING_LITERAL_LONG_SINGLE_QUOTE | STRING_LITERAL_LONG_QUOTE
+
+String:
+    STRING_LITERAL1	{
+    my ($self, $STRING_LITERAL1) = @_;
+    my $ret = new String($STRING_LITERAL1);
+    $self->traceProduction('String', 'STRING_LITERAL1', $STRING_LITERAL1);
+    return $ret;
+}
+    | STRING_LITERAL2	{
+    my ($self, $STRING_LITERAL2) = @_;
+    my $ret = new String($STRING_LITERAL2);
+    $self->traceProduction('String', 'STRING_LITERAL2', $STRING_LITERAL2);
+    return $ret;
+}
+    | STRING_LITERAL_LONG1	{
+    my ($self, $STRING_LITERAL_LONG1) = @_;
+    my $ret = new String($STRING_LITERAL_LONG1);
+    $self->traceProduction('String', 'STRING_LITERAL_LONG1', $STRING_LITERAL_LONG1);
+    return $ret;
+}
+    | STRING_LITERAL_LONG2	{
+    my ($self, $STRING_LITERAL_LONG2) = @_;
+    my $ret = new String($STRING_LITERAL_LONG2);
+    $self->traceProduction('String', 'STRING_LITERAL_LONG2', $STRING_LITERAL_LONG2);
+    return $ret;
+};
+
+iri:
+    IRIREF	{
+    my ($self, $IRIREF) = @_;
+    my $ret = new iri($IRIREF);
+    $self->traceProduction('iri', 'IRIREF', $IRIREF);
+    return $ret;
+}
+    | PrefixedName	{
+    my ($self, $PrefixedName) = @_;
+    my $ret = new iri($PrefixedName);
+    $self->traceProduction('iri', 'PrefixedName', $PrefixedName);
+    return $ret;
+};
+
+PrefixedName:
+    PNAME_LN	{
+    my ($self, $PNAME_LN) = @_;
+    my $ret = new PrefixedName($PNAME_LN);
+    $self->traceProduction('PrefixedName', 'PNAME_LN', $PNAME_LN);
+    return $ret;
+}
+    | PNAME_NS	{
+    my ($self, $PNAME_NS) = @_;
+    my $ret = new PrefixedName($PNAME_NS);
+    $self->traceProduction('PrefixedName', 'PNAME_NS', $PNAME_NS);
+    return $ret;
+};
+
+BlankNode:
+    BLANK_NODE_LABEL	{
+    my ($self, $BLANK_NODE_LABEL) = @_;
+    my $ret = new BlankNode($BLANK_NODE_LABEL);
+    $self->traceProduction('BlankNode', 'BLANK_NODE_LABEL', $BLANK_NODE_LABEL);
+    return $ret;
+}
+    | ANON	{
+    my ($self, $ANON) = @_;
+    my $ret = new BlankNode($ANON);
+    $self->traceProduction('BlankNode', 'ANON', $ANON);
+    return $ret;
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ #*** END turtleAwesome - Change the grammar rules above ***
+
+%% #*** Additional Code ***
+
+my $LanguageName = 'turtleAwesome';
+# -*- Mode: cperl; coding: utf-8; cperl-indent-level: 4 -*-
+# START LexerBlock
+#
+# YappTemplate: used by yacker to create yapp input files.
+#
+# Use: yacker -l perl -s -n <name> <name>.txt
+#
+# to generate a yapp input module called turtleAwesome.yp.
+
+#line 11 "YappTemplate"
+
+# $Id: Langname_.yp,v 1.1 2008/04/08 09:34:09 eric Exp $
+
+sub _Base::new {
+    my ($proto, @args) = @_;
+    my $class = ref($proto) || $proto;
+    my $self = [];
+    foreach my $arg (@args) {
+	if (UNIVERSAL::isa($arg, $class)) {
+
+	    # Collapse nested left-recursive *, +, ? and () productions.
+	    push (@$self, @$arg);
+	} else {
+
+	    # Construct simple parse tree of production parameters.
+	    push (@$self, $arg);
+	}
+    }
+    bless ($self, $class);
+    return $self;
+}
+sub _Base::toString {
+    my ($self) = @_;
+    my @ret = map {$_->toString} @$self;
+    return wantarray ? @ret : join(' ', @ret);
+}
+sub _Base::toXML {
+    my ($self, $prefix, $decls) = @_;
+    my $class = ref $self;
+    my $declsStr = join('', map {my $p = $_ ? ":$_" : ''; "\n xmlns$p=\"$decls->{$_}\""} keys %$decls);
+    my @ret = ("$prefix<$class$declsStr>", map {ref $_ ? $_->toXML("$prefix  ", {}) : $_} @$self, "$prefix</$class>");
+    return wantarray ? @ret : join("\n", @ret);
+}
+
+@_Production::ISA = qw(_Base);
+@_GenProduction::ISA = qw(_Production);
+sub _GenProduction::toXML {
+    my ($self, $prefix) = @_;
+    return join("\n", map {$_->toXML($prefix)} @$self);
+}
+
+@_Terminal::ISA = qw(_Base);
+sub _Terminal::toString {
+    my ($self) = @_;
+    my $encodedValue = $self->[0];
+    $encodedValue =~ s/\r/\\r/g;
+    $encodedValue =~ s/\n/\\n/g;
+    $encodedValue =~ s/\t/\\t/g;
+    return $encodedValue;
+}
+sub _Terminal::toXML {
+    my ($self, $prefix) = @_;
+    my $class = ref $self;
+    my $encodedValue = $self->[0];
+    $encodedValue =~ s/&/&amp;/g;
+    $encodedValue =~ s/</&lt;/g;
+    $encodedValue =~ s/>/&gt;/g;
+    return "$prefix<$class>$encodedValue</$class>";
+}
+@_Constant::ISA = qw(_Base);
+sub _Constant::toString {
+    my ($self) = @_;
+    return ($self->[0]);
+}
+sub _Constant::toXML {
+    my ($self, $prefix) = @_;
+    my $class = ref $self;
+    $class =~ s/^[IG]T_//;
+    return "$prefix<yacker:implicit-terminal>$class</yacker:implicit-terminal>";
+}
+
+sub _Error {
+    my ($self) = @_;
+        exists $self->YYData->{ERRMSG}
+    and do {
+        print $self->YYData->{ERRMSG};
+        delete $self->YYData->{ERRMSG};
+        return;
+    };
+    my $pos = pos $self->YYData->{INPUT};
+    my $lastPos = $self->YYData->{my_LASTPOS};
+    my $excerpt = substr($self->YYData->{INPUT}, $lastPos, $pos - $lastPos);
+    my $expect = @{$self->{STACK}} ? join (' | ', sort {(!(lc $a cmp lc $b)) ? $b cmp $a : lc $a cmp lc $b} map {&_terminalString($_)} $self->YYExpect()) : 'INVALID INITIALIZER';
+    if (ref $expect) {
+	# Flag unexpected (by the author at this point) refs with '?ref'.
+	if (ref $expect eq 'HASH') {
+	    if (exists $expect->{NEXT}) {
+		$expect = $ {$expect->{NEXT}};
+	    } else {
+		$expect = "?ref {%$expect}";
+	    }
+	} elsif (ref $expect eq 'ARRAY') {
+	    $expect = "?ref [@$expect]";
+	} elsif (ref $expect eq 'SCALAR') {
+	    $expect = "?ref $$expect";
+	} elsif (ref $expect eq 'GLOB') {
+	    $expect = "?ref \**$expect";
+	} else {
+	    $expect = "?ref ??? $expect";
+	}
+    }
+    my $token = &_terminalString($self->YYData->{my_LASTTOKEN});
+    my $value = $self->YYData->{my_LASTVALUE};
+    die "expected \"$expect\", got ($token, $value) from \"$excerpt\" at offset $lastPos.\n";
+}
+
+sub _terminalString { # static
+    my ($token) = @_;
+    if ($token =~ m{^I_T_(.+)$}) {
+	$token = "'$1'";
+    } elsif ($token =~ m{^T_(.+)$}) {
+	if (my $base = $ARGV[0]) {
+	    $token = "&lt;<a href=\"$base$token\">$1</a>&gt;";
+	} else {
+	    $token = "<$1>";
+	}
+    }
+    return $token;
+}
+
+my $AtStart;
+
+sub _Lexer {
+    my($self)=shift;
+
+    my ($token, $value) = ('', undef);
+
+  top:
+    if (defined $self->YYData->{INPUT} && 
+	pos $self->YYData->{INPUT} < length ($self->YYData->{INPUT})) {
+	# still some chars left.
+    } else {
+	return ('', undef);
+    }
+
+    $self->YYData->{my_LASTPOS} = pos $self->YYData->{INPUT};
+    my $startPos = pos $self->YYData->{INPUT};
+    my ($mText, $mLen, $mI, $mLookAhead) = ('', 0, undef, undef);
+    for (my $i = 0; $i < @$Tokens; $i++) {
+	my $rule = $Tokens->[$i];
+	my ($start, $regexp, $action) = @$rule;
+	if ($start && !$AtStart) {
+	    next;
+	}
+	eval {
+	    if ($self->YYData->{INPUT} =~ m/\G($regexp)/gc) {
+		my $lookAhead = defined $2 ? length $2 : 0;
+		my $len = (pos $self->YYData->{INPUT}) - $startPos + $lookAhead;
+		if ($len > $mLen) {
+		    $mText = substr($self->YYData->{INPUT}, $startPos, $len - $lookAhead);
+		    $mLen = $len;
+		    $mI = $i;
+		    $mLookAhead = $lookAhead
+		}
+		pos $self->YYData->{INPUT} = $startPos;
+	    }
+	}; if ($@) {
+	    die "error processing $action: $@";
+	}
+    }
+    if ($mLen) {
+	my ($start, $regexp, $action) = @{$Tokens->[$mI]};
+	pos $self->YYData->{INPUT} += $mLen - $mLookAhead;
+	$AtStart = $mText =~ m/\z/gc;
+	($token, $value) = ($action, $mText);
+    } else {
+	my $excerpt = substr($self->YYData->{INPUT}, pos $self->YYData->{INPUT}, 40);
+	die "lexer couldn't parse at \"$excerpt\"\n";
+    }
+    if (!defined $token) {
+	# We just parsed whitespace or comment.
+	goto top;
+    }
+#    my $pos = pos $self->YYData->{INPUT};
+#    print "\n$pos,$token,$value\n";
+    $self->YYData->{my_LASTTOKEN} = $token;
+    $self->YYData->{my_LASTVALUE} = $value;
+    my $ret = $token->new($value);
+    my $str = $ret->toString;
+    $self->trace("shift ($token, $str)");
+    return ($token, $ret);
+}
+
+# END LexerBlock
+
+sub parse {
+    my ($self, $sample) = @_;
+    $self->YYData->{INPUT} = $sample;
+    pos $self->YYData->{INPUT} = 0;
+    return $self->YYParse( yylex => \&_Lexer, yyerror => \&_Error, yydebug => $ENV{YYDEBUG} );
+}
+
+sub openTraceFd {
+    my ($self, $fd) = @_;
+    open $self->YYData->{Trace}, '>&', $fd;
+}
+sub closeTrace {
+    my ($self, $fd) = @_;
+    close $self->YYData->{Trace};
+}
+sub trace {
+    my($self, $str) = @_;
+    if ($self->YYData->{Trace}) {
+	&utf8::encode($str);
+	print {$self->YYData->{Trace}} "$str\n";
+    }
+}
+sub traceProduction {
+    my($self, $prod, @parms) = @_;
+    if ($self->YYData->{Trace}) {
+	my $str = "  $prod:";
+	my @lines;
+	while (@parms) {
+	    my ($parmName, $parmVal) = (shift @parms, shift @parms);
+
+	    if (UNIVERSAL::isa($parmVal, '_GenProduction')) {
+
+		# Enumerate elements of *, +, ? and () productions.
+		$str .= sprintf(" %s(%d)", $parmName, scalar @$parmVal);
+		for (my $i = 0; $i < @$parmVal; $i++) {
+		    push (@lines, sprintf("    %s(%d): %s", $parmName, $i, join(' ', $parmVal->[$i]->toString)));
+		}
+	    } else {
+
+		# Display singleton properties via their toString form.
+		$str .= sprintf(" %s(%d)", $parmName, 1);
+		push (@lines, sprintf("    %s(%d): %s", $parmName, 0, join(' ', $parmVal->toString)));
+	    }
+	}
+	$str = join("\n", $str, @lines);  
+	&utf8::encode($str);
+	print {$self->YYData->{Trace}} "$str\n";
+    }
+}
+
+require Exporter;
+use vars qw ( @EXPORT );
+push (@ISA, qw ( Exporter ));
+@EXPORT = qw(&test);
+
+sub test {
+    if (@ARGV < 1) {
+	local $/ = undef;
+	&testFile(<STDIN>, $ENV{TRACE_FD});
+    } else {
+	foreach my $file (@ARGV) {
+	    open(F, $file) || die "unable to open input $file: $!\n";
+	    local $/ = undef;
+	    &testFile(<F>, $ENV{TRACE_FD});
+	    close (F);
+	}
+    }
+}
+sub testFile {
+    my ($sample, $traceFd) = @_;
+    my $parser = turtleAwesome->new();
+    &utf8::decode($sample);
+    if ($ENV{TRACE_FD}) {
+	$parser->openTraceFd($ENV{TRACE_FD});
+    }
+    eval {
+	my $root = $parser->parse($sample);
+	my $text = $root->toXML('', {
+	 '' => 'http://www.w3.org/2005/01/yacker/uploads/turtleAwesome/', 
+	 'yacker' => 'http://www.w3.org/2005/01/yacker/'});
+
+	# @@@ you may need to comment this for command line processing.
+	&utf8::encode($text);
+
+	print "$text\n";
+    };
+    my $lastError = $@;
+    if ($ENV{TRACE_FD}) {
+	$parser->closeTrace();
+    }
+    if ($lastError) {
+	die $lastError;
+    }
+}
+
+1;
+
+__END__
+
+=head1 turtleAwesome
+
+turtleAwesome - parse some language.
+
+=head1 SYNOPSIS
+
+    my ($sample) = $ARGV[0];
+    &utf8::decode($sample);
+    my $parser = new turtleAwesome();
+    my $root = $parser->parser($sample);
+    my $text = $root->toXML('', {
+	 '' => 'http://www.w3.org/2005/01/yacker/uploads/turtleAwesome/', 
+	 'yacker' => 'http://www.w3.org/2005/01/yacker/'});
+    &utf8::encode($text);
+    print "$text\n";
+
+=head1 DESCRIPTION
+
+Yacker needs to encode rule patterns in [a-zA-Z_]+ so it reserves symbols starting with '_'. This parser reverses the process.
+
+This module was generated by W3C::Grammar::bin::yacker.
+
+
+=head1 API
+
+This function supplies a single parsing function. The methods of the returned object are described below.
+
+=head2 parse($sample)
+
+Returns an array of objects parsed into the language given to yacker.
+
+=head2 returned object
+
+The returned objects are blessed subclasses of _Production. They have the following functions:
+
+=head3 toString
+
+Return a ' '-separated "normalization" of the parsed $sample.
+
+=head3 toXML
+
+Return an XML parse tree of the parsed $sample.
+
+
+=head1 TESTING/DEBUGGING
+
+    TRACE_FD=3 perl -MturtleAwesome -e test < sample.in 3> sample.trace
+or
+    TRACE_FD=3 perl -MturtleAwesome -e test sample 3> sample.trace
+
+which should return a parse tree for the given language.
+
+Setting the trace file descriptor to 1 will send the trace output to stdout.
+    TRACE_FD=1
+Leaving it unset will suppress the trace output.
+
+
+=head1 BUGS
+
+The web interface to yacker requires the results to be encoded:
+  &utf8::encode($text)
+
+Many shells do not expect this so you may need to comment it out. You
+may search for the "@@@" above to find the line in sub test.
+
+
+=head1 AUTHOR
+
+turtleAwesome author: unknown
+yacker author: Eric Prud'hommeaux <eric@w3.org>
+
+=head1 SEE ALSO
+
+W3C::Grammar::bin::yacker(1)
+
+=cut
+

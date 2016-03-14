@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -42,8 +43,8 @@ public interface SailConnection {
 		throws SailException;
 
 	/**
-	 * Closes the connection. Any updates that haven't been committed yet will be
-	 * rolled back. The connection can no longer be used once it is closed.
+	 * Closes the connection. Any updates that haven't been committed yet will
+	 * be rolled back. The connection can no longer be used once it is closed.
 	 */
 	public void close()
 		throws SailException;
@@ -60,8 +61,8 @@ public interface SailConnection {
 	 *        the Sail's default dataset.
 	 * @param bindings
 	 *        A set of input parameters for the query evaluation. The keys
-	 *        reference variable names that should be bound to the value they map
-	 *        to.
+	 *        reference variable names that should be bound to the value they
+	 *        map to.
 	 * @param includeInferred
 	 *        Indicates whether inferred triples are to be considered in the
 	 *        query result. If false, no inferred statements are returned; if
@@ -75,7 +76,7 @@ public interface SailConnection {
 	 */
 	public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred)
-		throws SailException;
+				throws SailException;
 
 	/**
 	 * Returns the set of all unique context identifiers that are used to store
@@ -97,7 +98,8 @@ public interface SailConnection {
 	 * statements that have been added explicitly.
 	 * 
 	 * @param subj
-	 *        A Resource specifying the subject, or <tt>null</tt> for a wildcard.
+	 *        A Resource specifying the subject, or <tt>null</tt> for a
+	 *        wildcard.
 	 * @param pred
 	 *        A URI specifying the predicate, or <tt>null</tt> for a wildcard.
 	 * @param obj
@@ -108,8 +110,8 @@ public interface SailConnection {
 	 * @param contexts
 	 *        The context(s) to get the data from. Note that this parameter is a
 	 *        vararg and as such is optional. If no contexts are specified the
-	 *        method operates on the entire repository. A <tt>null</tt> value can
-	 *        be used to match context-less statements.
+	 *        method operates on the entire repository. A <tt>null</tt> value
+	 *        can be used to match context-less statements.
 	 * @return The statements matching the specified pattern.
 	 * @throws SailException
 	 *         If the Sail object encountered an error or unexpected situation
@@ -119,17 +121,32 @@ public interface SailConnection {
 	 */
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts)
-		throws SailException;
+				throws SailException;
+
+	/**
+	 * @deprecated since 4.0. Use
+	 *             {@link #getStatements(Resource, IRI, Value, boolean, Resource...)}
+	 *             instead.
+	 */
+	@Deprecated
+	default CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, URI pred,
+			Value obj, boolean includeInferred, Resource... contexts)
+				throws SailException
+	{
+		return getStatements(subj, (IRI)pred, obj, includeInferred, contexts);
+	}
 
 	/**
 	 * Determines if the store contains any statements from the specified
 	 * contexts that have a specific subject, predicate and/or object. All three
-	 * parameters may be null to indicate wildcards. The <tt>includeInferred</tt>
-	 * parameter can be used to control which statements are checked: all
-	 * statements or only the statements that have been added explicitly.
+	 * parameters may be null to indicate wildcards. The
+	 * <tt>includeInferred</tt> parameter can be used to control which
+	 * statements are checked: all statements or only the statements that have
+	 * been added explicitly.
 	 * 
 	 * @param subj
-	 *        A Resource specifying the subject, or <tt>null</tt> for a wildcard.
+	 *        A Resource specifying the subject, or <tt>null</tt> for a
+	 *        wildcard.
 	 * @param pred
 	 *        An IRI specifying the predicate, or <tt>null</tt> for a wildcard.
 	 * @param obj
@@ -140,8 +157,8 @@ public interface SailConnection {
 	 * @param contexts
 	 *        The context(s) to get the data from. Note that this parameter is a
 	 *        vararg and as such is optional. If no contexts are specified the
-	 *        method operates on the entire repository. A <tt>null</tt> value can
-	 *        be used to match context-less statements.
+	 *        method operates on the entire repository. A <tt>null</tt> value
+	 *        can be used to match context-less statements.
 	 * @return <code>true</code> iff the store contains any statements matching
 	 *         the supplied criteria, <code>false</code> otherwise.
 	 * @throws SailException
@@ -153,9 +170,10 @@ public interface SailConnection {
 	 */
 	default boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts)
-		throws SailException
+				throws SailException
 	{
-		CloseableIteration<? extends Statement, SailException> stIter = getStatements(subj, pred, obj, includeInferred, contexts);
+		CloseableIteration<? extends Statement, SailException> stIter = getStatements(subj, pred, obj,
+				includeInferred, contexts);
 		try {
 			return stIter.hasNext();
 		}
@@ -171,8 +189,8 @@ public interface SailConnection {
 	 * @param contexts
 	 *        The context(s) to determine the size of. Note that this parameter
 	 *        is a vararg and as such is optional. If no contexts are specified
-	 *        the method operates on the entire repository. A <tt>null</tt> value
-	 *        can be used to match context-less statements.
+	 *        the method operates on the entire repository. A <tt>null</tt>
+	 *        value can be used to match context-less statements.
 	 * @return The number of explicit statements in this store, or in the
 	 *         specified context(s).
 	 * @throws IllegalStateException
@@ -182,9 +200,9 @@ public interface SailConnection {
 		throws SailException;
 
 	/**
-	 * Begins a transaction requiring {@link #commit()} or {@link #rollback()} to
-	 * be called to close the transaction. The transaction will use the default
-	 * {@link IsolationLevel} level for the SAIL, as returned by
+	 * Begins a transaction requiring {@link #commit()} or {@link #rollback()}
+	 * to be called to close the transaction. The transaction will use the
+	 * default {@link IsolationLevel} level for the SAIL, as returned by
 	 * {@link Sail#getDefaultIsolationLevel()}.
 	 * 
 	 * @since 2.7.0
@@ -201,7 +219,8 @@ public interface SailConnection {
 	 * the transaction.
 	 * 
 	 * @param level
-	 *        the transaction isolation level on which this transaction operates.
+	 *        the transaction isolation level on which this transaction
+	 *        operates.
 	 * @since 2.8.0
 	 * @throws UnknownSailTransactionStateException
 	 *         If the IsolationLevel is not supported by this implementation
@@ -216,8 +235,8 @@ public interface SailConnection {
 	/**
 	 * Flushes any pending updates and notify changes to listeners as
 	 * appropriate. This is an optional call; calling or not calling this method
-	 * should have no effect on the outcome of other calls. This method exists to
-	 * give the caller more control over the efficiency when calling
+	 * should have no effect on the outcome of other calls. This method exists
+	 * to give the caller more control over the efficiency when calling
 	 * {@link #prepare()}. This method may be called multiple times within the
 	 * same transaction.
 	 * 
@@ -247,14 +266,14 @@ public interface SailConnection {
 	 * @since 2.7.0
 	 * @throws UnknownSailTransactionStateException
 	 *         If the transaction state can not be determined (this can happen
-	 *         for instance when communication between client and server fails or
-	 *         times-out). It does not indicate a problem with the integrity of
-	 *         the store.
+	 *         for instance when communication between client and server fails
+	 *         or times-out). It does not indicate a problem with the integrity
+	 *         of the store.
 	 * @throws SailException
 	 *         If there is an active transaction and it cannot be committed.
 	 * @throws IllegalStateException
-	 *         If the connection has been closed or prepare was already called by
-	 *         another thread.
+	 *         If the connection has been closed or prepare was already called
+	 *         by another thread.
 	 */
 	public void prepare()
 		throws SailException;
@@ -265,9 +284,9 @@ public interface SailConnection {
 	 * 
 	 * @throws UnknownSailTransactionStateException
 	 *         If the transaction state can not be determined (this can happen
-	 *         for instance when communication between client and server fails or
-	 *         times-out). It does not indicate a problem with the integrity of
-	 *         the store.
+	 *         for instance when communication between client and server fails
+	 *         or times-out). It does not indicate a problem with the integrity
+	 *         of the store.
 	 * @throws SailException
 	 *         If the SailConnection could not be committed.
 	 * @throws IllegalStateException
@@ -282,9 +301,9 @@ public interface SailConnection {
 	 * 
 	 * @throws UnknownSailTransactionStateException
 	 *         If the transaction state can not be determined (this can happen
-	 *         for instance when communication between client and server fails or
-	 *         times-out). It does not indicate a problem with the integrity of
-	 *         the store.
+	 *         for instance when communication between client and server fails
+	 *         or times-out). It does not indicate a problem with the integrity
+	 *         of the store.
 	 * @throws SailException
 	 *         If the SailConnection could not be rolled back.
 	 * @throws IllegalStateException
@@ -303,8 +322,8 @@ public interface SailConnection {
 	 *         iff no transaction is active.
 	 * @throws UnknownSailTransactionStateException
 	 *         if the transaction state can not be determined (this can happen
-	 *         for instance when communication between client and server fails or
-	 *         times out).
+	 *         for instance when communication between client and server fails
+	 *         or times out).
 	 */
 	public boolean isActive()
 		throws UnknownSailTransactionStateException;
@@ -319,9 +338,9 @@ public interface SailConnection {
 	 * @param obj
 	 *        The object of the statement to add.
 	 * @param contexts
-	 *        The context(s) to add the statement to. Note that this parameter is
-	 *        a vararg and as such is optional. If no contexts are specified, a
-	 *        context-less statement will be added.
+	 *        The context(s) to add the statement to. Note that this parameter
+	 *        is a vararg and as such is optional. If no contexts are specified,
+	 *        a context-less statement will be added.
 	 * @throws SailException
 	 *         If the statement could not be added, for example because no
 	 *         transaction is active.
@@ -330,6 +349,18 @@ public interface SailConnection {
 	 */
 	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException;
+
+	/**
+	 * @deprecated since 4.0. Use
+	 *             {@link #addStatement(Resource, IRI, Value, Resource...)}
+	 *             instead.
+	 */
+	@Deprecated
+	default void addStatement(Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException
+	{
+		addStatement(subj, (IRI)pred, obj, contexts);
+	}
 
 	/**
 	 * Removes all statements matching the specified subject, predicate and
@@ -360,9 +391,21 @@ public interface SailConnection {
 		throws SailException;
 
 	/**
+	 * @deprecated since 4.0. Use
+	 *             {@link #removeStatements(Resource, IRI, Value, Resource...)}
+	 *             instead.
+	 */
+	default void removeStatements(Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException
+	{
+		removeStatements(subj, (IRI)pred, obj, contexts);
+	}
+
+	/**
 	 * Signals the start of an update operation. The given <code>op</code> maybe
 	 * passed to subsequent
-	 * {@link #addStatement(UpdateContext, Resource, IRI, Value, Resource...)} or
+	 * {@link #addStatement(UpdateContext, Resource, IRI, Value, Resource...)}
+	 * or
 	 * {@link #removeStatement(UpdateContext, Resource, IRI, Value, Resource...)}
 	 * calls before {@link #endUpdate(UpdateContext)} is called.
 	 * 
@@ -385,9 +428,9 @@ public interface SailConnection {
 	 * @param obj
 	 *        The object of the statement to add.
 	 * @param contexts
-	 *        The context(s) to add the statement to. Note that this parameter is
-	 *        a vararg and as such is optional. If no contexts are specified, a
-	 *        context-less statement will be added.
+	 *        The context(s) to add the statement to. Note that this parameter
+	 *        is a vararg and as such is optional. If no contexts are specified,
+	 *        a context-less statement will be added.
 	 * @throws SailException
 	 *         If the statement could not be added, for example because no
 	 *         transaction is active.
@@ -396,6 +439,18 @@ public interface SailConnection {
 	 */
 	public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException;
+
+	/**
+	 * @deprecated since 4.0. Use
+	 *             {@link #addStatement(UpdateContext, Resource, IRI, Value, Resource...)}
+	 *             instead.
+	 */
+	@Deprecated
+	default void addStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException
+	{
+		addStatement(op, subj, (IRI)pred, obj, contexts);
+	}
 
 	/**
 	 * Removes all statements matching the specified subject, predicate and
@@ -427,9 +482,21 @@ public interface SailConnection {
 		throws SailException;
 
 	/**
+	 * @deprecated since 4.0. USe
+	 *             {@link #removeStatement(UpdateContext, Resource, IRI, Value, Resource...)}
+	 *             instead.
+	 */
+	@Deprecated
+	default void removeStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException
+	{
+		removeStatement(op, subj, (IRI)pred, obj, contexts);
+	}
+
+	/**
 	 * Indicates that the given <code>op</code> will not be used in any call
-	 * again. Implementations should use this to flush of any temporary operation
-	 * states that may have occurred.
+	 * again. Implementations should use this to flush of any temporary
+	 * operation states that may have occurred.
 	 * 
 	 * @param op
 	 * @throws SailException
@@ -438,8 +505,8 @@ public interface SailConnection {
 		throws SailException;
 
 	/**
-	 * Removes all statements from the specified/all contexts. If no contexts are
-	 * specified the method operates on the entire repository.
+	 * Removes all statements from the specified/all contexts. If no contexts
+	 * are specified the method operates on the entire repository.
 	 * 
 	 * @param contexts
 	 *        The context(s) from which to remove the statements. Note that this
