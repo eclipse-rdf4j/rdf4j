@@ -236,18 +236,6 @@
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>sesame-sail-spin</artifactId>
-			<version>${project.version}</version>
-			<scope>runtime</scope>
-		</dependency>
-						<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>sesame-sail-spin</artifactId>
-			<version>${project.version}</version>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-sail-spin</artifactId>
 			<version>${project.version}</version>
 			<scope>runtime</scope>
