@@ -1,0 +1,112 @@
+# name				TABs		path (intepreted as if it were in perl ""s)	TABs	example
+
+# IRI
+IRI subject								//triples/subject//IRIREF							<http://a.example/s> <http://a.example/p> <http://a.example/o> .			<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+IRI predicate								//triples//predicate//IRIREF							<http://a.example/s> <http://a.example/p> <http://a.example/o> .			<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+IRI object								//triples//object//IRIREF							<http://a.example/s> <http://a.example/p> <http://a.example/o> .			<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+IRI with four digit numeric escape (\u)					//IRIREF[contains(text(), '\\u')]						<http://a.example/\\u0073> <http://a.example/p> <http://a.example/o> .			<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+IRI with eight digit numeric escape (\U)				//IRIREF[contains(text(), '\\U')]						<http://a.example/\\U00000073> <http://a.example/p> <http://a.example/o> .		<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+IRI with all punctuation						//IRIREF[contains(text(), '!') and contains(text(), '$') and contains(text(), '%') and contains(text(), '&') and contains(text(), \"'\") and contains(text(), '(') and contains(text(), ')') and contains(text(), '*') and contains(text(), '+') and contains(text(), ',') and contains(text(), '-') and contains(text(), '@') and contains(text(), '~') and contains(text(), '?')]	<scheme:!$%25&amp;'()*+,-./0123456789:/@ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz~?\#> <http://a.example/p> <http://a.example/o> .		<scheme:!$%25&amp;'()*+,-./0123456789:/@ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz~?\#> <http://a.example/p> <http://a.example/o> .
+bareword a predicate							//RDF_TYPE									<http://a.example/s> a <http://a.example/o> .						<http://a.example/s> <http://www.w3.org/1999/02/22-rdf-syntax-ns\#type> <http://a.example/o> .
+
+# Prefix
+old-style prefix							//prefixID									@prefix p: <http://a.example/>.\np:s <http://a.example/p> <http://a.example/o> .	<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+SPARQL-style prefix							//sparqlPrefix									PREFIX p: <http://a.example/>\np:s <http://a.example/p> <http://a.example/o> .		<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+no prefix								/turtleDoc[not(statement/directive/prefixID) and not(statement/directive/sparqlPrefix)]	<http://a.example/s> <http://a.example/p> <http://a.example/o> .		<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+prefixed IRI subject							//triples/subject//PrefixedName							@prefix p: <http://a.example/>.\np:s <http://a.example/p> <http://a.example/o> .	<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+prefixed IRI predicate							//triples//predicate//PrefixedName						@prefix p: <http://a.example/>.\n<http://a.example/s> p:p <http://a.example/o> .	<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+prefixed IRI object							//triples//object//PrefixedName							@prefix p: <http://a.example/>.\n<http://a.example/s> <http://a.example/p> p:o .	<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+prefix-only IRI (p:)							//triples//PrefixedName/PNAME_NS						@prefix p: <http://a.example/s>.\np: <http://a.example/p> <http://a.example/o> .	<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+default namespace IRI (:ln)						//triples//PrefixedName/PNAME_LN[substring-after(text(), ':')]			@prefix : <http://a.example/>.\n:s <http://a.example/p> <http://a.example/o> .		<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+prefix and localname IRI (p:ln)						//triples//PrefixedName/PNAME_LN[substring-before(text(), ':')]			@prefix p: <http://a.example/>.\np:s <http://a.example/p> <http://a.example/o> .	<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+prefix reassigned and used						//statement[//PNAME_NS/text() = following-sibling::statement//PNAME_NS/text() and contains(following-sibling::statement/triples//PNAME_LN/text(), //PNAME_NS/text())]	@prefix p: <http://a.example/>.\n@prefix p: <http://b.example/>.\np:s <http://a.example/p> <http://a.example/o> .	<http://b.example/s> <http://a.example/p> <http://a.example/o> .
+reserved-escaped local name						//triples//PNAME_LN[contains(text(), '\\')]					@prefix p: <http://a.example/>.\np:\\%00 <http://a.example/p> <http://a.example/o> .	<http://a.example/%00> <http://a.example/p> <http://a.example/o> .
+percent-escaped local name						//triples//PNAME_LN[contains(text(), '%')]					@prefix p: <http://a.example/>.\np:%25 <http://a.example/p> <http://a.example/o> .	<http://a.example/%25> <http://a.example/p> <http://a.example/o> .
+HYPHEN-MINUS in local name						//triples//PNAME_LN[contains(text(), '-')]					@prefix p: <http://a.example/>.\np:s- <http://a.example/p> <http://a.example/o> .	<http://a.example/s-> <http://a.example/p> <http://a.example/o> .
+underscore in local name						//triples//PNAME_LN[contains(text(), '_')]					@prefix p: <http://a.example/>.\np:s_ <http://a.example/p> <http://a.example/o> .	<http://a.example/s_> <http://a.example/p> <http://a.example/o> .
+localname with COLON							//triples//PNAME_LN[contains(substring(text(), 2, string-length(text())-1), ':')]	@prefix p: <http://a.example/>.\np:s: <http://a.example/p> <http://a.example/o> .	<http://a.example/s:> <http://a.example/p> <http://a.example/o> .
+
+# Base
+old-style base								//base										@base <http://a.example/>.\n<s> <http://a.example/p> <http://a.example/o> .		<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+SPARQL-style base							//sparqlBase									BASE <http://a.example/>\n<s> <http://a.example/p> <http://a.example/o> .		<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+no base									/turtleDoc[not(statement/directive/base) and not(statement/directive/sparqlBase)]	<http://a.example/s> <http://a.example/p> <http://a.example/o> .		<http://a.example/s> <http://a.example/p> <http://a.example/o> .
+
+# blank node
+labeled blank node subject						//triples/subject//BLANK_NODE_LABEL						_:s <http://a.example/p> <http://a.example/o> .						_:b1 <http://a.example/p> <http://a.example/o> .
+labeled blank node object						//triples//object//BLANK_NODE_LABEL						<http://a.example/s> <http://a.example/p> _:o .						<http://a.example/s> <http://a.example/p> _:b1 .
+anonymous blank node subject						//triples/subject//ANON								[] <http://a.example/p> <http://a.example/o> .						_:b1 <http://a.example/p> <http://a.example/o> .
+anonymous blank node object						//triples//object//ANON								<http://a.example/s> <http://a.example/p> [] .						<http://a.example/s> <http://a.example/p> _:b1 .
+sole blankNodePropertyList [ <p> <o> ] .				//blankNodePropertyList[not(following-sibling::*[1])]				[ <http://a.example/p> <http://a.example/o> ] .						_:b1 <http://a.example/p> <http://a.example/o> .
+blankNodePropertyList as subject [ … ] <p> <o> .			//blankNodePropertyList[following-sibling::*[1]]				[ <http://a.example/p> <http://a.example/o> ] <http://a.example/p2> <http://a.example/o2> .	_:b1 <http://a.example/p> <http://a.example/o>.\n_:b1 <http://a.example/p2> <http://a.example/o2> .
+blankNodePropertyList as object <s> <p> [ … ] .				//triples//object/blankNodePropertyList						<http://a.example/s> <http://a.example/p> [ <http://a.example/p2> <http://a.example/o2> ] .	<http://a.example/s> <http://a.example/p> _:b1 .\n_:b1 <http://a.example/p2> <http://a.example/o2> .
+blankNodePropertyList with sole triple [ <s> <p> ]			//triples/blankNodePropertyList/predicateObjectList[verb[1] and not(verb[2])]	[ <http://a.example/p> <http://a.example/o> ] .						_:b1 <http://a.example/p> <http://a.example/o> .
+blankNodePropertyList with multiple triples [ <s> <p> ; <s2> <p2> ]	//triples/blankNodePropertyList/predicateObjectList[verb[2]]			[ <http://a.example/p1> <http://a.example/o1> ; <http://a.example/p2> <http://a.example/o2> ] <http://a.example/p> <http://a.example/o> .				_:b1 <http://a.example/p1> <http://a.example/o1> .\n_:b1 <http://a.example/p2> <http://a.example/o2>\n._:b1 <http://a.example/p> <http://a.example/o> .
+nested blankNodePropertyLists [ <p1> [ <p2> <o2> ] ; <p3> <o3> ]	//triples/blankNodePropertyList/predicateObjectList/objectList[object/blankNodePropertyList and following-sibling::verb]	[ <http://a.example/p1> [ <http://a.example/p2> <http://a.example/o2> ] ; <http://a.example/p> <http://a.example/o> ].	_:b1 <http://a.example/p1> _:b2 .\n_:b2 <http://a.example/p2> <http://a.example/o2> .\n_:b1 <http://a.example/p> <http://a.example/o> .
+blankNodePropertyList containing collection [ <p1> ( … ) ]		//triples/blankNodePropertyList//collection					[ <http://a.example/p1> (1) ] .			_:b1 <http://a.example/p1> _:el1 .\n_:el1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#first> \"1\"^^<http://www.w3.org/2001/XMLSchema\#integer> .\n_:el1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns\#nil> .
+
+# collection
+collection subject							//triples/subject/collection							(1) <http://a.example/p> <http://a.example/o> .				_:el1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#first> \"1\"^^<http://www.w3.org/2001/XMLSchema\#integer> .\n_:el1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns\#nil> .\n_:el1 <http://a.example/p> <http://a.example/o> .
+collection object							//triples//object/collection							<http://a.example/s> <http://a.example/p> (1) .				<http://a.example/s> <http://a.example/p> _:el1 .\n_:el1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#first> \"1\"^^<http://www.w3.org/2001/XMLSchema\#integer> .\n_:el1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns\#nil> .
+empty collection ()							//triples//collection[not(object)]						<http://a.example/s> <http://a.example/p> () .				<http://a.example/s> <http://a.example/p> <http://www.w3.org/1999/02/22-rdf-syntax-ns\#nil> .
+non-empty collection (1)						//triples//collection[object]							<http://a.example/s> <http://a.example/p> (1) .				<http://a.example/s> <http://a.example/p> _:el1 .\n_:el1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#first> \"1\"^^<http://www.w3.org/2001/XMLSchema\#integer> .\n_:el1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns\#nil> .
+nested collection (())							//triples//collection//collection						<http://a.example/s> <http://a.example/p> ((1)) .			<http://a.example/s> <http://a.example/p> _:outerEl1 .\n_:outerEl1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#first> _:innerEl1 .\n_:innerEl1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#first> \"1\"^^<http://www.w3.org/2001/XMLSchema\#integer> .\n_:innerEl1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns\#nil> .\n_:outerEl1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns\#nil> .
+first, not last, non-empty nested collection				//triples//collection[object[1]/collection//object and not(object[last()]/collection)]		<http://a.example/s> <http://a.example/p> ((1) 2) .	<http://a.example/s> <http://a.example/p> _:outerEl1 .\n_:outerEl1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#first> _:innerEl1 .\n_:innerEl1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#first> \"1\"^^<http://www.w3.org/2001/XMLSchema\#integer> .\n_:innerEl1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns\#nil> .\n_:outerEl1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#rest> _:outerEl2 .\n_:outerEl2 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#first> \"2\"^^<http://www.w3.org/2001/XMLSchema\#integer> .\n_:outerEl2 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns\#nil> .
+last, not first, non-empty nested collection				//triples//collection[not(object[1]/collection//object) and object[last()]/collection//object]	<http://a.example/s> <http://a.example/p> (1 (2)) .	<http://a.example/s> <http://a.example/p> _:outerEl1 .\n_:outerEl1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#first> \"1\"^^<http://www.w3.org/2001/XMLSchema\#integer> .\n_:outerEl1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#rest> _:outerEl2 .\n_:outerEl2 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#first> _:innerEl1 .\n_:innerEl1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#first> \"2\"^^<http://www.w3.org/2001/XMLSchema\#integer> .\n_:innerEl1 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns\#nil> .\n_:outerEl2 <http://www.w3.org/1999/02/22-rdf-syntax-ns\#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns\#nil> .
+
+# literal
+LITERAL1 'x'								//triples//STRING_LITERAL1										<http://a.example/s> <http://a.example/p> 'x' .			<http://a.example/s> <http://a.example/p> \"x\" .
+LITERAL_LONG1 '''x'''							//triples//STRING_LITERAL_LONG1										<http://a.example/s> <http://a.example/p> '''x''' .		<http://a.example/s> <http://a.example/p> \"x\" .
+LITERAL_LONG1 with 1 squote '''a'b'''					//triples//STRING_LITERAL_LONG1[contains(substring(text(), 4, string-length(text())-6), \"'\")]		<http://a.example/s> <http://a.example/p> '''x'y''' .		<http://a.example/s> <http://a.example/p> \"x'y\" .
+LITERAL_LONG1 with 2 squotes '''a''b'''					//triples//STRING_LITERAL_LONG1[contains(substring(text(), 4, string-length(text())-6), \"''\")]	<http://a.example/s> <http://a.example/p> '''x''y''' .		<http://a.example/s> <http://a.example/p> \"x''y\" .
+LITERAL2 "x"								//triples//STRING_LITERAL2										<http://a.example/s> <http://a.example/p> \"x\" .		<http://a.example/s> <http://a.example/p> \"x\" .
+LITERAL_LONG2 """x"""							//triples//STRING_LITERAL_LONG2										<http://a.example/s> <http://a.example/p> \"\"\"x\"\"\" .	<http://a.example/s> <http://a.example/p> \"x\" .
+LITERAL_LONG2 with 1 squote """a"b"""					//triples//STRING_LITERAL_LONG2[contains(substring(text(), 4, string-length(text())-6), '\"')]		<http://a.example/s> <http://a.example/p> \"\"\"x\"y\"\"\" .	<http://a.example/s> <http://a.example/p> \"x\\\"y\" .
+LITERAL_LONG2 with 2 squotes """a""b"""					//triples//STRING_LITERAL_LONG2[contains(substring(text(), 4, string-length(text())-6), '\"\"')]	<http://a.example/s> <http://a.example/p> \"\"\"x\"\"y\"\"\" .	<http://a.example/s> <http://a.example/p> \"x\\\"\\\"y\" .
+
+# ECHAR: tbnrf\"'
+literal with CHARACTER TABULATION					//String/*[contains(text(), '回09')]						<http://a.example/s> <http://a.example/p> '\t' .			<http://a.example/s> <http://a.example/p> \"\\t\" .
+literal with BACKSPACE							//String/*[contains(text(), '回08')]						<http://a.example/s> <http://a.example/p> '\b' .			<http://a.example/s> <http://a.example/p> \"\\u0008\" .
+literal with LINE FEED							//String/*[contains(text(), '\n')]						<http://a.example/s> <http://a.example/p> '''\n''' .			<http://a.example/s> <http://a.example/p> \"\\n\" .
+literal with CARRIAGE RETURN						//String/*[contains(text(), '回0d')]						<http://a.example/s> <http://a.example/p> '''\r''' .			<http://a.example/s> <http://a.example/p> \"\\r\" .
+literal with FORM FEED							//String/*[contains(text(), '回0c')]						<http://a.example/s> <http://a.example/p> '\f' .			<http://a.example/s> <http://a.example/p> \"\\u000C\" .
+literal with REVERSE SOLIDUS						//String/*[contains(text(), '\\')]						<http://a.example/s> <http://a.example/p> '\\\\' .			<http://a.example/s> <http://a.example/p> \"\\\\\" .
+literal with escaped CHARACTER TABULATION				//String/*[contains(text(), '\\t')]						<http://a.example/s> <http://a.example/p> '\\t' .			<http://a.example/s> <http://a.example/p> \"\\t\" .
+literal with escaped BACKSPACE						//String/*[contains(text(), '\\b')]						<http://a.example/s> <http://a.example/p> '\\b' .			<http://a.example/s> <http://a.example/p> \"\\u0008\" .
+literal with escaped LINE FEED						//String/*[contains(text(), '\\n')]						<http://a.example/s> <http://a.example/p> '\\n' .			<http://a.example/s> <http://a.example/p> \"\\n\" .
+literal with escaped CARRIAGE RETURN					//String/*[contains(text(), '\\r')]						<http://a.example/s> <http://a.example/p> '\\r' .			<http://a.example/s> <http://a.example/p> \"\\r\" .
+literal with escaped FORM FEED						//String/*[contains(text(), '\\f')]						<http://a.example/s> <http://a.example/p> '\\f' .			<http://a.example/s> <http://a.example/p> \"\\u000C\" .
+literal with escaped REVERSE SOLIDUS					//String/*[contains(text(), '\\\\')]						<http://a.example/s> <http://a.example/p> '\\\\' .			<http://a.example/s> <http://a.example/p> \"\\\\\" .
+# UCHAR: \uxxxx \Uxxxxxxxx
+literal with numeric escape4 \u						//String/*[contains(text(), '\\u')]						<http://a.example/s> <http://a.example/p> '\\u006F' .			<http://a.example/s> <http://a.example/p> \"o\" .
+literal with numeric escape8 \U						//String/*[contains(text(), '\\U')]						<http://a.example/s> <http://a.example/p> '\\U0000006F' .		<http://a.example/s> <http://a.example/p> \"o\" .
+
+# datatypes
+IRIREF datatype ""^^<t>							//RDFLiteral/iri/IRIREF								<http://a.example/s> <http://a.example/p> \"1\"^^<http://www.w3.org/2001/XMLSchema\#integer> .				<http://a.example/s> <http://a.example/p> \"1\"^^<http://www.w3.org/2001/XMLSchema\#integer> .
+prefixed name datatype ""^^p:t						//RDFLiteral/iri/PrefixedName							@prefix xsd: <http://www.w3.org/2001/XMLSchema\#> .\n<http://a.example/s> <http://a.example/p> \"1\"^^xsd:integer .	<http://a.example/s> <http://a.example/p> \"1\"^^<http://www.w3.org/2001/XMLSchema\#integer> .
+
+# bareword literals
+bareword integer									//triples//INTEGER								<http://a.example/s> <http://a.example/p> 1 .			<http://a.example/s> <http://a.example/p> \"1\"^^<http://www.w3.org/2001/XMLSchema\#integer> .
+bareword decimal									//triples//DECIMAL								<http://a.example/s> <http://a.example/p> 1.0 .			<http://a.example/s> <http://a.example/p> \"1.0\"^^<http://www.w3.org/2001/XMLSchema\#decimal> .
+bareword double									//triples//DOUBLE								<http://a.example/s> <http://a.example/p> 1E0 .			<http://a.example/s> <http://a.example/p> \"1E0\"^^<http://www.w3.org/2001/XMLSchema\#double> .
+double upper case E							//triples//DOUBLE[contains(text(), 'E')]					<http://a.example/s> <http://a.example/p> 1E0 .			<http://a.example/s> <http://a.example/p> \"1E0\"^^<http://www.w3.org/2001/XMLSchema\#double> .
+double lower case e							//triples//DOUBLE[contains(text(), 'e')]					<http://a.example/s> <http://a.example/p> 1e0 .			<http://a.example/s> <http://a.example/p> \"1e0\"^^<http://www.w3.org/2001/XMLSchema\#double> .
+negative numeric							//triples//NumericLiteral/*[contains(text(), '-')]				<http://a.example/s> <http://a.example/p> -1 .			<http://a.example/s> <http://a.example/p> \"-1\"^^<http://www.w3.org/2001/XMLSchema\#integer> .
+positive numeric							//triples//NumericLiteral/*[contains(text(), '+')]				<http://a.example/s> <http://a.example/p> +1 .			<http://a.example/s> <http://a.example/p> \"+1\"^^<http://www.w3.org/2001/XMLSchema\#integer> .
+numeric with leading 0							//triples//NumericLiteral/*[substring(text(), 1, 1)='0']			<http://a.example/s> <http://a.example/p> 01 .			<http://a.example/s> <http://a.example/p> \"01\"^^<http://www.w3.org/2001/XMLSchema\#integer> .
+literal true								//triples//BooleanLiteral/*[text()='true']					<http://a.example/s> <http://a.example/p> true .		<http://a.example/s> <http://a.example/p> \"true\"^^<http://www.w3.org/2001/XMLSchema\#boolean> .
+literal false								//triples//BooleanLiteral/*[text()='false']					<http://a.example/s> <http://a.example/p> false .		<http://a.example/s> <http://a.example/p> \"false\"^^<http://www.w3.org/2001/XMLSchema\#boolean> .
+
+# language tag
+langtagged non-LONG "x"@en						//RDFLiteral[String/*[not(contains(name(), 'LONG'))] and LANGTAG]		<http://a.example/s> <http://a.example/p> \"chat\"@en .		<http://a.example/s> <http://a.example/p> \"chat\"@en .
+langtagged LONG """x"""@en						//RDFLiteral[String/*[contains(name(), 'LONG')] and LANGTAG]			<http://a.example/s> <http://a.example/p> \"\"\"chat\"\"\"@en .	<http://a.example/s> <http://a.example/p> \"chat\"@en .
+lantag with subtag "x"@en-us						//RDFLiteral/LANGTAG[contains(text(), '-')]					<http://a.example/s> <http://a.example/p> \"chat\"@en-us .	<http://a.example/s> <http://a.example/p> \"chat\"@en-us .
+
+# comma and semicolon structures
+objectList with two objects … <o1>,<o2>					//predicateObjectList[objectList/object[2]]													<http://a.example/s> <http://a.example/p> <http://a.example/o1>, <http://a.example/o2> .				<http://a.example/s> <http://a.example/p> <http://a.example/o1> .\n<http://a.example/s> <http://a.example/p> <http://a.example/o2> .
+predicateObjectList with two objectLists … <o1>,<o2>			//predicateObjectList[objectList[2]]														<http://a.example/s> <http://a.example/p1> <http://a.example/o1>; <http://a.example/p2> <http://a.example/o2> .		<http://a.example/s> <http://a.example/p1> <http://a.example/o1> .\n<http://a.example/s> <http://a.example/p2> <http://a.example/o2> .
+repeated semis at end <s> <p> <o> ;; <p2> <o2> .			//predicateObjectList//implicit-terminal[text()=\"SEMI\" and following-sibling::*[1][text()=\"SEMI\" and following-sibling::verb]]		<http://a.example/s> <http://a.example/p1> <http://a.example/o1>;; <http://a.example/p2> <http://a.example/o2> .	<http://a.example/s> <http://a.example/p1> <http://a.example/o1> .\n<http://a.example/s> <http://a.example/p2> <http://a.example/o2> .
+repeated semis not at end <s> <p> <o> ;;.				//predicateObjectList//implicit-terminal[text()=\"SEMI\" and following-sibling::*[1][text()=\"SEMI\" and not(following-sibling::verb)]]		<http://a.example/s> <http://a.example/p1> <http://a.example/o1>;; .							<http://a.example/s> <http://a.example/p1> <http://a.example/o1> .
+
+# junk
+#predicateObjectList, exactly two objectLists	//predicateObjectList[objectList[2] and not(objectList[3])]
+
