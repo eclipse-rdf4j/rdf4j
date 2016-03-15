@@ -42,7 +42,7 @@ public class ManifestTest {
 
 	static final Logger logger = LoggerFactory.getLogger(ManifestTest.class);
 
-	private static final boolean REMOTE = false;
+	private static final boolean REMOTE = true;
 
 	public static TestSuite suite(SPARQLQueryTest.Factory factory)
 		throws Exception
