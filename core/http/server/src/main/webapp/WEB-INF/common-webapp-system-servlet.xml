@@ -21,8 +21,8 @@
 	<bean id="commonWebappNavigation" class="org.eclipse.rdf4j.common.webapp.navigation.NavigationModel">
 		<property name="navigationModels">
 			<list>
-				<value>/org/eclipse/rdf4j/webapp/system/navigation.xml</value>
-				<value>/org/eclipse/rdf4j/webapp/navigation.xml</value>
+				<value>/org/eclipse/rdf4j/common/webapp/system/navigation.xml</value>
+				<value>/org/eclipse/rdf4j/common/webapp/navigation.xml</value>
 			</list>
 		</property>
 	</bean>
