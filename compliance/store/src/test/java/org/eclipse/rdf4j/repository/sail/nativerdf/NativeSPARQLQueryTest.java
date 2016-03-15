@@ -12,7 +12,7 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.ManifestTest;
+import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11ManifestTest;
 import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQLQueryTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
@@ -26,30 +26,42 @@ public class NativeSPARQLQueryTest extends SPARQLQueryTest {
 	public static Test suite()
 		throws Exception
 	{
-		return ManifestTest.suite(new Factory() {
+		return SPARQL11ManifestTest.suite(new Factory() {
 
-			public NativeSPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
-					String resultFileURL, Dataset dataSet, boolean laxCardinality)
+			public NativeSPARQLQueryTest createSPARQLQueryTest(String testURI, String name,
+					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality)
 			{
 				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
 						laxCardinality, false);
 			}
-			
-			public NativeSPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
-					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder)
+
+			public NativeSPARQLQueryTest createSPARQLQueryTest(String testURI, String name,
+					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality,
+					boolean checkOrder)
 			{
+				String[] ignoredTests = {
+						// test case incompatible with RDF 1.1 - see
+						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
+						"STRDT   TypeErrors",
+						// test case incompatible with RDF 1.1 - see
+						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
+						"STRLANG   TypeErrors",
+						// known issue: SES-937
+						"sq03 - Subquery within graph pattern, graph variable is not bound" };
 				return new NativeSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
-						laxCardinality, checkOrder);
+						laxCardinality, checkOrder, ignoredTests);
 			}
-		});
+			// skip 'service' tests because it requires the test rig to start up
+			// a remote endpoint
+		}, true, true, false, "service");
 	}
 
 	private File dataDir;
 
 	protected NativeSPARQLQueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
-			Dataset dataSet, boolean laxCardinality, boolean checkOrder)
+			Dataset dataSet, boolean laxCardinality, boolean checkOrder, String[] ignoredTests)
 	{
-		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder);
+		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
 
 	@Override

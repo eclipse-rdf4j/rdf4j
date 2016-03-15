@@ -262,7 +262,7 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 
 		logger.debug("Loading manifest data");
 		URL manifest = new URL(manifestFile);
-		ManifestTest.addTurtle(con, manifest, manifestFile);
+		SPARQL11ManifestTest.addTurtle(con, manifest, manifestFile);
 
 		logger.info("Searching for sub-manifests");
 		List<String> subManifestList = new ArrayList<String>();
@@ -281,7 +281,7 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 			con.clear();
 
 			URL subManifestURL = new URL(subManifest);
-			ManifestTest.addTurtle(con, subManifestURL, subManifest);
+			SPARQL11ManifestTest.addTurtle(con, subManifestURL, subManifest);
 
 			TestSuite subSuite = new TestSuite(subManifest.substring(host.length()));
 
