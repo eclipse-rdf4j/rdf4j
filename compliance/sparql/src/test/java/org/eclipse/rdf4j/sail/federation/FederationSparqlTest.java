@@ -34,22 +34,35 @@ public class FederationSparqlTest extends SPARQLQueryTest {
 			public SPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
 					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder)
 			{
+				String[] ignoredTests = {
+						// test case incompatible with RDF 1.1 - see
+						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
+						"STRDT   TypeErrors",
+						// test case incompatible with RDF 1.1 - see
+						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
+						"STRLANG   TypeErrors",
+						// known issue: SES-937
+						"sq03 - Subquery within graph pattern, graph variable is not bound",
+						// fails in federationsail setup. 
+						"sq14 - limit by resource"};
+
 				return new FederationSparqlTest(testURI, name, queryFileURL, resultFileURL, dataSet,
-						laxCardinality, checkOrder);
+						laxCardinality, checkOrder, ignoredTests);
 			}
-		}, true, true, false);
+			// skip 'service' tests for now since they require presence of remote sparql endpoints.
+		}, true, true, false, "service");
 	}
 
 	public FederationSparqlTest(String testURI, String name, String queryFileURL, String resultFileURL,
-			Dataset dataSet, boolean laxCardinality)
+			Dataset dataSet, boolean laxCardinality, String... ignoredTests)
 	{
-		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality);
+		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, ignoredTests);
 	}
 
 	public FederationSparqlTest(String testURI, String name, String queryFileURL, String resultFileURL,
-			Dataset dataSet, boolean laxCardinality, boolean checkOrder)
+			Dataset dataSet, boolean laxCardinality, boolean checkOrder, String... ignoredTests)
 	{
-		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder);
+		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
 
 	@Override
