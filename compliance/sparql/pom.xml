@@ -215,14 +215,6 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-failsafe-plugin</artifactId>
-				<configuration>
-					<forkCount>1</forkCount>
-					<reuseForks>false</reuseForks>
-					<argLine>-Xmx512M -XX:MaxPermSize=256M</argLine>
-					<includes>
-						<include>**/*Test.java</include>
-					</includes>
-				</configuration>
 				<executions>
 					<execution>
 						<id>integration-tests</id>

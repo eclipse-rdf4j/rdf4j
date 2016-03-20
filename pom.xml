@@ -78,6 +78,12 @@
 				<javadoc.opts>-Xdoclint:none</javadoc.opts>
 			</properties>
 		</profile>
+		<profile>
+			<id>eclipse-hudson-rdf4j</id>
+			<properties>
+				<hudson.rdf4j.proxy.opts>-Dhttp.proxyHost=proxy.eclipse.org -Dhttp.proxyPort=9898 -Dhttps.proxyHost=proxy.eclipse.org -Dhttps.proxyPort=9898 -Dhttp.nonProxyHosts=*.eclipse.org -Dhttps.nonProxyHosts=*.eclipse.org -Dftp.proxyHost=proxy.eclipse.org -Dftp.proxyPort=9898 -Dftp.nonProxyHosts=*.eclipse.org</hudson.rdf4j.proxy.opts>
+			</properties>
+		</profile>
 	</profiles>
 
 	<properties>
@@ -569,6 +575,12 @@
 					<version>2.17</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
+						<forkCount>1</forkCount>
+						<reuseForks>false</reuseForks>
+						<argLine>-Xmx1024M -XX:MaxPermSize=256M ${hudson.rdf4j.proxy.opts}</argLine>
+						<includes>
+							<include>**/*Test.java</include>
+						</includes>
 					</configuration>
 				</plugin>
 				<plugin>
