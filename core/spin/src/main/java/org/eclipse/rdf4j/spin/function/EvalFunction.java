@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.spin.function;
 
 import java.util.Set;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.URI;
@@ -118,16 +118,16 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 		catch (ValueExprEvaluationException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 		return result;
 	}
 
 	private boolean isQuery(Resource r, TripleSource store)
-		throws OpenRDFException
+		throws RDF4JException
 	{
-		CloseableIteration<? extends URI, ? extends OpenRDFException> typeIter = Statements.getObjectURIs(
+		CloseableIteration<? extends URI, ? extends RDF4JException> typeIter = Statements.getObjectURIs(
 				r, RDF.TYPE, store);
 		try {
 			while (typeIter.hasNext()) {

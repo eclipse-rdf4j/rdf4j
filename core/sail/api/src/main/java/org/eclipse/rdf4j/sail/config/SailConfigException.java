@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.config;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 
 /**
  * Exception indicating a sail configuration problem.
  * 
  * @author Arjohn Kampman
  */
-public class SailConfigException extends OpenRDFException {
+public class SailConfigException extends RDF4JException {
 
 	private static final long serialVersionUID = 185213210952981723L;
 

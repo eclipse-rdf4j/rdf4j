@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.spin;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
@@ -63,18 +63,18 @@ public class SpinFunctionInterpreter implements QueryOptimizer {
 		try {
 			tupleExpr.visit(new FunctionScanner());
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			logger.warn("Failed to parse function");
 		}
 	}
 
-	private class FunctionScanner extends AbstractQueryModelVisitor<OpenRDFException> {
+	private class FunctionScanner extends AbstractQueryModelVisitor<RDF4JException> {
 
 		ValueFactory vf = tripleSource.getValueFactory();
 
 		@Override
 		public void meet(FunctionCall node)
-			throws OpenRDFException
+			throws RDF4JException
 		{
 			String name = node.getURI();
 			if (!functionRegistry.has(name)) {

@@ -11,7 +11,7 @@ import java.util.Arrays;
 
 import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -65,7 +65,7 @@ public class ExploreServlet extends TupleServlet {
 	@Override
 	protected void service(final WorkbenchRequest req, final HttpServletResponse resp,
 			final TupleResultBuilder builder, final RepositoryConnection con)
-		throws BadRequestException, OpenRDFException
+		throws BadRequestException, RDF4JException
 	{
 		final Value value = req.getValue("resource");
 		logger.debug("resource = {}", value);
@@ -104,13 +104,13 @@ public class ExploreServlet extends TupleServlet {
 	 *        The limit on the number of results to render.
 	 * @param render
 	 *        If false, suppresses output to the HTTP response.
-	 * @throws OpenRDFException
+	 * @throws RDF4JException
 	 *         if there is an issue iterating through results
 	 * @return The count of all triples in the repository using the given value.
 	 */
 	protected ResultCursor processResource(final RepositoryConnection con, final TupleResultBuilder builder,
 			final Value value, final int offset, final int limit, final boolean render)
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		final ResultCursor cursor = new ResultCursor(offset, limit, render);
 		boolean resource = value instanceof Resource;
@@ -164,7 +164,7 @@ public class ExploreServlet extends TupleServlet {
 	 */
 	private void export(RepositoryConnection con, TupleResultBuilder builder, ResultCursor cursor,
 			Resource subj, IRI pred, Value obj, Resource... context)
-		throws OpenRDFException, MalformedQueryException, QueryEvaluationException
+		throws RDF4JException, MalformedQueryException, QueryEvaluationException
 	{
 		RepositoryResult<Statement> result = con.getStatements(subj, pred, obj, true, context);
 		try {

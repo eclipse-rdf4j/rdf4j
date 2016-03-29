@@ -11,7 +11,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -132,8 +132,8 @@ public abstract class AbstractRDFInserter extends AbstractRDFHandler {
 		return Arrays.copyOf(contexts, contexts.length);
 	}
 
-	protected abstract void addNamespace(String prefix, String name) throws OpenRDFException;
-	protected abstract void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) throws OpenRDFException;
+	protected abstract void addNamespace(String prefix, String name) throws RDF4JException;
+	protected abstract void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) throws RDF4JException;
 
 	@Override
 	public void endRDF()
@@ -146,7 +146,7 @@ public abstract class AbstractRDFInserter extends AbstractRDFHandler {
 			try {
 				addNamespace(prefix, name);
 			}
-			catch (OpenRDFException e) {
+			catch (RDF4JException e) {
 				throw new RDFHandlerException(e);
 			}
 		}
@@ -191,7 +191,7 @@ public abstract class AbstractRDFInserter extends AbstractRDFHandler {
 		try {
 			addStatement(subj, pred, obj, ctxt);
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RDFHandlerException(e);
 		}
 	}

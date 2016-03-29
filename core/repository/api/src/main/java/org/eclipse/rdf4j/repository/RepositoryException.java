@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 
 /**
  * An exception thrown by classes from the Repository API to indicate an error.
  * Most of the time, this exception will wrap another exception that indicates
  * the actual source of the error.
  */
-public class RepositoryException extends OpenRDFException {
+public class RepositoryException extends RDF4JException {
 
 	private static final long serialVersionUID = -5345676977796873420L;
 

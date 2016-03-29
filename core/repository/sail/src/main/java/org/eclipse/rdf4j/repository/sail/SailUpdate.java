@@ -11,7 +11,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
@@ -68,7 +68,7 @@ public class SailUpdate extends AbstractParserUpdate {
 					commitLocalTransaction();
 				}
 			}
-			catch (OpenRDFException e) {
+			catch (RDF4JException e) {
 				logger.warn("exception during update execution: ", e);
 				if (!updateExpr.isSilent()) {
 					throw new UpdateExecutionException(e);

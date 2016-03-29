@@ -18,7 +18,7 @@ import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -44,7 +44,7 @@ public class SpinxFunctionParser implements FunctionParser {
 
 	@Override
 	public Function parse(IRI funcUri, TripleSource store)
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		Value codeValue = Statements.singleValue(funcUri, SPINX.JAVA_SCRIPT_CODE_PROPERTY, store);
 		String code = (codeValue instanceof Literal) ? ((Literal)codeValue).getLabel() : null;

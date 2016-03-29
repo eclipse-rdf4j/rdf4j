@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors.
+ * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -8,13 +8,14 @@
 package org.eclipse.rdf4j;
 
 /**
- * Superclass of all (runtime) exceptions thrown by RDF4J.
+ * General superclass of all unchecked exceptions that parts of RDF4J can throw.
  * 
  * @author Jeen Broekstra
  */
-public abstract class RDF4JException extends RuntimeException {
+@SuppressWarnings("deprecation")
+public abstract class RDF4JException extends OpenRDFException {
 
-	private static final long serialVersionUID = 5283957703704198489L;
+	private static final long serialVersionUID = 8913366826930181397L;
 
 	public RDF4JException() {
 		super();
@@ -30,6 +31,5 @@ public abstract class RDF4JException extends RuntimeException {
 
 	public RDF4JException(String msg, Throwable t) {
 		super(msg, t);
-
 	}
 }

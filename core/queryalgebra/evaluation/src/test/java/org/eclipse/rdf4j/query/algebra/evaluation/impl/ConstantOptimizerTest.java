@@ -11,7 +11,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
@@ -36,7 +36,7 @@ public class ConstantOptimizerTest {
 
 	@Test
 	public void testAndOptimization()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		String query = "prefix ex: <ex:>" + "select ?a ?b ?c\n" + "where {\n" + " bind((?a && ?b) as ?c) \n"
 				+ "}";
@@ -74,7 +74,7 @@ public class ConstantOptimizerTest {
 
 	@Test
 	public void testFunctionOptimization()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		String query = "prefix ex: <ex:>" + "select ?a ?b ?c \n " + "where {\n"
 				+ " bind(concat(?a, ?b) as ?c) \n" + "}";

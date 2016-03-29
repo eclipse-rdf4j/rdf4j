@@ -14,7 +14,7 @@ import static org.mockito.Mockito.mock;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.util.GraphUtil;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -47,7 +47,7 @@ public class TestProxyRepositoryFactory {
 
 	@Test
 	public final void testGetRepository()
-		throws OpenRDFException, IOException
+		throws RDF4JException, IOException
 	{
 		Model graph = Rio.parse(this.getClass().getResourceAsStream("/proxy.ttl"),
 				RepositoryConfigSchema.NAMESPACE, RDFFormat.TURTLE);

@@ -21,7 +21,7 @@ import java.util.Collections;
 
 import javax.servlet.ServletException;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.ResourceUtil;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
@@ -71,7 +71,7 @@ public class TestQueryServlet {
 
 	@Test
 	public void testGetQueryTextRefText()
-		throws BadRequestException, OpenRDFException
+		throws BadRequestException, RDF4JException
 	{
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
@@ -83,7 +83,7 @@ public class TestQueryServlet {
 
 	@Test
 	public void testGetQueryNoQuery()
-		throws BadRequestException, OpenRDFException
+		throws BadRequestException, RDF4JException
 	{
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(false);
@@ -92,7 +92,7 @@ public class TestQueryServlet {
 	
 	@Test
 	public void testGetQueryTextUnrecognizedRef()
-		throws BadRequestException, OpenRDFException
+		throws BadRequestException, RDF4JException
 	{
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
@@ -104,7 +104,7 @@ public class TestQueryServlet {
 
 	@Test
 	public void testGetQueryTextNoRef()
-		throws BadRequestException, OpenRDFException
+		throws BadRequestException, RDF4JException
 	{
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
@@ -115,7 +115,7 @@ public class TestQueryServlet {
 
 	@Test
 	public void testGetQueryTextRefHash()
-		throws BadRequestException, OpenRDFException
+		throws BadRequestException, RDF4JException
 	{
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
@@ -129,7 +129,7 @@ public class TestQueryServlet {
 
 	@Test
 	public void testGetQueryTextRefHashNoEntry()
-		throws BadRequestException, OpenRDFException
+		throws BadRequestException, RDF4JException
 	{
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
@@ -143,7 +143,7 @@ public class TestQueryServlet {
 
 	@Test
 	public void testGetQueryTextRefId()
-		throws BadRequestException, OpenRDFException
+		throws BadRequestException, RDF4JException
 	{
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);

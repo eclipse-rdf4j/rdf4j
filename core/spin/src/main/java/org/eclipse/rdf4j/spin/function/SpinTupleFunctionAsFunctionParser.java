@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.spin.function;
 
 import java.util.List;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -36,7 +36,7 @@ public class SpinTupleFunctionAsFunctionParser implements FunctionParser {
 
 	@Override
 	public Function parse(IRI funcUri, TripleSource store)
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		Statement magicPropStmt = Statements.single(funcUri, RDF.TYPE, SPIN.MAGIC_PROPERTY_CLASS, store);
 		if (magicPropStmt == null) {

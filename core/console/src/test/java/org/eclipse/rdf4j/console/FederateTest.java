@@ -24,7 +24,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
@@ -74,7 +74,7 @@ public class FederateTest extends AbstractCommandTest {
 
 	@Before
 	public void prepareManager()
-		throws UnsupportedEncodingException, IOException, OpenRDFException
+		throws UnsupportedEncodingException, IOException, RDF4JException
 	{
 		manager = new LocalRepositoryManager(LOCATION.getRoot());
 		manager.initialize();
@@ -89,7 +89,7 @@ public class FederateTest extends AbstractCommandTest {
 
 	@After
 	public void tearDown()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		manager.shutDown();
 	}
@@ -105,7 +105,7 @@ public class FederateTest extends AbstractCommandTest {
 
 	@Test
 	public void noArgumentsPrintsHelp()
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		execute();
 		verify(streams).writeln(PrintHelp.FEDERATE);
@@ -113,7 +113,7 @@ public class FederateTest extends AbstractCommandTest {
 
 	@Test
 	public void oneArgumentPrintsHelp()
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		execute(FED_ID);
 		verify(streams).writeln(PrintHelp.FEDERATE);
@@ -121,7 +121,7 @@ public class FederateTest extends AbstractCommandTest {
 
 	@Test
 	public void twoArgumentsPrintsHelp()
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		execute(FED_ID, MEMORY_MEMBER_ID1);
 		verify(streams).writeln(PrintHelp.FEDERATE);
@@ -129,7 +129,7 @@ public class FederateTest extends AbstractCommandTest {
 
 	@Test
 	public void invalidArgumentPrintsError()
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		execute("type=memory", FED_ID, MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID2);
 		verifyFailure();
@@ -137,7 +137,7 @@ public class FederateTest extends AbstractCommandTest {
 
 	@Test
 	public void duplicateMembersPrintsError()
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		execute(FED_ID, MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID1);
 		verifyFailure();
@@ -145,7 +145,7 @@ public class FederateTest extends AbstractCommandTest {
 
 	@Test
 	public void fedSameAsMemberPrintsError()
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		execute(FED_ID, MEMORY_MEMBER_ID1, FED_ID, MEMORY_MEMBER_ID1);
 		verifyFailure();
@@ -153,7 +153,7 @@ public class FederateTest extends AbstractCommandTest {
 
 	@Test
 	public void sparqlAndNotReadOnlyPrintsError()
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		execute("readonly=false", FED_ID, SPARQL_MEMBER_ID, SPARQL2_MEMBER_ID);
 		verifyFailure(SPARQL_MEMBER_ID + " is read-only.");
@@ -162,7 +162,7 @@ public class FederateTest extends AbstractCommandTest {
 
 	@Test
 	public void fedAlreadyExistsPrintsSpecificError()
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		execute(MEMORY_MEMBER_ID1, FED_ID, MEMORY_MEMBER_ID2);
 		verifyFailure(MEMORY_MEMBER_ID1 + " already exists.");
@@ -170,7 +170,7 @@ public class FederateTest extends AbstractCommandTest {
 
 	@Test
 	public void nonexistentMemberPrintsSpecificError()
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		execute(FED_ID, MEMORY_MEMBER_ID1, "FreeLunch");
 		verifyFailure("FreeLunch does not exist.");
@@ -200,7 +200,7 @@ public class FederateTest extends AbstractCommandTest {
 
 	@Test
 	public void federateSucceedsWithHTTPandSPARQLmembers()
-		throws UnsupportedEncodingException, IOException, OpenRDFException
+		throws UnsupportedEncodingException, IOException, RDF4JException
 	{
 		execute(FED_ID, HTTP_MEMBER_ID, SPARQL_MEMBER_ID);
 		verifySuccess(HTTPRepositoryFactory.REPOSITORY_TYPE, SPARQLRepositoryFactory.REPOSITORY_TYPE);
@@ -208,7 +208,7 @@ public class FederateTest extends AbstractCommandTest {
 
 	@Test
 	public void federateHTTPtypeSucceeds()
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		execute(FED_ID, HTTP_MEMBER_ID, HTTP2_MEMBER_ID);
 		verifySuccess(HTTPRepositoryFactory.REPOSITORY_TYPE, HTTPRepositoryFactory.REPOSITORY_TYPE);
@@ -216,7 +216,7 @@ public class FederateTest extends AbstractCommandTest {
 
 	@Test
 	public void federateSPARQLtypeSucceeds()
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		execute(FED_ID, SPARQL_MEMBER_ID, SPARQL2_MEMBER_ID);
 		verifySuccess(SPARQLRepositoryFactory.REPOSITORY_TYPE, SPARQLRepositoryFactory.REPOSITORY_TYPE);
