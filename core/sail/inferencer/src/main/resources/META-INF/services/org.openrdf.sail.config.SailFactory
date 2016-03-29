@@ -1,4 +1,0 @@
-org.openrdf.sail.inferencer.fc.config.ForwardChainingRDFSInferencerFactory
-org.openrdf.sail.inferencer.fc.config.DirectTypeHierarchyInferencerFactory
-org.openrdf.sail.inferencer.fc.config.CustomGraphQueryInferencerFactory
-org.openrdf.sail.inferencer.fc.config.DedupingInferencerFactory
