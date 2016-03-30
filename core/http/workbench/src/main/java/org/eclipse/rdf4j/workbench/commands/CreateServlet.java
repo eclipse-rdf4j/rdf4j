@@ -17,7 +17,7 @@ import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -106,7 +106,7 @@ public class CreateServlet extends TransformationServlet {
 	}
 
 	private String createRepositoryConfig(final WorkbenchRequest req)
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		String type = req.getTypeParameter();
 		String newID;
@@ -124,7 +124,7 @@ public class CreateServlet extends TransformationServlet {
 	}
 
 	private RepositoryConfig updateRepositoryConfig(final String configString)
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		final Repository systemRepo = manager.getSystemRepository();
 		final Model graph = new LinkedHashModel();

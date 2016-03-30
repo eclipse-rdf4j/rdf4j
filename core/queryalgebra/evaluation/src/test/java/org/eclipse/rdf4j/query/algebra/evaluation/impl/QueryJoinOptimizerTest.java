@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.junit.Assert.assertEquals;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
@@ -26,7 +26,7 @@ import org.junit.Test;
  */
 public class QueryJoinOptimizerTest {
 	@Test
-	public void testBindingSetAssignmentOptimization() throws OpenRDFException {
+	public void testBindingSetAssignmentOptimization() throws RDF4JException {
 		String query = "prefix ex: <ex:>"
 				+ "select ?s ?p ?o ?x where {"
 				+ " ex:s1 ex:pred ?v. "
@@ -56,7 +56,7 @@ public class QueryJoinOptimizerTest {
 
 	@Test(expected=AssertionError.class)
 	public void testContextOptimization()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		String query = "prefix ex: <ex:>"
 				+ "select ?x ?y ?z ?g ?p ?o where {"

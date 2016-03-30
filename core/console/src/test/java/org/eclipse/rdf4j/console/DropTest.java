@@ -20,7 +20,7 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
@@ -47,7 +47,7 @@ public class DropTest extends AbstractCommandTest {
 
 	@Before
 	public void prepareManager()
-		throws UnsupportedEncodingException, IOException, OpenRDFException
+		throws UnsupportedEncodingException, IOException, RDF4JException
 	{
 		manager = new LocalRepositoryManager(LOCATION.getRoot());
 		manager.initialize();
@@ -65,7 +65,7 @@ public class DropTest extends AbstractCommandTest {
 
 	@After
 	public void tearDown()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		manager.shutDown();
 	}

@@ -17,7 +17,7 @@ import java.lang.reflect.Modifier;
 import java.util.List;
 
 import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.IRI;
@@ -102,7 +102,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	@Override
 	@Ignore
 	public void testAddDelete()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		System.err.println("temporarily disabled testAddDelete() for SPARQLRepository");
 	}
@@ -110,7 +110,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	@Override
 	@Ignore
 	public void testAddRemoveInsert()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		System.err.println("temporarily disabled testAddRemoveInsert() for SPARQLRepository");
 	}

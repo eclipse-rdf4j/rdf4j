@@ -22,7 +22,7 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -173,7 +173,7 @@ public class QueryServlet extends TransformationServlet {
 
 	@Override
 	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
-		throws IOException, OpenRDFException, BadRequestException, JSONException
+		throws IOException, RDF4JException, BadRequestException, JSONException
 	{
 		if (!writeQueryCookie) {
 			// If we suppressed putting the query text into the cookies before.
@@ -200,7 +200,7 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private void handleStandardBrowserRequest(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-		throws IOException, OpenRDFException, QueryResultHandlerException
+		throws IOException, RDF4JException, QueryResultHandlerException
 	{
 		setContentType(req, resp);
 		OutputStream out = resp.getOutputStream();
@@ -232,7 +232,7 @@ public class QueryServlet extends TransformationServlet {
 
 	@Override
 	protected void doPost(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
-		throws IOException, BadRequestException, OpenRDFException, JSONException
+		throws IOException, BadRequestException, RDF4JException, JSONException
 	{
 		final String action = req.getParameter("action");
 		if ("save".equals(action)) {
@@ -272,7 +272,7 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private void saveQuery(final WorkbenchRequest req, final HttpServletResponse resp)
-		throws IOException, BadRequestException, OpenRDFException, JSONException
+		throws IOException, BadRequestException, RDF4JException, JSONException
 	{
 		resp.setContentType("application/json");
 		final JSONObject json = new JSONObject();
@@ -354,7 +354,7 @@ public class QueryServlet extends TransformationServlet {
 
 	private void service(final WorkbenchRequest req, final HttpServletResponse resp, final OutputStream out,
 			final String xslPath)
-				throws BadRequestException, OpenRDFException, UnsupportedQueryResultFormatException, IOException
+				throws BadRequestException, RDF4JException, UnsupportedQueryResultFormatException, IOException
 	{
 		final RepositoryConnection con = repository.getConnection();
 		con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
@@ -397,11 +397,11 @@ public class QueryServlet extends TransformationServlet {
 	 *         parameters, otherwise an empty string
 	 * @throws BadRequestException
 	 *         if a problem occurs grabbing the request from storage
-	 * @throws OpenRDFException
+	 * @throws RDF4JException
 	 *         if a problem occurs grabbing the request from storage
 	 */
 	protected String getQueryText(WorkbenchRequest req)
-		throws BadRequestException, OpenRDFException
+		throws BadRequestException, RDF4JException
 	{
 		String result;
 		if (req.isParameterPresent(QUERY)) {
@@ -437,7 +437,7 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private boolean canReadSavedQuery(WorkbenchRequest req)
-		throws BadRequestException, OpenRDFException
+		throws BadRequestException, RDF4JException
 	{
 		if (req.isParameterPresent(REF)) {
 			return "id".equals(req.getParameter(REF))

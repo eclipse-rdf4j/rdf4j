@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.config;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 
 /**
  * Exception indicating a repository configuration problem.
  * 
  * @author Arjohn Kampman
  */
-public class RepositoryConfigException extends OpenRDFException {
+public class RepositoryConfigException extends RDF4JException {
 
 	private static final long serialVersionUID = -6643040675968955429L;
 

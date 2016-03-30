@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 
 /**
  * An exception indicating that the execution of an update failed.
  * 
  * @author Jeen
  */
-public class UpdateExecutionException extends OpenRDFException {
+public class UpdateExecutionException extends RDF4JException {
 
 	/**
 	 * 

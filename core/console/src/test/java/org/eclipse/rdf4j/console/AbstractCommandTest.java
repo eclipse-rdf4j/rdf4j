@@ -16,7 +16,7 @@ import java.io.StringReader;
 import java.io.UnsupportedEncodingException;
 import java.net.URL;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -45,7 +45,7 @@ public class AbstractCommandTest {
 	protected ConsoleIO streams = mock(ConsoleIO.class);
 
 	protected final void addRepositories(String... identities)
-		throws UnsupportedEncodingException, IOException, OpenRDFException
+		throws UnsupportedEncodingException, IOException, RDF4JException
 	{
 		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 		for (String identity : identities) {
@@ -55,7 +55,7 @@ public class AbstractCommandTest {
 	}
 
 	protected void addRepository(InputStream configStream, URL data)
-		throws UnsupportedEncodingException, IOException, OpenRDFException
+		throws UnsupportedEncodingException, IOException, RDF4JException
 	{
 		Repository systemRepo = manager.getSystemRepository();
 		RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, systemRepo.getValueFactory());

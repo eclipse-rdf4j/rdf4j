@@ -5,32 +5,31 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.config;
-
-import org.eclipse.rdf4j.RDF4JException;
+package org.eclipse.rdf4j;
 
 /**
- * Exception indicating a sail configuration problem.
+ * General superclass of all unchecked exceptions that parts of RDF4J can throw.
  * 
- * @author Arjohn Kampman
+ * @author Jeen Broekstra
  */
-public class SailConfigException extends RDF4JException {
+@SuppressWarnings("deprecation")
+public abstract class RDF4JException extends OpenRDFException {
 
-	private static final long serialVersionUID = 185213210952981723L;
+	private static final long serialVersionUID = 8913366826930181397L;
 
-	public SailConfigException() {
+	public RDF4JException() {
 		super();
 	}
 
-	public SailConfigException(String message) {
-		super(message);
+	public RDF4JException(String msg) {
+		super(msg);
 	}
 
-	public SailConfigException(Throwable t) {
+	public RDF4JException(Throwable t) {
 		super(t);
 	}
 
-	public SailConfigException(String message, Throwable t) {
-		super(message, t);
+	public RDF4JException(String msg, Throwable t) {
+		super(msg, t);
 	}
 }

@@ -16,7 +16,7 @@ import static org.mockito.Mockito.when;
 import java.net.MalformedURLException;
 import java.util.Arrays;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
@@ -52,7 +52,7 @@ public class TestRepositoryManagerFederator {
 
 	@Test
 	public final void testDirectRecursiveAddThrowsException()
-		throws MalformedURLException, OpenRDFException
+		throws MalformedURLException, RDF4JException
 	{
 		thrown.expect(is(instanceOf(RepositoryConfigException.class)));
 		thrown.expectMessage(is(equalTo("A federation member may not have the same ID as the federation.")));

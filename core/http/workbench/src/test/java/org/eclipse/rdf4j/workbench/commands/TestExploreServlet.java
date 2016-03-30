@@ -13,7 +13,7 @@ import static org.junit.Assert.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -85,7 +85,7 @@ public class TestExploreServlet {
 
 	@Test
 	public final void testRegressionSES1748()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		for (int i = 0; i < foos.length; i++) {
 			connection.add(foo, bar, foos[i]);
@@ -102,7 +102,7 @@ public class TestExploreServlet {
 	 */
 	@Test
 	public final void testSubjectSameAsContext()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		addToFooContext(":foo a :bar");
 		assertStatementCount(foo, 1, 1);
@@ -111,7 +111,7 @@ public class TestExploreServlet {
 
 	@Test
 	public final void testPredicateSameAsContext()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		addToFooContext(":bar :foo :bar");
 		assertStatementCount(foo, 1, 1);
@@ -120,7 +120,7 @@ public class TestExploreServlet {
 
 	@Test
 	public final void testObjectSameAsContext()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		addToFooContext(":bar a :foo");
 		assertStatementCount(foo, 1, 1);
@@ -129,7 +129,7 @@ public class TestExploreServlet {
 
 	@Test
 	public final void testNoValueSameAsContext()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		addToFooContext(":bar a :bar");
 		assertStatementCount(foo, 1, 1);
@@ -138,7 +138,7 @@ public class TestExploreServlet {
 
 	@Test
 	public final void testOneObjectSameAsContext()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		addToFooContext(":bar a :bar , :foo");
 		assertStatementCount(foo, 2, 2);
@@ -148,7 +148,7 @@ public class TestExploreServlet {
 
 	@Test
 	public final void testSubjectSameAsPredicate()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		addToFooContext(":bar :bar :bang");
 		assertStatementCount(bar, 1, 1);
@@ -157,7 +157,7 @@ public class TestExploreServlet {
 
 	@Test
 	public final void testSubjectSameAsObject()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		addToFooContext(":bar a :bar");
 		assertStatementCount(bar, 1, 1);
@@ -166,7 +166,7 @@ public class TestExploreServlet {
 
 	@Test
 	public final void testPredicateSameAsObject()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		addToFooContext(":bar :bang :bang");
 		assertStatementCount(bang, 1, 1);
@@ -175,7 +175,7 @@ public class TestExploreServlet {
 
 	@Test
 	public final void testWorstCaseDuplication()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		addToFooContext(":foo :foo :foo");
 		assertStatementCount(foo, 1, 1);
@@ -184,7 +184,7 @@ public class TestExploreServlet {
 
 	@Test
 	public final void testSES1723regression()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		addToFooContext(":foo :foo :foo");
 		connection.add(foo, foo, foo);
@@ -200,14 +200,14 @@ public class TestExploreServlet {
 	}
 
 	private void assertStatementCount(IRI uri, int expectedTotal, int expectedRendered)
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		// limit = 0 means render all
 		assertStatementCount(uri, 0, expectedTotal, expectedRendered);
 	}
 
 	private void assertStatementCount(IRI uri, int limit, int expectedTotal, int expectedRendered)
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		ResultCursor cursor = servlet.processResource(connection, builder, uri, 0, limit, true);
 		assertThat(cursor.getTotalResultCount(), is(equalTo(expectedTotal)));

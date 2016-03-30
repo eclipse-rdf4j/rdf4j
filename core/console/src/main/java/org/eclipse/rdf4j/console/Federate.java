@@ -14,7 +14,7 @@ import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedList;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
@@ -99,7 +99,7 @@ public class Federate implements Command {
 			catch (MalformedURLException mue) {
 				cio.writeError(mue.getMessage());
 			}
-			catch (OpenRDFException ore) {
+			catch (RDF4JException ore) {
 				cio.writeError(ore.getMessage());
 			}
 			catch (IOException ioe) {

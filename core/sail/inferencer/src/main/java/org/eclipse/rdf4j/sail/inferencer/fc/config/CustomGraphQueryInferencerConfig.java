@@ -15,7 +15,7 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -145,7 +145,7 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 			try {
 				QueryParserUtil.parseGraphQuery(language, ruleQuery, null);
 			}
-			catch (OpenRDFException e) {
+			catch (RDF4JException e) {
 				throw new SailConfigException("Problem occured parsing supplied rule query.", e);
 			}
 		}
@@ -155,7 +155,7 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 			}
 			QueryParserUtil.parseGraphQuery(language, matcherQuery, null);
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new SailConfigException("Problem occured parsing matcher query: " + matcherQuery, e);
 		}
 	}

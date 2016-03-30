@@ -49,7 +49,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.BNode;
@@ -1724,7 +1724,7 @@ public abstract class RepositoryConnectionTest {
 
 	@Test
 	public void testAddRemove()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		final Statement stmt = vf.createStatement(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1),
 				vf.createIRI(URN_TEST_O1));
@@ -1746,7 +1746,7 @@ public abstract class RepositoryConnectionTest {
 
 	@Test
 	public void testAddDelete()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		final Statement stmt = vf.createStatement(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1),
 				vf.createURI(URN_TEST_O1));
@@ -1769,7 +1769,7 @@ public abstract class RepositoryConnectionTest {
 
 	@Test
 	public final void testInsertRemove()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		final Statement stmt = vf.createStatement(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1),
 				vf.createURI(URN_TEST_O1));
@@ -1792,7 +1792,7 @@ public abstract class RepositoryConnectionTest {
 
 	@Test
 	public void testInsertDelete()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		final Statement stmt = vf.createStatement(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1),
 				vf.createURI(URN_TEST_O1));
@@ -1816,7 +1816,7 @@ public abstract class RepositoryConnectionTest {
 
 	@Test
 	public void testAddRemoveAdd()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		Statement stmt = vf.createStatement(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1),
 				vf.createURI(URN_TEST_O1));
@@ -1830,7 +1830,7 @@ public abstract class RepositoryConnectionTest {
 
 	@Test
 	public void testAddDeleteAdd()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		Statement stmt = vf.createStatement(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1),
 				vf.createURI(URN_TEST_O1));
@@ -1845,7 +1845,7 @@ public abstract class RepositoryConnectionTest {
 
 	@Test
 	public void testAddRemoveInsert()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		Statement stmt = vf.createStatement(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1),
 				vf.createURI(URN_TEST_O1));
@@ -1860,7 +1860,7 @@ public abstract class RepositoryConnectionTest {
 
 	@Test
 	public void testAddDeleteInsert()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		testCon.add(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1), vf.createURI(URN_TEST_O1));
 		testCon.begin();

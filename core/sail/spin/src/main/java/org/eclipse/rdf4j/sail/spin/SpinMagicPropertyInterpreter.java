@@ -13,7 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -90,15 +90,15 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 		try {
 			tupleExpr.visit(new PropertyScanner());
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			logger.warn("Failed to parse tuple function");
 		}
 	}
 
-	private class PropertyScanner extends QueryModelVisitorBase<OpenRDFException> {
+	private class PropertyScanner extends QueryModelVisitorBase<RDF4JException> {
 
 		private void processGraphPattern(List<StatementPattern> sps)
-			throws OpenRDFException
+			throws RDF4JException
 		{
 			List<StatementPattern> magicProperties = new ArrayList<StatementPattern>();
 			Map<String, Map<IRI, List<StatementPattern>>> spIndex = new HashMap<String, Map<IRI, List<StatementPattern>>>();
@@ -260,16 +260,16 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 
 		@Override
 		public void meet(Join node)
-			throws OpenRDFException
+			throws RDF4JException
 		{
-			BGPCollector<OpenRDFException> collector = new BGPCollector<OpenRDFException>(this);
+			BGPCollector<RDF4JException> collector = new BGPCollector<RDF4JException>(this);
 			node.visit(collector);
 			processGraphPattern(collector.getStatementPatterns());
 		}
 
 		@Override
 		public void meet(StatementPattern node)
-			throws OpenRDFException
+			throws RDF4JException
 		{
 			processGraphPattern(Collections.singletonList(node));
 		}

@@ -53,7 +53,7 @@ import org.apache.http.params.BasicHttpParams;
 import org.apache.http.params.CoreConnectionPNames;
 import org.apache.http.params.HttpParams;
 import org.apache.http.util.EntityUtils;
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
@@ -382,7 +382,7 @@ public class SparqlSession implements HttpClientDependent {
 		catch (QueryInterruptedException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -456,7 +456,7 @@ public class SparqlSession implements HttpClientDependent {
 		catch (QueryInterruptedException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -776,7 +776,7 @@ public class SparqlSession implements HttpClientDependent {
 		catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -907,7 +907,7 @@ public class SparqlSession implements HttpClientDependent {
 		catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -917,10 +917,10 @@ public class SparqlSession implements HttpClientDependent {
 	 * {@link BooleanQueryResultParser}. All HTTP connections are closed and
 	 * released in this method
 	 * 
-	 * @throws OpenRDFException
+	 * @throws RDF4JException
 	 */
 	protected boolean getBoolean(HttpUriRequest method)
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		// Specify which formats we support using Accept headers
 		Set<QueryResultFormat> booleanFormats = BooleanQueryResultParserRegistry.getInstance().getKeys();
@@ -955,7 +955,7 @@ public class SparqlSession implements HttpClientDependent {
 	}
 
 	private HttpResponse sendBooleanQueryViaHttp(HttpUriRequest method, Set<QueryResultFormat> booleanFormats)
-				throws IOException, OpenRDFException
+				throws IOException, RDF4JException
 	{
 
 		for (QueryResultFormat format : booleanFormats) {
@@ -986,10 +986,10 @@ public class SparqlSession implements HttpClientDependent {
 	 * boolean queries in the same way. This method aborts the HTTP connection.
 	 * 
 	 * @param method
-	 * @throws OpenRDFException
+	 * @throws RDF4JException
 	 */
 	protected HttpResponse executeOK(HttpUriRequest method)
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		boolean fail = true;
 		HttpResponse response = execute(method);
@@ -1014,7 +1014,7 @@ public class SparqlSession implements HttpClientDependent {
 	}
 
 	protected void executeNoContent(HttpUriRequest method)
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		HttpResponse response = execute(method);
 		try {
@@ -1030,7 +1030,7 @@ public class SparqlSession implements HttpClientDependent {
 	}
 
 	protected HttpResponse execute(HttpUriRequest method)
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		boolean consume = true;
 		method.setParams(params);

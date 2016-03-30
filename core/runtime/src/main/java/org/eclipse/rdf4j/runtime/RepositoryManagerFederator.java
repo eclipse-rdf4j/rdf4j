@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.runtime;
 import java.net.MalformedURLException;
 import java.util.Collection;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -89,12 +89,12 @@ public class RepositoryManagerFederator {
 	 * @throws MalformedURLException
 	 *         if the {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}
 	 *         has a malformed location
-	 * @throws OpenRDFException
+	 * @throws RDF4JException
 	 *         if a problem otherwise occurs while creating the federation
 	 */
 	public void addFed(String fedID, String description, Collection<String> members, boolean readonly,
 			boolean distinct)
-				throws MalformedURLException, OpenRDFException
+				throws MalformedURLException, RDF4JException
 	{
 		if (members.contains(fedID)) {
 			throw new RepositoryConfigException(
@@ -120,7 +120,7 @@ public class RepositoryManagerFederator {
 
 	private void addImplementation(Collection<String> members, Model graph, BNode fedRepoNode,
 			RepositoryConnection con, boolean readonly, boolean distinct)
-				throws OpenRDFException, MalformedURLException
+				throws RDF4JException, MalformedURLException
 	{
 		BNode implRoot = valueFactory.createBNode();
 		addToGraph(graph, fedRepoNode, RepositoryConfigSchema.REPOSITORYIMPL, implRoot);
@@ -131,7 +131,7 @@ public class RepositoryManagerFederator {
 
 	private void addSail(Collection<String> members, Model graph, BNode implRoot, RepositoryConnection con,
 			boolean readonly, boolean distinct)
-				throws OpenRDFException, MalformedURLException
+				throws RDF4JException, MalformedURLException
 	{
 		BNode sailRoot = valueFactory.createBNode();
 		addToGraph(graph, implRoot, SailRepositorySchema.SAILIMPL, sailRoot);
@@ -145,7 +145,7 @@ public class RepositoryManagerFederator {
 	}
 
 	private void addMember(Model graph, BNode sailRoot, String identifier, RepositoryConnection con)
-		throws OpenRDFException, MalformedURLException
+		throws RDF4JException, MalformedURLException
 	{
 		LOGGER.debug("Adding member: {}", identifier);
 		BNode memberNode = valueFactory.createBNode();
@@ -178,7 +178,7 @@ public class RepositoryManagerFederator {
 	}
 
 	private Value getMemberLocator(String identifier, RepositoryConnection con, String memberRepoType)
-		throws MalformedURLException, RepositoryConfigException, OpenRDFException
+		throws MalformedURLException, RepositoryConfigException, RDF4JException
 	{
 		Value locator;
 		if (HTTPRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType)) {

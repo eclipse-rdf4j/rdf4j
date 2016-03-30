@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 
 /**
  * The super class of exceptions originating from {@link QueryResultHandler}
@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.OpenRDFException;
  * @author Peter Ansell
  * @since 2.7.0
  */
-public class QueryResultHandlerException extends OpenRDFException {
+public class QueryResultHandlerException extends RDF4JException {
 
 	private static final long serialVersionUID = 5096811224670124398L;
 
