@@ -1,0 +1,4 @@
+approve_by_comment: true
+reviewers:
+    required: 1
+    members: all
