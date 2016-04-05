@@ -78,7 +78,7 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-war-plugin</artifactId>
 				<configuration>
-					<warName>openrdf-sesame</warName>
+					<warName>rdf4j-server</warName>
 					<archiveClasses>true</archiveClasses>
 				</configuration>
 			</plugin>
@@ -88,7 +88,7 @@
 				<configuration>
 					<warFile>${project.build.directory}/${project.artifactId}.war</warFile>
 					<server>localhost</server>
-					<path>/openrdf-sesame</path>
+					<path>/rdf4j-server</path>
 				</configuration>
 			</plugin>
 		</plugins>
@@ -107,7 +107,7 @@
 						<artifactId>maven-eclipse-plugin</artifactId>
 						<configuration>
 							<wtpversion>1.5</wtpversion>
-							<wtpContextName>openrdf-sesame</wtpContextName>
+							<wtpContextName>rdf4j-server</wtpContextName>
 							<additionalBuildcommands>
 								<buildCommand>
 									<name>

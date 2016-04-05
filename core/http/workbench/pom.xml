@@ -141,7 +141,7 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-war-plugin</artifactId>
 				<configuration>
-					<warName>openrdf-workbench</warName>
+					<warName>rdf4j-workbench</warName>
 					<archiveClasses>true</archiveClasses>
 				</configuration>
 			</plugin>
@@ -151,7 +151,7 @@
 				<configuration>
 					<warFile>${project.build.directory}/${project.artifactId}.war</warFile>
 					<server>localhost</server>
-					<path>/openrdf-workbench</path>
+					<path>/rdf4j-workbench</path>
 				</configuration>
 			</plugin>
 		</plugins>
