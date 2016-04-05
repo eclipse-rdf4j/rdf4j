@@ -126,15 +126,12 @@
 					<!-- These scripts need to be loaded before other templates are applied. -->
 					<script src="../../scripts/template.js" type="text/javascript"></script>
 					<script src="../../scripts/jquery-1.11.0.min.js" type="text/javascript"></script>
-					<xsl:apply-templates select="*" />
+					<xsl:apply-templates />
 				</div>
 				<div id="footer">
 						<div>
 							<xsl:value-of select="$copyright.label" />
 						</div>
-						<a href="http://www.aduna-software.com/">
-							<xsl:value-of select="$aduna.label" />
-						</a>
 				</div>
 			</body>
 		</html>
