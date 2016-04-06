@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="ISO-8859-1"?>
 
-<navigation id="openrdf-sesame">
+<navigation id="rdf4j-server">
 	<!-- Group definitions -->	
 	<group id="home">
 		<view id="overview" />
