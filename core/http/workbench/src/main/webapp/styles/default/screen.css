@@ -15,7 +15,7 @@ html {
 }
 
 body {
-	background: linear-gradient(#757575, #D0D0D0 150px, #FFFFFF);
+ 	background: linear-gradient(#757575, #D0D0D0 150px, #FFFFFF);
 	filter: progid:DXImageTransform.Microsoft.gradient(
 		startColorstr='#757575', endColorstr='#ffffff',GradientType=0 ); /* IE6-9 */
 	background-repeat: no-repeat;
@@ -98,15 +98,17 @@ div.resource:hover > a.resourceURL {
 }
 
 #header {
-	padding: 5px 0 0 5px;
-	height: 50px;
+	background-color: white;
+	border-style: none none solid none;
+	border-color: #da5800;
+	border-width: 10px;
+	height: 114px;
 }
 
-.productgroup {
-	position: absolute;
-	right: 0;
-	margin-top: -8px;
+.product {
+	margin-left: 20px;
 }	
+
 
 #search {
 	position: absolute;
@@ -216,23 +218,23 @@ div.resource:hover > a.resourceURL {
 }
 
 #contentheader {
-	margin-left: 200px;
-	padding: 10px 20px 10px 15px;
+	float: right;
+	margin-left: 50px;
+	padding: 20px 20px 10px 15px;
 	height: 55px;
-	color: #FFF;
+	color: #000000;
 	font-weight: bold;
 	font-family: Trebuchet MS, Arial, Helvetica, sans-serif;
 	font-size: 83%;
 }
 
 #contentheader hr {
-	color: #666;
+	color: #000000;
 	background-color: #666;
 	height: 1px;
 }
 
 #contentheader th, #contentheader td {
-	color: #FFF;
 	font-weight: bold;
 	font-family: Trebuchet MS, Arial, Helvetica, sans-serif;
 	font-size: 83%;
