@@ -11,7 +11,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Properties;
 
-import org.eclipse.rdf4j.Sesame;
+import org.eclipse.rdf4j.RDF4J;
 import org.eclipse.rdf4j.common.app.config.Configuration;
 import org.eclipse.rdf4j.common.app.logging.LogConfiguration;
 import org.eclipse.rdf4j.common.app.net.ProxySettings;
@@ -29,9 +29,9 @@ public class AppConfiguration implements Configuration {
 
 	private static final String APP_CONFIG_FILE = "application.properties";
 
-	private static final String DEFAULT_PREFIX = "Aduna";
+	private static final String DEFAULT_PREFIX = "RDF4J";
 
-	private static final String DEFAULT_LOGGING = "info.aduna.app.logging.logback.LogbackConfiguration";
+	private static final String DEFAULT_LOGGING = "org.eclipse.rdf4j.common.app.logging.logback.LogbackConfiguration";
 
 	/*-----------*
 	 * Variables *
@@ -245,7 +245,7 @@ public class AppConfiguration implements Configuration {
 	 */
 	public AppVersion getVersion() {
 		if (version == null) {
-			version = AppVersion.parse(Sesame.getVersion());
+			version = AppVersion.parse(RDF4J.getVersion());
 		}
 		return version;
 	}
