@@ -34,11 +34,6 @@
 					<div id="contentheader">
 					<table>
 						<tr>
-							<th colspan="3">
-								<xsl:value-of select="$selections.title" />
-							</th>
-						</tr>
-						<tr>
 							<th>
 								<xsl:value-of select="$server.label" />
 							</th>

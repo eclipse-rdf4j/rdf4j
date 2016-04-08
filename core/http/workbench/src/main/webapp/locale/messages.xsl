@@ -26,7 +26,7 @@
 	<variable name="add.title">Add RDF</variable>
 	<variable name="remove.title">Remove Statements</variable>
 	<variable name="clear.title">Clear Repository</variable>
-	<variable name="change-server.title">Change Server</variable>
+	<variable name="change-server.title">Connect to RDF4J Server</variable>
 	<variable name="selections.title">Current Selections</variable>
 	<variable name="repository-create.title">New Repository</variable>
 	<variable name="repository-delete.title">
@@ -77,7 +77,7 @@
 	<variable name="show.label">Show</variable>
 	<variable name="clear.label">Clear</variable>
 	<variable name="execute.label">Execute</variable>
-	<variable name="change-server.label">Change Server</variable>
+	<variable name="change-server.label">RDF4J Server URL</variable>
 	<variable name="change.label">Change</variable>
 	<variable name="server.label">RDF4J Server</variable>
 	<variable name="server-user.label">User (optional)</variable>
@@ -85,7 +85,7 @@
 	<variable name="repository.label">Repository</variable>
 	<variable name="download.label">Download</variable>
 	<variable name="download-format.label">Download format</variable>
-	<variable name="change-server.desc">i.e. http://localhost:8080/rdf4j-server</variable>
+	<variable name="change-server.desc">for example: http://localhost:8080/rdf4j-server</variable>
 	<variable name="repository-create.label">New repository</variable>
 	<variable name="repository-delete.label">
 		Delete repository
