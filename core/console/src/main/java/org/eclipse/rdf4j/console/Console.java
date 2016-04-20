@@ -27,7 +27,7 @@ import org.apache.commons.cli.OptionGroup;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.cli.PosixParser;
-import org.eclipse.rdf4j.Sesame;
+import org.eclipse.rdf4j.RDF4J;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.common.app.AppVersion;
 import org.eclipse.rdf4j.repository.Repository;
@@ -48,9 +48,9 @@ public class Console implements ConsoleState, ConsoleParameters {
 	 * Static constants *
 	 *------------------*/
 
-	private static final AppVersion VERSION = AppVersion.parse(Sesame.getVersion());
+	private static final AppVersion VERSION = AppVersion.parse(RDF4J.getVersion());
 
-	private static final String APP_NAME = "RDF4J Console";
+	private static final String APP_NAME = "Console";
 
 	private static boolean exitOnError;
 
@@ -58,7 +58,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 	 * Constants *
 	 *-----------*/
 
-	private final AppConfiguration appConfig = new AppConfiguration(APP_NAME, APP_NAME, VERSION);
+	private final AppConfiguration appConfig = new AppConfiguration(APP_NAME, VERSION);
 
 	/*-----------*
 	 * Variables *
@@ -91,7 +91,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 		final Option helpOption = new Option("h", "help", false, "print this help");
 		final Option versionOption = new Option("v", "version", false, "print version information");
 		final Option serverURLOption = new Option("s", "serverURL", true,
-				"URL of Sesame server to connect to, e.g. http://localhost/openrdf-sesame/");
+				"URL of RDF4J Server to connect to, e.g. http://localhost:8080/rdf4j-server/");
 		final Option dirOption = new Option("d", "dataDir", true, "data dir to 'connect' to");
 		Option echoOption = new Option("e", "echo", false,
 				"echoes input back to stdout, useful for logging script sessions");
@@ -203,12 +203,12 @@ public class Console implements ConsoleState, ConsoleParameters {
 	}
 
 	private static void printUsage(ConsoleIO cio, Options options) {
-		cio.writeln("Sesame Console, an interactive shell based utility to communicate with Sesame repositories.");
+		cio.writeln("RDF4J Console, an interactive command shell for RDF4J repositories.");
 		final HelpFormatter formatter = new HelpFormatter();
 		formatter.setWidth(80);
 		formatter.printHelp("start-console [OPTION] [repositoryID]", options);
 		cio.writeln();
-		cio.writeln("For bug reports and suggestions, see http://www.openrdf.org/");
+		cio.writeln("For bug reports and suggestions, see http://www.rdf4j.org/");
 	}
 
 	private final Map<String, Command> commandMap = new HashMap<String, Command>();
@@ -251,8 +251,9 @@ public class Console implements ConsoleState, ConsoleParameters {
 	public void start()
 		throws IOException
 	{
-		consoleIO.writeln("Sesame Console, an interactive shell to communicate with Sesame repositories.");
+		consoleIO.writeln(appConfig.getFullName());
 		consoleIO.writeln();
+		consoleIO.writeln(RDF4J.getVersion());
 		consoleIO.writeln("Type 'help' for help.");
 		int exitCode = 0;
 		try {

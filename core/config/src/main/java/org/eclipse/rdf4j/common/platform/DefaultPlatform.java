@@ -17,7 +17,7 @@ public class DefaultPlatform extends AbstractPlatform {
 	}
 
 	public File getOSApplicationDataDir() {
-		return new File("Aduna");
+		return new File("RDF4J");
 	}
 
 	public boolean dataDirPreserveCase() {

@@ -22,7 +22,7 @@ public class PosixPlatform extends AbstractPlatform {
 	}
 
 	public File getOSApplicationDataDir() {
-		return new File(System.getProperty("user.home"), ".aduna");
+		return new File(System.getProperty("user.home"), ".RDF4J");
 	}
 
 	public boolean dataDirPreserveCase() {

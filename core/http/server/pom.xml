@@ -86,8 +86,8 @@
 				<groupId>org.apache.tomcat.maven</groupId>
 				<artifactId>tomcat7-maven-plugin</artifactId>
 				<configuration>
-					<warFile>${project.build.directory}/${project.artifactId}.war</warFile>
-					<server>localhost</server>
+					<warFile>${project.build.directory}/rdf4j-server.war</warFile>
+					<server>tomcat</server>
 					<path>/rdf4j-server</path>
 				</configuration>
 			</plugin>

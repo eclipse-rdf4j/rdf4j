@@ -44,7 +44,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 * Variables *
 	 *-----------*/
 
-	private static final String VERSION = MavenUtil.loadVersion("org.eclipse.rdf4j.sesame", "sesame-sail-nativerdf",
+	private static final String VERSION = MavenUtil.loadVersion("org.eclipse.rdf4j", "rdf4j-sail-nativerdf",
 			"devel");
 
 	/**

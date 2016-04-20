@@ -54,7 +54,7 @@
 						</th>
 						<td>
 							<input type="text" id="server" name="Sesame server location"
-								size="48" value="http://localhost:8080/openrdf-sesame" />
+								size="48" value="http://localhost:8080/rdf4j-server" />
 						</td>
 						<td></td>
 					</tr>

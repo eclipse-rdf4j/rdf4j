@@ -12,10 +12,10 @@ import org.eclipse.rdf4j.common.io.MavenUtil;
 /**
  * @author Arjohn Kampman
  */
-public class Sesame {
+public class RDF4J {
 
-	private static final String VERSION = MavenUtil.loadVersion("org.openrdf.sesame", "sesame-config", "dev");
-	
+	private static final String VERSION = MavenUtil.loadVersion("org.eclipse.rdf4j", "rdf4j-config", "dev");
+
 	public final static String getVersion() {
 		return VERSION;
 	}

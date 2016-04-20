@@ -31,24 +31,8 @@
 			</head>
 			<body>
 				<div id="header">
-					<div id="logo">
-						<img src="../../images/logo.png" alt="" />
-						<img class="productgroup" src="../../images/productgroup.png"
-							alt="" />
-					</div>
-				</div>
-				<div id="navigation">
-					<ul class="maingroup">
-						<xsl:call-template name="navigation" />
-					</ul>
-				</div>
-				<div id="contentheader">
+					<div id="contentheader">
 					<table>
-						<tr>
-							<th colspan="3">
-								<xsl:value-of select="$selections.title" />
-							</th>
-						</tr>
 						<tr>
 							<th>
 								<xsl:value-of select="$server.label" />
@@ -111,7 +95,16 @@
 							</td>
 						</tr>
 					</table>
-					<hr />
+				</div>
+					<div id="logo">
+						<img src="../../images/logo.png" alt="rdf4j" />
+						<img class="product" src="../../images/product.png" alt="workbench" />
+					</div>
+				</div>
+				<div id="navigation">
+					<ul class="maingroup">
+						<xsl:call-template name="navigation" />
+					</ul>
 				</div>
 				<div id="content">
 					<h1 id="title_heading">
