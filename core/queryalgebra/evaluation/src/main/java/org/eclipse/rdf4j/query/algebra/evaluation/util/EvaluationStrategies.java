@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.util.UUIDable;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
@@ -76,10 +77,19 @@ public class EvaluationStrategies {
 	 * @return the key with which the strategy is registered.
 	 */
 	public static final UUID register(EvaluationStrategy strategy) {
-		UUID key = getKey(strategy);
-		if (key == null) {
-			key = UUID.randomUUID();
-			registry.put(key, strategy);
+		UUID key;
+		if (strategy instanceof UUIDable) {
+			key = ((UUIDable)strategy).getUUID();
+			if (get(key) == null) {
+				registry.put(key, strategy);
+			}
+		}
+		else {
+			key = getKey(strategy);
+			if (key == null) {
+				key = UUID.randomUUID();
+				registry.put(key, strategy);
+			}
 		}
 		return key;
 	}

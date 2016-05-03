@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -141,6 +142,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.util.UUIDable;
 
 /**
  * Default evaluation strategy for Sesame queries, to evaluate one
@@ -153,7 +155,7 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
  * @author David Huynh
  * @author Andreas Schwarte
  */
-public class SimpleEvaluationStrategy implements EvaluationStrategy {
+public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	/*-----------*
 	 * Constants *
@@ -172,6 +174,8 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy {
 
 	private final long iterationCacheSyncThreshold;
 
+	private final UUID uuid;
+	
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -193,7 +197,8 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy {
 		this.dataset = dataset;
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
-
+		this.uuid = UUID.randomUUID();
+		
 		EvaluationStrategies.register(this);
 	}
 
@@ -201,6 +206,12 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy {
 	 * Methods *
 	 *---------*/
 
+	@Override
+	public UUID getUUID()
+	{
+		return uuid;
+	}
+	
 	public FederatedService getService(String serviceUrl)
 		throws QueryEvaluationException
 	{

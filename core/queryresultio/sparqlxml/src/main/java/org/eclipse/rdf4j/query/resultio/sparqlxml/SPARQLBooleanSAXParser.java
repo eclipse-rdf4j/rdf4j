@@ -10,6 +10,9 @@ package org.eclipse.rdf4j.query.resultio.sparqlxml;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.BOOLEAN_FALSE;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.BOOLEAN_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.BOOLEAN_TRUE;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.RESULT_SET_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.RESULT_TAG;
+
 
 import java.util.Map;
 
@@ -39,8 +42,8 @@ class SPARQLBooleanSAXParser extends SimpleSAXAdapter {
 			} else {
 				throw new SAXException("Illegal value for element " + BOOLEAN_TAG + ": " + text);
 			}
-		} else if (SPARQLResultsXMLConstants.RESULT_SET_TAG.equals(tagName)
-				|| SPARQLResultsXMLConstants.RESULT_TAG.equals(tagName)) {
+		}
+		else if (RESULT_SET_TAG.equals(tagName) || RESULT_TAG.equals(tagName)) {
 			QueryResultParseException realException = new QueryResultParseException(
 					"Found tuple results in boolean parser");
 			throw new SAXException(realException);

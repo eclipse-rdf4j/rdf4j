@@ -82,6 +82,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	private static final String SOMETHING = "ASK { ?s ?p ?o }";
 
+	private static final String SOMETHING_WITH_GRAPH = "ASK { { GRAPH ?g { ?s ?p ?o } } UNION { ?s ?p ?o } }";
+
 	private static final String NAMEDGRAPHS = "SELECT DISTINCT ?_ WHERE { GRAPH ?_ { ?s ?p ?o } }";
 
 	private final SparqlSession client;
@@ -175,6 +177,27 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		throws RepositoryException
 	{
 		return new RepositoryResult<Namespace>(new EmptyIteration<Namespace, RepositoryException>());
+	}
+
+	public boolean isEmpty()
+		throws RepositoryException
+	{
+		try {
+			BooleanQuery query;
+			if(isQuadMode()) {
+				query = prepareBooleanQuery(SPARQL, SOMETHING_WITH_GRAPH);
+			}
+			else {
+				query = prepareBooleanQuery(SPARQL, SOMETHING);
+			}
+			return !query.evaluate();
+		}
+		catch (MalformedQueryException e) {
+			throw new RepositoryException(e);
+		}
+		catch (QueryEvaluationException e) {
+			throw new RepositoryException(e);
+		}
 	}
 
 	public long size(Resource... contexts)

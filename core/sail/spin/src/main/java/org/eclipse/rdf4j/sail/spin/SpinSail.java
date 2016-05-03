@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.SP;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
@@ -153,11 +152,14 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 	{
 		super.initialize();
 
+		SpinFunctionInterpreter.registerSpinParsingFunctions(parser, functionRegistry);
+		SpinMagicPropertyInterpreter.registerSpinParsingTupleFunctions(parser, tupleFunctionRegistry);
+
 		SpinSailConnection con = getConnection();
 		try {
 			con.begin();
 			Set<Statement> stmts = Iterations.asSet(
-					con.getStatements(getValueFactory().createIRI(SP.NAMESPACE), RDF.TYPE, OWL.ONTOLOGY, true));
+					con.getStatements(getValueFactory().createIRI("http://spinrdf.org/sp"), RDF.TYPE, OWL.ONTOLOGY, true));
 			if (stmts.isEmpty()) {
 				con.addAxiomStatements();
 			}

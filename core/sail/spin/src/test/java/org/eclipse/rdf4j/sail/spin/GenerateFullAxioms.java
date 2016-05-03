@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.openrdf.sail.spin;
+package org.eclipse.rdf4j.sail.spin;
 
 import java.io.FileWriter;
 

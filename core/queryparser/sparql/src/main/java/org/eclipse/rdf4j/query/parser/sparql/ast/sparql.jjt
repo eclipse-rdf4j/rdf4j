@@ -85,26 +85,28 @@ public class SyntaxTreeBuilder {
 		return s;
 	}
 
-	private String readToMatchingBrace() {
+	private String readToMatchingBrace() throws ParseException {
 	    StringBuilder sb = new StringBuilder();
 	    Token tok;
 	    int nesting = 1;
 	    boolean previousTokenDtSep = false;
 	    while (true) {
-		tok = getToken(1);
-		if (!previousTokenDtSep && !tok.image.equals("^^")&& !tok.image.startsWith("@")) {
-		    sb.append(" ");
-		}
-		if (tok.kind == LBRACE) nesting++;
-		if (tok.kind == RBRACE) {
-		    nesting--;
-		    if (nesting == 0) break;
-		}
-		sb.append(tok.image);
-		previousTokenDtSep = tok.image.equals("^^");
+			tok = getToken(1);
+			if ("".equals(tok.image)) {
+				throw new ParseException("closing brace missing");
+			}
+			if (!previousTokenDtSep && !tok.image.equals("^^")&& !tok.image.startsWith("@")) {
+				sb.append(" ");
+			}
+			if (tok.kind == LBRACE) nesting++;
+			if (tok.kind == RBRACE) {
+				nesting--;
+				if (nesting == 0) break;
+			}
+			sb.append(tok.image);
+			previousTokenDtSep = tok.image.equals("^^");
 
-		tok = getNextToken();
-
+			tok = getNextToken();
 	    }
 	    return sb.toString();
 	}

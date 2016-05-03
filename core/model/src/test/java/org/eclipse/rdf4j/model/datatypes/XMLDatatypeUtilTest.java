@@ -308,4 +308,18 @@ public class XMLDatatypeUtilTest {
 			}
 		}
 	}
+
+	@Test
+	public void testParseDouble() {
+		for(String value : VALID_FLOATS) {
+			XMLDatatypeUtil.parseDouble(value);
+		}
+	}
+
+	@Test
+	public void testParseFloat() {
+		for(String value : VALID_FLOATS) {
+			XMLDatatypeUtil.parseFloat(value);
+		}
+	}
 }

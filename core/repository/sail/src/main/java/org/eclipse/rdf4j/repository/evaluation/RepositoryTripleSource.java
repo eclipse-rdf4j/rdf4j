@@ -60,5 +60,4 @@ public class RepositoryTripleSource implements TripleSource {
 	public ValueFactory getValueFactory() {
 		return repo.getValueFactory();
 	}
-
 }

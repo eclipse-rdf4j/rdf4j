@@ -41,7 +41,7 @@ public class SPARQLUpdate extends AbstractHTTPUpdate {
 			SparqlSession client = getHttpClient();
 			try {
 				client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset, includeInferred,
-						getBindingsArray());
+						getMaxExecutionTime(), getBindingsArray());
 			}
 			catch (UnauthorizedException e) {
 				throw new UpdateExecutionException(e.getMessage(), e);

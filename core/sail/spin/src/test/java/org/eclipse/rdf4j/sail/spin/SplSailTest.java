@@ -5,10 +5,11 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.openrdf.sail.spin;
+package org.eclipse.rdf4j.sail.spin;
 
 import static org.junit.Assert.assertEquals;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 
@@ -25,11 +26,11 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.inferencer.fc.DedupingInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.spin.SpinSail;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -65,16 +66,13 @@ public class SplSailTest {
 	@Test
 	public void runTests() throws Exception {
 		ValueFactory vf = conn.getValueFactory();
-		URL url = getClass().getResource("/schema/owl.ttl");
-		InputStream in = url.openStream();
-		try {
-			conn.add(in, url.toString(), RDFFormat.TURTLE);
-		}
-		finally {
-			in.close();
-		}
+		loadRDF("/schema/owl.ttl");
 		conn.add(vf.createStatement(vf.createURI("test:run"), RDF.TYPE, vf.createURI(SPL.NAMESPACE, "RunTestCases")));
-		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, "select ?testCase ?expected ?actual where {(<test:run>) <http://spinrdf.org/spin#select> (?testCase ?expected ?actual)}");
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL,
+				"prefix spin: <http://spinrdf.org/spin#> "+
+				"prefix spl: <http://spinrdf.org/spl#> "+
+				"select ?testCase ?expected ?actual where {(<test:run>) spin:select (?testCase ?expected ?actual)}");
+		// returns failed tests
 		TupleQueryResult tqr = tq.evaluate();
 		try
 		{
@@ -89,6 +87,17 @@ public class SplSailTest {
 		finally
 		{
 			tqr.close();
+		}
+	}
+
+	private void loadRDF(String path) throws IOException, RDFParseException, RepositoryException {
+		URL url = getClass().getResource(path);
+		InputStream in = url.openStream();
+		try {
+			conn.add(in, url.toString(), RDFFormat.TURTLE);
+		}
+		finally {
+			in.close();
 		}
 	}
 }

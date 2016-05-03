@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.rio.DatatypeHandler;
 import org.eclipse.rdf4j.rio.DatatypeHandlerRegistry;
 import org.eclipse.rdf4j.rio.LanguageHandler;
 import org.eclipse.rdf4j.rio.LanguageHandlerRegistry;
+import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,7 +89,7 @@ public class BasicParserSettings {
 		_DEFAULT_PREFIX = Collections.unmodifiableSet(aNamespaces);
 	}
 
-	private final static Logger _LOG = LoggerFactory.getLogger(BasicParserSettings.class);
+	private final static Logger log = LoggerFactory.getLogger(BasicParserSettings.class);
 
 	/**
 	 * Boolean setting for parser to determine whether values for recognised
@@ -205,6 +206,18 @@ public class BasicParserSettings {
 			"org.eclipse.rdf4j.rio.verifyrelativeuris", "Verify relative URIs", Boolean.TRUE);
 
 	/**
+	 * Boolean setting for parser to determine if URIs should be verified to
+	 * contain only legal characters.
+	 * <p>
+	 * Defaults to {@code true}. If set to {@code false}, the parser will report
+	 * syntactically illegal URIs to the {@link RDFHandler}.
+	 * 
+	 * @since 2.9.0
+	 */
+	public static final RioSetting<Boolean> VERIFY_URI_SYNTAX = new RioSettingImpl<Boolean>(
+			"org.openrdf.rio.verifyurisyntax", "Verify URI syntax", Boolean.TRUE);
+
+	/**
 	 * Boolean setting for parser to determine whether parser should attempt to
 	 * preserve identifiers for blank nodes. If the blank node did not have an
 	 * identifier in the document a new identifier will be generated for it.
@@ -265,6 +278,7 @@ public class BasicParserSettings {
 	 * Defaults to <a href="http://www.w3.org/2011/rdfa-context/rdfa-1.1">this
 	 * list</a>.
 	 * </p>
+	 * </p>
 	 *
 	 * @since 2.8.5
 	 */
@@ -283,14 +297,14 @@ public class BasicParserSettings {
 					defaultDatatypeHandlers.add(nextdt.get());
 				}
 				else {
-					_LOG.warn("Could not find DatatypeHandler : {}", nextHandler);
+					log.warn("Could not find DatatypeHandler : {}", nextHandler);
 				}
 			}
 		}
 		catch (Exception e) {
 			// Ignore exceptions so that service loading failures do not cause
 			// class initialization errors.
-			_LOG.warn("Found an error loading DatatypeHandler services", e);
+			log.warn("Found an error loading DatatypeHandler services", e);
 		}
 
 		DATATYPE_HANDLERS = new RioSettingImpl<List<DatatypeHandler>>("org.eclipse.rdf4j.rio.datatypehandlers",
@@ -305,14 +319,14 @@ public class BasicParserSettings {
 					defaultLanguageHandlers.add(nextlang.get());
 				}
 				else {
-					_LOG.warn("Could not find LanguageHandler : {}", nextHandler);
+					log.warn("Could not find LanguageHandler : {}", nextHandler);
 				}
 			}
 		}
 		catch (Exception e) {
 			// Ignore exceptions so that service loading failures do not cause
 			// class initialization errors.
-			_LOG.warn("Found an error loading LanguageHandler services", e);
+			log.warn("Found an error loading LanguageHandler services", e);
 		}
 
 		LANGUAGE_HANDLERS = new RioSettingImpl<List<LanguageHandler>>("org.eclipse.rdf4j.rio.languagehandlers",

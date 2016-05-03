@@ -203,7 +203,7 @@ public class SpinParser {
 	private final Cache<IRI, Template> templateCache = CacheBuilder.newBuilder().maximumSize(100).build();
 
 	private final Cache<IRI, Map<IRI, Argument>> argumentCache = CacheBuilder.newBuilder().maximumSize(
-			100).recordStats().build();
+			100).build();
 
 	public SpinParser() {
 		this(Input.TEXT_FIRST);
@@ -623,8 +623,8 @@ public class SpinParser {
 				throws RDF4JException
 	{
 		for (FunctionParser functionParser : functionParsers) {
-			org.eclipse.rdf4j.query.algebra.evaluation.function.Function function = functionParser.parse(funcUri,
-					store);
+			org.eclipse.rdf4j.query.algebra.evaluation.function.Function function = functionParser.parse(
+					funcUri, store);
 			if (function != null) {
 				return function;
 			}

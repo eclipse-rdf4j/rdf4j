@@ -422,7 +422,15 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	public void setParameter(String key, String value) {
-		parameters.put(key, value);
+		parameters.setProperty(key, value);
+	}
+
+	public String getParameter(String key) {
+		return parameters.getProperty(key);
+	}
+
+	public Set<String> getParameterNames() {
+		return parameters.stringPropertyNames();
 	}
 
 	/**
@@ -436,6 +444,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 * See REINDEX_QUERY_KEY parameter.
 	 */
 	public void setReindexQuery(String query) {
+		this.setParameter(REINDEX_QUERY_KEY, query);
 		this.reindexQuery = query;
 	}
 
@@ -460,6 +469,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 *        true or false
 	 */
 	public void setIncompleteQueryFails(boolean incompleteQueryFails) {
+		this.setParameter(INCOMPLETE_QUERY_FAIL_KEY, Boolean.toString(incompleteQueryFails));
 		this.incompleteQueryFails = incompleteQueryFails;
 	}
 
