@@ -2,40 +2,54 @@
 # imports: http://spinrdf.org/spin
 
 @prefix afn: <http://jena.hpl.hp.com/ARQ/function#> .
+@prefix arg: <http://spinrdf.org/arg#> .
 @prefix fn: <http://www.w3.org/2005/xpath-functions#> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix sp: <http://spinrdf.org/sp#> .
+@prefix spif: <http://spinrdf.org/spif#> .
 @prefix spin: <http://spinrdf.org/spin#> .
 @prefix spl: <http://spinrdf.org/spl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-<http://spinrdf.org/arg#max>
+arg:class
   rdf:type rdf:Property ;
   rdfs:subPropertyOf sp:arg ;
 .
-<http://spinrdf.org/arg#maxCount>
+arg:instance
   rdf:type rdf:Property ;
   rdfs:subPropertyOf sp:arg ;
 .
-<http://spinrdf.org/arg#min>
+arg:max
   rdf:type rdf:Property ;
   rdfs:subPropertyOf sp:arg ;
 .
-<http://spinrdf.org/arg#minCount>
+arg:maxCount
   rdf:type rdf:Property ;
   rdfs:subPropertyOf sp:arg ;
 .
-<http://spinrdf.org/arg#otherProperty>
+arg:min
   rdf:type rdf:Property ;
   rdfs:subPropertyOf sp:arg ;
 .
-<http://spinrdf.org/arg#pattern>
+arg:minCount
   rdf:type rdf:Property ;
   rdfs:subPropertyOf sp:arg ;
 .
-<http://spinrdf.org/arg#property>
+arg:otherProperty
+  rdf:type rdf:Property ;
+  rdfs:subPropertyOf sp:arg ;
+.
+arg:pattern
+  rdf:type rdf:Property ;
+  rdfs:subPropertyOf sp:arg ;
+.
+arg:property
+  rdf:type rdf:Property ;
+  rdfs:subPropertyOf sp:arg ;
+.
+arg:uriStart
   rdf:type rdf:Property ;
   rdfs:subPropertyOf sp:arg ;
 .
@@ -1158,13 +1172,27 @@ spin:eval
       rdfs:comment "The expression to evaluate. Should be a sp:Select, sp:Ask, a sp:Variable or an instance of a SPARQL function class, but may also be a simple RDF value."^^xsd:string ;
     ] ;
 .
+spin:violatesConstraints
+  spin:constraint [
+      rdf:type spl:Argument ;
+      spl:predicate sp:arg1 ;
+      spl:valueType rdfs:Resource ;
+      rdfs:comment "The instance to check."^^xsd:string ;
+    ] ;
+  spin:constraint [
+      rdf:type spl:Argument ;
+      spl:predicate sp:arg2 ;
+      spl:valueType rdfs:Class ;
+      rdfs:comment "The class to get the constraints of."^^xsd:string ;
+    ] ;
+.
 <http://spinrdf.org/spl>
   rdf:type spin:LibraryOntology ;
   rdf:type owl:Ontology ;
   rdfs:comment "A collection of generally useful SPARQL functions (expressed as SPIN functions), and SPIN templates. Also provides a top-level classification of functions, and definitions of the standard SPARQL functions."^^xsd:string ;
   rdfs:label "SPIN Standard Library"^^xsd:string ;
   owl:imports <http://spinrdf.org/spin> ;
-  owl:versionInfo "1.3.0"^^xsd:string ;
+  owl:versionInfo "1.4.0"^^xsd:string ;
 .
 spl:AllArguments
   rdf:type spin:SelectTemplate ;
@@ -1740,14 +1768,14 @@ spl:CountPropertyConstraintTemplates
   spin:constraint [
       rdf:type spl:Argument ;
       spl:optional "true"^^xsd:boolean ;
-      spl:predicate <http://spinrdf.org/arg#maxCount> ;
+      spl:predicate arg:maxCount ;
       spl:valueType xsd:integer ;
       rdfs:comment "The maximum number of values that the property must have."^^xsd:string ;
     ] ;
   spin:constraint [
       rdf:type spl:Argument ;
       spl:optional "true"^^xsd:boolean ;
-      spl:predicate <http://spinrdf.org/arg#minCount> ;
+      spl:predicate arg:minCount ;
       spl:valueType xsd:integer ;
       rdfs:comment "The minimum number of values that the property must have."^^xsd:string ;
     ] ;
@@ -1906,6 +1934,104 @@ spl:InferDefaultValue
   rdfs:comment "Can be used to infer default values for a given subject/predicate combination. This is typically assigned as spin:rule to a class. If ?this does not already have a value for a given property {?predicate}, then this will infer the value {?defaultValue}."^^xsd:string ;
   rdfs:label "Infer default value"^^xsd:string ;
   rdfs:subClassOf spin:ConstructTemplates ;
+.
+spl:LessThanOtherPropertyPairConstraint
+  rdf:type spl:ConstraintTemplate ;
+  spin:body [
+      rdf:type sp:Construct ;
+      sp:templates (
+          [
+            sp:object spin:ConstraintViolation ;
+            sp:predicate rdf:type ;
+            sp:subject _:b27325 ;
+          ]
+          [
+            sp:object [
+                sp:varName "property"^^xsd:string ;
+              ] ;
+            sp:predicate spin:violationPath ;
+            sp:subject _:b27325 ;
+          ]
+          [
+            sp:object [
+                sp:varName "value"^^xsd:string ;
+              ] ;
+            sp:predicate spin:violationValue ;
+            sp:subject _:b27325 ;
+          ]
+          [
+            sp:object spin:_this ;
+            sp:predicate spin:violationRoot ;
+            sp:subject _:b27325 ;
+          ]
+          [
+            sp:object [
+                sp:varName "label"^^xsd:string ;
+              ] ;
+            sp:predicate rdfs:label ;
+            sp:subject _:b27325 ;
+          ]
+        ) ;
+      sp:where (
+          [
+            sp:object [
+                sp:varName "value"^^xsd:string ;
+              ] ;
+            sp:predicate [
+                sp:varName "property"^^xsd:string ;
+              ] ;
+            sp:subject spin:_this ;
+          ]
+          [
+            sp:object [
+                sp:varName "otherValue"^^xsd:string ;
+              ] ;
+            sp:predicate [
+                sp:varName "otherProperty"^^xsd:string ;
+              ] ;
+            sp:subject spin:_this ;
+          ]
+          [
+            rdf:type sp:Filter ;
+            sp:expression [
+                rdf:type sp:ge ;
+                sp:arg1 [
+                    sp:varName "value"^^xsd:string ;
+                  ] ;
+                sp:arg2 [
+                    sp:varName "otherValue"^^xsd:string ;
+                  ] ;
+              ] ;
+          ]
+          [
+            rdf:type sp:Bind ;
+            sp:expression [
+                rdf:type sp:concat ;
+                sp:arg1 "Value " ;
+                sp:arg2 [
+                    rdf:type xsd:string ;
+                    sp:arg1 [
+                        sp:varName "value"^^xsd:string ;
+                      ] ;
+                  ] ;
+                sp:arg3 " must be less than " ;
+                sp:arg4 [
+                    rdf:type xsd:string ;
+                    sp:arg1 [
+                        sp:varName "otherValue"^^xsd:string ;
+                      ] ;
+                  ] ;
+              ] ;
+            sp:variable [
+                sp:varName "label"^^xsd:string ;
+              ] ;
+          ]
+        ) ;
+    ] ;
+  spin:labelTemplate "Values of {?property} must be less than the values of {?otherProperty}"^^xsd:string ;
+  rdfs:comment "Can be used to define a constraint between two properties (?property and ?otherProperty) enforcing the invariant that the values of ?property must be smaller than the values of ?otherProperty. For example this can be used to state that ex:startDate must be < ex:endDate."^^xsd:string ;
+  rdfs:label "Less than other property pair constraint"^^xsd:string ;
+  rdfs:subClassOf spl:PropertyPairConstraintTemplates ;
 .
 spl:MathematicalFunctions
   rdf:type spin:Function ;
@@ -2119,12 +2245,189 @@ spl:OntologyFunctions
   rdfs:label "Ontology functions"^^xsd:string ;
   rdfs:subClassOf spin:Functions ;
 .
+spl:PrimaryKeyPropertyConstraint
+  rdf:type spl:ConstraintTemplate ;
+  spin:body [
+      rdf:type sp:Construct ;
+      sp:templates (
+          [
+            sp:object spin:ConstraintViolation ;
+            sp:predicate rdf:type ;
+            sp:subject _:b83324 ;
+          ]
+          [
+            sp:object [
+                sp:varName "label"^^xsd:string ;
+              ] ;
+            sp:predicate rdfs:label ;
+            sp:subject _:b83324 ;
+          ]
+          [
+            sp:object spin:_this ;
+            sp:predicate spin:violationRoot ;
+            sp:subject _:b83324 ;
+          ]
+          [
+            sp:object [
+                sp:varName "property"^^xsd:string ;
+              ] ;
+            sp:predicate spin:violationPath ;
+            sp:subject _:b83324 ;
+          ]
+        ) ;
+      sp:where (
+          [
+            rdf:type sp:Union ;
+            sp:elements (
+                (
+                  [
+                    rdf:type sp:Filter ;
+                    sp:expression [
+                        rdf:type sp:notExists ;
+                        sp:elements (
+                            [
+                              sp:object [
+                                  sp:varName "any"^^xsd:string ;
+                                ] ;
+                              sp:predicate [
+                                  sp:varName "property"^^xsd:string ;
+                                ] ;
+                              sp:subject spin:_this ;
+                            ]
+                          ) ;
+                      ] ;
+                  ]
+                  [
+                    rdf:type sp:Bind ;
+                    sp:expression "Missing value for primary key property" ;
+                    sp:variable [
+                        sp:varName "label"^^xsd:string ;
+                      ] ;
+                  ]
+                )
+                (
+                  [
+                    rdf:type sp:Filter ;
+                    sp:expression [
+                        rdf:type sp:gt ;
+                        sp:arg1 [
+                            rdf:type spl:objectCount ;
+                            sp:arg1 spin:_this ;
+                            sp:arg2 [
+                                sp:varName "property"^^xsd:string ;
+                              ] ;
+                          ] ;
+                        sp:arg2 1 ;
+                      ] ;
+                  ]
+                  [
+                    rdf:type sp:Bind ;
+                    sp:expression "Multiple values of primary key property" ;
+                    sp:variable [
+                        sp:varName "label"^^xsd:string ;
+                      ] ;
+                  ]
+                )
+                (
+                  [
+                    rdf:type sp:Filter ;
+                    sp:expression [
+                        rdf:type sp:eq ;
+                        sp:arg1 [
+                            rdf:type spl:objectCount ;
+                            sp:arg1 spin:_this ;
+                            sp:arg2 [
+                                sp:varName "property"^^xsd:string ;
+                              ] ;
+                          ] ;
+                        sp:arg2 1 ;
+                      ] ;
+                  ]
+                  [
+                    sp:object [
+                        sp:varName "value"^^xsd:string ;
+                      ] ;
+                    sp:predicate [
+                        sp:varName "property"^^xsd:string ;
+                      ] ;
+                    sp:subject spin:_this ;
+                  ]
+                  [
+                    rdf:type sp:Bind ;
+                    sp:expression [
+                        rdf:type sp:concat ;
+                        sp:arg1 [
+                            sp:varName "uriStart"^^xsd:string ;
+                          ] ;
+                        sp:arg2 [
+                            rdf:type sp:encode_for_uri ;
+                            sp:arg1 [
+                                rdf:type xsd:string ;
+                                sp:arg1 [
+                                    sp:varName "value"^^xsd:string ;
+                                  ] ;
+                              ] ;
+                          ] ;
+                      ] ;
+                    sp:variable [
+                        sp:varName "uri"^^xsd:string ;
+                      ] ;
+                  ]
+                  [
+                    rdf:type sp:Filter ;
+                    sp:expression [
+                        rdf:type sp:ne ;
+                        sp:arg1 [
+                            rdf:type xsd:string ;
+                            sp:arg1 spin:_this ;
+                          ] ;
+                        sp:arg2 [
+                            sp:varName "uri"^^xsd:string ;
+                          ] ;
+                      ] ;
+                  ]
+                  [
+                    rdf:type sp:Bind ;
+                    sp:expression [
+                        rdf:type sp:concat ;
+                        sp:arg1 "Primary key value " ;
+                        sp:arg2 [
+                            rdf:type xsd:string ;
+                            sp:arg1 [
+                                sp:varName "value"^^xsd:string ;
+                              ] ;
+                          ] ;
+                        sp:arg3 " does not align with the expected URI " ;
+                        sp:arg4 [
+                            sp:varName "uri"^^xsd:string ;
+                          ] ;
+                      ] ;
+                    sp:variable [
+                        sp:varName "label"^^xsd:string ;
+                      ] ;
+                  ]
+                )
+              ) ;
+          ]
+        ) ;
+    ] ;
+  spin:constraint [
+      rdf:type spl:Argument ;
+      spl:predicate arg:uriStart ;
+      spl:valueType xsd:string ;
+      rdfs:comment "The start of the URIs of well-formed instances of the associated class."^^xsd:string ;
+    ] ;
+  spin:labelTemplate "The property {?property} is the primary key and URIs start with {?uriStart}"^^xsd:string ;
+  rdfs:comment "Specifies that the given property is a primary key for instances of the associated class (and its subclasses). If a property has been declared to be the primary key then each instance of the class must have exactly one value for that property. Furthermore, the URIs of those instances must start with a given string (arg:uriStart), followed by the URL-encoded primary key value. For example if arg:uriStart is \"http://example.org/country-\" and the primary key for an instance is \"de\" then the URI must be \"http://example.org/country-de\". Finally, as a result of the URI policy, there can not be any other instance with the same value under the same primary key policy."^^xsd:string ;
+  rdfs:label "Primary key property constraint"^^xsd:string ;
+  rdfs:subClassOf spl:PropertyConstraintTemplates ;
+.
 spl:PropertyConstraintTemplates
   rdf:type spl:ConstraintTemplate ;
   spin:abstract "true"^^xsd:boolean ;
   spin:constraint [
       rdf:type spl:Argument ;
-      spl:predicate <http://spinrdf.org/arg#property> ;
+      spl:predicate arg:property ;
       spl:valueType rdf:Property ;
       rdfs:comment "The property being constrained."^^xsd:string ;
     ] ;
@@ -2137,7 +2440,7 @@ spl:PropertyPairConstraintTemplates
   spin:abstract "true"^^xsd:boolean ;
   spin:constraint [
       rdf:type spl:Argument ;
-      spl:predicate <http://spinrdf.org/arg#otherProperty> ;
+      spl:predicate arg:otherProperty ;
       spl:valueType rdf:Property ;
       rdfs:comment "The \"other\" property."^^xsd:string ;
     ] ;
@@ -2255,14 +2558,14 @@ spl:RangePropertyConstraint
   spin:constraint [
       rdf:type spl:Argument ;
       spl:optional "true"^^xsd:boolean ;
-      spl:predicate <http://spinrdf.org/arg#max> ;
+      spl:predicate arg:max ;
       spl:valueType rdfs:Literal ;
       rdfs:comment "The maximum value."^^xsd:string ;
     ] ;
   spin:constraint [
       rdf:type spl:Argument ;
       spl:optional "true"^^xsd:boolean ;
-      spl:predicate <http://spinrdf.org/arg#min> ;
+      spl:predicate arg:min ;
       spl:valueType rdfs:Literal ;
       rdfs:comment "The minimum value."^^xsd:string ;
     ] ;
@@ -2351,7 +2654,7 @@ spl:RegexPropertyConstraint
     ] ;
   spin:constraint [
       rdf:type spl:Argument ;
-      spl:predicate <http://spinrdf.org/arg#pattern> ;
+      spl:predicate arg:pattern ;
       spl:valueType xsd:string ;
       rdfs:comment "The regular expression to match."^^xsd:string ;
     ] ;
@@ -2877,6 +3180,45 @@ spl:hasArgument
   rdfs:label "has argument"^^xsd:string ;
   rdfs:subClassOf spl:BooleanFunctions ;
 .
+spl:hasPrimaryKey
+  rdf:type spin:Function ;
+  spin:body [
+      rdf:type sp:Ask ;
+      sp:where (
+          [
+            rdf:type sp:Bind ;
+            sp:expression [
+                rdf:type spl:primaryKeyProperty ;
+                arg:class [
+                    sp:varName "class"^^xsd:string ;
+                  ] ;
+              ] ;
+            sp:variable [
+                sp:varName "primaryKey"^^xsd:string ;
+              ] ;
+          ]
+          [
+            rdf:type sp:Filter ;
+            sp:expression [
+                rdf:type sp:bound ;
+                sp:arg1 [
+                    sp:varName "primaryKey"^^xsd:string ;
+                  ] ;
+              ] ;
+          ]
+        ) ;
+    ] ;
+  spin:constraint [
+      rdf:type spl:Argument ;
+      spl:predicate arg:class ;
+      spl:valueType rdfs:Class ;
+      rdfs:comment "The class to get the primary key of."^^xsd:string ;
+    ] ;
+  spin:returnType xsd:boolean ;
+  rdfs:comment "Checks if a given class has a declared primary key, using spl:PrimaryKeyPropertyConstraint."^^xsd:string ;
+  rdfs:label "has primary key"^^xsd:string ;
+  rdfs:subClassOf spl:OntologyFunctions ;
+.
 spl:hasValue
   rdf:type spin:Function ;
   spin:body [
@@ -3131,6 +3473,63 @@ spl:instanceOf
   rdfs:label "instanceOf"^^xsd:string ;
   rdfs:subClassOf spl:BooleanFunctions ;
   owl:versionInfo "Note that in TopBraid this function has been implemented in native Java code, for performance reasons."^^xsd:string ;
+.
+spl:isPrimaryKeyPropertyOfInstance
+  rdf:type spin:Function ;
+  spin:body [
+      rdf:type sp:Ask ;
+      sp:where (
+          [
+            sp:object [
+                sp:varName "type"^^xsd:string ;
+              ] ;
+            sp:predicate rdf:type ;
+            sp:subject [
+                sp:varName "instance"^^xsd:string ;
+              ] ;
+          ]
+          [
+            rdf:type sp:Bind ;
+            sp:expression [
+                rdf:type spl:primaryKeyProperty ;
+                arg:class [
+                    sp:varName "type"^^xsd:string ;
+                  ] ;
+              ] ;
+            sp:variable [
+                sp:varName "pk"^^xsd:string ;
+              ] ;
+          ]
+          [
+            rdf:type sp:Filter ;
+            sp:expression [
+                rdf:type sp:eq ;
+                sp:arg1 [
+                    sp:varName "property"^^xsd:string ;
+                  ] ;
+                sp:arg2 [
+                    sp:varName "pk"^^xsd:string ;
+                  ] ;
+              ] ;
+          ]
+        ) ;
+    ] ;
+  spin:constraint [
+      rdf:type spl:Argument ;
+      spl:predicate arg:instance ;
+      spl:valueType rdfs:Resource ;
+      rdfs:comment "The instance to check."^^xsd:string ;
+    ] ;
+  spin:constraint [
+      rdf:type spl:Argument ;
+      spl:predicate arg:property ;
+      spl:valueType rdf:Property ;
+      rdfs:comment "The property that may or may not be the primary key."^^xsd:string ;
+    ] ;
+  spin:returnType xsd:boolean ;
+  rdfs:comment "Checks if a given property is the primary key of a given instance."^^xsd:string ;
+  rdfs:label "is primary key property of instance"^^xsd:string ;
+  rdfs:subClassOf spl:OntologyFunctions ;
 .
 spl:isUntypedLiteral
   rdf:type spin:Function ;
@@ -3454,6 +3853,132 @@ spl:predicate
   rdf:type rdf:Property ;
   rdfs:label "predicate"^^xsd:string ;
   rdfs:subPropertyOf sp:arg ;
+.
+spl:primaryKeyProperty
+  rdf:type spin:Function ;
+  spin:body [
+      rdf:type sp:Select ;
+      sp:resultVariables (
+          [
+            sp:varName "property"^^xsd:string ;
+          ]
+        ) ;
+      sp:where (
+          [
+            rdf:type sp:TriplePath ;
+            sp:object [
+                sp:varName "type"^^xsd:string ;
+              ] ;
+            sp:path [
+                rdf:type sp:ModPath ;
+                sp:modMax -2 ;
+                sp:modMin 0 ;
+                sp:subPath rdfs:subClassOf ;
+              ] ;
+            sp:subject [
+                sp:varName "class"^^xsd:string ;
+              ] ;
+          ]
+          [
+            sp:object [
+                sp:varName "constraint"^^xsd:string ;
+              ] ;
+            sp:predicate spin:constraint ;
+            sp:subject [
+                sp:varName "type"^^xsd:string ;
+              ] ;
+          ]
+          [
+            sp:object spl:PrimaryKeyPropertyConstraint ;
+            sp:predicate rdf:type ;
+            sp:subject [
+                sp:varName "constraint"^^xsd:string ;
+              ] ;
+          ]
+          [
+            sp:object [
+                sp:varName "property"^^xsd:string ;
+              ] ;
+            sp:predicate arg:property ;
+            sp:subject [
+                sp:varName "constraint"^^xsd:string ;
+              ] ;
+          ]
+        ) ;
+    ] ;
+  spin:constraint [
+      rdf:type spl:Argument ;
+      spl:predicate arg:class ;
+      spl:valueType rdfs:Class ;
+      rdfs:comment "The class to get the primary key of."^^xsd:string ;
+    ] ;
+  spin:returnType rdf:Property ;
+  rdfs:comment "Gets the primary key property declared for a given class, using spl:PrimaryKeyPropertyConstraint."^^xsd:string ;
+  rdfs:label "primary key property"^^xsd:string ;
+  rdfs:subClassOf spl:OntologyFunctions ;
+.
+spl:primaryKeyURIStart
+  rdf:type spin:Function ;
+  spin:body [
+      rdf:type sp:Select ;
+      sp:resultVariables (
+          [
+            sp:varName "result"^^xsd:string ;
+          ]
+        ) ;
+      sp:where (
+          [
+            rdf:type sp:TriplePath ;
+            sp:object [
+                sp:varName "type"^^xsd:string ;
+              ] ;
+            sp:path [
+                rdf:type sp:ModPath ;
+                sp:modMax -2 ;
+                sp:modMin 0 ;
+                sp:subPath rdfs:subClassOf ;
+              ] ;
+            sp:subject [
+                sp:varName "class"^^xsd:string ;
+              ] ;
+          ]
+          [
+            sp:object [
+                sp:varName "constraint"^^xsd:string ;
+              ] ;
+            sp:predicate spin:constraint ;
+            sp:subject [
+                sp:varName "type"^^xsd:string ;
+              ] ;
+          ]
+          [
+            sp:object spl:PrimaryKeyPropertyConstraint ;
+            sp:predicate rdf:type ;
+            sp:subject [
+                sp:varName "constraint"^^xsd:string ;
+              ] ;
+          ]
+          [
+            sp:object [
+                sp:varName "result"^^xsd:string ;
+              ] ;
+            sp:predicate arg:uriStart ;
+            sp:subject [
+                sp:varName "constraint"^^xsd:string ;
+              ] ;
+          ]
+        ) ;
+    ] ;
+  spin:constraint [
+      rdf:type spl:Argument ;
+      spl:predicate arg:class ;
+      spl:valueType rdfs:Class ;
+      rdfs:comment "The class to get the primary key of."^^xsd:string ;
+    ] ;
+  spin:returnType rdf:Property ;
+  rdfs:comment "Gets the URI start declared as part of a primary key declaration for a given class, using spl:PrimaryKeyPropertyConstraint."^^xsd:string ;
+  rdfs:label "primary key URI start"^^xsd:string ;
+  rdfs:subClassOf spl:OntologyFunctions ;
 .
 spl:relevantPropertyAtClass
   rdf:type spin:MagicProperty ;

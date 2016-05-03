@@ -127,6 +127,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.Statements;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelVisitorBase;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
+import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedOperation;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -142,7 +143,6 @@ import org.eclipse.rdf4j.spin.function.SpinTupleFunctionAsFunctionParser;
 import org.eclipse.rdf4j.spin.function.SpinTupleFunctionParser;
 import org.eclipse.rdf4j.spin.function.SpinxFunctionParser;
 import org.eclipse.rdf4j.spin.function.TupleFunctionParser;
-import org.openrdf.query.parser.ParsedDescribeQuery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -203,7 +203,7 @@ public class SpinParser {
 	private final Cache<IRI, Template> templateCache = CacheBuilder.newBuilder().maximumSize(100).build();
 
 	private final Cache<IRI, Map<IRI, Argument>> argumentCache = CacheBuilder.newBuilder().maximumSize(
-			100).recordStats().build();
+			100).build();
 
 	public SpinParser() {
 		this(Input.TEXT_FIRST);
@@ -507,7 +507,7 @@ public class SpinParser {
 
 	private Template getTemplate(final IRI tmplUri, final IRI queryType, final Set<IRI> abstractTmpls,
 			final TripleSource store)
-				throws OpenRDFException
+		throws OpenRDFException
 	{
 		try {
 			return templateCache.get(tmplUri, new Callable<Template>() {
@@ -535,7 +535,7 @@ public class SpinParser {
 
 	private Template parseTemplateInternal(IRI tmplUri, IRI queryType, Set<IRI> abstractTmpls,
 			TripleSource store)
-				throws OpenRDFException
+		throws OpenRDFException
 	{
 		Set<IRI> possibleTmplTypes = new HashSet<IRI>();
 		CloseableIteration<? extends IRI, ? extends OpenRDFException> typeIter = Statements.getObjectURIs(
@@ -620,11 +620,11 @@ public class SpinParser {
 
 	public org.eclipse.rdf4j.query.algebra.evaluation.function.Function parseFunction(IRI funcUri,
 			TripleSource store)
-				throws OpenRDFException
+		throws OpenRDFException
 	{
 		for (FunctionParser functionParser : functionParsers) {
-			org.eclipse.rdf4j.query.algebra.evaluation.function.Function function = functionParser.parse(funcUri,
-					store);
+			org.eclipse.rdf4j.query.algebra.evaluation.function.Function function = functionParser.parse(
+					funcUri, store);
 			if (function != null) {
 				return function;
 			}

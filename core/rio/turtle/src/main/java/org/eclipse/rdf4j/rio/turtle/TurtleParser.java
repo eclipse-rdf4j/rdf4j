@@ -54,8 +54,8 @@ import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
  * constructs that extend over multiple lines, but the author's own parser
  * deviates from this too.</li>
  * <li>The localname part of a prefixed named is allowed to start with a number
- * (cf. <a href="http://www.w3.org/TR/turtle/">the W3C Turtle Working
- * Draft</a>).</li>
+ * (cf. <a href="http://www.w3.org/TR/turtle/">the W3C Turtle Working Draft</a>
+ * ).</li>
  * </ul>
  * 
  * @author Arjohn Kampman
@@ -282,7 +282,8 @@ public class TurtleParser extends AbstractRDFParser {
 		}
 		else if (directive.length() >= 7 && directive.substring(0, 7).equalsIgnoreCase("@prefix")) {
 			if (!this.getParserConfig().get(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES)) {
-				reportFatalError("Cannot strictly support case-insensitive @prefix directive in compliance mode.");
+				reportFatalError(
+						"Cannot strictly support case-insensitive @prefix directive in compliance mode.");
 			}
 			if (directive.length() > 7) {
 				unread(directive.substring(7));
@@ -465,7 +466,7 @@ public class TurtleParser extends AbstractRDFParser {
 			if (value instanceof Resource) {
 				subject = (Resource)value;
 			}
-			else {
+			else if (value != null) {
 				reportFatalError("Illegal subject value: " + value);
 			}
 		}
@@ -948,6 +949,7 @@ public class TurtleParser extends AbstractRDFParser {
 		int c = readCodePoint();
 		verifyCharacterOrFail(c, "<");
 
+		boolean uriIsIllegal = false;
 		// Read up to the next '>' character
 		while (true) {
 			c = readCodePoint();
@@ -960,7 +962,9 @@ public class TurtleParser extends AbstractRDFParser {
 			}
 
 			if (c == ' ') {
-				reportFatalError("IRI included an unencoded space: '" + c + "'");
+				reportError("IRI included an unencoded space: '" + c + "'",
+						BasicParserSettings.VERIFY_URI_SYNTAX);
+				uriIsIllegal = true;
 			}
 
 			uriBuf.append(Character.toChars(c));
@@ -972,29 +976,39 @@ public class TurtleParser extends AbstractRDFParser {
 					throwEOFException();
 				}
 				if (c != 'u' && c != 'U') {
-					reportFatalError("IRI includes string escapes: '\\" + c + "'");
+					reportError("IRI includes string escapes: '\\" + c + "'",
+							BasicParserSettings.VERIFY_URI_SYNTAX);
+					uriIsIllegal = true;
 				}
 				uriBuf.append(Character.toChars(c));
 			}
 		}
 
 		if (c == '.') {
-			reportFatalError("IRI must not end in a '.'");
+			reportError("IRI must not end in a '.'", BasicParserSettings.VERIFY_URI_SYNTAX);
+			uriIsIllegal = true;
 		}
 
-		String uri = uriBuf.toString();
+		// do not report back the actual URI if it's illegal and the parser is
+		// configured to verify URI syntax.
+		if (!(uriIsIllegal && getParserConfig().get(BasicParserSettings.VERIFY_URI_SYNTAX))) {
+			String uri = uriBuf.toString();
 
-		// Unescape any escape sequences
-		try {
-			// FIXME: The following decodes \n and similar in URIs, which should be
-			// invalid according to test <turtle-syntax-bad-uri-04.ttl>
-			uri = TurtleUtil.decodeString(uri);
-		}
-		catch (IllegalArgumentException e) {
-			reportError(e.getMessage(), BasicParserSettings.VERIFY_DATATYPE_VALUES);
+			// Unescape any escape sequences
+			try {
+				// FIXME: The following decodes \n and similar in URIs, which should
+				// be
+				// invalid according to test <turtle-syntax-bad-uri-04.ttl>
+				uri = TurtleUtil.decodeString(uri);
+			}
+			catch (IllegalArgumentException e) {
+				reportError(e.getMessage(), BasicParserSettings.VERIFY_DATATYPE_VALUES);
+			}
+
+			return super.resolveURI(uri);
 		}
 
-		return super.resolveURI(uri);
+		return null;
 	}
 
 	/**
@@ -1178,9 +1192,11 @@ public class TurtleParser extends AbstractRDFParser {
 	protected void reportStatement(Resource subj, IRI pred, Value obj)
 		throws RDFParseException, RDFHandlerException
 	{
-		Statement st = createStatement(subj, pred, obj);
-		if (rdfHandler != null) {
-			rdfHandler.handleStatement(st);
+		if (subj != null && pred != null && obj != null) {
+			Statement st = createStatement(subj, pred, obj);
+			if (rdfHandler != null) {
+				rdfHandler.handleStatement(st);
+			}
 		}
 	}
 

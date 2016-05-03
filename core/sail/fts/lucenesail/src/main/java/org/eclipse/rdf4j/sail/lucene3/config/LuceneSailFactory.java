@@ -61,6 +61,9 @@ public class LuceneSailFactory implements SailFactory {
 		if (config instanceof AbstractLuceneSailConfig) {
 			AbstractLuceneSailConfig luceneConfig = (AbstractLuceneSailConfig)config;
 			luceneSail.setParameter(LuceneSail.LUCENE_DIR_KEY, luceneConfig.getIndexDir());
+			for (String key : luceneConfig.getParameterNames()) {
+				luceneSail.setParameter(key, luceneConfig.getParameter(key));
+			}
 		}
 
 		return luceneSail;

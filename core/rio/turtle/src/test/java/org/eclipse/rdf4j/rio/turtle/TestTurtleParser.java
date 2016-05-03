@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
+import static org.hamcrest.CoreMatchers.not;
+import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.hasSize;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -28,13 +31,13 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
+import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.hamcrest.CoreMatchers;
 import org.hamcrest.Matchers;
 import org.junit.Before;
 import org.junit.Test;
-
 /**
  * @author jeen
  */
@@ -86,6 +89,51 @@ public class TestTurtleParser {
 	}
 
 	@Test
+	public void testParseIllegalURIFatal()
+		throws Exception
+	{
+		String data = " <urn:foo_bar\\r> <urn:foo> <urn:bar> ; <urn:foo2> <urn:bar2> . <urn:foobar> <urn:food> <urn:barf> . ";
+
+		try {
+			parser.parse(new StringReader(data), baseURI);
+			fail("default config should result in fatal error / parse exception");
+		}
+		catch (RDFParseException e) {
+			// expected
+		}
+	}
+
+	@Test
+	public void testParseIllegalURINonFatal()
+		throws Exception
+	{
+		String data = " <urn:foo_bar\\r> <urn:foo> <urn:bar> ; <urn:foo2> <urn:bar2> . <urn:foobar> <urn:food> <urn:barf> . ";
+
+		parser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_URI_SYNTAX);
+		parser.parse(new StringReader(data), baseURI);
+		assertThat(errorCollector.getErrors(), hasSize(1));
+		assertThat(errorCollector.getFatalErrors(), empty());
+		assertThat(statementCollector.getStatements(), not(empty()));
+		assertThat("only syntactically legal triples should have been reported",
+				statementCollector.getStatements(), hasSize(1));
+	}
+
+	@Test
+	public void testParseIllegalURINoVerify()
+		throws Exception
+	{
+		String data = " <urn:foo_bar\\r> <urn:foo> <urn:bar> ; <urn:foo2> <urn:bar2> . <urn:foobar> <urn:food> <urn:barf> . ";
+
+		parser.getParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false);
+
+		parser.parse(new StringReader(data), baseURI);
+		assertThat(errorCollector.getErrors(), empty());
+		assertThat(errorCollector.getFatalErrors(), empty());
+		assertThat(statementCollector.getStatements(), not(empty()));
+		assertThat("all triples should have been reported", statementCollector.getStatements(), hasSize(3));
+	}
+
+	@Test
 	public void testParseBNodes()
 		throws Exception
 	{
@@ -130,8 +178,10 @@ public class TestTurtleParser {
 	public void testW3C1()
 		throws Exception
 	{
-		URL url = new URL("http://www.w3.org/2013/TurtleTests/localName_with_assigned_nfc_PN_CHARS_BASE_character_boundaries.ttl");
-		URL nturl = new URL("http://www.w3.org/2013/TurtleTests/localName_with_assigned_nfc_PN_CHARS_BASE_character_boundaries.nt");
+		URL url = new URL(
+				"http://www.w3.org/2013/TurtleTests/localName_with_assigned_nfc_PN_CHARS_BASE_character_boundaries.ttl");
+		URL nturl = new URL(
+				"http://www.w3.org/2013/TurtleTests/localName_with_assigned_nfc_PN_CHARS_BASE_character_boundaries.nt");
 
 		parser.parse(url.openStream(), baseURI);
 
@@ -145,7 +195,7 @@ public class TestTurtleParser {
 			System.out.println(st);
 		}
 	}
-	
+
 	@Test
 	public void testParseTurtleLiteralUTF8()
 		throws Exception
@@ -165,7 +215,7 @@ public class TestTurtleParser {
 			System.out.println(st);
 		}
 	}
-	
+
 	@Test
 	public void testParseTurtleLiteralCarriageReturn()
 		throws Exception
@@ -204,12 +254,14 @@ public class TestTurtleParser {
 			assertTrue(error.contains("(9,"));
 		}
 	}
-	
+
 	@Test
-	public void testParseBooleanLiteralComma() throws Exception{
+	public void testParseBooleanLiteralComma()
+		throws Exception
+	{
 		String data = "<urn:a> <urn:b> true, false .";
 		Reader r = new StringReader(data);
-		
+
 		try {
 			parser.parse(r, baseURI);
 			assertTrue(statementCollector.getStatements().size() == 2);
@@ -220,10 +272,12 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testParseBooleanLiteralWhitespaceComma() throws Exception{
+	public void testParseBooleanLiteralWhitespaceComma()
+		throws Exception
+	{
 		String data = "<urn:a> <urn:b> true , false .";
 		Reader r = new StringReader(data);
-		
+
 		try {
 			parser.parse(r, baseURI);
 			assertTrue(statementCollector.getStatements().size() == 2);
@@ -232,12 +286,14 @@ public class TestTurtleParser {
 			fail("parse error on correct data: " + e.getMessage());
 		}
 	}
-	
+
 	@Test
-	public void testParseBooleanLiteralSemicolumn() throws Exception{
+	public void testParseBooleanLiteralSemicolumn()
+		throws Exception
+	{
 		String data = "<urn:a> <urn:b> true; <urn:c> false .";
 		Reader r = new StringReader(data);
-		
+
 		try {
 			parser.parse(r, baseURI);
 			assertTrue(statementCollector.getStatements().size() == 2);
@@ -246,12 +302,14 @@ public class TestTurtleParser {
 			fail("parse error on correct data: " + e.getMessage());
 		}
 	}
-	
+
 	@Test
-	public void testParseBooleanLiteralWhitespaceSemicolumn() throws Exception{
+	public void testParseBooleanLiteralWhitespaceSemicolumn()
+		throws Exception
+	{
 		String data = "<urn:a> <urn:b> true ; <urn:c> false .";
 		Reader r = new StringReader(data);
-		
+
 		try {
 			parser.parse(r, baseURI);
 			assertTrue(statementCollector.getStatements().size() == 2);
@@ -260,7 +318,7 @@ public class TestTurtleParser {
 			fail("parse error on correct data: " + e.getMessage());
 		}
 	}
-	
+
 	@Test
 	public void testParseNTriplesLiteralUTF8()
 		throws Exception
@@ -282,7 +340,9 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void rdfXmlLoadedFromInsideAJarResolvesRelativeUris() throws Exception {
+	public void rdfXmlLoadedFromInsideAJarResolvesRelativeUris()
+		throws Exception
+	{
 		URL zipfileUrl = TestTurtleParser.class.getResource("sample-with-turtle-data.zip");
 
 		assertNotNull("The sample-with-turtle-data.zip file must be present for this test", zipfileUrl);
@@ -300,17 +360,16 @@ public class TestTurtleParser {
 
 		Collection<Statement> stmts = sc.getStatements();
 
-		assertThat(stmts, Matchers.<Statement>iterableWithSize(2));
+		assertThat(stmts, Matchers.<Statement> iterableWithSize(2));
 
 		Iterator<Statement> iter = stmts.iterator();
 
-		Statement stmt1 = iter.next(),
-				stmt2 = iter.next();
+		Statement stmt1 = iter.next(), stmt2 = iter.next();
 
 		assertEquals(vf.createIRI("http://www.example.com/#"), stmt1.getSubject());
 		assertEquals(vf.createIRI("http://www.example.com/ns/#document-about"), stmt1.getPredicate());
 
-		Resource res = (Resource) stmt1.getObject();
+		Resource res = (Resource)stmt1.getObject();
 
 		String resourceUrl = res.stringValue();
 

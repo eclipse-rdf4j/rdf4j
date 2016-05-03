@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.sail;
 
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
-import org.openrdf.query.impl.AbstractParserQuery;
+import org.eclipse.rdf4j.query.parser.impl.AbstractParserQuery;
 
 /**
  * @author Arjohn Kampman

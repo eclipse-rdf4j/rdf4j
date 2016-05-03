@@ -30,7 +30,7 @@ public class Localname extends UnaryFunction {
 			return valueFactory.createLiteral(uri.getLocalName());
 		}
 		else {
-			throw new ValueExprEvaluationException();
+			throw new ValueExprEvaluationException("Not a URI");
 		}
 	}
 }

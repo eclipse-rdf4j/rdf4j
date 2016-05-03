@@ -368,7 +368,15 @@ public class SparqlSession implements HttpClientDependent {
 				throws IOException, RepositoryException, MalformedQueryException, UnauthorizedException,
 				QueryInterruptedException
 	{
-		HttpUriRequest method = getUpdateMethod(ql, update, baseURI, dataset, includeInferred, bindings);
+		sendUpdate(ql, update, baseURI, dataset, includeInferred, 0, bindings);
+	}
+
+	public void sendUpdate(QueryLanguage ql, String update, String baseURI, Dataset dataset,
+			boolean includeInferred, int maxQueryTime, Binding... bindings)
+				throws IOException, RepositoryException, MalformedQueryException, UnauthorizedException,
+				QueryInterruptedException
+	{
+		HttpUriRequest method = getUpdateMethod(ql, update, baseURI, dataset, includeInferred, maxQueryTime, bindings);
 
 		try {
 			executeNoContent(method);
@@ -536,12 +544,18 @@ public class SparqlSession implements HttpClientDependent {
 	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
 			boolean includeInferred, Binding... bindings)
 	{
+		return getUpdateMethod(ql, update, baseURI, dataset, includeInferred, 0, bindings);
+	}
+
+	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
+			boolean includeInferred, int maxQueryTime, Binding... bindings)
+	{
 		HttpPost method = new HttpPost(getUpdateURL());
 
 		method.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
 
 		List<NameValuePair> queryParams = getUpdateMethodParameters(ql, update, baseURI, dataset,
-				includeInferred, bindings);
+				includeInferred, maxQueryTime, bindings);
 
 		method.setEntity(new UrlEncodedFormEntity(queryParams, UTF8));
 
@@ -600,6 +614,12 @@ public class SparqlSession implements HttpClientDependent {
 	protected List<NameValuePair> getUpdateMethodParameters(QueryLanguage ql, String update, String baseURI,
 			Dataset dataset, boolean includeInferred, Binding... bindings)
 	{
+		return getUpdateMethodParameters(ql, update, baseURI, dataset, includeInferred, 0, bindings);
+	}
+
+	protected List<NameValuePair> getUpdateMethodParameters(QueryLanguage ql, String update, String baseURI,
+			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings)
+	{
 		if (ql == null) {
 			throw new NullPointerException("ql may not be null");
 		}
@@ -617,6 +637,9 @@ public class SparqlSession implements HttpClientDependent {
 		}
 		queryParams.add(
 				new BasicNameValuePair(Protocol.INCLUDE_INFERRED_PARAM_NAME, Boolean.toString(includeInferred)));
+		if (maxQueryTime > 0) {
+			queryParams.add(new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));
+		}
 
 		if (dataset != null) {
 			for (IRI graphURI : dataset.getDefaultRemoveGraphs()) {

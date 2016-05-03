@@ -1,3 +1,4 @@
+# sp
 org.openrdf.spin.function.Add
 org.openrdf.spin.function.Subtract
 org.openrdf.spin.function.Multiply
@@ -11,5 +12,33 @@ org.openrdf.spin.function.LessThan
 org.openrdf.spin.function.LessThanOrEqualTo
 org.openrdf.spin.function.GreaterThan
 org.openrdf.spin.function.GreaterThanOrEqualTo
+# afn
 org.openrdf.spin.function.Localname
+# spl
 org.openrdf.spin.function.ObjectFunction
+# spif
+org.openrdf.spin.function.spif.Mod
+org.openrdf.spin.function.spif.ParseDate
+org.openrdf.spin.function.spif.DateFormat
+org.openrdf.spin.function.spif.DecimalFormat
+org.openrdf.spin.function.spif.Trim
+org.openrdf.spin.function.spif.CurrentTimeMillis
+org.openrdf.spin.function.spif.TimeMillis
+org.openrdf.spin.function.spif.GenerateUUID
+org.openrdf.spin.function.spif.Random
+org.openrdf.spin.function.spif.Cast
+org.openrdf.spin.function.spif.IndexOf
+org.openrdf.spin.function.spif.LastIndexOf
+org.openrdf.spin.function.spif.EncodeURL
+org.openrdf.spin.function.spif.BuildString
+org.openrdf.spin.function.spif.BuildURI
+org.openrdf.spin.function.spif.ReplaceAll
+org.openrdf.spin.function.spif.Name
+org.openrdf.spin.function.spif.UnCamelCase
+org.openrdf.spin.function.spif.IsValidURI
+org.openrdf.spin.function.spif.HasAllObjects
+org.openrdf.spin.function.spif.Invoke
+org.openrdf.spin.function.spif.UpperCase
+org.openrdf.spin.function.spif.LowerCase
+org.openrdf.spin.function.spif.TitleCase
+org.openrdf.spin.function.spif.LowerTitleCase

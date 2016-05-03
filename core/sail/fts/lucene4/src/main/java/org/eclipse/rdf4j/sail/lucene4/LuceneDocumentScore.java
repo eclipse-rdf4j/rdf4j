@@ -19,6 +19,10 @@ import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
 
+/**
+ * @deprecated since 4.1.0. Use the LuceneSail in package
+ *             {@code org.openrdf.sail.lucene} instead.
+ */
 @Deprecated
 public class LuceneDocumentScore extends LuceneDocumentResult implements DocumentScore {
 

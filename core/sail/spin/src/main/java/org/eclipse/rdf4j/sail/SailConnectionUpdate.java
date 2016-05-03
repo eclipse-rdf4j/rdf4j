@@ -17,9 +17,9 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
+import org.eclipse.rdf4j.query.parser.impl.AbstractParserUpdate;
 import org.eclipse.rdf4j.repository.sail.helpers.SailUpdateExecutor;
 import org.eclipse.rdf4j.rio.ParserConfig;
-import org.openrdf.query.impl.AbstractParserUpdate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

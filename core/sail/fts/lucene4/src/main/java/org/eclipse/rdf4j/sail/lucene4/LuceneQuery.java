@@ -36,12 +36,14 @@ public class LuceneQuery implements SearchQuery
 	private final LuceneIndex index;
 	private Highlighter highlighter;
 
+	@Deprecated
 	public LuceneQuery(Query q, LuceneIndex index) {
 		this.query = q;
 		this.index = index;
 	}
 
 	@Override
+	@Deprecated
 	public Iterable<? extends DocumentScore> query(Resource resource) throws IOException {
 		TopDocs docs;
 		if(resource != null) {
@@ -60,6 +62,7 @@ public class LuceneQuery implements SearchQuery
 	}
 
 	@Override
+	@Deprecated
 	public void highlight(URI property) {
 		Formatter formatter = new SimpleHTMLFormatter(SearchFields.HIGHLIGHTER_PRE_TAG, SearchFields.HIGHLIGHTER_POST_TAG);
 		highlighter = new Highlighter(formatter, new QueryScorer(query));

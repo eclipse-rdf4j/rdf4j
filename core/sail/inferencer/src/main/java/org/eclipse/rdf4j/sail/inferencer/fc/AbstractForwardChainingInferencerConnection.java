@@ -26,14 +26,14 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 {
 
 	/*-----------*
-	 * Constants *
-	 *-----------*/
+	* Constants *
+	*-----------*/
 
 	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	/*-----------*
-	 * Variables *
-	 *-----------*/
+	* Variables *
+	*-----------*/
 
 	private Sail sail;
 
@@ -50,8 +50,8 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	protected int totalInferred;
 
 	/*--------------*
-	 * Constructors *
-	 *--------------*/
+	* Constructors *
+	*--------------*/
 
 	public AbstractForwardChainingInferencerConnection(Sail sail, InferencerConnection con) {
 		super(con);
@@ -60,8 +60,8 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	}
 
 	/*---------*
-	 * Methods *
-	 *---------*/
+	* Methods *
+	*---------*/
 
 	// Called by base sail
 	@Override
@@ -82,8 +82,12 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	// Called by base sail
 	@Override
 	public void statementRemoved(Statement st) {
-		statementsRemoved = true;
-		newStatements = null;
+		boolean removed = (newStatements != null) ? newStatements.remove(st) : false;
+		if (!removed) {
+			// trigger full rebuild
+			statementsRemoved = true;
+			newStatements = null;
+		}
 	}
 
 	@Override
@@ -130,8 +134,8 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
 				sail.getSupportedIsolationLevels());
 		if (compatibleLevel == null) {
-			throw new UnknownSailTransactionStateException("Isolation level " + level
-					+ " not compatible with this Sail");
+			throw new UnknownSailTransactionStateException(
+					"Isolation level " + level + " not compatible with this Sail");
 		}
 		super.begin(compatibleLevel);
 	}

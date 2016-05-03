@@ -1,0 +1,7 @@
+@prefix : <http://example.org/> .
+
+{
+:a14 :float "-3.4428452385e-13"^^xsd:float .
+:a100 :float "-INF"^^xsd:float .
+:a101 :float "INF"^^xsd:float .
+}
