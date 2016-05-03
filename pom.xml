@@ -81,12 +81,7 @@
 		<profile>
 			<id>eclipse-hudson-rdf4j</id>
 			<properties>
-				<hudson.rdf4j.proxy.opts>-Dhttp.proxyHost=proxy.eclipse.org
-					-Dhttp.proxyPort=9898 -Dhttps.proxyHost=proxy.eclipse.org
-					-Dhttps.proxyPort=9898 -Dhttp.nonProxyHosts=*.eclipse.org
-					-Dhttps.nonProxyHosts=*.eclipse.org
-					-Dftp.proxyHost=proxy.eclipse.org -Dftp.proxyPort=9898
-					-Dftp.nonProxyHosts=*.eclipse.org</hudson.rdf4j.proxy.opts>
+				<hudson.rdf4j.proxy.opts>-Dhttp.proxyHost=proxy.eclipse.org -Dhttp.proxyPort=9898 -Dhttps.proxyHost=proxy.eclipse.org -Dhttps.proxyPort=9898 -Dhttp.nonProxyHosts=*.eclipse.org -Dhttps.nonProxyHosts=*.eclipse.org -Dftp.proxyHost=proxy.eclipse.org -Dftp.proxyPort=9898 -Dftp.nonProxyHosts=*.eclipse.org</hudson.rdf4j.proxy.opts>
 			</properties>
 		</profile>
 	</profiles>
