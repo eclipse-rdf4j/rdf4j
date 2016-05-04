@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.http.server.repository.graph;
 
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import static javax.servlet.http.HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE;
-import static org.eclipse.rdf4j.http.protocol.Protocol.BASEURI_PARAM_NAME;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -21,6 +20,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
 import org.eclipse.rdf4j.common.webapp.views.EmptySuccessView;
+import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
 import org.eclipse.rdf4j.http.protocol.error.ErrorType;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
@@ -45,6 +45,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContextException;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.AbstractController;
+
 /**
  * Handles requests for manipulating the named graphs in a repository.
  * 
@@ -137,7 +138,7 @@ public class GraphController extends AbstractController {
 	 */
 	private ModelAndView getExportStatementsResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response)
-				throws ClientHTTPException
+		throws ClientHTTPException
 	{
 		ProtocolUtil.logRequestParameters(request);
 
@@ -162,19 +163,20 @@ public class GraphController extends AbstractController {
 	 */
 	private ModelAndView getAddDataResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response, boolean replaceCurrent)
-				throws IOException, ClientHTTPException, ServerHTTPException
+		throws IOException, ClientHTTPException, ServerHTTPException
 	{
 		ProtocolUtil.logRequestParameters(request);
 
 		String mimeType = HttpServerUtil.getMIMEType(request.getContentType());
 
 		RDFFormat rdfFormat = Rio.getParserFormatForMIMEType(mimeType).orElseThrow(
-				() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type: " + mimeType));
+				() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,
+						"Unsupported MIME type: " + mimeType));
 
 		ValueFactory vf = repository.getValueFactory();
 		final IRI graph = getGraphName(request, vf);
 
-		IRI baseURI = ProtocolUtil.parseURIParam(request, BASEURI_PARAM_NAME, vf);
+		IRI baseURI = ProtocolUtil.parseURIParam(request, Protocol.BASEURI_PARAM_NAME, vf);
 		if (baseURI == null) {
 			baseURI = graph != null ? graph : vf.createIRI("foo:bar");
 			logger.info("no base URI specified, using '{}'", baseURI);
@@ -223,7 +225,7 @@ public class GraphController extends AbstractController {
 	 */
 	private ModelAndView getDeleteDataResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response)
-				throws ClientHTTPException, ServerHTTPException
+		throws ClientHTTPException, ServerHTTPException
 	{
 		ProtocolUtil.logRequestParameters(request);
 

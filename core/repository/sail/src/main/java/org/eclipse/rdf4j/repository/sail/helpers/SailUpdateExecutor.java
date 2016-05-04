@@ -51,15 +51,16 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailUpdate;
 import org.eclipse.rdf4j.repository.util.RDFLoader;
 import org.eclipse.rdf4j.rio.ParserConfig;
+import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+import org.eclipse.rdf4j.rio.helpers.TimeLimitRDFHandler;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 /**
  * Implementation of {@link SailUpdate#execute()} using
  * {@link SailConnection#evaluate(TupleExpr, Dataset, BindingSet, boolean)} and
@@ -107,6 +108,9 @@ public class SailUpdateExecutor {
 		this.loader = new RDFLoader(loadConfig, vf);
 	}
 
+	/**
+	 * @param maxExecutionTime in seconds.
+	 */
 	public void executeUpdate(UpdateExpr updateExpr, Dataset dataset, BindingSet bindings,
 			boolean includeInferred, int maxExecutionTime)
 				throws SailException, RDFParseException, IOException
@@ -427,10 +431,12 @@ public class SailUpdateExecutor {
 		throws SailException
 	{
 
-		// FIXME maxExecutionTime currently ignored
-
 		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser(vf);
-		parser.setRDFHandler(new RDFSailInserter(con, vf, uc));
+		RDFHandler handler = new RDFSailInserter(con, vf, uc);
+		if (maxExecutionTime > 0) {
+			handler = new TimeLimitRDFHandler(handler, 1000L * maxExecutionTime);
+		}
+		parser.setRDFHandler(handler);
 		parser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 		parser.getParserConfig().addNonFatalError(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES);
 		try {
@@ -457,12 +463,14 @@ public class SailUpdateExecutor {
 		throws SailException
 	{
 
-		// FIXME maxExecutionTime currently ignored
-
 		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser(vf);
 		parser.setAllowBlankNodes(false); // no blank nodes allowed in DELETE
 														// DATA.
-		parser.setRDFHandler(new RDFSailRemover(con, vf, uc));
+		RDFHandler handler = new RDFSailRemover(con, vf, uc);
+		if (maxExecutionTime > 0) {
+			handler = new TimeLimitRDFHandler(handler, 1000L * maxExecutionTime);
+		}
+		parser.setRDFHandler(handler);
 
 		try {
 			// TODO process update context somehow? dataset, base URI, etc.

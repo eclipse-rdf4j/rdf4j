@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.spin.config;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
+
 /**
  * Vocabulary constants for RDF-based configuration of the SpinSail.
  * 

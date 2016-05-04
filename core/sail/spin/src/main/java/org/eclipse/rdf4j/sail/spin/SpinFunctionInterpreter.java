@@ -7,10 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.spin;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
+import org.eclipse.rdf4j.model.vocabulary.SPIF;
 import org.eclipse.rdf4j.model.vocabulary.SPIN;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -23,10 +24,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.spin.SpinParser;
 import org.eclipse.rdf4j.spin.function.AskFunction;
-import org.eclipse.rdf4j.spin.function.Concat;
 import org.eclipse.rdf4j.spin.function.EvalFunction;
+import org.eclipse.rdf4j.spin.function.spif.CanInvoke;
+import org.eclipse.rdf4j.spin.function.spif.ConvertSpinRDFToString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 
 /**
  * QueryOptimizer that adds support for SPIN functions.
@@ -41,14 +44,9 @@ public class SpinFunctionInterpreter implements QueryOptimizer {
 
 	private final FunctionRegistry functionRegistry;
 
-	public SpinFunctionInterpreter(SpinParser parser, TripleSource tripleSource,
-			FunctionRegistry functionRegistry)
-	{
-		this.parser = parser;
-		this.tripleSource = tripleSource;
-		this.functionRegistry = functionRegistry;
-		if (!(functionRegistry.get(FN.CONCAT.toString()).get() instanceof Concat)) {
-			functionRegistry.add(new Concat());
+	static void registerSpinParsingFunctions(SpinParser parser, FunctionRegistry functionRegistry) {
+		if (!(functionRegistry.get(FN.CONCAT.toString()).get() instanceof org.eclipse.rdf4j.spin.function.Concat)) {
+			functionRegistry.add(new org.eclipse.rdf4j.spin.function.Concat());
 		}
 		if (!functionRegistry.has(SPIN.EVAL_FUNCTION.toString())) {
 			functionRegistry.add(new EvalFunction(parser));
@@ -56,6 +54,18 @@ public class SpinFunctionInterpreter implements QueryOptimizer {
 		if (!functionRegistry.has(SPIN.ASK_FUNCTION.toString())) {
 			functionRegistry.add(new AskFunction(parser));
 		}
+		if(!functionRegistry.has(SPIF.CONVERT_SPIN_RDF_TO_STRING_FUNCTION.toString())) {
+			functionRegistry.add(new ConvertSpinRDFToString(parser));
+		}
+		if(!functionRegistry.has(SPIF.CAN_INVOKE_FUNCTION.toString())) {
+			functionRegistry.add(new CanInvoke(parser));
+		}
+	}
+
+	public SpinFunctionInterpreter(SpinParser parser, TripleSource tripleSource, FunctionRegistry functionRegistry) {
+		this.parser = parser;
+		this.tripleSource = tripleSource;
+		this.functionRegistry = functionRegistry;
 	}
 
 	@Override
@@ -63,18 +73,18 @@ public class SpinFunctionInterpreter implements QueryOptimizer {
 		try {
 			tupleExpr.visit(new FunctionScanner());
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			logger.warn("Failed to parse function");
 		}
 	}
 
-	private class FunctionScanner extends AbstractQueryModelVisitor<OpenRDFException> {
+	private class FunctionScanner extends AbstractQueryModelVisitor<RDF4JException> {
 
 		ValueFactory vf = tripleSource.getValueFactory();
 
 		@Override
 		public void meet(FunctionCall node)
-			throws OpenRDFException
+			throws RDF4JException
 		{
 			String name = node.getURI();
 			if (!functionRegistry.has(name)) {

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration debug="false" scan="true" scanPeriod="30 seconds">
+	<appender name="MainLog" class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<file>${org.eclipse.rdf4j.common.logging.dir}/main.log</file>
+		<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+			<fileNamePattern>${org.eclipse.rdf4j.common.logging.dir}/main-%d{yyyy-MM-dd}.log</fileNamePattern>
+		</rollingPolicy>
+		<encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+			<layout class="org.eclipse.rdf4j.common.logging.file.logback.StackTracePatternLayout"/>
+			<charset>UTF-8</charset>
+		</encoder>
+		<logreader class="org.eclipse.rdf4j.common.logging.file.logback.FileLogReader" default="true" />
+	</appender>
+	
+	<root>
+		<level value="INFO" />
+		<appender-ref ref="MainLog" />
+	</root>
+</configuration>

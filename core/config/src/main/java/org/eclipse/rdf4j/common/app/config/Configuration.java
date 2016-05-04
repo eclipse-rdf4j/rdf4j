@@ -13,7 +13,7 @@ public interface Configuration {
 
 	public static final String DIR = "conf";
 
-	public static final String RESOURCES_LOCATION = "/info/aduna/app/config/";
+	public static final String RESOURCES_LOCATION = "/org/eclipse/rdf4j/common/app/config/";
 
 	public static final String DEFAULT_RESOURCES_LOCATION = RESOURCES_LOCATION + "defaults/";
 

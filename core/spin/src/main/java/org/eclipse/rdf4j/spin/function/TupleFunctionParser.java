@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.spin.function;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
@@ -15,5 +15,5 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 public interface TupleFunctionParser {
 
 	TupleFunction parse(IRI uri, TripleSource store)
-		throws OpenRDFException;
+		throws RDF4JException;
 }

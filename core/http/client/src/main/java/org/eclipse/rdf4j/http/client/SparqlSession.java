@@ -53,7 +53,7 @@ import org.apache.http.params.BasicHttpParams;
 import org.apache.http.params.CoreConnectionPNames;
 import org.apache.http.params.HttpParams;
 import org.apache.http.util.EntityUtils;
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
@@ -368,7 +368,15 @@ public class SparqlSession implements HttpClientDependent {
 				throws IOException, RepositoryException, MalformedQueryException, UnauthorizedException,
 				QueryInterruptedException
 	{
-		HttpUriRequest method = getUpdateMethod(ql, update, baseURI, dataset, includeInferred, bindings);
+		sendUpdate(ql, update, baseURI, dataset, includeInferred, 0, bindings);
+	}
+
+	public void sendUpdate(QueryLanguage ql, String update, String baseURI, Dataset dataset,
+			boolean includeInferred, int maxQueryTime, Binding... bindings)
+				throws IOException, RepositoryException, MalformedQueryException, UnauthorizedException,
+				QueryInterruptedException
+	{
+		HttpUriRequest method = getUpdateMethod(ql, update, baseURI, dataset, includeInferred, maxQueryTime, bindings);
 
 		try {
 			executeNoContent(method);
@@ -382,7 +390,7 @@ public class SparqlSession implements HttpClientDependent {
 		catch (QueryInterruptedException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -456,7 +464,7 @@ public class SparqlSession implements HttpClientDependent {
 		catch (QueryInterruptedException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -536,12 +544,18 @@ public class SparqlSession implements HttpClientDependent {
 	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
 			boolean includeInferred, Binding... bindings)
 	{
+		return getUpdateMethod(ql, update, baseURI, dataset, includeInferred, 0, bindings);
+	}
+
+	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
+			boolean includeInferred, int maxQueryTime, Binding... bindings)
+	{
 		HttpPost method = new HttpPost(getUpdateURL());
 
 		method.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
 
 		List<NameValuePair> queryParams = getUpdateMethodParameters(ql, update, baseURI, dataset,
-				includeInferred, bindings);
+				includeInferred, maxQueryTime, bindings);
 
 		method.setEntity(new UrlEncodedFormEntity(queryParams, UTF8));
 
@@ -600,6 +614,12 @@ public class SparqlSession implements HttpClientDependent {
 	protected List<NameValuePair> getUpdateMethodParameters(QueryLanguage ql, String update, String baseURI,
 			Dataset dataset, boolean includeInferred, Binding... bindings)
 	{
+		return getUpdateMethodParameters(ql, update, baseURI, dataset, includeInferred, 0, bindings);
+	}
+
+	protected List<NameValuePair> getUpdateMethodParameters(QueryLanguage ql, String update, String baseURI,
+			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings)
+	{
 		if (ql == null) {
 			throw new NullPointerException("ql may not be null");
 		}
@@ -617,6 +637,9 @@ public class SparqlSession implements HttpClientDependent {
 		}
 		queryParams.add(
 				new BasicNameValuePair(Protocol.INCLUDE_INFERRED_PARAM_NAME, Boolean.toString(includeInferred)));
+		if (maxQueryTime > 0) {
+			queryParams.add(new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));
+		}
 
 		if (dataset != null) {
 			for (IRI graphURI : dataset.getDefaultRemoveGraphs()) {
@@ -776,7 +799,7 @@ public class SparqlSession implements HttpClientDependent {
 		catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -907,7 +930,7 @@ public class SparqlSession implements HttpClientDependent {
 		catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -917,10 +940,10 @@ public class SparqlSession implements HttpClientDependent {
 	 * {@link BooleanQueryResultParser}. All HTTP connections are closed and
 	 * released in this method
 	 * 
-	 * @throws OpenRDFException
+	 * @throws RDF4JException
 	 */
 	protected boolean getBoolean(HttpUriRequest method)
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		// Specify which formats we support using Accept headers
 		Set<QueryResultFormat> booleanFormats = BooleanQueryResultParserRegistry.getInstance().getKeys();
@@ -955,7 +978,7 @@ public class SparqlSession implements HttpClientDependent {
 	}
 
 	private HttpResponse sendBooleanQueryViaHttp(HttpUriRequest method, Set<QueryResultFormat> booleanFormats)
-				throws IOException, OpenRDFException
+				throws IOException, RDF4JException
 	{
 
 		for (QueryResultFormat format : booleanFormats) {
@@ -986,10 +1009,10 @@ public class SparqlSession implements HttpClientDependent {
 	 * boolean queries in the same way. This method aborts the HTTP connection.
 	 * 
 	 * @param method
-	 * @throws OpenRDFException
+	 * @throws RDF4JException
 	 */
 	protected HttpResponse executeOK(HttpUriRequest method)
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		boolean fail = true;
 		HttpResponse response = execute(method);
@@ -1014,7 +1037,7 @@ public class SparqlSession implements HttpClientDependent {
 	}
 
 	protected void executeNoContent(HttpUriRequest method)
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		HttpResponse response = execute(method);
 		try {
@@ -1030,7 +1053,7 @@ public class SparqlSession implements HttpClientDependent {
 	}
 
 	protected HttpResponse execute(HttpUriRequest method)
-		throws IOException, OpenRDFException
+		throws IOException, RDF4JException
 	{
 		boolean consume = true;
 		method.setParams(params);

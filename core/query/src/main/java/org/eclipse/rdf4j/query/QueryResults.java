@@ -16,7 +16,7 @@ import java.util.Set;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -53,7 +53,7 @@ public class QueryResults extends Iterations {
 	 * @return a {@link Model} containing all statements obtained from the
 	 *         specified source iteration.
 	 */
-	public static Model asModel(CloseableIteration<? extends Statement, ? extends OpenRDFException> iteration)
+	public static Model asModel(CloseableIteration<? extends Statement, ? extends RDF4JException> iteration)
 		throws QueryEvaluationException
 	{
 		Model model = new LinkedHashModel();

@@ -11,7 +11,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.UUID;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -193,12 +193,12 @@ public class QueryStorage {
 	 * @param infer
 	 * @param rowsPerPage
 	 *        rows to display per page, may be 0 (all), 10, 50, 100, or 200)
-	 * @throws OpenRDFException
+	 * @throws RDF4JException
 	 */
 	public void saveQuery(final HTTPRepository repository, final String queryName, final String userName,
 			final boolean shared, final QueryLanguage queryLanguage, final String queryText,
 			final boolean infer, final int rowsPerPage)
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		if (QueryLanguage.SPARQL != queryLanguage && QueryLanguage.SERQL != queryLanguage) {
 			throw new RepositoryException("May only save SPARQL or SeRQL queries, not"
@@ -390,13 +390,13 @@ public class QueryStorage {
 	 * @param queryName
 	 *        The name given to the query.
 	 * @return if it exists, the URI referring to the specified saved query.
-	 * @throws OpenRDFException
+	 * @throws RDF4JException
 	 *         if issues occur performing the necessary queries.
 	 * @throws BadRequestException
 	 *         if the the specified stored query doesn't exist
 	 */
 	public IRI selectSavedQuery(final HTTPRepository repository, final String owner, final String queryName)
-		throws OpenRDFException, BadRequestException
+		throws RDF4JException, BadRequestException
 	{
 		final QueryStringBuilder select = new QueryStringBuilder(SELECT_URI);
 		select.replaceQuote(QueryStorage.USER_NAME, owner);
@@ -429,13 +429,13 @@ public class QueryStorage {
 	 * @param queryName
 	 *        The name given to the saved query.
 	 * @return the text of the saved query, if it exists
-	 * @throws OpenRDFException
+	 * @throws RDF4JException
 	 *         if a problem occurs accessing storage
 	 * @throws BadRequestException
 	 *         if the specified query doesn't exist
 	 */
 	public String getQueryText(final HTTPRepository repository, final String owner, final String queryName)
-		throws OpenRDFException, BadRequestException
+		throws RDF4JException, BadRequestException
 	{
 		final QueryStringBuilder select = new QueryStringBuilder(SELECT_TEXT);
 		select.replaceQuote(QueryStorage.USER_NAME, owner);

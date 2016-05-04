@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.repository;
 import java.io.File;
 import java.io.IOException;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -75,7 +75,7 @@ public abstract class OptimisticIsolationTest {
 	}
 
 	public static Repository getEmptyInitializedRepository(Class<?> caller)
-		throws OpenRDFException, IOException
+		throws RDF4JException, IOException
 	{
 		if (dataDir != null && dataDir.isDirectory()) {
 			FileUtil.deleteDir(dataDir);

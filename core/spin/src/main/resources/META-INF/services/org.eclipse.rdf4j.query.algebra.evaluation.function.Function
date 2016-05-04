@@ -1,0 +1,44 @@
+# sp
+org.eclipse.rdf4j.spin.function.Add
+org.eclipse.rdf4j.spin.function.Subtract
+org.eclipse.rdf4j.spin.function.Multiply
+org.eclipse.rdf4j.spin.function.Divide
+org.eclipse.rdf4j.spin.function.And
+org.eclipse.rdf4j.spin.function.Or
+org.eclipse.rdf4j.spin.function.Not
+org.eclipse.rdf4j.spin.function.EqualTo
+org.eclipse.rdf4j.spin.function.NotEqualTo
+org.eclipse.rdf4j.spin.function.LessThan
+org.eclipse.rdf4j.spin.function.LessThanOrEqualTo
+org.eclipse.rdf4j.spin.function.GreaterThan
+org.eclipse.rdf4j.spin.function.GreaterThanOrEqualTo
+# afn
+org.eclipse.rdf4j.spin.function.Localname
+# spl
+org.eclipse.rdf4j.spin.function.ObjectFunction
+# spif
+org.eclipse.rdf4j.spin.function.spif.Mod
+org.eclipse.rdf4j.spin.function.spif.ParseDate
+org.eclipse.rdf4j.spin.function.spif.DateFormat
+org.eclipse.rdf4j.spin.function.spif.DecimalFormat
+org.eclipse.rdf4j.spin.function.spif.Trim
+org.eclipse.rdf4j.spin.function.spif.CurrentTimeMillis
+org.eclipse.rdf4j.spin.function.spif.TimeMillis
+org.eclipse.rdf4j.spin.function.spif.GenerateUUID
+org.eclipse.rdf4j.spin.function.spif.Random
+org.eclipse.rdf4j.spin.function.spif.Cast
+org.eclipse.rdf4j.spin.function.spif.IndexOf
+org.eclipse.rdf4j.spin.function.spif.LastIndexOf
+org.eclipse.rdf4j.spin.function.spif.EncodeURL
+org.eclipse.rdf4j.spin.function.spif.BuildString
+org.eclipse.rdf4j.spin.function.spif.BuildURI
+org.eclipse.rdf4j.spin.function.spif.ReplaceAll
+org.eclipse.rdf4j.spin.function.spif.Name
+org.eclipse.rdf4j.spin.function.spif.UnCamelCase
+org.eclipse.rdf4j.spin.function.spif.IsValidURI
+org.eclipse.rdf4j.spin.function.spif.HasAllObjects
+org.eclipse.rdf4j.spin.function.spif.Invoke
+org.eclipse.rdf4j.spin.function.spif.UpperCase
+org.eclipse.rdf4j.spin.function.spif.LowerCase
+org.eclipse.rdf4j.spin.function.spif.TitleCase
+org.eclipse.rdf4j.spin.function.spif.LowerTitleCase

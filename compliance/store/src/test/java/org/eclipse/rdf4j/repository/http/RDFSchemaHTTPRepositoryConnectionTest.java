@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.repository.http;
 import static org.junit.Assert.fail;
 
 import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.repository.RDFSchemaRepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
@@ -180,7 +180,7 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 					RepositoryConnectionTest.class.getResourceAsStream(TEST_DIR_PREFIX + "malformed-literals.ttl"),
 					"", RDFFormat.TURTLE);
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			fail("upload of malformed literals should not fail with error in default configuration for HTTPRepository");
 		}
 	}

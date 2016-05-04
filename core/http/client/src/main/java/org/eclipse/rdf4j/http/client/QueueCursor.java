@@ -15,7 +15,7 @@ import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
@@ -150,7 +150,7 @@ public class QueueCursor<E> extends LookAheadIteration<E, QueryEvaluationExcepti
 				try {
 					throw exceptions.remove();
 				}
-				catch (OpenRDFException e) {
+				catch (RDF4JException e) {
 					if (e instanceof QueryEvaluationException) {
 						List<StackTraceElement> stack = new ArrayList<StackTraceElement>();
 						stack.addAll(Arrays.asList(e.getStackTrace()));

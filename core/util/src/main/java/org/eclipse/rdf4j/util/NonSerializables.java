@@ -70,10 +70,19 @@ public class NonSerializables {
 	 * @return the key with which the object is registered.
 	 */
 	public static final UUID register(Object obj) {
-		UUID key = getKey(obj);
-		if (key == null) {
-			key = UUID.randomUUID();
-			registry.put(key, obj);
+		UUID key;
+		if (obj instanceof UUIDable) {
+			key = ((UUIDable)obj).getUUID();
+			if (get(key) == null) {
+				registry.put(key, obj);
+			}
+		}
+		else {
+			key = getKey(obj);
+			if (key == null) {
+				key = UUID.randomUUID();
+				registry.put(key, obj);
+			}
 		}
 		return key;
 	}

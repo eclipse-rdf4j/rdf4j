@@ -11,13 +11,13 @@ html,body {
 }
 
 html {
-	background: #FFF url(images/bg_html.png);
-	background-repeat: repeat-x;
 	overflow: scroll;
 }
 
 body {
-	background: url(images/bg_body.png);
+ 	background: linear-gradient(#757575, #D0D0D0 150px, #FFFFFF);
+	filter: progid:DXImageTransform.Microsoft.gradient(
+		startColorstr='#757575', endColorstr='#ffffff',GradientType=0 ); /* IE6-9 */
 	background-repeat: no-repeat;
 }
 
@@ -87,15 +87,17 @@ hr {
 }
 
 #header {
-	padding: 5px 0 0 5px;
-	height: 50px;
+	background-color: white;
+	border-style: none none solid none;
+	border-color: #da5800;
+	border-width: 10px;
+	height: 80px;
 }
 
-.productgroup {
-	position: absolute;
-	right: 0;
-	margin-top: -8px;
+.product {
+	margin-left: 20px;
 }	
+
 
 #search {
 	position: absolute;

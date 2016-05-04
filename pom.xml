@@ -5,7 +5,7 @@
 
 	<groupId>org.eclipse.rdf4j</groupId>
 	<artifactId>rdf4j</artifactId>
-	<version>4.1.1-SNAPSHOT</version>
+	<version>1.0M1-SNAPSHOT</version>
 	<packaging>pom</packaging>
 
 	<name>RDF4J</name>
@@ -116,15 +116,22 @@
 				<javadoc.opts>-Xdoclint:none</javadoc.opts>
 			</properties>
 		</profile>
+		<profile>
+			<id>eclipse-hudson-rdf4j</id>
+			<properties>
+				<hudson.rdf4j.proxy.opts>-Dhttp.proxyHost=proxy.eclipse.org -Dhttp.proxyPort=9898 -Dhttps.proxyHost=proxy.eclipse.org -Dhttps.proxyPort=9898 -Dhttp.nonProxyHosts=*.eclipse.org -Dhttps.nonProxyHosts=*.eclipse.org -Dftp.proxyHost=proxy.eclipse.org -Dftp.proxyPort=9898 -Dftp.nonProxyHosts=*.eclipse.org</hudson.rdf4j.proxy.opts>
+			</properties>
+		</profile>
 	</profiles>
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-		<httpclient.version>4.4</httpclient.version>
 		<slf4j.version>1.7.10</slf4j.version>
 		<logback.version>1.1.2</logback.version>
 		<spring.version>4.2.1.RELEASE</spring.version>
+		<httpclient.version>4.5.2</httpclient.version>
+		<httpcore.version>4.4.4</httpcore.version>
 		<jackson.version>2.6.2</jackson.version>
 		<jsonldjava.version>0.7.0</jsonldjava.version>
 	</properties>
@@ -159,24 +166,13 @@
 				<scope>runtime</scope>
 			</dependency>
 			<dependency>
-				<groupId>org.apache.httpcomponents</groupId>
-				<artifactId>httpclient</artifactId>
-				<version>${httpclient.version}</version>
-				<exclusions>
-					<exclusion>
-						<groupId>commons-logging</groupId>
-						<artifactId>commons-logging</artifactId>
-					</exclusion>
-					<exclusion>
-						<!-- httpclient includes older codec -->
-						<groupId>commons-codec</groupId>
-						<artifactId>commons-codec</artifactId>
-					</exclusion>
-				</exclusions>
+				<groupId>commons-lang</groupId>
+				<artifactId>commons-lang</artifactId>
+				<version>2.6</version>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
-				<artifactId>httpcore</artifactId>
+				<artifactId>httpclient</artifactId>
 				<version>${httpclient.version}</version>
 				<exclusions>
 					<exclusion>
@@ -225,7 +221,7 @@
 			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
 				<artifactId>httpcore-osgi</artifactId>
-				<version>${httpclient.version}</version>
+				<version>${httpcore.version}</version>
 				<exclusions>
 					<exclusion>
 						<groupId>commons-logging</groupId>
@@ -273,7 +269,7 @@
 			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
 				<artifactId>httpcore-nio</artifactId>
-				<version>${httpclient.version}</version>
+				<version>${httpcore.version}</version>
 				<exclusions>
 					<exclusion>
 						<groupId>commons-logging</groupId>
@@ -322,6 +318,11 @@
 				<version>1.1</version>
 			</dependency>
 
+			<dependency>
+				<groupId>org.ebaysf.web</groupId>
+				<artifactId>cors-filter</artifactId>
+				<version>1.0.1</version>
+			</dependency>
 			<dependency>
 				<groupId>org.tuckey</groupId>
 				<artifactId>urlrewritefilter</artifactId>
@@ -520,6 +521,43 @@
 		<pluginManagement>
 			<plugins>
 				<plugin>
+					<groupId>org.eclipse.m2e</groupId>
+					<artifactId>lifecycle-mapping</artifactId>
+					<version>1.0.0</version>
+					<configuration>
+						<lifecycleMappingMetadata>
+							<pluginExecutions>
+								<pluginExecution>
+									<pluginExecutionFilter>
+										<groupId>org.apache.maven.plugins</groupId>
+										<artifactId>maven-enforcer-plugin</artifactId>
+										<versionRange>[1.0.0,)</versionRange>
+										<goals>
+											<goal>enforce</goal>
+										</goals>
+									</pluginExecutionFilter>
+									<action>
+										<ignore />
+									</action>
+								</pluginExecution>
+								<pluginExecution>
+									<pluginExecutionFilter>
+										<groupId>org.apache.maven.plugins</groupId>
+										<artifactId>maven-antrun-plugin</artifactId>
+										<versionRange>[1.0.0,)</versionRange>
+										<goals>
+											<goal>run</goal>
+										</goals>
+									</pluginExecutionFilter>
+									<action>
+										<ignore />
+									</action>
+								</pluginExecution>
+							</pluginExecutions>
+						</lifecycleMappingMetadata>
+					</configuration>
+				</plugin>
+				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-antrun-plugin</artifactId>
 					<version>1.6</version>
@@ -612,83 +650,37 @@
 					<version>2.17</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
+						<forkCount>1</forkCount>
+						<reuseForks>false</reuseForks>
+						<argLine>-Xmx1024M -XX:MaxPermSize=256M ${hudson.rdf4j.proxy.opts}</argLine>
+						<includes>
+							<include>**/*Test.java</include>
+						</includes>
 					</configuration>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-war-plugin</artifactId>
 					<version>2.1.1</version>
+					<configuration>
+						<failOnMissingWebXml>false</failOnMissingWebXml>
+					</configuration>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.tomcat.maven</groupId>
 					<artifactId>tomcat7-maven-plugin</artifactId>
 					<version>2.2</version>
 				</plugin>
-
-				<plugin>
-					<groupId>org.apache.felix</groupId>
-					<artifactId>maven-bundle-plugin</artifactId>
-					<version>2.5.3</version>
-					<configuration>
-						<remoteOBR>repository.xml</remoteOBR>
-					</configuration>
-					<executions>
-						<execution>
-							<id>bundle-manifest</id>
-							<phase>process-classes</phase>
-							<goals>
-								<goal>manifest</goal>
-							</goals>
-						</execution>
-						<execution>
-							<id>bundle-package</id>
-							<phase>package</phase>
-							<goals>
-								<goal>bundle</goal>
-							</goals>
-						</execution>
-						<execution>
-							<id>bundle-install</id>
-							<phase>install</phase>
-							<goals>
-								<goal>install</goal>
-							</goals>
-						</execution>
-						<execution>
-							<id>bundle-deploy</id>
-							<phase>deploy</phase>
-							<goals>
-								<goal>deploy</goal>
-							</goals>
-						</execution>
-					</executions>
-				</plugin>
 			</plugins>
 		</pluginManagement>
 
 		<plugins>
-			<!-- disabled since no java8 signature is available yet
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>animal-sniffer-maven-plugin</artifactId>
-				<version>1.14</version>
-				<executions>
-					<execution>
-						<phase>test</phase>
-						<goals>
-							<goal>check</goal>
-						</goals>
-					</execution>
-				</executions>
-				<configuration>
-					<signature>
-						<groupId>org.codehaus.mojo.signature</groupId>
-						<artifactId>java16</artifactId>
-						<version>1.1</version>
-					</signature>
-				</configuration>
-			</plugin>
-			-->
+			<!-- disabled since no java8 signature is available yet <plugin> <groupId>org.codehaus.mojo</groupId> 
+				<artifactId>animal-sniffer-maven-plugin</artifactId> <version>1.14</version> 
+				<executions> <execution> <phase>test</phase> <goals> <goal>check</goal> </goals> 
+				</execution> </executions> <configuration> <signature> <groupId>org.codehaus.mojo.signature</groupId> 
+				<artifactId>java16</artifactId> <version>1.1</version> </signature> </configuration> 
+				</plugin> -->
 			<plugin>
 				<!-- verify all bytecode (including third party libs) is Java 8 max -->
 				<groupId>org.apache.maven.plugins</groupId>
@@ -738,9 +730,9 @@
 			<url>http://maven.restlet.org</url>
 		</repository>
 	</repositories>
-	
+
 	<scm>
-		<connection>scm:git:git@github.com:eclipse/rdf4j.git</connection>
+		<connection>scm:git:git://github.com:eclipse/rdf4j.git</connection>
 		<developerConnection>scm:git:git@github.com:eclipse/rdf4j.git</developerConnection>
 		<url>https://github.com/eclipse/rdf4j</url>
 	</scm>

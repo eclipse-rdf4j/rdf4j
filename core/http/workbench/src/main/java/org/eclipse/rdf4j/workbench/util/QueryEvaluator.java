@@ -14,7 +14,7 @@ import java.util.List;
 
 import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -72,13 +72,13 @@ public final class QueryEvaluator {
 	 * @throws BadRequestException
 	 *         if there's a problem getting request parameters or issuing the
 	 *         repository query
-	 * @throws OpenRDFException
+	 * @throws RDF4JException
 	 *         if there's a problem preparing the query
 	 */
 	public void extractQueryAndEvaluate(final TupleResultBuilder builder, final HttpServletResponse resp,
 			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
 			final WorkbenchRequest req, final CookieHandler cookies)
-		throws BadRequestException, OpenRDFException
+		throws BadRequestException, RDF4JException
 	{
 		final QueryLanguage queryLn = QueryLanguage.valueOf(req.getParameter("queryLn"));
 		Query query = QueryFactory.prepareQuery(con, queryLn, queryText);
@@ -271,7 +271,7 @@ public final class QueryEvaluator {
 	private void evaluate(final TupleResultBuilder builder, final OutputStream out, final String xslPath,
 			final WorkbenchRequest req, HttpServletResponse resp, CookieHandler cookies, final Query query,
 			boolean writeCookie, boolean paged, int offset, int limit)
-		throws OpenRDFException, BadRequestException
+		throws RDF4JException, BadRequestException
 	{
 		if (query instanceof TupleQuery) {
 			this.evaluateTupleQuery(builder, xslPath, req, resp, cookies, (TupleQuery)query, writeCookie, paged,

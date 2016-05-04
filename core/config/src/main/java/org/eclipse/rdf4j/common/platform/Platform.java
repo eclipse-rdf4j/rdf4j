@@ -17,10 +17,10 @@ import java.io.File;
  */
 public interface Platform {
 
-	public static final String APPDATA_BASEDIR_PROPERTY = "info.aduna.platform.appdata.basedir";
+	public static final String APPDATA_BASEDIR_PROPERTY = "org.eclipse.rdf4j.appdata.basedir";
 	
 	@Deprecated
-	public static final String OLD_DATADIR_PROPERTY = "aduna.platform.applicationdata.dir";
+	public static final String OLD_DATADIR_PROPERTY = "info.aduna.platform.appdata.basedir";
 	
 	/**
 	 * Get a descriptive name for this platform.

@@ -11,18 +11,17 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+import org.eclipse.rdf4j.query.impl.AbstractParserUpdate;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 import org.eclipse.rdf4j.repository.sail.helpers.SailUpdateExecutor;
 import org.eclipse.rdf4j.rio.ParserConfig;
-import org.openrdf.query.impl.AbstractParserUpdate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 
 public class SailConnectionUpdate extends AbstractParserUpdate {
 
@@ -67,13 +66,14 @@ public class SailConnectionUpdate extends AbstractParserUpdate {
 					beginLocalTransaction();
 				}
 
-				executor.executeUpdate(updateExpr, activeDataset, getBindings(), getIncludeInferred(), getMaxExecutionTime());
+				executor.executeUpdate(updateExpr, activeDataset, getBindings(), getIncludeInferred(),
+						getMaxExecutionTime());
 
 				if (localTransaction) {
 					commitLocalTransaction();
 				}
 			}
-			catch (OpenRDFException e) {
+			catch (RDF4JException e) {
 				logger.warn("exception during update execution: ", e);
 				if (!updateExpr.isSilent()) {
 					throw new UpdateExecutionException(e);

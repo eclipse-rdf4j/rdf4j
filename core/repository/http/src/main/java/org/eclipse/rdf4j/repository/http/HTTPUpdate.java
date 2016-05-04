@@ -47,7 +47,7 @@ public class HTTPUpdate extends AbstractHTTPUpdate {
 					SparqlSession client = getHttpClient();
 					try {
 						client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset,
-								includeInferred, getBindingsArray());
+								includeInferred, getMaxExecutionTime(), getBindingsArray());
 					}
 					catch (UnauthorizedException e) {
 						throw new HTTPUpdateExecutionException(e.getMessage(), e);
@@ -73,7 +73,7 @@ public class HTTPUpdate extends AbstractHTTPUpdate {
 			try {
 				httpCon.flushTransactionState(Action.UPDATE);
 				client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset, includeInferred,
-						getBindingsArray());
+						getMaxExecutionTime(), getBindingsArray());
 			}
 			catch (UnauthorizedException e) {
 				throw new HTTPUpdateExecutionException(e.getMessage(), e);

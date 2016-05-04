@@ -10,10 +10,11 @@ package org.eclipse.rdf4j.sail.spin;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -48,6 +49,7 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.queryrender.sparql.SPARQLQueryRenderer;
 import org.eclipse.rdf4j.spin.SpinParser;
 import org.eclipse.rdf4j.spin.function.ConstructTupleFunction;
+import org.eclipse.rdf4j.spin.function.InverseMagicProperty;
 import org.eclipse.rdf4j.spin.function.SelectTupleFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,9 +66,20 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 
 	private final TupleFunctionRegistry tupleFunctionRegistry;
 
-	private final AbstractFederatedServiceResolver serviceResolver;
+	private AbstractFederatedServiceResolver serviceResolver;
 
 	private final IRI spinServiceUri;
+
+	static void registerSpinParsingTupleFunctions(SpinParser parser,
+			TupleFunctionRegistry tupleFunctionRegistry)
+	{
+		if (!tupleFunctionRegistry.has(SPIN.CONSTRUCT_PROPERTY.stringValue())) {
+			tupleFunctionRegistry.add(new ConstructTupleFunction(parser));
+		}
+		if (!tupleFunctionRegistry.has(SPIN.SELECT_PROPERTY.stringValue())) {
+			tupleFunctionRegistry.add(new SelectTupleFunction(parser));
+		}
+	}
 
 	public SpinMagicPropertyInterpreter(SpinParser parser, TripleSource tripleSource,
 			TupleFunctionRegistry tupleFunctionRegistry, AbstractFederatedServiceResolver serviceResolver)
@@ -76,13 +89,6 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 		this.tupleFunctionRegistry = tupleFunctionRegistry;
 		this.serviceResolver = serviceResolver;
 		this.spinServiceUri = tripleSource.getValueFactory().createIRI(SPIN_SERVICE);
-
-		if (!tupleFunctionRegistry.has(SPIN.CONSTRUCT_PROPERTY.stringValue())) {
-			tupleFunctionRegistry.add(new ConstructTupleFunction(parser));
-		}
-		if (!tupleFunctionRegistry.has(SPIN.SELECT_PROPERTY.stringValue())) {
-			tupleFunctionRegistry.add(new SelectTupleFunction(parser));
-		}
 	}
 
 	@Override
@@ -90,31 +96,33 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 		try {
 			tupleExpr.visit(new PropertyScanner());
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			logger.warn("Failed to parse tuple function");
 		}
 	}
 
-	private class PropertyScanner extends QueryModelVisitorBase<OpenRDFException> {
+	private class PropertyScanner extends QueryModelVisitorBase<RDF4JException> {
 
 		private void processGraphPattern(List<StatementPattern> sps)
-			throws OpenRDFException
+			throws RDF4JException
 		{
-			List<StatementPattern> magicProperties = new ArrayList<StatementPattern>();
+			Map<StatementPattern, TupleFunction> magicProperties = new LinkedHashMap<StatementPattern, TupleFunction>();
 			Map<String, Map<IRI, List<StatementPattern>>> spIndex = new HashMap<String, Map<IRI, List<StatementPattern>>>();
 
 			for (StatementPattern sp : sps) {
 				IRI pred = (IRI)sp.getPredicateVar().getValue();
 				if (pred != null) {
-					if (tupleFunctionRegistry.has(pred.stringValue())) {
-						magicProperties.add(sp);
+					TupleFunction func = tupleFunctionRegistry.get(pred.stringValue()).orElse(null);
+					if (func != null) {
+						magicProperties.put(sp, func);
 					}
 					else {
 						Statement magicPropStmt = Statements.single(pred, RDF.TYPE, SPIN.MAGIC_PROPERTY_CLASS,
 								tripleSource);
 						if (magicPropStmt != null) {
-							TupleFunction func = parser.parseMagicProperty(pred, tripleSource);
+							func = parser.parseMagicProperty(pred, tripleSource);
 							tupleFunctionRegistry.add(func);
+							magicProperties.put(sp, func);
 						}
 						else {
 							// normal statement
@@ -136,12 +144,14 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 			}
 
 			if (!magicProperties.isEmpty()) {
-				for (StatementPattern sp : magicProperties) {
+				for (Map.Entry<StatementPattern, TupleFunction> entry : magicProperties.entrySet()) {
+					StatementPattern sp = entry.getKey();
+					TupleFunction func = entry.getValue();
 					Union union = new Union();
 					sp.replaceWith(union);
 					TupleExpr stmts = sp;
 
-					List<ValueExpr> subjList = new ArrayList<ValueExpr>(4);
+					List<? super Var> subjList = new ArrayList<ValueExpr>(4);
 					TupleExpr subjNodes = addList(subjList, sp.getSubjectVar(), spIndex);
 					if (subjNodes != null) {
 						stmts = new Join(stmts, subjNodes);
@@ -150,20 +160,26 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 						subjList = Collections.<ValueExpr> singletonList(sp.getSubjectVar());
 					}
 
-					List<Var> objList = new ArrayList<Var>(4);
+					List<? super Var> objList = new ArrayList<ValueExpr>(4);
 					TupleExpr objNodes = addList(objList, sp.getObjectVar(), spIndex);
 					if (objNodes != null) {
 						stmts = new Join(stmts, objNodes);
 					}
 					else {
-						objList = Collections.singletonList(sp.getObjectVar());
+						objList = Collections.<ValueExpr> singletonList(sp.getObjectVar());
 					}
 					union.setLeftArg(stmts);
 
 					TupleFunctionCall funcCall = new TupleFunctionCall();
 					funcCall.setURI(sp.getPredicateVar().getValue().stringValue());
-					funcCall.setArgs(subjList);
-					funcCall.setResultVars(objList);
+					if (func instanceof InverseMagicProperty) {
+						funcCall.setArgs((List<ValueExpr>)objList);
+						funcCall.setResultVars((List<Var>)subjList);
+					}
+					else {
+						funcCall.setArgs((List<ValueExpr>)subjList);
+						funcCall.setResultVars((List<Var>)objList);
+					}
 
 					TupleExpr magicPropertyNode;
 					if (serviceResolver != null) {
@@ -187,8 +203,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 						prefixDecls.put(SP.PREFIX, SP.NAMESPACE);
 						prefixDecls.put(SPIN.PREFIX, SPIN.NAMESPACE);
 						prefixDecls.put(SPL.PREFIX, SPL.NAMESPACE);
-						magicPropertyNode = new Service(serviceRef, funcCall, exprString, prefixDecls, null,
-								false);
+						magicPropertyNode = new Service(serviceRef, funcCall, exprString, prefixDecls, null, false);
 					}
 					else {
 						magicPropertyNode = funcCall;
@@ -260,16 +275,16 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 
 		@Override
 		public void meet(Join node)
-			throws OpenRDFException
+			throws RDF4JException
 		{
-			BGPCollector<OpenRDFException> collector = new BGPCollector<OpenRDFException>(this);
+			BGPCollector<RDF4JException> collector = new BGPCollector<RDF4JException>(this);
 			node.visit(collector);
 			processGraphPattern(collector.getStatementPatterns());
 		}
 
 		@Override
 		public void meet(StatementPattern node)
-			throws OpenRDFException
+			throws RDF4JException
 		{
 			processGraphPattern(Collections.singletonList(node));
 		}

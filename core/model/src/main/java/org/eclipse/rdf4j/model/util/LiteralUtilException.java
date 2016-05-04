@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 
 /**
  * An exception thrown by {@link Literals} when specific conditions are not
@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.OpenRDFException;
  * 
  * @author Peter Ansell
  */
-public class LiteralUtilException extends OpenRDFException {
+public class LiteralUtilException extends RDF4JException {
 
 	private static final long serialVersionUID = 9075761346909805423L;
 

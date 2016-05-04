@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
@@ -165,7 +165,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		catch (RepositoryException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 		catch (IllegalStateException e) {
@@ -329,7 +329,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			client.commitTransaction();
 			active = false;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 		catch (IllegalStateException e) {
@@ -354,7 +354,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			client.rollbackTransaction();
 			active = false;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 		catch (IllegalStateException e) {

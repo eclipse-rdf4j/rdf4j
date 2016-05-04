@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.inferencer.fc.config;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailFactory;
@@ -56,7 +56,7 @@ public class CustomGraphQueryInferencerFactory implements SailFactory {
 				sail.setFields(customConfig.getQueryLanguage(), customConfig.getRuleQuery(),
 						customConfig.getMatcherQuery());
 			}
-			catch (OpenRDFException e) {
+			catch (RDF4JException e) {
 				throw new SailConfigException("Problem occured parsing rule or matcher query text.", e);
 			}
 		}

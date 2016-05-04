@@ -24,7 +24,7 @@ import ch.qos.logback.core.util.StatusPrinter;
 
 public class LogbackConfiguration extends AbstractLogConfiguration {
 
-	public static final String LOGGING_DIR_PROPERTY = "info.aduna.logging.dir";
+	public static final String LOGGING_DIR_PROPERTY = "org.eclipse.rdf4j.common.logging.dir";
 
 	private static final String LOGBACK_CONFIG_FILE = "logback.xml";
 

@@ -105,7 +105,7 @@ public abstract class AbstractServlet implements Servlet {
 		throws ServletException
 	{
 		this.config = config;
-		this.appConfig = new AppConfiguration("openrdf-workbench", "OpenRDF Sesame Workbench");
+		this.appConfig = new AppConfiguration("Workbench", "RDF4J Workbench");
 		try {
 			// Suppress loading of log configuration.
 			this.appConfig.init(false);

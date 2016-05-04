@@ -45,7 +45,7 @@ import org.apache.http.message.BasicHeader;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.util.EntityUtils;
 import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.http.protocol.Protocol;
@@ -197,7 +197,7 @@ public class SesameSession extends SparqlSession {
 		catch (RepositoryException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -239,7 +239,7 @@ public class SesameSession extends SparqlSession {
 		catch (RepositoryException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -256,7 +256,7 @@ public class SesameSession extends SparqlSession {
 		catch (RepositoryException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -317,7 +317,7 @@ public class SesameSession extends SparqlSession {
 		catch (RepositoryException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -336,7 +336,7 @@ public class SesameSession extends SparqlSession {
 		catch (RepositoryException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -354,7 +354,7 @@ public class SesameSession extends SparqlSession {
 		catch (RepositoryException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -372,7 +372,7 @@ public class SesameSession extends SparqlSession {
 		catch (RepositoryException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -418,8 +418,8 @@ public class SesameSession extends SparqlSession {
 
 	public void getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
 			Resource... contexts)
-				throws IOException, RDFHandlerException, RepositoryException, UnauthorizedException,
-				QueryInterruptedException
+		throws IOException, RDFHandlerException, RepositoryException, UnauthorizedException,
+		QueryInterruptedException
 	{
 		checkRepositoryURL();
 
@@ -463,7 +463,7 @@ public class SesameSession extends SparqlSession {
 	}
 
 	public synchronized void beginTransaction(IsolationLevel isolationLevel)
-		throws OpenRDFException, IOException, UnauthorizedException
+		throws RDF4JException, IOException, UnauthorizedException
 	{
 		checkRepositoryURL();
 
@@ -502,7 +502,7 @@ public class SesameSession extends SparqlSession {
 	}
 
 	public synchronized void commitTransaction()
-		throws OpenRDFException, IOException, UnauthorizedException
+		throws RDF4JException, IOException, UnauthorizedException
 	{
 		checkRepositoryURL();
 
@@ -539,7 +539,7 @@ public class SesameSession extends SparqlSession {
 	}
 
 	public synchronized void rollbackTransaction()
-		throws OpenRDFException, IOException, UnauthorizedException
+		throws RDF4JException, IOException, UnauthorizedException
 	{
 		checkRepositoryURL();
 
@@ -638,7 +638,7 @@ public class SesameSession extends SparqlSession {
 		catch (RepositoryException e) {
 			throw e;
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
 	}
@@ -657,14 +657,14 @@ public class SesameSession extends SparqlSession {
 
 	public void upload(InputStream contents, String baseURI, RDFFormat dataFormat, boolean overwrite,
 			boolean preserveNodeIds, Resource... contexts)
-				throws IOException, RDFParseException, RepositoryException, UnauthorizedException
+		throws IOException, RDFParseException, RepositoryException, UnauthorizedException
 	{
 		upload(contents, baseURI, dataFormat, overwrite, preserveNodeIds, Action.ADD, contexts);
 	}
 
 	protected void upload(InputStream contents, String baseURI, RDFFormat dataFormat, boolean overwrite,
 			boolean preserveNodeIds, Action action, Resource... contexts)
-				throws IOException, RDFParseException, RepositoryException, UnauthorizedException
+		throws IOException, RDFParseException, RepositoryException, UnauthorizedException
 	{
 		// Set Content-Length to -1 as we don't know it and we also don't want to
 		// cache
@@ -675,7 +675,7 @@ public class SesameSession extends SparqlSession {
 
 	public void upload(final Reader contents, String baseURI, final RDFFormat dataFormat, boolean overwrite,
 			boolean preserveNodeIds, Resource... contexts)
-				throws UnauthorizedException, RDFParseException, RepositoryException, IOException
+		throws UnauthorizedException, RDFParseException, RepositoryException, IOException
 	{
 		upload(contents, baseURI, dataFormat, overwrite, preserveNodeIds, Action.ADD, contexts);
 	}
@@ -712,7 +712,7 @@ public class SesameSession extends SparqlSession {
 
 	@Override
 	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
-			boolean includeInferred, Binding... bindings)
+			boolean includeInferred, int maxExecutionTime, Binding... bindings)
 	{
 		RequestBuilder builder = null;
 		if (transactionURL != null) {
@@ -720,7 +720,7 @@ public class SesameSession extends SparqlSession {
 			builder.addHeader("Content-Type", Protocol.SPARQL_UPDATE_MIME_TYPE + "; charset=utf-8");
 			builder.addParameter(Protocol.ACTION_PARAM_NAME, Action.UPDATE.toString());
 			for (NameValuePair nvp : getUpdateMethodParameters(ql, null, baseURI, dataset, includeInferred,
-					bindings))
+					maxExecutionTime, bindings))
 			{
 				builder.addParameter(nvp);
 			}
@@ -732,8 +732,8 @@ public class SesameSession extends SparqlSession {
 			builder = RequestBuilder.post(getUpdateURL());
 			builder.addHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
 
-			builder.setEntity(new UrlEncodedFormEntity(
-					getUpdateMethodParameters(ql, update, baseURI, dataset, includeInferred, bindings), UTF8));
+			builder.setEntity(new UrlEncodedFormEntity(getUpdateMethodParameters(ql, update, baseURI, dataset,
+					includeInferred, maxExecutionTime, bindings), UTF8));
 		}
 
 		return builder.build();
@@ -741,7 +741,7 @@ public class SesameSession extends SparqlSession {
 
 	protected void upload(final Reader contents, String baseURI, final RDFFormat dataFormat, boolean overwrite,
 			boolean preserveNodeIds, Action action, Resource... contexts)
-				throws IOException, RDFParseException, RepositoryException, UnauthorizedException
+		throws IOException, RDFParseException, RepositoryException, UnauthorizedException
 	{
 		final Charset charset = dataFormat.hasCharset() ? dataFormat.getCharset() : Charset.forName("UTF-8");
 
@@ -796,7 +796,7 @@ public class SesameSession extends SparqlSession {
 
 	protected void upload(HttpEntity reqEntity, String baseURI, boolean overwrite, boolean preserveNodeIds,
 			Action action, Resource... contexts)
-				throws IOException, RDFParseException, RepositoryException, UnauthorizedException
+		throws IOException, RDFParseException, RepositoryException, UnauthorizedException
 	{
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
@@ -851,7 +851,7 @@ public class SesameSession extends SparqlSession {
 			catch (RDFParseException e) {
 				throw e;
 			}
-			catch (OpenRDFException e) {
+			catch (RDF4JException e) {
 				throw new RepositoryException(e);
 			}
 		}

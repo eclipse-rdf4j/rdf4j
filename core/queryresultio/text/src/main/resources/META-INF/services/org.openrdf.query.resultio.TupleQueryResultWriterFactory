@@ -1,2 +1,0 @@
-org.openrdf.query.resultio.text.csv.SPARQLResultsCSVWriterFactory
-org.openrdf.query.resultio.text.tsv.SPARQLResultsTSVWriterFactory

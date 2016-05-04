@@ -19,14 +19,7 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class TimeLimitIteration<E, X extends Exception> extends IterationWrapper<E, X> {
 
-	private static Timer timer = null;
-
-	private static synchronized Timer getTimer() {
-		if (timer == null) {
-			timer = new Timer("TimeLimitIteration", true);
-		}
-		return timer;
-	}
+	private static final Timer timer = new Timer("TimeLimitIteration", true);
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -41,7 +34,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 
 		interruptTask = new InterruptTask<E, X>(this);
 
-		getTimer().schedule(interruptTask, timeLimit);
+		timer.schedule(interruptTask, timeLimit);
 	}
 
 	@Override

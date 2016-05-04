@@ -88,8 +88,8 @@ public class WorkbenchGateway extends AbstractServlet {
 	 * Whether the server path is fixed, which is when the change-server-path
 	 * configuration value is not set.
 	 * 
-	 * @return true, if the change-server-path configuration variable is not set,
-	 *         meaning that changing the server is blocked
+	 * @return true, if the change-server-path configuration variable is not
+	 *         set, meaning that changing the server is blocked
 	 */
 	public boolean isServerFixed() {
 		return getChangeServerPath() == null;
@@ -145,36 +145,49 @@ public class WorkbenchGateway extends AbstractServlet {
 	private void changeServer(final HttpServletRequest req, final HttpServletResponse resp)
 		throws IOException, QueryResultHandlerException
 	{
-		final String server = req.getParameter(SERVER_COOKIE);
+		String server = req.getParameter(SERVER_COOKIE);
 		if (server == null) {
 			// Server parameter was not present, so present entry form.
 			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 			builder.transform(getTransformationUrl(req), "server.xsl");
-			builder.start();
+			builder.start("server");
+
+			// see if server url was still present in cookie, if so use that
+			// value as prefilled value in the form
+			String currentServer = this.cookies.getCookie(req, resp, SERVER_COOKIE);
+			if (currentServer == null) {
+				// otherwise use the default
+				currentServer = getDefaultServer(req);
+			}
+			builder.result(currentServer);
 			builder.end();
+			return;
 		}
-		else if (this.serverValidator.isValidServer(server)) {
-			// Valid server was submitted by form. Set cookie and redirect to
-			// repository selection page.
-			this.cookies.addNewCookie(req, resp, SERVER_COOKIE, server);
-			final String user = getOptionalParameter(req, SERVER_USER);
-			this.cookies.addNewCookie(req, resp, SERVER_USER, user);
-			final String password = getOptionalParameter(req, SERVER_PASSWORD);
-			this.cookies.addNewCookie(req, resp, SERVER_PASSWORD, password);
-			final StringBuilder uri = new StringBuilder(req.getRequestURI());
-			uri.setLength(uri.length() - req.getPathInfo().length());
-			resetCache();
-			resp.sendRedirect(uri.toString());
-		}
-		else {
+
+		server = server.trim();
+		if (!this.serverValidator.isValidServer(server)) {
 			// Invalid server was submitted by form. Present entry form again
 			// with error message.
 			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 			builder.transform(getTransformationUrl(req), "server.xsl");
-			builder.start("error-message");
-			builder.result("Invalid Server URL");
+			builder.start("error-message", "server");
+			builder.result("Invalid Server URL", server);
 			builder.end();
+			return;
+
 		}
+
+		// Valid server was submitted by form. Set cookie and redirect to
+		// repository selection page.
+		this.cookies.addNewCookie(req, resp, SERVER_COOKIE, server);
+		final String user = getOptionalParameter(req, SERVER_USER);
+		this.cookies.addNewCookie(req, resp, SERVER_USER, user);
+		final String password = getOptionalParameter(req, SERVER_PASSWORD);
+		this.cookies.addNewCookie(req, resp, SERVER_PASSWORD, password);
+		final StringBuilder uri = new StringBuilder(req.getRequestURI());
+		uri.setLength(uri.length() - req.getPathInfo().length());
+		resetCache();
+		resp.sendRedirect(uri.toString());
 	}
 
 	/**
@@ -230,7 +243,8 @@ public class WorkbenchGateway extends AbstractServlet {
 	 * @throws ServletException
 	 *         if a problem occurs initializing a new servlet
 	 */
-	private WorkbenchServlet findWorkbenchServlet(final HttpServletRequest req, final HttpServletResponse resp)
+	private WorkbenchServlet findWorkbenchServlet(final HttpServletRequest req,
+			final HttpServletResponse resp)
 		throws ServletException
 	{
 		WorkbenchServlet servlet = null;
@@ -264,13 +278,13 @@ public class WorkbenchGateway extends AbstractServlet {
 	}
 
 	/**
-	 * Returns the full URL to the default server on the same server as the given
-	 * request.
+	 * Returns the full URL to the default server on the same server as the
+	 * given request.
 	 * 
 	 * @param req
 	 *        the request to find the default server relative to
-	 * @return the full URL to the default server on the same server as the given
-	 *         request
+	 * @return the full URL to the default server on the same server as the
+	 *         given request
 	 */
 	private String getDefaultServer(final HttpServletRequest req) {
 		String server = getDefaultServerPath();

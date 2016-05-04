@@ -6,7 +6,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-core</artifactId>
-		<version>4.1.1-SNAPSHOT</version>
+		<version>1.0M1-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>rdf4j-console</artifactId>
@@ -60,14 +60,12 @@
 		<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
-			<version>4.11</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<!-- needs extra dependencies: objenesis & hamcrest -->
 			<groupId>org.mockito</groupId>
 			<artifactId>mockito-core</artifactId>
-			<version>1.9.5</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>

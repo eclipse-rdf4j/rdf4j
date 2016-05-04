@@ -28,6 +28,10 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
  */
 public class XMLDatatypeUtil {
 
+	public static final String POSITIVE_INFINITY = "INF";
+	public static final String NEGATIVE_INFINITY = "-INF";
+	public static final String NaN = "NaN";
+
 	private static DatatypeFactory dtFactory;
 
 	static {
@@ -1115,7 +1119,7 @@ public class XMLDatatypeUtil {
 		}
 		
 		// handle special values
-		if (value.equals("INF") || value.equals("-INF") || value.equals("NaN")) {
+		if (value.equals(POSITIVE_INFINITY) || value.equals(NEGATIVE_INFINITY) || value.equals(NaN)) {
 			return value;
 		}
 
@@ -1680,7 +1684,7 @@ public class XMLDatatypeUtil {
 	 */
 	public static int compareCanonicalFPNumbers(String float1, String float2) {
 		// Handle special case NaN
-		if (float1.equals("NaN") || float2.equals("NaN")) {
+		if (float1.equals(NaN) || float2.equals(NaN)) {
 			if (float1.equals(float2)) {
 				// NaN is equal to itself
 				return 0;
@@ -1691,18 +1695,18 @@ public class XMLDatatypeUtil {
 		}
 
 		// Handle special case INF
-		if (float1.equals("INF")) {
-			return (float2.equals("INF")) ? 0 : 1;
+		if (float1.equals(POSITIVE_INFINITY)) {
+			return (float2.equals(POSITIVE_INFINITY)) ? 0 : 1;
 		}
-		else if (float2.equals("INF")) {
+		else if (float2.equals(POSITIVE_INFINITY)) {
 			return -1;
 		}
 
 		// Handle special case -INF
-		if (float1.equals("-INF")) {
-			return (float2.equals("-INF")) ? 0 : -1;
+		if (float1.equals(NEGATIVE_INFINITY)) {
+			return (float2.equals(NEGATIVE_INFINITY)) ? 0 : -1;
 		}
-		else if (float2.equals("-INF")) {
+		else if (float2.equals(NEGATIVE_INFINITY)) {
 			return 1;
 		}
 
@@ -1854,8 +1858,19 @@ public class XMLDatatypeUtil {
 	 *         If the supplied string is not a valid xsd:float value.
 	 */
 	public static float parseFloat(String s) {
-		s = trimPlusSign(s);
-		return Float.parseFloat(s);
+		if (POSITIVE_INFINITY.equals(s)) {
+			return Float.POSITIVE_INFINITY;
+		}
+		else if (NEGATIVE_INFINITY.equals(s)) {
+			return Float.NEGATIVE_INFINITY;
+		}
+		else if (NaN.equals(s)) {
+			return Float.NaN;
+		}
+		else {
+			s = trimPlusSign(s);
+			return Float.parseFloat(s);
+		}
 	}
 
 	/**
@@ -1869,8 +1884,19 @@ public class XMLDatatypeUtil {
 	 *         If the supplied string is not a valid xsd:double value.
 	 */
 	public static double parseDouble(String s) {
-		s = trimPlusSign(s);
-		return Double.parseDouble(s);
+		if (POSITIVE_INFINITY.equals(s)) {
+			return Double.POSITIVE_INFINITY;
+		}
+		else if (NEGATIVE_INFINITY.equals(s)) {
+			return Double.NEGATIVE_INFINITY;
+		}
+		else if (NaN.equals(s)) {
+			return Double.NaN;
+		}
+		else {
+			s = trimPlusSign(s);
+			return Double.parseDouble(s);
+		}
 	}
 
 	/**
@@ -1975,6 +2001,22 @@ public class XMLDatatypeUtil {
 		else {
 			throw new IllegalArgumentException("QName cannot be mapped to an XML Schema URI: "
 					+ qname.toString());
+		}
+	}
+
+	public static String toString(Number value) {
+		double d = value.doubleValue();
+		if (Double.POSITIVE_INFINITY == d) {
+			return XMLDatatypeUtil.POSITIVE_INFINITY;
+		}
+		else if (Double.NEGATIVE_INFINITY == d) {
+			return XMLDatatypeUtil.NEGATIVE_INFINITY;
+		}
+		else if (Double.NaN == d) {
+			return XMLDatatypeUtil.NaN;
+		}
+		else {
+			return value.toString();
 		}
 	}
 

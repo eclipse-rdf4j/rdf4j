@@ -16,13 +16,14 @@ import java.util.Set;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.spatial.SpatialStrategy;
-import org.eclipse.rdf4j.sail.lucene.LuceneSail;
-import org.eclipse.rdf4j.sail.lucene.SearchDocument;
-import org.eclipse.rdf4j.sail.lucene.SearchFields;
 
 import com.google.common.base.Function;
 import com.spatial4j.core.shape.Shape;
 
+/**
+ * @deprecated since 4.1.0. Use the LuceneSail in package
+ *             {@code org.openrdf.sail.lucene} instead.
+ */
 @Deprecated
 public class LuceneDocument implements SearchDocument {
 

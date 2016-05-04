@@ -148,16 +148,101 @@ public abstract class ComplexSPARQLQueryTest {
 
 				assertNotNull(s);
 				assertFalse(bob.equals(s)); // should not be present in default
-											// graph
+				// graph
 				assertFalse(alice.equals(s)); // should not be present in
-												// default
-												// graph
+				// default
+				// graph
 			}
 			result.close();
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());
+		}
+	}
+
+	@Test
+	public void testSES2373SubselectOptional()
+		throws Exception
+	{
+		conn.prepareUpdate(QueryLanguage.SPARQL,
+				"insert data {" + "<u:1> <u:r> <u:subject> ." + "<u:1> <u:v> 1 ." + "<u:1> <u:x> <u:x1> ."
+						+ "<u:2> <u:r> <u:subject> ." + "<u:2> <u:v> 2 ." + "<u:2> <u:x> <u:x2> ."
+						+ "<u:3> <u:r> <u:subject> ." + "<u:3> <u:v> 3 ." + "<u:3> <u:x> <u:x3> ."
+						+ "<u:4> <u:r> <u:subject> ." + "<u:4> <u:v> 4 ." + "<u:4> <u:x> <u:x4> ."
+						+ "<u:5> <u:r> <u:subject> ." + "<u:5> <u:v> 5 ." + "<u:5> <u:x> <u:x5> ."
+						+ "}").execute();
+
+		StringBuilder qb = new StringBuilder();
+		qb.append("select ?x { \n");
+		qb.append(" { select ?v { ?v <u:r> <u:subject> filter (?v = <u:1>) } }.\n");
+		qb.append("  optional {  select ?val { ?v <u:v> ?val .} }\n");
+		qb.append("  ?v <u:x> ?x \n");
+		qb.append("}\n");
+
+		TupleQueryResult res = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb.toString()).evaluate();
+		assertTrue("The query should return a result", res.hasNext());
+		BindingSet b = res.next();
+		assertTrue("?x is from the mandatory part of the query and should be bound", b.hasBinding("x"));
+	}
+
+	@Test
+	public void testSES2154SubselectOptional()
+		throws Exception
+	{
+		StringBuilder ub = new StringBuilder();
+		ub.append("insert data { \n");
+		ub.append(" <urn:s1> a <urn:C> .  \n");
+		ub.append(" <urn:s2> a <urn:C> .  \n");
+		ub.append(" <urn:s3> a <urn:C> .  \n");
+		ub.append(" <urn:s4> a <urn:C> .  \n");
+		ub.append(" <urn:s5> a <urn:C> .  \n");
+		ub.append(" <urn:s6> a <urn:C> .  \n");
+		ub.append(" <urn:s7> a <urn:C> .  \n");
+		ub.append(" <urn:s8> a <urn:C> .  \n");
+		ub.append(" <urn:s9> a <urn:C> .  \n");
+		ub.append(" <urn:s10> a <urn:C> .  \n");
+		ub.append(" <urn:s11> a <urn:C> .  \n");
+		ub.append(" <urn:s12> a <urn:C> .  \n");
+
+		ub.append(" <urn:s1> <urn:p> \"01\" .  \n");
+		ub.append(" <urn:s2> <urn:p> \"02\" .  \n");
+		ub.append(" <urn:s3> <urn:p> \"03\" .  \n");
+		ub.append(" <urn:s4> <urn:p> \"04\" .  \n");
+		ub.append(" <urn:s5> <urn:p> \"05\" .  \n");
+		ub.append(" <urn:s6> <urn:p> \"06\" .  \n");
+		ub.append(" <urn:s7> <urn:p> \"07\" .  \n");
+		ub.append(" <urn:s8> <urn:p> \"08\" .  \n");
+		ub.append(" <urn:s9> <urn:p> \"09\" .  \n");
+		ub.append(" <urn:s10> <urn:p> \"10\" .  \n");
+		ub.append(" <urn:s11> <urn:p> \"11\" .  \n");
+		ub.append(" <urn:s12> <urn:p> \"12\" .  \n");
+		ub.append("} \n");
+		
+		conn.prepareUpdate(QueryLanguage.SPARQL, ub.toString()).execute();
+
+		StringBuilder qb = new StringBuilder();
+		qb.append("SELECT ?s ?label\n");
+		qb.append("WHERE { \n");
+		qb.append(" 	  ?s a <urn:C> \n .\n");
+		qb.append(" 	  OPTIONAL  { {SELECT ?label  WHERE { \n");
+		qb.append("                     ?s <urn:p> ?label . \n");
+		qb.append("   	      } ORDER BY ?label LIMIT 2 \n");
+		qb.append("		    }\n");
+		qb.append("       }\n");
+		qb.append("}\n");
+		qb.append("ORDER BY ?s\n");
+		qb.append("LIMIT 10 \n");
+
+		TupleQueryResult res = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb.toString()).evaluate();
+		assertTrue("The query should return a result", res.hasNext());
+
+		List<BindingSet> result = QueryResults.asList(res);
+		assertEquals(10, result.size());
+		for (BindingSet bs : result) {
+			Literal label = (Literal)bs.getValue("label");
+			assertTrue("wrong label value (expected '01' or '02', but got '" + label.stringValue() + "')",
+					label.stringValue().equals("01") || label.stringValue().equals("02"));
 		}
 	}
 
@@ -186,10 +271,10 @@ public abstract class ComplexSPARQLQueryTest {
 
 				assertNotNull(s);
 				assertFalse(bob.equals(s)); // should not be present in default
-											// graph
+				// graph
 				assertFalse(alice.equals(s)); // should not be present in
-												// default
-												// graph
+				// default
+				// graph
 			}
 			result.close();
 		}
@@ -2104,87 +2189,90 @@ public abstract class ComplexSPARQLQueryTest {
 	}
 
 	@Test
-	public void testSES2361UndefMin() throws Exception
+	public void testSES2361UndefMin()
+		throws Exception
 	{
-			String query = "SELECT (MIN(?v) as ?min) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
-			TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
-			try {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
-				assertEquals("1", result.next().getValue("min").stringValue());
-				assertFalse(result.hasNext());
-			}
-			finally {
-				result.close();
-			}
+		String query = "SELECT (MIN(?v) as ?min) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
+		TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
+		try {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertEquals("1", result.next().getValue("min").stringValue());
+			assertFalse(result.hasNext());
+		}
+		finally {
+			result.close();
+		}
 	}
-	
+
 	@Test
-	public void testSES2361UndefMax() throws Exception
+	public void testSES2361UndefMax()
+		throws Exception
 	{
-			String query = "SELECT (MAX(?v) as ?max) WHERE { VALUES ?v { 1 2 7 undef 3 4 }}";
-			TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
-			try {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
-				assertEquals("7", result.next().getValue("max").stringValue());
-				assertFalse(result.hasNext());
-			}
-			finally {
-				result.close();
-			}
+		String query = "SELECT (MAX(?v) as ?max) WHERE { VALUES ?v { 1 2 7 undef 3 4 }}";
+		TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
+		try {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertEquals("7", result.next().getValue("max").stringValue());
+			assertFalse(result.hasNext());
+		}
+		finally {
+			result.close();
+		}
 	}
-	
-	
+
 	@Test
-	public void testSES2361UndefCount() throws Exception
+	public void testSES2361UndefCount()
+		throws Exception
 	{
-			String query = "SELECT (COUNT(?v) as ?c) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
-			TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
-			try {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
-				assertEquals("4", result.next().getValue("c").stringValue());
-				assertFalse(result.hasNext());
-			}
-			finally {
-				result.close();
-			}
+		String query = "SELECT (COUNT(?v) as ?c) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
+		TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
+		try {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertEquals("4", result.next().getValue("c").stringValue());
+			assertFalse(result.hasNext());
+		}
+		finally {
+			result.close();
+		}
 	}
-	
+
 	@Test
-	public void testSES2361UndefCountWildcard() throws Exception
+	public void testSES2361UndefCountWildcard()
+		throws Exception
 	{
-			String query = "SELECT (COUNT(*) as ?c) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
-			TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
-			try {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
-				assertEquals("4", result.next().getValue("c").stringValue());
-				assertFalse(result.hasNext());
-			}
-			finally {
-				result.close();
-			}
+		String query = "SELECT (COUNT(*) as ?c) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
+		TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
+		try {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertEquals("4", result.next().getValue("c").stringValue());
+			assertFalse(result.hasNext());
+		}
+		finally {
+			result.close();
+		}
 	}
-	
+
 	@Test
-	public void testSES2361UndefSum() throws Exception
+	public void testSES2361UndefSum()
+		throws Exception
 	{
-			String query = "SELECT (SUM(?v) as ?s) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
-			TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
-			try {
-				assertNotNull(result);
-				assertTrue(result.hasNext());
-				assertEquals("10", result.next().getValue("s").stringValue());
-				assertFalse(result.hasNext());
-			}
-			finally {
-				result.close();
-			}
+		String query = "SELECT (SUM(?v) as ?s) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
+		TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
+		try {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			assertEquals("10", result.next().getValue("s").stringValue());
+			assertFalse(result.hasNext());
+		}
+		finally {
+			result.close();
+		}
 	}
-	
-	
+
 	@Test
 	public void testSES2336NegatedPropertyPathMod()
 		throws Exception
@@ -2215,6 +2303,31 @@ public abstract class ComplexSPARQLQueryTest {
 
 			assertFalse(containsSolution(result, new SimpleBinding("s", a), new SimpleBinding("o", b)));
 
+		}
+		catch (QueryEvaluationException e) {
+			e.printStackTrace();
+			fail(e.getMessage());
+		}
+
+	}
+
+	@Test
+	public void testSES1979MinMaxInf()
+		throws Exception
+	{
+		loadTestData("/testdata-query/dataset-ses1979.trig");
+		String query = "prefix : <http://example.org/> select (min(?o) as ?min) (max(?o) as ?max) where { ?s :float ?o }";
+
+		ValueFactory vf = conn.getValueFactory();
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+
+		try {
+			List<BindingSet> result = QueryResults.asList(tq.evaluate());
+			assertNotNull(result);
+			assertEquals(1, result.size());
+
+			assertEquals(vf.createLiteral(Float.NEGATIVE_INFINITY), result.get(0).getValue("min"));
+			assertEquals(vf.createLiteral(Float.POSITIVE_INFINITY), result.get(0).getValue("max"));
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();

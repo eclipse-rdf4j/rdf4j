@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.util;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -50,7 +50,7 @@ public class RDFInserter extends AbstractRDFInserter {
 	 *---------*/
 
 	@Override
-	protected void addNamespace(String prefix, String name) throws OpenRDFException
+	protected void addNamespace(String prefix, String name) throws RDF4JException
 	{
 		if (con.getNamespace(prefix) == null) {
 			con.setNamespace(prefix, name);
@@ -58,7 +58,7 @@ public class RDFInserter extends AbstractRDFInserter {
 	}
 
 	@Override
-	protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) throws OpenRDFException
+	protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) throws RDF4JException
 	{
 		if (enforcesContext()) {
 			con.add(subj, pred, obj, contexts);

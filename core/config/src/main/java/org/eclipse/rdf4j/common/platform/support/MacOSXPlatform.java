@@ -15,7 +15,7 @@ import java.io.File;
  */
 public class MacOSXPlatform extends PosixPlatform {
 
-	public static final String APPLICATION_DATA = "Library/Application Support/Aduna";
+	public static final String APPLICATION_DATA = "Library/Application Support/RDF4J";
 	
 	public String getName() {
 		return "Mac OS X";

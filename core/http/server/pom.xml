@@ -6,7 +6,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-http</artifactId>
-		<version>4.1.1-SNAPSHOT</version>
+		<version>1.0M1-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>rdf4j-http-server</artifactId>
@@ -32,6 +32,10 @@
 			<version>${project.version}</version>
 		</dependency>
 
+		<dependency>
+			<groupId>org.ebaysf.web</groupId>
+			<artifactId>cors-filter</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.tuckey</groupId>
 			<artifactId>urlrewritefilter</artifactId>
@@ -78,7 +82,7 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-war-plugin</artifactId>
 				<configuration>
-					<warName>openrdf-sesame</warName>
+					<warName>rdf4j-server</warName>
 					<archiveClasses>true</archiveClasses>
 				</configuration>
 			</plugin>
@@ -86,9 +90,9 @@
 				<groupId>org.apache.tomcat.maven</groupId>
 				<artifactId>tomcat7-maven-plugin</artifactId>
 				<configuration>
-					<warFile>${project.build.directory}/${project.artifactId}.war</warFile>
-					<server>localhost</server>
-					<path>/openrdf-sesame</path>
+					<warFile>${project.build.directory}/rdf4j-server.war</warFile>
+					<server>tomcat</server>
+					<path>/rdf4j-server</path>
 				</configuration>
 			</plugin>
 		</plugins>
@@ -107,7 +111,7 @@
 						<artifactId>maven-eclipse-plugin</artifactId>
 						<configuration>
 							<wtpversion>1.5</wtpversion>
-							<wtpContextName>openrdf-sesame</wtpContextName>
+							<wtpContextName>rdf4j-server</wtpContextName>
 							<additionalBuildcommands>
 								<buildCommand>
 									<name>

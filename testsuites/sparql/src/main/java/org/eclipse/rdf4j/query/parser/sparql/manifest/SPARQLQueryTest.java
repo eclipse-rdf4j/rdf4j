@@ -636,7 +636,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 		manifestRep.initialize();
 		RepositoryConnection con = manifestRep.getConnection();
 
-		ManifestTest.addTurtle(con, new URL(manifestFileURL), manifestFileURL);
+		SPARQL11ManifestTest.addTurtle(con, new URL(manifestFileURL), manifestFileURL);
 
 		suite.setName(getManifestName(manifestRep, con, manifestFileURL));
 

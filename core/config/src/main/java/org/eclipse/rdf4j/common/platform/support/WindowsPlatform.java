@@ -21,8 +21,8 @@ public class WindowsPlatform extends AbstractPlatform {
 	/** name of the directory containing application data */
 	public static final String APPLICATION_DATA = "Application Data";
 
-	/** name of the app data subdirectory containing all Aduna files * */
-	public static final String ADUNA_APPLICATION_DATA = "Aduna";
+	/** name of the app data subdirectory containing all RDF4J files * */
+	public static final String ADUNA_APPLICATION_DATA = "RDF4J";
 
 	/**
 	 * indication whether this is a windows9x platform: 0 means not initialized,

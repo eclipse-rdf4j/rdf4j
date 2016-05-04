@@ -30,9 +30,14 @@ public class AppVersion implements Comparable<AppVersion> {
 	private int minor;
 
 	/**
-	 * The version's micro version number.
+	 * The version's patch version number, if any.
 	 */
-	private int micro;
+	private int patch;
+
+	/**
+	 * The version's milestone number, if any.
+	 */
+	private int milestone;
 
 	/**
 	 * The version's modifier, if any.
@@ -43,22 +48,22 @@ public class AppVersion implements Comparable<AppVersion> {
 	 * Construct an uninitialized AppVersion.
 	 */
 	public AppVersion() {
-		this(-1, -1, -1, null);
+		this(-1, -1, -1, -1, null);
 	}
 
 	/**
 	 * Creates a new <tt>major.minor</tt> version number, e.g. <tt>1.0</tt>.
 	 */
 	public AppVersion(int major, int minor) {
-		this(major, minor, -1, null);
+		this(major, minor, -1, -1, null);
 	}
 
 	/**
-	 * Creates a new <tt>major.minor.micro</tt> version number, e.g.
+	 * Creates a new <tt>major.minor.patch</tt> version number, e.g.
 	 * <tt>1.0.1</tt>.
 	 */
-	public AppVersion(int major, int minor, int micro) {
-		this(major, minor, micro, null);
+	public AppVersion(int major, int minor, int patch) {
+		this(major, minor, patch, -1, null);
 	}
 
 	/**
@@ -66,17 +71,26 @@ public class AppVersion implements Comparable<AppVersion> {
 	 * <tt>1.0-beta1</tt>.
 	 */
 	public AppVersion(int major, int minor, String modifier) {
-		this(major, minor, -1, modifier);
+		this(major, minor, -1, -1, modifier);
 	}
 
 	/**
-	 * Creates a new <tt>major.minor.micro-modifier</tt> version number, e.g.
+	 * Creates a new <tt>major.minor.patch-modifier</tt> version number, e.g.
 	 * <tt>1.0.1-SNAPSHOT</tt>.
 	 */
-	public AppVersion(int major, int minor, int micro, String modifier) {
+	public AppVersion(int major, int minor, int patch, String modifier) {
+		this(major, minor, patch, -1, modifier);
+	}
+
+	/**
+	 * Creates a new <tt>major.minor.patchMmilestone-modifier</tt> version
+	 * number, e.g. <tt>1.0.1M1-SNAPSHOT</tt>.
+	 */
+	public AppVersion(int major, int minor, int patch, int milestone, String modifier) {
 		this.major = major;
 		this.minor = minor;
-		this.micro = micro;
+		this.patch = patch;
+		this.milestone = milestone;
 		this.modifier = modifier;
 	}
 
@@ -105,12 +119,20 @@ public class AppVersion implements Comparable<AppVersion> {
 	/**
 	 * Gets the version's micro version number.
 	 */
-	public int getMicro() {
-		return micro;
+	public int getPatch() {
+		return patch;
 	}
 
-	public void setMicro(int micro) {
-		this.micro = micro;
+	public void setPatch(int micro) {
+		this.patch = micro;
+	}
+
+	public void setMilestone(int milestone) {
+		this.milestone = milestone;
+	}
+
+	public int getMilestone() {
+		return milestone;
 	}
 
 	/**
@@ -131,7 +153,7 @@ public class AppVersion implements Comparable<AppVersion> {
 		if (other instanceof AppVersion) {
 			AppVersion o = (AppVersion)other;
 
-			isEqual = major == o.major && minor == o.minor && micro == o.micro;
+			isEqual = major == o.major && minor == o.minor && patch == o.patch && milestone == o.milestone;
 
 			if (isEqual) {
 				isEqual = modifier == o.modifier || modifier != null && modifier.equalsIgnoreCase(o.modifier);
@@ -145,8 +167,12 @@ public class AppVersion implements Comparable<AppVersion> {
 	public int hashCode() {
 		int hash = 31 * (31 * major + minor);
 
-		if (micro > 0) {
-			hash += micro;
+		if (patch > 0) {
+			hash += patch;
+		}
+
+		if (milestone > 0) {
+			hash += milestone;
 		}
 
 		if (modifier != null) {
@@ -173,12 +199,13 @@ public class AppVersion implements Comparable<AppVersion> {
 	}
 
 	/**
-	 * Compares two version numbers according to their major, minor and micro
-	 * version numbers, ordering from oldest to newests version. If all three
-	 * version numbers are equal then their modifiers are compared
-	 * lexicographically (based on the Unicode value of each character), ignoring
-	 * case. Versions without a modifier are considered to be the "final"
-	 * versions and come after otherwise equal versions with a modifier.
+	 * Compares two version numbers according to their major, minor, patch and
+	 * milestone version numbers, ordering from oldest to newest version. If all
+	 * version numbers are equal then their modifiers are
+	 * compared lexicographically (based on the Unicode value of each
+	 * character), ignoring case. Versions without a modifier or milestone are considered to
+	 * be the "final" versions and come after otherwise equal versions with a
+	 * modifier or milestone.
 	 * 
 	 * @return <tt>0</tt> if both versions are equal, a negative number if this
 	 *         version is older than <tt>other</tt>, or a positive number
@@ -192,7 +219,23 @@ public class AppVersion implements Comparable<AppVersion> {
 		}
 
 		if (result == 0) {
-			result = micro - other.micro;
+			result = patch - other.patch;
+		}
+		
+		if (result == 0 && (milestone > -1 || other.milestone > -1)) {
+			if (milestone > -1) {
+				if (other.milestone == -1) {
+					result = -1;
+				}
+				else {
+					result = milestone - other.milestone;
+				}
+			}
+			else {
+				if (other.milestone > -1) {
+					result = 1;
+				}
+			}
 		}
 
 		if (result == 0 && !ObjectUtil.nullEquals(modifier, other.modifier)) {
@@ -224,46 +267,69 @@ public class AppVersion implements Comparable<AppVersion> {
 			return new AppVersion(-1, -1, "dev");
 		}
 
-		int minorSeperator = versionString.indexOf('.');
-		int microSeperator = versionString.indexOf('.', minorSeperator + 1);
-		int modifierSeperator = versionString.indexOf('-', Math.max(minorSeperator, microSeperator));
+		int minorSeparator = versionString.indexOf('.');
+		int patchSeparator = versionString.indexOf('.', minorSeparator + 1);
+		int milestoneSeparator = versionString.indexOf('M', Math.max(minorSeparator, patchSeparator));
+		int modifierSeparator = versionString.indexOf('-', Math.max(minorSeparator, milestoneSeparator));
 
-		if (minorSeperator == -1) {
+		if (minorSeparator == -1) {
 			throw new NumberFormatException("Illegal version string: " + versionString);
 		}
 
-		String major = versionString.substring(0, minorSeperator);
+		final boolean hasPatch = patchSeparator > -1;
+		final boolean hasMilestone = milestoneSeparator > -1;
+		final boolean hasModifier = modifierSeparator > -1;
+
+		String major = versionString.substring(0, minorSeparator);
 		String minor = null;
-		String micro = null;
+		String patch = null;
+		String milestone = null;
 		String modifier = null;
 
-		if (microSeperator == -1) {
-			// Without micro version number
-			if (modifierSeperator == -1) {
-				minor = versionString.substring(minorSeperator + 1);
+		if (hasModifier) {
+			modifier = versionString.substring(modifierSeparator + 1);
+		}
+
+		if (hasMilestone) {
+			if (hasModifier) {
+				milestone = versionString.substring(milestoneSeparator + 1, modifierSeparator);
 			}
 			else {
-				minor = versionString.substring(minorSeperator + 1, modifierSeperator);
-				modifier = versionString.substring(modifierSeperator + 1);
+				milestone = versionString.substring(milestoneSeparator + 1);
 			}
 		}
-		else {
-			// With micro version number
-			minor = versionString.substring(minorSeperator + 1, microSeperator);
 
-			if (modifierSeperator == -1) {
-				micro = versionString.substring(microSeperator + 1);
+		// determine patch and minor versions
+		if (hasPatch) {
+			if (hasMilestone) {
+				patch = versionString.substring(patchSeparator + 1, milestoneSeparator);
+			}
+			else if (hasModifier) {
+				patch = versionString.substring(patchSeparator + 1, modifierSeparator);
 			}
 			else {
-				micro = versionString.substring(microSeperator + 1, modifierSeperator);
-				modifier = versionString.substring(modifierSeperator + 1);
+				patch = versionString.substring(patchSeparator + 1);
 			}
+			minor = versionString.substring(minorSeparator + 1, patchSeparator);
+		}
+		else {
+			if (hasMilestone) {
+				minor = versionString.substring(minorSeparator + 1, milestoneSeparator);
+			}
+			else if (hasModifier) {
+				minor = versionString.substring(minorSeparator + 1, modifierSeparator);
+			}
+			else {
+				minor = versionString.substring(minorSeparator + 1);
+			}
+
 		}
 
 		int majorInt = Integer.parseInt(major);
 		int minorInt = Integer.parseInt(minor);
-		int microInt = micro == null ? -1 : Integer.parseInt(micro);
-		return new AppVersion(majorInt, minorInt, microInt, modifier);
+		int patchInt = patch == null ? -1 : Integer.parseInt(patch);
+		int milestoneInt = milestone == null ? -1 : Integer.parseInt(milestone);
+		return new AppVersion(majorInt, minorInt, patchInt, milestoneInt, modifier);
 	}
 
 	/**
@@ -277,10 +343,14 @@ public class AppVersion implements Comparable<AppVersion> {
 			sb.append(major).append('.').append(minor);
 		}
 
-		if (micro >= 0) {
-			sb.append('.').append(micro);
+		if (patch >= 0) {
+			sb.append('.').append(patch);
 		}
 
+		if (milestone >= 0) {
+			sb.append('M').append(milestone);
+		}
+		
 		if (modifier != null) {
 			if (sb.length() > 0) {
 				sb.append('-');

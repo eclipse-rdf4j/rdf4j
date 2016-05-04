@@ -15,7 +15,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -103,13 +103,13 @@ public class FederationQueryTest {
 
 	@Test
 	public void test()
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		assertQuery(pattern);
 	}
 
 	private void assertQuery(String qry)
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		TupleQueryResult expected = reference.prepareTupleQuery(SPARQL, WHERE + qry).evaluate();
 		TupleQueryResult result = con.prepareTupleQuery(SPARQL, WHERE + qry).evaluate();

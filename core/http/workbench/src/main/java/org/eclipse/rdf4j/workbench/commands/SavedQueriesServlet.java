@@ -14,7 +14,7 @@ import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -57,7 +57,7 @@ public class SavedQueriesServlet extends TransformationServlet {
 
 	@Override
 	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
-		throws IOException, OpenRDFException, BadRequestException
+		throws IOException, RDF4JException, BadRequestException
 	{
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		builder.transform(xslPath, "saved-queries.xsl");
@@ -69,7 +69,7 @@ public class SavedQueriesServlet extends TransformationServlet {
 
 	@Override
 	protected void doPost(final WorkbenchRequest wreq, final HttpServletResponse resp, final String xslPath)
-		throws BadRequestException, IOException, OpenRDFException
+		throws BadRequestException, IOException, RDF4JException
 	{
 		final String urn = wreq.getParameter("delete");
 		if (null == urn || urn.isEmpty()) {
@@ -93,7 +93,7 @@ public class SavedQueriesServlet extends TransformationServlet {
 	}
 
 	private void getSavedQueries(final WorkbenchRequest req, final TupleResultBuilder builder)
-		throws OpenRDFException, BadRequestException
+		throws RDF4JException, BadRequestException
 	{
 		final HTTPRepository repo = (HTTPRepository)this.repository;
 		String user = req.getParameter(SERVER_USER);

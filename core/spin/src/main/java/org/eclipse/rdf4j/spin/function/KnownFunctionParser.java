@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.spin.function;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
@@ -27,14 +27,17 @@ public class KnownFunctionParser implements FunctionParser {
 
 	@Override
 	public org.eclipse.rdf4j.query.algebra.evaluation.function.Function parse(IRI funcUri, TripleSource store)
-			throws OpenRDFException {
-		String name = null;
-		if (wellKnownFunctions != null) {
-			name = wellKnownFunctions.apply(funcUri);
+		throws RDF4JException
+	{
+		{
+			String name = null;
+			if (wellKnownFunctions != null) {
+				name = wellKnownFunctions.apply(funcUri);
+			}
+			if (name == null) {
+				name = funcUri.stringValue();
+			}
+			return functionRegistry.get(name).orElse(null);
 		}
-		if (name == null) {
-			name = funcUri.stringValue();
-		}
-		return functionRegistry.get(name).orElse(null);
 	}
 }

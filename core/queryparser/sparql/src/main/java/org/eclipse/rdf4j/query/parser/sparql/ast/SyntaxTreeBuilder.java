@@ -67,26 +67,28 @@ public class SyntaxTreeBuilder/*@bgen(jjtree)*/implements SyntaxTreeBuilderTreeC
                 return s;
         }
 
-        private String readToMatchingBrace() {
+        private String readToMatchingBrace() throws ParseException {
             StringBuilder sb = new StringBuilder();
             Token tok;
             int nesting = 1;
             boolean previousTokenDtSep = false;
             while (true) {
-                tok = getToken(1);
-                if (!previousTokenDtSep && !tok.image.equals("^^")&& !tok.image.startsWith("@")) {
-                    sb.append(" ");
-                }
-                if (tok.kind == LBRACE) nesting++;
-                if (tok.kind == RBRACE) {
-                    nesting--;
-                    if (nesting == 0) break;
-                }
-                sb.append(tok.image);
-                previousTokenDtSep = tok.image.equals("^^");
+                        tok = getToken(1);
+                        if ("".equals(tok.image)) {
+                                throw new ParseException("closing brace missing");
+                        }
+                        if (!previousTokenDtSep && !tok.image.equals("^^")&& !tok.image.startsWith("@")) {
+                                sb.append(" ");
+                        }
+                        if (tok.kind == LBRACE) nesting++;
+                        if (tok.kind == RBRACE) {
+                                nesting--;
+                                if (nesting == 0) break;
+                        }
+                        sb.append(tok.image);
+                        previousTokenDtSep = tok.image.equals("^^");
 
-                tok = getNextToken();
-
+                        tok = getNextToken();
             }
             return sb.toString();
         }
@@ -8121,16 +8123,6 @@ public class SyntaxTreeBuilder/*@bgen(jjtree)*/implements SyntaxTreeBuilderTreeC
     finally { jj_save(6, xla); }
   }
 
-  private boolean jj_3R_57() {
-    if (jj_3R_65()) return true;
-    return false;
-  }
-
-  private boolean jj_3R_52() {
-    if (jj_3R_61()) return true;
-    return false;
-  }
-
   private boolean jj_3R_56() {
     if (jj_3R_64()) return true;
     return false;
@@ -8166,6 +8158,16 @@ public class SyntaxTreeBuilder/*@bgen(jjtree)*/implements SyntaxTreeBuilderTreeC
     return false;
   }
 
+  private boolean jj_3R_86() {
+    Token xsp;
+    xsp = jj_scanpos;
+    if (jj_scan_token(169)) {
+    jj_scanpos = xsp;
+    if (jj_scan_token(170)) return true;
+    }
+    return false;
+  }
+
   private boolean jj_3R_58() {
     if (jj_3R_66()) return true;
     return false;
@@ -8177,16 +8179,6 @@ public class SyntaxTreeBuilder/*@bgen(jjtree)*/implements SyntaxTreeBuilderTreeC
     if (jj_3R_58()) {
     jj_scanpos = xsp;
     if (jj_3R_59()) return true;
-    }
-    return false;
-  }
-
-  private boolean jj_3R_86() {
-    Token xsp;
-    xsp = jj_scanpos;
-    if (jj_scan_token(169)) {
-    jj_scanpos = xsp;
-    if (jj_scan_token(170)) return true;
     }
     return false;
   }
@@ -8612,6 +8604,16 @@ public class SyntaxTreeBuilder/*@bgen(jjtree)*/implements SyntaxTreeBuilderTreeC
     jj_scanpos = xsp;
     if (jj_scan_token(146)) return true;
     }
+    return false;
+  }
+
+  private boolean jj_3R_57() {
+    if (jj_3R_65()) return true;
+    return false;
+  }
+
+  private boolean jj_3R_52() {
+    if (jj_3R_61()) return true;
     return false;
   }
 

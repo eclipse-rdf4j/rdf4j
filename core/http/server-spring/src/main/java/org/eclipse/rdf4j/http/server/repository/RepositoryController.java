@@ -28,7 +28,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpStatus;
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
@@ -151,7 +151,7 @@ public class RepositoryController extends AbstractController {
 							"could not locate repository configuration for repository '" + repId + "'.");
 				}
 			}
-			catch (OpenRDFException e) {
+			catch (RDF4JException e) {
 				logger.error("error while attempting to delete repository '" + repId + "'", e);
 				throw new ServerHTTPException("Repository delete error: " + e.getMessage(), e);
 			}

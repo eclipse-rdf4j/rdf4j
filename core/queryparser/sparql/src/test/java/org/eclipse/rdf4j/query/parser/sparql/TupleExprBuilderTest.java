@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTServiceGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpdateSequence;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ParseException;
 import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder;
 import org.eclipse.rdf4j.query.parser.sparql.ast.TokenMgrError;
@@ -28,7 +29,6 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-
 /**
  * @author jeen
  */
@@ -71,6 +71,22 @@ public class TupleExprBuilderTest {
 		
 	}
 
+	/**
+	 * Verifies that a missing close brace does not cause an endless loop. Timeout is set to avoid
+	 * test itself endlessly looping. See SES-2389.
+	 */
+	@Test(timeout = 1000)
+	public void testMissingCloseBrace() {
+		String query = "INSERT DATA { <urn:a> <urn:b> <urn:c> .";
+		try {
+			final ASTUpdateSequence us = SyntaxTreeBuilder.parseUpdateSequence(query);
+			fail("should result in parse error");
+		}
+		catch (ParseException e) {
+			// fall through, expected
+		}
+	}
+	
 	@Test
 	public void testServiceGraphPatternStringDetection1()
 		throws TokenMgrError, ParseException, VisitorException

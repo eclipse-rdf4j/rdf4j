@@ -31,24 +31,8 @@
 			</head>
 			<body>
 				<div id="header">
-					<div id="logo">
-						<img src="../../images/logo.png" alt="" />
-						<img class="productgroup" src="../../images/productgroup.png"
-							alt="" />
-					</div>
-				</div>
-				<div id="navigation">
-					<ul class="maingroup">
-						<xsl:call-template name="navigation" />
-					</ul>
-				</div>
-				<div id="contentheader">
+					<div id="contentheader">
 					<table>
-						<tr>
-							<th colspan="3">
-								<xsl:value-of select="$selections.title" />
-							</th>
-						</tr>
 						<tr>
 							<th>
 								<xsl:value-of select="$server.label" />
@@ -111,7 +95,16 @@
 							</td>
 						</tr>
 					</table>
-					<hr />
+				</div>
+					<div id="logo">
+						<img src="../../images/logo.png" alt="rdf4j" />
+						<img class="product" src="../../images/product.png" alt="workbench" />
+					</div>
+				</div>
+				<div id="navigation">
+					<ul class="maingroup">
+						<xsl:call-template name="navigation" />
+					</ul>
 				</div>
 				<div id="content">
 					<h1 id="title_heading">
@@ -126,15 +119,12 @@
 					<!-- These scripts need to be loaded before other templates are applied. -->
 					<script src="../../scripts/template.js" type="text/javascript"></script>
 					<script src="../../scripts/jquery-1.11.0.min.js" type="text/javascript"></script>
-					<xsl:apply-templates select="*" />
+					<xsl:apply-templates />
 				</div>
 				<div id="footer">
 						<div>
 							<xsl:value-of select="$copyright.label" />
 						</div>
-						<a href="http://www.aduna-software.com/">
-							<xsl:value-of select="$aduna.label" />
-						</a>
 				</div>
 			</body>
 		</html>

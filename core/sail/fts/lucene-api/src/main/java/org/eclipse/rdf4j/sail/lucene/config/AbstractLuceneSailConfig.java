@@ -9,9 +9,14 @@ package org.eclipse.rdf4j.sail.lucene.config;
 
 import static org.eclipse.rdf4j.sail.lucene.config.LuceneSailConfigSchema.INDEX_DIR;
 
+import java.util.Properties;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.sail.config.AbstractDelegatingSailImplConfig;
@@ -24,6 +29,8 @@ public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImp
 	 *-----------*/
 
 	private String indexDir;
+
+	private Properties parameters = new Properties();
 
 	/*--------------*
 	 * Constructors *
@@ -59,12 +66,30 @@ public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImp
 		this.indexDir = luceneDir;
 	}
 
+	public String getParameter(String key) {
+		return parameters.getProperty(key);
+	}
+
+	public void setParameter(String key, String value) {
+		parameters.setProperty(key, value);
+	}
+
+	public Set<String> getParameterNames() {
+		return parameters.stringPropertyNames();
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
 
+		ValueFactory vf = SimpleValueFactory.getInstance();
 		if (indexDir != null) {
 			m.add(implNode, INDEX_DIR, SimpleValueFactory.getInstance().createLiteral(indexDir));
+		}
+
+		for (String key : getParameterNames()) {
+			m.add(implNode, vf.createIRI(LuceneSailConfigSchema.NAMESPACE, key),
+					vf.createLiteral(getParameter(key)));
 		}
 
 		return implNode;
@@ -80,5 +105,13 @@ public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImp
 				() -> new SailConfigException("no value found for " + INDEX_DIR));
 
 		setIndexDir(indexDirLit.getLabel());
+		for (Statement stmt : graph.filter(implNode, null, null)) {
+			if (stmt.getPredicate().getNamespace().equals(LuceneSailConfigSchema.NAMESPACE)) {
+				if (stmt.getObject() instanceof Literal) {
+					String key = stmt.getPredicate().getLocalName();
+					setParameter(key, stmt.getObject().stringValue());
+				}
+			}
+		}
 	}
 }

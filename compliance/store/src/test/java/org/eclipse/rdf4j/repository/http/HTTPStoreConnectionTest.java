@@ -12,7 +12,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
@@ -103,7 +103,7 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 					RepositoryConnectionTest.class.getResourceAsStream(TEST_DIR_PREFIX + "malformed-literals.ttl"),
 					"", RDFFormat.TURTLE);
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			fail("upload of malformed literals should not fail with error in default configuration for HTTPRepository");
 		}
 	}

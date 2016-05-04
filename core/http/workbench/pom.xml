@@ -5,14 +5,14 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-http</artifactId>
-		<version>4.1.1-SNAPSHOT</version>
+		<version>1.0M1-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>rdf4j-http-workbench</artifactId>
 	<packaging>war</packaging>
 
-	<name>RDF4J: HTTP workbench</name>
-	<description>Workbench to interact with RDF servers. Currently supports RDF4J 2 servers only.</description>
+	<name>RDF4J Workbench</name>
+	<description>Workbench to interact with RDF4J servers.</description>
 
 	<dependencies>
 		<dependency>
@@ -141,7 +141,7 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-war-plugin</artifactId>
 				<configuration>
-					<warName>openrdf-workbench</warName>
+					<warName>rdf4j-workbench</warName>
 					<archiveClasses>true</archiveClasses>
 				</configuration>
 			</plugin>
@@ -149,9 +149,9 @@
 				<groupId>org.apache.tomcat.maven</groupId>
 				<artifactId>tomcat7-maven-plugin</artifactId>
 				<configuration>
-					<warFile>${project.build.directory}/${project.artifactId}.war</warFile>
-					<server>localhost</server>
-					<path>/openrdf-workbench</path>
+					<warFile>${project.build.directory}/rdf4j-workbench.war</warFile>
+					<path>/rdf4j-workbench</path>
+					<server>tomcat</server>
 				</configuration>
 			</plugin>
 		</plugins>

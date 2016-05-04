@@ -6,7 +6,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-core</artifactId>
-		<version>4.1.1-SNAPSHOT</version>
+		<version>1.0M1-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>rdf4j-runtime-osgi</artifactId>
@@ -55,7 +55,6 @@
 			<plugin>
 				<groupId>org.apache.felix</groupId>
 				<artifactId>maven-bundle-plugin</artifactId>
-				<version>2.5.3</version>
 				<extensions>true</extensions>
 				<configuration>
 					<remoteOBR>NONE</remoteOBR>
