@@ -7,8 +7,8 @@ Briefly describe the changes proposed in this PR:
 - ...
 - ...
 
-Make sure the following is taken care of before submitting your PR (please mark as ticked to indicate you've taken care of them):
+Make sure you've followed the [Contributor Guidelines](https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md). In particular (please tick to indicate you've taken care of it):
 
-- [ ] RDF4J code formatting applied
-- [ ] tests included
-- [ ] tests greenline
+- [ ] RDF4J code formatting has been applied
+- [ ] tests are included and all succeed
+- [ ] all tests succeed
