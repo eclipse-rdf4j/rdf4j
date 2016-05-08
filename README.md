@@ -7,6 +7,6 @@ user documentation and download links.
 ## Keen to contribute?
 
 We welcome contributions! Please read our [Contributor
-guidelines](https://github.com/eclipse/rdf4j/blob/master/CONTRIBUTING.md) for
+guidelines](https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md) for
 more information on how to get started.
 
