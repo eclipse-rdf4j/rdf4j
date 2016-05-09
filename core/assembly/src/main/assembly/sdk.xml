@@ -6,7 +6,7 @@
 		<format>zip</format>
 	</formats>
 
-	<baseDirectory>openrdf-sesame-${project.version}</baseDirectory>
+	<baseDirectory>eclipse-rdf4j-${project.version}</baseDirectory>
 
 	<dependencySets>
 	    <dependencySet>
@@ -33,11 +33,11 @@
 
 	<files>
 		<file>
-		    <source>../http/server/target/openrdf-sesame.war</source>
+		    <source>../http/server/target/rdf4j-server.war</source>
 			<outputDirectory>war</outputDirectory>
 		</file>
 		<file>
-		    <source>../http/workbench/target/openrdf-workbench.war</source>
+		    <source>../http/workbench/target/rdf4j-workbench.war</source>
 			<outputDirectory>war</outputDirectory>
 		</file>
 
