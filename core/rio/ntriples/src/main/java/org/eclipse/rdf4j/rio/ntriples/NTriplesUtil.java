@@ -230,7 +230,6 @@ public class NTriplesUtil {
 	 * @param xsdStringToPlainLiteral
 	 *        True to omit serialising the xsd:string datatype and false to
 	 *        always serialise the datatype for literals.
-	 * @since 2.8.0
 	 */
 	public static String toNTriplesString(Value value, boolean xsdStringToPlainLiteral) {
 		if (value instanceof Resource) {
@@ -266,7 +265,6 @@ public class NTriplesUtil {
 	 *        True to omit serialising the xsd:string datatype and false to
 	 *        always serialise the datatype for literals.
 	 * @throws IOException
-	 * @since 2.8.0
 	 */
 	public static void append(Value value, Appendable appendable, boolean xsdStringToPlainLiteral,
 			boolean escapeUnicode)
@@ -387,7 +385,6 @@ public class NTriplesUtil {
 	 * @param xsdStringToPlainLiteral
 	 *        True to omit serialising the xsd:string datatype and false to
 	 *        always serialise the datatype for literals.
-	 * @since 2.8.0
 	 */
 	public static String toNTriplesString(Literal lit, boolean xsdStringToPlainLiteral) {
 		try {
@@ -421,7 +418,6 @@ public class NTriplesUtil {
 	 *        True to omit serialising the xsd:string datatype and false to
 	 *        always serialise the datatype for literals.
 	 * @throws IOException
-	 * @since 2.8.0
 	 */
 	public static void append(Literal lit, Appendable appendable, boolean xsdStringToPlainLiteral)
 		throws IOException
@@ -516,7 +512,6 @@ public class NTriplesUtil {
 	 * if the option is selected.
 	 * 
 	 * @throws IOException
-	 * @since 2.8.0
 	 */
 	public static void escapeString(String label, Appendable appendable, boolean escapeUnicode)
 		throws IOException

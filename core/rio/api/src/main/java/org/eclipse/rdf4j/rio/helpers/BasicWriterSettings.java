@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * support.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public class BasicWriterSettings {
 

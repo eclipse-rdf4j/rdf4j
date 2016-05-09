@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * ParserSettings for the N-Triples parser features.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public class NTriplesParserSettings {
 
@@ -23,7 +22,6 @@ public class NTriplesParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_NTRIPLES_INVALID_LINES = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.failonntriplesinvalidlines", "Fail on N-Triples invalid lines", Boolean.TRUE);

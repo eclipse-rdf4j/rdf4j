@@ -14,7 +14,6 @@ import java.util.Iterator;
  * code point (taking care to handle surrogate pairs correctly).
  * 
  * @author Jeen Broekstra
- * @since 2.8.0
  * @see CodePointSequence
  */
 public class CodePointIterator implements Iterator<Integer> {

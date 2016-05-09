@@ -19,7 +19,6 @@ import java.io.Serializable;
 public class WriterConfig extends RioConfig implements Serializable {
 
 	/**
-	 * @since 2.7.0
 	 */
 	private static final long serialVersionUID = 270L;
 

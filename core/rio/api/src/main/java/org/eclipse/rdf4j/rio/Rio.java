@@ -190,7 +190,6 @@ public class Rio {
 	 *         If no {@link RDFParser} is available for the specified RDF format.
 	 * @throws RDFParseException
 	 *         If an error was found while parsing the RDF data.
-	 * @since 2.7.1
 	 */
 	public static Model parse(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
 		throws IOException, RDFParseException, UnsupportedRDFormatException
@@ -224,7 +223,6 @@ public class Rio {
 	 *         If no {@link RDFParser} is available for the specified RDF format.
 	 * @throws RDFParseException
 	 *         If an error was found while parsing the RDF data.
-	 * @since 2.7.1
 	 */
 	public static Model parse(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
 		throws IOException, RDFParseException, UnsupportedRDFormatException
@@ -265,7 +263,6 @@ public class Rio {
 	 *         If no {@link RDFParser} is available for the specified RDF format.
 	 * @throws RDFParseException
 	 *         If an error was found while parsing the RDF data.
-	 * @since 2.7.3
 	 */
 	public static Model parse(InputStream in, String baseURI, RDFFormat dataFormat, ParserConfig settings,
 			ValueFactory valueFactory, ParseErrorListener errors, Resource... contexts)
@@ -315,7 +312,6 @@ public class Rio {
 	 *         If no {@link RDFParser} is available for the specified RDF format.
 	 * @throws RDFParseException
 	 *         If an error was found while parsing the RDF data.
-	 * @since 2.7.3
 	 */
 	public static Model parse(Reader reader, String baseURI, RDFFormat dataFormat, ParserConfig settings,
 			ValueFactory valueFactory, ParseErrorListener errors, Resource... contexts)
@@ -348,7 +344,6 @@ public class Rio {
 	 *         Thrown if there is an error writing the statements.
 	 * @throws UnsupportedRDFormatException
 	 *         If no {@link RDFWriter} is available for the specified RDF format.
-	 * @since 2.7.1
 	 */
 	public static void write(Iterable<Statement> model, OutputStream output, RDFFormat dataFormat)
 		throws RDFHandlerException
@@ -372,7 +367,6 @@ public class Rio {
 	 *         Thrown if there is an error writing the statements.
 	 * @throws UnsupportedRDFormatException
 	 *         If no {@link RDFWriter} is available for the specified RDF format.
-	 * @since 2.7.1
 	 */
 	public static void write(Iterable<Statement> model, Writer output, RDFFormat dataFormat)
 		throws RDFHandlerException
@@ -399,7 +393,6 @@ public class Rio {
 	 *         Thrown if there is an error writing the statements.
 	 * @throws UnsupportedRDFormatException
 	 *         If no {@link RDFWriter} is available for the specified RDF format.
-	 * @since 2.7.3
 	 */
 	public static void write(Iterable<Statement> model, OutputStream output, RDFFormat dataFormat,
 			WriterConfig settings)
@@ -429,7 +422,6 @@ public class Rio {
 	 *         Thrown if there is an error writing the statements.
 	 * @throws UnsupportedRDFormatException
 	 *         If no {@link RDFWriter} is available for the specified RDF format.
-	 * @since 2.7.3
 	 */
 	public static void write(Iterable<Statement> model, Writer output, RDFFormat dataFormat,
 			WriterConfig settings)
@@ -449,7 +441,6 @@ public class Rio {
 	 *        A collection of statements, such as a {@link Model}, to be written.
 	 * @throws RDFHandlerException
 	 *         Thrown if there is an error writing the statements.
-	 * @since 2.7.3
 	 */
 	public static void write(Iterable<Statement> model, RDFHandler writer)
 		throws RDFHandlerException
@@ -483,7 +474,6 @@ public class Rio {
 	 *         Thrown if there is an error writing the statement.
 	 * @throws UnsupportedRDFormatException
 	 *         If no {@link RDFWriter} is available for the specified RDF format.
-	 * @since 2.8.0
 	 */
 	public static void write(Statement st, OutputStream output, RDFFormat dataFormat)
 		throws RDFHandlerException
@@ -508,7 +498,6 @@ public class Rio {
 	 *         Thrown if there is an error writing the statement.
 	 * @throws UnsupportedRDFormatException
 	 *         If no {@link RDFWriter} is available for the specified RDF format.
-	 * @since 2.8.0
 	 */
 	public static void write(Statement st, OutputStream output, RDFFormat dataFormat, WriterConfig settings)
 		throws RDFHandlerException
@@ -533,7 +522,6 @@ public class Rio {
 	 *         Thrown if there is an error writing the statement.
 	 * @throws UnsupportedRDFormatException
 	 *         If no {@link RDFWriter} is available for the specified RDF format.
-	 * @since 2.8.0
 	 */
 	public static void write(Statement statement, Writer output, RDFFormat dataFormat)
 		throws RDFHandlerException
@@ -559,7 +547,6 @@ public class Rio {
 	 *         Thrown if there is an error writing the statement.
 	 * @throws UnsupportedRDFormatException
 	 *         If no {@link RDFWriter} is available for the specified RDF format.
-	 * @since 2.8.0
 	 */
 	public static void write(Statement statement, Writer output, RDFFormat dataFormat, WriterConfig settings)
 		throws RDFHandlerException
@@ -577,7 +564,6 @@ public class Rio {
 	 *        A statement, to be written.
 	 * @throws RDFHandlerException
 	 *         Thrown if there is an error writing the statement.
-	 * @since 2.8.0
 	 */
 	public static void write(Statement statement, RDFHandler writer)
 		throws RDFHandlerException

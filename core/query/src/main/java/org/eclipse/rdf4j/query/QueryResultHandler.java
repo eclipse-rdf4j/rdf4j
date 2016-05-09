@@ -27,7 +27,6 @@ import java.util.List;
  * {@link TupleQueryResultHandlerException}, will be thrown to indicate this
  * failure when the relevant methods are called.
  * 
- * @since 2.7.0
  * @author Peter Ansell
  */
 public interface QueryResultHandler {
@@ -45,7 +44,6 @@ public interface QueryResultHandler {
 	 *         cannot process both boolean and tuple results simultaneously.
 	 * @throws UnsupportedOperationException
 	 *         If this method is not supported
-	 * @since 2.7.0
 	 */
 	void handleBoolean(boolean value)
 		throws QueryResultHandlerException;
@@ -66,7 +64,6 @@ public interface QueryResultHandler {
 	 * @throws QueryResultHandlerException
 	 *         If there was an error handling the set of link URLs. This error is
 	 *         not thrown in cases where links are not supported.
-	 * @since 2.7.0
 	 */
 	void handleLinks(List<String> linkUrls)
 		throws QueryResultHandlerException;

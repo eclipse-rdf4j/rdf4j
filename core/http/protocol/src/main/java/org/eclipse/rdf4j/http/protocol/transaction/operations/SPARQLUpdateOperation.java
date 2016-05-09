@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * Encapsulation of a SPARQL 1.1 update operation executed as part of a transaction.
  * 
  * @author Jeen Broekstra
- * @since 2.7.0
  */
 public class SPARQLUpdateOperation implements TransactionOperation, Serializable {
 

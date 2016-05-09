@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
  * </p>
  * 
  * @author Michael Grove
- * @since 2.7.0
  */
 public class BasicGroup implements Group {
 

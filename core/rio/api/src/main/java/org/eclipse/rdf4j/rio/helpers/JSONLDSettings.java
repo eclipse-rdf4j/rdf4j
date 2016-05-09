@@ -26,7 +26,6 @@ public class JSONLDSettings {
 	 * <p>
 	 * Defaults to true.
 	 * 
-	 * @since 2.7.0
 	 * @see <a
 	 *      href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD
 	 *      Data Structures</a>
@@ -42,7 +41,6 @@ public class JSONLDSettings {
 	 * <p>
 	 * Defaults to false.
 	 * 
-	 * @since 2.7.0
 	 * @see <a
 	 *      href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD
 	 *      Data Structures</a>
@@ -59,7 +57,6 @@ public class JSONLDSettings {
 	 * <p>
 	 * Defaults to false for RDF compatibility.
 	 * 
-	 * @since 2.7.0
 	 * @see <a
 	 *      href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD
 	 *      Data Structures</a>
@@ -73,7 +70,6 @@ public class JSONLDSettings {
 	 * <p>
 	 * Defaults to false.
 	 * 
-	 * @since 2.7.0
 	 * @see <a
 	 *      href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD
 	 *      Data Structures</a>
@@ -88,7 +84,6 @@ public class JSONLDSettings {
 	 * Defaults to {@link JSONLDMode#EXPAND} to provide maximum RDF
 	 * compatibility.
 	 * 
-	 * @since 2.7.0
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#features">JSONLD
 	 *      Features</a>
 	 */

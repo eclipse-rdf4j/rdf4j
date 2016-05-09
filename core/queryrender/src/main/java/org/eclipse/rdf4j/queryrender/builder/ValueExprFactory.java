@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.query.algebra.Var;
  * </p>
  * 
  * @author Michael Grove
- * @since 2.7.0
  */
 public class ValueExprFactory {
 

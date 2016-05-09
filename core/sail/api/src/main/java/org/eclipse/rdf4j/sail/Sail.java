@@ -107,7 +107,6 @@ public interface Sail {
 	 * @return a non-empty List of supported Isolation Levels, in order of
 	 *         increasing complexity. Every SAIL supports at least one
 	 *         {@link IsolationLevel}.
-	 * @since 2.8.0
 	 */
 	List<IsolationLevel> getSupportedIsolationLevels();
 
@@ -118,7 +117,6 @@ public interface Sail {
 	 * @return the {@link IsolationLevel} that will be used with
 	 *         {@link SailConnection#begin()}, for SAIL connections returned by
 	 *         {@link #getConnection()}.
-	 * @since 2.8.0
 	 */
 	IsolationLevel getDefaultIsolationLevel();
 }

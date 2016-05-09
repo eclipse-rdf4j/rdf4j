@@ -18,7 +18,6 @@ import java.util.regex.Pattern;
  * tokens such as keywords, opening and closing brackets, and hashes).
  * 
  * @author Jeen Broekstra
- * @since 2.7.12
  */
 public class QueryPrologLexer {
 

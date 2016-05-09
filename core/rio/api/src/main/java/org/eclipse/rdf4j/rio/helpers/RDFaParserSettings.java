@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * A selection of parser settings specific to RDFa parsers.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public class RDFaParserSettings {
 
@@ -23,7 +22,6 @@ public class RDFaParserSettings {
 	 * <p>
 	 * Defaults to {@link RDFaVersion#RDFA_1_0}.
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final RioSetting<RDFaVersion> RDFA_COMPATIBILITY = new RioSettingImpl<RDFaVersion>(
 			"org.eclipse.rdf4j.rio.rdfa.version", "RDFa Version Compatibility", RDFaVersion.RDFA_1_0);
@@ -38,7 +36,6 @@ public class RDFaParserSettings {
 	 * @see <a
 	 *      href="http://www.w3.org/TR/2012/REC-rdfa-core-20120607/#s_vocab_expansion">RDFa
 	 *      Vocabulary Expansion</a>
-	 * @since 2.7.0
 	 */
 	public static final RioSetting<Boolean> VOCAB_EXPANSION_ENABLED = new RioSettingImpl<Boolean>(
 			"http://www.w3.org/TR/2012/REC-rdfa-core-20120607/#s_vocab_expansion", "Vocabulary Expansion",
@@ -49,7 +46,6 @@ public class RDFaParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 *
-	 * @since 2.7.0
 	 * @deprecated Use {@link BasicParserSettings#NAMESPACES}
 	 */
 	@Deprecated

@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.rio.DatatypeHandler;
  * An implementation of a datatype handler that can process GeoSPARQL datatypes.
  * 
  * @author Peter Ansell
- * @since 2.7.4
  */
 public class GeoSPARQLDatatypeHandler implements DatatypeHandler {
 

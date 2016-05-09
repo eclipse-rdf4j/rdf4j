@@ -57,7 +57,6 @@ public abstract class QueryResultView implements View {
 	 * {@link org.eclipse.rdf4j.http.server.repository.transaction.ActiveTransactionRegistry}
 	 * after processing the query result.
 	 * 
-	 * @since 2.8.5
 	 */
 	public static final String TRANSACTION_ID_KEY = "transactionID";
 

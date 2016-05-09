@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * Base interface for parsers of query results in both boolean and tuple forms.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public interface QueryResultParser {
 
@@ -29,7 +28,6 @@ public interface QueryResultParser {
 	 * Gets the query result format that this parser can parse.
 	 * 
 	 * @return The {@link QueryResultFormat} supported by this parser.
-	 * @since 2.7.0
 	 */
 	QueryResultFormat getQueryResultFormat();
 	
@@ -39,7 +37,6 @@ public interface QueryResultParser {
 	 * 
 	 * @param handler
 	 *        The {@link QueryResultHandler} to use for handling results.
-	 * @since 2.7.0
 	 */
 	void setQueryResultHandler(QueryResultHandler handler);
 
@@ -66,7 +63,6 @@ public interface QueryResultParser {
 	 *         If the {@link QueryResultHandler} set in
 	 *         {@link #setQueryResultHandler(QueryResultHandler)} throws an
 	 *         exception.
-	 * @since 2.7.0
 	 */
 	void parseQueryResult(InputStream in)
 		throws IOException, QueryResultParseException, QueryResultHandlerException;
@@ -77,7 +73,6 @@ public interface QueryResultParser {
 	 * 
 	 * @param config
 	 *        a parser configuration object.
-	 * @since 2.7.0
 	 */
 	public void setParserConfig(ParserConfig config);
 
@@ -86,14 +81,12 @@ public interface QueryResultParser {
 	 * 
 	 * @return a parser configuration object representing the current
 	 *         configuration of the parser.
-	 * @since 2.7.0
 	 */
 	public ParserConfig getParserConfig();
 
 	/**
 	 * @return A collection of {@link RioSetting}s that are supported by this
 	 *         QueryResultParser.
-	 * @since 2.7.0
 	 */
 	public Collection<RioSetting<?>> getSupportedSettings();
 

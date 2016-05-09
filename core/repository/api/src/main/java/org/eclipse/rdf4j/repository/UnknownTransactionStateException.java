@@ -11,7 +11,6 @@ package org.eclipse.rdf4j.repository;
  * A specific subtype of {@link RepositoryException} that indicates the
  * connection's transaction state can not be determined.
  * 
- * @since 2.7.0.
  * @author Jeen Broekstra
  */
 public class UnknownTransactionStateException extends RepositoryException {

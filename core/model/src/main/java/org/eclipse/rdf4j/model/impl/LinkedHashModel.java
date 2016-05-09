@@ -54,7 +54,6 @@ import org.eclipse.rdf4j.model.util.PatternIterator;
  * </pre>
  * 
  * @author James Leigh
- * @since 2.7.0
  */
 @SuppressWarnings("unchecked")
 public class LinkedHashModel extends AbstractModel {

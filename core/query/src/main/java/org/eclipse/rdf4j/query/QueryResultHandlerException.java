@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.RDF4JException;
  * implementations.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public class QueryResultHandlerException extends RDF4JException {
 

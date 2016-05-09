@@ -49,7 +49,6 @@ public final class Repositories {
 	 * @throws UnknownTransactionStateException
 	 *         If the transaction state was not properly recognised. (Optional
 	 *         specific exception)
-	 * @since 4.0
 	 */
 	public static void consume(Repository repository, Consumer<RepositoryConnection> processFunction)
 		throws RepositoryException, UnknownTransactionStateException
@@ -77,7 +76,6 @@ public final class Repositories {
 	 * @throws UnknownTransactionStateException
 	 *         If the transaction state was not properly recognised. (Optional
 	 *         specific exception)
-	 * @since 4.0
 	 */
 	public static void consume(Repository repository, Consumer<RepositoryConnection> processFunction,
 			Consumer<RepositoryException> exceptionHandler)
@@ -101,7 +99,6 @@ public final class Repositories {
 	 *        The {@link Repository} to open a connection to.
 	 * @param processFunction
 	 *        A {@link Consumer} that performs an action on the connection.
-	 * @since 4.0
 	 */
 	public static void consumeSilent(Repository repository, Consumer<RepositoryConnection> processFunction) {
 		consume(repository, processFunction, e -> {
@@ -127,7 +124,6 @@ public final class Repositories {
 	 * @throws UnknownTransactionStateException
 	 *         If the transaction state was not properly recognised. (Optional
 	 *         specific exception)
-	 * @since 4.0
 	 */
 	public static <T> T get(Repository repository, Function<RepositoryConnection, T> processFunction)
 		throws RepositoryException, UnknownTransactionStateException
@@ -177,7 +173,6 @@ public final class Repositories {
 	 * @throws UnknownTransactionStateException
 	 *         If the transaction state was not properly recognised. (Optional
 	 *         specific exception)
-	 * @since 4.0
 	 */
 	public static <T> T get(Repository repository, Function<RepositoryConnection, T> processFunction,
 			Consumer<RepositoryException> exceptionHandler)
@@ -207,7 +202,6 @@ public final class Repositories {
 	 *        returns a result.
 	 * @return The result of applying the function, or <tt>null</tt> if an
 	 *         exception is thrown.
-	 * @since 4.0
 	 */
 	public static <T> T getSilent(Repository repository, Function<RepositoryConnection, T> processFunction) {
 		return get(repository, processFunction, e -> {

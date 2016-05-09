@@ -216,7 +216,6 @@ public interface ValueFactory {
 	 * Creates a new literal representing the specified bigDecimal that is typed
 	 * using the appropriate XML Schema date/time datatype.
 	 * 
-	 * @since 4.0
 	 */
 	public Literal createLiteral(BigDecimal bigDecimal);
 
@@ -224,7 +223,6 @@ public interface ValueFactory {
 	 * Creates a new literal representing the specified bigInteger that is typed
 	 * using the appropriate XML Schema date/time datatype.
 	 * 
-	 * @since 4.0
 	 */
 	public Literal createLiteral(BigInteger bigInteger);
 
@@ -242,7 +240,6 @@ public interface ValueFactory {
 	 * Creates a new literal representing the specified date that is typed using
 	 * the appropriate XML Schema date/time datatype.
 	 * 
-	 * @since 2.7.0
 	 */
 	public Literal createLiteral(Date date);
 

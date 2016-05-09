@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
  * @see <a href="http://dublincore.org/documents/dcmi-terms/">DCMI Metadata
  *      Terms</a>
  * @author Peter Ansell
- * @since 2.7.0
  */
 public class DCTERMS {
 

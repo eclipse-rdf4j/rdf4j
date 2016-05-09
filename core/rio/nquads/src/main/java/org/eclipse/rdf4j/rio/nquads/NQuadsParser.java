@@ -29,7 +29,6 @@ import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
  * found <a href="http://sw.deri.org/2008/07/n-quads/">here</a>. This parser is
  * not thread-safe, therefore its public methods are synchronized.
  * 
- * @since 2.7.0
  * @author Joshua Shinavier
  */
 public class NQuadsParser extends NTriplesParser {

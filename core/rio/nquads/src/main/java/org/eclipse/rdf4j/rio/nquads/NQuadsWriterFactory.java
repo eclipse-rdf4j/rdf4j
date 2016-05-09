@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 /**
  * An {@link RDFWriterFactory} for {@link RDFFormat#NQUADS N-Quads} writers.
  * 
- * @since 2.7.0
  * @author Peter Ansell
  */
 public class NQuadsWriterFactory implements RDFWriterFactory {

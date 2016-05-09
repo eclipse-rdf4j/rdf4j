@@ -39,7 +39,6 @@ import com.fasterxml.jackson.core.JsonToken;
  * {@link RDFParser} implementation for the RDF/JSON format
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 
@@ -120,7 +119,6 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 	 *        the current JsonLocation. May not be null.
 	 * @return the created {@link Literal} object.
 	 * @throws RDFParseException
-	 * @since 2.7.4
 	 */
 	protected Literal createLiteral(String label, String language, IRI datatype,
 			JsonLocation currentLocation)

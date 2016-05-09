@@ -94,7 +94,6 @@ public interface Operation {
 	 * @param maxQueryTime
 	 *        The maximum query time, measured in seconds. A negative or zero
 	 *        value indicates an unlimited execution time (which is the default).
-	 * @since 2.8.0
 	 */
 	public void setMaxExecutionTime(int maxExecTime);
 
@@ -103,7 +102,6 @@ public interface Operation {
 	 * 
 	 * @return The maximum operation execution time, measured in seconds.
 	 * @see #setMaxExecutionTime(int)
-	 * @since 2.8.0
 	 */
 	public int getMaxExecutionTime();
 

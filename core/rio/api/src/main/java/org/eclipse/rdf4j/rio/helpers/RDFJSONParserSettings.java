@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * A selection of parser settings specific to RDF/JSON parsers.
  * 
  * @author Peter Ansell
- * @since 2.7.1
  */
 public class RDFJSONParserSettings {
 
@@ -24,7 +23,6 @@ public class RDFJSONParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 * 
-	 * @since 2.7.1
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_VALUES = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.failonmultipleobjectvalues", "Fail on multiple object values", Boolean.TRUE);
@@ -35,7 +33,6 @@ public class RDFJSONParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 * 
-	 * @since 2.7.1
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_TYPES = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.failonmultipleobjecttypes", "Fail on multiple object types", Boolean.TRUE);
@@ -47,7 +44,6 @@ public class RDFJSONParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 * 
-	 * @since 2.7.1
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_LANGUAGES = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.failonmultipleobjectlanguages", "Fail on multiple object languages", Boolean.TRUE);
@@ -59,7 +55,6 @@ public class RDFJSONParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 * 
-	 * @since 2.7.1
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_DATATYPES = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.failonmultipleobjectdatatypes", "Fail on multiple object datatypes", Boolean.TRUE);
@@ -71,7 +66,6 @@ public class RDFJSONParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 * 
-	 * @since 2.7.1
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_UNKNOWN_PROPERTY = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.failonunknownproperty", "Fail on unknown property", Boolean.TRUE);
@@ -82,7 +76,6 @@ public class RDFJSONParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 * 
-	 * @since 2.7.1
 	 */
 	public static final RioSetting<Boolean> SUPPORT_GRAPHS_EXTENSION = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.supportgraphsextension", "SUPPORT_GRAPHS_EXTENSION", Boolean.TRUE);

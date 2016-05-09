@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.model.util.LiteralUtilException;
  * driven by the user.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public interface LanguageHandler {
 
@@ -47,7 +46,6 @@ public interface LanguageHandler {
 	 * @return True if the language tag is syntactically valid and could be used
 	 *         with {@link #verifyLanguage(String, String)} and
 	 *         {@link #normalizeLanguage(String, String, ValueFactory)}.
-	 * @since 2.7.0
 	 */
 	public boolean isRecognizedLanguage(String languageTag);
 
@@ -66,7 +64,6 @@ public interface LanguageHandler {
 	 *        {@link #isRecognizedLanguage(String)}.
 	 * @return True if the language tag is recognized by this language handler,
 	 *         and it is verified to be syntactically valid.
-	 * @since 2.7.0
 	 * @throws LiteralUtilException
 	 *         If the language tag was not recognized.
 	 */
@@ -94,7 +91,6 @@ public interface LanguageHandler {
 	 *        The {@link ValueFactory} to use to create the result literal.
 	 * @return A {@link Literal} containing the normalized literal value and
 	 *         language tag.
-	 * @since 2.7.0
 	 * @throws LiteralUtilException
 	 *         If the language tag was not recognized or verified, or the literal
 	 *         value could not be normalized due to an error.
@@ -107,7 +103,6 @@ public interface LanguageHandler {
 	 * LanguageHandlerRegistry.
 	 * 
 	 * @return A unique string key.
-	 * @since 2.7.0
 	 */
 	public String getKey();
 

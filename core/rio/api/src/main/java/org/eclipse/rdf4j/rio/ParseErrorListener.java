@@ -27,7 +27,6 @@ public interface ParseErrorListener {
 	 * @param colNo
 	 *        A column number related to the warning, or -1 if not available or
 	 *        applicable.
-	 * @since 4.0
 	 */
 	public void warning(String msg, long lineNo, long colNo);
 
@@ -46,7 +45,6 @@ public interface ParseErrorListener {
 	 *        A column number related to the error, or -1 if not available or
 	 *        applicable.
 	 * @see org.eclipse.rdf4j.rio.RDFParser#setStopAtFirstError
-	 * @since 4.0
 	 */
 	public void error(String msg, long lineNo, long colNo);
 
@@ -64,7 +62,6 @@ public interface ParseErrorListener {
 	 * @param colNo
 	 *        A column number related to the error, or -1 if not available or
 	 *        applicable.
-	 * @since 4.0
 	 */
 	public void fatalError(String msg, long lineNo, long colNo);
 }

@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * </p>
  * 
  * @author Blazej Bulka
- * @since 2.7.0
  */
 public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 

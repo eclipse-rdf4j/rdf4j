@@ -21,7 +21,6 @@ import org.xml.sax.XMLReader;
  * @see XMLConstants
  * @see <a href="http://xerces.apache.org/xerces-j/features.html">Apache XML
  *      Project - Features</a>
- * @since 2.7.0
  */
 public final class XMLParserSettings {
 
@@ -34,7 +33,6 @@ public final class XMLParserSettings {
 	 * @see <a
 	 *      href="http://docs.oracle.com/javase/6/docs/api/javax/xml/XMLConstants.html#FEATURE_SECURE_PROCESSING">
 	 *      XMLConstants.FEATURE_SECURE_PROCESSING</a>
-	 * @since 2.7.0
 	 */
 	public static final RioSetting<Boolean> SECURE_PROCESSING = new RioSettingImpl<Boolean>(
 			XMLConstants.FEATURE_SECURE_PROCESSING, "Secure processing feature of XMLConstants", true);
@@ -46,7 +44,6 @@ public final class XMLParserSettings {
 	 * 
 	 * @see <a href="http://xerces.apache.org/xerces-j/features.html">Apache XML
 	 *      Project - Features</a>
-	 * @since 2.7.0
 	 */
 	public static final RioSetting<Boolean> LOAD_EXTERNAL_DTD = new RioSettingImpl<Boolean>(
 			"http://apache.org/xml/features/nonvalidating/load-external-dtd", "Load External DTD", true);
@@ -61,7 +58,6 @@ public final class XMLParserSettings {
 	 * Defaults to null, This settings is only useful if
 	 * {@link RioConfig#isSet(RioSetting)} returns true.
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final RioSetting<XMLReader> CUSTOM_XML_READER = new RioSettingImpl<XMLReader>(
 			"org.eclipse.rdf4j.rio.xmlreader", "Custom XML Reader", null);
@@ -72,7 +68,6 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to true
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_SAX_NON_FATAL_ERRORS = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.failonsaxnonfatalerrors", "Fail on SAX non-fatal errors", true);
@@ -83,7 +78,6 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to true
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_NON_STANDARD_ATTRIBUTES = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.failonnonstandardattributes", "Fail on non-standard attributes", true);
@@ -94,7 +88,6 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to true
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_INVALID_NCNAME = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.failoninvalidncname", "Fail on invalid NCName", true);
@@ -105,7 +98,6 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to true
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_DUPLICATE_RDF_ID = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.failonduplicaterdfid", "Fail on duplicate RDF ID", true);
@@ -116,7 +108,6 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to true
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_INVALID_QNAME = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.failoninvalidqname", "Fail on invalid QName", true);
@@ -127,7 +118,6 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to true
 	 * 
-	 * @since 2.7.1
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_MISMATCHED_TAGS = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.failonmismatchedtags", "Fail on mismatched tags", true);
@@ -139,7 +129,6 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to true
 	 * 
-	 * @since 2.7.8
 	 */
 	public static final RioSetting<Boolean> PARSE_STANDALONE_DOCUMENTS = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.parsestandalonedocuments", "Parse standalone documents", true);

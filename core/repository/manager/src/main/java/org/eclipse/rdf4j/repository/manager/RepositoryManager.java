@@ -89,7 +89,6 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * initialization status may change if the Repository is shut down.
 	 * 
 	 * @return true iff the repository manager has been initialized.
-	 * @since 2.7.0
 	 */
 	public boolean isInitialized() {
 		synchronized (initializedRepositories) {
@@ -322,7 +321,6 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * repository configuration. <strong>NB this operation can not be
 	 * undone!</strong>
 	 * 
-	 * @since 2.6.7
 	 * @param repositoryID
 	 *        The ID of the repository that needs to be removed.
 	 * @throws RepositoryException

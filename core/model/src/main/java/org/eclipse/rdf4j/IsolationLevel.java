@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.model.IRI;
  * isolation contract is different from what is provided by default.
  * 
  * @author Jeen Broekstra
- * @since 2.8
  */
 public interface IsolationLevel {
 

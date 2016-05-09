@@ -144,7 +144,6 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 *        The standard URI that has been assigned to this format by a
 	 *        standards organisation or null if it does not currently have a
 	 *        standard URI.
-	 * @since 2.8.0
 	 */
 	public TupleQueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
 			Collection<String> fileExtensions, IRI standardURI)

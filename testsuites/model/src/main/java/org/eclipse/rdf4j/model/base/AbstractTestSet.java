@@ -28,7 +28,6 @@ import java.util.Set;
  * set is not modifiable, or if your set restricts what kinds of
  * elements may be added; see {@link AbstractTestCollection} for more details.
  *
- * @since Commons Collections 3.0
  * @version $Revision: 646780 $ $Date: 2008-04-10 13:48:07 +0100 (Thu, 10 Apr 2008) $
  * 
  * @author Paul Jack

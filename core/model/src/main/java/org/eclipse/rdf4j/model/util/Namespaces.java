@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
  * A utility class to perform operations on {@link Namespace}s.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public class Namespaces {
 
@@ -40,7 +39,6 @@ public class Namespaces {
 	 * @return A {@link Map} of {@link String} to {@link String} where the
 	 *         key/value combinations are created based on the prefix and names
 	 *         from {@link Namespace}s in the input set.
-	 * @since 2.7.0
 	 */
 	public static Map<String, String> asMap(Set<Namespace> namespaces) {
 		Map<String, String> result = new HashMap<String, String>();
@@ -62,7 +60,6 @@ public class Namespaces {
 	 *        The Set to wrap.
 	 * @return A Map of prefix to URI mappings which is backed by the given Set
 	 *         of {@link Namespace}s.
-	 * @since 2.7.10
 	 */
 	public static Map<String, String> wrap(final Set<Namespace> namespaces) {
 		return new Map<String, String>() {

@@ -13,12 +13,10 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * Basic implementation of {@link RioSetting} interface.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public final class RioSettingImpl<T> implements RioSetting<T> {
 
 	/**
-	 * @since 2.7.0
 	 */
 	private static final long serialVersionUID = 270L;
 

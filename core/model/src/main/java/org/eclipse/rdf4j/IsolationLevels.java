@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.vocabulary.SESAME;
  * 
  * @author Jeen Broekstra
  * @author James Leigh
- * @since 2.8.0
  */
 public enum IsolationLevels implements IsolationLevel {
 
@@ -99,7 +98,6 @@ public enum IsolationLevels implements IsolationLevel {
 	 *         Otherwise, the first compatible level in the list of supported
 	 *         isolation levels, or <code>null</code> if no compatible level can
 	 *         be found.
-	 * @since 2.8.0
 	 * @throws IllegalArgumentException
 	 *         if either one of the input parameters is <code>null</code>.
 	 */

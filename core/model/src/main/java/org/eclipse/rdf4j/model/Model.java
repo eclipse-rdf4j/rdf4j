@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.util.Models;
  * Additional utility functionality for working with Model objects is available
  * in the {@link org.eclipse.rdf4j.model.util.Models Models} utility class.
  * 
- * @since 2.7.0
  * @author James Leigh
  * @author Jeen Broekstra
  * @see org.eclipse.rdf4j.model.util.Models the Models utility class
@@ -322,7 +321,6 @@ public interface Model extends Graph, Set<Statement>, Serializable {
 	 * @throws ModelException
 	 *         If the statements matched by the specified parameters have more
 	 *         than one unique subject.
-	 * @since 2.8.0
 	 * @deprecated since 4.0. Instead, use {@link Models#subject(Model)} to
 	 *             retrieve a subject Resource, and/or use the size of the set
 	 *             returned by {@link #subjects()} to verify if the subject is
@@ -354,7 +352,6 @@ public interface Model extends Graph, Set<Statement>, Serializable {
 	 * @throws ModelException
 	 *         If such an exception is thrown by {@link #subjectResource()} or if
 	 *         its return value is not a IRI.
-	 * @since 2.8.0
 	 * @deprecated since 4.0. Instead, use {@link Models#subjectURI(Model)} to
 	 *             retrieve a subject URI, and/or use the size of the set
 	 *             returned by {@link #subjects()} to verify if the subject is
@@ -400,7 +397,6 @@ public interface Model extends Graph, Set<Statement>, Serializable {
 	 * @throws ModelException
 	 *         If such an exception is thrown by {@link #subjectResource()} or if
 	 *         its return value is not a BNode.
-	 * @since 2.8.0
 	 * @deprecated since 4.0. Instead, use {@link Models#subjectBNode(Model)} to
 	 *             retrieve a subject BNode, and/or use the size of the set
 	 *             returned by {@link #subjects()} to verify if the subject is

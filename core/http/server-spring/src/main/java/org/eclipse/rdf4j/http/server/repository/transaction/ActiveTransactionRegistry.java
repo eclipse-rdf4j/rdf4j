@@ -29,7 +29,6 @@ import com.google.common.cache.RemovalNotification;
  * transaction.
  * 
  * @author Jeen Broekstra
- * @since 2.8.0
  */
 public enum ActiveTransactionRegistry {
 

@@ -50,7 +50,6 @@ import org.eclipse.rdf4j.model.util.PatternIterator;
  * interface methods):
  * </p>
  * 
- * @since 2.7.0
  * @author James Leigh
  */
 public class TreeModel extends AbstractModel implements SortedSet<Statement> {

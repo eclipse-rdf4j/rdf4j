@@ -19,7 +19,6 @@ import java.util.function.Consumer;
  * closed when exhausted (if it's a {@link CloseableIteration}).
  *
  * @author Jeen Broekstra
- * @since 4.0
  */
 public class IterationSpliterator<T> extends Spliterators.AbstractSpliterator<T> {
 

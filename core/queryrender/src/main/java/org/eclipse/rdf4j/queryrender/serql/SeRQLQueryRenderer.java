@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.queryrender.QueryRenderer;
  * </p>
  * 
  * @author Michael Grove
- * @since 2.7.0
  */
 public class SeRQLQueryRenderer implements QueryRenderer {
 

@@ -266,7 +266,6 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 * Converts the supplied {@link Date} to a {@link XMLGregorianCalendar}, then
 	 * calls {@link ValueFactory#createLiteral(XMLGregorianCalendar)}.
 	 * 
-	 * @since 2.7.0
 	 */
 	@Override
 	public Literal createLiteral(Date date) {

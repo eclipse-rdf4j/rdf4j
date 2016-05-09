@@ -59,7 +59,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
  * @author Jeen Broekstra
  * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Schema
  *      1.1 section on Collection vocabulary</a>.
- * @since 4.1.0
  */
 public class RDFCollections {
 
@@ -97,7 +96,6 @@ public class RDFCollections {
 	 *         if one of the supplied values can not be converted to a Literal.
 	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF
 	 *      Schema 1.1 section on Collection vocabulary</a>.
-	 * @since 4.1.0
 	 */
 	public static <C extends Collection<Statement>> C asRDF(Iterable<?> values, Resource head, C sink,
 			Resource... contexts)
@@ -132,7 +130,6 @@ public class RDFCollections {
 	 *         the Collection is not well-formed.
 	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF
 	 *      Schema 1.1 section on Collection vocabulary</a>.
-	 * @since 4.1.0
 	 */
 	public static <C extends Collection<Value>> C asValues(final Model m, Resource head, C collection,
 			Resource... contexts)
@@ -177,7 +174,6 @@ public class RDFCollections {
 	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF
 	 *      Schema 1.1 section on Collection vocabulary</a>.
 	 * @see Literals#createLiteralOrFail(ValueFactory, Object)
-	 * @since 4.1.0
 	 */
 	public static void consumeCollection(Iterable<?> values, Resource head, Consumer<Statement> consumer,
 			Resource... contexts)
@@ -232,7 +228,6 @@ public class RDFCollections {
 	 *         the Collection is not well-formed.
 	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF
 	 *      Schema 1.1 section on Collection vocabulary</a>.
-	 * @since 4.1.0
 	 */
 	public static void consumeValues(final Model m, Resource head, Consumer<Value> consumer,
 			Resource... contexts)
@@ -276,7 +271,6 @@ public class RDFCollections {
 	 *        argument is an optional vararg and can be left out.
 	 * @return the supplied sink {@link Collection} of {@link Statement}s, with
 	 *         the Statements of the RDF Collection added.
-	 * @since 4.1.0
 	 */
 	public static <C extends Collection<Statement>> C getCollection(Model sourceModel, Resource head, C sink,
 			Resource... contexts)
@@ -307,7 +301,6 @@ public class RDFCollections {
 	 * @param contexts
 	 *        the context(s) from which to read the RDF Collection. This
 	 *        argument is an optional vararg and can be left out.
-	 * @since 4.1.0
 	 */
 	public static void extract(Model sourceModel, Resource head, Consumer<Statement> consumer,
 			Resource... contexts)
@@ -344,7 +337,6 @@ public class RDFCollections {
 	 * @throws E
 	 *         if a problem occurs reading the RDF Collection, for example if it
 	 *         is not well-formed.
-	 * @since 4.1.0
 	 */
 	public static <E extends RDF4JException> void extract(GetStatementOptional statementSupplier,
 			Resource head, Consumer<Statement> collectionConsumer,
