@@ -204,7 +204,7 @@ public class BasicParserSettings {
 	 * 
 	 */
 	public static final RioSetting<Boolean> VERIFY_URI_SYNTAX = new RioSettingImpl<Boolean>(
-			"org.openrdf.rio.verifyurisyntax", "Verify URI syntax", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.verifyurisyntax", "Verify URI syntax", Boolean.TRUE);
 
 	/**
 	 * Boolean setting for parser to determine whether parser should attempt to
