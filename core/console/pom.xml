@@ -88,8 +88,8 @@
 				<configuration>
 					<archive>
 						<manifest>
-							<mainClass>org.openrdf.console.Console</mainClass>
-							<packageName>org.openrdf.console</packageName>
+							<mainClass>org.eclipse.rdf4j.console.Console</mainClass>
+							<packageName>org.eclipse.rdf4j.console</packageName>
 							<addClasspath>true</addClasspath>
 							<addExtensions />
 							<classpathPrefix />

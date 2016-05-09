@@ -260,7 +260,7 @@
 					<plugin>
 						<artifactId>maven-assembly-plugin</artifactId>
 						<configuration>
-							<finalName>openrdf-sesame-${project.version}</finalName>
+							<finalName>eclipse-rdf4j-${project.version}</finalName>
 							<attach>false</attach>
 							<descriptors>
 								<descriptor>src/main/assembly/sdk.xml</descriptor>
@@ -286,10 +286,10 @@
 									<include>org.eclipse.rdf4j:*</include>
 								</includes>
 								<excludes>
-									<exclude>org.eclipse.rdf4j:sesame-runtime-osgi</exclude>
+									<exclude>org.eclipse.rdf4j:rdf4j-runtime-osgi</exclude>
 								</excludes>
 							</artifactSet>
-							<outputFile>target/openrdf-sesame-${project.version}-onejar.jar</outputFile>
+							<outputFile>target/eclipse-rdf4j-${project.version}-onejar.jar</outputFile>
 							<createDependencyReducedPom>false</createDependencyReducedPom>
 							<shadedArtifactAttached>false</shadedArtifactAttached>
 							<transformers>

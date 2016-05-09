@@ -48,13 +48,13 @@ goto end
 IF ERRORLEVEL 1 goto java6
 rem use java.ext.dirs hack
 rem echo Using java.ext.dirs to set classpath
-"%JAVA%" -Djava.ext.dirs="%LIB_DIR%" org.openrdf.console.Console %CMD_LINE_ARGS%
+"%JAVA%" -Djava.ext.dirs="%LIB_DIR%" org.eclipse.rdf4j.console.Console %CMD_LINE_ARGS%
 goto end
 
 :java6
 rem use java 6 wildcard feature
 rem echo Using wildcard to set classpath
-"%JAVA%" -cp "%LIB_DIR%\*" org.openrdf.console.Console %CMD_LINE_ARGS%
+"%JAVA%" -cp "%LIB_DIR%\*" org.eclipse.rdf4j.console.Console %CMD_LINE_ARGS%
 goto end
 
 :end
