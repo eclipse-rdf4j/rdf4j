@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.sail.spin.SpinSail;
 import org.junit.Ignore;
 import org.junit.Test;
 
+@Ignore("#58 - disabled spin compliance tests due to being slow and unstable. Manually execute when modifying SPIN functionality")
 public class SpinMemoryRepositoryConnectionTest extends RepositoryConnectionTest {
 
 	public SpinMemoryRepositoryConnectionTest(IsolationLevel level) {
@@ -33,7 +34,6 @@ public class SpinMemoryRepositoryConnectionTest extends RepositoryConnectionTest
 	{
 		return new SailRepository(new SpinSail(new MemoryStore()));
 	}
-	
 
 	@Ignore
 	@Test
