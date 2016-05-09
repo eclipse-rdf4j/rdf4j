@@ -12,7 +12,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
- * @since 2.7.3
  * @version 1.4.0
  */
 public class SP {

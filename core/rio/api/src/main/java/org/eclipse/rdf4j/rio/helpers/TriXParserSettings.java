@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * ParserSettings for the TriX parser features.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public class TriXParserSettings {
 
@@ -23,7 +22,6 @@ public class TriXParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_TRIX_MISSING_DATATYPE = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.ignoretrixmissingdatatype", "Ignore TriX missing datatype", Boolean.TRUE);
@@ -34,7 +32,6 @@ public class TriXParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_TRIX_INVALID_STATEMENT = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.ignoretrixmissingdatatype", "Ignore TriX missing datatype", Boolean.TRUE);

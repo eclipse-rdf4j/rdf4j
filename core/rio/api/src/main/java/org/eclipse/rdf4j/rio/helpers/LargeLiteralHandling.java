@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.rio.helpers;
  * {@link BasicParserSettings#LARGE_LITERALS_HANDLING} parser setting.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public enum LargeLiteralHandling {
 

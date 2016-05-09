@@ -169,7 +169,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws UnsupportedOperationException
 	 *         If the <tt>prepareQuery</tt> method is not supported by this
 	 *         repository.
-	 * @since 4.0
 	 * @see #prepareQuery(QueryLanguage, String)
 	 */
 	public default Query prepareQuery(String query)
@@ -239,7 +238,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         If the supplied query is not a tuple query.
 	 * @throws MalformedQueryException
 	 *         If the supplied query is malformed.
-	 * @since 4.0
 	 * @see #prepareTupleQuery(QueryLanguage, String)
 	 */
 	public default TupleQuery prepareTupleQuery(String query)
@@ -309,7 +307,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         If the supplied query is not a graph query.
 	 * @throws MalformedQueryException
 	 *         If the supplied query is malformed.
-	 * @since 4.0
 	 * @see #prepareGraphQuery(QueryLanguage, String)
 	 */
 	public default GraphQuery prepareGraphQuery(String query)
@@ -379,7 +376,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         If the supplied query is not a boolean query.
 	 * @throws MalformedQueryException
 	 *         If the supplied SPARQL query is malformed.
-	 * @since 4.0
 	 * @see #prepareBooleanQuery(QueryLanguage, String)
 	 */
 	public default BooleanQuery prepareBooleanQuery(String query)
@@ -446,7 +442,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         {@link RepositoryConnection}.
 	 * @throws MalformedQueryException
 	 *         If the supplied update operation string is malformed.
-	 * @since 4.0
 	 * @see #prepareUpdate(QueryLanguage, String)
 	 */
 	public default Update prepareUpdate(String update)
@@ -525,7 +520,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         containing {@link Statement}s and optionally throwing a
 	 *         {@link RepositoryException} when an error when a problem occurs
 	 *         during retrieval.
-	 * @since 4.0
 	 */
 	public default RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts)
@@ -782,7 +776,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * transaction is active if {@link #begin()} has been called, and becomes
 	 * inactive after {@link #commit()} or {@link #rollback()} has been called.
 	 * 
-	 * @since 2.7.0
 	 * @return <code>true</code> iff a transaction is active, <code>false</code>
 	 *         iff no transaction is active.
 	 * @throws UnknownTransactionStateException
@@ -804,7 +797,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *        the transaction isolation level to set.
 	 * @throws IllegalStateException
 	 *         if the method is called while a transaction is already active.
-	 * @since 2.8.0
 	 */
 	public void setIsolationLevel(IsolationLevel level)
 		throws IllegalStateException;
@@ -814,7 +806,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * of the connection.
 	 * 
 	 * @return the current transaction isolation level.
-	 * @since 2.8.0
 	 */
 	public IsolationLevel getIsolationLevel();
 
@@ -833,7 +824,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @see #commit()
 	 * @see #rollback()
 	 * @see #setIsolationLevel(IsolationLevel)
-	 * @since 2.7.0
 	 */
 	public void begin()
 		throws RepositoryException;
@@ -864,7 +854,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @see #commit()
 	 * @see #rollback()
 	 * @see #setIsolationLevel()
-	 * @since 2.8.0
 	 */
 	public void begin(IsolationLevel level)
 		throws RepositoryException;

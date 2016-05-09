@@ -31,7 +31,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
  * Description (omitting reified statements).
  * 
  * @author Jeen Broekstra
- * @since 2.7.4
  * @see <a href="http://www.w3.org/Submission/CBD/#alternatives">Concise Bounded Description - alternatives</a> 
  */
 public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {

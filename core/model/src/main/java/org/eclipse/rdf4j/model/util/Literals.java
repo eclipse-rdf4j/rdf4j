@@ -456,7 +456,6 @@ public class Literals {
 	 * @return a typed literal representation of the supplied object.
 	 * @throws NullPointerException
 	 *         If the object was null.
-	 * @since 2.7.0
 	 */
 	public static Literal createLiteral(ValueFactory valueFactory, Object object) {
 		try {
@@ -484,7 +483,6 @@ public class Literals {
 	 *         If the literal could not be created.
 	 * @throws NullPointerException
 	 *         If the object was null.
-	 * @since 2.7.0
 	 */
 	public static Literal createLiteralOrFail(ValueFactory valueFactory, Object object)
 		throws LiteralUtilException
@@ -516,7 +514,6 @@ public class Literals {
 	 *         If the literal could not be created.
 	 * @throws NullPointerException
 	 *         If the object was null.
-	 * @since 2.7.0
 	 */
 	private static Literal createLiteral(ValueFactory valueFactory, Object object,
 			boolean throwExceptionOnFailure)
@@ -575,7 +572,6 @@ public class Literals {
 	 *         solely on its type and the methods available on the
 	 *         {@link ValueFactory} interface and false otherwise. Returns false
 	 *         if the object is null.
-	 * @since 2.7.0
 	 */
 	public static boolean canCreateLiteral(Object object) {
 		if (object == null) {
@@ -604,7 +600,6 @@ public class Literals {
 	 *        The literal to check
 	 * @return True if the literal has a language tag attached to it and false
 	 *         otherwise.
-	 * @since 2.8.0
 	 */
 	public static boolean isLanguageLiteral(Literal literal) {
 		return Objects.requireNonNull(literal, "Literal cannot be null").getLanguage().isPresent();

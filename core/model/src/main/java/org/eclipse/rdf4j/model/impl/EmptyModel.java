@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.model.Value;
  * model's namespaces.
  * 
  * @author James Leigh
- * @since 2.7.0
  */
 public class EmptyModel extends AbstractModel {
 

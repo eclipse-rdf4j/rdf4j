@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
  * Currently this includes tuple and boolean queries.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public class QueryResultFormat extends FileFormat {
 
@@ -132,7 +131,6 @@ public class QueryResultFormat extends FileFormat {
 	 *        The format's file extensions, e.g. <tt>srx</tt> for SPARQL/XML
 	 *        files. The first item in the list is interpreted as the default
 	 *        file extension for the format.
-	 * @since 2.8.0
 	 */
 	public QueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
 			Collection<String> fileExtensions, IRI standardURI)
@@ -145,7 +143,6 @@ public class QueryResultFormat extends FileFormat {
 	/**
 	 * @return True if a standard URI has been assigned to this format by a
 	 *         standards organisation.
-	 * @since 2.8.0
 	 */
 	public boolean hasStandardURI() {
 		return standardURI != null;
@@ -155,7 +152,6 @@ public class QueryResultFormat extends FileFormat {
 	 * @return The standard URI that has been assigned to this format by a
 	 *         standards organisation or null if it does not currently have a
 	 *         standard URI.
-	 * @since 2.8.0
 	 */
 	public IRI getStandardURI() {
 		return standardURI;

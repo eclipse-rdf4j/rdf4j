@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.model.Value;
 /**
  * Applies a basic graph pattern filter to what triples can be see.
  * 
- * @since 2.7.0
  */
 public abstract class FilteredModel extends AbstractModel {
 

@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.query.algebra.Var;
  * Utility methods for {@link TupleExpr} objects.
  * 
  * @author Jeen Broekstra
- * @since 2.7.3
  */
 public class TupleExprs {
 
@@ -33,7 +32,6 @@ public class TupleExprs {
 	 *        a tuple expression.
 	 * @return <code>true</code> if the TupleExpr contains a projection (outside
 	 *         of a Join), <code>false</code> otherwise.
-	 * @since 2.7.3
 	 */
 	public static boolean containsProjection(TupleExpr t) {
 		@SuppressWarnings("serial")

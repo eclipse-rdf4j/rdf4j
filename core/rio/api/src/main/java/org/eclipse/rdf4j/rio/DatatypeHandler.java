@@ -18,14 +18,12 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
  * typed literals and datatype URIs.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public interface DatatypeHandler {
 
 	/**
 	 * Identifier for datatypes defined in the {@link XMLSchema} vocabulary.
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final String XMLSCHEMA = "org.eclipse.rdf4j.rio.datatypes.xmlschema";
 
@@ -33,7 +31,6 @@ public interface DatatypeHandler {
 	 * Identifier for datatypes defined in the
 	 * {@link org.eclipse.rdf4j.model.vocabulary.RDF} vocabulary.
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final String RDFDATATYPES = "org.eclipse.rdf4j.rio.datatypes.rdf";
 
@@ -43,7 +40,6 @@ public interface DatatypeHandler {
 	 * @see <a
 	 *      href="http://mappings.dbpedia.org/index.php/DBpedia_Datatypes">DBPedia
 	 *      Datatypes</a>
-	 * @since 2.7.1
 	 */
 	public static final String DBPEDIA = "org.eclipse.rdf4j.rio.datatypes.dbpedia";
 
@@ -53,7 +49,6 @@ public interface DatatypeHandler {
 	 * @see <a
 	 *      href="http://docs.openlinksw.com/virtuoso/rdfsparqlgeospat.html">Virtuoso
 	 *      Geospatial</a>
-	 * @since 2.7.1
 	 */
 	public static final String VIRTUOSOGEOMETRY = "org.eclipse.rdf4j.rio.datatypes.virtuosogeometry";
 
@@ -62,7 +57,6 @@ public interface DatatypeHandler {
 	 * 
 	 * @see <a
 	 *      href="http://www.opengeospatial.org/standards/geosparql">GeoSPARQL</a>
-	 * @since 2.7.4
 	 */
 	public static final String GEOSPARQL = "org.eclipse.rdf4j.rio.datatypes.geosparql";
 
@@ -74,7 +68,6 @@ public interface DatatypeHandler {
 	 * @return True if the datatype is syntactically valid and could be used with
 	 *         {@link #verifyDatatype(String, IRI)} and
 	 *         {@link #normalizeDatatype(String, IRI, ValueFactory)}.
-	 * @since 2.7.0
 	 */
 	public boolean isRecognizedDatatype(IRI datatypeUri);
 
@@ -92,7 +85,6 @@ public interface DatatypeHandler {
 	 *        A datatype URI that matched with {@link #isRecognizedDatatype(IRI)}
 	 * @return True if the datatype URI is recognized by this datatype handler,
 	 *         and it is verified to be syntactically valid.
-	 * @since 2.7.0
 	 * @throws LiteralUtilException
 	 *         If the datatype was not recognized.
 	 */
@@ -120,7 +112,6 @@ public interface DatatypeHandler {
 	 *        The {@link ValueFactory} to use to create the result literal.
 	 * @return A {@link Literal} containing the normalized literal value and
 	 *         datatype URI.
-	 * @since 2.7.0
 	 * @throws LiteralUtilException
 	 *         If the datatype URI was not recognized or verified, or the literal
 	 *         value could not be normalized due to an error.
@@ -133,7 +124,6 @@ public interface DatatypeHandler {
 	 * DatatypeHandlerRegistry.
 	 * 
 	 * @return A unique string key.
-	 * @since 2.7.0
 	 */
 	public String getKey();
 

@@ -125,7 +125,6 @@ public interface RDFParser {
 	/**
 	 * @return A collection of {@link RioSetting}s that are supported by this
 	 *         RDFParser.
-	 * @since 2.7.0
 	 */
 	public Collection<RioSetting<?>> getSupportedSettings();
 
@@ -139,7 +138,6 @@ public interface RDFParser {
 	 *        The value to change.
 	 * @return Either a copy of this parser, if it is immutable, or this object,
 	 *         to allow chaining of method calls.
-	 * @since 4.0.0
 	 */
 	public <T> RDFParser set(RioSetting<T> setting, T value);
 

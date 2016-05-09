@@ -38,7 +38,6 @@ public class RDFFormat extends FileFormat {
 	 * Indicates that calls to {@link RDFHandler#handleNamespace(String, String)}
 	 * may be serialised when serializing to this format.
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final boolean SUPPORTS_NAMESPACES = true;
 
@@ -47,7 +46,6 @@ public class RDFFormat extends FileFormat {
 	 * {@link RDFHandler#handleNamespace(String, String)} will be ignored when
 	 * serializing to this format.
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final boolean NO_NAMESPACES = false;
 
@@ -55,7 +53,6 @@ public class RDFFormat extends FileFormat {
 	 * Indicates that the {@link Statement#getContext()} URI may be serialized
 	 * for this format.
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final boolean SUPPORTS_CONTEXTS = true;
 
@@ -63,7 +60,6 @@ public class RDFFormat extends FileFormat {
 	 * Indicates that the {@link Statement#getContext()} URI will NOT be
 	 * serialized for this format.
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final boolean NO_CONTEXTS = false;
 
@@ -191,7 +187,6 @@ public class RDFFormat extends FileFormat {
 	 * 
 	 * @see <a href="http://www.w3.org/TR/n-quads/">N-Quads: Extending N-Triples
 	 *      with Context</a>
-	 * @since 2.6.6
 	 */
 	public static final RDFFormat NQUADS = new RDFFormat("N-Quads", Arrays.asList("application/n-quads",
 			"text/x-nquads", "text/nquads"), Charset.forName("UTF-8"), Arrays.asList("nq"),
@@ -208,7 +203,6 @@ public class RDFFormat extends FileFormat {
 	 * </p>
 	 * 
 	 * @see <a href="http://www.w3.org/TR/json-ld/">JSON-LD 1.0</a>
-	 * @since 2.7.0
 	 */
 	public static final RDFFormat JSONLD = new RDFFormat("JSON-LD", Arrays.asList("application/ld+json"),
 			Charset.forName("UTF-8"), Arrays.asList("jsonld"), SimpleValueFactory.getInstance().createIRI(
@@ -225,7 +219,6 @@ public class RDFFormat extends FileFormat {
 	 * 
 	 * @see <a href="http://www.w3.org/TR/rdf-json/">RDF 1.1 JSON Alternate
 	 *      Serialization (RDF/JSON)</a>
-	 * @since 2.7.0
 	 */
 	public static final RDFFormat RDFJSON = new RDFFormat("RDF/JSON", Arrays.asList("application/rdf+json"),
 			Charset.forName("UTF-8"), Arrays.asList("rj"), SimpleValueFactory.getInstance().createIRI(
@@ -241,7 +234,6 @@ public class RDFFormat extends FileFormat {
 	 * </p>
 	 * 
 	 * @see <a href="http://www.w3.org/TR/rdfa-syntax/">XHTML+RDFa 1.1</a>
-	 * @since 2.7.0
 	 */
 	public static final RDFFormat RDFA = new RDFFormat("RDFa", Arrays.asList("application/xhtml+xml",
 			"application/html", "text/html"), Charset.forName("UTF-8"), Arrays.asList("xhtml", "html"),
@@ -447,7 +439,6 @@ public class RDFFormat extends FileFormat {
 	 * @param supportsContexts
 	 *        <tt>True</tt> if the RDFFormat supports the encoding of
 	 *        contexts/named graphs and <tt>false</tt> otherwise.
-	 * @since 2.8.0
 	 */
 	public RDFFormat(String name, Collection<String> mimeTypes, Charset charset,
 			Collection<String> fileExtensions, IRI standardURI, boolean supportsNamespaces,
@@ -483,7 +474,6 @@ public class RDFFormat extends FileFormat {
 	/**
 	 * @return True if a standard URI has been assigned to this format by a
 	 *         standards organisation.
-	 * @since 2.8.0
 	 */
 	public boolean hasStandardURI() {
 		return standardURI != null;
@@ -493,7 +483,6 @@ public class RDFFormat extends FileFormat {
 	 * @return The standard URI that has been assigned to this format by a
 	 *         standards organisation or null if it does not currently have a
 	 *         standard URI.
-	 * @since 2.8.0
 	 */
 	public IRI getStandardURI() {
 		return standardURI;

@@ -335,7 +335,6 @@ public abstract class AbstractSail implements Sail {
 	 * 
 	 * @param level
 	 *        a supported IsolationLevel.
-	 * @since 2.8
 	 */
 	protected void addSupportedIsolationLevel(IsolationLevels level) {
 		this.supportedIsolationLevels.add(level);
@@ -347,7 +346,6 @@ public abstract class AbstractSail implements Sail {
 	 * 
 	 * @param level
 	 *        the isolation level to remove.
-	 * @since 2.8
 	 */
 	protected void removeSupportedIsolationLevel(IsolationLevel level) {
 		while (this.supportedIsolationLevels.remove(level)) {
@@ -360,7 +358,6 @@ public abstract class AbstractSail implements Sail {
 	 * 
 	 * @param supportedIsolationLevels
 	 *        a list of supported isolation levels.
-	 * @since 2.8
 	 */
 	protected void setSupportedIsolationLevels(List<IsolationLevel> supportedIsolationLevels) {
 		this.supportedIsolationLevels = supportedIsolationLevels;
@@ -372,7 +369,6 @@ public abstract class AbstractSail implements Sail {
 	 * 
 	 * @param supportedIsolationLevels
 	 *        a list of supported isolation levels.
-	 * @since 2.8.3
 	 */
 	protected void setSupportedIsolationLevels(IsolationLevel... supportedIsolationLevels) {
 		this.supportedIsolationLevels = Arrays.asList(supportedIsolationLevels);
@@ -392,7 +388,6 @@ public abstract class AbstractSail implements Sail {
 	 * Sets the default {@link IsolationLevel} on which transactions in this Sail
 	 * operate.
 	 * 
-	 * @since 2.8.0
 	 * @param defaultIsolationLevel
 	 *        The defaultIsolationLevel to set.
 	 */

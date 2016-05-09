@@ -13,7 +13,6 @@ import java.io.Serializable;
  * Identifies a parser setting along with its default value.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public interface RioSetting<T extends Object> extends Serializable {
 

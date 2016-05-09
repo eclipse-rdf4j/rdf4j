@@ -218,7 +218,6 @@ public abstract class Protocol {
 	 * Parameter for server instruction to preserve blank node ids when parsing
 	 * request data.
 	 * 
-	 * @since 2.8.0
 	 */
 	public static final String PRESERVE_BNODE_ID_PARAM_NAME = "preserveNodeId";
 
@@ -301,7 +300,6 @@ public abstract class Protocol {
 	 *        the location of a repository implementing this REST protocol.
 	 * @return the location of the transaction resources for the specified
 	 *         repository
-	 * @since 2.8.0
 	 */
 	public static final String getTransactionsLocation(String repositoryLocation) {
 		return repositoryLocation + "/" + TRANSACTIONS;

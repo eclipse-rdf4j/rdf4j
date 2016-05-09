@@ -29,7 +29,6 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
  * Convenience functions for use with {@link RepositoryConnection}s.
  *
  * @author Jeen Broekstra
- * @since 4.1.0
  */
 public class Connections {
 
@@ -55,7 +54,6 @@ public class Connections {
 	 * @see RDFCollections
 	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF
 	 *      Schema 1.1 section on Collection vocabulary</a>.
-	 * @since 4.1.0
 	 */
 	public static void consumeRDFCollection(RepositoryConnection conn, Resource head,
 			Consumer<Statement> collectionConsumer, Resource... contexts)
@@ -90,7 +88,6 @@ public class Connections {
 	 * @see RDFCollections
 	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF
 	 *      Schema 1.1 section on Collection vocabulary</a>.
-	 * @since 4.1.0
 	 */
 	public static <C extends Collection<Statement>> C getRDFCollection(RepositoryConnection conn,
 			Resource head, C statementCollection, Resource... contexts)
@@ -125,7 +122,6 @@ public class Connections {
 	 * @return an {@link Optional} of {@link Statement}. If no matching
 	 *         Statement was found, {@link Optional#empty()} is returned.
 	 * @throws RepositoryException
-	 * @since 4.1.0
 	 */
 	public static Optional<Statement> getStatement(RepositoryConnection conn, Resource subject, IRI predicate,
 			Value object, Resource... contexts)

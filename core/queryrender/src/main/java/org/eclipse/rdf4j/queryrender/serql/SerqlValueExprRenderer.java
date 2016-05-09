@@ -51,7 +51,6 @@ import org.eclipse.rdf4j.queryrender.RenderUtils;
  * </p>
  * 
  * @author Michael Grove
- * @since 2.7.0
  */
 class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 

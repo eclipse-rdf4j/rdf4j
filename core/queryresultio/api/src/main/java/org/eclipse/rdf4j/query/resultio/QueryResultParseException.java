@@ -52,7 +52,6 @@ public class QueryResultParseException extends RDF4JException {
 	 *        An error message.
 	 * @param t
 	 *        The source exception.
-	 * @since 2.7.0
 	 */
 	public QueryResultParseException(String msg, Throwable t) {
 		super(msg, t);

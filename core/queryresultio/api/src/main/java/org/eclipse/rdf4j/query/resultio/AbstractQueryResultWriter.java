@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
  * query result writers.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public abstract class AbstractQueryResultWriter implements QueryResultWriter {
 

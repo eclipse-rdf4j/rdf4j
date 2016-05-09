@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
  * href="http://www.w3.org/TR/sparql11-query/#func-uuid">SPARQL Query Language
  * for RDF</a>
  * 
- * @since 2.7.0
  * @author Jeen Broekstra
  */
 public class UUID implements Function {

@@ -36,7 +36,6 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 /**
  * Utility methods related to query results.
  * 
- * @since 2.7.0
  * @author Jeen Broekstra
  */
 public class QueryResults extends Iterations {
@@ -45,7 +44,6 @@ public class QueryResults extends Iterations {
 	 * Get a {@link Model} containing all elements obtained from the specified
 	 * query result.
 	 * 
-	 * @since 2.7.0
 	 * @param iteration
 	 *        the source iteration to get the statements from. This can be a
 	 *        {@link GraphQueryResult}, a {@link RepositoryResult<Statement>}, or
@@ -65,7 +63,6 @@ public class QueryResults extends Iterations {
 	 * Returns a single element from the query result. The QueryResult is
 	 * automatically closed by this method.
 	 * 
-	 * @since 2.7.0
 	 * @return a single query result element.
 	 * @throws QueryEvaluationException
 	 */
@@ -84,7 +81,6 @@ public class QueryResults extends Iterations {
 	 * Returns a single element from the query result. The QueryResult is
 	 * automatically closed by this method.
 	 * 
-	 * @since 2.7.0
 	 * @return a single query result element.
 	 * @throws QueryEvaluationException
 	 */
@@ -106,7 +102,6 @@ public class QueryResults extends Iterations {
 	 * @param queryResult
 	 *        a queryResult containing possible duplicate statements.
 	 * @return a {@link GraphQueryResult} with any duplicates filtered out.
-	 * @since 2.7.0
 	 */
 	public static GraphQueryResult distinctResults(GraphQueryResult queryResult) {
 		return new GraphQueryResultFilter(queryResult);
@@ -119,7 +114,6 @@ public class QueryResults extends Iterations {
 	 * @param queryResult
 	 *        a queryResult containing possible duplicate solutions.
 	 * @return a {@link TupleQueryResult} with any duplicates filtered out.
-	 * @since 2.7.0
 	 */
 	public static TupleQueryResult distinctResults(TupleQueryResult queryResult) {
 		return new TupleQueryResultFilter(queryResult);

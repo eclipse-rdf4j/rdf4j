@@ -13,7 +13,6 @@ import java.util.Iterator;
  * Helper class for working with Strings as sequences of Unicode code points.
  * 
  * @author Jeen Broekstra
- * @since 2.8.0
  * @see CodePointIterator
  */
 public class CodePointSequence implements Iterable<Integer> {

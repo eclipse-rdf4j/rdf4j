@@ -166,7 +166,6 @@ public interface SailConnection {
 	 *         internally.
 	 * @throws IllegalStateException
 	 *         If the connection has been closed.
-	 * @since 4.0
 	 */
 	default boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts)
@@ -205,7 +204,6 @@ public interface SailConnection {
 	 * default {@link IsolationLevel} level for the SAIL, as returned by
 	 * {@link Sail#getDefaultIsolationLevel()}.
 	 * 
-	 * @since 2.7.0
 	 * @throws SailException
 	 *         If the connection could not start a transaction or if a
 	 *         transaction is already active on this connection.
@@ -221,7 +219,6 @@ public interface SailConnection {
 	 * @param level
 	 *        the transaction isolation level on which this transaction
 	 *        operates.
-	 * @since 2.8.0
 	 * @throws UnknownSailTransactionStateException
 	 *         If the IsolationLevel is not supported by this implementation
 	 * @throws SailException
@@ -240,7 +237,6 @@ public interface SailConnection {
 	 * {@link #prepare()}. This method may be called multiple times within the
 	 * same transaction.
 	 * 
-	 * @since 2.8.0
 	 * @throws SailException
 	 *         If the updates could not be processed, for example because no
 	 *         transaction is active.
@@ -263,7 +259,6 @@ public interface SailConnection {
 	 * this method returns with an exception the caller should treat the
 	 * exception as if it came from a call to {@link #commit()}.
 	 * 
-	 * @since 2.7.0
 	 * @throws UnknownSailTransactionStateException
 	 *         If the transaction state can not be determined (this can happen
 	 *         for instance when communication between client and server fails
@@ -317,7 +312,6 @@ public interface SailConnection {
 	 * transaction is active if {@link #begin()} has been called, and becomes
 	 * inactive after {@link #commit()} or {@link #rollback()} has been called.
 	 * 
-	 * @since 2.7.0
 	 * @return <code>true</code> iff a transaction is active, <code>false</code>
 	 *         iff no transaction is active.
 	 * @throws UnknownSailTransactionStateException

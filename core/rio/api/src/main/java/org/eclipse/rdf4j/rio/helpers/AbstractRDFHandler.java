@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
  * Base class for {@link RDFHandler}s with dummy implementations of all
  * methods.
  * 
- * @since 4.0
  */
 public abstract class AbstractRDFHandler implements RDFHandler {
 

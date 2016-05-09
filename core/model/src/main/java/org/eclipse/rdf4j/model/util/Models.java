@@ -33,7 +33,6 @@ import org.eclipse.rdf4j.util.iterators.Iterators;
  * 
  * @author Jeen Broekstra
  * @author Arjohn Kampman
- * @since 2.8.0
  * @see org.eclipse.rdf4j.model.Model
  */
 public class Models {
@@ -53,7 +52,6 @@ public class Models {
 	 *        the model from which to retrieve an object value.
 	 * @return an object value from the given model, or {@link Optional#empty()}
 	 *         if no such value exists.
-	 * @since 4.0
 	 */
 	public static Optional<Value> object(Model m) {
 		return m.stream().map(st -> st.getObject()).findAny();
@@ -76,7 +74,6 @@ public class Models {
 	 *        the model from which to retrieve an object Literal value.
 	 * @return an object Literal value from the given model, or
 	 *         {@link Optional#empty()} if no such value exists.
-	 * @since 4.0
 	 */
 	public static Optional<Literal> objectLiteral(Model m) {
 		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Literal).map(
@@ -101,7 +98,6 @@ public class Models {
 	 * @return an {@link Optional} object Resource value from the given model,
 	 *         which will be {@link Optional#empty() empty} if no such value
 	 *         exists.
-	 * @since 4.0
 	 */
 	public static Optional<Resource> objectResource(Model m) {
 		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Resource).map(
@@ -125,7 +121,6 @@ public class Models {
 	 *        the model from which to retrieve an object IRI value.
 	 * @return an {@link Optional} object IRI value from the given model, which
 	 *         will be {@link Optional#empty() empty} if no such value exists.
-	 * @since 4.0
 	 */
 	public static Optional<IRI> objectIRI(Model m) {
 		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof IRI).map(r -> (IRI)r).findAny();
@@ -141,7 +136,6 @@ public class Models {
 	 * @return an {@link Optional} object String value from the given model,
 	 *         which will be {@link Optional#empty() empty} if no such value
 	 *         exists.
-	 * @since 4.0
 	 */
 	public static Optional<String> objectString(Model m) {
 		return m.stream().map(st -> st.getObject().stringValue()).findAny();
@@ -164,7 +158,6 @@ public class Models {
 	 *        the model from which to retrieve a subject Resource.
 	 * @return an {@link Optional} subject resource from the given model, which
 	 *         will be {@link Optional#empty() empty} if no such value exists.
-	 * @since 4.0
 	 */
 	public static Optional<Resource> subject(Model m) {
 		return m.stream().map(st -> st.getSubject()).findAny();
@@ -210,7 +203,6 @@ public class Models {
 	 * @return an {@link Optional} subject BNode value from the given model,
 	 *         which will be {@link Optional#empty() empty} if no such value
 	 *         exists.
-	 * @since 4.0
 	 */
 	public static Optional<BNode> subjectBNode(Model m) {
 		return m.stream().map(st -> st.getSubject()).filter(s -> s instanceof BNode).map(
@@ -233,7 +225,6 @@ public class Models {
 	 *        the model from which to retrieve a predicate value.
 	 * @return an {@link Optional} predicate value from the given model, which
 	 *         will be {@link Optional#empty() empty} if no such value exists.
-	 * @since 4.0
 	 */
 	public static Optional<IRI> predicate(Model m) {
 		return m.stream().map(st -> st.getPredicate()).findAny();
@@ -267,7 +258,6 @@ public class Models {
 	 *        vararg argument. If not specified the operations works on the
 	 *        entire Model.
 	 * @return the Model object, containing the updated property value.
-	 * @since 2.8.0
 	 */
 	public static Model setProperty(Model m, Resource subject, IRI property, Value value,
 			Resource... contexts)
@@ -301,7 +291,6 @@ public class Models {
 	 * 
 	 * @see <a href="http://www.w3.org/TR/rdf11-concepts/#graph-isomorphism">RDF
 	 *      Concepts &amp; Abstract Syntax, section 3.6 (Graph Comparison)</a>
-	 * @since 2.8.0
 	 */
 	public static boolean isomorphic(Iterable<? extends Statement> model1,
 			Iterable<? extends Statement> model2)

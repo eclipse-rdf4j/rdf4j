@@ -391,7 +391,6 @@ public class QueryEvaluationUtil {
 	 *        the second argument
 	 * @return true iff the two supplied arguments are argument compatible, false
 	 *         otherwise
-	 * @since 2.7.0
 	 * @see <a
 	 *      href="http://www.w3.org/TR/sparql11-query/#func-arg-compatibility">SPARQL
 	 *      Argument Compatibility Rules</a>

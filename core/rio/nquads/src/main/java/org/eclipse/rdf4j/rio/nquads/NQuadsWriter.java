@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.rio.ntriples.NTriplesWriter;
  * RDFWriter implementation for the {@link org.eclipse.rdf4j.rio.RDFFormat#NQUADS
  * N-Quads} RDF format.
  * 
- * @since 2.7.0
  * @author Joshua Shinavier
  */
 public class NQuadsWriter extends NTriplesWriter {

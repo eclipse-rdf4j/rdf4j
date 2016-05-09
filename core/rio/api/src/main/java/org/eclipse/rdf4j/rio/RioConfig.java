@@ -22,7 +22,6 @@ import org.slf4j.LoggerFactory;
 public class RioConfig implements Serializable {
 
 	/**
-	 * @since 2.7.14
 	 */
 	private static final long serialVersionUID = 2714L;
 
@@ -48,7 +47,6 @@ public class RioConfig implements Serializable {
 	 *        The {@link RioSetting} to fetch a value for.
 	 * @return The value for the parser setting, or the default value if it is
 	 *         not set.
-	 * @since 2.7.0
 	 */
 	@SuppressWarnings("unchecked")
 	public <T extends Object> T get(RioSetting<T> setting) {
@@ -70,7 +68,6 @@ public class RioConfig implements Serializable {
 	 * @param value
 	 *        The value for the parser setting, or null to reset the parser
 	 *        setting to use the default value.
-	 * @since 2.7.0
 	 * @return Either a copy of this config, if it is immutable, or this object,
 	 *         to allow chaining of method calls.
 	 */
@@ -103,7 +100,6 @@ public class RioConfig implements Serializable {
 	 *        The setting to check for.
 	 * @return True if the parser setting has been explicitly set, or false
 	 *         otherwise.
-	 * @since 2.7.0
 	 */
 	public <T extends Object> boolean isSet(RioSetting<T> setting) {
 		return settings.containsKey(setting);
@@ -112,7 +108,6 @@ public class RioConfig implements Serializable {
 	/**
 	 * Resets all settings back to their default values.
 	 * 
-	 * @since 2.7.0
 	 * @return Either a copy of this config, if it is immutable, or this object,
 	 *         to allow chaining of method calls.
 	 */

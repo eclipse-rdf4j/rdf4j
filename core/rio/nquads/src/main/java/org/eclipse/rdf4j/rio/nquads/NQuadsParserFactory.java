@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.rio.RDFParserFactory;
 /**
  * An {@link RDFParserFactory} for N-Quads parsers.
  * 
- * @since 2.7.0
  * @author Peter Ansell
  */
 public class NQuadsParserFactory implements RDFParserFactory {

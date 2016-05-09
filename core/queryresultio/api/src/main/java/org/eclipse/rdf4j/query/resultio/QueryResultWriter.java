@@ -18,14 +18,12 @@ import org.eclipse.rdf4j.rio.WriterConfig;
  * The base interface for writers of query results sets and boolean results.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public interface QueryResultWriter extends QueryResultHandler {
 
 	/**
 	 * Gets the query result format that this writer uses.
 	 * 
-	 * @since 2.7.0
 	 */
 	QueryResultFormat getQueryResultFormat();
 
@@ -42,7 +40,6 @@ public interface QueryResultWriter extends QueryResultHandler {
 	 * @param uri
 	 *        The full URI that is to be represented by the prefix.
 	 * @throws QueryResultHandlerException
-	 * @since 2.7.0
 	 */
 	void handleNamespace(String prefix, String uri)
 		throws QueryResultHandlerException;
@@ -52,7 +49,6 @@ public interface QueryResultWriter extends QueryResultHandler {
 	 * 
 	 * @throws QueryResultHandlerException
 	 *         If there was an error starting the writing of the results.
-	 * @since 2.7.0
 	 */
 	void startDocument()
 		throws QueryResultHandlerException;
@@ -69,7 +65,6 @@ public interface QueryResultWriter extends QueryResultHandler {
 	 * @throws QueryResultHandlerException
 	 *         If there was an error handling the stylesheet. This error is not
 	 *         thrown in cases where stylesheets are not supported.
-	 * @since 2.7.0
 	 */
 	void handleStylesheet(String stylesheetUrl)
 		throws QueryResultHandlerException;
@@ -82,7 +77,6 @@ public interface QueryResultWriter extends QueryResultHandler {
 	 *      Query Results XML Format documentation for head element.</a>
 	 * @throws QueryResultHandlerException
 	 *         If there was an error writing the start of the header.
-	 * @since 2.7.0
 	 */
 	void startHeader()
 		throws QueryResultHandlerException;
@@ -93,7 +87,6 @@ public interface QueryResultWriter extends QueryResultHandler {
 	 * 
 	 * @throws QueryResultHandlerException
 	 *         If there was an error writing the end of the header.
-	 * @since 2.7.0
 	 */
 	void endHeader()
 		throws QueryResultHandlerException;
@@ -103,7 +96,6 @@ public interface QueryResultWriter extends QueryResultHandler {
 	 * 
 	 * @param config
 	 *        a writer configuration object.
-	 * @since 2.7.0
 	 */
 	public void setWriterConfig(WriterConfig config);
 
@@ -112,14 +104,12 @@ public interface QueryResultWriter extends QueryResultHandler {
 	 * 
 	 * @return a writer configuration object representing the current
 	 *         configuration of the writer.
-	 * @since 2.7.0
 	 */
 	public WriterConfig getWriterConfig();
 
 	/**
 	 * @return A collection of {@link RioSetting}s that are supported by this
 	 *         {@link QueryResultWriter}.
-	 * @since 2.7.0
 	 */
 	public Collection<RioSetting<?>> getSupportedSettings();
 

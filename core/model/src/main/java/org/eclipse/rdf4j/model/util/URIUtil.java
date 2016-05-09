@@ -172,7 +172,6 @@ public class URIUtil {
 	 *      6.4 of the RDF Concepts and Abstract Syntax specification</a>
 	 * @see <a href="http://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a>
 	 * @see <a href="http://www.ietf.org/rfc/rfc2396.txt">RFC 2396</a>
-	 * @since 2.7.14
 	 */
 	public static boolean isValidURIReference(String uriRef) {
 

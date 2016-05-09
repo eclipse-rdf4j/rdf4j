@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
  * </p>
  * 
  * @author Michael Grove
- * @since 2.7.0
  */
 public class GroupBuilder<T extends ParsedQuery, E extends SupportsGroups> {
 

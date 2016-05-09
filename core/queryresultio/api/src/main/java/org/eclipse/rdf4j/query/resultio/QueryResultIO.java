@@ -101,7 +101,6 @@ public class QueryResultIO {
 	 * @return An RDFFormat object if a match was found, or
 	 *         {@link Optional#empty()} otherwise.
 	 * @see #getBooleanParserFormatForMIMEType(String, BooleanQueryResultFormat)
-	 * @since 2.7.0
 	 */
 	public static Optional<QueryResultFormat> getBooleanParserFormatForMIMEType(String mimeType) {
 		return BooleanQueryResultParserRegistry.getInstance().getFileFormatForMIMEType(mimeType);
@@ -116,7 +115,6 @@ public class QueryResultIO {
 	 * @return An BooleanQueryResultFormat object if a match was found, or
 	 *         {@link Optional#empty()} otherwise.
 	 * @see #getBooleanParserFormatForFileName(String, BooleanQueryResultFormat)
-	 * @since 2.7.0
 	 */
 	public static Optional<QueryResultFormat> getBooleanParserFormatForFileName(String fileName) {
 		return BooleanQueryResultParserRegistry.getInstance().getFileFormatForFileName(fileName);
@@ -131,7 +129,6 @@ public class QueryResultIO {
 	 * @return An BooleanQueryResultFormat object if a match was found, or
 	 *         {@link Optional#empty()} otherwise.
 	 * @see #getBooleanWriterFormatForMIMEType(String, BooleanQueryResultFormat)
-	 * @since 2.7.0
 	 */
 	public static Optional<QueryResultFormat> getBooleanWriterFormatForMIMEType(String mimeType) {
 		return BooleanQueryResultWriterRegistry.getInstance().getFileFormatForMIMEType(mimeType);
@@ -146,7 +143,6 @@ public class QueryResultIO {
 	 * @return An BooleanQueryResultFormat object if a match was found, or
 	 *         {@link Optional#empty()} otherwise.
 	 * @see #getBooleanWriterFormatForFileName(String, BooleanQueryResultFormat)
-	 * @since 2.7.0
 	 */
 	public static Optional<QueryResultFormat> getBooleanWriterFormatForFileName(String fileName) {
 		return BooleanQueryResultWriterRegistry.getInstance().getFileFormatForFileName(fileName);
@@ -264,7 +260,6 @@ public class QueryResultIO {
 	 * @throws UnsupportedQueryResultFormatException
 	 *         If no writer is available for the specified tuple query result
 	 *         format.
-	 * @since 2.7.0
 	 */
 	public static QueryResultWriter createWriter(QueryResultFormat format, OutputStream out)
 		throws UnsupportedQueryResultFormatException
@@ -467,7 +462,6 @@ public class QueryResultIO {
 	 *         the stream.
 	 * @throws UnsupportedQueryResultFormatException
 	 *         If an unsupported query result file format was specified.
-	 * @since 2.7.0
 	 */
 	public static void writeBoolean(boolean value, QueryResultFormat format, OutputStream out)
 		throws QueryResultHandlerException, UnsupportedQueryResultFormatException

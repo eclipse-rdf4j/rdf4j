@@ -95,7 +95,6 @@ public class Iterations {
 	 *        a source {@link Iteration} for the stream.
 	 * @return a sequential {@link Stream} object which can be used to process
 	 *         the data from the source iteration.
-	 * @since 4.0
 	 */
 	public static <T> Stream<T> stream(Iteration<T, ? extends Exception> iteration) {
 		Spliterator<T> spliterator = new IterationSpliterator<T>(iteration);

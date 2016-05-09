@@ -31,7 +31,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * {@link DatatypeHandler} and {@link LanguageHandler} related methods
  * 
  * @author Peter Ansell
- * @since 2.7.1
  */
 public class RDFParserHelper {
 
@@ -70,7 +69,6 @@ public class RDFParserHelper {
 	 * @throws RDFParseException
 	 *         If there was an error during the process that could not be
 	 *         recovered from, based on settings in the given parser config.
-	 * @since 2.7.1
 	 */
 	public static final Literal createLiteral(String label, String lang, IRI datatype,
 			ParserConfig parserConfig, ParseErrorListener errListener, ValueFactory valueFactory)
@@ -124,7 +122,6 @@ public class RDFParserHelper {
 	 * @throws RDFParseException
 	 *         If there was an error during the process that could not be
 	 *         recovered from, based on settings in the given parser config.
-	 * @since 2.7.4
 	 */
 	public static final Literal createLiteral(String label, String lang, IRI datatype,
 			ParserConfig parserConfig, ParseErrorListener errListener, ValueFactory valueFactory, long lineNo,
@@ -288,7 +285,6 @@ public class RDFParserHelper {
 	 *         If {@link ParserConfig#get(RioSetting)} returns true, and
 	 *         {@link ParserConfig#isNonFatalError(RioSetting)} returns true for
 	 *         the given setting.
-	 * @since 2.7.1
 	 */
 	public static void reportError(String msg, RioSetting<Boolean> relevantSetting, ParserConfig parserConfig,
 			ParseErrorListener errListener)
@@ -335,7 +331,6 @@ public class RDFParserHelper {
 	 *         If {@link ParserConfig#get(RioSetting)} returns true, and
 	 *         {@link ParserConfig#isNonFatalError(RioSetting)} returns true for
 	 *         the given setting.
-	 * @since 2.7.1
 	 */
 	public static void reportError(String msg, long lineNo, long columnNo, RioSetting<Boolean> relevantSetting,
 			ParserConfig parserConfig, ParseErrorListener errListener)
@@ -390,7 +385,6 @@ public class RDFParserHelper {
 	 *         If {@link ParserConfig#get(RioSetting)} returns true, and
 	 *         {@link ParserConfig#isNonFatalError(RioSetting)} returns true for
 	 *         the given setting.
-	 * @since 2.7.1
 	 */
 	public static void reportError(Exception e, long lineNo, long columnNo,
 			RioSetting<Boolean> relevantSetting, ParserConfig parserConfig, ParseErrorListener errListener)
@@ -418,7 +412,6 @@ public class RDFParserHelper {
 	 * {@link #reportFatalError(String, long, long, ParseErrorListener)}
 	 * supplying <tt>-1</tt> for the line- and column number.
 	 * 
-	 * @since 2.7.1
 	 */
 	public static void reportFatalError(String msg, ParseErrorListener errListener)
 		throws RDFParseException
@@ -431,7 +424,6 @@ public class RDFParserHelper {
 	 * registered ParseErrorListener, if any, and throws a
 	 * <tt>ParseException</tt> afterwards.
 	 * 
-	 * @since 2.7.1
 	 */
 	public static void reportFatalError(String msg, long lineNo, long columnNo, ParseErrorListener errListener)
 		throws RDFParseException
@@ -455,7 +447,6 @@ public class RDFParserHelper {
 	 * {@link #reportFatalError(Exception, long, long, ParseErrorListener)}
 	 * supplying <tt>-1</tt> for the line- and column number.
 	 * 
-	 * @since 2.7.1
 	 */
 	public static void reportFatalError(Exception e, ParseErrorListener errListener)
 		throws RDFParseException
@@ -473,7 +464,6 @@ public class RDFParserHelper {
 	 * the ParseErrorListener, assuming that it has already been reported when
 	 * the original ParseException was thrown.
 	 * 
-	 * @since 2.7.1
 	 */
 	public static void reportFatalError(Exception e, long lineNo, long columnNo,
 			ParseErrorListener errListener)

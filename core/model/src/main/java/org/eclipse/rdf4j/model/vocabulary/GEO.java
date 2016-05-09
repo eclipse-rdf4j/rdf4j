@@ -12,7 +12,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
 
 /**
- * @since 2.8.5
  * @version 1.0
  * @see http://www.opengeospatial.org/standards/geosparql
  */

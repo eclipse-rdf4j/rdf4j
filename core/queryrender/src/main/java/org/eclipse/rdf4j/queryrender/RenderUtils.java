@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.model.util.Literals;
  * Utility methods for rendering (parts of) SeRQL and SPARQL query strings.
  * 
  * @author Michael Grove
- * @since 2.7.0
  */
 public final class RenderUtils {
 
@@ -50,7 +49,6 @@ public final class RenderUtils {
 	 * @param theValue
 	 *        the value to render
 	 * @return the value rendered in its SPARQL query string representation
-	 * @since 2.8.0
 	 */
 	public static String toSPARQL(Value theValue) {
 		StringBuilder aBuffer = toSPARQL(theValue, new StringBuilder());
@@ -66,7 +64,6 @@ public final class RenderUtils {
 	 * @param builder
 	 *        the {@link StringBuilder} to append to
 	 * @return the original {@link StringBuilder} with the value appended.
-	 * @since 2.8.0
 	 */
 	public static StringBuilder toSPARQL(Value value, StringBuilder builder) {
 		if (value instanceof IRI) {
@@ -111,7 +108,6 @@ public final class RenderUtils {
 	 * @param theValue
 	 *        the value to render
 	 * @return the value rendered in its query string representation
-	 * @since 2.8.0
 	 */
 	public static String toSeRQL(Value theValue) {
 		StringBuilder aBuffer = new StringBuilder();

@@ -138,7 +138,6 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * Verifies if a transaction is currently active. Throws a
 	 * {@link SailException} if no transaction is active.
 	 * 
-	 * @since 2.7.0
 	 * @throws SailException
 	 *         if no transaction is active.
 	 */

@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.query.Binding;
 /**
  * An implementation of the {@link Binding} interface.
  * 
- * @since 4.0
  * @author Jeen Broekstra
  */
 public class SimpleBinding implements Binding {

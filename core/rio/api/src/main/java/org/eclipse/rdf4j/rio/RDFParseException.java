@@ -76,7 +76,6 @@ public class RDFParseException extends RDF4JException {
 	 *        An error message.
 	 * @param t
 	 *        The source exception.
-	 * @since 2.7.0
 	 */
 	public RDFParseException(String msg, Throwable t) {
 		this(msg, t, -1, -1);
@@ -111,7 +110,6 @@ public class RDFParseException extends RDF4JException {
 	 *        A line number associated with the message.
 	 * @param columnNo
 	 *        A column number associated with the message.
-	 * @since 2.7.0
 	 */
 	public RDFParseException(String msg, Throwable t, long lineNo, long columnNo) {
 		super(msg + getLocationString(lineNo, columnNo), t);

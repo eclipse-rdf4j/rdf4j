@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * A class encapsulating writer settings that XML writers may support.
  * 
  * @author Peter Ansell
- * @since 2.7.3
  */
 public class XMLWriterSettings {
 

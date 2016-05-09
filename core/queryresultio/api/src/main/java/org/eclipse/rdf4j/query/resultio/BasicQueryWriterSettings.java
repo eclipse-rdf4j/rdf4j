@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.rio.helpers.RioSettingImpl;
  * {@link RioSetting} constants to use with {@link QueryResultWriter}s.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public class BasicQueryWriterSettings {
 
@@ -24,7 +23,6 @@ public class BasicQueryWriterSettings {
 	 * <p>
 	 * Defaults to false.
 	 * 
-	 * @since 2.7.0
 	 */
 	public final static RioSetting<Boolean> ADD_SESAME_QNAME = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.query.resultio.addsesameqname", "Add Sesame QName", false);
@@ -35,7 +33,6 @@ public class BasicQueryWriterSettings {
 	 * <p>
 	 * Defaults to "sesamecallback".
 	 * 
-	 * @since 2.7.0
 	 */
 	public static final RioSetting<String> JSONP_CALLBACK = new RioSettingImpl<String>(
 			"org.eclipse.rdf4j.query.resultio.jsonpcallback", "JSONP callback function", "sesamecallback");

@@ -131,7 +131,6 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 	 *        The standard URI that has been assigned to this format by a
 	 *        standards organisation or null if it does not currently have a
 	 *        standard URI.
-	 * @since 2.8.0
 	 */
 	public BooleanQueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
 			Collection<String> fileExtensions, IRI standardURI)

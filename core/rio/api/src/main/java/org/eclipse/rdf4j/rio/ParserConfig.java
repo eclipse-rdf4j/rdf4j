@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.rio.helpers.TriXParserSettings;
 public class ParserConfig extends RioConfig implements Serializable {
 
 	/**
-	 * @since 2.7.0
 	 */
 	private static final long serialVersionUID = 270L;
 
@@ -104,7 +103,6 @@ public class ParserConfig extends RioConfig implements Serializable {
 	 * 
 	 * @param nonFatalErrors
 	 *        The set of parser errors that are relevant to
-	 * @since 2.7.0
 	 * @return Either a copy of this config, if it is immutable, or this object,
 	 *         to allow chaining of method calls.
 	 */
@@ -148,7 +146,6 @@ public class ParserConfig extends RioConfig implements Serializable {
 	 * @return True if the user has setup the parser configuration to indicate
 	 *         that this error is not necessarily fatal and false if the user has
 	 *         not indicated that this error is fatal.
-	 * @since 2.7.0
 	 */
 	public boolean isNonFatalError(RioSetting<?> errorToCheck) {
 		return nonFatalErrors.contains(errorToCheck);

@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.query.impl.SimpleDataset;
  * {@link UpdateExpr} operation.
  * 
  * @author James Leigh
- * @since 2.7.0
  */
 public class UpdateContext {
 

@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * WriterSettings for the N-Triples writer features.
  * 
  * @author Peter Ansell
- * @since 2.8.0
  */
 public class NTriplesWriterSettings {
 
@@ -22,7 +21,6 @@ public class NTriplesWriterSettings {
 	 * <p>
 	 * Defaults to false.
 	 * 
-	 * @since 2.8.0
 	 */
 	public static final RioSetting<Boolean> ESCAPE_UNICODE = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.escapeunicode", "Escape Unicode characters", Boolean.FALSE);

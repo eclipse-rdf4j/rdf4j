@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail;
 /**
  * Indicates that a SAIL's transaction state (active or inactive) cannot be determined.
  * 
- * @since 2.7.0
  * @author Jeen Broekstra
  */
 public class UnknownSailTransactionStateException extends SailException {

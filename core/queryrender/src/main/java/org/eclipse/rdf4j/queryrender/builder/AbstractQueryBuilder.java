@@ -50,7 +50,6 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
  * </p>
  * 
  * @author Michael Grove
- * @since 2.7.0
  */
 public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder<T> {
 

@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.query;
  * encounters an unrecoverable error.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public class BooleanQueryResultHandlerException extends QueryResultHandlerException {
 

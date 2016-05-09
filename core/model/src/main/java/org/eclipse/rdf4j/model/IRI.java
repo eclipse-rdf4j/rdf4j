@@ -27,7 +27,6 @@ package org.eclipse.rdf4j.model;
  * implementation should check this upon object creation.
  * 
  * @see <a href="http://tools.ietf.org/html/rfc3987">RFC 3987</a>
- * @since 4.0.0
  * @author Jeen Broekstra
  */
 @SuppressWarnings("deprecation")

@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.rio.DatatypeHandler;
  * datatypes.
  * 
  * @author Peter Ansell
- * @since 2.7.1
  */
 public class VirtuosoGeometryDatatypeHandler implements DatatypeHandler {
 

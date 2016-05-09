@@ -241,7 +241,6 @@ public interface QueryModelVisitor<X extends Exception> {
 		throws X;
 
 	/**
-	 * @since 2.7.4
 	 */
 	public void meet(ListMemberOperator node)
 			throws X;

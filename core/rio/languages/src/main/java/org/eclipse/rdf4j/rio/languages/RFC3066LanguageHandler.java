@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.rio.LanguageHandler;
  * 
  * @see <a href="http://www.ietf.org/rfc/rfc3066.txt">RFC 3066</a>
  * @author Peter Ansell
- * @since 2.7.0
  */
 public class RFC3066LanguageHandler implements LanguageHandler {
 

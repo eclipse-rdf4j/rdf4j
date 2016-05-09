@@ -53,52 +53,42 @@ interface TransactionXMLConstants {
 	public static final String CONTEXTS_TAG = "contexts";
 
 	/**
-	 * @since 2.7.0
 	 */
 	public static final String SPARQL_UPDATE_TAG = "sparql";
 
 	/**
-	 * @since 2.7.0
 	 */
 	public static final String UPDATE_STRING_TAG = "updateString";
 
 	/**
-	 * @since 2.7.0
 	 */
 	public static final String BASE_URI_ATT = "baseURI";
 
 	/**
-	 * @since 2.7.0
 	 */
 	public static final String INCLUDE_INFERRED_ATT = "includeInferred";
 
 	/**
-	 * @since 2.7.0
 	 */
 	public static final String DATASET_TAG = "dataset";
 
 	/**
-	 * @since 2.7.0
 	 */
 	public static final String GRAPH_TAG = "graph";
 
 	/**
-	 * @since 2.7.0
 	 */
 	public static final String DEFAULT_GRAPHS_TAG = "defaultGraphs";
 
 	/**
-	 * @since 2.7.0
 	 */
 	public static final String NAMED_GRAPHS_TAG = "namedGraphs";
 
 	/**
-	 * @since 2.7.0
 	 */
 	public static final String DEFAULT_REMOVE_GRAPHS_TAG = "defaultRemoveGraphs";
 
 	/**
-	 * @since 2.7.0
 	 */
 	public static final String DEFAULT_INSERT_GRAPH = "defaultInsertGraph";
 

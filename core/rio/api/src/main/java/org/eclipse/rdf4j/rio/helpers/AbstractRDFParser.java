@@ -488,7 +488,6 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * lineNo and columnNo to enhance error messages or exceptions that may be
 	 * generated during the creation of the literal.
 	 * 
-	 * @since 2.7.4
 	 * @see org.eclipse.rdf4j.rio.helpers.RDFParserHelper#createLiteral(String, String,
 	 *      IRI, ParserConfig, ParseErrorListener, ValueFactory, long, long)
 	 */

@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.rio.RDFParserFactory;
  * An {@link RDFParserFactory} for RDF/JSON parsers.
  * 
  * @author Peter Ansell
- * @since 2.7.0
  */
 public class RDFJSONParserFactory implements RDFParserFactory {
 

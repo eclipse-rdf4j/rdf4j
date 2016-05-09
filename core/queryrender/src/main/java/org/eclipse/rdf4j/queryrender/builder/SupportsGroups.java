@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.queryrender.builder;
  * </p>
  * 
  * @author Michael Grove
- * @since 2.7.0
  */
 public interface SupportsGroups<T> {
 

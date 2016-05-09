@@ -340,7 +340,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	/**
 	 * Starts a new transaction if one is not already active.
 	 * 
-	 * @since 2.7.0
 	 * @return <code>true</code> if a new transaction was started,
 	 *         <code>false</code> if a transaction was already active.
 	 * @throws RepositoryException
@@ -359,7 +358,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	 * Invokes {@link #commit()} if supplied boolean condition is
 	 * <code>true</code>.
 	 * 
-	 * @since 2.7.0
 	 * @param condition
 	 *        a boolean condition.
 	 * @throws RepositoryException
@@ -376,7 +374,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	 * Invokes {@link #rollback()} if supplied boolean condition is
 	 * <code>true</code>.
 	 * 
-	 * @since 2.7.0
 	 * @param condition
 	 *        a boolean condition.
 	 * @throws RepositoryException
