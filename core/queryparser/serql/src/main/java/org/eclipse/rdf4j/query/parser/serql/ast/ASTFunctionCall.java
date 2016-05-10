@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.serql.ast;
 
-
 public class ASTFunctionCall extends ASTValueExpr {
 
 	public ASTFunctionCall(int id) {

@@ -1709,7 +1709,6 @@ public abstract class RepositoryConnectionTest {
 		assertThat(testCon2.size(), is(equalTo(2L)));
 	}
 
-
 	@Test
 	public void testSizeDuplicateStatement()
 		throws Exception
@@ -2237,7 +2236,7 @@ public abstract class RepositoryConnectionTest {
 				(Resource)null);
 		con.add(vf.createIRI("urn:test:s4"), vf.createIRI("urn:test:p4"), vf.createIRI("urn:test:o4"),
 
-		vf.createIRI(URN_TEST_OTHER));
+				vf.createIRI(URN_TEST_OTHER));
 		assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(3)));
 		assertThat(Iterations.asList(testCon.getStatements(null, null, null, true)).size(), is(equalTo(4)));
 		assertThat(size(defaultGraph), is(equalTo(3)));

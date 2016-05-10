@@ -62,8 +62,8 @@ public class HTTPMemServer {
 
 		WebAppContext webapp = new WebAppContext();
 		// TODO temporarily disabled so the integration test server shows server-side logging.
-//		webapp.addSystemClass("org.slf4j.");
-//		webapp.addSystemClass("ch.qos.logback.");
+		//		webapp.addSystemClass("org.slf4j.");
+		//		webapp.addSystemClass("ch.qos.logback.");
 		webapp.setContextPath(OPENRDF_CONTEXT);
 		// warPath configured in pom.xml maven-war-plugin configuration
 		webapp.setWar("./target/openrdf-sesame");
@@ -85,8 +85,8 @@ public class HTTPMemServer {
 	public void stop()
 		throws Exception
 	{
-		Repository systemRepo = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL,
-				SystemRepository.ID));
+		Repository systemRepo = new HTTPRepository(
+				Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
 		RepositoryConnection con = systemRepo.getConnection();
 		try {
 			con.clear();
@@ -102,8 +102,8 @@ public class HTTPMemServer {
 	private void createTestRepositories()
 		throws RepositoryException, RepositoryConfigException
 	{
-		Repository systemRep = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL,
-				SystemRepository.ID));
+		Repository systemRep = new HTTPRepository(
+				Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
 
 		// create a (non-inferencing) memory store
 		MemoryStoreConfig memStoreConfig = new MemoryStoreConfig();

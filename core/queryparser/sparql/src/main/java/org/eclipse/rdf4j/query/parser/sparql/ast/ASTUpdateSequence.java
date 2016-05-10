@@ -33,20 +33,20 @@ public class ASTUpdateSequence extends SimpleNode {
 	public void setSourceString(String source) {
 		this.source = source;
 	}
-	
+
 	public String getSourceString() {
 		return source;
 	}
-	
+
 	public List<ASTUpdateContainer> getUpdateContainers() {
-		
+
 		List<ASTUpdateContainer> result = jjtGetChildren(ASTUpdateContainer.class);
 		ASTUpdateSequence seq = jjtGetChild(ASTUpdateSequence.class);
-		
+
 		if (seq != null) {
 			result.addAll(seq.getUpdateContainers());
 		}
-		
+
 		return result;
 	}
 }

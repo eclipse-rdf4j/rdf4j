@@ -19,49 +19,83 @@ public class GEOF {
 	public static final String NAMESPACE = "http://www.opengis.net/def/function/geosparql/";
 
 	public static final URI DISTANCE;
+
 	public static final URI BUFFER;
+
 	public static final URI CONVEX_HULL;
+
 	public static final URI INTERSECTION;
+
 	public static final URI UNION;
+
 	public static final URI DIFFERENCE;
+
 	public static final URI SYM_DIFFERENCE;
+
 	public static final URI ENVELOPE;
+
 	public static final URI BOUNDARY;
+
 	public static final URI GET_SRID;
 
 	public static final URI RELATE;
 
 	public static final URI SF_EQUALS;
+
 	public static final URI SF_DISJOINT;
+
 	public static final URI SF_INTERSECTS;
+
 	public static final URI SF_TOUCHES;
+
 	public static final URI SF_CROSSES;
+
 	public static final URI SF_WITHIN;
+
 	public static final URI SF_CONTAINS;
+
 	public static final URI SF_OVERLAPS;
 
 	public static final URI EH_EQUALS;
+
 	public static final URI EH_DISJOINT;
+
 	public static final URI EH_MEET;
+
 	public static final URI EH_OVERLAP;
+
 	public static final URI EH_COVERS;
+
 	public static final URI EH_COVERED_BY;
+
 	public static final URI EH_INSIDE;
+
 	public static final URI EH_CONTAINS;
 
 	public static final URI RCC8_EQ;
+
 	public static final URI RCC8_DC;
+
 	public static final URI RCC8_EC;
+
 	public static final URI RCC8_PO;
+
 	public static final URI RCC8_TPPI;
+
 	public static final URI RCC8_TPP;
+
 	public static final URI RCC8_NTPP;
+
 	public static final URI RCC8_NTPPI;
 
 	public static final String UOM_NAMESPACE = "http://www.opengis.net/def/uom/OGC/1.0/";
+
 	public static final URI UOM_DEGREE;
+
 	public static final URI UOM_RADIAN;
+
 	public static final URI UOM_UNITY;
+
 	public static final URI UOM_METRE;
 
 	static {

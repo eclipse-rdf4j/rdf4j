@@ -16,8 +16,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.rio.DatatypeHandler;
 
 /**
- * An implementation of a datatype handler that can process {@link XMLSchema}
- * datatypes.
+ * An implementation of a datatype handler that can process {@link XMLSchema} datatypes.
  * <p>
  * Implemented using {@link XMLDatatypeUtil}.
  * 
@@ -45,10 +44,10 @@ public class XMLSchemaDatatypeHandler implements DatatypeHandler {
 		throws LiteralUtilException
 	{
 		if (isRecognizedDatatype(datatypeUri)) {
-			if(literalValue == null) {
+			if (literalValue == null) {
 				throw new NullPointerException("Literal value cannot be null");
 			}
-			
+
 			return XMLDatatypeUtil.isValidValue(literalValue, datatypeUri);
 		}
 
@@ -60,10 +59,10 @@ public class XMLSchemaDatatypeHandler implements DatatypeHandler {
 		throws LiteralUtilException
 	{
 		if (isRecognizedDatatype(datatypeUri)) {
-			if(literalValue == null) {
+			if (literalValue == null) {
 				throw new NullPointerException("Literal value cannot be null");
 			}
-			
+
 			try {
 				return valueFactory.createLiteral(XMLDatatypeUtil.normalize(literalValue, datatypeUri),
 						datatypeUri);
@@ -72,7 +71,7 @@ public class XMLSchemaDatatypeHandler implements DatatypeHandler {
 				throw new LiteralUtilException("Could not normalise XMLSchema literal", e);
 			}
 		}
-		
+
 		throw new LiteralUtilException("Could not normalise XMLSchema literal");
 	}
 

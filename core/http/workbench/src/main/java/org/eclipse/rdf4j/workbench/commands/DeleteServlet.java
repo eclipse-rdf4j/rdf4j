@@ -23,15 +23,13 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.json.JSONObject;
 
 /**
- * Servlet responsible for presenting the list of repositories, and deleting the
- * chosen one.
+ * Servlet responsible for presenting the list of repositories, and deleting the chosen one.
  */
 public class DeleteServlet extends TransformationServlet {
 
 	/**
-	 * Deletes the repository with the given ID, then redirects to the repository
-	 * selection page. If given a "checkSafe" parameter, instead returns JSON
-	 * response with safe field set to true if safe, false if not.
+	 * Deletes the repository with the given ID, then redirects to the repository selection page. If given a
+	 * "checkSafe" parameter, instead returns JSON response with safe field set to true if safe, false if not.
 	 */
 	@Override
 	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)

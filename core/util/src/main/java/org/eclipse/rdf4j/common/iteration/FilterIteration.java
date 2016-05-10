@@ -11,9 +11,8 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.NoSuchElementException;
 
 /**
- * A CloseableIteration that wraps another Iteration, applying a filter on the
- * objects that are returned. Subclasses must implement the <tt>accept</tt>
- * method to indicate which objects should be returned.
+ * A CloseableIteration that wraps another Iteration, applying a filter on the objects that are returned.
+ * Subclasses must implement the <tt>accept</tt> method to indicate which objects should be returned.
  */
 public abstract class FilterIteration<E, X extends Exception> extends IterationWrapper<E, X> {
 
@@ -77,14 +76,13 @@ public abstract class FilterIteration<E, X extends Exception> extends IterationW
 	}
 
 	/**
-	 * Tests whether or not the specified object should be returned by this
-	 * Iteration. All objects from the wrapped Iteration pass through this method
-	 * in the same order as they are coming from the wrapped Iteration.
+	 * Tests whether or not the specified object should be returned by this Iteration. All objects from the
+	 * wrapped Iteration pass through this method in the same order as they are coming from the wrapped
+	 * Iteration.
 	 * 
 	 * @param object
 	 *        The object to be tested.
-	 * @return <tt>true</tt> if the object should be returned, <tt>false</tt>
-	 *         otherwise.
+	 * @return <tt>true</tt> if the object should be returned, <tt>false</tt> otherwise.
 	 * @throws X
 	 */
 	protected abstract boolean accept(E object)

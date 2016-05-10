@@ -33,18 +33,16 @@ import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 class NamespaceDeclProcessor extends AbstractASTVisitor {
 
 	/**
-	 * Processes prefix declarations in queries. This method collects all
-	 * prefixes that are declared in the supplied query, verifies that prefixes
-	 * are not redefined and replaces any {@link ASTQName} nodes in the query
-	 * with equivalent {@link ASTIRI} nodes.
+	 * Processes prefix declarations in queries. This method collects all prefixes that are declared in the
+	 * supplied query, verifies that prefixes are not redefined and replaces any {@link ASTQName} nodes in the
+	 * query with equivalent {@link ASTIRI} nodes.
 	 * 
 	 * @param qc
 	 *        The query that needs to be processed.
-	 * @return A map containing the prefixes that are declared in the query (key)
-	 *         and the namespace they map to (value).
+	 * @return A map containing the prefixes that are declared in the query (key) and the namespace they map
+	 *         to (value).
 	 * @throws MalformedQueryException
-	 *         If the query contains redefined prefixes or qnames that use
-	 *         undefined prefixes.
+	 *         If the query contains redefined prefixes or qnames that use undefined prefixes.
 	 */
 	public static Map<String, String> process(ASTQueryContainer qc)
 		throws MalformedQueryException
@@ -63,8 +61,8 @@ class NamespaceDeclProcessor extends AbstractASTVisitor {
 					// duplicate, ignore
 				}
 				else {
-					throw new MalformedQueryException("Multiple namespace declarations for prefix '" + prefix
-							+ "'");
+					throw new MalformedQueryException(
+							"Multiple namespace declarations for prefix '" + prefix + "'");
 				}
 			}
 			else {

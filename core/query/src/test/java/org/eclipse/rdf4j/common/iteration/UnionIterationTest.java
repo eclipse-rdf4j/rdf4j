@@ -14,14 +14,13 @@ import org.junit.Test;
 public class UnionIterationTest extends CloseableIterationTest {
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration()
-	{
-		return new UnionIteration<String, Exception>(createStringList1Iteration(), createStringList2Iteration());
+	protected CloseableIteration<String, Exception> createTestIteration() {
+		return new UnionIteration<String, Exception>(createStringList1Iteration(),
+				createStringList2Iteration());
 	}
 
 	@Override
-	protected int getTestIterationSize()
-	{
+	protected int getTestIterationSize() {
 		return stringList1.size() + stringList2.size();
 	}
 
@@ -32,7 +31,8 @@ public class UnionIterationTest extends CloseableIterationTest {
 		SingletonIteration<String, Exception> iter1 = new SingletonIteration<String, Exception>("1");
 		SingletonIteration<String, Exception> iter2 = new SingletonIteration<String, Exception>("2");
 		SingletonIteration<String, Exception> iter3 = new SingletonIteration<String, Exception>("3");
-		UnionIteration<String, Exception> unionIter = new UnionIteration<String, Exception>(iter1, iter2, iter3);
+		UnionIteration<String, Exception> unionIter = new UnionIteration<String, Exception>(iter1, iter2,
+				iter3);
 
 		unionIter.next();
 		unionIter.close();

@@ -22,14 +22,12 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
 /**
- * Forward-chaining RDF Schema inferencer, using the rules from the <a
- * href="http://www.w3.org/TR/2004/REC-rdf-mt-20040210/">RDF Semantics
- * Recommendation (10 February 2004)</a>. This inferencer can be used to add RDF
- * Schema semantics to any Sail that returns {@link InferencerConnection}s from
- * their {@link Sail#getConnection()} method.
+ * Forward-chaining RDF Schema inferencer, using the rules from the
+ * <a href="http://www.w3.org/TR/2004/REC-rdf-mt-20040210/">RDF Semantics Recommendation (10 February
+ * 2004)</a>. This inferencer can be used to add RDF Schema semantics to any Sail that returns
+ * {@link InferencerConnection}s from their {@link Sail#getConnection()} method.
  */
-class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInferencerConnection
-{
+class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInferencerConnection {
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -70,8 +68,8 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	/**
-	 * Adds all basic set of axiom statements from which the complete set can be
-	 * inferred to the underlying Sail.
+	 * Adds all basic set of axiom statements from which the complete set can be inferred to the underlying
+	 * Sail.
 	 */
 	@Override
 	protected void addAxiomStatements()
@@ -162,7 +160,8 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	@Override
-	protected int applyRules(Model iteration) throws SailException
+	protected int applyRules(Model iteration)
+		throws SailException
 	{
 		newThisIteration = iteration;
 		int nofInferred = 0;
@@ -302,7 +301,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 				result = applyRuleX1();
 				break;
 			default:
-				throw new AssertionError("Unexpected rule: "+rule);
+				throw new AssertionError("Unexpected rule: " + rule);
 		}
 		// ThreadLog.trace("Rule " + RDFSRules.RULENAMES[rule] + " inferred " +
 		// result + " new triples.");
@@ -317,7 +316,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model iter = newThisIteration.filter(null, null, null);
 
-		for(Statement st : iter) {
+		for (Statement st : iter) {
 			boolean added = addInferredStatement(st.getPredicate(), RDF.TYPE, RDF.PROPERTY);
 
 			if (added) {
@@ -336,7 +335,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model ntIter = newThisIteration.filter(null, null, null);
 
-		for(Statement nt : ntIter) {
+		for (Statement nt : ntIter) {
 			Resource xxx = nt.getSubject();
 			IRI aaa = nt.getPredicate();
 
@@ -368,7 +367,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model ntIter = newThisIteration.filter(null, RDFS.DOMAIN, null);
 
-		for(Statement nt : ntIter) {
+		for (Statement nt : ntIter) {
 			Resource aaa = nt.getSubject();
 			Value zzz = nt.getObject();
 
@@ -400,7 +399,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model ntIter = newThisIteration.filter(null, null, null);
 
-		for(Statement nt : ntIter) {
+		for (Statement nt : ntIter) {
 			IRI aaa = nt.getPredicate();
 			Value uuu = nt.getObject();
 
@@ -433,7 +432,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model ntIter = newThisIteration.filter(null, RDFS.RANGE, null);
 
-		for(Statement nt : ntIter) {
+		for (Statement nt : ntIter) {
 			Resource aaa = nt.getSubject();
 			Value zzz = nt.getObject();
 
@@ -468,7 +467,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model iter = newThisIteration.filter(null, null, null);
 
-		for(Statement st : iter) {
+		for (Statement st : iter) {
 			boolean added = addInferredStatement(st.getSubject(), RDF.TYPE, RDFS.RESOURCE);
 			if (added) {
 				nofInferred++;
@@ -486,7 +485,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model iter = newThisIteration.filter(null, null, null);
 
-		for(Statement st : iter) {
+		for (Statement st : iter) {
 			Value uuu = st.getObject();
 			if (uuu instanceof Resource) {
 				boolean added = addInferredStatement((Resource)uuu, RDF.TYPE, RDFS.RESOURCE);
@@ -508,7 +507,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model ntIter = newThisIteration.filter(null, RDFS.SUBPROPERTYOF, null);
 
-		for(Statement nt : ntIter) {
+		for (Statement nt : ntIter) {
 			Resource aaa = nt.getSubject();
 			Value bbb = nt.getObject();
 
@@ -544,7 +543,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model ntIter = newThisIteration.filter(null, RDFS.SUBPROPERTYOF, null);
 
-		for(Statement nt : ntIter) {
+		for (Statement nt : ntIter) {
 			Resource bbb = nt.getSubject();
 			Value ccc = nt.getObject();
 
@@ -576,7 +575,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model iter = newThisIteration.filter(null, RDF.TYPE, RDF.PROPERTY);
 
-		for(Statement st : iter) {
+		for (Statement st : iter) {
 			Resource xxx = st.getSubject();
 			boolean added = addInferredStatement(xxx, RDFS.SUBPROPERTYOF, xxx);
 			if (added) {
@@ -595,7 +594,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model ntIter = newThisIteration.filter(null, null, null);
 
-		for(Statement nt : ntIter) {
+		for (Statement nt : ntIter) {
 			Resource xxx = nt.getSubject();
 			IRI aaa = nt.getPredicate();
 			Value yyy = nt.getObject();
@@ -628,7 +627,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model ntIter = newThisIteration.filter(null, RDFS.SUBPROPERTYOF, null);
 
-		for(Statement nt : ntIter) {
+		for (Statement nt : ntIter) {
 			Resource aaa = nt.getSubject();
 			Value bbb = nt.getObject();
 
@@ -662,7 +661,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model iter = newThisIteration.filter(null, RDF.TYPE, RDFS.CLASS);
 
-		for(Statement st : iter) {
+		for (Statement st : iter) {
 			Resource xxx = st.getSubject();
 
 			boolean added = addInferredStatement(xxx, RDFS.SUBCLASSOF, RDFS.RESOURCE);
@@ -682,7 +681,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model ntIter = newThisIteration.filter(null, RDFS.SUBCLASSOF, null);
 
-		for(Statement nt : ntIter) {
+		for (Statement nt : ntIter) {
 			Resource xxx = nt.getSubject();
 			Value yyy = nt.getObject();
 
@@ -715,7 +714,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model ntIter = newThisIteration.filter(null, RDF.TYPE, null);
 
-		for(Statement nt : ntIter) {
+		for (Statement nt : ntIter) {
 			Resource aaa = nt.getSubject();
 			Value xxx = nt.getObject();
 
@@ -750,7 +749,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model iter = newThisIteration.filter(null, RDF.TYPE, RDFS.CLASS);
 
-		for(Statement st : iter) {
+		for (Statement st : iter) {
 			Resource xxx = st.getSubject();
 
 			boolean added = addInferredStatement(xxx, RDFS.SUBCLASSOF, xxx);
@@ -771,7 +770,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model ntIter = newThisIteration.filter(null, RDFS.SUBCLASSOF, null);
 
-		for(Statement nt : ntIter) {
+		for (Statement nt : ntIter) {
 			Resource xxx = nt.getSubject();
 			Value yyy = nt.getObject();
 
@@ -807,7 +806,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model ntIter = newThisIteration.filter(null, RDFS.SUBCLASSOF, null);
 
-		for(Statement nt : ntIter) {
+		for (Statement nt : ntIter) {
 			Resource yyy = nt.getSubject();
 			Value zzz = nt.getObject();
 
@@ -841,7 +840,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model iter = newThisIteration.filter(null, RDF.TYPE, RDFS.CONTAINERMEMBERSHIPPROPERTY);
 
-		for(Statement st : iter) {
+		for (Statement st : iter) {
 			Resource xxx = st.getSubject();
 
 			boolean added = addInferredStatement(xxx, RDFS.SUBPROPERTYOF, RDFS.MEMBER);
@@ -861,7 +860,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		Model iter = newThisIteration.filter(null, RDF.TYPE, RDFS.DATATYPE);
 
-		for(Statement st : iter) {
+		for (Statement st : iter) {
 			Resource xxx = st.getSubject();
 
 			boolean added = addInferredStatement(xxx, RDFS.SUBCLASSOF, RDFS.LITERAL);
@@ -884,7 +883,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 		String prefix = RDF.NAMESPACE + "_";
 		Model iter = newThisIteration.filter(null, null, null);
 
-		for(Statement st : iter) {
+		for (Statement st : iter) {
 			IRI predNode = st.getPredicate();
 			String predURI = predNode.toString();
 

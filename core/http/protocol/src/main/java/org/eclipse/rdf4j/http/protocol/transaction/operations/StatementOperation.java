@@ -55,23 +55,20 @@ public abstract class StatementOperation extends ContextOperation {
 	}
 
 	@Override
-	public boolean equals(Object other)
-	{
+	public boolean equals(Object other) {
 		if (other instanceof StatementOperation) {
 			StatementOperation o = (StatementOperation)other;
 
 			return ObjectUtil.nullEquals(getSubject(), o.getSubject())
 					&& ObjectUtil.nullEquals(getPredicate(), o.getPredicate())
-					&& ObjectUtil.nullEquals(getObject(), o.getObject())
-					&& super.equals(other);
+					&& ObjectUtil.nullEquals(getObject(), o.getObject()) && super.equals(other);
 		}
 
 		return false;
 	}
 
 	@Override
-	public int hashCode()
-	{
+	public int hashCode() {
 		int hashCode = ObjectUtil.nullHashCode(getSubject());
 		hashCode = 31 * hashCode + ObjectUtil.nullHashCode(getPredicate());
 		hashCode = 31 * hashCode + ObjectUtil.nullHashCode(getObject());

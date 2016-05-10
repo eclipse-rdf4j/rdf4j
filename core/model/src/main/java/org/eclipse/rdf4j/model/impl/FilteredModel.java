@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.model.Value;
 
 /**
  * Applies a basic graph pattern filter to what triples can be see.
- * 
  */
 public abstract class FilteredModel extends AbstractModel {
 
@@ -169,7 +168,8 @@ public abstract class FilteredModel extends AbstractModel {
 	}
 
 	@Override
-	public final void removeTermIteration(Iterator<Statement> iter, Resource s, IRI p, Value o, Resource... c)
+	public final void removeTermIteration(Iterator<Statement> iter, Resource s, IRI p, Value o,
+			Resource... c)
 	{
 		if (s == null) {
 			s = subj;
@@ -190,8 +190,8 @@ public abstract class FilteredModel extends AbstractModel {
 	}
 
 	/**
-	 * Called by aggregate sets when a term has been removed from a term
-	 * iterator. At least one of the last four terms will be non-empty.
+	 * Called by aggregate sets when a term has been removed from a term iterator. At least one of the last
+	 * four terms will be non-empty.
 	 * 
 	 * @param iter
 	 *        The iterator used to navigate the live set (never null)

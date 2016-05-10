@@ -62,8 +62,7 @@ public class NTriplesHandlingTest extends AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Helper method to write the given model to N-Triples and return an
-	 * InputStream containing the results.
+	 * Helper method to write the given model to N-Triples and return an InputStream containing the results.
 	 * 
 	 * @param statements
 	 * @return An {@link InputStream} containing the results.

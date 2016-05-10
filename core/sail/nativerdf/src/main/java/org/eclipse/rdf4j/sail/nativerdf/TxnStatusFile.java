@@ -21,14 +21,13 @@ class TxnStatusFile {
 	public static enum TxnStatus {
 
 		/**
-		 * No active transaction. This occurs if no transaction has been started
-		 * yet, or if all transactions have been committed or rolled back.
+		 * No active transaction. This occurs if no transaction has been started yet, or if all transactions
+		 * have been committed or rolled back.
 		 */
 		NONE,
 
 		/**
-		 * A transaction has been started, but was not yet committed or rolled
-		 * back.
+		 * A transaction has been started, but was not yet committed or rolled back.
 		 */
 		ACTIVE,
 
@@ -58,8 +57,7 @@ class TxnStatusFile {
 	private final NioFile nioFile;
 
 	/**
-	 * Creates a new transaction status file. New files are initialized with
-	 * {@link TxnStatus#NONE}.
+	 * Creates a new transaction status file. New files are initialized with {@link TxnStatus#NONE}.
 	 * 
 	 * @param dataDir
 	 *        The directory for the transaction status file.
@@ -102,8 +100,8 @@ class TxnStatusFile {
 	/**
 	 * Reads the transaction status from file.
 	 * 
-	 * @return The read transaction status, or {@link TxnStatus#UNKNOWN} when the
-	 *         file contains an unrecognized status string.
+	 * @return The read transaction status, or {@link TxnStatus#UNKNOWN} when the file contains an
+	 *         unrecognized status string.
 	 * @throws IOException
 	 *         If the transaction status file could not be read.
 	 */

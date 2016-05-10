@@ -9,8 +9,7 @@
 package org.eclipse.rdf4j.common.iteration;
 
 /**
- * An Iteration that skips the first <tt>offset</tt> elements from an
- * underlying Iteration.
+ * An Iteration that skips the first <tt>offset</tt> elements from an underlying Iteration.
  */
 public class OffsetIteration<E, X extends Exception> extends FilterIteration<E, X> {
 

@@ -17,9 +17,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
- * The SPARQL built-in {@link Function} STRLEN, as defined in <a
- * href="http://www.w3.org/TR/sparql11-query/#func-strlen">SPARQL Query Language
- * for RDF</a>
+ * The SPARQL built-in {@link Function} STRLEN, as defined in
+ * <a href="http://www.w3.org/TR/sparql11-query/#func-strlen">SPARQL Query Language for RDF</a>
  * 
  * @author Jeen Broekstra
  */
@@ -50,7 +49,8 @@ public class StrLen implements Function {
 				return valueFactory.createLiteral(length.toString(), XMLSchema.INTEGER);
 			}
 			else {
-				throw new ValueExprEvaluationException("unexpected input value for strlen function: " + argValue);
+				throw new ValueExprEvaluationException(
+						"unexpected input value for strlen function: " + argValue);
 			}
 		}
 		else {

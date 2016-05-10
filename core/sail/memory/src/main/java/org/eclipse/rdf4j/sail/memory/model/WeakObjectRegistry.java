@@ -15,12 +15,10 @@ import java.util.Map;
 import java.util.WeakHashMap;
 
 /**
- * An object registry that uses weak references to keep track of the stored
- * objects. The registry can be used to retrieve stored objects using another,
- * equivalent object. As such, it can be used to prevent the use of duplicates
- * in another data structure, reducing memory usage. The objects that are being
- * stored should properly implement the {@link Object#equals} and
- * {@link Object#hashCode} methods.
+ * An object registry that uses weak references to keep track of the stored objects. The registry can be used
+ * to retrieve stored objects using another, equivalent object. As such, it can be used to prevent the use of
+ * duplicates in another data structure, reducing memory usage. The objects that are being stored should
+ * properly implement the {@link Object#equals} and {@link Object#hashCode} methods.
  */
 public class WeakObjectRegistry<E> extends AbstractSet<E> {
 
@@ -45,12 +43,10 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	}
 
 	/**
-	 * Constructs a new WeakObjectRegistry containing the elements in the
-	 * specified collection.
+	 * Constructs a new WeakObjectRegistry containing the elements in the specified collection.
 	 * 
 	 * @param c
-	 *        The collection whose elements are to be placed into this object
-	 *        registry.
+	 *        The collection whose elements are to be placed into this object registry.
 	 * @throws NullPointerException
 	 *         If the specified collection is null.
 	 */
@@ -64,13 +60,12 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	 *---------*/
 
 	/**
-	 * Retrieves the stored object that is equal to the supplied <tt>key</tt>
-	 * object.
+	 * Retrieves the stored object that is equal to the supplied <tt>key</tt> object.
 	 * 
 	 * @param key
 	 *        The object that should be used as the search key for the operation.
-	 * @return A stored object that is equal to the supplied key, or
-	 *         <tt>null</tt> if no such object was found.
+	 * @return A stored object that is equal to the supplied key, or <tt>null</tt> if no such object was
+	 *         found.
 	 */
 	public E get(Object key) {
 		WeakReference<E> weakRef = objectMap.get(key);
@@ -83,26 +78,22 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	}
 
 	@Override
-	public Iterator<E> iterator()
-	{
+	public Iterator<E> iterator() {
 		return objectMap.keySet().iterator();
 	}
 
 	@Override
-	public int size()
-	{
+	public int size() {
 		return objectMap.size();
 	}
 
 	@Override
-	public boolean contains(Object o)
-	{
+	public boolean contains(Object o) {
 		return get(o) != null;
 	}
 
 	@Override
-	public boolean add(E object)
-	{
+	public boolean add(E object) {
 		WeakReference<E> ref = new WeakReference<E>(object);
 
 		ref = objectMap.put(object, ref);
@@ -118,15 +109,13 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	}
 
 	@Override
-	public boolean remove(Object o)
-	{
+	public boolean remove(Object o) {
 		WeakReference<E> ref = objectMap.remove(o);
 		return ref != null && ref.get() != null;
 	}
 
 	@Override
-	public void clear()
-	{
+	public void clear() {
 		objectMap.clear();
 	}
 }

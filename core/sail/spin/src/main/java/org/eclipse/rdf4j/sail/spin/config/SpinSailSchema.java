@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.spin.config;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
-
 /**
  * Vocabulary constants for RDF-based configuration of the SpinSail.
  * 
@@ -19,8 +18,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 public class SpinSailSchema {
 
 	/**
-	 * The SpinSail schema namespace (
-	 * <tt>http://www.openrdf.org/config/sail/spin#</tt>).
+	 * The SpinSail schema namespace ( <tt>http://www.openrdf.org/config/sail/spin#</tt>).
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail/spin#";
 

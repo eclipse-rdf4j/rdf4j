@@ -68,11 +68,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Test suite for evaluation of SPARQL queries involving SERVICE clauses. The
- * test suite starts up an embedded Jetty server running Sesame, which functions
- * as the SPARQL endpoint to test against. The test is configured to execute the
- * W3C service tests located in
- * sesame-sparql-testsuite/src/main/resources/testcases-service
+ * Test suite for evaluation of SPARQL queries involving SERVICE clauses. The test suite starts up an embedded
+ * Jetty server running Sesame, which functions as the SPARQL endpoint to test against. The test is configured
+ * to execute the W3C service tests located in sesame-sparql-testsuite/src/main/resources/testcases-service
  * 
  * @author Jeen Broekstra
  * @author Andreas Schwarte
@@ -129,8 +127,8 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	}
 
 	/**
-	 * Get the repository url, initialized repositories are called endpoint1
-	 * endpoint2 .. endpoint%MAX_ENDPOINTS%
+	 * Get the repository url, initialized repositories are called endpoint1 endpoint2 ..
+	 * endpoint%MAX_ENDPOINTS%
 	 * 
 	 * @param i
 	 *        the index of the repository, starting with 1
@@ -141,8 +139,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	}
 
 	/**
-	 * Get the repository, initialized repositories are called endpoint1
-	 * endpoint2 .. endpoint%MAX_ENDPOINTS%
+	 * Get the repository, initialized repositories are called endpoint1 endpoint2 .. endpoint%MAX_ENDPOINTS%
 	 * 
 	 * @param i
 	 *        the index of the repository, starting with 1
@@ -153,15 +150,14 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	}
 
 	/**
-	 * Prepare a particular test, and load the specified data. Note: the
-	 * repositories are cleared before loading data
+	 * Prepare a particular test, and load the specified data. Note: the repositories are cleared before
+	 * loading data
 	 * 
 	 * @param localData
-	 *        a local data file that is added to local repository, use null if
-	 *        there is no local data
+	 *        a local data file that is added to local repository, use null if there is no local data
 	 * @param endpointData
-	 *        a list of endpoint data files, dataFile at index is loaded to
-	 *        endpoint%i%, use empty list for no remote data
+	 *        a list of endpoint data files, dataFile at index is loaded to endpoint%i%, use empty list for no
+	 *        remote data
 	 * @throws Exception
 	 */
 	protected void prepareTest(String localData, List<String> endpointData)
@@ -204,8 +200,8 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		RepositoryConnection con = rep.getConnection();
 		try {
 			con.clear();
-			con.add(dataset, "",
-					Rio.getParserFormatForFileName(datasetFile).orElseThrow(Rio.unsupportedFormat(datasetFile)));
+			con.add(dataset, "", Rio.getParserFormatForFileName(datasetFile).orElseThrow(
+					Rio.unsupportedFormat(datasetFile)));
 		}
 		finally {
 			dataset.close();
@@ -312,8 +308,8 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	public void test2()
 		throws Exception
 	{
-		prepareTest(null,
-				Arrays.asList("/testcases-service/data02endpoint1.ttl", "/testcases-service/data02endpoint2.ttl"));
+		prepareTest(null, Arrays.asList("/testcases-service/data02endpoint1.ttl",
+				"/testcases-service/data02endpoint2.ttl"));
 		execute("/testcases-service/service02.rq", "/testcases-service/service02.srx", false);
 	}
 
@@ -321,8 +317,8 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	public void test3()
 		throws Exception
 	{
-		prepareTest(null,
-				Arrays.asList("/testcases-service/data03endpoint1.ttl", "/testcases-service/data03endpoint2.ttl"));
+		prepareTest(null, Arrays.asList("/testcases-service/data03endpoint1.ttl",
+				"/testcases-service/data03endpoint2.ttl"));
 		execute("/testcases-service/service03.rq", "/testcases-service/service03.srx", false);
 	}
 
@@ -338,8 +334,8 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	public void test5()
 		throws Exception
 	{
-		prepareTest("/testcases-service/data05.ttl",
-				Arrays.asList("/testcases-service/data05endpoint1.ttl", "/testcases-service/data05endpoint2.ttl"));
+		prepareTest("/testcases-service/data05.ttl", Arrays.asList("/testcases-service/data05endpoint1.ttl",
+				"/testcases-service/data05endpoint2.ttl"));
 		execute("/testcases-service/service05.rq", "/testcases-service/service05.srx", false);
 	}
 
@@ -452,8 +448,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	}
 
 	/**
-	 * Execute a testcase, both queryFile and expectedResultFile must be files
-	 * located on the class path.
+	 * Execute a testcase, both queryFile and expectedResultFile must be files located on the class path.
 	 * 
 	 * @param queryFile
 	 * @param expectedResultFile
@@ -628,19 +623,14 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 			expectedResultTable.beforeFirst();
 
 			/*
-			 * StringBuilder message = new StringBuilder(128);
-			 * message.append("\n============ "); message.append(getName());
-			 * message.append(" =======================\n");
-			 * message.append("Expected result: \n"); while
-			 * (expectedResultTable.hasNext()) {
+			 * StringBuilder message = new StringBuilder(128); message.append("\n============ ");
+			 * message.append(getName()); message.append(" =======================\n"); message.append(
+			 * "Expected result: \n"); while (expectedResultTable.hasNext()) {
 			 * message.append(expectedResultTable.next()); message.append("\n"); }
-			 * message.append("============="); StringUtil.appendN('=',
-			 * getName().length(), message);
-			 * message.append("========================\n"); message.append("Query
-			 * result: \n"); while (queryResultTable.hasNext()) {
-			 * message.append(queryResultTable.next()); message.append("\n"); }
-			 * message.append("============="); StringUtil.appendN('=',
-			 * getName().length(), message);
+			 * message.append("============="); StringUtil.appendN('=', getName().length(), message);
+			 * message.append("========================\n"); message.append("Query result: \n"); while
+			 * (queryResultTable.hasNext()) { message.append(queryResultTable.next()); message.append("\n"); }
+			 * message.append("============="); StringUtil.appendN('=', getName().length(), message);
 			 * message.append("========================\n");
 			 */
 
@@ -706,27 +696,14 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 			logger.error(message.toString());
 			fail(message.toString());
 		}
-		/* debugging only: print out result when test succeeds 
-		else {
-			queryResultTable.beforeFirst();
-		
-			List<BindingSet> queryBindings = Iterations.asList(queryResultTable);
-			StringBuilder message = new StringBuilder(128);
-		
-			message.append("\n============ ");
-			message.append(getName());
-			message.append(" =======================\n");
-		
-			message.append(" =======================\n");
-			message.append("query result: \n");
-			for (BindingSet bs: queryBindings) {
-				message.append(bs);
-				message.append("\n");
-			}
-			
-			System.out.print(message.toString());
-		}
-		*/
+		/*
+		 * debugging only: print out result when test succeeds else { queryResultTable.beforeFirst();
+		 * List<BindingSet> queryBindings = Iterations.asList(queryResultTable); StringBuilder message = new
+		 * StringBuilder(128); message.append("\n============ "); message.append(getName()); message.append(
+		 * " =======================\n"); message.append(" =======================\n"); message.append(
+		 * "query result: \n"); for (BindingSet bs: queryBindings) { message.append(bs); message.append("\n");
+		 * } System.out.print(message.toString()); }
+		 */
 	}
 
 	/**
@@ -742,25 +719,19 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		if (!Models.isomorphic(expectedResult, queryResult)) {
 			// Don't use RepositoryUtil.difference, it reports incorrect diffs
 			/*
-			 * Collection<? extends Statement> unexpectedStatements =
-			 * RepositoryUtil.difference(queryResult, expectedResult); Collection<?
-			 * extends Statement> missingStatements =
-			 * RepositoryUtil.difference(expectedResult, queryResult);
-			 * StringBuilder message = new StringBuilder(128);
-			 * message.append("\n=======Diff: "); message.append(getName());
-			 * message.append("========================\n"); if
-			 * (!unexpectedStatements.isEmpty()) { message.append("Unexpected
-			 * statements in result: \n"); for (Statement st :
-			 * unexpectedStatements) { message.append(st.toString());
-			 * message.append("\n"); } message.append("============="); for (int i =
-			 * 0; i < getName().length(); i++) { message.append("="); }
-			 * message.append("========================\n"); } if
-			 * (!missingStatements.isEmpty()) { message.append("Statements missing
-			 * in result: \n"); for (Statement st : missingStatements) {
-			 * message.append(st.toString()); message.append("\n"); }
-			 * message.append("============="); for (int i = 0; i <
-			 * getName().length(); i++) { message.append("="); }
-			 * message.append("========================\n"); }
+			 * Collection<? extends Statement> unexpectedStatements = RepositoryUtil.difference(queryResult,
+			 * expectedResult); Collection<? extends Statement> missingStatements =
+			 * RepositoryUtil.difference(expectedResult, queryResult); StringBuilder message = new
+			 * StringBuilder(128); message.append("\n=======Diff: "); message.append(getName());
+			 * message.append("========================\n"); if (!unexpectedStatements.isEmpty()) {
+			 * message.append("Unexpected statements in result: \n"); for (Statement st :
+			 * unexpectedStatements) { message.append(st.toString()); message.append("\n"); }
+			 * message.append("============="); for (int i = 0; i < getName().length(); i++) {
+			 * message.append("="); } message.append("========================\n"); } if
+			 * (!missingStatements.isEmpty()) { message.append("Statements missing in result: \n"); for
+			 * (Statement st : missingStatements) { message.append(st.toString()); message.append("\n"); }
+			 * message.append("============="); for (int i = 0; i < getName().length(); i++) {
+			 * message.append("="); } message.append("========================\n"); }
 			 */
 			StringBuilder message = new StringBuilder(128);
 			message.append("\n============ ");

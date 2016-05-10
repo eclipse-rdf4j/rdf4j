@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.memory;
 
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -115,10 +114,11 @@ public class MemoryStoreConnection extends SailSourceConnection {
 		sailChangedEvent.setStatementsRemoved(true);
 		return ret;
 	}
-	
+
 	@Override
 	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
-		return new SimpleEvaluationStrategy(tripleSource, dataset, getFederatedServiceResolver(), sail.getIterationCacheSyncThreshold());
+		return new SimpleEvaluationStrategy(tripleSource, dataset, getFederatedServiceResolver(),
+				sail.getIterationCacheSyncThreshold());
 	}
 
 	@Override

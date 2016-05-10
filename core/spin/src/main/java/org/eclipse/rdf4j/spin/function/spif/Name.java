@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.Statements;
 import org.eclipse.rdf4j.spin.function.AbstractSpinFunction;
 
-
 public class Name extends AbstractSpinFunction implements Function {
 
 	public Name() {
@@ -31,9 +30,12 @@ public class Name extends AbstractSpinFunction implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+	public Value evaluate(ValueFactory valueFactory, Value... args)
+		throws ValueExprEvaluationException
+	{
 		if (args.length != 1) {
-			throw new ValueExprEvaluationException(String.format("%s requires 1 argument, got %d", getURI(), args.length));
+			throw new ValueExprEvaluationException(
+					String.format("%s requires 1 argument, got %d", getURI(), args.length));
 		}
 		if (args[0] instanceof Literal) {
 			return valueFactory.createLiteral(((Literal)args[0]).getLabel());
@@ -41,7 +43,8 @@ public class Name extends AbstractSpinFunction implements Function {
 		else {
 			QueryPreparer qp = getCurrentQueryPreparer();
 			try {
-				List<Literal> labels = Iterations.asList(Statements.getObjectLiterals((Resource) args[0], RDFS.LABEL, qp.getTripleSource()));
+				List<Literal> labels = Iterations.asList(
+						Statements.getObjectLiterals((Resource)args[0], RDFS.LABEL, qp.getTripleSource()));
 				return !labels.isEmpty() ? labels.get(0) : valueFactory.createLiteral(args[0].stringValue());
 			}
 			catch (QueryEvaluationException e) {

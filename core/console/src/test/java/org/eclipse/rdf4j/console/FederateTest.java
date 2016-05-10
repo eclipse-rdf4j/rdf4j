@@ -86,7 +86,6 @@ public class FederateTest extends AbstractCommandTest {
 		federate = new Federate(streams, state);
 	}
 
-
 	@After
 	public void tearDown()
 		throws RDF4JException
@@ -256,7 +255,8 @@ public class FederateTest extends AbstractCommandTest {
 		verify(streams, never()).writeError(anyString());
 		verify(streams, times(1)).readln("Federation Description (optional):");
 		assertThat(manager.getRepositoryInfo(FED_ID).getDescription(), is(equalTo(FED_DESCRIPTION)));
-		SailRepositoryConfig sailRepoConfig = (SailRepositoryConfig)manager.getRepositoryConfig(FED_ID).getRepositoryImplConfig();
+		SailRepositoryConfig sailRepoConfig = (SailRepositoryConfig)manager.getRepositoryConfig(
+				FED_ID).getRepositoryImplConfig();
 		FederationConfig fedSailConfig = (FederationConfig)sailRepoConfig.getSailImplConfig();
 		assertThat(fedSailConfig.isReadOnly(), is(equalTo(readonly)));
 		assertThat(fedSailConfig.isDistinct(), is(equalTo(distinct)));

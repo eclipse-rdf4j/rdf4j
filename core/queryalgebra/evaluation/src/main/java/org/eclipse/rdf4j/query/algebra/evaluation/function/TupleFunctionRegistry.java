@@ -31,8 +31,7 @@ public class TupleFunctionRegistry extends ServiceRegistry<String, TupleFunction
 	}
 
 	@Override
-	protected String getKey(TupleFunction function)
-	{
+	protected String getKey(TupleFunction function) {
 		return function.getURI();
 	}
 }

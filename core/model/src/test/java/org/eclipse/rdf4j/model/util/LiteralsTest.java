@@ -60,8 +60,7 @@ public class LiteralsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#getByteValue(org.eclipse.rdf4j.model.Literal, byte)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.util.Literals#getByteValue(org.eclipse.rdf4j.model.Literal, byte)} .
 	 */
 	@Ignore
 	@Test
@@ -73,8 +72,7 @@ public class LiteralsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#getByteValue(org.eclipse.rdf4j.model.Value, byte)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.util.Literals#getByteValue(org.eclipse.rdf4j.model.Value, byte)} .
 	 */
 	@Ignore
 	@Test
@@ -86,8 +84,7 @@ public class LiteralsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#getShortValue(org.eclipse.rdf4j.model.Literal, short)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.util.Literals#getShortValue(org.eclipse.rdf4j.model.Literal, short)} .
 	 */
 	@Ignore
 	@Test
@@ -99,8 +96,7 @@ public class LiteralsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#getShortValue(org.eclipse.rdf4j.model.Value, short)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.util.Literals#getShortValue(org.eclipse.rdf4j.model.Value, short)} .
 	 */
 	@Ignore
 	@Test
@@ -112,8 +108,7 @@ public class LiteralsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#getIntValue(org.eclipse.rdf4j.model.Literal, int)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.util.Literals#getIntValue(org.eclipse.rdf4j.model.Literal, int)} .
 	 */
 	@Ignore
 	@Test
@@ -125,8 +120,7 @@ public class LiteralsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#getIntValue(org.eclipse.rdf4j.model.Value, int)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.util.Literals#getIntValue(org.eclipse.rdf4j.model.Value, int)} .
 	 */
 	@Ignore
 	@Test
@@ -138,8 +132,7 @@ public class LiteralsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#getLongValue(org.eclipse.rdf4j.model.Literal, long)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.util.Literals#getLongValue(org.eclipse.rdf4j.model.Literal, long)} .
 	 */
 	@Ignore
 	@Test
@@ -151,8 +144,7 @@ public class LiteralsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#getLongValue(org.eclipse.rdf4j.model.Value, long)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.util.Literals#getLongValue(org.eclipse.rdf4j.model.Value, long)} .
 	 */
 	@Ignore
 	@Test
@@ -216,8 +208,7 @@ public class LiteralsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#getFloatValue(org.eclipse.rdf4j.model.Literal, float)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.util.Literals#getFloatValue(org.eclipse.rdf4j.model.Literal, float)} .
 	 */
 	@Ignore
 	@Test
@@ -229,8 +220,7 @@ public class LiteralsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#getFloatValue(org.eclipse.rdf4j.model.Value, float)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.util.Literals#getFloatValue(org.eclipse.rdf4j.model.Value, float)} .
 	 */
 	@Ignore
 	@Test
@@ -242,8 +232,7 @@ public class LiteralsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#getDoubleValue(org.eclipse.rdf4j.model.Literal, double)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.util.Literals#getDoubleValue(org.eclipse.rdf4j.model.Literal, double)} .
 	 */
 	@Ignore
 	@Test
@@ -255,8 +244,7 @@ public class LiteralsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#getDoubleValue(org.eclipse.rdf4j.model.Value, double)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.util.Literals#getDoubleValue(org.eclipse.rdf4j.model.Value, double)} .
 	 */
 	@Ignore
 	@Test
@@ -281,8 +269,7 @@ public class LiteralsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#getBooleanValue(org.eclipse.rdf4j.model.Value, boolean)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.util.Literals#getBooleanValue(org.eclipse.rdf4j.model.Value, boolean)} .
 	 */
 	@Ignore
 	@Test
@@ -797,8 +784,7 @@ public class LiteralsTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
 	 */
 	@Test
 	public void testCanCreateLiteralObjectBoolean()
@@ -811,8 +797,7 @@ public class LiteralsTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
 	 */
 	@Test
 	public void testCanCreateLiteralObjectByte()
@@ -825,8 +810,7 @@ public class LiteralsTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
 	 */
 	@Test
 	public void testCanCreateLiteralObjectDouble()
@@ -839,8 +823,7 @@ public class LiteralsTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
 	 */
 	@Test
 	public void testCanCreateLiteralObjectFloat()
@@ -853,8 +836,7 @@ public class LiteralsTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
 	 */
 	@Test
 	public void testCanCreateLiteralObjectInteger()
@@ -867,8 +849,7 @@ public class LiteralsTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
 	 */
 	@Test
 	public void testCanCreateLiteralObjectLong()
@@ -881,8 +862,7 @@ public class LiteralsTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
 	 */
 	@Test
 	public void testCanCreateLiteralObjectShort()
@@ -895,8 +875,7 @@ public class LiteralsTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
 	 */
 	@Test
 	public void testCanCreateLiteralObjectXMLGregorianCalendar()
@@ -911,8 +890,7 @@ public class LiteralsTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
 	 */
 	@Test
 	public void testCanCreateLiteralObjectDate()
@@ -925,8 +903,7 @@ public class LiteralsTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
 	 */
 	@Test
 	public void testCanCreateLiteralObjectString()
@@ -939,8 +916,7 @@ public class LiteralsTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#canCreateLiteral(Object)} .
 	 */
 	@Test
 	public void testCanCreateLiteralObjectObject()

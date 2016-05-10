@@ -29,8 +29,8 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * 
  * @author James Leigh
  */
-public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryException> implements
-		QueryOptimizer
+public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryException>
+		implements QueryOptimizer
 {
 
 	private final Collection<? extends RepositoryConnection> members;
@@ -66,7 +66,8 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	private Resource[] getContexts(Var var) {
-		return (var == null || !var.hasValue()) ? new Resource[0] : new Resource[] { (Resource)var.getValue() };
+		return (var == null || !var.hasValue()) ? new Resource[0]
+				: new Resource[] { (Resource)var.getValue() };
 	}
 
 }

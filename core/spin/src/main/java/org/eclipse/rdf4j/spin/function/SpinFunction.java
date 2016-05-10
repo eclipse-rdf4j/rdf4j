@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.spin.Argument;
 
 import com.google.common.base.Joiner;
 
-
 public class SpinFunction extends AbstractSpinFunction implements TransientFunction {
 
 	private ParsedQuery parsedQuery;
@@ -57,7 +56,7 @@ public class SpinFunction extends AbstractSpinFunction implements TransientFunct
 
 	@Override
 	public String toString() {
-		return getURI()+"("+ Joiner.on(", ").join(arguments)+")";
+		return getURI() + "(" + Joiner.on(", ").join(arguments) + ")";
 	}
 
 	@Override
@@ -66,8 +65,8 @@ public class SpinFunction extends AbstractSpinFunction implements TransientFunct
 	{
 		QueryPreparer qp = getCurrentQueryPreparer();
 		Value result;
-		if(parsedQuery instanceof ParsedBooleanQuery) {
-			ParsedBooleanQuery askQuery = (ParsedBooleanQuery) parsedQuery;
+		if (parsedQuery instanceof ParsedBooleanQuery) {
+			ParsedBooleanQuery askQuery = (ParsedBooleanQuery)parsedQuery;
 			BooleanQuery queryOp = qp.prepare(askQuery);
 			addBindings(queryOp, arguments, args);
 			try {
@@ -77,16 +76,17 @@ public class SpinFunction extends AbstractSpinFunction implements TransientFunct
 				throw new ValueExprEvaluationException(e);
 			}
 		}
-		else if(parsedQuery instanceof ParsedTupleQuery) {
-			ParsedTupleQuery selectQuery = (ParsedTupleQuery) parsedQuery;
+		else if (parsedQuery instanceof ParsedTupleQuery) {
+			ParsedTupleQuery selectQuery = (ParsedTupleQuery)parsedQuery;
 			TupleQuery queryOp = qp.prepare(selectQuery);
 			addBindings(queryOp, arguments, args);
 			try {
 				TupleQueryResult queryResult = queryOp.evaluate();
-				if(queryResult.hasNext()) {
+				if (queryResult.hasNext()) {
 					BindingSet bs = queryResult.next();
-					if(bs.size() != 1) {
-						throw new ValueExprEvaluationException("Only a single result variables is supported: "+bs);
+					if (bs.size() != 1) {
+						throw new ValueExprEvaluationException(
+								"Only a single result variables is supported: " + bs);
 					}
 					result = bs.iterator().next().getValue();
 				}
@@ -99,14 +99,13 @@ public class SpinFunction extends AbstractSpinFunction implements TransientFunct
 			}
 		}
 		else {
-			throw new IllegalStateException("Unexpected query: "+parsedQuery);
+			throw new IllegalStateException("Unexpected query: " + parsedQuery);
 		}
 		return result;
 	}
 
-	private static void addBindings(Query query, List<Argument> arguments, Value... args)
-	{
-		for(int i=0; i<args.length; i++) {
+	private static void addBindings(Query query, List<Argument> arguments, Value... args) {
+		for (int i = 0; i < args.length; i++) {
 			Argument argument = arguments.get(i);
 			query.setBinding(argument.getPredicate().getLocalName(), args[i]);
 		}

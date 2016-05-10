@@ -19,9 +19,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * The SPARQL built-in {@link Function} ABS, as defined in <a
- * href="http://www.w3.org/TR/sparql11-query/#func-abs">SPARQL Query Language
- * for RDF</a>
+ * The SPARQL built-in {@link Function} ABS, as defined in
+ * <a href="http://www.w3.org/TR/sparql11-query/#func-abs">SPARQL Query Language for RDF</a>
  * 
  * @author Jeen Broekstra
  */
@@ -42,13 +41,12 @@ public class Abs implements Function {
 			Literal literal = (Literal)args[0];
 
 			IRI datatype = literal.getDatatype();
-			
+
 			// ABS function accepts only numeric literals
-			if (datatype != null && XMLDatatypeUtil.isNumericDatatype(datatype))
-			{
+			if (datatype != null && XMLDatatypeUtil.isNumericDatatype(datatype)) {
 				if (XMLDatatypeUtil.isDecimalDatatype(datatype)) {
 					BigDecimal absoluteValue = literal.decimalValue().abs();
-					
+
 					return valueFactory.createLiteral(absoluteValue.toPlainString(), datatype);
 				}
 				else if (XMLDatatypeUtil.isFloatingPointDatatype(datatype)) {
@@ -56,7 +54,8 @@ public class Abs implements Function {
 					return valueFactory.createLiteral(Double.toString(absoluteValue), datatype);
 				}
 				else {
-					throw new ValueExprEvaluationException("unexpected datatype for function operand: " + args[0]);
+					throw new ValueExprEvaluationException(
+							"unexpected datatype for function operand: " + args[0]);
 				}
 			}
 			else {

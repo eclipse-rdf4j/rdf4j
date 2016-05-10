@@ -13,8 +13,7 @@ import org.eclipse.rdf4j.sail.SailIsolationLevelTest;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
- * An extension of {@link SailIsolationLevelTest} for testing the class
- * {@link MemoryStore}.
+ * An extension of {@link SailIsolationLevelTest} for testing the class {@link MemoryStore}.
  */
 public class MemoryStoreIsolationLevelTest extends SailIsolationLevelTest {
 

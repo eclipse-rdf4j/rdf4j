@@ -14,8 +14,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
 
 /**
- * A {@link TupleQueryResultWriterFactory} for writers of SPARQL/TSV tuple query
- * results.
+ * A {@link TupleQueryResultWriterFactory} for writers of SPARQL/TSV tuple query results.
  * 
  * @author Jeen Broekstra
  */

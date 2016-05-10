@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.query.resultio;
 import java.io.OutputStream;
 
 /**
- * Returns {@link TupleQueryResultWriter}s for a specific tuple query result
- * format.
+ * Returns {@link TupleQueryResultWriter}s for a specific tuple query result format.
  * 
  * @author Arjohn Kampman
  */
@@ -23,8 +22,7 @@ public interface TupleQueryResultWriterFactory {
 	TupleQueryResultFormat getTupleQueryResultFormat();
 
 	/**
-	 * Returns a TupleQueryResultWriter instance that will write to the supplied
-	 * output stream.
+	 * Returns a TupleQueryResultWriter instance that will write to the supplied output stream.
 	 * 
 	 * @param out
 	 *        The OutputStream to write the result to.

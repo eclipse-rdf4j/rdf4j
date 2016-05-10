@@ -54,7 +54,7 @@ public class SimpleResponseView implements View {
 		response.setStatus(sc.intValue());
 
 		response.setContentType(CONTENT_TYPE);
-		
+
 		if (model.containsKey(CUSTOM_HEADERS_KEY)) {
 			Map<String, String> customHeaders = (Map<String, String>)model.get(CUSTOM_HEADERS_KEY);
 			if (customHeaders != null) {

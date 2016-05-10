@@ -18,20 +18,23 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class MemorySeRQLQueryTest extends SeRQLQueryTestCase {
 
-	public static Test suite() throws Exception {
+	public static Test suite()
+		throws Exception
+	{
 		return SeRQLQueryTestCase.suite(new Factory() {
-			public Test createTest(String name, String dataFile,
-					List<String> graphNames, String queryFile,
-					String resultFile, String entailment) {
-				return new MemorySeRQLQueryTest(name, dataFile, graphNames,
-						queryFile, resultFile, entailment);
+
+			public Test createTest(String name, String dataFile, List<String> graphNames, String queryFile,
+					String resultFile, String entailment)
+			{
+				return new MemorySeRQLQueryTest(name, dataFile, graphNames, queryFile, resultFile,
+						entailment);
 			}
 		});
 	}
 
-	public MemorySeRQLQueryTest(String name, String dataFile,
-			List<String> graphNames, String queryFile, String resultFile,
-			String entailment) {
+	public MemorySeRQLQueryTest(String name, String dataFile, List<String> graphNames, String queryFile,
+			String resultFile, String entailment)
+	{
 		super(name, dataFile, graphNames, queryFile, resultFile, entailment);
 	}
 

@@ -13,9 +13,8 @@ import java.util.Spliterators;
 import java.util.function.Consumer;
 
 /**
- * A {@link Spliterator} implementation that wraps an {@link Iteration}. It
- * handles occurrence of checked exceptions by wrapping them in
- * RuntimeExceptions, and in addition ensures that the wrapped Iteration is
+ * A {@link Spliterator} implementation that wraps an {@link Iteration}. It handles occurrence of checked
+ * exceptions by wrapping them in RuntimeExceptions, and in addition ensures that the wrapped Iteration is
  * closed when exhausted (if it's a {@link CloseableIteration}).
  *
  * @author Jeen Broekstra
@@ -25,10 +24,9 @@ public class IterationSpliterator<T> extends Spliterators.AbstractSpliterator<T>
 	private final Iteration<T, ? extends Exception> iteration;
 
 	/**
-	 * Creates a {@link Spliterator} implementation that wraps the supplied
-	 * {@link Iteration}. It handles occurrence of checked exceptions by wrapping
-	 * them in RuntimeExceptions, and in addition ensures that the wrapped
-	 * Iteration is closed when exhausted (if it's a {@link CloseableIteration}).
+	 * Creates a {@link Spliterator} implementation that wraps the supplied {@link Iteration}. It handles
+	 * occurrence of checked exceptions by wrapping them in RuntimeExceptions, and in addition ensures that
+	 * the wrapped Iteration is closed when exhausted (if it's a {@link CloseableIteration}).
 	 * 
 	 * @param iteration
 	 *        the iteration to wrap

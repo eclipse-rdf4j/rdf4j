@@ -13,26 +13,25 @@ package org.eclipse.rdf4j.query.algebra;
 public class InsertData extends AbstractQueryModelNode implements UpdateExpr {
 
 	private final String dataBlock;
-	
+
 	public InsertData(String dataBlock) {
 		this.dataBlock = dataBlock;
 	}
-	
+
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{
 		visitor.meet(this);
 	}
-	
+
 	public String getDataBlock() {
 		return dataBlock;
 	}
 
-
 	@Override
 	public boolean equals(Object other) {
-		if(other instanceof InsertData) {
+		if (other instanceof InsertData) {
 			InsertData o = (InsertData)other;
 			return dataBlock.equals(o.dataBlock);
 		}

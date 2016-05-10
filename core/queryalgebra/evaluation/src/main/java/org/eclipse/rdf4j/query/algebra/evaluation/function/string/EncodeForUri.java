@@ -18,9 +18,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
- * The SPARQL built-in {@link Function} ENCODE_FOR_URI, as defined in <a
- * href="http://www.w3.org/TR/sparql11-query/#func-encode">SPARQL Query Language
- * for RDF</a>
+ * The SPARQL built-in {@link Function} ENCODE_FOR_URI, as defined in
+ * <a href="http://www.w3.org/TR/sparql11-query/#func-encode">SPARQL Query Language for RDF</a>
  * 
  * @author Jeen Broekstra
  * @author Arjohn Kampman
@@ -35,8 +34,8 @@ public class EncodeForUri implements Function {
 		throws ValueExprEvaluationException
 	{
 		if (args.length != 1) {
-			throw new ValueExprEvaluationException("ENCODE_FOR_URI requires exactly 1 argument, got "
-					+ args.length);
+			throw new ValueExprEvaluationException(
+					"ENCODE_FOR_URI requires exactly 1 argument, got " + args.length);
 		}
 
 		if (args[0] instanceof Literal) {
@@ -57,7 +56,7 @@ public class EncodeForUri implements Function {
 	}
 
 	private String encodeUri(String uri) {
-				
+
 		StringBuilder buf = new StringBuilder(uri.length() * 2);
 
 		int uriLen = uri.length();
@@ -71,13 +70,13 @@ public class EncodeForUri implements Function {
 				// use UTF-8 hex encoding for character.
 				try {
 					byte[] utf8 = Character.toString(c).getBytes("UTF-8");
-					
-					for (byte b: utf8) {
+
+					for (byte b : utf8) {
 						// Escape character
 						buf.append('%');
-						
+
 						char cb = (char)(b & 0xFF);
-						
+
 						String hexVal = Integer.toHexString(cb).toUpperCase();
 
 						// Ensure use of two characters
@@ -87,7 +86,7 @@ public class EncodeForUri implements Function {
 
 						buf.append(hexVal);
 					}
-						
+
 				}
 				catch (UnsupportedEncodingException e) {
 					// UTF-8 is always supported

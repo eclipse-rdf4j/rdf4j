@@ -26,8 +26,7 @@ import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 
 /**
- * All requests are serviced by this Servlet, though it usually delegates to
- * other Servlets.
+ * All requests are serviced by this Servlet, though it usually delegates to other Servlets.
  */
 public class WorkbenchGateway extends AbstractServlet {
 
@@ -75,8 +74,8 @@ public class WorkbenchGateway extends AbstractServlet {
 	}
 
 	/**
-	 * Returns the value of the default-server configuration variable. Often,
-	 * this is simply a relative path on the same HTTP server.
+	 * Returns the value of the default-server configuration variable. Often, this is simply a relative path
+	 * on the same HTTP server.
 	 * 
 	 * @return the path to the default Sesame server instance
 	 */
@@ -85,11 +84,10 @@ public class WorkbenchGateway extends AbstractServlet {
 	}
 
 	/**
-	 * Whether the server path is fixed, which is when the change-server-path
-	 * configuration value is not set.
+	 * Whether the server path is fixed, which is when the change-server-path configuration value is not set.
 	 * 
-	 * @return true, if the change-server-path configuration variable is not
-	 *         set, meaning that changing the server is blocked
+	 * @return true, if the change-server-path configuration variable is not set, meaning that changing the
+	 *         server is blocked
 	 */
 	public boolean isServerFixed() {
 		return getChangeServerPath() == null;
@@ -195,8 +193,7 @@ public class WorkbenchGateway extends AbstractServlet {
 	 *        the servlet request
 	 * @param name
 	 *        the name of the optional parameter
-	 * @return the value of the parameter, or an empty String if it is not
-	 *         present.
+	 * @return the value of the parameter, or an empty String if it is not present.
 	 */
 	private String getOptionalParameter(final HttpServletRequest req, final String name) {
 		String value = req.getParameter(name);
@@ -278,13 +275,11 @@ public class WorkbenchGateway extends AbstractServlet {
 	}
 
 	/**
-	 * Returns the full URL to the default server on the same server as the
-	 * given request.
+	 * Returns the full URL to the default server on the same server as the given request.
 	 * 
 	 * @param req
 	 *        the request to find the default server relative to
-	 * @return the full URL to the default server on the same server as the
-	 *         given request
+	 * @return the full URL to the default server on the same server as the given request
 	 */
 	private String getDefaultServer(final HttpServletRequest req) {
 		String server = getDefaultServerPath();

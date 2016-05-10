@@ -19,13 +19,13 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * A SearchIndex is a one-stop-shop abstraction of a Lucene index. It takes care
- * of proper synchronization of IndexReaders, IndexWriters and IndexSearchers in
- * a way that is suitable for a LuceneSail.
+ * A SearchIndex is a one-stop-shop abstraction of a Lucene index. It takes care of proper synchronization of
+ * IndexReaders, IndexWriters and IndexSearchers in a way that is suitable for a LuceneSail.
  * 
  * @see LuceneSail
  */
 public interface SearchIndex {
+
 	void initialize(Properties parameters)
 		throws Exception;
 
@@ -48,10 +48,9 @@ public interface SearchIndex {
 	void shutDown()
 		throws IOException;
 
-
 	/**
-	 * Returns whether the provided literal is accepted by the LuceneIndex to be
-	 * indexed. It for instance does not make much since to index xsd:float.
+	 * Returns whether the provided literal is accepted by the LuceneIndex to be indexed. It for instance does
+	 * not make much since to index xsd:float.
 	 * 
 	 * @param literal
 	 *        the literal to be accepted
@@ -71,10 +70,9 @@ public interface SearchIndex {
 		throws IOException;
 
 	/**
-	 * Commits any changes done to the LuceneIndex since the last commit. The
-	 * semantics is synchronous to SailConnection.commit(), i.e. the LuceneIndex
-	 * should be committed/rollbacked whenever the LuceneSailConnection is
-	 * committed/rollbacked.
+	 * Commits any changes done to the LuceneIndex since the last commit. The semantics is synchronous to
+	 * SailConnection.commit(), i.e. the LuceneIndex should be committed/rollbacked whenever the
+	 * LuceneSailConnection is committed/rollbacked.
 	 */
 	void commit()
 		throws IOException;
@@ -83,21 +81,21 @@ public interface SearchIndex {
 		throws IOException;
 
 	/**
-	 * Indexes the specified Statement.
-	 * This should be called from within a begin-commit-rollback block.
+	 * Indexes the specified Statement. This should be called from within a begin-commit-rollback block.
 	 */
-	void addStatement(Statement statement) throws IOException;
+	void addStatement(Statement statement)
+		throws IOException;
 
 	/**
-	 * Removes the specified Statement from the indexes.
-	 * This should be called from within a begin-commit-rollback block.
+	 * Removes the specified Statement from the indexes. This should be called from within a
+	 * begin-commit-rollback block.
 	 */
-	void removeStatement(Statement statement) throws IOException;
+	void removeStatement(Statement statement)
+		throws IOException;
 
 	/**
-	 * Add many statements at the same time, remove many statements at the same
-	 * time. Ordering by resource has to be done inside this method. The passed
-	 * added/removed sets are disjunct, no statement can be in both.
+	 * Add many statements at the same time, remove many statements at the same time. Ordering by resource has
+	 * to be done inside this method. The passed added/removed sets are disjunct, no statement can be in both.
 	 * This should be called from within a begin-commit-rollback block.
 	 * 
 	 * @param added
@@ -110,20 +108,19 @@ public interface SearchIndex {
 
 	/**
 	 * This should be called from within a begin-commit-rollback block.
+	 * 
 	 * @param contexts
 	 * @param sail
-	 *        - the underlying native sail where to read the missing triples from
-	 *        after deletion
+	 *        - the underlying native sail where to read the missing triples from after deletion
 	 * @throws SailException
 	 */
 	void clearContexts(Resource... contexts)
 		throws IOException;
 
 	/**
-	 * Add a complete Lucene Document based on these statements. Do not search
-	 * for an existing document with the same subject id. (assume the existing
-	 * document was deleted).
-	 * This should be called from within a begin-commit-rollback block.
+	 * Add a complete Lucene Document based on these statements. Do not search for an existing document with
+	 * the same subject id. (assume the existing document was deleted). This should be called from within a
+	 * begin-commit-rollback block.
 	 * 
 	 * @param statements
 	 *        the statements that make up the resource

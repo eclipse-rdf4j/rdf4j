@@ -33,8 +33,7 @@ public class UnionIterator<E> extends LookAheadIterator<E> {
 	 *--------------*/
 
 	/**
-	 * Creates a new UnionIterator that returns the bag union of the results of
-	 * a number of Iterators.
+	 * Creates a new UnionIterator that returns the bag union of the results of a number of Iterators.
 	 * 
 	 * @param args
 	 *        The Iterators containing the elements to iterate over.
@@ -55,8 +54,7 @@ public class UnionIterator<E> extends LookAheadIterator<E> {
 	 *--------------*/
 
 	@Override
-	protected E getNextElement()
-	{
+	protected E getNextElement() {
 		if (currentIter.hasNext()) {
 			return currentIter.next();
 		}

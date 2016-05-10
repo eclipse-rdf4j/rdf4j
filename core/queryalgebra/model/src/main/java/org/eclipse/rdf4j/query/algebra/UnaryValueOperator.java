@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * An abstract superclass for unary value operators which, by definition, has
- * one argument.
+ * An abstract superclass for unary value operators which, by definition, has one argument.
  */
 public abstract class UnaryValueOperator extends AbstractQueryModelNode implements ValueExpr {
 

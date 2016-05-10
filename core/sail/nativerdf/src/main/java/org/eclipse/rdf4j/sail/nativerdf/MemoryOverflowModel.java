@@ -33,24 +33,32 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Model implementation that stores in a {@link TreeModel} until more than
- * 10KB statements are added and the estimated memory usage is more than the
- * amount of free memory available. Once the threshold is cross this
+ * Model implementation that stores in a {@link TreeModel} until more than 10KB statements are added and the
+ * estimated memory usage is more than the amount of free memory available. Once the threshold is cross this
  * implementation seamlessly changes to a disk based {@link SailSourceModel}.
  * 
  * @author James Leigh
- * 
  */
 abstract class MemoryOverflowModel extends AbstractModel {
+
 	private static final long serialVersionUID = 4119844228099208169L;
+
 	private static final Runtime RUNTIME = Runtime.getRuntime();
+
 	private static final int LARGE_BLOCK = 10000;
+
 	final Logger logger = LoggerFactory.getLogger(MemoryOverflowModel.class);
+
 	private TreeModel memory;
+
 	transient File dataDir;
+
 	transient SailStore store;
+
 	transient SailSourceModel disk;
+
 	private long baseline = 0;
+
 	private long maxBlockSize = 0;
 
 	public MemoryOverflowModel() {
@@ -62,8 +70,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		addAll(model);
 	}
 
-	public MemoryOverflowModel(Set<Namespace> namespaces,
-			Collection<? extends Statement> c) {
+	public MemoryOverflowModel(Set<Namespace> namespaces, Collection<? extends Statement> c) {
 		this(namespaces);
 		addAll(c);
 	}
@@ -100,8 +107,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		return memory.removeNamespace(prefix);
 	}
 
-	public boolean contains(Resource subj, IRI pred, Value obj,
-			Resource... contexts) {
+	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return getDelegate().contains(subj, pred, obj, contexts);
 	}
 
@@ -110,8 +116,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		return getDelegate().add(subj, pred, obj, contexts);
 	}
 
-	public boolean remove(Resource subj, IRI pred, Value obj,
-			Resource... contexts) {
+	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return getDelegate().remove(subj, pred, obj, contexts);
 	}
 
@@ -127,9 +132,9 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		return getDelegate().clear(contexts);
 	}
 
-	public Model filter(final Resource subj, final IRI pred, final Value obj,
-			final Resource... contexts) {
+	public Model filter(final Resource subj, final IRI pred, final Value obj, final Resource... contexts) {
 		return new FilteredModel(this, subj, pred, obj, contexts) {
+
 			private static final long serialVersionUID = -475666402618133101L;
 
 			@Override
@@ -139,31 +144,32 @@ abstract class MemoryOverflowModel extends AbstractModel {
 
 			@Override
 			public Iterator<Statement> iterator() {
-				return getDelegate().filter(subj, pred, obj, contexts)
-						.iterator();
+				return getDelegate().filter(subj, pred, obj, contexts).iterator();
 			}
 
 			@Override
-			protected void removeFilteredTermIteration(
-					Iterator<Statement> iter, Resource subj, IRI pred,
-					Value obj, Resource... contexts) {
+			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred,
+					Value obj, Resource... contexts)
+			{
 				MemoryOverflowModel.this.removeTermIteration(iter, subj, pred, obj, contexts);
 			}
 		};
 	}
 
 	@Override
-	public synchronized void removeTermIteration(Iterator<Statement> iter,
-			Resource subj, IRI pred, Value obj, Resource... contexts) {
+	public synchronized void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
+			Resource... contexts)
+	{
 		if (disk == null) {
 			memory.removeTermIteration(iter, subj, pred, obj, contexts);
-		} else {
+		}
+		else {
 			disk.removeTermIteration(iter, subj, pred, obj, contexts);
 		}
 	}
 
-	protected abstract SailStore createSailStore(File dataDir) throws IOException,
-	SailException;
+	protected abstract SailStore createSailStore(File dataDir)
+		throws IOException, SailException;
 
 	synchronized Model getDelegate() {
 		if (disk == null)
@@ -171,7 +177,9 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		return disk;
 	}
 
-	private void writeObject(ObjectOutputStream s) throws IOException {
+	private void writeObject(ObjectOutputStream s)
+		throws IOException
+	{
 		// Write out any hidden serialization magic
 		s.defaultWriteObject();
 		// Write in size
@@ -187,15 +195,16 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		}
 	}
 
-	private void readObject(ObjectInputStream s) throws IOException,
-			ClassNotFoundException {
+	private void readObject(ObjectInputStream s)
+		throws IOException, ClassNotFoundException
+	{
 		// Read in any hidden serialization magic
 		s.defaultReadObject();
 		// Read in size
 		int size = s.readInt();
 		// Read in all elements
 		for (int i = 0; i < size; i++) {
-			add((Statement) s.readObject());
+			add((Statement)s.readObject());
 		}
 	}
 
@@ -229,13 +238,17 @@ abstract class MemoryOverflowModel extends AbstractModel {
 			disk = new SailSourceModel(store) {
 
 				@Override
-				protected void finalize() throws Throwable {
+				protected void finalize()
+					throws Throwable
+				{
 					if (disk == this) {
 						try {
 							store.close();
-						} catch (SailException e) {
+						}
+						catch (SailException e) {
 							logger.error(e.toString(), e);
-						} finally {
+						}
+						finally {
 							FileUtil.deltree(dataDir);
 							dataDir = null;
 							store = null;
@@ -247,14 +260,18 @@ abstract class MemoryOverflowModel extends AbstractModel {
 			};
 			disk.addAll(memory);
 			memory = new TreeModel(memory.getNamespaces());
-		} catch (IOException e) {
+		}
+		catch (IOException e) {
 			logger.error(e.toString(), e);
-		} catch (SailException e) {
+		}
+		catch (SailException e) {
 			logger.error(e.toString(), e);
 		}
 	}
 
-	private File createTempDir(String name) throws IOException {
+	private File createTempDir(String name)
+		throws IOException
+	{
 		String tmpDirStr = System.getProperty("java.io.tmpdir");
 		if (tmpDirStr != null) {
 			File tmpDir = new File(tmpDirStr);

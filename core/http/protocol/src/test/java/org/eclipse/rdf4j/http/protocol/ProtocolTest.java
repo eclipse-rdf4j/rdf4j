@@ -63,7 +63,6 @@ public class ProtocolTest {
 		assertEquals(serverLocation, result);
 	}
 
-
 	@Test
 	public void testGetRepositoryID() {
 		String repositoryLocation = getRepositoryLocation(serverLocation, repositoryID);

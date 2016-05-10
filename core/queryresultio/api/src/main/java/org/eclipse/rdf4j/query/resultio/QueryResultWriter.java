@@ -23,17 +23,14 @@ public interface QueryResultWriter extends QueryResultHandler {
 
 	/**
 	 * Gets the query result format that this writer uses.
-	 * 
 	 */
 	QueryResultFormat getQueryResultFormat();
 
 	/**
-	 * Handles a namespace prefix declaration. If this is called, it should be
-	 * called before {@link #startDocument()} to ensure that it has a document
-	 * wide effect.
+	 * Handles a namespace prefix declaration. If this is called, it should be called before
+	 * {@link #startDocument()} to ensure that it has a document wide effect.
 	 * <p>
-	 * NOTE: If the format does not support namespaces, it must silently ignore
-	 * calls to this method.
+	 * NOTE: If the format does not support namespaces, it must silently ignore calls to this method.
 	 * 
 	 * @param prefix
 	 *        The prefix to use for the namespace
@@ -54,17 +51,16 @@ public interface QueryResultWriter extends QueryResultHandler {
 		throws QueryResultHandlerException;
 
 	/**
-	 * Handles a stylesheet URL. If this is called, it must be called after
-	 * {@link #startDocument} and before {@link #startHeader}.
+	 * Handles a stylesheet URL. If this is called, it must be called after {@link #startDocument} and before
+	 * {@link #startHeader}.
 	 * <p>
-	 * NOTE: If the format does not support stylesheets, it must silently ignore
-	 * calls to this method.
+	 * NOTE: If the format does not support stylesheets, it must silently ignore calls to this method.
 	 * 
 	 * @param stylesheetUrl
 	 *        The URL of the stylesheet to be used to style the results.
 	 * @throws QueryResultHandlerException
-	 *         If there was an error handling the stylesheet. This error is not
-	 *         thrown in cases where stylesheets are not supported.
+	 *         If there was an error handling the stylesheet. This error is not thrown in cases where
+	 *         stylesheets are not supported.
 	 */
 	void handleStylesheet(String stylesheetUrl)
 		throws QueryResultHandlerException;
@@ -72,9 +68,8 @@ public interface QueryResultWriter extends QueryResultHandler {
 	/**
 	 * Indicates the start of the header.
 	 * 
-	 * @see <a
-	 *      href="http://www.w3.org/TR/2012/PER-rdf-sparql-XMLres-20121108/#head">SPARQL
-	 *      Query Results XML Format documentation for head element.</a>
+	 * @see <a href="http://www.w3.org/TR/2012/PER-rdf-sparql-XMLres-20121108/#head">SPARQL Query Results XML
+	 *      Format documentation for head element.</a>
 	 * @throws QueryResultHandlerException
 	 *         If there was an error writing the start of the header.
 	 */
@@ -82,8 +77,8 @@ public interface QueryResultWriter extends QueryResultHandler {
 		throws QueryResultHandlerException;
 
 	/**
-	 * Indicates the end of the header. This must be called after
-	 * {@link #startHeader} and before any calls to {@link #handleSolution}.
+	 * Indicates the end of the header. This must be called after {@link #startHeader} and before any calls to
+	 * {@link #handleSolution}.
 	 * 
 	 * @throws QueryResultHandlerException
 	 *         If there was an error writing the end of the header.
@@ -102,14 +97,12 @@ public interface QueryResultWriter extends QueryResultHandler {
 	/**
 	 * Retrieves the current writer configuration as a single object.
 	 * 
-	 * @return a writer configuration object representing the current
-	 *         configuration of the writer.
+	 * @return a writer configuration object representing the current configuration of the writer.
 	 */
 	public WriterConfig getWriterConfig();
 
 	/**
-	 * @return A collection of {@link RioSetting}s that are supported by this
-	 *         {@link QueryResultWriter}.
+	 * @return A collection of {@link RioSetting}s that are supported by this {@link QueryResultWriter}.
 	 */
 	public Collection<RioSetting<?>> getSupportedSettings();
 

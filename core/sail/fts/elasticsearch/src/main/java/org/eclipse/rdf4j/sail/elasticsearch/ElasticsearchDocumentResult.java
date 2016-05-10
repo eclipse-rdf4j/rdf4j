@@ -18,11 +18,13 @@ public class ElasticsearchDocumentResult implements DocumentResult {
 
 	protected final SearchHit hit;
 
-	private final Function<? super String,? extends SpatialContext> geoContextMapper;
+	private final Function<? super String, ? extends SpatialContext> geoContextMapper;
 
 	private ElasticsearchDocument fullDoc;
 
-	public ElasticsearchDocumentResult(SearchHit hit, Function<? super String,? extends SpatialContext> geoContextMapper) {
+	public ElasticsearchDocumentResult(SearchHit hit,
+			Function<? super String, ? extends SpatialContext> geoContextMapper)
+	{
 		this.hit = hit;
 		this.geoContextMapper = geoContextMapper;
 	}

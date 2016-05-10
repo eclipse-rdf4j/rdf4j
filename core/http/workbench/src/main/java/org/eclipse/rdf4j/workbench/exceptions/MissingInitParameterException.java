@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.workbench.exceptions;
 import javax.servlet.ServletException;
 
 public class MissingInitParameterException extends ServletException {
+
 	private static final long serialVersionUID = 8543657273860596921L;
 
 	public MissingInitParameterException(String parameter) {

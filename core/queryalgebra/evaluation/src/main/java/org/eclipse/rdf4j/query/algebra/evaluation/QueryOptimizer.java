@@ -13,8 +13,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
 
 /**
- * Interface used by {@link SimpleEvaluationStrategy} prior to evalutating the
- * query.
+ * Interface used by {@link SimpleEvaluationStrategy} prior to evalutating the query.
  * 
  * @author James Leigh
  * @author Arjohn Kampman

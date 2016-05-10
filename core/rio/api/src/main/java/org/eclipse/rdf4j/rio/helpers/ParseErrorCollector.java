@@ -14,8 +14,7 @@ import java.util.List;
 import org.eclipse.rdf4j.rio.ParseErrorListener;
 
 /**
- * A ParseErrorListener that collects Rio parse errors in the sequence they were
- * collected in.
+ * A ParseErrorListener that collects Rio parse errors in the sequence they were collected in.
  * 
  * @author Peter Ansell
  */
@@ -43,8 +42,7 @@ public class ParseErrorCollector implements ParseErrorListener {
 	}
 
 	/**
-	 * @return An unmodifiable list of strings representing warnings that were
-	 *         received using the
+	 * @return An unmodifiable list of strings representing warnings that were received using the
 	 *         {@link ParseErrorListener#warning(String, long, long)} interface.
 	 */
 	public List<String> getWarnings() {
@@ -52,8 +50,7 @@ public class ParseErrorCollector implements ParseErrorListener {
 	}
 
 	/**
-	 * @return An unmodifiable list of strings representing potential errors
-	 *         that were received using the
+	 * @return An unmodifiable list of strings representing potential errors that were received using the
 	 *         {@link ParseErrorListener#error(String, long, long)} interface.
 	 */
 	public List<String> getErrors() {
@@ -61,10 +58,8 @@ public class ParseErrorCollector implements ParseErrorListener {
 	}
 
 	/**
-	 * @return An unmodifiable list of strings representing fatal errors that
-	 *         were received using the
-	 *         {@link ParseErrorListener#fatalError(String, long, long)}
-	 *         interface.
+	 * @return An unmodifiable list of strings representing fatal errors that were received using the
+	 *         {@link ParseErrorListener#fatalError(String, long, long)} interface.
 	 */
 	public List<String> getFatalErrors() {
 		return Collections.unmodifiableList(fatalErrors);

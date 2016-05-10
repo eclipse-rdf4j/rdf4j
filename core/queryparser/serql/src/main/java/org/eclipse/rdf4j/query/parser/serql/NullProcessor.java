@@ -31,10 +31,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Processes {@link ASTNull} nodes in query models. Null's that appear in
- * projections are simply removed as that doesn't change the semantics. Null's
- * that appear in value comparisons are either replaced with {@link ASTBound}
- * nodes or constants.
+ * Processes {@link ASTNull} nodes in query models. Null's that appear in projections are simply removed as
+ * that doesn't change the semantics. Null's that appear in value comparisons are either replaced with
+ * {@link ASTBound} nodes or constants.
  * 
  * @author Arjohn Kampman
  */
@@ -96,11 +95,13 @@ class NullProcessor {
 			if (leftIsNull && rightIsNull) {
 				switch (operator) {
 					case EQ:
-						logger.warn("Use of NULL values in SeRQL queries has been deprecated, use BOUND(...) instead");
+						logger.warn(
+								"Use of NULL values in SeRQL queries has been deprecated, use BOUND(...) instead");
 						compareNode.jjtReplaceWith(new ASTBooleanConstant(true));
 						break;
 					case NE:
-						logger.warn("Use of NULL values in SeRQL queries has been deprecated, use BOUND(...) instead");
+						logger.warn(
+								"Use of NULL values in SeRQL queries has been deprecated, use BOUND(...) instead");
 						compareNode.jjtReplaceWith(new ASTBooleanConstant(false));
 						break;
 					default:

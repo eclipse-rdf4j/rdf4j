@@ -13,14 +13,12 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.text.StringUtil;
 
-
 /**
- * An element in an HTTP header value. An HTTP header element has a value and
- * zero or more parameters consisting of a key and a value. An example header
- * element is <tt>audio/*; q=0.2</tt>.
+ * An element in an HTTP header value. An HTTP header element has a value and zero or more parameters
+ * consisting of a key and a value. An example header element is <tt>audio/*; q=0.2</tt>.
  */
 public class HeaderElement {
-	
+
 	/*----------------*
 	 * Static methods *
 	 *----------------*/
@@ -35,20 +33,20 @@ public class HeaderElement {
 			String token = tokens.get(0);
 
 			// Remove any whitespace and double quotes from the token
-			token = StringUtil.trimDoubleQuotes( token.trim() );
-			
+			token = StringUtil.trimDoubleQuotes(token.trim());
+
 			result.setValue(token);
-			
+
 			// Add parameters to the header element
 			for (int i = 1; i < tokens.size(); i++) {
 				token = (String)tokens.get(i);
-				
+
 				int splitIdx = token.indexOf('=');
-				
+
 				if (splitIdx == -1) {
 					// No value, only key
-					token = StringUtil.trimDoubleQuotes( token.trim() );
-					
+					token = StringUtil.trimDoubleQuotes(token.trim());
+
 					// Ignore empty parameters
 					if (token.length() > 0) {
 						result.addParameter(token);
@@ -69,15 +67,15 @@ public class HeaderElement {
 	/*-----------*
 	 * Variables *
 	 *-----------*/
-	
+
 	private String value;
-	
+
 	private final List<Parameter> parameters;
-	
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
-	
+
 	public HeaderElement() {
 		this("");
 	}
@@ -86,27 +84,27 @@ public class HeaderElement {
 		setValue(value);
 		parameters = new ArrayList<Parameter>();
 	}
-	
+
 	/*---------*
 	 * Methods *
 	 *---------*/
-	
+
 	public String getValue() {
 		return value;
 	}
-	
+
 	public void setValue(String value) {
 		this.value = value;
 	}
-	
+
 	public int getParameterCount() {
 		return parameters.size();
 	}
-	
+
 	public Parameter getParameter(int i) {
 		return parameters.get(i);
 	}
-	
+
 	public Parameter getParameter(String key) {
 		for (int i = 0; i < parameters.size(); i++) {
 			Parameter param = parameters.get(i);
@@ -114,71 +112,69 @@ public class HeaderElement {
 				return param;
 			}
 		}
-		
+
 		return null;
 	}
-	
+
 	public String getParameterValue(String key) {
 		Parameter param = getParameter(key);
-		
+
 		if (param != null) {
 			return param.getValue();
 		}
-		
+
 		return null;
 	}
-	
+
 	public List<Parameter> getParameters() {
 		return Collections.unmodifiableList(parameters);
 	}
-	
+
 	public void addParameter(String key) {
 		addParameter(key, null);
 	}
 
 	public void addParameter(String key, String value) {
-		addParameter( new Parameter(key, value) );
+		addParameter(new Parameter(key, value));
 	}
-	
+
 	public void addParameter(Parameter param) {
 		parameters.add(param);
 	}
-	
+
 	public Parameter removeParameter(int idx) {
 		return parameters.remove(idx);
 	}
-	
+
 	public boolean removeParameter(Parameter param) {
 		return parameters.remove(param);
 	}
-	
+
 	public boolean equals(Object obj) {
 		if (obj instanceof HeaderElement) {
 			HeaderElement other = (HeaderElement)obj;
-			
-			return
-				value.equals(other.getValue()) &&
-				parameters.equals(other.getParameters());
+
+			return value.equals(other.getValue()) && parameters.equals(other.getParameters());
 		}
-		
+
 		return false;
 	}
-	
+
 	public int hashCode() {
 		return value.hashCode();
 	}
-	
+
 	public String toString() {
 		StringBuilder sb = new StringBuilder(32);
 		sb.append(value);
-		
+
 		for (int i = 0; i < parameters.size(); i++) {
 			Parameter param = parameters.get(i);
 
 			sb.append("; ");
 			sb.append(param.toString());
 		}
-		
+
 		return sb.toString();
 	}
 }

@@ -23,7 +23,9 @@ public class GenerateUUID implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+	public Value evaluate(ValueFactory valueFactory, Value... args)
+		throws ValueExprEvaluationException
+	{
 		return valueFactory.createLiteral(UUID.randomUUID().toString());
 	}
 }

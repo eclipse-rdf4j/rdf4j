@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.sail.memory.model;
 import java.util.Arrays;
 
 /**
- * A dedicated data structure for storing MemStatement objects, offering
- * operations optimized for their use in the memory Sail.
+ * A dedicated data structure for storing MemStatement objects, offering operations optimized for their use in
+ * the memory Sail.
  */
 public class MemStatementList {
 

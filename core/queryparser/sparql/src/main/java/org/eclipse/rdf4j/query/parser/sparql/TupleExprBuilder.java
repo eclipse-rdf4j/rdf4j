@@ -124,10 +124,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 *---------*/
 
 	/**
-	 * Maps the given valueExpr to a Var. If the supplied ValueExpr is a Var,
-	 * the object itself will be returned. If it is a ValueConstant, this method
-	 * will check if an existing variable mapping exists and return that mapped
-	 * variable, otherwise it will create and store a new mapping.
+	 * Maps the given valueExpr to a Var. If the supplied ValueExpr is a Var, the object itself will be
+	 * returned. If it is a ValueConstant, this method will check if an existing variable mapping exists and
+	 * return that mapped variable, otherwise it will create and store a new mapping.
 	 * 
 	 * @param valueExpr
 	 * @return a Var for the given valueExpr.
@@ -175,8 +174,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	/**
-	 * Creates an anonymous Var with a unique, randomly generated, variable
-	 * name.
+	 * Creates an anonymous Var with a unique, randomly generated, variable name.
 	 * 
 	 * @return an anonymous Var with a unique, randomly generated, variable name
 	 */
@@ -763,9 +761,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	/**
-	 * Gets the set of variables that are relevant for the constructor. This
-	 * method accumulates all subject, predicate and object variables from the
-	 * supplied statement patterns, but ignores any context variables.
+	 * Gets the set of variables that are relevant for the constructor. This method accumulates all subject,
+	 * predicate and object variables from the supplied statement patterns, but ignores any context variables.
 	 */
 	private Set<Var> getConstructVars(Collection<StatementPattern> statementPatterns) {
 		Set<Var> vars = new LinkedHashSet<Var>(statementPatterns.size() * 2);
@@ -1509,7 +1506,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					Var nextVar = createAnonVar();
 
 					if (invertSequence && startVar.equals(subjVar)) { // first
-																		// element
+																			// element
 																		// in
 																		// inverted
 																		// sequence
@@ -1666,7 +1663,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	private TupleExpr handlePathModifiers(Scope scope, Var subjVar, TupleExpr te, Var endVar, Var contextVar,
 			long lowerBound, long upperBound)
-				throws VisitorException
+		throws VisitorException
 	{
 
 		TupleExpr result = te;
@@ -1723,7 +1720,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	private TupleExpr createPath(Scope scope, Var subjVar, TupleExpr pathExpression, Var endVar,
 			Var contextVar, long length)
-				throws VisitorException
+		throws VisitorException
 	{
 		if (pathExpression instanceof StatementPattern) {
 			Var predVar = ((StatementPattern)pathExpression).getPredicateVar();

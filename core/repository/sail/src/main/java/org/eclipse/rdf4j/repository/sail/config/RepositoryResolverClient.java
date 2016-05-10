@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.repository.sail.config;
 
 /**
- * Interface used by factory classes that need access to other repositories by
- * their id's.
+ * Interface used by factory classes that need access to other repositories by their id's.
  * 
  * @author Dale Visser
  */

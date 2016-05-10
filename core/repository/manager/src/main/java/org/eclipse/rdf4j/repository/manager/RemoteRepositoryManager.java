@@ -32,9 +32,9 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 
 /**
- * A manager for {@link Repository}s that reside on a remote server. This
- * repository manager allows one to access repositories over HTTP similar to how
- * local repositories are accessed using the {@link LocalRepositoryManager}.
+ * A manager for {@link Repository}s that reside on a remote server. This repository manager allows one to
+ * access repositories over HTTP similar to how local repositories are accessed using the
+ * {@link LocalRepositoryManager}.
  * 
  * @author Arjohn Kampman
  */
@@ -45,8 +45,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	 *------------------------*/
 
 	/**
-	 * Creates an initialized {@link RemoteRepositoryManager} with the specified
-	 * server URL.
+	 * Creates an initialized {@link RemoteRepositoryManager} with the specified server URL.
 	 */
 	public static RemoteRepositoryManager getInstance(String serverURL)
 		throws RepositoryException
@@ -57,8 +56,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	}
 
 	/**
-	 * Creates an initialized {@link RemoteRepositoryManager} with the specified
-	 * server URL and credentials.
+	 * Creates an initialized {@link RemoteRepositoryManager} with the specified server URL and credentials.
 	 */
 	public static RemoteRepositoryManager getInstance(String serverURL, String username, String password)
 		throws RepositoryException
@@ -90,8 +88,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	 *--------------*/
 
 	/**
-	 * Creates a new RepositoryManager that operates on the specified base
-	 * directory.
+	 * Creates a new RepositoryManager that operates on the specified base directory.
 	 * 
 	 * @param serverURL
 	 *        The URL of the server.
@@ -119,7 +116,8 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	public HttpClient getHttpClient() {
 		if (client == null) {
 			return null;
-		} else {
+		}
+		else {
 			return client.getHttpClient();
 		}
 	}
@@ -173,8 +171,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	}
 
 	/**
-	 * Gets the URL of the remote server, e.g.
-	 * "http://localhost:8080/openrdf-sesame/".
+	 * Gets the URL of the remote server, e.g. "http://localhost:8080/openrdf-sesame/".
 	 * 
 	 * @throws MalformedURLException
 	 *         If serverURL cannot be parsed
@@ -186,8 +183,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	}
 
 	/**
-	 * Gets the URL of the remote server, e.g.
-	 * "http://localhost:8080/openrdf-sesame/".
+	 * Gets the URL of the remote server, e.g. "http://localhost:8080/openrdf-sesame/".
 	 */
 	public String getServerURL() {
 		return serverURL;
@@ -198,11 +194,9 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	 * 
 	 * @param id
 	 *        A repository ID.
-	 * @return The created repository, or <tt>null</tt> if no such repository
-	 *         exists.
+	 * @return The created repository, or <tt>null</tt> if no such repository exists.
 	 * @throws RepositoryConfigException
-	 *         If no repository could be created due to invalid or incomplete
-	 *         configuration data.
+	 *         If no repository could be created due to invalid or incomplete configuration data.
 	 */
 	@Override
 	protected Repository createRepository(String id)

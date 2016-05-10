@@ -30,8 +30,7 @@ import ch.qos.logback.core.rolling.RollingPolicy;
 import ch.qos.logback.core.rolling.TimeBasedRollingPolicy;
 
 /**
- * Date range-enabled wrapper for FileLogReader. Reads multiple logfiles chunked
- * by dates as a single log.
+ * Date range-enabled wrapper for FileLogReader. Reads multiple logfiles chunked by dates as a single log.
  * 
  * @author alex
  */
@@ -224,7 +223,6 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	}
 
 	/**
-	 * 
 	 * @author alex
 	 */
 	public class DateRangeFilenameFilter implements FilenameFilter {
@@ -241,7 +239,8 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		 * @param startCal
 		 * @param endCal
 		 */
-		public DateRangeFilenameFilter(Pattern pattern, SimpleDateFormat df, Calendar startCal, Calendar endCal)
+		public DateRangeFilenameFilter(Pattern pattern, SimpleDateFormat df, Calendar startCal,
+				Calendar endCal)
 		{
 			this.pattern = pattern;
 			this.df = df;
@@ -271,7 +270,8 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 			}
 			Calendar cal = Calendar.getInstance();
 			cal.setTime(d);
-			return (((startCal == null) || (cal.compareTo(startCal) >= 0)) && ((endCal == null) || (cal.compareTo(endCal) <= 0)));
+			return (((startCal == null) || (cal.compareTo(startCal) >= 0))
+					&& ((endCal == null) || (cal.compareTo(endCal) <= 0)));
 		}
 
 	}

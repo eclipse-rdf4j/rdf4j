@@ -16,8 +16,7 @@ import org.eclipse.rdf4j.sail.lucene.config.AbstractLuceneSailConfig;
 import org.eclipse.rdf4j.sail.solr.SolrIndex;
 
 /**
- * A {@link SailFactory} that creates {@link LuceneSail}s based on RDF
- * configuration data.
+ * A {@link SailFactory} that creates {@link LuceneSail}s based on RDF configuration data.
  */
 public class SolrSailFactory implements SailFactory {
 

@@ -21,8 +21,8 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 /**
  * An iterating implementation of the {@link TupleQueryResult} interface.
  */
-public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, QueryEvaluationException> implements
-		TupleQueryResult
+public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, QueryEvaluationException>
+		implements TupleQueryResult
 {
 
 	/*-----------*
@@ -37,9 +37,8 @@ public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, Quer
 
 	/**
 	 * Creates a query result object with the supplied binding names.
-	 * <em>The supplied list of binding names is assumed to be constant</em>;
-	 * care should be taken that the contents of this list doesn't change after
-	 * supplying it to this solution.
+	 * <em>The supplied list of binding names is assumed to be constant</em>; care should be taken that the
+	 * contents of this list doesn't change after supplying it to this solution.
 	 * 
 	 * @param bindingNames
 	 *        The binding names, in order of projection.
@@ -48,15 +47,17 @@ public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, Quer
 		this(bindingNames, bindingSets.iterator());
 	}
 
-	public IteratingTupleQueryResult(List<String> bindingNames, Iterator<? extends BindingSet> bindingSetIter) {
-		this(bindingNames, new CloseableIteratorIteration<BindingSet, QueryEvaluationException>(bindingSetIter));
+	public IteratingTupleQueryResult(List<String> bindingNames,
+			Iterator<? extends BindingSet> bindingSetIter)
+	{
+		this(bindingNames,
+				new CloseableIteratorIteration<BindingSet, QueryEvaluationException>(bindingSetIter));
 	}
 
 	/**
 	 * Creates a query result object with the supplied binding names.
-	 * <em>The supplied list of binding names is assumed to be constant</em>;
-	 * care should be taken that the contents of this list doesn't change after
-	 * supplying it to this solution.
+	 * <em>The supplied list of binding names is assumed to be constant</em>; care should be taken that the
+	 * contents of this list doesn't change after supplying it to this solution.
 	 * 
 	 * @param bindingNames
 	 *        The binding names, in order of projection.

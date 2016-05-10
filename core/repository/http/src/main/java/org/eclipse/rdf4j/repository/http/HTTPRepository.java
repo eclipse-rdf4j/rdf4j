@@ -34,16 +34,13 @@ import org.eclipse.rdf4j.repository.base.AbstractRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 
 /**
- * A repository that serves as a proxy for a remote repository on a Sesame
- * Server. Methods in this class may throw the specific RepositoryException
- * subclass UnautorizedException, the semantics of which is defined by the HTTP
- * protocol.
+ * A repository that serves as a proxy for a remote repository on a Sesame Server. Methods in this class may
+ * throw the specific RepositoryException subclass UnautorizedException, the semantics of which is defined by
+ * the HTTP protocol.
  * <p>
- * This repository proxy uses a
- * <a href="http://rdf4j.org/doc/system">Sesame-specific extension of the SPARQL
- * 1.1 Protocol</a> to communicate with the server. For communicating with a
- * non-Sesame-based SPARQL endpoint, it is recommend to use
- * {@link org.eclipse.rdf4j.repository.sparql.SPARQLRepository SPARQLRepository}
+ * This repository proxy uses a <a href="http://rdf4j.org/doc/system">Sesame-specific extension of the SPARQL
+ * 1.1 Protocol</a> to communicate with the server. For communicating with a non-Sesame-based SPARQL endpoint,
+ * it is recommend to use {@link org.eclipse.rdf4j.repository.sparql.SPARQLRepository SPARQLRepository}
  * instead.
  *
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
@@ -110,9 +107,9 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 		this.repositoryURL = repositoryURL;
 	}
 
-	/* ---------------*
-	 * public methods *
-	 * ---------------*/
+	/*
+	 * ---------------* public methods * ---------------
+	 */
 
 	public void setDataDir(final File dataDir) {
 		this.dataDir = dataDir;
@@ -192,15 +189,14 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	}
 
 	/**
-	 * Sets the preferred serialization format for tuple query results to the
-	 * supplied {@link TupleQueryResultFormat}, overriding the
-	 * {@link SparqlSession} 's default preference. Setting this parameter is not
-	 * necessary in most cases as the {@link SparqlSession} by default indicates
-	 * a preference for the most compact and efficient format available.
+	 * Sets the preferred serialization format for tuple query results to the supplied
+	 * {@link TupleQueryResultFormat}, overriding the {@link SparqlSession} 's default preference. Setting
+	 * this parameter is not necessary in most cases as the {@link SparqlSession} by default indicates a
+	 * preference for the most compact and efficient format available.
 	 * 
 	 * @param format
-	 *        the preferred {@link TupleQueryResultFormat}. If set to 'null' no
-	 *        explicit preference will be stated.
+	 *        the preferred {@link TupleQueryResultFormat}. If set to 'null' no explicit preference will be
+	 *        stated.
 	 */
 	public void setPreferredTupleQueryResultFormat(final TupleQueryResultFormat format) {
 		this.tupleFormat = format;
@@ -209,26 +205,23 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	/**
 	 * Indicates the current preferred {@link TupleQueryResultFormat}.
 	 * 
-	 * @return The preferred format, of 'null' if no explicit preference is
-	 *         defined.
+	 * @return The preferred format, of 'null' if no explicit preference is defined.
 	 */
 	public TupleQueryResultFormat getPreferredTupleQueryResultFormat() {
 		return tupleFormat;
 	}
 
 	/**
-	 * Sets the preferred serialization format for RDF to the supplied
-	 * {@link RDFFormat}, overriding the {@link SparqlSession}'s default
-	 * preference. Setting this parameter is not necessary in most cases as the
-	 * {@link SparqlSession} by default indicates a preference for the most
-	 * compact and efficient format available.
+	 * Sets the preferred serialization format for RDF to the supplied {@link RDFFormat}, overriding the
+	 * {@link SparqlSession}'s default preference. Setting this parameter is not necessary in most cases as
+	 * the {@link SparqlSession} by default indicates a preference for the most compact and efficient format
+	 * available.
 	 * <p>
-	 * Use with caution: if set to a format that does not support context
-	 * serialization any context info contained in the query result will be lost.
+	 * Use with caution: if set to a format that does not support context serialization any context info
+	 * contained in the query result will be lost.
 	 * 
 	 * @param format
-	 *        the preferred {@link RDFFormat}. If set to 'null' no explicit
-	 *        preference will be stated.
+	 *        the preferred {@link RDFFormat}. If set to 'null' no explicit preference will be stated.
 	 */
 	public void setPreferredRDFFormat(final RDFFormat format) {
 		this.rdfFormat = format;
@@ -237,16 +230,14 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	/**
 	 * Indicates the current preferred {@link RDFFormat}.
 	 * 
-	 * @return The preferred format, of 'null' if no explicit preference is
-	 *         defined.
+	 * @return The preferred format, of 'null' if no explicit preference is defined.
 	 */
 	public RDFFormat getPreferredRDFFormat() {
 		return rdfFormat;
 	}
 
 	/**
-	 * Set the username and password to use for authenticating with the remote
-	 * repository.
+	 * Set the username and password to use for authenticating with the remote repository.
 	 * 
 	 * @param username
 	 *        the username. Setting this to null will disable authentication.
@@ -262,9 +253,9 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 		return repositoryURL;
 	}
 
-	/* -------------------*
-	 * non-public methods *
-	 * -------------------*/
+	/*
+	 * -------------------* non-public methods * -------------------
+	 */
 
 	@Override
 	protected void initializeInternal()
@@ -286,8 +277,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	}
 
 	/**
-	 * Creates a new HTTPClient object. Subclasses may override to return a more
-	 * specific HTTPClient subtype.
+	 * Creates a new HTTPClient object. Subclasses may override to return a more specific HTTPClient subtype.
 	 * 
 	 * @return a HTTPClient object.
 	 */
@@ -311,14 +301,13 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	}
 
 	/**
-	 * Verify if transaction handling should be done in backward-compatible mode
-	 * (this is the case when communicating with an older Sesame Server).
+	 * Verify if transaction handling should be done in backward-compatible mode (this is the case when
+	 * communicating with an older Sesame Server).
 	 * 
-	 * @return <code>true</code> if the Server does not support the extended
-	 *         transaction protocol, <code>false</code> otherwise.
+	 * @return <code>true</code> if the Server does not support the extended transaction protocol,
+	 *         <code>false</code> otherwise.
 	 * @throws RepositoryException
-	 *         if something went wrong while querying the server for the protocol
-	 *         version.
+	 *         if something went wrong while querying the server for the protocol version.
 	 */
 	synchronized boolean useCompatibleMode()
 		throws RepositoryException

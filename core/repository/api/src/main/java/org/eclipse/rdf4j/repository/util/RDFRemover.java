@@ -33,15 +33,14 @@ public class RDFRemover extends AbstractRDFHandler {
 	 *-----------*/
 
 	/**
-	 * Flag indicating whether the context specified for this RDFRemover should
-	 * be enforced upon all reported statements.
+	 * Flag indicating whether the context specified for this RDFRemover should be enforced upon all reported
+	 * statements.
 	 */
 	private boolean enforceContext;
 
 	/**
-	 * The context to remove the statements from; <tt>null</tt> to indicate the
-	 * null context. This context value is used when enforceContext is set to
-	 * true.
+	 * The context to remove the statements from; <tt>null</tt> to indicate the null context. This context
+	 * value is used when enforceContext is set to true.
 	 */
 	private Resource context;
 
@@ -50,8 +49,7 @@ public class RDFRemover extends AbstractRDFHandler {
 	 *--------------*/
 
 	/**
-	 * Creates a new RDFRemover object that removes the data from the default
-	 * context.
+	 * Creates a new RDFRemover object that removes the data from the default context.
 	 * 
 	 * @param con
 	 *        The connection to use for the removal operations.
@@ -66,12 +64,10 @@ public class RDFRemover extends AbstractRDFHandler {
 	 *---------*/
 
 	/**
-	 * Enforces the supplied context upon all statements that are reported to
-	 * this RDFRemover.
+	 * Enforces the supplied context upon all statements that are reported to this RDFRemover.
 	 * 
 	 * @param context
-	 *        A Resource identifying the context, or <tt>null</tt> for the null
-	 *        context.
+	 *        A Resource identifying the context, or <tt>null</tt> for the null context.
 	 */
 	public void enforceContext(Resource context) {
 		this.context = context;
@@ -79,23 +75,19 @@ public class RDFRemover extends AbstractRDFHandler {
 	}
 
 	/**
-	 * Checks whether this RDFRemover enforces its context upon all statements
-	 * that are reported to it.
+	 * Checks whether this RDFRemover enforces its context upon all statements that are reported to it.
 	 * 
-	 * @return <tt>true</tt> if it enforces its context, <tt>false</tt>
-	 *         otherwise.
+	 * @return <tt>true</tt> if it enforces its context, <tt>false</tt> otherwise.
 	 */
 	public boolean enforcesContext() {
 		return enforceContext;
 	}
 
 	/**
-	 * Gets the context identifier that this RDFRemover enforces upon all
-	 * statements that are reported to it (in case <tt>enforcesContext()</tt>
-	 * returns <tt>true</tt>).
+	 * Gets the context identifier that this RDFRemover enforces upon all statements that are reported to it
+	 * (in case <tt>enforcesContext()</tt> returns <tt>true</tt>).
 	 * 
-	 * @return A Resource identifying the context, or <tt>null</tt> if the null
-	 *         context is enforced.
+	 * @return A Resource identifying the context, or <tt>null</tt> if the null context is enforced.
 	 */
 	public Resource getContext() {
 		return context;

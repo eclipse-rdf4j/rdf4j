@@ -6,6 +6,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql.query;
+
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -21,14 +22,11 @@ import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.util.iterators.ConvertingIterator;
 
 /**
- * An implementation of the {@link BindingSet} interface that is used to
- * evaluate query object models. This implementations differs from
- * {@link MapBindingSet} in that it maps variable names to Value objects and
- * that the Binding objects are created lazily. Note that this class is a fully
- * equivalent copy of
- * {@link org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet}, and is only
- * included here to avoid a circular dependency between the algebra-evaluation
- * module and the sparql-repository module.
+ * An implementation of the {@link BindingSet} interface that is used to evaluate query object models. This
+ * implementations differs from {@link MapBindingSet} in that it maps variable names to Value objects and that
+ * the Binding objects are created lazily. Note that this class is a fully equivalent copy of
+ * {@link org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet}, and is only included here to avoid a
+ * circular dependency between the algebra-evaluation module and the sparql-repository module.
  */
 public class SPARQLQueryBindingSet extends AbstractBindingSet {
 
@@ -63,8 +61,7 @@ public class SPARQLQueryBindingSet extends AbstractBindingSet {
 	}
 
 	/**
-	 * Adds a new binding to the binding set. The binding's name must not already
-	 * be part of this binding set.
+	 * Adds a new binding to the binding set. The binding's name must not already be part of this binding set.
 	 * 
 	 * @param binding
 	 *        The binding to add this this BindingSet.
@@ -74,8 +71,7 @@ public class SPARQLQueryBindingSet extends AbstractBindingSet {
 	}
 
 	/**
-	 * Adds a new binding to the binding set. The binding's name must not already
-	 * be part of this binding set.
+	 * Adds a new binding to the binding set. The binding's name must not already be part of this binding set.
 	 * 
 	 * @param name
 	 *        The binding's name, must not be bound in this binding set already.

@@ -43,8 +43,9 @@ public class JSONLDInternalTripleCallbackTest {
 		final Graph graph = new LinkedHashModel();
 		final ParseErrorCollector parseErrorListener = new ParseErrorCollector();
 		final ParserConfig parserConfig = new ParserConfig();
-		final JSONLDInternalTripleCallback callback = new JSONLDInternalTripleCallback(new StatementCollector(
-				graph), SimpleValueFactory.getInstance(), parserConfig, parseErrorListener);
+		final JSONLDInternalTripleCallback callback = new JSONLDInternalTripleCallback(
+				new StatementCollector(graph), SimpleValueFactory.getInstance(), parserConfig,
+				parseErrorListener);
 
 		JsonLdProcessor.toRDF(input, callback);
 

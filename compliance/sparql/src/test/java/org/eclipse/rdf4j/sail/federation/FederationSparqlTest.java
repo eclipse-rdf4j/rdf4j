@@ -44,7 +44,7 @@ public class FederationSparqlTest extends SPARQLQueryTest {
 						// known issue: SES-937
 						"sq03 - Subquery within graph pattern, graph variable is not bound",
 						// fails in federationsail setup. 
-						"sq14 - limit by resource"};
+						"sq14 - limit by resource" };
 
 				return new FederationSparqlTest(testURI, name, queryFileURL, resultFileURL, dataSet,
 						laxCardinality, checkOrder, ignoredTests);

@@ -198,8 +198,7 @@ public class QueryEvaluationUtilTest {
 	}
 
 	/**
-	 * Assert that there is an exception as a result of comparing the two
-	 * literals with the given operator.
+	 * Assert that there is an exception as a result of comparing the two literals with the given operator.
 	 * 
 	 * @param lit1
 	 *        The left literal
@@ -222,8 +221,8 @@ public class QueryEvaluationUtilTest {
 	}
 
 	/**
-	 * Assert that there is no exception as a result of comparing the two
-	 * literals with the given operator and it returns false.
+	 * Assert that there is no exception as a result of comparing the two literals with the given operator and
+	 * it returns false.
 	 * 
 	 * @param lit1
 	 *        The left literal
@@ -240,8 +239,8 @@ public class QueryEvaluationUtilTest {
 	}
 
 	/**
-	 * Assert that there is no exception as a result of comparing the two
-	 * literals with the given operator and it returns true.
+	 * Assert that there is no exception as a result of comparing the two literals with the given operator and
+	 * it returns true.
 	 * 
 	 * @param lit1
 	 *        The left literal

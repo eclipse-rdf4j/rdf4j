@@ -39,7 +39,6 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.spin.SpinParser;
 
-
 public class EvalFunction extends AbstractSpinFunction implements Function {
 
 	private SpinParser parser;
@@ -66,17 +65,17 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 		throws ValueExprEvaluationException
 	{
 		QueryPreparer qp = getCurrentQueryPreparer();
-		if(args.length == 0 || !(args[0] instanceof Resource)) {
+		if (args.length == 0 || !(args[0] instanceof Resource)) {
 			throw new ValueExprEvaluationException("First argument must be a resource");
 		}
-		if((args.length % 2) == 0) {
+		if ((args.length % 2) == 0) {
 			throw new ValueExprEvaluationException("Old number of arguments required");
 		}
 		Value result;
-		Resource subj = (Resource) args[0];
+		Resource subj = (Resource)args[0];
 		try {
 			ParsedQuery parsedQuery;
-			if(isQuery(subj, qp.getTripleSource())) {
+			if (isQuery(subj, qp.getTripleSource())) {
 				parsedQuery = parser.parseQuery(subj, qp.getTripleSource());
 			}
 			else {
@@ -86,15 +85,15 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 				parsedQuery = new ParsedTupleQuery(root);
 			}
 
-			if(parsedQuery instanceof ParsedTupleQuery) {
-				ParsedTupleQuery tupleQuery = (ParsedTupleQuery) parsedQuery;
+			if (parsedQuery instanceof ParsedTupleQuery) {
+				ParsedTupleQuery tupleQuery = (ParsedTupleQuery)parsedQuery;
 				TupleQuery queryOp = qp.prepare(tupleQuery);
 				addArguments(queryOp, args);
 				TupleQueryResult queryResult = queryOp.evaluate();
-				if(queryResult.hasNext()) {
+				if (queryResult.hasNext()) {
 					BindingSet bs = queryResult.next();
 					Set<String> bindingNames = tupleQuery.getTupleExpr().getBindingNames();
-					if(!bindingNames.isEmpty()) {
+					if (!bindingNames.isEmpty()) {
 						result = bs.getValue(bindingNames.iterator().next());
 					}
 					else {
@@ -105,8 +104,8 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 					throw new ValueExprEvaluationException("No value");
 				}
 			}
-			else if(parsedQuery instanceof ParsedBooleanQuery) {
-				ParsedBooleanQuery booleanQuery = (ParsedBooleanQuery) parsedQuery;
+			else if (parsedQuery instanceof ParsedBooleanQuery) {
+				ParsedBooleanQuery booleanQuery = (ParsedBooleanQuery)parsedQuery;
 				BooleanQuery queryOp = qp.prepare(booleanQuery);
 				addArguments(queryOp, args);
 				result = BooleanLiteral.valueOf(queryOp.evaluate());
@@ -127,12 +126,14 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 	private boolean isQuery(Resource r, TripleSource store)
 		throws RDF4JException
 	{
-		CloseableIteration<? extends URI, ? extends RDF4JException> typeIter = Statements.getObjectURIs(
-				r, RDF.TYPE, store);
+		CloseableIteration<? extends URI, ? extends RDF4JException> typeIter = Statements.getObjectURIs(r,
+				RDF.TYPE, store);
 		try {
 			while (typeIter.hasNext()) {
 				URI type = typeIter.next();
-				if (SP.SELECT_CLASS.equals(type) || SP.ASK_CLASS.equals(type) || SPIN.TEMPLATES_CLASS.equals(type)) {
+				if (SP.SELECT_CLASS.equals(type) || SP.ASK_CLASS.equals(type)
+						|| SPIN.TEMPLATES_CLASS.equals(type))
+				{
 					return true;
 				}
 			}
@@ -147,11 +148,11 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 	protected static void addArguments(Query query, Value... args)
 		throws ValueExprEvaluationException
 	{
-		for(int i=1; i<args.length; i+=2) {
-			if(!(args[i] instanceof URI)) {
-				throw new ValueExprEvaluationException("Argument "+i+" must be a URI");
+		for (int i = 1; i < args.length; i += 2) {
+			if (!(args[i] instanceof URI)) {
+				throw new ValueExprEvaluationException("Argument " + i + " must be a URI");
 			}
-			query.setBinding(((URI)args[i]).getLocalName(), args[i+1]);
+			query.setBinding(((URI)args[i]).getLocalName(), args[i + 1]);
 		}
 	}
 }

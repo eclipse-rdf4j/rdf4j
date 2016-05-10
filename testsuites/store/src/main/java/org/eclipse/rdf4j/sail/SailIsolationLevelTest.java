@@ -33,8 +33,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Simple tests to sanity check that Sail correctly supports claimed isolation
- * levels.
+ * Simple tests to sanity check that Sail correctly supports claimed isolation levels.
  * 
  * @author James Leigh
  */
@@ -196,8 +195,7 @@ public abstract class SailIsolationLevelTest {
 	}
 
 	/**
-	 * Every connection must support reading its own changes while another
-	 * iteration is active.
+	 * Every connection must support reading its own changes while another iteration is active.
 	 */
 	private void readPendingWhileActive(IsolationLevel level)
 		throws SailException
@@ -313,8 +311,7 @@ public abstract class SailIsolationLevelTest {
 	}
 
 	/**
-	 * Any statement read in a transaction must remain present until the
-	 * transaction is over
+	 * Any statement read in a transaction must remain present until the transaction is over
 	 */
 	private void repeatableRead(final IsolationLevels level)
 		throws Exception
@@ -397,8 +394,7 @@ public abstract class SailIsolationLevelTest {
 	}
 
 	/**
-	 * Query results must not include statements added after the first result is
-	 * read
+	 * Query results must not include statements added after the first result is read
 	 */
 	private void snapshotRead(IsolationLevel level)
 		throws SailException
@@ -420,7 +416,8 @@ public abstract class SailIsolationLevelTest {
 					counter++;
 					if (counter < size) {
 						// remove observed statement to force new state
-						con.removeStatements(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+						con.removeStatements(st.getSubject(), st.getPredicate(), st.getObject(),
+								st.getContext());
 						insertTestStatement(con, size + counter);
 						insertTestStatement(con, size + size + counter);
 					}
@@ -445,8 +442,7 @@ public abstract class SailIsolationLevelTest {
 	}
 
 	/**
-	 * Reader observes the complete state of the store and ensure that does not
-	 * change
+	 * Reader observes the complete state of the store and ensure that does not change
 	 */
 	private void snapshot(final IsolationLevels level)
 		throws Exception
@@ -572,7 +568,8 @@ public abstract class SailIsolationLevelTest {
 	}
 
 	protected Thread incrementBy(final CountDownLatch start, final CountDownLatch observed,
-			final IsolationLevels level, final ValueFactory vf, final IRI subj, final IRI pred, final int by)
+			final IsolationLevels level, final ValueFactory vf, final IRI subj, final IRI pred,
+			final int by)
 	{
 		return new Thread(new Runnable() {
 
@@ -623,7 +620,7 @@ public abstract class SailIsolationLevelTest {
 
 	protected long count(SailConnection con, Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts)
-				throws SailException
+		throws SailException
 	{
 		CloseableIteration<? extends Statement, SailException> stmts;
 		stmts = con.getStatements(subj, pred, obj, includeInferred, contexts);

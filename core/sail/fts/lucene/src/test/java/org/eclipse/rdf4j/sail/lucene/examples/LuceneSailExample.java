@@ -74,9 +74,8 @@ public class LuceneSailExample {
 		SailRepositoryConnection connection = repository.getConnection();
 		try {
 			connection.begin();
-			connection.add(
-					LuceneSailExample.class.getResourceAsStream("/org/openrdf/sail/lucene/examples/foaf.rdfs"),
-					"", RDFFormat.RDFXML);
+			connection.add(LuceneSailExample.class.getResourceAsStream(
+					"/org/openrdf/sail/lucene/examples/foaf.rdfs"), "", RDFFormat.RDFXML);
 			connection.commit();
 
 			// search for resources that mention "person"
@@ -112,7 +111,8 @@ public class LuceneSailExample {
 					+ "CONSTRUCT { ?x rdfs:domain foaf:Person } \n" + "WHERE { \n"
 					+ "?x rdfs:domain foaf:Person . \n" + "?x search:matches ?match . \n"
 					+ "?match search:query \"homepage\" ; \n" + "       search:property ?property ; \n"
-					+ "       search:score ?score ; \n" + "       search:snippet ?snippet . \n" + "} LIMIT 3 \n";
+					+ "       search:score ?score ; \n" + "       search:snippet ?snippet . \n"
+					+ "} LIMIT 3 \n";
 			graphQuery(queryString, connection);
 		}
 		finally {

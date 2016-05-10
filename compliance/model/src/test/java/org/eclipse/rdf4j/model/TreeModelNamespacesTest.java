@@ -13,8 +13,8 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 
 /**
- * Tests for {@link Namespace} support in {@link TreeModel} using the abstract
- * tests defined in {@link ModelNamespacesTest}.
+ * Tests for {@link Namespace} support in {@link TreeModel} using the abstract tests defined in
+ * {@link ModelNamespacesTest}.
  * 
  * @author Peter Ansell p_ansell@yahoo.com
  */

@@ -26,8 +26,7 @@ import org.eclipse.rdf4j.queryrender.RenderUtils;
 
 /**
  * <p>
- * Extends the BaseTupleExprRenderer to provide support for rendering tuple
- * expressions as SPARQL queries.
+ * Extends the BaseTupleExprRenderer to provide support for rendering tuple expressions as SPARQL queries.
  * </p>
  * 
  * @author Michael Grove
@@ -147,8 +146,8 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		theJoin.getRightArg().visit(this);
 
 		if (theJoin.getCondition() != null) {
-			mJoinBuffer.append(indent()).append("filter").append(renderValueExpr(theJoin.getCondition())).append(
-					"\n");
+			mJoinBuffer.append(indent()).append("filter").append(
+					renderValueExpr(theJoin.getCondition())).append("\n");
 		}
 
 		mIndent -= 2;
@@ -163,8 +162,8 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * Renders the tuple expression as a query string. It creates a new
-	 * SparqlTupleExprRenderer rather than reusing this one.
+	 * Renders the tuple expression as a query string. It creates a new SparqlTupleExprRenderer rather than
+	 * reusing this one.
 	 * 
 	 * @param theExpr
 	 *        the expr to render
@@ -210,9 +209,9 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 			aRight = aRight.substring(0, aRight.length() - 1);
 		}
 
-		mJoinBuffer.append(indent()).append("{\n").append(aLeft).append("\n").append(indent()).append("}\n").append(
-				indent()).append("union\n").append(indent()).append("{\n").append(aRight).append("\n").append(
-				indent()).append("}.\n");
+		mJoinBuffer.append(indent()).append("{\n").append(aLeft).append("\n").append(indent()).append(
+				"}\n").append(indent()).append("union\n").append(indent()).append("{\n").append(
+						aRight).append("\n").append(indent()).append("}.\n");
 
 		ctxClose(theOp);
 	}
@@ -227,8 +226,8 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		String aLeft = renderTupleExpr(theOp.getLeftArg());
 		String aRight = renderTupleExpr(theOp.getRightArg());
 
-		mJoinBuffer.append("\n{").append(aLeft).append("}").append("\nminus\n").append("{").append(aRight).append(
-				"}.\n");
+		mJoinBuffer.append("\n{").append(aLeft).append("}").append("\nminus\n").append("{").append(
+				aRight).append("}.\n");
 	}
 
 	/**
@@ -241,8 +240,8 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		String aLeft = renderTupleExpr(theOp.getLeftArg());
 		String aRight = renderTupleExpr(theOp.getRightArg());
 
-		mJoinBuffer.append("\n").append(aLeft).append("}").append("\nintersection\n").append("{").append(aRight).append(
-				"}.\n");
+		mJoinBuffer.append("\n").append(aLeft).append("}").append("\nintersection\n").append("{").append(
+				aRight).append("}.\n");
 	}
 
 	/**
@@ -260,7 +259,8 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 
 		// try and reverse engineer the original scoping intent of the query
 		final boolean aNeedsNewScope = theFilter.getParentNode() != null
-				&& (theFilter.getParentNode() instanceof Join || theFilter.getParentNode() instanceof LeftJoin);
+				&& (theFilter.getParentNode() instanceof Join
+						|| theFilter.getParentNode() instanceof LeftJoin);
 
 		String aFilter = renderValueExpr(theFilter.getCondition());
 		if (theFilter.getCondition() instanceof ValueConstant || theFilter.getCondition() instanceof Var) {

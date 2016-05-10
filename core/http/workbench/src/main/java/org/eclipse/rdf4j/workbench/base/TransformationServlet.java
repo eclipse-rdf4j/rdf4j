@@ -30,14 +30,14 @@ import org.slf4j.LoggerFactory;
 public abstract class TransformationServlet extends AbstractRepositoryServlet {
 
 	protected static final ParserConfig NON_VERIFYING_PARSER_CONFIG;
-	
+
 	static {
 		NON_VERIFYING_PARSER_CONFIG = new ParserConfig();
 		NON_VERIFYING_PARSER_CONFIG.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, false);
 		NON_VERIFYING_PARSER_CONFIG.set(BasicParserSettings.VERIFY_LANGUAGE_TAGS, false);
 		NON_VERIFYING_PARSER_CONFIG.set(BasicParserSettings.VERIFY_RELATIVE_URIS, false);
 	}
-	
+
 	public static final String CONTEXT = "context";
 
 	protected static final String INFO = "info";
@@ -122,7 +122,8 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 	protected void service(final TupleResultBuilder writer, final String xslPath)
 		throws Exception
 	{
-		LOGGER.info("Call made to empty superclass implementation of service(PrintWriter,String) for path: {}",
+		LOGGER.info(
+				"Call made to empty superclass implementation of service(PrintWriter,String) for path: {}",
 				xslPath);
 	}
 

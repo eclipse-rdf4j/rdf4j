@@ -35,8 +35,8 @@ public class SimpleEvaluationStrategyTest {
 	}
 
 	/**
-	 * Verifies if only those input bindings that actually occur in the query
-	 * are returned in the result. See SES-2373.
+	 * Verifies if only those input bindings that actually occur in the query are returned in the result. See
+	 * SES-2373.
 	 */
 	@Test
 	public void testBindings()

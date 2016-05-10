@@ -16,8 +16,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * A {@link DelegatingRepository} implementation that, by default, forwards all
- * method calls to its delegate.
+ * A {@link DelegatingRepository} implementation that, by default, forwards all method calls to its delegate.
  * 
  * @author Herko ter Horst
  * @author Arjohn Kampman
@@ -33,8 +32,8 @@ public class RepositoryWrapper implements DelegatingRepository {
 	}
 
 	/**
-	 * Creates a new <tt>RepositoryWrapper</tt> and calls
-	 * {@link #setDelegate(Repository)} with the supplied delegate repository.
+	 * Creates a new <tt>RepositoryWrapper</tt> and calls {@link #setDelegate(Repository)} with the supplied
+	 * delegate repository.
 	 */
 	public RepositoryWrapper(Repository delegate) {
 		setDelegate(delegate);

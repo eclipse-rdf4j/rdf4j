@@ -170,7 +170,8 @@ public class TransactionWriter {
 				{
 					if (binding.getValue() instanceof IRI) {
 						xmlWriter.setAttribute(TransactionXMLConstants.NAME_ATT, binding.getName());
-						xmlWriter.textElement(TransactionXMLConstants.BINDING_URI, binding.getValue().stringValue());
+						xmlWriter.textElement(TransactionXMLConstants.BINDING_URI,
+								binding.getValue().stringValue());
 					}
 
 					if (binding.getValue() instanceof BNode) {
@@ -184,7 +185,8 @@ public class TransactionWriter {
 
 						Literal literal = (Literal)binding.getValue();
 						if (Literals.isLanguageLiteral(literal)) {
-							xmlWriter.setAttribute(TransactionXMLConstants.LANGUAGE_ATT, literal.getLanguage().get());
+							xmlWriter.setAttribute(TransactionXMLConstants.LANGUAGE_ATT,
+									literal.getLanguage().get());
 						}
 						else {
 							xmlWriter.setAttribute(TransactionXMLConstants.DATA_TYPE_ATT,
@@ -329,7 +331,8 @@ public class TransactionWriter {
 				xmlWriter.setAttribute(TransactionXMLConstants.LANG_ATT, literal.getLanguage().get());
 			}
 			else {
-				xmlWriter.setAttribute(TransactionXMLConstants.DATATYPE_ATT, literal.getDatatype().toString());
+				xmlWriter.setAttribute(TransactionXMLConstants.DATATYPE_ATT,
+						literal.getDatatype().toString());
 			}
 
 			String label = literal.getLabel();

@@ -20,9 +20,12 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 public class RedirectFilter implements Filter {
+
 	private FilterConfig config;
 
-	public void init(FilterConfig config) throws ServletException {
+	public void init(FilterConfig config)
+		throws ServletException
+	{
 		this.config = config;
 	}
 
@@ -30,22 +33,22 @@ public class RedirectFilter implements Filter {
 	}
 
 	@SuppressWarnings("unchecked")
-	public void doFilter(ServletRequest req, ServletResponse resp,
-			FilterChain chain) throws IOException, ServletException {
-		HttpServletRequest hreq = (HttpServletRequest) req;
-		HttpServletResponse hresp = (HttpServletResponse) resp;
+	public void doFilter(ServletRequest req, ServletResponse resp, FilterChain chain)
+		throws IOException, ServletException
+	{
+		HttpServletRequest hreq = (HttpServletRequest)req;
+		HttpServletResponse hresp = (HttpServletResponse)resp;
 		Enumeration<String> names = config.getInitParameterNames();
 		while (names.hasMoreElements()) {
 			String name = names.nextElement();
 			String pathInfo = hreq.getPathInfo();
 			String servletPath = hreq.getServletPath();
-			if (pathInfo == null && name.equals(servletPath)
-					|| name.equals(pathInfo)) {
+			if (pathInfo == null && name.equals(servletPath) || name.equals(pathInfo)) {
 				if (hreq.getContextPath() != null) {
-					hresp.sendRedirect(hreq.getContextPath()
-							+ config.getInitParameter(name));
+					hresp.sendRedirect(hreq.getContextPath() + config.getInitParameter(name));
 					return;
-				} else {
+				}
+				else {
 					hresp.sendRedirect(config.getInitParameter(name));
 					return;
 				}

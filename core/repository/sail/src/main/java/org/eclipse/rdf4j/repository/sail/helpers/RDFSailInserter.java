@@ -40,8 +40,8 @@ public class RDFSailInserter extends AbstractRDFInserter {
 	 *--------------*/
 
 	/**
-	 * Creates a new RDFInserter object that preserves bnode IDs and that does
-	 * not enforce any context upon statements that are reported to it.
+	 * Creates a new RDFInserter object that preserves bnode IDs and that does not enforce any context upon
+	 * statements that are reported to it.
 	 * 
 	 * @param con
 	 *        The connection to use for the add operations.
@@ -61,7 +61,8 @@ public class RDFSailInserter extends AbstractRDFInserter {
 	 *---------*/
 
 	@Override
-	protected void addNamespace(String prefix, String name) throws RDF4JException
+	protected void addNamespace(String prefix, String name)
+		throws RDF4JException
 	{
 		if (con.getNamespace(prefix) == null) {
 			con.setNamespace(prefix, name);
@@ -69,14 +70,15 @@ public class RDFSailInserter extends AbstractRDFInserter {
 	}
 
 	@Override
-	protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) throws RDF4JException
+	protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt)
+		throws RDF4JException
 	{
 		if (enforcesContext()) {
 			addStatement(uc, subj, pred, obj, contexts);
 		}
 		else {
 			if (uc != null && ctxt == null) {
-					final IRI insertGraph = uc.getDataset().getDefaultInsertGraph();
+				final IRI insertGraph = uc.getDataset().getDefaultInsertGraph();
 				if (insertGraph != null) {
 					addStatement(uc, subj, pred, obj, insertGraph);
 				}
@@ -90,9 +92,10 @@ public class RDFSailInserter extends AbstractRDFInserter {
 		}
 	}
 
-	private void addStatement(UpdateContext uc, Resource subj, IRI pred, Value obj, Resource... ctxts) throws SailException
+	private void addStatement(UpdateContext uc, Resource subj, IRI pred, Value obj, Resource... ctxts)
+		throws SailException
 	{
-		if(uc != null) {
+		if (uc != null) {
 			con.addStatement(uc, subj, pred, obj, ctxts);
 		}
 		else {

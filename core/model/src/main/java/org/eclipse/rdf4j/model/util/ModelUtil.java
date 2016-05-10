@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
-
 /**
  * Utility functions for working with {@link org.eclipse.rdf4j.model.Model}s and other statement collections.
  * 

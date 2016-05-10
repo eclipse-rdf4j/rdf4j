@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * Checks whether a certain value is contained in a set of results produced by a
- * query.
+ * Checks whether a certain value is contained in a set of results produced by a query.
  */
 public class In extends CompareSubQueryValueOperator {
 

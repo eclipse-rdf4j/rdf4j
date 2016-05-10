@@ -19,9 +19,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.SilentIteration;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
- * Fallback join handler, if the block join can not be performed, e.g. because
- * the BINDINGS clause is not supported by the endpoint. Gets a materialized
- * collection of bindings as input, and has to evaluate the join.
+ * Fallback join handler, if the block join can not be performed, e.g. because the BINDINGS clause is not
+ * supported by the endpoint. Gets a materialized collection of bindings as input, and has to evaluate the
+ * join.
  * 
  * @author Andreas Schwarte
  */
@@ -35,8 +35,8 @@ public class ServiceFallbackIteration extends JoinExecutorBase<BindingSet> {
 
 	protected final Collection<BindingSet> bindings;
 
-	public ServiceFallbackIteration(Service service, Set<String> projectionVars, Collection<BindingSet> bindings,
-			FederatedService federatedService)
+	public ServiceFallbackIteration(Service service, Set<String> projectionVars,
+			Collection<BindingSet> bindings, FederatedService federatedService)
 		throws QueryEvaluationException
 	{
 		super(null, null, EmptyBindingSet.getInstance());
@@ -63,15 +63,16 @@ public class ServiceFallbackIteration extends JoinExecutorBase<BindingSet> {
 						service, projectionVars, b, service.getBaseURI());
 				result = service.isSilent() ? new SilentIteration(result) : result;
 				addResult(result);
-			} 
+			}
 			catch (QueryEvaluationException e) {
 				// suppress exceptions if silent
 				if (service.isSilent()) {
 					addResult(new SingletonIteration<BindingSet, QueryEvaluationException>(b));
-				} else {
+				}
+				else {
 					throw e;
 				}
-			}			
+			}
 			catch (RuntimeException e) {
 				// suppress special exceptions (e.g. UndeclaredThrowable with wrapped
 				// QueryEval) if silent

@@ -19,36 +19,36 @@ public abstract class RDFXMLWriterTestCase extends RDFWriterTest {
 
 	// TODO temporarily disabled since legal status of CIA factbook test files is not clear. Test
 	// should be modified to use different test data that we own ourselves. 
-//	public void testWrite()
-//		throws RepositoryException, RDFParseException, IOException, RDFHandlerException
-//	{
-//		Repository rep1 = new SailRepository(new MemoryStore());
-//		rep1.initialize();
-//
-//		RepositoryConnection con1 = rep1.getConnection();
-//
-//		InputStream ciaScheme = this.getClass().getResourceAsStream("/cia-factbook/CIA-onto-enhanced.rdf");
-//		InputStream ciaFacts = this.getClass().getResourceAsStream("/cia-factbook/CIA-facts-enhanced.rdf");
-//
-//		con1.add(ciaScheme, "urn:cia-factbook/CIA-onto-enhanced.rdf", RDFFormat.RDFXML);
-//		con1.add(ciaFacts, "urn:cia-factbook/CIA-facts-enhanced.rdf", RDFFormat.RDFXML);
-//
-//		StringWriter writer = new StringWriter();
-//		RDFWriter rdfWriter = rdfWriterFactory.getWriter(writer);
-//		con1.export(rdfWriter);
-//
-//		con1.close();
-//
-//		Repository rep2 = new SailRepository(new MemoryStore());
-//		rep2.initialize();
-//
-//		RepositoryConnection con2 = rep2.getConnection();
-//
-//		con2.add(new StringReader(writer.toString()), "foo:bar", RDFFormat.RDFXML);
-//		con2.close();
-//
-//		Assert.assertTrue("result of serialization and re-upload should be equal to original",
-//				RepositoryUtil.equals(rep1, rep2));
-//	}
+	//	public void testWrite()
+	//		throws RepositoryException, RDFParseException, IOException, RDFHandlerException
+	//	{
+	//		Repository rep1 = new SailRepository(new MemoryStore());
+	//		rep1.initialize();
+	//
+	//		RepositoryConnection con1 = rep1.getConnection();
+	//
+	//		InputStream ciaScheme = this.getClass().getResourceAsStream("/cia-factbook/CIA-onto-enhanced.rdf");
+	//		InputStream ciaFacts = this.getClass().getResourceAsStream("/cia-factbook/CIA-facts-enhanced.rdf");
+	//
+	//		con1.add(ciaScheme, "urn:cia-factbook/CIA-onto-enhanced.rdf", RDFFormat.RDFXML);
+	//		con1.add(ciaFacts, "urn:cia-factbook/CIA-facts-enhanced.rdf", RDFFormat.RDFXML);
+	//
+	//		StringWriter writer = new StringWriter();
+	//		RDFWriter rdfWriter = rdfWriterFactory.getWriter(writer);
+	//		con1.export(rdfWriter);
+	//
+	//		con1.close();
+	//
+	//		Repository rep2 = new SailRepository(new MemoryStore());
+	//		rep2.initialize();
+	//
+	//		RepositoryConnection con2 = rep2.getConnection();
+	//
+	//		con2.add(new StringReader(writer.toString()), "foo:bar", RDFFormat.RDFXML);
+	//		con2.close();
+	//
+	//		Assert.assertTrue("result of serialization and re-upload should be equal to original",
+	//				RepositoryUtil.equals(rep1, rep2));
+	//	}
 
 }

@@ -34,8 +34,7 @@ public class DefaultSailChangedEvent implements SailChangedEvent {
 	 *--------------*/
 
 	/**
-	 * Creates a new DefaultSailChangedEvent in which all possible changes are
-	 * set to false.
+	 * Creates a new DefaultSailChangedEvent in which all possible changes are set to false.
 	 */
 	public DefaultSailChangedEvent(Sail sail) {
 		this.sail = sail;

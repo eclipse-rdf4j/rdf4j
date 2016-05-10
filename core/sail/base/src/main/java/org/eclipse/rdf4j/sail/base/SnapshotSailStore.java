@@ -14,9 +14,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * A {@link SailStore} wrapper that branches the backing {@link SailSource}s to
- * provide concurrent {@link IsolationLevels#SNAPSHOT_READ} isolation and
- * higher.
+ * A {@link SailStore} wrapper that branches the backing {@link SailSource}s to provide concurrent
+ * {@link IsolationLevels#SNAPSHOT_READ} isolation and higher.
  * 
  * @author James Leigh
  */
@@ -28,20 +27,17 @@ public class SnapshotSailStore implements SailStore {
 	private final SailStore backingStore;
 
 	/**
-	 * {@link SailSource} of {@link SailStore#getExplicitSailSource()}
-	 * .
+	 * {@link SailSource} of {@link SailStore#getExplicitSailSource()} .
 	 */
 	private final SailSourceBranch explicitAutoFlush;
 
 	/**
-	 * {@link SailSource} of {@link SailStore#getInferredSailSource()}
-	 * .
+	 * {@link SailSource} of {@link SailStore#getInferredSailSource()} .
 	 */
 	private final SailSourceBranch inferredAutoFlush;
 
 	/**
-	 * Wraps an {@link SailStore}, tracking changes in {@link SailModelFactory}
-	 * instances.
+	 * Wraps an {@link SailStore}, tracking changes in {@link SailModelFactory} instances.
 	 * 
 	 * @param backingStore
 	 * @param modelFactory

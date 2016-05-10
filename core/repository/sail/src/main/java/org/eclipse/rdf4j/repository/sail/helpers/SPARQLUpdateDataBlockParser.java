@@ -19,10 +19,9 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.trig.TriGParser;
 
 /**
- * An extension of {@link TriGParser} that processes data in the format
- * specified in the SPARQL 1.1 grammar for Quad data (assuming no variables, as
- * is the case for INSERT DATA and DELETE DATA operations). This format is
- * almost completely compatible with TriG, except for three differences:
+ * An extension of {@link TriGParser} that processes data in the format specified in the SPARQL 1.1 grammar
+ * for Quad data (assuming no variables, as is the case for INSERT DATA and DELETE DATA operations). This
+ * format is almost completely compatible with TriG, except for three differences:
  * <ul>
  * <li>it introduces the 'GRAPH' keyword in front of each named graph identifier
  * <li>it does not allow the occurrence of blank nodes.
@@ -30,10 +29,10 @@ import org.eclipse.rdf4j.rio.trig.TriGParser;
  * </ul>
  * 
  * @author Jeen Broekstra
- * @see <a href="http://www.w3.org/TR/sparql11-query/#rInsertData">SPARQL 1.1
- *      Grammar production for INSERT DATA</a>
- * @see <a href="http://www.w3.org/TR/sparql11-query/#rDeleteData">SPARQL 1.1
- *      Grammar production for DELETE DATA</a>
+ * @see <a href="http://www.w3.org/TR/sparql11-query/#rInsertData">SPARQL 1.1 Grammar production for INSERT
+ *      DATA</a>
+ * @see <a href="http://www.w3.org/TR/sparql11-query/#rDeleteData">SPARQL 1.1 Grammar production for DELETE
+ *      DATA</a>
  */
 public class SPARQLUpdateDataBlockParser extends TriGParser {
 
@@ -44,16 +43,14 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 	 *--------------*/
 
 	/**
-	 * Creates a new parser that will use a {@link SimpleValueFactory} to create
-	 * RDF model objects.
+	 * Creates a new parser that will use a {@link SimpleValueFactory} to create RDF model objects.
 	 */
 	public SPARQLUpdateDataBlockParser() {
 		super();
 	}
 
 	/**
-	 * Creates a new parser that will use the supplied ValueFactory to create RDF
-	 * model objects.
+	 * Creates a new parser that will use the supplied ValueFactory to create RDF model objects.
 	 * 
 	 * @param valueFactory
 	 *        A ValueFactory.
@@ -74,11 +71,13 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 	}
 
 	@Override
-	protected void parseGraph() throws RDFParseException, RDFHandlerException, IOException {
+	protected void parseGraph()
+		throws RDFParseException, RDFHandlerException, IOException
+	{
 		super.parseGraph();
 		skipOptionalPeriod();
 	}
-	
+
 	@Override
 	protected Resource parseImplicitBlank()
 		throws IOException, RDFParseException, RDFHandlerException

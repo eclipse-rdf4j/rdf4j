@@ -24,8 +24,8 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 
 /**
- * An in-memory store for namespace prefix information that uses a file for
- * persistence. Namespaces are encoded in the file as records as follows:
+ * An in-memory store for namespace prefix information that uses a file for persistence. Namespaces are
+ * encoded in the file as records as follows:
  * 
  * <pre>
  *   byte 1 - 2     : the length of the encoded namespace name
@@ -45,9 +45,8 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 	private static final String FILE_NAME = "namespaces.dat";
 
 	/**
-	 * Magic number "Native Namespace File" to detect whether the file is
-	 * actually a namespace file. The first three bytes of the file should be
-	 * equal to this magic number.
+	 * Magic number "Native Namespace File" to detect whether the file is actually a namespace file. The first
+	 * three bytes of the file should be equal to this magic number.
 	 */
 	private static final byte[] MAGIC_NUMBER = new byte[] { 'n', 'n', 'f' };
 
@@ -71,8 +70,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 	private final Map<String, SimpleNamespace> namespacesMap;
 
 	/**
-	 * Flag indicating whether the contents of this NamespaceStore are different
-	 * from what is stored on disk.
+	 * Flag indicating whether the contents of this NamespaceStore are different from what is stored on disk.
 	 */
 	private volatile boolean contentsChanged;
 
@@ -200,7 +198,8 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 					throw new IOException("Unable to read namespace file; it uses a newer file format");
 				}
 				else if (version != FILE_FORMAT_VERSION) {
-					throw new IOException("Unable to read namespace file; invalid file format version: " + version);
+					throw new IOException(
+							"Unable to read namespace file; invalid file format version: " + version);
 				}
 
 				while (true) {

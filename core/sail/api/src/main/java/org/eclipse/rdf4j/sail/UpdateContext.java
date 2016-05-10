@@ -14,8 +14,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 
 /**
- * Provided with add and remove operation to give them context within a
- * {@link UpdateExpr} operation.
+ * Provided with add and remove operation to give them context within a {@link UpdateExpr} operation.
  * 
  * @author James Leigh
  */
@@ -29,17 +28,21 @@ public class UpdateContext {
 
 	private final boolean includeInferred;
 
-	public UpdateContext(UpdateExpr updateExpr, Dataset dataset, BindingSet bindings, boolean includeInferred) {
+	public UpdateContext(UpdateExpr updateExpr, Dataset dataset, BindingSet bindings,
+			boolean includeInferred)
+	{
 		assert updateExpr != null;
 		this.updateExpr = updateExpr;
 		if (dataset == null) {
 			this.dataset = new SimpleDataset();
-		} else {
+		}
+		else {
 			this.dataset = dataset;
 		}
 		if (bindings == null) {
 			this.bindings = EmptyBindingSet.getInstance();
-		} else {
+		}
+		else {
 			this.bindings = bindings;
 		}
 		this.includeInferred = includeInferred;

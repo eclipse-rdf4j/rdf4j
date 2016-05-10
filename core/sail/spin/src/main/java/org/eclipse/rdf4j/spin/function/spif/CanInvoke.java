@@ -130,8 +130,10 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 				}
 			}
 
-			/* in order to check any additional constraints we have to create a virtual function instance
-			to run them against */
+			/*
+			 * in order to check any additional constraints we have to create a virtual function instance to
+			 * run them against
+			 */
 			final Resource funcInstance = qpTripleSource.getValueFactory().createBNode();
 
 			TripleSource tempTripleSource = new TripleSource() {
@@ -191,8 +193,8 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 						tupleExpr = new QueryRoot(tupleExpr);
 					}
 
-					new SpinFunctionInterpreter(parser, getTripleSource(), functionRegistry).optimize(tupleExpr,
-							dataset, bindings);
+					new SpinFunctionInterpreter(parser, getTripleSource(), functionRegistry).optimize(
+							tupleExpr, dataset, bindings);
 					new SpinMagicPropertyInterpreter(parser, getTripleSource(), tupleFunctionRegistry,
 							serviceResolver).optimize(tupleExpr, dataset, bindings);
 
@@ -236,8 +238,8 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 							Statements.getObjectURIs(constraint, RDF.TYPE, qpTripleSource));
 					// skip over argument constraints that we have already checked
 					if (!constraintTypes.contains(SPL.ARGUMENT_TEMPLATE)) {
-						ConstraintViolation violation = SpinInferencing.checkConstraint(funcInstance, constraint,
-								tempQueryPreparer, parser);
+						ConstraintViolation violation = SpinInferencing.checkConstraint(funcInstance,
+								constraint, tempQueryPreparer, parser);
 						if (violation != null) {
 							return BooleanLiteralImpl.FALSE;
 						}

@@ -25,7 +25,7 @@ public class RemoveNamespaceOperation implements TransactionOperation, Serializa
 	 * 
 	 */
 	private static final long serialVersionUID = 3227597422508894927L;
-	
+
 	private String prefix;
 
 	public RemoveNamespaceOperation() {
@@ -50,8 +50,7 @@ public class RemoveNamespaceOperation implements TransactionOperation, Serializa
 	}
 
 	@Override
-	public boolean equals(Object other)
-	{
+	public boolean equals(Object other) {
 		if (other instanceof RemoveNamespaceOperation) {
 			RemoveNamespaceOperation o = (RemoveNamespaceOperation)other;
 			return ObjectUtil.nullEquals(getPrefix(), o.getPrefix());
@@ -61,8 +60,7 @@ public class RemoveNamespaceOperation implements TransactionOperation, Serializa
 	}
 
 	@Override
-	public int hashCode()
-	{
+	public int hashCode() {
 		return ObjectUtil.nullHashCode(getPrefix());
 	}
 }

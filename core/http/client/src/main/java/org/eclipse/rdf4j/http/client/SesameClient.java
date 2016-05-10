@@ -22,20 +22,17 @@ public interface SesameClient {
 	HttpClient getHttpClient();
 
 	/**
-	 * Creates a new session to the remote SPARQL endpoint to manage the auth
-	 * state.
+	 * Creates a new session to the remote SPARQL endpoint to manage the auth state.
 	 */
 	SparqlSession createSparqlSession(String queryEndpointUrl, String updateEndpointUrl);
 
 	/**
-	 * Creates a new session to the remote Sesame server to manage the auth
-	 * state.
+	 * Creates a new session to the remote Sesame server to manage the auth state.
 	 */
 	SesameSession createSesameSession(String serverURL);
 
 	/**
-	 * Closes any remaining TCP connections and threads used by the sessions
-	 * created by this object.
+	 * Closes any remaining TCP connections and threads used by the sessions created by this object.
 	 */
 	void shutDown();
 

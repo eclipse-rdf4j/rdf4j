@@ -31,11 +31,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
- * A query optimizer that embeds {@link Filter}s with {@link SameTerm} operators
- * in statement patterns as much as possible. Operators like sameTerm(X, Y) are
- * processed by renaming X to Y (or vice versa). Operators like sameTerm(X,
- * <someURI>) are processed by assigning the URI to all occurring variables with
- * name X.
+ * A query optimizer that embeds {@link Filter}s with {@link SameTerm} operators in statement patterns as much
+ * as possible. Operators like sameTerm(X, Y) are processed by renaming X to Y (or vice versa). Operators like
+ * sameTerm(X, <someURI>) are processed by assigning the URI to all occurring variables with name X.
  * 
  * @author Arjohn Kampman
  * @author James Leigh
@@ -43,8 +41,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 public class SameTermFilterOptimizer implements QueryOptimizer {
 
 	/**
-	 * Applies generally applicable optimizations to the supplied query: variable
-	 * assignments are inlined.
+	 * Applies generally applicable optimizations to the supplied query: variable assignments are inlined.
 	 */
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(new SameTermFilterVisitor());
@@ -74,24 +71,30 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 				}
 
 				Set<String> assuredBindingNames = filterArg.getAssuredBindingNames();
-				if (isUnboundVar(leftArg, assuredBindingNames) || isUnboundVar(rightArg, assuredBindingNames)) {
+				if (isUnboundVar(leftArg, assuredBindingNames)
+						|| isUnboundVar(rightArg, assuredBindingNames))
+				{
 					// One or both var(s) are potentially unbound, inlining could
 					// invalidate the result e.g. in case of left joins
 					return;
 				}
 
 				if (leftArg instanceof Var || rightArg instanceof Var) {
-					if (filterArg instanceof ArbitraryLengthPath && leftArg instanceof Var && rightArg instanceof Var) {
+					if (filterArg instanceof ArbitraryLengthPath && leftArg instanceof Var
+							&& rightArg instanceof Var)
+					{
 						final ArbitraryLengthPath alp = (ArbitraryLengthPath)filterArg;
 						final List<Var> sameTermArgs = Arrays.asList((Var)leftArg, (Var)rightArg);
-						
-						if (sameTermArgs.contains(alp.getSubjectVar()) && sameTermArgs.contains(alp.getObjectVar())) {
+
+						if (sameTermArgs.contains(alp.getSubjectVar())
+								&& sameTermArgs.contains(alp.getObjectVar()))
+						{
 							// SameTerm provides a deferred mapping to allow arbitrary-length property path to produce cyclic paths. See SES-1685. 
 							// we can not inline.
 							return;
 						}
 					}
-					
+
 					BindingSetAssignmentCollector collector = new BindingSetAssignmentCollector();
 					filterArg.visit(collector);
 
@@ -170,6 +173,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 	}
 
 	protected static class VarRenamer extends AbstractQueryModelVisitor<RuntimeException> {
+
 		private final Var oldVar;
 
 		private final Var newVar;

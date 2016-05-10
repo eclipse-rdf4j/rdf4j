@@ -61,21 +61,19 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 /**
  * Implementation of {@link SailUpdate#execute()} using
- * {@link SailConnection#evaluate(TupleExpr, Dataset, BindingSet, boolean)} and
- * other {@link SailConnection} methods. LOAD is handled at the Repository API
- * level because it requires access to the Rio parser.
+ * {@link SailConnection#evaluate(TupleExpr, Dataset, BindingSet, boolean)} and other {@link SailConnection}
+ * methods. LOAD is handled at the Repository API level because it requires access to the Rio parser.
  * 
  * @author jeen
  * @author James Leigh
  * @param <E>
  * @see SailConnection#startUpdate(UpdateContext)
  * @see SailConnection#endUpdate(UpdateContext)
- * @see SailConnection#addStatement(UpdateContext, Resource, IRI, Value,
- *      Resource...)
- * @see SailConnection#removeStatement(UpdateContext, Resource, IRI, Value,
- *      Resource...)
+ * @see SailConnection#addStatement(UpdateContext, Resource, IRI, Value, Resource...)
+ * @see SailConnection#removeStatement(UpdateContext, Resource, IRI, Value, Resource...)
  * @see SailConnection#clear(Resource...)
  * @see SailConnection#getContextIDs()
  * @see SailConnection#getStatements(Resource, IRI, Value, boolean, Resource...)
@@ -93,8 +91,8 @@ public class SailUpdateExecutor {
 
 	/**
 	 * Implementation of {@link SailUpdate#execute()} using
-	 * {@link SailConnection#evaluate(TupleExpr, Dataset, BindingSet, boolean)}
-	 * and other {@link SailConnection} methods.
+	 * {@link SailConnection#evaluate(TupleExpr, Dataset, BindingSet, boolean)} and other
+	 * {@link SailConnection} methods.
 	 * 
 	 * @param con
 	 *        Used to read data from and write data to.
@@ -109,11 +107,12 @@ public class SailUpdateExecutor {
 	}
 
 	/**
-	 * @param maxExecutionTime in seconds.
+	 * @param maxExecutionTime
+	 *        in seconds.
 	 */
 	public void executeUpdate(UpdateExpr updateExpr, Dataset dataset, BindingSet bindings,
 			boolean includeInferred, int maxExecutionTime)
-				throws SailException, RDFParseException, IOException
+		throws SailException, RDFParseException, IOException
 	{
 		UpdateContext uc = new UpdateContext(updateExpr, dataset, bindings, includeInferred);
 		logger.trace("Incoming update expression:\n{}", uc);
@@ -234,8 +233,8 @@ public class SailUpdateExecutor {
 		}
 
 		// get all statements from source and add them to destination
-		CloseableIteration<? extends Statement, SailException> statements = con.getStatements(null, null, null,
-				uc.isIncludeInferred(), (Resource)source);
+		CloseableIteration<? extends Statement, SailException> statements = con.getStatements(null, null,
+				null, uc.isIncludeInferred(), (Resource)source);
 
 		if (maxExecutionTime > 0) {
 			statements = new TimeLimitIteration<Statement, SailException>(statements,
@@ -254,7 +253,8 @@ public class SailUpdateExecutor {
 		try {
 			while (statements.hasNext()) {
 				Statement st = statements.next();
-				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(), (Resource)destination);
+				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(),
+						(Resource)destination);
 			}
 		}
 		finally {
@@ -282,8 +282,8 @@ public class SailUpdateExecutor {
 		}
 
 		// get all statements from source and add them to destination
-		CloseableIteration<? extends Statement, SailException> statements = con.getStatements(null, null, null,
-				uc.isIncludeInferred(), (Resource)source);
+		CloseableIteration<? extends Statement, SailException> statements = con.getStatements(null, null,
+				null, uc.isIncludeInferred(), (Resource)source);
 
 		if (maxExecTime > 0) {
 			statements = new TimeLimitIteration<Statement, SailException>(statements, 1000L * maxExecTime) {
@@ -300,7 +300,8 @@ public class SailUpdateExecutor {
 		try {
 			while (statements.hasNext()) {
 				Statement st = statements.next();
-				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(), (Resource)destination);
+				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(),
+						(Resource)destination);
 			}
 		}
 		finally {
@@ -337,8 +338,8 @@ public class SailUpdateExecutor {
 		}
 
 		// remove all statements from source and add them to destination
-		CloseableIteration<? extends Statement, SailException> statements = con.getStatements(null, null, null,
-				uc.isIncludeInferred(), (Resource)source);
+		CloseableIteration<? extends Statement, SailException> statements = con.getStatements(null, null,
+				null, uc.isIncludeInferred(), (Resource)source);
 
 		if (maxExecutionTime > 0) {
 			statements = new TimeLimitIteration<Statement, SailException>(statements,
@@ -357,7 +358,8 @@ public class SailUpdateExecutor {
 		try {
 			while (statements.hasNext()) {
 				Statement st = statements.next();
-				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(), (Resource)destination);
+				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(),
+						(Resource)destination);
 				con.removeStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(), (Resource)source);
 			}
 		}
@@ -465,7 +467,7 @@ public class SailUpdateExecutor {
 
 		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser(vf);
 		parser.setAllowBlankNodes(false); // no blank nodes allowed in DELETE
-														// DATA.
+											// DATA.
 		RDFHandler handler = new RDFSailRemover(con, vf, uc);
 		if (maxExecutionTime > 0) {
 			handler = new TimeLimitRDFHandler(handler, 1000L * maxExecutionTime);
@@ -527,10 +529,11 @@ public class SailUpdateExecutor {
 
 	private CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateWhereClause(
 			final TupleExpr whereClause, final UpdateContext uc, final int maxExecutionTime)
-				throws SailException, QueryEvaluationException
+		throws SailException, QueryEvaluationException
 	{
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings;
-		sourceBindings = con.evaluate(whereClause, uc.getDataset(), uc.getBindingSet(), uc.isIncludeInferred());
+		sourceBindings = con.evaluate(whereClause, uc.getDataset(), uc.getBindingSet(),
+				uc.isIncludeInferred());
 
 		if (maxExecutionTime > 0) {
 			sourceBindings = new TimeLimitIteration<BindingSet, QueryEvaluationException>(sourceBindings,
@@ -634,7 +637,8 @@ public class SailUpdateExecutor {
 			// individual source binding.
 			MapBindingSet bnodeMapping = new MapBindingSet();
 			for (StatementPattern insertPattern : insertPatterns) {
-				Statement toBeInserted = createStatementFromPattern(insertPattern, whereBinding, bnodeMapping);
+				Statement toBeInserted = createStatementFromPattern(insertPattern, whereBinding,
+						bnodeMapping);
 
 				if (toBeInserted != null) {
 					IRI with = uc.getDataset().getDefaultInsertGraph();
@@ -657,7 +661,7 @@ public class SailUpdateExecutor {
 
 	private Statement createStatementFromPattern(StatementPattern pattern, BindingSet sourceBinding,
 			MapBindingSet bnodeMapping)
-				throws SailException
+		throws SailException
 	{
 
 		Resource subject = null;

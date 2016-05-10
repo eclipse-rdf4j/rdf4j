@@ -25,22 +25,18 @@ public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryE
 	private long maxSize;
 
 	/**
-	 * Creates a new MinusIteration that returns the results of the left argument
-	 * minus the results of the right argument. By default, duplicates are
-	 * <em>not</em> filtered from the results.
+	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the
+	 * right argument. By default, duplicates are <em>not</em> filtered from the results.
 	 * 
 	 * @param leftArg
 	 *        An Iteration containing the main set of elements.
 	 * @param rightArg
-	 *        An Iteration containing the set of elements that should be filtered
-	 *        from the main set. * @param used An atomic long used to monitor how
-	 *        many elements are in the set collections.
+	 *        An Iteration containing the set of elements that should be filtered from the main set. * @param
+	 *        used An atomic long used to monitor how many elements are in the set collections.
 	 * @param used
-	 *        An atomic long used to monitor how many elements are in the set
-	 *        collections.
+	 *        An atomic long used to monitor how many elements are in the set collections.
 	 * @param maxSize
-	 *        Maximum size allowed by the sum of all collections used by the
-	 *        LimitedSizeQueryEvaluatlion.
+	 *        Maximum size allowed by the sum of all collections used by the LimitedSizeQueryEvaluatlion.
 	 */
 	public LimitedSizeSPARQLMinusIteration(Iteration<BindingSet, QueryEvaluationException> leftArg,
 			Iteration<BindingSet, QueryEvaluationException> rightArg, AtomicLong used, long maxSize)
@@ -49,23 +45,19 @@ public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryE
 	}
 
 	/**
-	 * Creates a new SPARQLMinusIteration that returns the results of the left argument
-	 * minus the results of the right argument.
+	 * Creates a new SPARQLMinusIteration that returns the results of the left argument minus the results of
+	 * the right argument.
 	 * 
 	 * @param leftArg
 	 *        An Iteration containing the main set of elements.
 	 * @param rightArg
-	 *        An Iteration containing the set of elements that should be filtered
-	 *        from the main set.
+	 *        An Iteration containing the set of elements that should be filtered from the main set.
 	 * @param distinct
-	 *        Flag indicating whether duplicate elements should be filtered from
-	 *        the result.
+	 *        Flag indicating whether duplicate elements should be filtered from the result.
 	 * @param used
-	 *        An atomic long used to monitor how many elements are in the set
-	 *        collections.
+	 *        An atomic long used to monitor how many elements are in the set collections.
 	 * @param maxSize
-	 *        Maximum size allowed by the sum of all collections used by the
-	 *        LimitedSizeQueryEvaluatlion.
+	 *        Maximum size allowed by the sum of all collections used by the LimitedSizeQueryEvaluatlion.
 	 */
 	public LimitedSizeSPARQLMinusIteration(Iteration<BindingSet, QueryEvaluationException> leftArg,
 			Iteration<BindingSet, QueryEvaluationException> rightArg, boolean distinct, AtomicLong used,
@@ -75,11 +67,12 @@ public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryE
 		this.used = used;
 		this.maxSize = maxSize;
 	}
-	
+
 	@Override
-	protected Set<BindingSet> makeSet(Iteration<BindingSet, QueryEvaluationException> rightArg2) 
-			throws QueryEvaluationException {
-		return LimitedSizeIteratorUtil.addAll(rightArg2, makeSet(),used, maxSize);
+	protected Set<BindingSet> makeSet(Iteration<BindingSet, QueryEvaluationException> rightArg2)
+		throws QueryEvaluationException
+	{
+		return LimitedSizeIteratorUtil.addAll(rightArg2, makeSet(), used, maxSize);
 	}
 
 	/**
@@ -93,6 +86,5 @@ public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryE
 		super.handleClose();
 		used.addAndGet(-size);
 	}
-
 
 }

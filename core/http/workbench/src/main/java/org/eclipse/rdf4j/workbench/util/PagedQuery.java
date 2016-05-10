@@ -41,13 +41,12 @@ public class PagedQuery {
 
 	/***
 	 * <p>
-	 * Creates an object that adds or modifies the limit and offset clauses of
-	 * the query to be executed so that only those results to be displayed are
-	 * requested from the query engine.
+	 * Creates an object that adds or modifies the limit and offset clauses of the query to be executed so
+	 * that only those results to be displayed are requested from the query engine.
 	 * </p>
 	 * <p>
-	 * Implementation note: The new object contains the user's query with
-	 * appended or modified LIMIT and OFFSET clauses.
+	 * Implementation note: The new object contains the user's query with appended or modified LIMIT and
+	 * OFFSET clauses.
 	 * </p>
 	 * 
 	 * @param query
@@ -55,15 +54,15 @@ public class PagedQuery {
 	 * @param language
 	 *        SPARQL or SeRQL, as specified by the user
 	 * @param requestLimit
-	 *        maximum number of results to return, as specified by the URL query
-	 *        parameters or cookies
+	 *        maximum number of results to return, as specified by the URL query parameters or cookies
 	 * @param requestOffset
 	 *        which result to start at when populating the result set
 	 */
 	public PagedQuery(final String query, final QueryLanguage language, final int requestLimit,
 			final int requestOffset)
 	{
-		LOGGER.debug("Query Language: {}, requestLimit: " + requestLimit + ", requestOffset: " + requestOffset,
+		LOGGER.debug(
+				"Query Language: {}, requestLimit: " + requestLimit + ", requestOffset: " + requestOffset,
 				language);
 		LOGGER.debug("Query: {}", query);
 
@@ -72,9 +71,10 @@ public class PagedQuery {
 		// requestLimit <= 0 actually means don't limit display
 		hasLimitAndOffset = requestLimit > 0;
 		if (hasLimitAndOffset) {
-			/* the matcher on the pattern will have a group for "limit l#" as 
-			    well as a group for l#, similarly for "offset o#" and o#. If 
-			    either doesn't exist, it can be appended at the end. */
+			/*
+			 * the matcher on the pattern will have a group for "limit l#" as well as a group for l#,
+			 * similarly for "offset o#" and o#. If either doesn't exist, it can be appended at the end.
+			 */
 			int queryLimit = -1;
 			int queryOffset = -1;
 			final Matcher matcher = LIMIT_OR_OFFSET.matcher(query);
@@ -82,9 +82,9 @@ public class PagedQuery {
 				final String clause = matcher.group().toLowerCase();
 				final int value = Integer.parseInt(SPLITTER.split(clause)[1]);
 				if (clause.startsWith("limit")) {
-				    if (query.indexOf('}', matcher.end()) < 0) {
-				    	queryLimit = value;
-				    }
+					if (query.indexOf('}', matcher.end()) < 0) {
+						queryLimit = value;
+					}
 				}
 				else {
 					queryOffset = value;
@@ -100,7 +100,8 @@ public class PagedQuery {
 			final int maxRequestCount = requestLimit + offset;
 			limitSubstitute = (maxRequestCount < maxQueryCount) ? requestLimit : queryLimit - offset;
 			offsetSubstitute = queryOffsetExists ? queryOffset + offset : offset;
-			rval = modifyLimit(language, rval, queryLimit, queryLimitExists, queryOffsetExists, limitSubstitute);
+			rval = modifyLimit(language, rval, queryLimit, queryLimitExists, queryOffsetExists,
+					limitSubstitute);
 			rval = modifyOffset(language, offset, rval, queryOffsetExists);
 			LOGGER.debug("Modified Query: {}", rval);
 		}
@@ -156,8 +157,8 @@ public class PagedQuery {
 				}
 			}
 			else {
-				/* SeRQL, add the clause before before the namespace
-				 * section
+				/*
+				 * SeRQL, add the clause before before the namespace section
 				 */
 				rval = insertAtMatchOnOwnLine(SERQL_NAMESPACE, rval, newOffsetClause);
 			}
@@ -180,12 +181,11 @@ public class PagedQuery {
 	{
 		String rval = query;
 
-		/* In SPARQL, LIMIT and/or OFFSET can occur at the end, in 
-		 * either order. In SeRQL, LIMIT and/or OFFSET must be 
-		 * immediately prior to the *optional* namespace declaration 
-		 * section (which is itself last), and LIMIT must precede OFFSET.
-		 * This code makes no attempt to correct if the user places them
-		 * out of order in the query. 
+		/*
+		 * In SPARQL, LIMIT and/or OFFSET can occur at the end, in either order. In SeRQL, LIMIT and/or OFFSET
+		 * must be immediately prior to the *optional* namespace declaration section (which is itself last),
+		 * and LIMIT must precede OFFSET. This code makes no attempt to correct if the user places them out of
+		 * order in the query.
 		 */
 		if (queryLimitExists) {
 			if (limitSubstitute != queryLimit) {
@@ -204,8 +204,8 @@ public class PagedQuery {
 				rval = ensureNewlineAndAppend(rval, newLimitClause);
 			}
 			else {
-				/* SeRQL, add the clause before any offset clause or the 
-				 * namespace section
+				/*
+				 * SeRQL, add the clause before any offset clause or the namespace section
 				 */
 				final Pattern pattern = queryOffsetExists ? OFFSET_PATTERN : SERQL_NAMESPACE;
 				rval = insertAtMatchOnOwnLine(pattern, rval, newLimitClause);
@@ -215,9 +215,8 @@ public class PagedQuery {
 	}
 
 	/**
-	 * Insert a given string into another string at the point at which the given
-	 * matcher matches, making sure to place the insertion string on its own
-	 * line. If there is no match, appends to end on own line.
+	 * Insert a given string into another string at the point at which the given matcher matches, making sure
+	 * to place the insertion string on its own line. If there is no match, appends to end on own line.
 	 * 
 	 * @param pattern
 	 *        pattern to search for insertion location
@@ -227,7 +226,8 @@ public class PagedQuery {
 	 *        string to insert on own line
 	 * @returns result of inserting text
 	 */
-	private static String insertAtMatchOnOwnLine(final Pattern pattern, final String orig, final String insert)
+	private static String insertAtMatchOnOwnLine(final Pattern pattern, final String orig,
+			final String insert)
 	{
 		final Matcher matcher = pattern.matcher(orig);
 		final boolean found = matcher.find();

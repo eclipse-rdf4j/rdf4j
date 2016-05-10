@@ -23,11 +23,9 @@ public class ConfigurationUtil {
 	 * 
 	 * @param file
 	 *        the file to load from
-	 * @return the contents of the file as a String, or null if the file did not
-	 *         exist
+	 * @return the contents of the file as a String, or null if the file did not exist
 	 * @throws IOException
-	 *         if the contents of the file could not be read due to an I/O
-	 *         problem
+	 *         if the contents of the file could not be read due to an I/O problem
 	 */
 	public static String loadConfigurationContents(File file)
 		throws IOException
@@ -44,8 +42,8 @@ public class ConfigurationUtil {
 	 * 
 	 * @param resourceName
 	 *        the name of the resource
-	 * @return the contents of the resources as a String, or null if the
-	 *         resource, nor its default, could be found
+	 * @return the contents of the resources as a String, or null if the resource, nor its default, could be
+	 *         found
 	 * @throws IOException
 	 *         if the resource could not be read due to an I/O problem
 	 */
@@ -68,11 +66,9 @@ public class ConfigurationUtil {
 	 * 
 	 * @param file
 	 *        the file to load from
-	 * @return the contents of the file as Properties, or null if the file did
-	 *         not exist
+	 * @return the contents of the file as Properties, or null if the file did not exist
 	 * @throws IOException
-	 *         if the contents of the file could not be read due to an I/O
-	 *         problem
+	 *         if the contents of the file could not be read due to an I/O problem
 	 */
 	public static Properties loadConfigurationProperties(File file, Properties defaults)
 		throws IOException

@@ -28,8 +28,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.util.iterators.Iterators;
 
 /**
- * Utility functions for working with {@link Model}s and other {@link Statement}
- * collections.
+ * Utility functions for working with {@link Model}s and other {@link Statement} collections.
  * 
  * @author Jeen Broekstra
  * @author Arjohn Kampman
@@ -44,14 +43,12 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves an object {@link Value} from the statements in the given model.
-	 * If more than one possible object value exists, any one value is picked and
-	 * returned.
+	 * Retrieves an object {@link Value} from the statements in the given model. If more than one possible
+	 * object value exists, any one value is picked and returned.
 	 * 
 	 * @param m
 	 *        the model from which to retrieve an object value.
-	 * @return an object value from the given model, or {@link Optional#empty()}
-	 *         if no such value exists.
+	 * @return an object value from the given model, or {@link Optional#empty()} if no such value exists.
 	 */
 	public static Optional<Value> object(Model m) {
 		return m.stream().map(st -> st.getObject()).findAny();
@@ -66,14 +63,13 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves an object {@link Literal} value from the statements in the given
-	 * model. If more than one possible Literal value exists, any one Literal
-	 * value is picked and returned.
+	 * Retrieves an object {@link Literal} value from the statements in the given model. If more than one
+	 * possible Literal value exists, any one Literal value is picked and returned.
 	 * 
 	 * @param m
 	 *        the model from which to retrieve an object Literal value.
-	 * @return an object Literal value from the given model, or
-	 *         {@link Optional#empty()} if no such value exists.
+	 * @return an object Literal value from the given model, or {@link Optional#empty()} if no such value
+	 *         exists.
 	 */
 	public static Optional<Literal> objectLiteral(Model m) {
 		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Literal).map(
@@ -89,15 +85,13 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves an object {@link Resource} value from the statements in the
-	 * given model. If more than one possible Resource value exists, any one
-	 * Resource value is picked and returned.
+	 * Retrieves an object {@link Resource} value from the statements in the given model. If more than one
+	 * possible Resource value exists, any one Resource value is picked and returned.
 	 * 
 	 * @param m
 	 *        the model from which to retrieve an object Resource value.
-	 * @return an {@link Optional} object Resource value from the given model,
-	 *         which will be {@link Optional#empty() empty} if no such value
-	 *         exists.
+	 * @return an {@link Optional} object Resource value from the given model, which will be
+	 *         {@link Optional#empty() empty} if no such value exists.
 	 */
 	public static Optional<Resource> objectResource(Model m) {
 		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Resource).map(
@@ -113,29 +107,26 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves an object {@link IRI} value from the statements in the given
-	 * model. If more than one possible IRI value exists, any one value is picked
-	 * and returned.
+	 * Retrieves an object {@link IRI} value from the statements in the given model. If more than one possible
+	 * IRI value exists, any one value is picked and returned.
 	 * 
 	 * @param m
 	 *        the model from which to retrieve an object IRI value.
-	 * @return an {@link Optional} object IRI value from the given model, which
-	 *         will be {@link Optional#empty() empty} if no such value exists.
+	 * @return an {@link Optional} object IRI value from the given model, which will be
+	 *         {@link Optional#empty() empty} if no such value exists.
 	 */
 	public static Optional<IRI> objectIRI(Model m) {
 		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof IRI).map(r -> (IRI)r).findAny();
 	}
 
 	/**
-	 * Retrieves an object value as a String from the statements in the given
-	 * model. If more than one possible object value exists, any one value is
-	 * picked and returned.
+	 * Retrieves an object value as a String from the statements in the given model. If more than one possible
+	 * object value exists, any one value is picked and returned.
 	 * 
 	 * @param m
 	 *        the model from which to retrieve an object String value.
-	 * @return an {@link Optional} object String value from the given model,
-	 *         which will be {@link Optional#empty() empty} if no such value
-	 *         exists.
+	 * @return an {@link Optional} object String value from the given model, which will be
+	 *         {@link Optional#empty() empty} if no such value exists.
 	 */
 	public static Optional<String> objectString(Model m) {
 		return m.stream().map(st -> st.getObject().stringValue()).findAny();
@@ -150,14 +141,13 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves a subject {@link Resource} from the statements in the given
-	 * model. If more than one possible resource value exists, any one resource
-	 * value is picked and returned.
+	 * Retrieves a subject {@link Resource} from the statements in the given model. If more than one possible
+	 * resource value exists, any one resource value is picked and returned.
 	 * 
 	 * @param m
 	 *        the model from which to retrieve a subject Resource.
-	 * @return an {@link Optional} subject resource from the given model, which
-	 *         will be {@link Optional#empty() empty} if no such value exists.
+	 * @return an {@link Optional} subject resource from the given model, which will be
+	 *         {@link Optional#empty() empty} if no such value exists.
 	 */
 	public static Optional<Resource> subject(Model m) {
 		return m.stream().map(st -> st.getSubject()).findAny();
@@ -172,14 +162,13 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves a subject {@link IRI} from the statements in the given model. If
-	 * more than one possible IRI value exists, any one IRI value is picked and
-	 * returned.
+	 * Retrieves a subject {@link IRI} from the statements in the given model. If more than one possible IRI
+	 * value exists, any one IRI value is picked and returned.
 	 * 
 	 * @param m
 	 *        the model from which to retrieve a subject IRI value.
-	 * @return an {@link Optional} subject IRI value from the given model, which
-	 *         will be {@link Optional#empty() empty} if no such value exists.
+	 * @return an {@link Optional} subject IRI value from the given model, which will be
+	 *         {@link Optional#empty() empty} if no such value exists.
 	 */
 	public static Optional<IRI> subjectIRI(Model m) {
 		return m.stream().map(st -> st.getSubject()).filter(s -> s instanceof IRI).map(s -> (IRI)s).findAny();
@@ -194,15 +183,13 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves a subject {@link BNode} from the statements in the given model.
-	 * If more than one possible blank node value exists, any one blank node
-	 * value is picked and returned.
+	 * Retrieves a subject {@link BNode} from the statements in the given model. If more than one possible
+	 * blank node value exists, any one blank node value is picked and returned.
 	 * 
 	 * @param m
 	 *        the model from which to retrieve a subject BNode value.
-	 * @return an {@link Optional} subject BNode value from the given model,
-	 *         which will be {@link Optional#empty() empty} if no such value
-	 *         exists.
+	 * @return an {@link Optional} subject BNode value from the given model, which will be
+	 *         {@link Optional#empty() empty} if no such value exists.
 	 */
 	public static Optional<BNode> subjectBNode(Model m) {
 		return m.stream().map(st -> st.getSubject()).filter(s -> s instanceof BNode).map(
@@ -218,13 +205,13 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves a predicate from the statements in the given model. If more than
-	 * one possible predicate value exists, any one value is picked and returned.
+	 * Retrieves a predicate from the statements in the given model. If more than one possible predicate value
+	 * exists, any one value is picked and returned.
 	 * 
 	 * @param m
 	 *        the model from which to retrieve a predicate value.
-	 * @return an {@link Optional} predicate value from the given model, which
-	 *         will be {@link Optional#empty() empty} if no such value exists.
+	 * @return an {@link Optional} predicate value from the given model, which will be {@link Optional#empty()
+	 *         empty} if no such value exists.
 	 */
 	public static Optional<IRI> predicate(Model m) {
 		return m.stream().map(st -> st.getPredicate()).findAny();
@@ -239,24 +226,21 @@ public class Models {
 	}
 
 	/**
-	 * Sets the property value for the given subject to the given object value,
-	 * replacing any existing value(s) for the subject's property. This method
-	 * updates the original input Model and then returns that same Model object.
+	 * Sets the property value for the given subject to the given object value, replacing any existing
+	 * value(s) for the subject's property. This method updates the original input Model and then returns that
+	 * same Model object.
 	 * 
 	 * @param m
 	 *        the model in which to set the property value. May not be null.
 	 * @param subject
-	 *        the subject for which to set/replace the property value. May not be
-	 *        null.
+	 *        the subject for which to set/replace the property value. May not be null.
 	 * @param property
 	 *        the property for which to set/replace the value. May not be null.
 	 * @param value
-	 *        the value to set for the given subject and property. May not be
-	 *        null.
+	 *        the value to set for the given subject and property. May not be null.
 	 * @param contexts
-	 *        the context(s) in which to set/replace the property value. Optional
-	 *        vararg argument. If not specified the operations works on the
-	 *        entire Model.
+	 *        the context(s) in which to set/replace the property value. Optional vararg argument. If not
+	 *        specified the operations works on the entire Model.
 	 * @return the Model object, containing the updated property value.
 	 */
 	public static Model setProperty(Model m, Resource subject, IRI property, Value value,
@@ -275,22 +259,19 @@ public class Models {
 	}
 
 	/**
-	 * Compares two RDF models, and returns <tt>true</tt> if they consist of
-	 * isomorphic graphs and the isomorphic graph identifiers map 1:1 to each
-	 * other. RDF graphs are isomorphic graphs if statements from one graphs can
-	 * be mapped 1:1 on to statements in the other graphs. In this mapping, blank
-	 * nodes are not considered mapped when having an identical internal id, but
-	 * are mapped from one graph to the other by looking at the statements in
-	 * which the blank nodes occur.
+	 * Compares two RDF models, and returns <tt>true</tt> if they consist of isomorphic graphs and the
+	 * isomorphic graph identifiers map 1:1 to each other. RDF graphs are isomorphic graphs if statements from
+	 * one graphs can be mapped 1:1 on to statements in the other graphs. In this mapping, blank nodes are not
+	 * considered mapped when having an identical internal id, but are mapped from one graph to the other by
+	 * looking at the statements in which the blank nodes occur.
 	 * <p>
-	 * A Model can consist of more than one graph (denoted by context
-	 * identifiers). Two models are considered isomorphic if for each of the
-	 * graphs in one model, an isomorphic graph exists in the other model, and
-	 * the context identifiers of these graphs are either identical or (in the
-	 * case of blank nodes) map 1:1 on each other.
+	 * A Model can consist of more than one graph (denoted by context identifiers). Two models are considered
+	 * isomorphic if for each of the graphs in one model, an isomorphic graph exists in the other model, and
+	 * the context identifiers of these graphs are either identical or (in the case of blank nodes) map 1:1 on
+	 * each other.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/rdf11-concepts/#graph-isomorphism">RDF
-	 *      Concepts &amp; Abstract Syntax, section 3.6 (Graph Comparison)</a>
+	 * @see <a href="http://www.w3.org/TR/rdf11-concepts/#graph-isomorphism">RDF Concepts &amp; Abstract
+	 *      Syntax, section 3.6 (Graph Comparison)</a>
 	 */
 	public static boolean isomorphic(Iterable<? extends Statement> model1,
 			Iterable<? extends Statement> model2)
@@ -306,14 +287,11 @@ public class Models {
 	}
 
 	/**
-	 * Compares two RDF models, defined by two statement collections, and returns
-	 * <tt>true</tt> if they are equal. Models are equal if they contain the same
-	 * set of statements. Blank node IDs are not relevant for model equality,
-	 * they are mapped from one model to the other by using the attached
-	 * properties.
+	 * Compares two RDF models, defined by two statement collections, and returns <tt>true</tt> if they are
+	 * equal. Models are equal if they contain the same set of statements. Blank node IDs are not relevant for
+	 * model equality, they are mapped from one model to the other by using the attached properties.
 	 * 
-	 * @deprecated since 2.8.0. Use {@link Models#isomorphic(Iterable, Iterable)}
-	 *             instead.
+	 * @deprecated since 2.8.0. Use {@link Models#isomorphic(Iterable, Iterable)} instead.
 	 */
 	@Deprecated
 	public static boolean equals(Iterable<? extends Statement> model1, Iterable<? extends Statement> model2) {
@@ -321,9 +299,8 @@ public class Models {
 	}
 
 	/**
-	 * Compares two RDF models, and returns <tt>true</tt> if the first model is a
-	 * subset of the second model, using graph isomorphism to map statements
-	 * between models.
+	 * Compares two RDF models, and returns <tt>true</tt> if the first model is a subset of the second model,
+	 * using graph isomorphism to map statements between models.
 	 */
 	public static boolean isSubset(Iterable<? extends Statement> model1,
 			Iterable<? extends Statement> model2)
@@ -336,9 +313,8 @@ public class Models {
 	}
 
 	/**
-	 * Compares two RDF models, and returns <tt>true</tt> if the first model is a
-	 * subset of the second model, using graph isomorphism to map statements
-	 * between models.
+	 * Compares two RDF models, and returns <tt>true</tt> if the first model is a subset of the second model,
+	 * using graph isomorphism to map statements between models.
 	 */
 	public static boolean isSubset(Set<? extends Statement> model1, Set<? extends Statement> model2) {
 		// Compare the number of statements in both sets
@@ -349,7 +325,9 @@ public class Models {
 		return isSubsetInternal(model1, model2);
 	}
 
-	private static boolean isSubsetInternal(Set<? extends Statement> model1, Set<? extends Statement> model2) {
+	private static boolean isSubsetInternal(Set<? extends Statement> model1,
+			Set<? extends Statement> model2)
+	{
 		// try to create a full blank node mapping
 		return matchModels(model1, model2);
 	}
@@ -375,9 +353,9 @@ public class Models {
 	}
 
 	/**
-	 * A recursive method for finding a complete mapping between blank nodes in
-	 * model1 and blank nodes in model2. The algorithm does a depth-first search
-	 * trying to establish a mapping for each blank node occurring in model1.
+	 * A recursive method for finding a complete mapping between blank nodes in model1 and blank nodes in
+	 * model2. The algorithm does a depth-first search trying to establish a mapping for each blank node
+	 * occurring in model1.
 	 * 
 	 * @param model1
 	 * @param model2
@@ -568,14 +546,12 @@ public class Models {
 	}
 
 	/**
-	 * Creates a {@link Supplier} of {@link ModelException} objects that be
-	 * passed to {@link Optional#orElseThrow(Supplier)} to generate exceptions as
-	 * necessary.
+	 * Creates a {@link Supplier} of {@link ModelException} objects that be passed to
+	 * {@link Optional#orElseThrow(Supplier)} to generate exceptions as necessary.
 	 * 
 	 * @param message
 	 *        The message to be used for the exception
-	 * @return A {@link Supplier} that will create {@link ModelException} objects
-	 *         with the given message.
+	 * @return A {@link Supplier} that will create {@link ModelException} objects with the given message.
 	 */
 	public static Supplier<ModelException> modelException(String message) {
 		return () -> new ModelException(message);

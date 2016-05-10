@@ -59,7 +59,7 @@ public abstract class SeRQLParserTestCase extends TestCase {
 
 	private static IRI MFX_CORRECT = SimpleValueFactory.getInstance().createIRI(MFX + "Correct");
 
-	private static IRI MFX_PARSE_ERROR =  SimpleValueFactory.getInstance().createIRI(MFX + "ParseError");
+	private static IRI MFX_PARSE_ERROR = SimpleValueFactory.getInstance().createIRI(MFX + "ParseError");
 
 	/* Constructors */
 

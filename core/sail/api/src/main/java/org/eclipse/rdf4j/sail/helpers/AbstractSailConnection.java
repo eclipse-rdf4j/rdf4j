@@ -38,8 +38,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Abstract Class offering base functionality for SailConnection
- * implementations.
+ * Abstract Class offering base functionality for SailConnection implementations.
  * 
  * @author Arjohn Kampman
  * @author Jeen Broekstra
@@ -69,8 +68,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	private volatile boolean txnPrepared;
 
 	/**
-	 * Lock used to give the {@link #close()} method exclusive access to a
-	 * connection.
+	 * Lock used to give the {@link #close()} method exclusive access to a connection.
 	 * <ul>
 	 * <li>write lock: close()
 	 * <li>read lock: all other (public) methods
@@ -79,22 +77,20 @@ public abstract class AbstractSailConnection implements SailConnection {
 	protected final ReentrantReadWriteLock connectionLock = new ReentrantReadWriteLock();
 
 	/**
-	 * Lock used to prevent concurrent calls to update methods like addStatement,
-	 * clear, commit, etc. within a transaction.
+	 * Lock used to prevent concurrent calls to update methods like addStatement, clear, commit, etc. within a
+	 * transaction.
 	 */
 	protected final ReentrantLock updateLock = new ReentrantLock();
 
 	private final Map<SailBaseIteration, Throwable> activeIterations = new IdentityHashMap<SailBaseIteration, Throwable>();
 
 	/**
-	 * Statements that are currently being removed, but not yet realized, by an
-	 * active operation.
+	 * Statements that are currently being removed, but not yet realized, by an active operation.
 	 */
 	private final Map<UpdateContext, Collection<Statement>> removed = new HashMap<UpdateContext, Collection<Statement>>();
 
 	/**
-	 * Statements that are currently being added, but not yet realized, by an
-	 * active operation.
+	 * Statements that are currently being added, but not yet realized, by an active operation.
 	 */
 	private final Map<UpdateContext, Collection<Statement>> added = new HashMap<UpdateContext, Collection<Statement>>();
 
@@ -135,8 +131,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	/**
-	 * Verifies if a transaction is currently active. Throws a
-	 * {@link SailException} if no transaction is active.
+	 * Verifies if a transaction is currently active. Throws a {@link SailException} if no transaction is
+	 * active.
 	 * 
 	 * @throws SailException
 	 *         if no transaction is active.
@@ -198,8 +194,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	/**
 	 * Retrieve the currently set {@link IsolationLevel}.
 	 * 
-	 * @return the current {@link IsolationLevel}. If no transaction is active,
-	 *         this may be <code>null</code>.
+	 * @return the current {@link IsolationLevel}. If no transaction is active, this may be <code>null</code>.
 	 */
 	protected IsolationLevel getTransactionIsolation() {
 		return this.transactionIsolationLevel;
@@ -256,7 +251,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	public final CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(
 			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
-				throws SailException
+		throws SailException
 	{
 		flushPendingUpdates();
 		connectionLock.readLock().lock();
@@ -305,15 +300,15 @@ public abstract class AbstractSailConnection implements SailConnection {
 	@Override
 	public final CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts)
-				throws SailException
+		throws SailException
 	{
 		flushPendingUpdates();
 		connectionLock.readLock().lock();
 		try {
 			verifyIsOpen();
 			boolean registered = false;
-			CloseableIteration<? extends Statement, SailException> iteration = getStatementsInternal(subj, pred,
-					obj, includeInferred, contexts);
+			CloseableIteration<? extends Statement, SailException> iteration = getStatementsInternal(subj,
+					pred, obj, includeInferred, contexts);
 			try {
 				CloseableIteration<? extends Statement, SailException> registeredIteration = registerIteration(
 						iteration);
@@ -351,18 +346,15 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	/**
-	 * <B>IMPORTANT</B> Since Sesame 2.7.0. this method no longer automatically
-	 * starts a transaction, but instead verifies if a transaction is active and
-	 * if not throws an exception. The method is left in for transitional
-	 * purposes only. Sail implementors are advised that by contract, any update
-	 * operation on the Sail should check if a transaction has been started via
-	 * {@link SailConnection#isActive} and throw a SailException if not.
-	 * Implementors can use {@link AbstractSailConnection#verifyIsActive()} as a
+	 * <B>IMPORTANT</B> Since Sesame 2.7.0. this method no longer automatically starts a transaction, but
+	 * instead verifies if a transaction is active and if not throws an exception. The method is left in for
+	 * transitional purposes only. Sail implementors are advised that by contract, any update operation on the
+	 * Sail should check if a transaction has been started via {@link SailConnection#isActive} and throw a
+	 * SailException if not. Implementors can use {@link AbstractSailConnection#verifyIsActive()} as a
 	 * convenience method for this check.
 	 * 
-	 * @deprecated since 2.7.0. Use {@link #verifyIsActive()} instead. We should
-	 *             not automatically start a transaction at the sail level.
-	 *             Instead, an exception should be thrown when an update is
+	 * @deprecated since 2.7.0. Use {@link #verifyIsActive()} instead. We should not automatically start a
+	 *             transaction at the sail level. Instead, an exception should be thrown when an update is
 	 *             executed without first starting a transaction.
 	 * @throws SailException
 	 *         if no transaction is active.
@@ -500,19 +492,18 @@ public abstract class AbstractSailConnection implements SailConnection {
 			flushPendingUpdates();
 		}
 		synchronized (removed) {
-			assert!removed.containsKey(op);
+			assert !removed.containsKey(op);
 			removed.put(op, new LinkedList<Statement>());
 		}
 
 		synchronized (added) {
-			assert!added.containsKey(op);
+			assert !added.containsKey(op);
 			added.put(op, new LinkedList<Statement>());
 		}
 	}
 
 	/**
-	 * The default implementation buffers added statements until the update
-	 * operation is complete.
+	 * The default implementation buffers added statements until the update operation is complete.
 	 */
 	@Override
 	public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
@@ -539,8 +530,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	/**
-	 * The default implementation buffers removed statements until the update
-	 * operation is complete.
+	 * The default implementation buffers removed statements until the update operation is complete.
 	 */
 	@Override
 	public void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
@@ -782,9 +772,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	/**
-	 * Registers an iteration as active by wrapping it in a
-	 * {@link SailBaseIteration} object and adding it to the list of active
-	 * iterations.
+	 * Registers an iteration as active by wrapping it in a {@link SailBaseIteration} object and adding it to
+	 * the list of active iterations.
 	 */
 	protected <T, E extends Exception> CloseableIteration<T, E> registerIteration(
 			CloseableIteration<T, E> iter)
@@ -811,14 +800,14 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	protected abstract CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
 			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
-				throws SailException;
+		throws SailException;
 
 	protected abstract CloseableIteration<? extends Resource, SailException> getContextIDsInternal()
 		throws SailException;
 
 	protected abstract CloseableIteration<? extends Statement, SailException> getStatementsInternal(
 			Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-				throws SailException;
+		throws SailException;
 
 	protected abstract long sizeInternal(Resource... contexts)
 		throws SailException;
@@ -949,8 +938,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		 *--------------*/
 
 		/**
-		 * Creates a new Statement with the supplied subject, predicate and
-		 * object.
+		 * Creates a new Statement with the supplied subject, predicate and object.
 		 * 
 		 * @param subject
 		 *        The statement's subject, may be <tt>null</tt>.
@@ -964,8 +952,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 
 		/**
-		 * Creates a new Statement with the supplied subject, predicate and object
-		 * for the specified associated context.
+		 * Creates a new Statement with the supplied subject, predicate and object for the specified
+		 * associated context.
 		 * 
 		 * @param subject
 		 *        The statement's subject, may be <tt>null</tt>.
@@ -974,8 +962,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		 * @param object
 		 *        The statement's object, may be <tt>null</tt>.
 		 * @param context
-		 *        The statement's context, <tt>null</tt> to indicate no context is
-		 *        associated.
+		 *        The statement's context, <tt>null</tt> to indicate no context is associated.
 		 */
 		public WildStatement(Resource subject, IRI predicate, Value object, Resource context) {
 			this.subject = subject;

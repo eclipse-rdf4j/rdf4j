@@ -10,9 +10,8 @@ package org.eclipse.rdf4j.sail.memory.model;
 import org.eclipse.rdf4j.model.IRI;
 
 /**
- * A MemoryStore-specific implementation of URI that stores separated namespace
- * and local name information to enable reuse of namespace String objects
- * (reducing memory usage) and that gives it node properties.
+ * A MemoryStore-specific implementation of URI that stores separated namespace and local name information to
+ * enable reuse of namespace String objects (reducing memory usage) and that gives it node properties.
  */
 public class MemIRI implements IRI, MemResource {
 
@@ -116,8 +115,8 @@ public class MemIRI implements IRI, MemResource {
 		else if (other instanceof IRI) {
 			String otherStr = other.toString();
 
-			return namespace.length() + localName.length() == otherStr.length() && otherStr.endsWith(localName)
-					&& otherStr.startsWith(namespace);
+			return namespace.length() + localName.length() == otherStr.length()
+					&& otherStr.endsWith(localName) && otherStr.startsWith(namespace);
 		}
 
 		return false;
@@ -214,8 +213,7 @@ public class MemIRI implements IRI, MemResource {
 	}
 
 	/**
-	 * Adds a statement to this MemURI's list of statements for which it is the
-	 * predicate.
+	 * Adds a statement to this MemURI's list of statements for which it is the predicate.
 	 */
 	public void addPredicateStatement(MemStatement st) {
 		if (predicateStatements == null) {
@@ -226,8 +224,7 @@ public class MemIRI implements IRI, MemResource {
 	}
 
 	/**
-	 * Removes a statement from this MemURI's list of statements for which it is
-	 * the predicate.
+	 * Removes a statement from this MemURI's list of statements for which it is the predicate.
 	 */
 	public void removePredicateStatement(MemStatement st) {
 		predicateStatements.remove(st);
@@ -238,9 +235,8 @@ public class MemIRI implements IRI, MemResource {
 	}
 
 	/**
-	 * Removes statements from old snapshots (those that have expired at or
-	 * before the specified snapshot version) from this MemValue's list of
-	 * statements for which it is the predicate.
+	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot
+	 * version) from this MemValue's list of statements for which it is the predicate.
 	 * 
 	 * @param currentSnapshot
 	 *        The current snapshot version.

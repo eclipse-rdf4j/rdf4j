@@ -44,8 +44,8 @@ public class SpinInferencing {
 	private SpinInferencing() {
 	}
 
-	public static int executeRule(Resource subj, Resource rule, QueryPreparer queryPreparer, SpinParser parser,
-			InferencerConnection conn)
+	public static int executeRule(Resource subj, Resource rule, QueryPreparer queryPreparer,
+			SpinParser parser, InferencerConnection conn)
 		throws OpenRDFException
 	{
 		int nofInferred;
@@ -109,8 +109,8 @@ public class SpinInferencing {
 		return violation;
 	}
 
-	private static void addBindings(Resource subj, Resource opResource, ParsedOperation parsedOp, Operation op,
-			TripleSource tripleSource, SpinParser parser)
+	private static void addBindings(Resource subj, Resource opResource, ParsedOperation parsedOp,
+			Operation op, TripleSource tripleSource, SpinParser parser)
 		throws OpenRDFException
 	{
 		if (!parser.isThisUnbound(opResource, tripleSource)) {

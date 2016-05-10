@@ -78,7 +78,8 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 		throws SailConfigException
 	{
 		try {
-			Models.objectLiteral(m.filter(implNode, SAILTYPE, null)).ifPresent(lit -> setType(lit.getLabel()));
+			Models.objectLiteral(m.filter(implNode, SAILTYPE, null)).ifPresent(
+					lit -> setType(lit.getLabel()));
 			Models.objectLiteral(
 					m.filter(implNode, SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD, null)).ifPresent(
 							lit -> setIterationCacheSyncThreshold(lit.longValue()));

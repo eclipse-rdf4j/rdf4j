@@ -14,10 +14,9 @@ import java.util.Arrays;
 import org.eclipse.rdf4j.common.io.NioFile;
 
 /**
- * Class supplying access to an ID file. An ID file maps IDs (integers &gt;= 1)
- * to file pointers (long integers). There is a direct correlation between IDs
- * and the position at which the file pointers are stored; the file pointer for
- * ID X is stored at position 8*X.
+ * Class supplying access to an ID file. An ID file maps IDs (integers &gt;= 1) to file pointers (long
+ * integers). There is a direct correlation between IDs and the position at which the file pointers are
+ * stored; the file pointer for ID X is stored at position 8*X.
  * 
  * @author Arjohn Kampman
  */
@@ -28,9 +27,8 @@ public class IDFile {
 	 *-----------*/
 
 	/**
-	 * Magic number "Native ID File" to detect whether the file is actually an ID
-	 * file. The first three bytes of the file should be equal to this magic
-	 * number.
+	 * Magic number "Native ID File" to detect whether the file is actually an ID file. The first three bytes
+	 * of the file should be equal to this magic number.
 	 */
 	private static final byte[] MAGIC_NUMBER = new byte[] { 'n', 'i', 'f' };
 
@@ -40,9 +38,8 @@ public class IDFile {
 	private static final byte FILE_FORMAT_VERSION = 1;
 
 	/**
-	 * The size of the file header in bytes. The file header contains the
-	 * following data: magic number (3 bytes) file format version (1 byte) and 4
-	 * dummy bytes to align data at 8-byte offsets.
+	 * The size of the file header in bytes. The file header contains the following data: magic number (3
+	 * bytes) file format version (1 byte) and 4 dummy bytes to align data at 8-byte offsets.
 	 */
 	private static final long HEADER_LENGTH = 8;
 
@@ -116,8 +113,7 @@ public class IDFile {
 	/**
 	 * Gets the largest ID that is stored in this ID file.
 	 * 
-	 * @return The largest ID, or <tt>0</tt> if the file does not contain any
-	 *         data.
+	 * @return The largest ID, or <tt>0</tt> if the file does not contain any data.
 	 * @throws IOException
 	 *         If an I/O error occurs.
 	 */
@@ -128,8 +124,7 @@ public class IDFile {
 	}
 
 	/**
-	 * Stores the offset of a new data entry, returning the ID under which is
-	 * stored.
+	 * Stores the offset of a new data entry, returning the ID under which is stored.
 	 */
 	public int storeOffset(long offset)
 		throws IOException

@@ -14,7 +14,10 @@ import org.eclipse.rdf4j.model.vocabulary.SPIN;
  * Enum of possible SPIN constraint violation levels.
  */
 public enum ConstraintViolationLevel {
-	INFO, WARNING, ERROR, FATAL;
+	INFO,
+	WARNING,
+	ERROR,
+	FATAL;
 
 	public static ConstraintViolationLevel valueOf(URI levelValue) {
 		ConstraintViolationLevel level;

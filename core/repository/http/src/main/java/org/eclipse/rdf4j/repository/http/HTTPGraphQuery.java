@@ -22,9 +22,8 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 
 /**
- * GraphQuery implementation specific to the HTTP protocol. Methods in this
- * class may throw the specific RepositoryException subclass
- * UnautorizedException, the semantics of which is defined by the HTTP protocol.
+ * GraphQuery implementation specific to the HTTP protocol. Methods in this class may throw the specific
+ * RepositoryException subclass UnautorizedException, the semantics of which is defined by the HTTP protocol.
  * 
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @author Arjohn Kampman
@@ -35,7 +34,8 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 
 	private final HTTPRepositoryConnection conn;
 
-	public HTTPGraphQuery(HTTPRepositoryConnection conn, QueryLanguage ql, String queryString, String baseURI)
+	public HTTPGraphQuery(HTTPRepositoryConnection conn, QueryLanguage ql, String queryString,
+			String baseURI)
 	{
 		super(conn.getSesameSession(), ql, queryString, baseURI);
 		this.conn = conn;
@@ -62,27 +62,13 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 	}
 
 	/*
-	public GraphQueryResult evaluate()
-		throws QueryEvaluationException
-	{
-		HTTPClient client = httpCon.getRepository().getHTTPClient();
-
-		
-		try {
-			return client.sendGraphQuery(queryLanguage, queryString, baseURI, dataset, includeInferred, maxQueryTime,
-					getBindingsArray());
-		}
-		catch (IOException e) {
-			throw new HTTPQueryEvaluationException(e.getMessage(), e);
-		}
-		catch (RepositoryException e) {
-			throw new HTTPQueryEvaluationException(e.getMessage(), e);
-		}
-		catch (MalformedQueryException e) {
-			throw new HTTPQueryEvaluationException(e.getMessage(), e);
-		}
-	}
-	*/
+	 * public GraphQueryResult evaluate() throws QueryEvaluationException { HTTPClient client =
+	 * httpCon.getRepository().getHTTPClient(); try { return client.sendGraphQuery(queryLanguage, queryString,
+	 * baseURI, dataset, includeInferred, maxQueryTime, getBindingsArray()); } catch (IOException e) { throw
+	 * new HTTPQueryEvaluationException(e.getMessage(), e); } catch (RepositoryException e) { throw new
+	 * HTTPQueryEvaluationException(e.getMessage(), e); } catch (MalformedQueryException e) { throw new
+	 * HTTPQueryEvaluationException(e.getMessage(), e); } }
+	 */
 
 	public void evaluate(RDFHandler handler)
 		throws QueryEvaluationException, RDFHandlerException

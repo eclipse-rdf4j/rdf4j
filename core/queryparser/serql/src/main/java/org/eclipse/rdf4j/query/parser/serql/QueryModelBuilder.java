@@ -453,7 +453,8 @@ class QueryModelBuilder extends AbstractASTVisitor {
 				contextVar = createConstantVar(vc.getValue());
 			}
 			else {
-				throw new IllegalArgumentException("Unexpected contextID result type: " + contextID.getClass());
+				throw new IllegalArgumentException(
+						"Unexpected contextID result type: " + contextID.getClass());
 			}
 		}
 
@@ -677,7 +678,8 @@ class QueryModelBuilder extends AbstractASTVisitor {
 			return createConstantVar(vc.getValue());
 		}
 		else {
-			throw new IllegalArgumentException("Unexpected node element result type: " + valueExpr.getClass());
+			throw new IllegalArgumentException(
+					"Unexpected node element result type: " + valueExpr.getClass());
 		}
 	}
 

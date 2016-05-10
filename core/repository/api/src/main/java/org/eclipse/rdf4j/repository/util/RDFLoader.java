@@ -62,9 +62,8 @@ public class RDFLoader {
 	 * @param file
 	 *        A file containing RDF data.
 	 * @param baseURI
-	 *        The base URI to resolve any relative URIs that are in the data
-	 *        against. This defaults to the value of {@link java.io.File#toURI()
-	 *        file.toURI()} if the value is set to <tt>null</tt>.
+	 *        The base URI to resolve any relative URIs that are in the data against. This defaults to the
+	 *        value of {@link java.io.File#toURI() file.toURI()} if the value is set to <tt>null</tt>.
 	 * @param dataFormat
 	 *        The serialization format of the data.
 	 * @param rdfHandler
@@ -87,7 +86,8 @@ public class RDFLoader {
 		}
 		if (dataFormat == null) {
 			dataFormat = Rio.getParserFormatForFileName(file.getName()).orElseThrow(
-					() -> new UnsupportedRDFormatException("Could not find RDF format for file: " + file.getName()));
+					() -> new UnsupportedRDFormatException(
+							"Could not find RDF format for file: " + file.getName()));
 		}
 
 		InputStream in = new FileInputStream(file);
@@ -100,28 +100,25 @@ public class RDFLoader {
 	}
 
 	/**
-	 * Parses the RDF data that can be found at the specified URL to the
-	 * RDFHandler.
+	 * Parses the RDF data that can be found at the specified URL to the RDFHandler.
 	 * 
 	 * @param url
 	 *        The URL of the RDF data.
 	 * @param baseURI
-	 *        The base URI to resolve any relative URIs that are in the data
-	 *        against. This defaults to the value of
-	 *        {@link java.net.URL#toExternalForm() url.toExternalForm()} if the
-	 *        value is set to <tt>null</tt>.
+	 *        The base URI to resolve any relative URIs that are in the data against. This defaults to the
+	 *        value of {@link java.net.URL#toExternalForm() url.toExternalForm()} if the value is set to
+	 *        <tt>null</tt>.
 	 * @param dataFormat
-	 *        The serialization format of the data. If set to <tt>null</tt>, the
-	 *        format will be automatically determined by examining the content
-	 *        type in the HTTP response header, and failing that, the file name
-	 *        extension of the supplied URL.
+	 *        The serialization format of the data. If set to <tt>null</tt>, the format will be automatically
+	 *        determined by examining the content type in the HTTP response header, and failing that, the file
+	 *        name extension of the supplied URL.
 	 * @param rdfHandler
 	 *        Receives RDF parser events.
 	 * @throws IOException
 	 *         If an I/O error occurred while reading from the URL.
 	 * @throws UnsupportedRDFormatException
-	 *         If no parser is available for the specified RDF format, or the RDF
-	 *         format could not be automatically determined.
+	 *         If no parser is available for the specified RDF format, or the RDF format could not be
+	 *         automatically determined.
 	 * @throws RDFParseException
 	 *         If an error was found while parsing the RDF data.
 	 * @throws RDFHandlerException
@@ -161,8 +158,8 @@ public class RDFLoader {
 			}
 			dataFormat = Rio.getParserFormatForMIMEType(mimeType).orElseGet(
 					() -> Rio.getParserFormatForFileName(url.getPath()).orElseThrow(
-							() -> new UnsupportedRDFormatException("Could not find RDF format for URL: "
-									+ url.getPath())));
+							() -> new UnsupportedRDFormatException(
+									"Could not find RDF format for URL: " + url.getPath())));
 
 		}
 
@@ -180,8 +177,7 @@ public class RDFLoader {
 	 * @param in
 	 *        An InputStream from which RDF data can be read.
 	 * @param baseURI
-	 *        The base URI to resolve any relative URIs that are in the data
-	 *        against.
+	 *        The base URI to resolve any relative URIs that are in the data against.
 	 * @param dataFormat
 	 *        The serialization format of the data.
 	 * @param rdfHandler
@@ -214,17 +210,15 @@ public class RDFLoader {
 	}
 
 	/**
-	 * Parses RDF data from a Reader to the RDFHandler. <b>Note: using a Reader
-	 * to upload byte-based data means that you have to be careful not to destroy
-	 * the data's character encoding by enforcing a default character encoding
-	 * upon the bytes. If possible, adding such data using an InputStream is to
-	 * be preferred.</b>
+	 * Parses RDF data from a Reader to the RDFHandler. <b>Note: using a Reader to upload byte-based data
+	 * means that you have to be careful not to destroy the data's character encoding by enforcing a default
+	 * character encoding upon the bytes. If possible, adding such data using an InputStream is to be
+	 * preferred.</b>
 	 * 
 	 * @param reader
 	 *        A Reader from which RDF data can be read.
 	 * @param baseURI
-	 *        The base URI to resolve any relative URIs that are in the data
-	 *        against.
+	 *        The base URI to resolve any relative URIs that are in the data against.
 	 * @param dataFormat
 	 *        The serialization format of the data.
 	 * @param rdfHandler
@@ -284,12 +278,11 @@ public class RDFLoader {
 	}
 
 	/**
-	 * Adds the data that can be read from the supplied InputStream or Reader to
-	 * this repository.
+	 * Adds the data that can be read from the supplied InputStream or Reader to this repository.
 	 * 
 	 * @param inputStreamOrReader
-	 *        An {@link InputStream} or {@link Reader} containing RDF data that
-	 *        must be added to the repository.
+	 *        An {@link InputStream} or {@link Reader} containing RDF data that must be added to the
+	 *        repository.
 	 * @param baseURI
 	 *        The base URI for the data.
 	 * @param dataFormat
@@ -318,8 +311,8 @@ public class RDFLoader {
 			rdfParser.parse((Reader)inputStreamOrReader, baseURI);
 		}
 		else {
-			throw new IllegalArgumentException("Must be an InputStream or a Reader, is a: "
-					+ inputStreamOrReader.getClass());
+			throw new IllegalArgumentException(
+					"Must be an InputStream or a Reader, is a: " + inputStreamOrReader.getClass());
 		}
 	}
 }

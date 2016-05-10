@@ -10,9 +10,8 @@ package org.eclipse.rdf4j.query;
 import java.util.List;
 
 /**
- * Base class for {@link TupleQueryResultHandler}s with dummy implementations of
- * all methods. This class is a useful superclass for classes that implement
- * only one or two TupleQueryResultHandler methods.
+ * Base class for {@link TupleQueryResultHandler}s with dummy implementations of all methods. This class is a
+ * useful superclass for classes that implement only one or two TupleQueryResultHandler methods.
  */
 public abstract class AbstractTupleQueryResultHandler implements TupleQueryResultHandler {
 

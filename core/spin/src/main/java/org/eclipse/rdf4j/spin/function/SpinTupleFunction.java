@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.spin.function.SelectTupleFunction.TupleQueryResultItera
 
 import com.google.common.base.Joiner;
 
-
 public class SpinTupleFunction extends AbstractSpinFunction implements TransientTupleFunction {
 
 	private ParsedQuery parsedQuery;
@@ -61,43 +60,44 @@ public class SpinTupleFunction extends AbstractSpinFunction implements Transient
 
 	@Override
 	public String toString() {
-		return getURI()+"("+ Joiner.on(", ").join(arguments)+")";
+		return getURI() + "(" + Joiner.on(", ").join(arguments) + ")";
 	}
 
 	@Override
-	public CloseableIteration<? extends List<? extends Value>,QueryEvaluationException> evaluate(ValueFactory valueFactory, Value... args)
+	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
+			ValueFactory valueFactory, Value... args)
 		throws QueryEvaluationException
 	{
 		QueryPreparer qp = getCurrentQueryPreparer();
-		CloseableIteration<? extends List<? extends Value>,QueryEvaluationException> iter;
-		if(parsedQuery instanceof ParsedBooleanQuery) {
-			ParsedBooleanQuery askQuery = (ParsedBooleanQuery) parsedQuery;
+		CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> iter;
+		if (parsedQuery instanceof ParsedBooleanQuery) {
+			ParsedBooleanQuery askQuery = (ParsedBooleanQuery)parsedQuery;
 			BooleanQuery queryOp = qp.prepare(askQuery);
 			addBindings(queryOp, arguments, args);
 			Value result = BooleanLiteral.valueOf(queryOp.evaluate());
-			iter = new SingletonIteration<List<Value>,QueryEvaluationException>(Collections.singletonList(result));
+			iter = new SingletonIteration<List<Value>, QueryEvaluationException>(
+					Collections.singletonList(result));
 		}
-		else if(parsedQuery instanceof ParsedTupleQuery) {
-			ParsedTupleQuery selectQuery = (ParsedTupleQuery) parsedQuery;
+		else if (parsedQuery instanceof ParsedTupleQuery) {
+			ParsedTupleQuery selectQuery = (ParsedTupleQuery)parsedQuery;
 			TupleQuery queryOp = qp.prepare(selectQuery);
 			addBindings(queryOp, arguments, args);
 			iter = new TupleQueryResultIteration(queryOp.evaluate());
 		}
-		else if(parsedQuery instanceof ParsedGraphQuery) {
-			ParsedGraphQuery graphQuery = (ParsedGraphQuery) parsedQuery;
+		else if (parsedQuery instanceof ParsedGraphQuery) {
+			ParsedGraphQuery graphQuery = (ParsedGraphQuery)parsedQuery;
 			GraphQuery queryOp = qp.prepare(graphQuery);
 			addBindings(queryOp, arguments, args);
 			iter = new GraphQueryResultIteration(queryOp.evaluate());
 		}
 		else {
-			throw new IllegalStateException("Unexpected query: "+parsedQuery);
+			throw new IllegalStateException("Unexpected query: " + parsedQuery);
 		}
 		return iter;
 	}
 
-	private static void addBindings(Query query, List<Argument> arguments, Value... args)
-	{
-		for(int i=0; i<args.length; i++) {
+	private static void addBindings(Query query, List<Argument> arguments, Value... args) {
+		for (int i = 0; i < args.length; i++) {
 			Argument argument = arguments.get(i);
 			query.setBinding(argument.getPredicate().getLocalName(), args[i]);
 		}

@@ -27,15 +27,13 @@ class AllocatedNodesList {
 	 *-----------*/
 
 	/**
-	 * Magic number "Allocated Nodes File" to detect whether the file is actually
-	 * an allocated nodes file. The first three bytes of the file should be equal
-	 * to this magic number.
+	 * Magic number "Allocated Nodes File" to detect whether the file is actually an allocated nodes file. The
+	 * first three bytes of the file should be equal to this magic number.
 	 */
 	private static final byte[] MAGIC_NUMBER = new byte[] { 'a', 'n', 'f' };
 
 	/**
-	 * The file format version number, stored as the fourth byte in allocated
-	 * nodes files.
+	 * The file format version number, stored as the fourth byte in allocated nodes files.
 	 */
 	private static final byte FILE_FORMAT_VERSION = 1;
 
@@ -56,14 +54,12 @@ class AllocatedNodesList {
 	private final NioFile nioFile;
 
 	/**
-	 * Bit set recording which nodes have been allocated, using node IDs as
-	 * index.
+	 * Bit set recording which nodes have been allocated, using node IDs as index.
 	 */
 	private BitSet allocatedNodes;
 
 	/**
-	 * Flag indicating whether the set of allocated nodes has changed and needs
-	 * to be written to file.
+	 * Flag indicating whether the set of allocated nodes has changed and needs to be written to file.
 	 */
 	private boolean needsSync = false;
 
@@ -252,8 +248,8 @@ class AllocatedNodesList {
 				throw new IOException("Unable to read allocated nodes file; it uses a newer file format");
 			}
 			else if (version != FILE_FORMAT_VERSION) {
-				throw new IOException("Unable to read allocated nodes file; invalid file format version: "
-						+ version);
+				throw new IOException(
+						"Unable to read allocated nodes file; invalid file format version: " + version);
 			}
 
 			data = nioFile.readBytes(HEADER_LENGTH, (int)(nioFile.size() - HEADER_LENGTH));

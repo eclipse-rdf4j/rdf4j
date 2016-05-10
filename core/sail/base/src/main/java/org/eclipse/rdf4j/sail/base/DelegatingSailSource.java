@@ -11,9 +11,8 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * A wrapper around an {@link SailSource} that can suppress the call to
- * {@link #close()}. This is useful when the a shared branch is sometimes to be
- * used and other times a dedicated branch is to be used.
+ * A wrapper around an {@link SailSource} that can suppress the call to {@link #close()}. This is useful when
+ * the a shared branch is sometimes to be used and other times a dedicated branch is to be used.
  * 
  * @author James Leigh
  */
@@ -24,9 +23,8 @@ class DelegatingSailSource implements SailSource {
 	private final boolean releasing;
 
 	/**
-	 * Wraps this {@link SailSource}, delegating all calls to it unless
-	 * <code>closing</code> is false, in which case {@link #close()} will not be
-	 * delegated.
+	 * Wraps this {@link SailSource}, delegating all calls to it unless <code>closing</code> is false, in
+	 * which case {@link #close()} will not be delegated.
 	 * 
 	 * @param delegate
 	 * @param closing

@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
-
 /**
  * Provided for backward compatility purposes only
  * 

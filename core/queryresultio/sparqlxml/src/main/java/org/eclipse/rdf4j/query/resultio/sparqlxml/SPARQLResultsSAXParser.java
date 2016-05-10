@@ -102,7 +102,8 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 			currentBindingName = atts.get(BINDING_NAME_ATT);
 
 			if (currentBindingName == null) {
-				throw new SAXException(BINDING_NAME_ATT + " attribute missing for " + BINDING_TAG + " element");
+				throw new SAXException(
+						BINDING_NAME_ATT + " attribute missing for " + BINDING_TAG + " element");
 			}
 		}
 		else if (URI_TAG.equals(tagName)) {

@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
- 
+
 package org.eclipse.rdf4j.common.app.net;
 
 import java.io.File;
@@ -44,12 +44,14 @@ public class ProxySettings implements Configuration {
 	private Properties props;
 
 	public static final String PROXY_SETTINGS_FILENAME = "proxy.properties";
-	
+
 	private File confDir;
-	
+
 	private File propsFile;
 
-	public ProxySettings(File applicationDataDir) throws IOException {
+	public ProxySettings(File applicationDataDir)
+		throws IOException
+	{
 		confDir = new File(applicationDataDir, DIR);
 	}
 
@@ -160,22 +162,22 @@ public class ProxySettings implements Configuration {
 			setSystemProperty(key, val);
 		}
 		// See SES-1100: Sesame should leave proxy settings alone if not enabled
-//		else {
-//			setSystemProperty(key, null);
-//		}
+		//		else {
+		//			setSystemProperty(key, null);
+		//		}
 	}
 
 	/**
-	 * Get the semicolon-separated list of hostnames starting with given
-	 * strings, that do not use the proxy settings.
+	 * Get the semicolon-separated list of hostnames starting with given strings, that do not use the proxy
+	 * settings.
 	 */
 	public String getNonProxyHostsStarting() {
 		return props.getProperty(PROPNAME_PROXIES_NONPROXYHOSTS_STARTING);
 	}
 
 	/**
-	 * Set the semicolon separated list of hostnames starting with given
-	 * strings, that do not use the proxy settings.
+	 * Set the semicolon separated list of hostnames starting with given strings, that do not use the proxy
+	 * settings.
 	 */
 	public void setNonProxyHostsStarting(String nonProxyHostsStarting) {
 		setProperty(PROPNAME_PROXIES_NONPROXYHOSTS_STARTING, nonProxyHostsStarting);
@@ -205,23 +207,28 @@ public class ProxySettings implements Configuration {
 	/**
 	 * (Re-)loads the proxy system properties.
 	 */
-	public void load() throws IOException {
+	public void load()
+		throws IOException
+	{
 		Properties proxyConfig = ConfigurationUtil.loadConfigurationProperties(PROXY_SETTINGS_FILENAME, null);
 
 		propsFile = new File(confDir, PROXY_SETTINGS_FILENAME);
-		
+
 		props = ConfigurationUtil.loadConfigurationProperties(propsFile, proxyConfig);
 	}
 
 	/**
 	 * Saves the currently known settings.
 	 */
-	public void save() throws IOException {
-		if(!props.isEmpty()) {
+	public void save()
+		throws IOException
+	{
+		if (!props.isEmpty()) {
 			ConfigurationUtil.saveConfigurationProperties(props, propsFile, false);
 		}
-		ConfigurationUtil.saveConfigurationProperties(props, new File(propsFile.getParentFile(), propsFile.getName()+".default"), true);
-		
+		ConfigurationUtil.saveConfigurationProperties(props,
+				new File(propsFile.getParentFile(), propsFile.getName() + ".default"), true);
+
 	}
 
 	public void destroy()
@@ -234,7 +241,7 @@ public class ProxySettings implements Configuration {
 		throws IOException
 	{
 		load();
-		
+
 		// make sure some system properties are set properly
 		setHttpProxyHost(getHttpProxyHost());
 		setHttpProxyPort(getHttpProxyPort());
@@ -245,7 +252,7 @@ public class ProxySettings implements Configuration {
 		setSocksProxyHost(getSocksProxyHost());
 		setSocksProxyPort(getSocksProxyPort());
 		setNonProxyHostsStarting(getNonProxyHostsStarting());
-		
+
 		save();
 	}
 }

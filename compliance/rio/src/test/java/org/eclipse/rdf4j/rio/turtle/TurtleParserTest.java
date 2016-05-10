@@ -16,8 +16,8 @@ import org.eclipse.rdf4j.rio.turtle.TurtleParser;
 import org.eclipse.rdf4j.rio.turtle.TurtleParserTestCase;
 
 /**
- * JUnit test for the Turtle parser that uses the tests that are available <a
- * href="https://dvcs.w3.org/hg/rdf/file/09a9da374a9f/rdf-turtle/">online</a>.
+ * JUnit test for the Turtle parser that uses the tests that are available
+ * <a href="https://dvcs.w3.org/hg/rdf/file/09a9da374a9f/rdf-turtle/">online</a>.
  */
 public class TurtleParserTest extends TurtleParserTestCase {
 

@@ -22,16 +22,15 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 /**
- * Test for ParserConfig to verify that the core operations succeed and are
- * consistent.
+ * Test for ParserConfig to verify that the core operations succeed and are consistent.
  * 
  * @author Peter Ansell
  */
 public class ParserConfigTest {
 
 	/**
-	 * Test the default constructor does not set any settings, but still returns
-	 * the default values for basic settings.
+	 * Test the default constructor does not set any settings, but still returns the default values for basic
+	 * settings.
 	 */
 	@Test
 	public final void testParserConfig() {
@@ -64,8 +63,7 @@ public class ParserConfigTest {
 	}
 
 	/**
-	 * Test that the explicit constructor sets all of the basic settings using
-	 * the default values.
+	 * Test that the explicit constructor sets all of the basic settings using the default values.
 	 */
 	@Test
 	public final void testParserConfigSameAsDefaults() {
@@ -80,8 +78,7 @@ public class ParserConfigTest {
 	}
 
 	/**
-	 * Test that the explicit constructor sets all of the basic settings using
-	 * non-default values.
+	 * Test that the explicit constructor sets all of the basic settings using non-default values.
 	 */
 	@Test
 	public final void testParserConfigNonDefaults() {
@@ -129,8 +126,7 @@ public class ParserConfigTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.rio.ParserConfig#setNonFatalErrors(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.rio.ParserConfig#setNonFatalErrors(java.util.Set)}.
 	 */
 	@Test
 	public final void testSetNonFatalErrors() {
@@ -148,7 +144,8 @@ public class ParserConfigTest {
 		assertFalse(testConfig.getNonFatalErrors().contains(BasicParserSettings.VERIFY_DATATYPE_VALUES));
 
 		// Test with a non-empty set that we remove the previous setting
-		testConfig.setNonFatalErrors(Collections.<RioSetting<?>> singleton(BasicParserSettings.VERIFY_DATATYPE_VALUES));
+		testConfig.setNonFatalErrors(
+				Collections.<RioSetting<?>> singleton(BasicParserSettings.VERIFY_DATATYPE_VALUES));
 		assertNotNull(testConfig.getNonFatalErrors());
 		assertFalse(testConfig.getNonFatalErrors().isEmpty());
 		assertFalse(testConfig.getNonFatalErrors().contains(BasicParserSettings.PRESERVE_BNODE_IDS));
@@ -162,8 +159,7 @@ public class ParserConfigTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.rio.ParserConfig#addNonFatalError(org.eclipse.rdf4j.rio.RioSetting)}
-	 * .
+	 * {@link org.eclipse.rdf4j.rio.ParserConfig#addNonFatalError(org.eclipse.rdf4j.rio.RioSetting)} .
 	 */
 	@Test
 	public final void testAddNonFatalError() {
@@ -176,8 +172,7 @@ public class ParserConfigTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.rio.ParserConfig#isNonFatalError(org.eclipse.rdf4j.rio.RioSetting)}
-	 * .
+	 * {@link org.eclipse.rdf4j.rio.ParserConfig#isNonFatalError(org.eclipse.rdf4j.rio.RioSetting)} .
 	 */
 	@Test
 	public final void testIsNonFatalError() {
@@ -221,8 +216,8 @@ public class ParserConfigTest {
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.rio.ParserConfig#stopAtFirstError()}.
-	 * Test specifically for SES-1947
+	 * Test method for {@link org.eclipse.rdf4j.rio.ParserConfig#stopAtFirstError()}. Test specifically for
+	 * SES-1947
 	 */
 	@Test
 	public final void testStopAtFirstError() {
@@ -265,8 +260,7 @@ public class ParserConfigTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.rio.ParserConfig#get(org.eclipse.rdf4j.rio.RioSetting)}.
+	 * Test method for {@link org.eclipse.rdf4j.rio.ParserConfig#get(org.eclipse.rdf4j.rio.RioSetting)}.
 	 */
 	@Test
 	public final void testGet() {
@@ -281,8 +275,7 @@ public class ParserConfigTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.rio.ParserConfig#set(org.eclipse.rdf4j.rio.RioSetting, java.lang.Object)}
-	 * .
+	 * {@link org.eclipse.rdf4j.rio.ParserConfig#set(org.eclipse.rdf4j.rio.RioSetting, java.lang.Object)} .
 	 */
 	@Test
 	public final void testSet() {
@@ -296,8 +289,7 @@ public class ParserConfigTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.rio.ParserConfig#isSet(org.eclipse.rdf4j.rio.RioSetting)}.
+	 * Test method for {@link org.eclipse.rdf4j.rio.ParserConfig#isSet(org.eclipse.rdf4j.rio.RioSetting)}.
 	 */
 	@Test
 	public final void testIsSet() {

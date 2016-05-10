@@ -11,7 +11,9 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 
 public class ParsedBooleanTemplate extends ParsedBooleanQuery implements ParsedTemplate {
+
 	private final Template template;
+
 	private final BindingSet args;
 
 	public ParsedBooleanTemplate(Template template, BindingSet args) {

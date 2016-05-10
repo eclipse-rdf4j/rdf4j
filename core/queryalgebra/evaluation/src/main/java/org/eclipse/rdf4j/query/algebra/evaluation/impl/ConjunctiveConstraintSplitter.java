@@ -41,8 +41,7 @@ public class ConjunctiveConstraintSplitter implements QueryOptimizer {
 		}
 
 		@Override
-		public void meet(Filter filter)
-		{
+		public void meet(Filter filter) {
 			super.meet(filter);
 
 			List<ValueExpr> conjunctiveConstraints = new ArrayList<ValueExpr>(16);
@@ -66,26 +65,30 @@ public class ConjunctiveConstraintSplitter implements QueryOptimizer {
 			if (node.getCondition() != null) {
 				List<ValueExpr> conjunctiveConstraints = new ArrayList<ValueExpr>(16);
 				getConjunctiveConstraints(node.getCondition(), conjunctiveConstraints);
-	
+
 				TupleExpr arg = node.getRightArg();
 				ValueExpr condition = null;
-	
+
 				for (ValueExpr constraint : conjunctiveConstraints) {
 					if (isWithinBindingScope(constraint, arg)) {
 						arg = new Filter(arg, constraint);
-					} else if (condition == null) {
+					}
+					else if (condition == null) {
 						condition = constraint;
-					} else {
+					}
+					else {
 						condition = new And(condition, constraint);
 					}
 				}
-	
+
 				node.setCondition(condition);
 				node.setRightArg(arg);
 			}
 		}
 
-		protected void getConjunctiveConstraints(ValueExpr valueExpr, List<ValueExpr> conjunctiveConstraints) {
+		protected void getConjunctiveConstraints(ValueExpr valueExpr,
+				List<ValueExpr> conjunctiveConstraints)
+		{
 			if (valueExpr instanceof And) {
 				And and = (And)valueExpr;
 				getConjunctiveConstraints(and.getLeftArg(), conjunctiveConstraints);

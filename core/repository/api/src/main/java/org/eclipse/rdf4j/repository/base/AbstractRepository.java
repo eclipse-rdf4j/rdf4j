@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * Base class for {@link Repository} implementation, offering common functionality. 
+ * Base class for {@link Repository} implementation, offering common functionality.
  *
  * @author Jeen Broekstra
  */

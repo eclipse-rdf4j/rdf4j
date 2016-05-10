@@ -12,7 +12,8 @@ package org.eclipse.rdf4j.common.iteration;
  * @author Jeen Broekstra
  */
 @Deprecated
-public abstract class CloseableIterationBase<E, X extends Exception> extends AbstractCloseableIteration<E, X>
+public abstract class CloseableIterationBase<E, X extends Exception>
+		extends AbstractCloseableIteration<E, X>
 {
 
 }

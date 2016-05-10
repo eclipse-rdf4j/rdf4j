@@ -17,11 +17,10 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 
 /**
- * Registry for currently active {@link EvaluationStrategy} objects. The
- * internal registry uses soft references to allow entries to be
- * garbage-collected when no longer used. Currently, the primary purpose of this
- * is to support (de)serialization of objects (over the lifetime of the VM) that
- * depend on an EvaluationStrategy
+ * Registry for currently active {@link EvaluationStrategy} objects. The internal registry uses soft
+ * references to allow entries to be garbage-collected when no longer used. Currently, the primary purpose of
+ * this is to support (de)serialization of objects (over the lifetime of the VM) that depend on an
+ * EvaluationStrategy
  * 
  * @author Jeen Broekstra
  */
@@ -34,8 +33,8 @@ public class EvaluationStrategies {
 	 * 
 	 * @param key
 	 *        the key
-	 * @return the registered EvaluationStrategy, or <code>null</code> if no
-	 *         matching EvaluationStrategy can be found.
+	 * @return the registered EvaluationStrategy, or <code>null</code> if no matching EvaluationStrategy can
+	 *         be found.
 	 */
 	public static final EvaluationStrategy get(UUID key) {
 		return registry.getIfPresent(key);
@@ -46,9 +45,8 @@ public class EvaluationStrategies {
 	 * 
 	 * @param strategy
 	 *        the EvaluationStrategy for which to retrieve the registry key
-	 * @return the registry key with which the supplied strategy can be
-	 *         retrieved, or <code>null</code> if the supplied strategy is not in
-	 *         the registry.
+	 * @return the registry key with which the supplied strategy can be retrieved, or <code>null</code> if the
+	 *         supplied strategy is not in the registry.
 	 */
 	public static final UUID getKey(EvaluationStrategy strategy) {
 		final Map<UUID, EvaluationStrategy> map = registry.asMap();
@@ -68,9 +66,8 @@ public class EvaluationStrategies {
 	}
 
 	/**
-	 * Add a strategy to the registry and returns the registry key. If the
-	 * strategy is already present, the operation simply returns the key with
-	 * which it is currently registered.
+	 * Add a strategy to the registry and returns the registry key. If the strategy is already present, the
+	 * operation simply returns the key with which it is currently registered.
 	 * 
 	 * @param strategy
 	 *        the EvaluationStrategy to register

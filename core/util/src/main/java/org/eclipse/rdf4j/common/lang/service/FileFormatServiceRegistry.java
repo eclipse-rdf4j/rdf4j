@@ -12,9 +12,9 @@ import java.util.Optional;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 
 /**
- * A special {@link ServiceRegistry} for {@link FileFormat} related services.
- * This FileFormat-specific subclass offers some utility methods for matching
- * MIME types and file extensions to the file formats of registered services.
+ * A special {@link ServiceRegistry} for {@link FileFormat} related services. This FileFormat-specific
+ * subclass offers some utility methods for matching MIME types and file extensions to the file formats of
+ * registered services.
  * 
  * @author Arjohn Kampman
  */
@@ -29,8 +29,7 @@ public abstract class FileFormatServiceRegistry<FF extends FileFormat, S> extend
 	 * 
 	 * @param mimeType
 	 *        A MIME type, e.g. "text/plain".
-	 * @return The matching {@link FileFormat}, or {@link Optional#empty()} if no
-	 *         match was found.
+	 * @return The matching {@link FileFormat}, or {@link Optional#empty()} if no match was found.
 	 * @see #getFileFormatForMIMEType(String, FileFormat)
 	 */
 	public Optional<FF> getFileFormatForMIMEType(String mimeType) {
@@ -38,13 +37,11 @@ public abstract class FileFormatServiceRegistry<FF extends FileFormat, S> extend
 	}
 
 	/**
-	 * Tries to match the extension of a file name against the list of registred
-	 * file formats.
+	 * Tries to match the extension of a file name against the list of registred file formats.
 	 * 
 	 * @param fileName
 	 *        A file name.
-	 * @return The matching {@link FileFormat}, or {@link Optional#empty()} if no
-	 *         match was found.
+	 * @return The matching {@link FileFormat}, or {@link Optional#empty()} if no match was found.
 	 * @see #getFileFormatForFileName(String, FileFormat)
 	 */
 	public Optional<FF> getFileFormatForFileName(String fileName) {

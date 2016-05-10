@@ -19,10 +19,10 @@ import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
  */
 public class CollectionIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
 
-	
 	protected final Collection<E> collection;
-	protected Iterator<E> iterator;	
-	
+
+	protected Iterator<E> iterator;
+
 	/**
 	 * @param collection
 	 */
@@ -31,19 +31,23 @@ public class CollectionIteration<E, X extends Exception> extends AbstractCloseab
 		this.collection = collection;
 		iterator = collection.iterator();
 	}
-	
 
-	public boolean hasNext() throws X {
+	public boolean hasNext()
+		throws X
+	{
 		return iterator.hasNext();
 	}
 
-	public E next() throws X {
+	public E next()
+		throws X
+	{
 		return iterator.next();
 	}
 
-	public void remove() throws X {
-		throw new UnsupportedOperationException("Remove not supported on CollectionIteration");		
+	public void remove()
+		throws X
+	{
+		throw new UnsupportedOperationException("Remove not supported on CollectionIteration");
 	}
-	
 
 }

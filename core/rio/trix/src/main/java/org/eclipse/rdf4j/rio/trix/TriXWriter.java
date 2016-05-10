@@ -37,8 +37,8 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
 
 /**
- * An implementation of the RDFWriter interface that writes RDF documents in <a
- * href="http://www.w3.org/2004/03/trix/">TriX format</a>.
+ * An implementation of the RDFWriter interface that writes RDF documents in
+ * <a href="http://www.w3.org/2004/03/trix/">TriX format</a>.
  * 
  * @author Arjohn Kampman
  */
@@ -109,7 +109,7 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 			if (getWriterConfig().get(XMLWriterSettings.INCLUDE_XML_PI)) {
 				xmlWriter.startDocument();
 			}
-			
+
 			xmlWriter.setAttribute("xmlns", NAMESPACE);
 			xmlWriter.startTag(ROOT_TAG);
 		}

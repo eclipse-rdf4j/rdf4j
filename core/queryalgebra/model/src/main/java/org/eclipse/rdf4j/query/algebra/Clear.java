@@ -17,13 +17,13 @@ public class Clear extends AbstractQueryModelNode implements UpdateExpr {
 	private ValueConstant graph;
 
 	private boolean silent;
-	
+
 	private Scope scope;
-	
+
 	public Clear() {
 		super();
 	}
-	
+
 	public Clear(ValueConstant graph) {
 		super();
 		setGraph(graph);
@@ -58,22 +58,20 @@ public class Clear extends AbstractQueryModelNode implements UpdateExpr {
 
 	@Override
 	public boolean equals(Object other) {
-		if(other instanceof Clear) {
+		if (other instanceof Clear) {
 			Clear o = (Clear)other;
-			return silent == o.silent
-					&& nullEquals(graph, o.graph)
-					&& nullEquals(scope, o.scope);
+			return silent == o.silent && nullEquals(graph, o.graph) && nullEquals(scope, o.scope);
 		}
 		return false;
 	}
 
 	@Override
 	public int hashCode() {
-		int result = silent ? 1 :0;
-		if(graph != null) {
+		int result = silent ? 1 : 0;
+		if (graph != null) {
 			result ^= graph.hashCode();
 		}
-		if(scope != null) {
+		if (scope != null) {
 			result ^= scope.hashCode();
 		}
 		return result;
@@ -105,7 +103,8 @@ public class Clear extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * @param silent The silent to set.
+	 * @param silent
+	 *        The silent to set.
 	 */
 	public void setSilent(boolean silent) {
 		this.silent = silent;
@@ -120,7 +119,8 @@ public class Clear extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * @param scope The scope to set.
+	 * @param scope
+	 *        The scope to set.
 	 */
 	public void setScope(Scope scope) {
 		this.scope = scope;

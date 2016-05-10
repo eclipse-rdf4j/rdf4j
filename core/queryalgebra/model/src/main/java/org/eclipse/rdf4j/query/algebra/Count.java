@@ -16,11 +16,11 @@ public class Count extends AbstractAggregateOperator {
 	public Count(ValueExpr arg) {
 		super(arg);
 	}
-	
+
 	public Count(ValueExpr arg, boolean distinct) {
 		super(arg, distinct);
 	}
-	
+
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{
@@ -41,7 +41,7 @@ public class Count extends AbstractAggregateOperator {
 	public Count clone() {
 		return (Count)super.clone();
 	}
-	
+
 	@Override
 	public String getSignature() {
 		String signature = super.getSignature();

@@ -11,9 +11,9 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 
 /**
- * An implementation of the {@link org.eclipse.rdf4j.sail.NotifyingSailConnection}
- * interface that wraps another {@link org.eclipse.rdf4j.sail.NotifyingSailConnection}
- * object and forwards any method calls to the wrapped transaction.
+ * An implementation of the {@link org.eclipse.rdf4j.sail.NotifyingSailConnection} interface that wraps
+ * another {@link org.eclipse.rdf4j.sail.NotifyingSailConnection} object and forwards any method calls to the
+ * wrapped transaction.
  * 
  * @author Jeen Broekstra
  */
@@ -24,8 +24,7 @@ public class NotifyingSailConnectionWrapper extends SailConnectionWrapper implem
 	 *--------------*/
 
 	/**
-	 * Creates a new {@link NotifyingSailConnectionWrapper} object that wraps the
-	 * supplied connection.
+	 * Creates a new {@link NotifyingSailConnectionWrapper} object that wraps the supplied connection.
 	 */
 	public NotifyingSailConnectionWrapper(NotifyingSailConnection wrappedCon) {
 		super(wrappedCon);

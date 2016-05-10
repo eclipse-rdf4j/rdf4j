@@ -18,9 +18,8 @@ import org.eclipse.rdf4j.sail.config.SailImplConfig;
 public class SpinSailConfig extends AbstractDelegatingSailImplConfig {
 
 	/**
-	 * Flag to indicate if the SPIN engine should initialize using the full
-	 * deductive closure of the SPIN axioms. This is necessary if the underlying
-	 * Sail stack does not provide RDFS inferencing.
+	 * Flag to indicate if the SPIN engine should initialize using the full deductive closure of the SPIN
+	 * axioms. This is necessary if the underlying Sail stack does not provide RDFS inferencing.
 	 */
 	private boolean axiomClosureNeeded = true;
 

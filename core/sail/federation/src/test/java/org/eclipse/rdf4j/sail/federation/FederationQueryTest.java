@@ -45,10 +45,10 @@ import org.junit.runners.Parameterized.Parameters;
 @RunWith(Parameterized.class)
 public class FederationQueryTest {
 
-	@Rule public TestName name = new TestName();
+	@Rule
+	public TestName name = new TestName();
 
-	private String getName()
-	{
+	private String getName() {
 		return name.getMethodName();
 	}
 
@@ -60,7 +60,9 @@ public class FederationQueryTest {
 				{ "JoinBB", "{ ?person b:name ?name ; b:desc ?desc }" },
 				{ "JoinBC", "{ ?person b:name ?name ;  b:desc ?desc ; c:job ?job }" },
 				{ "JoinCC", "{ ?person c:livesIn ?home ; c:job ?job }" },
-				{ "LeftJoinAA", "{ ?person a:spouse ?spouse OPTIONAL { ?person a:parentOf ?child }}" },
+				{
+						"LeftJoinAA",
+						"{ ?person a:spouse ?spouse OPTIONAL { ?person a:parentOf ?child }}" },
 				{ "LeftJoinAC", "{ ?person a:spouse ?spouse OPTIONAL {?person c:job ?job }}" },
 				{ "LeftJoinAD", "{ ?person a:spouse ?spouse OPTIONAL {?person d:worksIn ?work }}" },
 				{ "LeftJoinBB", "{ ?person b:name ?name OPTIONAL { ?person b:desc ?desc }}" },

@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.serql.ast;
 
-
 public class ASTFrom extends SimpleNode {
 
 	public ASTFrom(int id) {

@@ -183,8 +183,8 @@ public abstract class RDFWriterTest {
 			potentialSubjects.add(vf.createBNode("a" + Integer.toHexString(i).toLowerCase()));
 		}
 		for (int i = 0; i < 200; i++) {
-			potentialSubjects.add(vf.createIRI(exNs + Integer.toHexString(i) + "/a"
-					+ Integer.toOctalString(i % 133)));
+			potentialSubjects.add(
+					vf.createIRI(exNs + Integer.toHexString(i) + "/a" + Integer.toOctalString(i % 133)));
 		}
 		Collections.shuffle(potentialSubjects, prng);
 
@@ -239,12 +239,10 @@ public abstract class RDFWriterTest {
 	}
 
 	/**
-	 * Override this method to setup custom settings for WriterConfig needed to
-	 * pass tests.
+	 * Override this method to setup custom settings for WriterConfig needed to pass tests.
 	 * <p>
-	 * One example of this is that {@link JSONLDMode#EXPAND} does not preserve
-	 * namespace prefixes, causing the tests here to be unnecessarily ignored.
-	 * The fix for that is to override this method and set the mode to
+	 * One example of this is that {@link JSONLDMode#EXPAND} does not preserve namespace prefixes, causing the
+	 * tests here to be unnecessarily ignored. The fix for that is to override this method and set the mode to
 	 * {@link JSONLDMode#COMPACT} that does preserve namespaces.
 	 * 
 	 * @param config
@@ -254,8 +252,7 @@ public abstract class RDFWriterTest {
 	}
 
 	/**
-	 * Override this method to setup custom settings for ParserConfig needed to
-	 * pass tests.
+	 * Override this method to setup custom settings for ParserConfig needed to pass tests.
 	 * 
 	 * @param config
 	 *        The config object to modify.
@@ -376,7 +373,8 @@ public abstract class RDFWriterTest {
 		}
 		assertTrue("missing statement with datatype", model.contains(st12));
 		if (rdfParser.getRDFFormat().equals(RDFFormat.RDFXML)) {
-			System.out.println("FIXME: SES-879: RDFXML Parser does not preserve literals starting or ending in newline character");
+			System.out.println(
+					"FIXME: SES-879: RDFXML Parser does not preserve literals starting or ending in newline character");
 		}
 		else {
 			assertTrue("missing statement with literal ending with newline", model.contains(st13));
@@ -483,8 +481,7 @@ public abstract class RDFWriterTest {
 	}
 
 	/**
-	 * Test specifically for bnode collisions of the form "a" -> "aa", with
-	 * preserve BNode ids setting on.
+	 * Test specifically for bnode collisions of the form "a" -> "aa", with preserve BNode ids setting on.
 	 * 
 	 * @throws Exception
 	 */
@@ -496,8 +493,7 @@ public abstract class RDFWriterTest {
 	}
 
 	/**
-	 * Test specifically for bnode collisions of the form "a" -> "aa", with
-	 * preserve BNode ids setting off.
+	 * Test specifically for bnode collisions of the form "a" -> "aa", with preserve BNode ids setting off.
 	 * 
 	 * @throws Exception
 	 */
@@ -539,8 +535,8 @@ public abstract class RDFWriterTest {
 	}
 
 	/**
-	 * Fuzz and performance test designed to find cases where parsers and/or
-	 * writers are incompatible with each other.
+	 * Fuzz and performance test designed to find cases where parsers and/or writers are incompatible with
+	 * each other.
 	 * 
 	 * @throws Exception
 	 */
@@ -552,8 +548,7 @@ public abstract class RDFWriterTest {
 	}
 
 	/**
-	 * Tests raw parser performance, without checking for consistency, by not
-	 * storing the resulting triples.
+	 * Tests raw parser performance, without checking for consistency, by not storing the resulting triples.
 	 * 
 	 * @throws Exception
 	 */
@@ -576,7 +571,7 @@ public abstract class RDFWriterTest {
 				StringBuffer big = new StringBuffer();
 				int len = 25000 + prng.nextInt(5000);
 				for (int j = 0; j < len; j++) {
-					big.append(((char) (32 + prng.nextInt(90))));
+					big.append(((char)(32 + prng.nextInt(90))));
 				}
 				obj = vf.createLiteral(big.toString());
 			}
@@ -585,12 +580,12 @@ public abstract class RDFWriterTest {
 					potentialPredicates.get(prng.nextInt(potentialPredicates.size())), obj);
 		}
 		System.out.println("Test class: " + this.getClass().getName());
-		System.out.println("Test statements size: " + model.size() + " (" + rdfWriterFactory.getRDFFormat()
-				+ ")");
+		System.out.println(
+				"Test statements size: " + model.size() + " (" + rdfWriterFactory.getRDFFormat() + ")");
 		assertFalse("Did not generate any test statements", model.isEmpty());
 
-		File testFile = tempDir.newFile("performancetest."
-				+ rdfWriterFactory.getRDFFormat().getDefaultFileExtension());
+		File testFile = tempDir.newFile(
+				"performancetest." + rdfWriterFactory.getRDFFormat().getDefaultFileExtension());
 
 		FileOutputStream out = new FileOutputStream(testFile);
 		try {
@@ -643,7 +638,8 @@ public abstract class RDFWriterTest {
 						System.out.println("parsedIsSubset=" + parsedIsSubset);
 
 						System.out.println("Written statements=>");
-						IOUtils.writeLines(IOUtils.readLines(new FileInputStream(testFile)), "\n", System.out);
+						IOUtils.writeLines(IOUtils.readLines(new FileInputStream(testFile)), "\n",
+								System.out);
 						System.out.println("Parsed statements=>");
 						Rio.write(parsedModel, System.out, RDFFormat.NQUADS);
 					}

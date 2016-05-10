@@ -56,27 +56,27 @@ public class LanguageTag implements LanguageTagCodes {
 		subtagList.toArray(subtags);
 		int lg = subtags[0].length();
 		if (lg == 0 || lg > 8) {
-			throw new LanguageTagSyntaxException("Primary subtag must be between 1 and 8 alpha characters: "
-					+ tag);
+			throw new LanguageTagSyntaxException(
+					"Primary subtag must be between 1 and 8 alpha characters: " + tag);
 		}
 		for (int j = 0; j < lg; j++) {
 			int ch = subtags[0].charAt(j);
 			if (!('a' <= ch && ch <= 'z')) {
-				throw new LanguageTagSyntaxException("Primary subtag must be between 1 and 8 alpha characters: "
-						+ tag);
+				throw new LanguageTagSyntaxException(
+						"Primary subtag must be between 1 and 8 alpha characters: " + tag);
 			}
 		}
 		for (int i = 1; i < subtags.length; i++) {
 			lg = subtags[i].length();
 			if (lg == 0 || lg > 8) {
-				throw new LanguageTagSyntaxException("Subtag " + (i + 1)
-						+ " must be between 1 and 8 alphanumeric characters: " + tag);
+				throw new LanguageTagSyntaxException(
+						"Subtag " + (i + 1) + " must be between 1 and 8 alphanumeric characters: " + tag);
 			}
 			for (int j = 0; j < lg; j++) {
 				int ch = subtags[i].charAt(j);
 				if (!(('a' <= ch && ch <= 'z') || ('0' <= ch && ch <= '9'))) {
-					throw new LanguageTagSyntaxException("Subtag " + (i + 1)
-							+ " must be between 1 and 8 alphanumeric characters: " + tag);
+					throw new LanguageTagSyntaxException(
+							"Subtag " + (i + 1) + " must be between 1 and 8 alphanumeric characters: " + tag);
 				}
 			}
 		}
@@ -94,17 +94,15 @@ public class LanguageTag implements LanguageTagCodes {
 	// Special cases.
 	// Overall properties
 	/**
-	 * The properties of this LanguageTag, expressed as a bitwise or of fields
-	 * from {@link LanguageTagCodes}. If the tag is illegal only
-	 * <CODE>LT_ILLEGAL</CODE> is reported. Examples include:
+	 * The properties of this LanguageTag, expressed as a bitwise or of fields from {@link LanguageTagCodes}.
+	 * If the tag is illegal only <CODE>LT_ILLEGAL</CODE> is reported. Examples include:
 	 * <dl>
 	 * <dt><CODE>LT_ISO639</CODE></dt>
 	 * <dd>en <I>English.</I></dd>
 	 * <dt><CODE>LT_ISO639|LT_ISO3166</CODE></dt>
 	 * <dd>en-GB <I>British English</I></dd>
 	 * <dt><CODE>LT_ILLEGAL</CODE></dt>
-	 * <dd>en-ENGLAND <I>No such country.</I> Never returned in combination
-	 * with other values.</dd>
+	 * <dd>en-ENGLAND <I>No such country.</I> Never returned in combination with other values.</dd>
 	 * <dt><CODE>LT_PRIVATE_USE</CODE></dt>
 	 * <dd>x-en-ENGLAND <I>Private tag with private semantics.</I></dd>
 	 * <dt><CODE>LT_IANA|LT_EXTRA</CODE></dt>
@@ -226,8 +224,8 @@ public class LanguageTag implements LanguageTagCodes {
 					// Section 2.3 Para 2
 				}
 				if (!lang.terminologyCode.equals(subtags[0])) {
-					return "RFC 3066 section 2.3 mandates the use of '" + lang.terminologyCode + "' instead of '"
-							+ subtags[0] + "'.";
+					return "RFC 3066 section 2.3 mandates the use of '" + lang.terminologyCode
+							+ "' instead of '" + subtags[0] + "'.";
 					// Section 2.3 Para 3
 				}
 				// Section 2.3 para 4,5,6 in a separate function.

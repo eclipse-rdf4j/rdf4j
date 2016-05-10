@@ -32,9 +32,8 @@ public class LuceneSailTest extends AbstractLuceneSailTest {
 	}
 
 	/**
-	 * This test simulates possible flow of calls to the LuceneIndex. It assert
-	 * does InexReader and IndexSearcher are not closed while iterating but are
-	 * finally close.
+	 * This test simulates possible flow of calls to the LuceneIndex. It assert does InexReader and
+	 * IndexSearcher are not closed while iterating but are finally close.
 	 *
 	 * @throws Exception
 	 */

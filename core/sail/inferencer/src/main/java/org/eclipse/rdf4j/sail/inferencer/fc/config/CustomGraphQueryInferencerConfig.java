@@ -35,8 +35,7 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
 
 /**
- * Configuration handling for
- * {@link org.eclipse.rdf4j.sail.inferencer.fc.CustomGraphQueryInferencer}.
+ * Configuration handling for {@link org.eclipse.rdf4j.sail.inferencer.fc.CustomGraphQueryInferencer}.
  * 
  * @author Dale Visser
  */
@@ -105,8 +104,8 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 			if (language.isPresent()) {
 				setQueryLanguage(QueryLanguage.valueOf(language.get().stringValue()));
 				if (null == getQueryLanguage()) {
-					throw new SailConfigException(
-							"Valid value required for " + QUERY_LANGUAGE + " property, found " + language.get());
+					throw new SailConfigException("Valid value required for " + QUERY_LANGUAGE
+							+ " property, found " + language.get());
 				}
 			}
 			else {
@@ -164,7 +163,8 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
 		if (null != language) {
-			m.add(implNode, QUERY_LANGUAGE, SimpleValueFactory.getInstance().createLiteral(language.getName()));
+			m.add(implNode, QUERY_LANGUAGE,
+					SimpleValueFactory.getInstance().createLiteral(language.getName()));
 		}
 		addQueryNode(m, implNode, RULE_QUERY, ruleQuery);
 		addQueryNode(m, implNode, MATCHER_QUERY, matcherQuery);

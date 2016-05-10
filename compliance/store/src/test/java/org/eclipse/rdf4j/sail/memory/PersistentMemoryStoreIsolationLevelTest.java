@@ -16,8 +16,8 @@ import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * An extension of {@link MemoryStoreIsolationLevelTest} for testing the class
- * {@link MemoryStore} using on-disk persistence.
+ * An extension of {@link MemoryStoreIsolationLevelTest} for testing the class {@link MemoryStore} using
+ * on-disk persistence.
  */
 public class PersistentMemoryStoreIsolationLevelTest extends MemoryStoreIsolationLevelTest {
 

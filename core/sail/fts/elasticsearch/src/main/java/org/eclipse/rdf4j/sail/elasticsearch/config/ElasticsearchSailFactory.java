@@ -16,8 +16,7 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.config.AbstractLuceneSailConfig;
 
 /**
- * A {@link SailFactory} that creates {@link LuceneSail}s based on RDF
- * configuration data.
+ * A {@link SailFactory} that creates {@link LuceneSail}s based on RDF configuration data.
  */
 public class ElasticsearchSailFactory implements SailFactory {
 

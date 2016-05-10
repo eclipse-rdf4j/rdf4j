@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 public class NativeComplexSPARQLQueryTest extends ComplexSPARQLQueryTest {
 
 	File dataDir = null;
-	
+
 	@Override
 	protected Repository newRepository()
 		throws Exception
@@ -30,7 +30,7 @@ public class NativeComplexSPARQLQueryTest extends ComplexSPARQLQueryTest {
 		return new SailRepository(new NativeStore(dataDir, "spoc"));
 
 	}
-	
+
 	@Override
 	public void tearDown()
 		throws Exception

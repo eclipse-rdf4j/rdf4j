@@ -21,8 +21,7 @@ import com.google.common.base.Function;
 import com.spatial4j.core.shape.Shape;
 
 /**
- * @deprecated since 4.1.0. Use the LuceneSail in package
- *             {@code org.openrdf.sail.lucene} instead.
+ * @deprecated since 4.1.0. Use the LuceneSail in package {@code org.openrdf.sail.lucene} instead.
  */
 @Deprecated
 public class LuceneDocument implements SearchDocument {
@@ -45,13 +44,16 @@ public class LuceneDocument implements SearchDocument {
 	}
 
 	@Deprecated
-	public LuceneDocument(Document doc, Function<? super String, ? extends SpatialStrategy> geoStrategyMapper) {
+	public LuceneDocument(Document doc,
+			Function<? super String, ? extends SpatialStrategy> geoStrategyMapper)
+	{
 		this.doc = doc;
 		this.geoStrategyMapper = geoStrategyMapper;
 	}
 
 	@Deprecated
-	public LuceneDocument(String id, String resourceId, String context, Function<? super String, ? extends SpatialStrategy> geoStrategyMapper)
+	public LuceneDocument(String id, String resourceId, String context,
+			Function<? super String, ? extends SpatialStrategy> geoStrategyMapper)
 	{
 		this(geoStrategyMapper);
 		setId(id);
@@ -117,12 +119,11 @@ public class LuceneDocument implements SearchDocument {
 	}
 
 	/**
-	 * Stores and indexes a property in a Document. We don't have to recalculate
-	 * the concatenated text: just add another TEXT field and Lucene will take
-	 * care of this. Additional advantage: Lucene may be able to handle the
-	 * invididual strings in a way that may affect e.g. phrase and proximity
-	 * searches (concatenation basically means loss of information). NOTE: The
-	 * TEXT_FIELD_NAME has to be stored, see in LuceneSail
+	 * Stores and indexes a property in a Document. We don't have to recalculate the concatenated text: just
+	 * add another TEXT field and Lucene will take care of this. Additional advantage: Lucene may be able to
+	 * handle the invididual strings in a way that may affect e.g. phrase and proximity searches
+	 * (concatenation basically means loss of information). NOTE: The TEXT_FIELD_NAME has to be stored, see in
+	 * LuceneSail
 	 * 
 	 * @see LuceneSail
 	 */

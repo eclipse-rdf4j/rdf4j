@@ -29,16 +29,14 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 public class Namespaces {
 
 	/**
-	 * Converts a set of {@link Namespace}s into a map containing the
-	 * {@link Namespace#getPrefix()} strings as keys, with the
-	 * {@link Namespace#getName()} strings as values in the map for each
-	 * namespace in the given set.
+	 * Converts a set of {@link Namespace}s into a map containing the {@link Namespace#getPrefix()} strings as
+	 * keys, with the {@link Namespace#getName()} strings as values in the map for each namespace in the given
+	 * set.
 	 * 
 	 * @param namespaces
 	 *        The {@link Set} of {@link Namespace}s to transform.
-	 * @return A {@link Map} of {@link String} to {@link String} where the
-	 *         key/value combinations are created based on the prefix and names
-	 *         from {@link Namespace}s in the input set.
+	 * @return A {@link Map} of {@link String} to {@link String} where the key/value combinations are created
+	 *         based on the prefix and names from {@link Namespace}s in the input set.
 	 */
 	public static Map<String, String> asMap(Set<Namespace> namespaces) {
 		Map<String, String> result = new HashMap<String, String>();
@@ -51,15 +49,13 @@ public class Namespaces {
 	}
 
 	/**
-	 * Wraps the given {@link Set} of {@link Namespace}s as a {@link Map} of
-	 * prefix to URI mappings, so that it can be used where a {@link Map} is
-	 * required by the API. <br>
+	 * Wraps the given {@link Set} of {@link Namespace}s as a {@link Map} of prefix to URI mappings, so that
+	 * it can be used where a {@link Map} is required by the API. <br>
 	 * NOTE: The Map returned by this method is not synchronized.
 	 * 
 	 * @param namespaces
 	 *        The Set to wrap.
-	 * @return A Map of prefix to URI mappings which is backed by the given Set
-	 *         of {@link Namespace}s.
+	 * @return A Map of prefix to URI mappings which is backed by the given Set of {@link Namespace}s.
 	 */
 	public static Map<String, String> wrap(final Set<Namespace> namespaces) {
 		return new Map<String, String>() {
@@ -94,8 +90,7 @@ public class Namespaces {
 			}
 
 			/**
-			 * NOTE: This entry set is immutable, and does not update the internal
-			 * set through its iterator.
+			 * NOTE: This entry set is immutable, and does not update the internal set through its iterator.
 			 */
 			@Override
 			public Set<java.util.Map.Entry<String, String>> entrySet() {

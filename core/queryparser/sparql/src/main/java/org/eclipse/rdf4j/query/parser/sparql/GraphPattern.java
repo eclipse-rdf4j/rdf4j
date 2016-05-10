@@ -25,8 +25,8 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
- * A graph pattern consisting of (required and optional) tuple expressions,
- * binding assignments and boolean constraints.
+ * A graph pattern consisting of (required and optional) tuple expressions, binding assignments and boolean
+ * constraints.
  * 
  * @author Arjohn Kampman
  */
@@ -48,9 +48,8 @@ public class GraphPattern {
 	private List<TupleExpr> requiredTEs = new ArrayList<TupleExpr>();
 
 	/**
-	 * The optional tuple expressions in this graph pattern, as a list of
-	 * Key-Value pairs with the tuple expression as the key and a list of
-	 * constraints applicable to the tuple expression as the value.
+	 * The optional tuple expressions in this graph pattern, as a list of Key-Value pairs with the tuple
+	 * expression as the key and a list of constraints applicable to the tuple expression as the value.
 	 */
 	private List<Map.Entry<TupleExpr, List<ValueExpr>>> optionalTEs = new ArrayList<Map.Entry<TupleExpr, List<ValueExpr>>>();
 
@@ -66,8 +65,7 @@ public class GraphPattern {
 	}
 
 	/**
-	 * Creates a new graph pattern that inherits the context and scope from a
-	 * parent graph pattern.
+	 * Creates a new graph pattern that inherits the context and scope from a parent graph pattern.
 	 */
 	public GraphPattern(GraphPattern parent) {
 		contextVar = parent.contextVar;
@@ -103,14 +101,13 @@ public class GraphPattern {
 	}
 
 	/**
-	 * add the supplied tuple expression as an optional expression, with a list
-	 * of constraints that hold as conditions.
+	 * add the supplied tuple expression as an optional expression, with a list of constraints that hold as
+	 * conditions.
 	 * 
 	 * @param te
 	 *        a tuple expression
 	 * @param constraints
-	 *        a list of constraints that form a condition for the LeftJoin to be
-	 *        formed from the optional TE.
+	 *        a list of constraints that form a condition for the LeftJoin to be formed from the optional TE.
 	 */
 	public void addOptionalTE(TupleExpr te, List<ValueExpr> constraints) {
 
@@ -120,9 +117,8 @@ public class GraphPattern {
 	}
 
 	/**
-	 * Retrieves the optional tuple expressions as a list of tuples with the
-	 * tuple expression as the key and the list of value expressions as the
-	 * value.
+	 * Retrieves the optional tuple expressions as a list of tuples with the tuple expression as the key and
+	 * the list of value expressions as the value.
 	 * 
 	 * @return a list of Map entries.
 	 */
@@ -158,8 +154,7 @@ public class GraphPattern {
 	}
 
 	/**
-	 * Builds a combined tuple expression from the tuple expressions and
-	 * constraints in this graph pattern.
+	 * Builds a combined tuple expression from the tuple expressions and constraints in this graph pattern.
 	 * 
 	 * @return A tuple expression for this graph pattern.
 	 */

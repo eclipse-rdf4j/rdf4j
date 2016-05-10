@@ -30,17 +30,15 @@ public class SolrSailGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLTest {
 	}
 
 	@Override
-	protected void loadPolygons()
-	{
+	protected void loadPolygons() {
 		// do nothing - JTS is required
 	}
 
 	@Override
-	protected void checkPolygons()
-	{
+	protected void checkPolygons() {
 		// do nothing - JTS is required
 	}
-	
+
 	@Test
 	@Ignore // JTS is required
 	@Override
@@ -50,7 +48,6 @@ public class SolrSailGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLTest {
 		super.testIntersectionQuery();
 	}
 
-
 	@Test
 	@Ignore // JTS is required
 	@Override
@@ -59,7 +56,6 @@ public class SolrSailGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLTest {
 	{
 		super.testComplexIntersectionQuery();
 	}
-
 
 	@Override
 	public void tearDown()

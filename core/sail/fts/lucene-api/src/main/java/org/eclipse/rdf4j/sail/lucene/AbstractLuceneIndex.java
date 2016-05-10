@@ -14,28 +14,26 @@ import java.util.LinkedList;
 public abstract class AbstractLuceneIndex extends AbstractSearchIndex {
 
 	/**
-	 * keep a lit of old monitors that are still iterating but not closed (open
-	 * iterators), will be all closed on shutdown items are removed from list by
-	 * ReaderMnitor.endReading() when closing
+	 * keep a lit of old monitors that are still iterating but not closed (open iterators), will be all closed
+	 * on shutdown items are removed from list by ReaderMnitor.endReading() when closing
 	 */
 	protected final Collection<AbstractReaderMonitor> oldmonitors = new LinkedList<AbstractReaderMonitor>();
 
 	protected abstract AbstractReaderMonitor getCurrentMonitor();
 
 	@Override
-	public void beginReading()
-	{
+	public void beginReading() {
 		getCurrentMonitor().beginReading();
 	}
 
 	@Override
-	public void endReading() throws IOException
+	public void endReading()
+		throws IOException
 	{
 		getCurrentMonitor().endReading();
 	}
 
-	public Collection<AbstractReaderMonitor> getOldMonitors()
-	{
+	public Collection<AbstractReaderMonitor> getOldMonitors() {
 		return oldmonitors;
 	}
 }

@@ -221,7 +221,8 @@ public class TransactionController extends AbstractController {
 					logger.debug("txnID is '{}'", txnID);
 				}
 				catch (IllegalArgumentException e) {
-					throw new ClientHTTPException(SC_BAD_REQUEST, "not a valid transaction id: " + pathInfo[2]);
+					throw new ClientHTTPException(SC_BAD_REQUEST,
+							"not a valid transaction id: " + pathInfo[2]);
 				}
 			}
 			else {
@@ -234,7 +235,7 @@ public class TransactionController extends AbstractController {
 
 	private ModelAndView processModificationOperation(RepositoryConnection conn, Action action,
 			HttpServletRequest request, HttpServletResponse response)
-				throws IOException, HTTPException
+		throws IOException, HTTPException
 	{
 		ProtocolUtil.logRequestParameters(request);
 
@@ -248,16 +249,15 @@ public class TransactionController extends AbstractController {
 		try {
 			switch (action) {
 				case ADD:
-					conn.add(
-							request.getInputStream(),
-							baseURI,
+					conn.add(request.getInputStream(), baseURI,
 							Rio.getParserFormatForMIMEType(request.getContentType()).orElseThrow(
 									Rio.unsupportedFormat(request.getContentType())));
 					break;
 				case DELETE:
 					RDFParser parser = Rio.createParser(
 							Rio.getParserFormatForMIMEType(request.getContentType()).orElseThrow(
-									Rio.unsupportedFormat(request.getContentType())), conn.getValueFactory());
+									Rio.unsupportedFormat(request.getContentType())),
+							conn.getValueFactory());
 					parser.setRDFHandler(new WildcardRDFRemover(conn));
 					parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 					parser.parse(request.getInputStream(), baseURI);
@@ -290,7 +290,7 @@ public class TransactionController extends AbstractController {
 
 	private ModelAndView getSize(RepositoryConnection conn, UUID txnId, HttpServletRequest request,
 			HttpServletResponse response)
-				throws HTTPException
+		throws HTTPException
 	{
 		try {
 			ProtocolUtil.logRequestParameters(request);
@@ -302,7 +302,8 @@ public class TransactionController extends AbstractController {
 				Repository repository = RepositoryInterceptor.getRepository(request);
 
 				ValueFactory vf = repository.getValueFactory();
-				Resource[] contexts = ProtocolUtil.parseContextParam(request, Protocol.CONTEXT_PARAM_NAME, vf);
+				Resource[] contexts = ProtocolUtil.parseContextParam(request, Protocol.CONTEXT_PARAM_NAME,
+						vf);
 
 				long size = -1;
 
@@ -329,7 +330,7 @@ public class TransactionController extends AbstractController {
 	 */
 	private ModelAndView getExportStatementsResult(RepositoryConnection conn, UUID txnId,
 			HttpServletRequest request, HttpServletResponse response)
-				throws ClientHTTPException
+		throws ClientHTTPException
 	{
 		ProtocolUtil.logRequestParameters(request);
 
@@ -358,20 +359,19 @@ public class TransactionController extends AbstractController {
 	}
 
 	/**
-	 * Evaluates a query on the given connection and returns the resulting
-	 * {@link QueryResultView}. The {@link QueryResultView} will take care of
-	 * correctly releasing the connection back to the
-	 * {@link ActiveTransactionRegistry}, after fully rendering the query result
-	 * for sending over the wire.
+	 * Evaluates a query on the given connection and returns the resulting {@link QueryResultView}. The
+	 * {@link QueryResultView} will take care of correctly releasing the connection back to the
+	 * {@link ActiveTransactionRegistry}, after fully rendering the query result for sending over the wire.
 	 */
 	private ModelAndView processQuery(RepositoryConnection conn, UUID txnId, HttpServletRequest request,
 			HttpServletResponse response)
-				throws IOException, HTTPException
+		throws IOException, HTTPException
 	{
 		String queryStr = null;
 		final String contentType = request.getContentType();
 		if (contentType != null && contentType.contains(Protocol.SPARQL_QUERY_MIME_TYPE)) {
-			final String encoding = request.getCharacterEncoding() != null ? request.getCharacterEncoding() : "UTF-8";
+			final String encoding = request.getCharacterEncoding() != null ? request.getCharacterEncoding()
+					: "UTF-8";
 			queryStr = IOUtils.toString(request.getInputStream(), encoding);
 		}
 		else {
@@ -435,14 +435,14 @@ public class TransactionController extends AbstractController {
 		model.put(QueryResultView.QUERY_RESULT_KEY, queryResult);
 		model.put(QueryResultView.FACTORY_KEY, factory);
 		model.put(QueryResultView.HEADERS_ONLY, false); // TODO needed for HEAD
-																		// requests.
+														// requests.
 		model.put(QueryResultView.TRANSACTION_ID_KEY, txnId);
 		return new ModelAndView(view, model);
 	}
 
 	private Query getQuery(RepositoryConnection repositoryCon, String queryStr, HttpServletRequest request,
 			HttpServletResponse response)
-				throws IOException, ClientHTTPException
+		throws IOException, ClientHTTPException
 	{
 		Query result = null;
 
@@ -565,13 +565,14 @@ public class TransactionController extends AbstractController {
 
 	private ModelAndView getSparqlUpdateResult(RepositoryConnection conn, HttpServletRequest request,
 			HttpServletResponse response)
-				throws ServerHTTPException, ClientHTTPException, HTTPException
+		throws ServerHTTPException, ClientHTTPException, HTTPException
 	{
 		String sparqlUpdateString = null;
 		final String contentType = request.getContentType();
 		if (contentType != null && contentType.contains(Protocol.SPARQL_UPDATE_MIME_TYPE)) {
 			try {
-				final String encoding = request.getCharacterEncoding() != null ? request.getCharacterEncoding() : "UTF-8";
+				final String encoding = request.getCharacterEncoding() != null
+						? request.getCharacterEncoding() : "UTF-8";
 				sparqlUpdateString = IOUtils.toString(request.getInputStream(), encoding);
 			}
 			catch (IOException e) {
@@ -670,7 +671,8 @@ public class TransactionController extends AbstractController {
 					dataset.addNamedGraph(uri);
 				}
 				catch (IllegalArgumentException e) {
-					throw new ClientHTTPException(SC_BAD_REQUEST, "Illegal URI for named graph: " + namedGraphURI);
+					throw new ClientHTTPException(SC_BAD_REQUEST,
+							"Illegal URI for named graph: " + namedGraphURI);
 				}
 			}
 		}

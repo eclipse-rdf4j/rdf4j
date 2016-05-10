@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.query.algebra;
 import java.util.Set;
 
 /**
- * An abstract superclass for unary tuple operators which, by definition, has
- * one argument.
+ * An abstract superclass for unary tuple operators which, by definition, has one argument.
  */
 public abstract class UnaryTupleOperator extends AbstractQueryModelNode implements TupleExpr {
 

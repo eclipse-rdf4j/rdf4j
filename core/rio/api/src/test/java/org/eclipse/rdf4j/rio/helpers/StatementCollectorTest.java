@@ -50,8 +50,7 @@ public class StatementCollectorTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.rio.helpers.StatementCollector#StatementCollector()}.
+	 * Test method for {@link org.eclipse.rdf4j.rio.helpers.StatementCollector#StatementCollector()}.
 	 */
 	@Test
 	public final void testStatementCollector()
@@ -65,8 +64,7 @@ public class StatementCollectorTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.rio.helpers.StatementCollector#StatementCollector(java.util.Collection)}
-	 * .
+	 * {@link org.eclipse.rdf4j.rio.helpers.StatementCollector#StatementCollector(java.util.Collection)} .
 	 */
 	@Test
 	public final void testStatementCollectorList()
@@ -83,8 +81,7 @@ public class StatementCollectorTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.rio.helpers.StatementCollector#StatementCollector(java.util.Collection)}
-	 * .
+	 * {@link org.eclipse.rdf4j.rio.helpers.StatementCollector#StatementCollector(java.util.Collection)} .
 	 */
 	@Test
 	public final void testStatementCollectorSet()
@@ -101,8 +98,7 @@ public class StatementCollectorTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.rio.helpers.StatementCollector#StatementCollector(java.util.Collection)}
-	 * .
+	 * {@link org.eclipse.rdf4j.rio.helpers.StatementCollector#StatementCollector(java.util.Collection)} .
 	 */
 	@Test
 	public final void testStatementCollectorCollectionModel()
@@ -193,8 +189,7 @@ public class StatementCollectorTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler#handleComment(java.lang.String)}
-	 * .
+	 * {@link org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler#handleComment(java.lang.String)} .
 	 * 
 	 * @throws Exception
 	 */

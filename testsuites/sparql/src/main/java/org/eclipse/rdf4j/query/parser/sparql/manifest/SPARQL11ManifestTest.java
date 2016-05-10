@@ -39,8 +39,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Functionality for creating a JUnit test suite out of a W3C Working
- * Group-style manifest for SPARQL query and update tests.
+ * Functionality for creating a JUnit test suite out of a W3C Working Group-style manifest for SPARQL query
+ * and update tests.
  * 
  * @author Jeen Broekstra
  */
@@ -51,26 +51,21 @@ public class SPARQL11ManifestTest {
 	private static File tmpDir;
 
 	/**
-	 * Creates a new {@link TestSuite} for executiong of {@link SPARQLQueryTest}
-	 * s.
+	 * Creates a new {@link TestSuite} for executiong of {@link SPARQLQueryTest} s.
 	 * 
 	 * @param factory
 	 *        a factory class that creates each individual test case.
 	 * @param officialWorkingGroupTests
-	 *        indicates whether to use the official W3C working group tests, or
-	 *        Sesame's own set of tests.
+	 *        indicates whether to use the official W3C working group tests, or Sesame's own set of tests.
 	 * @param approvedTestsOnly
-	 *        if <code>true</code>, use working group-approved tests only. Has no
-	 *        influence when officialWorkingGroup tests is set to
-	 *        <code>false</code>.
+	 *        if <code>true</code>, use working group-approved tests only. Has no influence when
+	 *        officialWorkingGroup tests is set to <code>false</code>.
 	 * @param useRemoteTests
 	 *        if set to <code>true</code>, use manifests and tests located at
-	 *        <code>http://www.w3.org/2009/sparql/docs/tests/data-sparql11/</code>
-	 *        , instead of local copies.
+	 *        <code>http://www.w3.org/2009/sparql/docs/tests/data-sparql11/</code> , instead of local copies.
 	 * @param excludedSubdirs
-	 *        an (optionally empty) list of subdirectories to exclude from
-	 *        testing. If specified, test cases in one of the supplied subdirs
-	 *        will not be executed. If left empty, all tests will be executed.
+	 *        an (optionally empty) list of subdirectories to exclude from testing. If specified, test cases
+	 *        in one of the supplied subdirs will not be executed. If left empty, all tests will be executed.
 	 * @return a TestSuite.
 	 * @throws Exception
 	 */
@@ -112,7 +107,8 @@ public class SPARQL11ManifestTest {
 				+ "SELECT DISTINCT ?manifestFile "
 				+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
 
-		TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SPARQL, query, manifestFile).evaluate();
+		TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SPARQL, query,
+				manifestFile).evaluate();
 
 		while (manifestResults.hasNext()) {
 			BindingSet bindingSet = manifestResults.next();
@@ -169,8 +165,9 @@ public class SPARQL11ManifestTest {
 				+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
 				+ "SELECT DISTINCT ?manifestFile "
 				+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
-		
-		TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SPARQL, query, manifestFile).evaluate();
+
+		TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SPARQL, query,
+				manifestFile).evaluate();
 
 		while (manifestResults.hasNext()) {
 			BindingSet bindingSet = manifestResults.next();
@@ -228,16 +225,14 @@ public class SPARQL11ManifestTest {
 	}
 
 	/**
-	 * Verifies if the selected subManifest occurs in the supplied list of
-	 * excluded subdirs.
+	 * Verifies if the selected subManifest occurs in the supplied list of excluded subdirs.
 	 * 
 	 * @param subManifestFile
 	 *        the url of a sub-manifest
 	 * @param excludedSubdirs
 	 *        an array of directory names. May be null.
-	 * @return <code>false</code> if the supplied list of excluded subdirs is not
-	 *         empty and contains a match for the supplied sub-manifest,
-	 *         <code>true</code> otherwise.
+	 * @return <code>false</code> if the supplied list of excluded subdirs is not empty and contains a match
+	 *         for the supplied sub-manifest, <code>true</code> otherwise.
 	 */
 	private static boolean includeSubManifest(String subManifestFile, String[] excludedSubdirs) {
 		boolean result = true;

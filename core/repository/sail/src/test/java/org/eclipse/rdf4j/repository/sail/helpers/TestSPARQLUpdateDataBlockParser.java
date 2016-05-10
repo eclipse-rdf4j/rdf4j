@@ -20,9 +20,8 @@ import org.junit.Test;
 public class TestSPARQLUpdateDataBlockParser {
 
 	/**
-	 * A case reproducing SES-2258 using two cases with optional 'dot'. If not
-	 * handled properly by SPARQLUpdateDataBlockParser.parseGraph(), an Exception
-	 * is throws and test fails.
+	 * A case reproducing SES-2258 using two cases with optional 'dot'. If not handled properly by
+	 * SPARQLUpdateDataBlockParser.parseGraph(), an Exception is throws and test fails.
 	 */
 	@Test
 	public void testParseGraph()

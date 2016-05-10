@@ -11,7 +11,9 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 
 public class ParsedTupleTemplate extends ParsedTupleQuery implements ParsedTemplate {
+
 	private final Template template;
+
 	private final BindingSet args;
 
 	public ParsedTupleTemplate(Template template, BindingSet args) {

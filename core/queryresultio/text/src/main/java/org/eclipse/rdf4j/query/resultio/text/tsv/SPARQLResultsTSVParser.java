@@ -60,7 +60,8 @@ public class SPARQLResultsTSVParser extends AbstractTupleQueryResultParser imple
 					// strip the '?' prefix
 					if ('?' == name.charAt(0)) {
 						bindingNames.add(name.substring(1));
-					} else {
+					}
+					else {
 						bindingNames.add(name);
 					}
 				}
@@ -122,7 +123,8 @@ public class SPARQLResultsTSVParser extends AbstractTupleQueryResultParser imple
 					values.add(v);
 				}
 
-				BindingSet bindingSet = new ListBindingSet(bindingNames, values.toArray(new Value[values.size()]));
+				BindingSet bindingSet = new ListBindingSet(bindingNames,
+						values.toArray(new Value[values.size()]));
 				if (handler != null) {
 					handler.handleSolution(bindingSet);
 				}
@@ -155,7 +157,8 @@ public class SPARQLResultsTSVParser extends AbstractTupleQueryResultParser imple
 				int startDtIdx = literal.indexOf("^^", endLabelIdx);
 
 				if (startLangIdx != -1 && startDtIdx != -1) {
-					throw new IllegalArgumentException("Literals can not have both a language and a datatype");
+					throw new IllegalArgumentException(
+							"Literals can not have both a language and a datatype");
 				}
 
 				// Get label
@@ -194,15 +197,13 @@ public class SPARQLResultsTSVParser extends AbstractTupleQueryResultParser imple
 	}
 
 	/**
-	 * Decodes an encoded Turtle string. Any \-escape sequences are substituted
-	 * with their decoded value.
+	 * Decodes an encoded Turtle string. Any \-escape sequences are substituted with their decoded value.
 	 * 
 	 * @param s
 	 *        An encoded Turtle string.
 	 * @return The unencoded string.
 	 * @exception IllegalArgumentException
-	 *            If the supplied string is not a correctly encoded Turtle
-	 *            string.
+	 *            If the supplied string is not a correctly encoded Turtle string.
 	 **/
 	public static String decodeString(String s) {
 		int backSlashIdx = s.indexOf('\\');
@@ -263,7 +264,8 @@ public class SPARQLResultsTSVParser extends AbstractTupleQueryResultParser imple
 					startIdx = backSlashIdx + 6;
 				}
 				catch (NumberFormatException e) {
-					throw new IllegalArgumentException("Illegal Unicode escape sequence '\\u" + xx + "' in: " + s);
+					throw new IllegalArgumentException(
+							"Illegal Unicode escape sequence '\\u" + xx + "' in: " + s);
 				}
 			}
 			else if (c == 'U') {
@@ -280,7 +282,8 @@ public class SPARQLResultsTSVParser extends AbstractTupleQueryResultParser imple
 					startIdx = backSlashIdx + 10;
 				}
 				catch (NumberFormatException e) {
-					throw new IllegalArgumentException("Illegal Unicode escape sequence '\\U" + xx + "' in: " + s);
+					throw new IllegalArgumentException(
+							"Illegal Unicode escape sequence '\\U" + xx + "' in: " + s);
 				}
 			}
 			else {

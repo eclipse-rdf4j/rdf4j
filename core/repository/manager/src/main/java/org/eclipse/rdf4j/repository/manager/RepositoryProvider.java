@@ -19,10 +19,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 
 /**
- * A static access point to manage {@link RepositoryManager}s and
- * {@link Repository Repositories}. RepositoryProvider ensures that all managers
- * and repositories obtained through it are automatically shutdown when the JVM
- * exits.
+ * A static access point to manage {@link RepositoryManager}s and {@link Repository Repositories}.
+ * RepositoryProvider ensures that all managers and repositories obtained through it are automatically
+ * shutdown when the JVM exits.
  * 
  * @author James Leigh
  */
@@ -79,16 +78,14 @@ public class RepositoryProvider {
 	}
 
 	/**
-	 * Creates a {@link RepositoryManager}, if not already created, that will be
-	 * shutdown when the JVM exits cleanly.
+	 * Creates a {@link RepositoryManager}, if not already created, that will be shutdown when the JVM exits
+	 * cleanly.
 	 * 
 	 * @param url
-	 *        location of the data directory for the RepositoryManager. This
-	 *        should be a URL of the form http://host:port/path/ (for a
-	 *        RemoteRepositoryManager) or file:///path/ (for a
+	 *        location of the data directory for the RepositoryManager. This should be a URL of the form
+	 *        http://host:port/path/ (for a RemoteRepositoryManager) or file:///path/ (for a
 	 *        LocalRepositoryManager).
-	 * @return a (new or existing) {@link RepositoryManager} using the supplied
-	 *         url as its data dir.
+	 * @return a (new or existing) {@link RepositoryManager} using the supplied url as its data dir.
 	 */
 	public static RepositoryManager getRepositoryManager(String url)
 		throws RepositoryConfigException, RepositoryException
@@ -115,8 +112,8 @@ public class RepositoryProvider {
 	}
 
 	/**
-	 * Creates a {@link LocalRepositoryManager}, if not already created, that
-	 * will be shutdown when the JVM exits cleanly.
+	 * Creates a {@link LocalRepositoryManager}, if not already created, that will be shutdown when the JVM
+	 * exits cleanly.
 	 * 
 	 * @param dir
 	 *        the data directory for the repository manager.
@@ -132,17 +129,14 @@ public class RepositoryProvider {
 	}
 
 	/**
-	 * Retrieves the {@link RepositoryManager} that will be used for the given
-	 * repository URL. Creates a {@link RepositoryManager}, if not already
-	 * created, that will be shutdown when the JVM exits cleanly.
+	 * Retrieves the {@link RepositoryManager} that will be used for the given repository URL. Creates a
+	 * {@link RepositoryManager}, if not already created, that will be shutdown when the JVM exits cleanly.
 	 * 
 	 * @param url
-	 *        the location of the repository for which to retrieve the
-	 *        corresponding RepositoryManager. The parameter must be a URL of the
-	 *        form http://host:port/path/repositories/id or
+	 *        the location of the repository for which to retrieve the corresponding RepositoryManager. The
+	 *        parameter must be a URL of the form http://host:port/path/repositories/id or
 	 *        file:///path/repositories/id.
-	 * @return the {@link RepositoryManager} that manages the repository
-	 *         identified by the URL.
+	 * @return the {@link RepositoryManager} that manages the repository identified by the URL.
 	 * @throws IllegalArgumentException
 	 *         if the supplied URL is not a repository URL.
 	 * @throws RepositoryConfigException
@@ -163,13 +157,11 @@ public class RepositoryProvider {
 	}
 
 	/**
-	 * Retrieves the Repository ID that will be passed to a RepositoryManager for
-	 * the given repository URL.
+	 * Retrieves the Repository ID that will be passed to a RepositoryManager for the given repository URL.
 	 * 
 	 * @param url
-	 *        the location URL for the repository. The parameter must be a URL of
-	 *        the form http://host:port/path/repositories/id or
-	 *        file:///path/repositories/id.
+	 *        the location URL for the repository. The parameter must be a URL of the form
+	 *        http://host:port/path/repositories/id or file:///path/repositories/id.
 	 * @return the repository identifier string for the given repository URL.
 	 * @throws IllegalArgumentException
 	 *         if the supplied URL is not a repository URL.
@@ -187,16 +179,13 @@ public class RepositoryProvider {
 	}
 
 	/**
-	 * Retrieves a (new or existing) Repository object for the supplied
-	 * repository URL. The Repository will be shutdown when the JVM exits
-	 * cleanly.
+	 * Retrieves a (new or existing) Repository object for the supplied repository URL. The Repository will be
+	 * shutdown when the JVM exits cleanly.
 	 * 
 	 * @param url
 	 *        the repository URL. The parameter must be a URL of the form
-	 *        http://host:port/path/repositories/id or
-	 *        file:///path/repositories/id.
-	 * @return Repository from a RepositoryManager or null if repository is not
-	 *         defined
+	 *        http://host:port/path/repositories/id or file:///path/repositories/id.
+	 * @return Repository from a RepositoryManager or null if repository is not defined
 	 */
 	public static Repository getRepository(String url)
 		throws RepositoryException, RepositoryConfigException

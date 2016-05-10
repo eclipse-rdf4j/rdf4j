@@ -26,10 +26,9 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
 
 /**
- * An implementation of the RDFWriter interface that writes RDF documents in
- * N-Triples format. The N-Triples format is defined in <a
- * href="http://www.w3.org/TR/rdf-testcases/#ntriples">this section</a> of the
- * RDF Test Cases document.
+ * An implementation of the RDFWriter interface that writes RDF documents in N-Triples format. The N-Triples
+ * format is defined in <a href="http://www.w3.org/TR/rdf-testcases/#ntriples">this section</a> of the RDF
+ * Test Cases document.
  */
 public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 
@@ -154,7 +153,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 
 		result.add(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
 		result.add(NTriplesWriterSettings.ESCAPE_UNICODE);
-		
+
 		return result;
 	}
 }

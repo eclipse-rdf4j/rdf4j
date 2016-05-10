@@ -30,8 +30,8 @@ public class DateFormat extends BinaryFunction {
 		if (!(arg1 instanceof Literal) || !(arg2 instanceof Literal)) {
 			throw new ValueExprEvaluationException("Both arguments must be literals");
 		}
-		Literal date = (Literal) arg1;
-		Literal format = (Literal) arg2;
+		Literal date = (Literal)arg1;
+		Literal format = (Literal)arg2;
 
 		SimpleDateFormat formatter = new SimpleDateFormat(format.getLabel());
 		String value = formatter.format(date.calendarValue().toGregorianCalendar().getTime());

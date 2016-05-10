@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -79,24 +78,26 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 		return tripleSource;
 	}
 
-	protected abstract CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
-			boolean includeInferred, int maxExecutionTime) throws QueryEvaluationException;
+	protected abstract CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(
+			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred,
+			int maxExecutionTime)
+		throws QueryEvaluationException;
+
 	protected abstract void execute(UpdateExpr updateExpr, Dataset dataset, BindingSet bindings,
-			boolean includeInferred, int maxExecutionTime) throws UpdateExecutionException;
-
-
-
+			boolean includeInferred, int maxExecutionTime)
+		throws UpdateExecutionException;
 
 	class BooleanQueryImpl extends AbstractParserQuery implements BooleanQuery {
+
 		BooleanQueryImpl(ParsedBooleanQuery query) {
 			super(query);
 		}
-	
+
 		@Override
 		public ParsedBooleanQuery getParsedQuery() {
 			return (ParsedBooleanQuery)super.getParsedQuery();
 		}
-	
+
 		@Override
 		public boolean evaluate()
 			throws QueryEvaluationException
@@ -108,9 +109,10 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 				// No external dataset specified, use query's own dataset (if any)
 				dataset = parsedBooleanQuery.getDataset();
 			}
-	
+
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter;
-			bindingsIter = AbstractQueryPreparer.this.evaluate(tupleExpr, dataset, getBindings(), getIncludeInferred(), getMaxExecutionTime());
+			bindingsIter = AbstractQueryPreparer.this.evaluate(tupleExpr, dataset, getBindings(),
+					getIncludeInferred(), getMaxExecutionTime());
 			bindingsIter = enforceMaxQueryTime(bindingsIter);
 
 			try {
@@ -123,6 +125,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 	}
 
 	class TupleQueryImpl extends AbstractParserQuery implements TupleQuery {
+
 		TupleQueryImpl(ParsedTupleQuery query) {
 			super(query);
 		}
@@ -138,7 +141,8 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 		{
 			TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter;
-			bindingsIter = AbstractQueryPreparer.this.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred(), getMaxExecutionTime());
+			bindingsIter = AbstractQueryPreparer.this.evaluate(tupleExpr, getActiveDataset(), getBindings(),
+					getIncludeInferred(), getMaxExecutionTime());
 			bindingsIter = enforceMaxQueryTime(bindingsIter);
 			return new TupleQueryResultImpl(new ArrayList<String>(tupleExpr.getBindingNames()), bindingsIter);
 		}
@@ -153,6 +157,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 	}
 
 	class GraphQueryImpl extends AbstractParserQuery implements GraphQuery {
+
 		GraphQueryImpl(ParsedGraphQuery query) {
 			super(query);
 		}
@@ -168,7 +173,8 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 		{
 			TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter;
-			bindingsIter = AbstractQueryPreparer.this.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred(), getMaxExecutionTime());
+			bindingsIter = AbstractQueryPreparer.this.evaluate(tupleExpr, getActiveDataset(), getBindings(),
+					getIncludeInferred(), getMaxExecutionTime());
 
 			// Filters out all partial and invalid matches
 			bindingsIter = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter) {
@@ -183,12 +189,13 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 							&& (context == null || context instanceof Resource);
 				}
 			};
-			
+
 			bindingsIter = enforceMaxQueryTime(bindingsIter);
 
 			// Convert the BindingSet objects to actual RDF statements
 			CloseableIteration<Statement, QueryEvaluationException> stIter;
 			stIter = new ConvertingIteration<BindingSet, Statement, QueryEvaluationException>(bindingsIter) {
+
 				private final ValueFactory vf = tripleSource.getValueFactory();
 
 				@Override
@@ -212,7 +219,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 
 		@Override
 		public void evaluate(RDFHandler handler)
-				throws QueryEvaluationException, RDFHandlerException
+			throws QueryEvaluationException, RDFHandlerException
 		{
 			GraphQueryResult queryResult = evaluate();
 			QueryResults.report(queryResult, handler);
@@ -220,6 +227,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 	}
 
 	class UpdateImpl extends AbstractParserUpdate {
+
 		UpdateImpl(ParsedUpdate update) {
 			super(update);
 		}
@@ -235,7 +243,8 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 				Dataset activeDataset = getMergedDataset(datasetMapping.get(updateExpr));
 
 				try {
-					AbstractQueryPreparer.this.execute(updateExpr, activeDataset, getBindings(), getIncludeInferred(), getMaxExecutionTime());
+					AbstractQueryPreparer.this.execute(updateExpr, activeDataset, getBindings(),
+							getIncludeInferred(), getMaxExecutionTime());
 				}
 				catch (UpdateExecutionException e) {
 					if (!updateExpr.isSilent()) {

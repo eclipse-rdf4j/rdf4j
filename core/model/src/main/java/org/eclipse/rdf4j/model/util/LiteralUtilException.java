@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.model.util;
 import org.eclipse.rdf4j.RDF4JException;
 
 /**
- * An exception thrown by {@link Literals} when specific conditions are not
- * met.
+ * An exception thrown by {@link Literals} when specific conditions are not met.
  * 
  * @author Peter Ansell
  */

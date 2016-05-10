@@ -96,8 +96,8 @@ public class MemoryStoreConfig extends AbstractSailImplConfig {
 					setSyncDelay((syncDelayValue).longValue());
 				}
 				catch (NumberFormatException e) {
-					throw new SailConfigException(
-							"Long integer value required for " + SYNC_DELAY + " property, found " + syncDelayValue);
+					throw new SailConfigException("Long integer value required for " + SYNC_DELAY
+							+ " property, found " + syncDelayValue);
 				}
 			});
 		}

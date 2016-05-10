@@ -50,16 +50,14 @@ public abstract class AbstractServlet implements Servlet {
 	protected static final String APPLICATION_JAVASCRIPT = "application/javascript";
 
 	/**
-	 * This response content type is used in cases where application/xml is
-	 * explicitly requested, or in cases where the user agent is known to be a
-	 * commonly available browser.
+	 * This response content type is used in cases where application/xml is explicitly requested, or in cases
+	 * where the user agent is known to be a commonly available browser.
 	 */
 	protected static final String APPLICATION_XML = "application/xml";
 
 	/**
-	 * This response content type is used for SPARQL Results XML results in
-	 * non-browser user agents or other cases where application/xml is not
-	 * specifically requested.
+	 * This response content type is used for SPARQL Results XML results in non-browser user agents or other
+	 * cases where application/xml is not specifically requested.
 	 */
 	protected static final String APPLICATION_SPARQL_RESULTS_XML = "application/sparql-results+xml";
 
@@ -77,8 +75,7 @@ public abstract class AbstractServlet implements Servlet {
 	protected static final String JSONP_ENABLED = "org.eclipse.rdf4j.workbench.jsonp.enabled";
 
 	/**
-	 * This query parameter is only used in cases where the configuration
-	 * property is not setup explicitly.
+	 * This query parameter is only used in cases where the configuration property is not setup explicitly.
 	 */
 	protected static final String DEFAULT_JSONP_CALLBACK_PARAMETER = "callback";
 
@@ -134,7 +131,8 @@ public abstract class AbstractServlet implements Servlet {
 		// default empty implementation
 	}
 
-	protected QueryResultFormat getTupleResultFormat(final HttpServletRequest req, final ServletResponse resp)
+	protected QueryResultFormat getTupleResultFormat(final HttpServletRequest req,
+			final ServletResponse resp)
 	{
 		String header = null;
 		if (req instanceof WorkbenchRequest) {
@@ -153,12 +151,14 @@ public abstract class AbstractServlet implements Servlet {
 		return null;
 	}
 
-	protected QueryResultFormat getBooleanResultFormat(final HttpServletRequest req, final ServletResponse resp)
+	protected QueryResultFormat getBooleanResultFormat(final HttpServletRequest req,
+			final ServletResponse resp)
 	{
 		String header = req.getHeader(ACCEPT);
 		if (header != null) {
 			// Then try boolean format
-			Optional<QueryResultFormat> booleanFormat = QueryResultIO.getBooleanParserFormatForMIMEType(header);
+			Optional<QueryResultFormat> booleanFormat = QueryResultIO.getBooleanParserFormatForMIMEType(
+					header);
 			if (booleanFormat.isPresent()) {
 				return booleanFormat.get();
 			}
@@ -167,7 +167,8 @@ public abstract class AbstractServlet implements Servlet {
 		return null;
 	}
 
-	protected QueryResultFormat getJSONPResultFormat(final HttpServletRequest req, final ServletResponse resp)
+	protected QueryResultFormat getJSONPResultFormat(final HttpServletRequest req,
+			final ServletResponse resp)
 	{
 		String header = req.getHeader(ACCEPT);
 		if (header != null) {
@@ -203,9 +204,8 @@ public abstract class AbstractServlet implements Servlet {
 	}
 
 	/**
-	 * Gets a {@link TupleResultBuilder} based on the Accept header, and sets the
-	 * result content type to the best available match for that, returning a
-	 * builder that can be used to write out the results.
+	 * Gets a {@link TupleResultBuilder} based on the Accept header, and sets the result content type to the
+	 * best available match for that, returning a builder that can be used to write out the results.
 	 * 
 	 * @param req
 	 *        the current HTTP request
@@ -280,7 +280,9 @@ public abstract class AbstractServlet implements Servlet {
 
 		// Convert rdf:langString back to language literals where this behaviour
 		// is supported
-		if (resultWriter.getSupportedSettings().contains(BasicWriterSettings.RDF_LANGSTRING_TO_LANG_LITERAL)) {
+		if (resultWriter.getSupportedSettings().contains(
+				BasicWriterSettings.RDF_LANGSTRING_TO_LANG_LITERAL))
+		{
 			resultWriter.getWriterConfig().set(BasicWriterSettings.RDF_LANGSTRING_TO_LANG_LITERAL, true);
 		}
 

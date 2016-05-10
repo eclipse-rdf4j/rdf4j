@@ -16,9 +16,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
- * The SPARQL built-in {@link Function} STRDT, as defined in <a
- * href="http://www.w3.org/TR/sparql11-query/#func-strdt">SPARQL Query Language
- * for RDF</a>
+ * The SPARQL built-in {@link Function} STRDT, as defined in
+ * <a href="http://www.w3.org/TR/sparql11-query/#func-strdt">SPARQL Query Language for RDF</a>
  * 
  * @author Jeen Broekstra
  */
@@ -32,13 +31,12 @@ public class StrDt implements Function {
 		throws ValueExprEvaluationException
 	{
 		if (args.length != 2) {
-			throw new ValueExprEvaluationException("STRDT requires 2 arguments, got "
-					+ args.length);
+			throw new ValueExprEvaluationException("STRDT requires 2 arguments, got " + args.length);
 		}
 
 		Value lexicalValue = args[0];
 		Value datatypeValue = args[1];
-		
+
 		if (QueryEvaluationUtil.isSimpleLiteral(lexicalValue)) {
 			Literal lit = (Literal)lexicalValue;
 			if (datatypeValue instanceof IRI) {

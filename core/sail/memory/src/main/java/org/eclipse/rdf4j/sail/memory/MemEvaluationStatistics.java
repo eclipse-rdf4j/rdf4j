@@ -23,9 +23,8 @@ import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 
 /**
- * Uses the MemoryStore's statement sizes to give cost estimates based on the
- * size of the expected results. This process could be improved with
- * repository statistics about size and distribution of statements.
+ * Uses the MemoryStore's statement sizes to give cost estimates based on the size of the expected results.
+ * This process could be improved with repository statistics about size and distribution of statements.
  * 
  * @author Arjohn Kampman
  * @author James Leigh
@@ -77,8 +76,8 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 			MemValue memObj = valueFactory.getMemValue(obj);
 			MemResource memContext = valueFactory.getMemResource((Resource)context);
 
-			if (subj != null && memSubj == null || pred != null && memPred == null || obj != null
-					&& memObj == null || context != null && memContext == null)
+			if (subj != null && memSubj == null || pred != null && memPred == null
+					|| obj != null && memObj == null || context != null && memContext == null)
 			{
 				// non-existent subject, predicate, object or context
 				return 0.0;

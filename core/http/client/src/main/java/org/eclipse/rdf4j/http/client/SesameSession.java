@@ -75,8 +75,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 
 /**
- * An {@link SparqlSession} subclass which bundles special functionality for
- * Sesame remote repositories.
+ * An {@link SparqlSession} subclass which bundles special functionality for Sesame remote repositories.
  * 
  * @author Andreas Schwarte
  */
@@ -223,7 +222,8 @@ public class SesameSession extends SparqlSession {
 				url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContexts[i]);
 			}
 
-			final HttpUriRequest method = useTransaction ? new HttpPut(url.build()) : new HttpGet(url.build());
+			final HttpUriRequest method = useTransaction ? new HttpPut(url.build())
+					: new HttpGet(url.build());
 
 			String response = EntityUtils.toString(executeOK(method).getEntity());
 			try {
@@ -570,8 +570,7 @@ public class SesameSession extends SparqlSession {
 	 * Appends the action as a parameter to the supplied url
 	 * 
 	 * @param url
-	 *        a url on which to append the parameter. it is assumed the url has
-	 *        no parameters.
+	 *        a url on which to append the parameter. it is assumed the url has no parameters.
 	 * @param action
 	 *        the action to add as a parameter
 	 * @return the url parametrized with the supplied action
@@ -702,9 +701,8 @@ public class SesameSession extends SparqlSession {
 			builder = RequestBuilder.post(getQueryURL());
 			builder.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
 
-			builder.setEntity(new UrlEncodedFormEntity(
-					getQueryMethodParameters(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings),
-					UTF8));
+			builder.setEntity(new UrlEncodedFormEntity(getQueryMethodParameters(ql, query, baseURI, dataset,
+					includeInferred, maxQueryTime, bindings), UTF8));
 		}
 
 		return builder.build();
@@ -739,8 +737,8 @@ public class SesameSession extends SparqlSession {
 		return builder.build();
 	}
 
-	protected void upload(final Reader contents, String baseURI, final RDFFormat dataFormat, boolean overwrite,
-			boolean preserveNodeIds, Action action, Resource... contexts)
+	protected void upload(final Reader contents, String baseURI, final RDFFormat dataFormat,
+			boolean overwrite, boolean preserveNodeIds, Action action, Resource... contexts)
 		throws IOException, RDFParseException, RepositoryException, UnauthorizedException
 	{
 		final Charset charset = dataFormat.hasCharset() ? dataFormat.getCharset() : Charset.forName("UTF-8");
@@ -815,7 +813,8 @@ public class SesameSession extends SparqlSession {
 				url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContext);
 			}
 			if (baseURI != null && baseURI.trim().length() != 0) {
-				String encodedBaseURI = Protocol.encodeValue(SimpleValueFactory.getInstance().createIRI(baseURI));
+				String encodedBaseURI = Protocol.encodeValue(
+						SimpleValueFactory.getInstance().createIRI(baseURI));
 				url.setParameter(Protocol.BASEURI_PARAM_NAME, encodedBaseURI);
 			}
 			if (preserveNodeIds) {

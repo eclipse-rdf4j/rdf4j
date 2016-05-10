@@ -9,20 +9,21 @@
 /* JavaCCOptions:MULTI=true,NODE_USES_PARSER=false,VISITOR=true,TRACK_TOKENS=false,NODE_PREFIX=AST,NODE_EXTENDS=,NODE_FACTORY=,SUPPORT_CLASS_VISIBILITY_PUBLIC=true */
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
-public
-class ASTRound extends SimpleNode {
-  public ASTRound(int id) {
-    super(id);
-  }
+public class ASTRound extends SimpleNode {
 
-  public ASTRound(SyntaxTreeBuilder p, int id) {
-    super(p, id);
-  }
+	public ASTRound(int id) {
+		super(id);
+	}
 
+	public ASTRound(SyntaxTreeBuilder p, int id) {
+		super(p, id);
+	}
 
-  /** Accept the visitor. **/
-  public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
-    return visitor.visit(this, data);
-  }
+	/** Accept the visitor. **/
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
+		throws VisitorException
+	{
+		return visitor.visit(this, data);
+	}
 }
 /* JavaCC - OriginalChecksum=55cfeb13f8aa6740942346ccaaf276fe (do not edit this line) */

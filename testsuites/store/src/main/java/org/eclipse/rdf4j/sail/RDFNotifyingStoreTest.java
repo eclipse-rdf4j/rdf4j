@@ -18,10 +18,9 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.junit.Test;
 
 /**
- * A JUnit test for testing Sail implementations that store RDF data. This is
- * purely a test for data storage and retrieval which assumes that no
- * inferencing or whatsoever is performed. This is an abstract class that should
- * be extended for specific Sail implementations.
+ * A JUnit test for testing Sail implementations that store RDF data. This is purely a test for data storage
+ * and retrieval which assumes that no inferencing or whatsoever is performed. This is an abstract class that
+ * should be extended for specific Sail implementations.
  */
 public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements SailChangedListener {
 
@@ -38,8 +37,8 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 	 *---------*/
 
 	/**
-	 * Gets an instance of the Sail that should be tested. The returned
-	 * repository should already have been initialized.
+	 * Gets an instance of the Sail that should be tested. The returned repository should already have been
+	 * initialized.
 	 * 
 	 * @return an initialized Sail.
 	 * @throws SailException
@@ -56,7 +55,7 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 		super.setUp();
 
 		// set self as listener
-		((NotifyingSail) sail).addSailChangedListener(this);
+		((NotifyingSail)sail).addSailChangedListener(this);
 
 	}
 

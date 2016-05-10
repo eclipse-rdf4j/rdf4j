@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.serql.ast;
 
-
 public class VisitorException extends Exception {
 
 	private static final long serialVersionUID = 1998121176957145353L;

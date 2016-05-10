@@ -57,7 +57,7 @@ import org.junit.Test;
 public abstract class AbstractLuceneSailTest {
 
 	protected static final ValueFactory vf = SimpleValueFactory.getInstance();
-	
+
 	public static final String QUERY_STRING;
 
 	public static final IRI SUBJECT_1 = vf.createIRI("urn:subject1");
@@ -97,7 +97,8 @@ public abstract class AbstractLuceneSailTest {
 		QUERY_STRING = buffer.toString();
 	}
 
-	protected abstract void configure(LuceneSail sail) throws IOException;
+	protected abstract void configure(LuceneSail sail)
+		throws IOException;
 
 	@Before
 	public void setUp()
@@ -140,10 +141,10 @@ public abstract class AbstractLuceneSailTest {
 	public void tearDown()
 		throws IOException, RepositoryException
 	{
-		if(connection != null) {
+		if (connection != null) {
 			connection.close();
 		}
-		if(repository != null) {
+		if (repository != null) {
 			repository.shutDown();
 		}
 	}
@@ -225,14 +226,14 @@ public abstract class AbstractLuceneSailTest {
 
 		assertTrue(result.hasNext());
 		bindings = result.next();
-		results.add("<" + (IRI)bindings.getValue("Resource") + ">, " + "<" + (IRI)bindings.getValue("Matching")
-				+ ">");
+		results.add("<" + (IRI)bindings.getValue("Resource") + ">, " + "<"
+				+ (IRI)bindings.getValue("Matching") + ">");
 		assertNotNull(bindings.getValue("Score"));
 
 		assertTrue(result.hasNext());
 		bindings = result.next();
-		results.add("<" + (IRI)bindings.getValue("Resource") + ">, " + "<" + (IRI)bindings.getValue("Matching")
-				+ ">");
+		results.add("<" + (IRI)bindings.getValue("Resource") + ">, " + "<"
+				+ (IRI)bindings.getValue("Matching") + ">");
 		assertNotNull(bindings.getValue("Score"));
 
 		assertFalse(result.hasNext());
@@ -279,47 +280,29 @@ public abstract class AbstractLuceneSailTest {
 		// prepare the query
 		String[] queries = new String[] {
 				"SELECT \n" + "  Resource1, Resource2, R1Score, R2Score \n" + "FROM \n" + "  {Resource1} <"
-						+ PREDICATE_3 + "> {Resource2}, \n" + "  {Resource1} <" + MATCHES + "> {} \n" + "    <"
-						+ QUERY + "> {\"one\"}; \n" + "    <" + SCORE + "> {R1Score}, \n" + "  {Resource2} <"
-						+ MATCHES + "> {} \n" + "    <" + QUERY + "> {\"one\"}; \n" + "    <" + SCORE
-						+ "> {R2Score} ",
+						+ PREDICATE_3 + "> {Resource2}, \n" + "  {Resource1} <" + MATCHES + "> {} \n"
+						+ "    <" + QUERY + "> {\"one\"}; \n" + "    <" + SCORE + "> {R1Score}, \n"
+						+ "  {Resource2} <" + MATCHES + "> {} \n" + "    <" + QUERY + "> {\"one\"}; \n"
+						+ "    <" + SCORE + "> {R2Score} ",
 				"SELECT \n" + "  Resource1, Resource3, R1Score, R3Score \n" + "FROM \n"
 						+ "  {Resource2} p21 {Resource1}, \n" + "  {Resource2} p23 {Resource3}, \n"
-						+ "  {Resource1} <" + MATCHES + "> {} \n" + "    <" + QUERY + "> {\"one\"}; \n" + "    <"
-						+ SCORE + "> {R1Score}, \n" + "  {Resource3} <" + MATCHES + "> {} \n" + "    <" + QUERY
-						+ "> {\"one\"}; \n" + "    <" + SCORE + "> {R3Score}" + "WHERE \n"
+						+ "  {Resource1} <" + MATCHES + "> {} \n" + "    <" + QUERY + "> {\"one\"}; \n"
+						+ "    <" + SCORE + "> {R1Score}, \n" + "  {Resource3} <" + MATCHES + "> {} \n"
+						+ "    <" + QUERY + "> {\"one\"}; \n" + "    <" + SCORE + "> {R3Score}" + "WHERE \n"
 						+ "  Resource1 != Resource3",
 				"SELECT \n" + "  Resource1, Resource3, R1Score, R3Score \n" + "FROM \n"
 						+ "  {Resource2} p21 {Resource1}, \n" + "  {Resource2} p23 {Resource3}, \n"
-						+ "  {Resource1} <"
-						+ MATCHES
-						+ "> {} \n"
-						+ "    <"
-						+ QUERY
-						+ "> {\"one\"}; \n"
-						+ "    <"
-						+ PROPERTY
-						+ "> {<"
-						+ PREDICATE_1
-						+ ">}; \n"
-						+ "    <"
-						+ SCORE
-						+ "> {R1Score}, \n"
-						+ "  {Resource3} <"
-						+ MATCHES
-						+ "> {} \n"
-						+ "    <"
-						+ QUERY
-						+ "> {\"two\"}; \n"
-						+ "    <"
-						+ PROPERTY
-						+ "> {<"
-						+ PREDICATE_2 + ">}; \n" + "    <" + SCORE + "> {R3Score}",
+						+ "  {Resource1} <" + MATCHES + "> {} \n" + "    <" + QUERY + "> {\"one\"}; \n"
+						+ "    <" + PROPERTY + "> {<" + PREDICATE_1 + ">}; \n" + "    <" + SCORE
+						+ "> {R1Score}, \n" + "  {Resource3} <" + MATCHES + "> {} \n" + "    <" + QUERY
+						+ "> {\"two\"}; \n" + "    <" + PROPERTY + "> {<" + PREDICATE_2 + ">}; \n" + "    <"
+						+ SCORE + "> {R3Score}",
 				"SELECT \n" + "  Resource1, Resource2, R1Score, R2Score \n" + "FROM \n" + "  {Resource1} <"
-						+ MATCHES + "> {} \n" + "    <" + QUERY + "> {\"one\"}; \n" + "    <" + PROPERTY + "> {<"
-						+ PREDICATE_1 + ">}; \n" + "    <" + SCORE + "> {R1Score}, \n" + "  {Resource2} <"
-						+ MATCHES + "> {} \n" + "    <" + QUERY + "> {\"one\"}; \n" + "    <" + PROPERTY + "> {<"
-						+ PREDICATE_2 + ">}; \n" + "    <" + SCORE + "> {R2Score}" };
+						+ MATCHES + "> {} \n" + "    <" + QUERY + "> {\"one\"}; \n" + "    <" + PROPERTY
+						+ "> {<" + PREDICATE_1 + ">}; \n" + "    <" + SCORE + "> {R1Score}, \n"
+						+ "  {Resource2} <" + MATCHES + "> {} \n" + "    <" + QUERY + "> {\"one\"}; \n"
+						+ "    <" + PROPERTY + "> {<" + PREDICATE_2 + ">}; \n" + "    <" + SCORE
+						+ "> {R2Score}" };
 
 		ArrayList<List<Map<String, String>>> results = new ArrayList<List<Map<String, String>>>();
 		ArrayList<Map<String, String>> resultSet = null;
@@ -465,7 +448,9 @@ public abstract class AbstractLuceneSailTest {
 						}
 						else {
 							// compare the values
-							if ((actualVal == null) || (expectedVal.compareTo(actualVal.stringValue()) != 0)) {
+							if ((actualVal == null)
+									|| (expectedVal.compareTo(actualVal.stringValue()) != 0))
+							{
 								matches = false;
 								break;
 							}
@@ -604,8 +589,8 @@ public abstract class AbstractLuceneSailTest {
 	}
 
 	/**
-	 * Test if the snippets do not accidentially come from the "text" field while
-	 * we actually expect them to come from the predicate field.
+	 * Test if the snippets do not accidentially come from the "text" field while we actually expect them to
+	 * come from the predicate field.
 	 */
 	@Test
 	public void testSnippetLimitedToPredicate()
@@ -670,8 +655,8 @@ public abstract class AbstractLuceneSailTest {
 					fail("snippet '" + snippet + "' contained value '" + notexpected + "' from predicate "
 							+ PREDICATE_2);
 				if (!foundexpected)
-					fail("did not find any of the expected strings " + expectedSnippetPart + " in the snippet "
-							+ snippet);
+					fail("did not find any of the expected strings " + expectedSnippetPart
+							+ " in the snippet " + snippet);
 
 				// there should be a score
 				assertNotNull(bindings.getValue("Score"));
@@ -731,8 +716,8 @@ public abstract class AbstractLuceneSailTest {
 					}
 				}
 				if (!foundexpected)
-					fail("did not find any of the expected strings " + expectedSnippetPart + " in the snippet "
-							+ snippet);
+					fail("did not find any of the expected strings " + expectedSnippetPart
+							+ " in the snippet " + snippet);
 
 				// there should be a score
 				assertNotNull(bindings.getValue("Score"));
@@ -752,53 +737,49 @@ public abstract class AbstractLuceneSailTest {
 	public void testGraphQuery()
 		throws QueryEvaluationException, MalformedQueryException, RepositoryException
 	{
-		 IRI score = vf.createIRI(LuceneSailSchema.NAMESPACE + "score");
-		 StringBuilder query = new StringBuilder();
-		
-		
-		 // here we would expect two links from SUBJECT3 to SUBJECT1 and SUBJECT2
-		 // and one link from SUBJECT3 to its score
-		 query.append("CONSTRUCT DISTINCT \n");
-		 query.append("    {r} <" + PREDICATE_3 + "> {r2} , \n");
-		 query.append("    {r} <" + score + "> {s} \n");
-		 query.append("FROM \n");
-		 query.append("    {r} lucenesail:matches {match} lucenesail:query {\"four\"}; \n");
-		 query.append("                                   lucenesail:score {s}, \n");
-		 query.append("    {r} <" + PREDICATE_3.toString() + "> {r2} \n");
-		 query.append("USING NAMESPACE\n");
-		 query.append("    lucenesail = <" + LuceneSailSchema.NAMESPACE +
-		 "> \n");
-		
-		 int r = 0;
-		 int n = 0;
-		 GraphQuery gq = connection.prepareGraphQuery(QueryLanguage.SERQL,
-		 query.toString());
-		 GraphQueryResult result = gq.evaluate();
-		 while(result.hasNext()) {
-			 Statement statement = result.next();
-			 n++;
-			
-			 if(statement.getSubject().equals(SUBJECT_3) &&
-			 statement.getPredicate().equals(PREDICATE_3) &&
-			 statement.getObject().equals(SUBJECT_1)) {
-				 r |= 1;
-				 continue;
-			 }
-			 if(statement.getSubject().equals(SUBJECT_3) &&
-			 statement.getPredicate().equals(PREDICATE_3) &&
-			 statement.getObject().equals(SUBJECT_2)) {
-				 r |= 2;
-				 continue;
-			 }
-			 if(statement.getSubject().equals(SUBJECT_3) &&
-			 statement.getPredicate().equals(score)) {
-				 r |= 4;
-				 continue;
-			 }
-		 }
-		
-		 assertEquals(3, n);
-		 assertEquals(7, r);
+		IRI score = vf.createIRI(LuceneSailSchema.NAMESPACE + "score");
+		StringBuilder query = new StringBuilder();
+
+		// here we would expect two links from SUBJECT3 to SUBJECT1 and SUBJECT2
+		// and one link from SUBJECT3 to its score
+		query.append("CONSTRUCT DISTINCT \n");
+		query.append("    {r} <" + PREDICATE_3 + "> {r2} , \n");
+		query.append("    {r} <" + score + "> {s} \n");
+		query.append("FROM \n");
+		query.append("    {r} lucenesail:matches {match} lucenesail:query {\"four\"}; \n");
+		query.append("                                   lucenesail:score {s}, \n");
+		query.append("    {r} <" + PREDICATE_3.toString() + "> {r2} \n");
+		query.append("USING NAMESPACE\n");
+		query.append("    lucenesail = <" + LuceneSailSchema.NAMESPACE + "> \n");
+
+		int r = 0;
+		int n = 0;
+		GraphQuery gq = connection.prepareGraphQuery(QueryLanguage.SERQL, query.toString());
+		GraphQueryResult result = gq.evaluate();
+		while (result.hasNext()) {
+			Statement statement = result.next();
+			n++;
+
+			if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(PREDICATE_3)
+					&& statement.getObject().equals(SUBJECT_1))
+			{
+				r |= 1;
+				continue;
+			}
+			if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(PREDICATE_3)
+					&& statement.getObject().equals(SUBJECT_2))
+			{
+				r |= 2;
+				continue;
+			}
+			if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(score)) {
+				r |= 4;
+				continue;
+			}
+		}
+
+		assertEquals(3, n);
+		assertEquals(7, r);
 	}
 
 	@Test
@@ -837,7 +818,7 @@ public abstract class AbstractLuceneSailTest {
 		queryStr += "  ?match2 search:query 'one' ; ";
 		queryStr += "          search:property <urn:predicate2> . } ";
 		queryStr += "} ";
-		
+
 		// fire a query with the subject pre-specified
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
 		TupleQueryResult result = query.evaluate();
@@ -930,8 +911,7 @@ public abstract class AbstractLuceneSailTest {
 	}
 
 	/**
-	 * we experienced problems with the NULL context and lucenesail in August
-	 * 2008
+	 * we experienced problems with the NULL context and lucenesail in August 2008
 	 *
 	 * @throws Exception
 	 */
@@ -1022,7 +1002,7 @@ public abstract class AbstractLuceneSailTest {
 
 	@Test
 	public void testPropertyVar()
-			throws MalformedQueryException, RepositoryException, QueryEvaluationException
+		throws MalformedQueryException, RepositoryException, QueryEvaluationException
 	{
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("SELECT \n");
@@ -1038,7 +1018,7 @@ public abstract class AbstractLuceneSailTest {
 		TupleQueryResult result = query.evaluate();
 
 		int results = 0;
-		Map<IRI,IRI> expectedSubject = new HashMap<IRI,IRI>();
+		Map<IRI, IRI> expectedSubject = new HashMap<IRI, IRI>();
 		expectedSubject.put(SUBJECT_1, PREDICATE_1);
 		expectedSubject.put(SUBJECT_2, PREDICATE_1);
 		expectedSubject.put(SUBJECT_3, PREDICATE_2);
@@ -1050,7 +1030,7 @@ public abstract class AbstractLuceneSailTest {
 			// remove it from the set
 			Value subject = bindings.getValue("Resource");
 			IRI expectedProperty = expectedSubject.remove(subject);
-			assertEquals("For subject "+subject, expectedProperty, bindings.getValue("Property"));
+			assertEquals("For subject " + subject, expectedProperty, bindings.getValue("Property"));
 		}
 
 		// there should have been 3 results

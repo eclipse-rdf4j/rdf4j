@@ -12,8 +12,7 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 /**
- * An Iteration that can convert an {@link Iterator} to a
- * {@link CloseableIteration}.
+ * An Iteration that can convert an {@link Iterator} to a {@link CloseableIteration}.
  */
 public class CloseableIteratorIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
 
@@ -28,9 +27,8 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 	 *--------------*/
 
 	/**
-	 * Creates an uninitialized CloseableIteratorIteration, needs to be
-	 * initialized by calling {@link #setIterator(Iterator)} before it can be
-	 * used.
+	 * Creates an uninitialized CloseableIteratorIteration, needs to be initialized by calling
+	 * {@link #setIterator(Iterator)} before it can be used.
 	 */
 	public CloseableIteratorIteration() {
 	}

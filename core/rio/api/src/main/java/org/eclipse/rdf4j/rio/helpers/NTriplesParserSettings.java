@@ -17,14 +17,14 @@ import org.eclipse.rdf4j.rio.RioSetting;
 public class NTriplesParserSettings {
 
 	/**
-	 * Boolean setting for parser to determine whether syntactically invalid
-	 * lines in N-Triples and N-Quads documents generate a parse error.
+	 * Boolean setting for parser to determine whether syntactically invalid lines in N-Triples and N-Quads
+	 * documents generate a parse error.
 	 * <p>
 	 * Defaults to true.
-	 * 
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_NTRIPLES_INVALID_LINES = new RioSettingImpl<Boolean>(
-			"org.eclipse.rdf4j.rio.failonntriplesinvalidlines", "Fail on N-Triples invalid lines", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.failonntriplesinvalidlines", "Fail on N-Triples invalid lines",
+			Boolean.TRUE);
 
 	/**
 	 * Private constructor

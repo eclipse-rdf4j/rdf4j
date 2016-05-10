@@ -23,8 +23,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
- * A graph pattern consisting of (required and optional) tuple expressions and
- * boolean constraints.
+ * A graph pattern consisting of (required and optional) tuple expressions and boolean constraints.
  */
 class GraphPattern {
 
@@ -49,8 +48,7 @@ class GraphPattern {
 	private List<TupleExpr> requiredTEs = new ArrayList<TupleExpr>();
 
 	/**
-	 * The optional tuple expressions and their constraints in this graph
-	 * pattern.
+	 * The optional tuple expressions and their constraints in this graph pattern.
 	 */
 	private List<OptionalTupleExpr> optionalTEs = new ArrayList<OptionalTupleExpr>();
 
@@ -66,8 +64,7 @@ class GraphPattern {
 	}
 
 	/**
-	 * Creates a new graph pattern that inherits the context and scope from a
-	 * parent graph pattern.
+	 * Creates a new graph pattern that inherits the context and scope from a parent graph pattern.
 	 */
 	public GraphPattern(GraphPattern parent) {
 		if (parent != null) {
@@ -158,8 +155,7 @@ class GraphPattern {
 	}
 
 	/**
-	 * Builds a combined tuple expression from the tuple expressions and
-	 * constraints in this graph pattern.
+	 * Builds a combined tuple expression from the tuple expressions and constraints in this graph pattern.
 	 * 
 	 * @return A tuple expression for this graph pattern.
 	 */

@@ -27,8 +27,7 @@ public final class AFN {
 	public static final String PREFIX = "afn";
 
 	/**
-	 * http://jena.hpl.hp.com/ARQ/function#localname The LocalName
-	 * QueryModelNode as a SPARQL function.
+	 * http://jena.hpl.hp.com/ARQ/function#localname The LocalName QueryModelNode as a SPARQL function.
 	 */
 	public static final IRI LOCALNAME;
 

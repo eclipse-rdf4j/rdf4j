@@ -58,7 +58,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 	private final DataOutputStream out;
 
 	private boolean writingStarted = false;
-	
+
 	private byte[] buf;
 
 	public BinaryRDFWriter(OutputStream out) {
@@ -230,14 +230,10 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 	{
 		// Check if a previous value can be overwritten
 		Integer id = null;
-		/* FIXME: This loop is very slow for large datasets
-		for (Value key : valueIdentifiers.keySet()) {
-			if (!valueFreq.containsKey(key)) {
-				id = valueIdentifiers.remove(key);
-				break;
-			}
-		}
-		*/
+		/*
+		 * FIXME: This loop is very slow for large datasets for (Value key : valueIdentifiers.keySet()) { if
+		 * (!valueFreq.containsKey(key)) { id = valueIdentifiers.remove(key); break; } }
+		 */
 		if (id == null) {
 			// no previous value could be overwritten
 			id = maxValueId.incrementAndGet();
@@ -319,14 +315,14 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 		int strLen = s.length();
 		out.writeInt(strLen);
 		int stringBytes = strLen << 1;
-		if(buf == null || buf.length < stringBytes) {
+		if (buf == null || buf.length < stringBytes) {
 			buf = new byte[stringBytes << 1];
 		}
 		int pos = 0;
-		for(int i = 0; i < strLen; i++) {
+		for (int i = 0; i < strLen; i++) {
 			char v = s.charAt(i);
-			buf[pos++] = (byte) ((v >>> 8) & 0xFF);
-			buf[pos++] = (byte) ((v >>> 0) & 0xFF);
+			buf[pos++] = (byte)((v >>> 8) & 0xFF);
+			buf[pos++] = (byte)((v >>> 0) & 0xFF);
 		}
 		out.write(buf, 0, stringBytes);
 	}

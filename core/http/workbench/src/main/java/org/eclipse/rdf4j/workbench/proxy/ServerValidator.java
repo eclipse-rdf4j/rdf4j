@@ -25,15 +25,17 @@ import org.slf4j.LoggerFactory;
  * Validates a server
  */
 class ServerValidator {
-	
+
 	private static final Logger LOGGER = LoggerFactory.getLogger(ServerValidator.class);
+
 	private static final String ACCEPTED_SERVER = "accepted-server-prefixes";
+
 	private final String prefixes;
 
 	protected ServerValidator(final ServletConfig config) {
 		this.prefixes = config.getInitParameter(ACCEPTED_SERVER);
 	}
-	
+
 	private boolean isDirectory(final String server) {
 		boolean isDir = false;
 		try {
@@ -72,11 +74,10 @@ class ServerValidator {
 		}
 		return isValid;
 	}
-	
+
 	/**
-	 * Returns whether the server prefix is in the list of acceptable prefixes,
-	 * as given by the space-separated configuration parameter value for
-	 * 'accepted-server-prefixes'.
+	 * Returns whether the server prefix is in the list of acceptable prefixes, as given by the
+	 * space-separated configuration parameter value for 'accepted-server-prefixes'.
 	 * 
 	 * @param server
 	 *        the server for which to check the prefix
@@ -100,10 +101,9 @@ class ServerValidator {
 		}
 		return accept;
 	}
-	
+
 	/**
-	 * Assumption: server won't require credentials to access the
-	 * protocol path.
+	 * Assumption: server won't require credentials to access the protocol path.
 	 */
 	private boolean canConnect(final String server) {
 		boolean success = false;
@@ -126,10 +126,10 @@ class ServerValidator {
 		}
 		return success;
 	}
-	
+
 	private File asLocalFile(final URL rdf)
-			throws UnsupportedEncodingException
-		{
-			return new File(URLDecoder.decode(rdf.getFile(), "UTF-8"));
-		}
+		throws UnsupportedEncodingException
+	{
+		return new File(URLDecoder.decode(rdf.getFile(), "UTF-8"));
+	}
 }

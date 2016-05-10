@@ -9,27 +9,30 @@
 /* JavaCCOptions:MULTI=true,NODE_USES_PARSER=false,VISITOR=true,TRACK_TOKENS=false,NODE_PREFIX=AST,NODE_EXTENDS=,NODE_FACTORY=,SUPPORT_CLASS_VISIBILITY_PUBLIC=true */
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
-public
-class ASTGraphRefAll extends SimpleNode {
-  private boolean _default;
-private boolean named;
+public class ASTGraphRefAll extends SimpleNode {
 
-public ASTGraphRefAll(int id) {
-    super(id);
-  }
+	private boolean _default;
 
-  public ASTGraphRefAll(SyntaxTreeBuilder p, int id) {
-    super(p, id);
-  }
+	private boolean named;
 
+	public ASTGraphRefAll(int id) {
+		super(id);
+	}
 
-  /** Accept the visitor. **/
-  public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
-    return visitor.visit(this, data);
-  }
-  
+	public ASTGraphRefAll(SyntaxTreeBuilder p, int id) {
+		super(p, id);
+	}
+
+	/** Accept the visitor. **/
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
+		throws VisitorException
+	{
+		return visitor.visit(this, data);
+	}
+
 	/**
-	 * @param _default The default to set.
+	 * @param _default
+	 *        The default to set.
 	 */
 	public void setDefault(boolean _default) {
 		this._default = _default;
@@ -43,7 +46,8 @@ public ASTGraphRefAll(int id) {
 	}
 
 	/**
-	 * @param named The named to set.
+	 * @param named
+	 *        The named to set.
 	 */
 	public void setNamed(boolean named) {
 		this.named = named;

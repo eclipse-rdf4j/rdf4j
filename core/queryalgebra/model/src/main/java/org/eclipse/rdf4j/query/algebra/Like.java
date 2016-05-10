@@ -21,8 +21,7 @@ public class Like extends UnaryValueOperator {
 	private boolean caseSensitive;
 
 	/**
-	 * Operational pattern, equal to pattern but converted to lower case when not
-	 * case sensitive.
+	 * Operational pattern, equal to pattern but converted to lower case when not case sensitive.
 	 */
 	private String opPattern;
 

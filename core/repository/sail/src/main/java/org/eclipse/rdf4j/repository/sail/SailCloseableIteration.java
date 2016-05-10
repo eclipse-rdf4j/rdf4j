@@ -22,8 +22,7 @@ class SailCloseableIteration<E> extends ExceptionConvertingIteration<E, Reposito
 	}
 
 	@Override
-	protected RepositoryException convert(Exception e)
-	{
+	protected RepositoryException convert(Exception e) {
 		if (e instanceof SailException) {
 			return new RepositoryException(e);
 		}

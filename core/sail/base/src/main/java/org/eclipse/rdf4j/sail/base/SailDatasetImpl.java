@@ -43,14 +43,13 @@ class SailDatasetImpl implements SailDataset {
 	private final SailDataset derivedFrom;
 
 	/**
-	 * Changes that have not yet been {@link SailSource#flush()}ed to the backing
-	 * {@link SailDataset}.
+	 * Changes that have not yet been {@link SailSource#flush()}ed to the backing {@link SailDataset}.
 	 */
 	private final Changeset changes;
 
 	/**
-	 * Create a derivative dataset that applies the given changeset. The life
-	 * cycle of this and the given {@link SailDataset} are bound.
+	 * Create a derivative dataset that applies the given changeset. The life cycle of this and the given
+	 * {@link SailDataset} are bound.
 	 * 
 	 * @param derivedFrom
 	 *        will be released when this object is released
@@ -231,14 +230,16 @@ class SailDatasetImpl implements SailDataset {
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
+	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
+			Value obj, Resource... contexts)
 		throws SailException
 	{
 		Set<Resource> deprecatedContexts = changes.getDeprecatedContexts();
 		CloseableIteration<? extends Statement, SailException> iter;
-		if (changes.isStatementCleared() || contexts == null && deprecatedContexts != null
-				&& deprecatedContexts.contains(null) || contexts.length > 0 && deprecatedContexts != null
-				&& deprecatedContexts.containsAll(Arrays.asList(contexts)))
+		if (changes.isStatementCleared()
+				|| contexts == null && deprecatedContexts != null && deprecatedContexts.contains(null)
+				|| contexts.length > 0 && deprecatedContexts != null
+						&& deprecatedContexts.containsAll(Arrays.asList(contexts)))
 		{
 			iter = null;
 		}

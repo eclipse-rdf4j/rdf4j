@@ -62,8 +62,7 @@ public class TurtleHandlingTest extends AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Helper method to write the given model to Turtle and return an InputStream
-	 * containing the results.
+	 * Helper method to write the given model to Turtle and return an InputStream containing the results.
 	 * 
 	 * @param statements
 	 * @return An {@link InputStream} containing the results.

@@ -42,7 +42,7 @@ public abstract class SailConcurrencyTest {
 	 *-----------*/
 
 	private Sail store;
-	
+
 	private ValueFactory vf;
 
 	private boolean m_failed;
@@ -90,8 +90,10 @@ public abstract class SailConcurrencyTest {
 						while (continueRunning) {
 							connection.begin();
 							for (int i = 0; i < 10; i++) {
-								insertTestStatement(connection, insertRandomizer.nextInt() % MAX_STATEMENT_IDX);
-								removeTestStatement(connection, removeRandomizer.nextInt() % MAX_STATEMENT_IDX);
+								insertTestStatement(connection,
+										insertRandomizer.nextInt() % MAX_STATEMENT_IDX);
+								removeTestStatement(connection,
+										removeRandomizer.nextInt() % MAX_STATEMENT_IDX);
 							}
 							// System.out.print("*");
 							connection.commit();
@@ -125,7 +127,7 @@ public abstract class SailConcurrencyTest {
 									assertNotNull(context);
 									contextCount++;
 								}
-//								 System.out.println("Found " + contextCount + " contexts");
+								//								 System.out.println("Found " + contextCount + " contexts");
 							}
 							finally {
 								contextIter.close();

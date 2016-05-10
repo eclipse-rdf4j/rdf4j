@@ -141,7 +141,8 @@ public abstract class AbstractLuceneSailIndexedPropertiesTest {
 				vf.createLiteral(
 						"Groucho Marx is going to cut away the first part of the first party of the contract."),
 				false));
-		assertTrue(connection.hasStatement(SUBJECT_1, FOAFNAME, vf.createLiteral("groucho and harpo"), false));
+		assertTrue(
+				connection.hasStatement(SUBJECT_1, FOAFNAME, vf.createLiteral("groucho and harpo"), false));
 
 		assertTrue(
 				connection.hasStatement(SUBJECT_2, FOAFNAME, vf.createLiteral("the second resource"), false));

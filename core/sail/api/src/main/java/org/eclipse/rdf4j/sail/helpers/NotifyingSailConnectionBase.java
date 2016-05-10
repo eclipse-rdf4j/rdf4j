@@ -15,14 +15,13 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 
 /**
- * Abstract Class offering base functionality for SailConnection
- * implementations.
+ * Abstract Class offering base functionality for SailConnection implementations.
  * 
  * @author Arjohn Kampman
  * @author jeen
  */
-public abstract class NotifyingSailConnectionBase extends AbstractSailConnection implements
-		NotifyingSailConnection
+public abstract class NotifyingSailConnectionBase extends AbstractSailConnection
+		implements NotifyingSailConnection
 {
 
 	/*-----------*

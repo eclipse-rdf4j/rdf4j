@@ -25,17 +25,18 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.base.AbstractRepository;
 
 /**
- * A proxy class to access any SPARQL endpoint. The instance must be initialized
- * prior to using it.
+ * A proxy class to access any SPARQL endpoint. The instance must be initialized prior to using it.
  * 
  * @author James Leigh
  */
-public class SPARQLRepository extends AbstractRepository implements HttpClientDependent, SesameClientDependent {
-	
+public class SPARQLRepository extends AbstractRepository
+		implements HttpClientDependent, SesameClientDependent
+{
+
 	/**
-	 * Flag indicating if quad mode is enabled in newly created
-	 * {@link SPARQLConnection}s.
-	 * @see #enableQuadMode(boolean) 
+	 * Flag indicating if quad mode is enabled in newly created {@link SPARQLConnection}s.
+	 * 
+	 * @see #enableQuadMode(boolean)
 	 */
 	private boolean quadMode = false;
 
@@ -58,8 +59,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	private Map<String, String> additionalHttpHeaders = Collections.emptyMap();
 
 	/**
-	 * Create a new SPARQLRepository using the supplied endpoint URL for queries
-	 * and updates.
+	 * Create a new SPARQLRepository using the supplied endpoint URL for queries and updates.
 	 * 
 	 * @param endpointUrl
 	 *        a SPARQL endpoint URL. May not be null.
@@ -69,8 +69,8 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	}
 
 	/**
-	 * Create a new SPARQLREpository using the supplied query endpoint URL for
-	 * queries, and the supplied update endpoint URL for updates.
+	 * Create a new SPARQLREpository using the supplied query endpoint URL for queries, and the supplied
+	 * update endpoint URL for updates.
 	 * 
 	 * @param queryEndpointUrl
 	 *        a SPARQL endpoint URL for queries. May not be null.
@@ -110,8 +110,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	}
 
 	/**
-	 * Creates a new HTTPClient object. Subclasses may override to return a more
-	 * specific HTTPClient subtype.
+	 * Creates a new HTTPClient object. Subclasses may override to return a more specific HTTPClient subtype.
 	 * 
 	 * @return a HTTPClient object.
 	 */
@@ -162,8 +161,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	}
 
 	/**
-	 * Set the username and password to use for authenticating with the remote
-	 * repository.
+	 * Set the username and password to use for authenticating with the remote repository.
 	 * 
 	 * @param username
 	 *        the username. Setting this to null will disable authentication.
@@ -196,18 +194,17 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	/**
 	 * Get the additional HTTP headers which will be used
 	 * 
-	 * @return a read-only view of the additional HTTP headers which will be
-	 *         included in every request to the server.
+	 * @return a read-only view of the additional HTTP headers which will be included in every request to the
+	 *         server.
 	 */
 	public Map<String, String> getAdditionalHttpHeaders() {
 		return Collections.unmodifiableMap(additionalHttpHeaders);
 	}
 
 	/**
-	 * Set additional HTTP headers to be included in every request to the server,
-	 * which may be required for certain unusual server configurations. This will
-	 * only take effect on connections subsequently returned by
-	 * {@link #getConnection()}.
+	 * Set additional HTTP headers to be included in every request to the server, which may be required for
+	 * certain unusual server configurations. This will only take effect on connections subsequently returned
+	 * by {@link #getConnection()}.
 	 * 
 	 * @param additionalHttpHeaders
 	 *        a map containing pairs of header names and values. May be null
@@ -220,16 +217,18 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 			this.additionalHttpHeaders = additionalHttpHeaders;
 		}
 	}
-	
+
 	/**
-	 * Activate quad mode for this {@link SPARQLRepository}, i.e. for 
-	 * retrieval of statements also retrieve the graph.<p>
+	 * Activate quad mode for this {@link SPARQLRepository}, i.e. for retrieval of statements also retrieve
+	 * the graph.
+	 * <p>
+	 * Note: the setting is only applied in newly created {@link SPARQLConnection}s as the setting is an
+	 * immutable configuration of a connection instance.
 	 * 
-	 * Note: the setting is only applied in newly created {@link SPARQLConnection}s
-	 * as the setting is an immutable configuration of a connection instance.
-	 * 
-	 * @param flag flag to enable or disable the quad mode
-	 * @see SPARQLConnection#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.URI, org.eclipse.rdf4j.model.Value, boolean, org.eclipse.rdf4j.model.Resource...)
+	 * @param flag
+	 *        flag to enable or disable the quad mode
+	 * @see SPARQLConnection#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.URI,
+	 *      org.eclipse.rdf4j.model.Value, boolean, org.eclipse.rdf4j.model.Resource...)
 	 */
 	public void enableQuadMode(boolean flag) {
 		this.quadMode = flag;

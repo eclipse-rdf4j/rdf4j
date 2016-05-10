@@ -29,8 +29,8 @@ import org.eclipse.rdf4j.sail.federation.algebra.NaryJoin;
 import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
 
 /**
- * Evaluates Join, LeftJoin and Union in parallel and only evaluate if
- * {@link OwnedTupleExpr} is the given member.
+ * Evaluates Join, LeftJoin and Union in parallel and only evaluate if {@link OwnedTupleExpr} is the given
+ * member.
  * 
  * @see ParallelJoinCursor
  * @see ParallelLeftJoinCursor
@@ -69,7 +69,8 @@ public class FederationStrategy extends SimpleEvaluationStrategy {
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Join join, BindingSet bindings)
 		throws QueryEvaluationException
 	{
-		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluate(join.getLeftArg(), bindings);
+		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluate(join.getLeftArg(),
+				bindings);
 		for (int i = 1, n = 2; i < n; i++) {
 			result = new ParallelJoinCursor(this, result, join.getRightArg()); // NOPMD
 			executor.execute((Runnable)result);
@@ -77,7 +78,8 @@ public class FederationStrategy extends SimpleEvaluationStrategy {
 		return result;
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(NaryJoin join, BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(NaryJoin join,
+			BindingSet bindings)
 		throws QueryEvaluationException
 	{
 		assert join.getNumberOfArguments() > 0;
@@ -133,7 +135,8 @@ public class FederationStrategy extends SimpleEvaluationStrategy {
 	{
 		CloseableIteration<BindingSet, QueryEvaluationException> result = expr.evaluate(dataset, bindings);
 		if (result == null) {
-			TripleSource source = new org.eclipse.rdf4j.repository.evaluation.RepositoryTripleSource(expr.getOwner());
+			TripleSource source = new org.eclipse.rdf4j.repository.evaluation.RepositoryTripleSource(
+					expr.getOwner());
 			EvaluationStrategy eval = new FederationStrategy(executor, source, dataset, serviceResolver);
 			result = eval.evaluate(expr.getArg(), bindings);
 		}

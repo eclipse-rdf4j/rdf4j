@@ -19,68 +19,42 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.Test;
 
-
 /**
  * Tests to monitor QueryJoinOptimizer behaviour.
+ * 
  * @author Mark
  */
 public class QueryJoinOptimizerTest {
+
 	@Test
-	public void testBindingSetAssignmentOptimization() throws RDF4JException {
-		String query = "prefix ex: <ex:>"
-				+ "select ?s ?p ?o ?x where {"
-				+ " ex:s1 ex:pred ?v. "
-				+ " ex:s2 ex:pred 'bah'. {"
-				+ "  ?s ?p ?o. "
-				+ "  optional {"
-				+ "   values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}. "
-				+ "  }"
-				+ " }"
-				+ "}";
+	public void testBindingSetAssignmentOptimization()
+		throws RDF4JException
+	{
+		String query = "prefix ex: <ex:>" + "select ?s ?p ?o ?x where {" + " ex:s1 ex:pred ?v. "
+				+ " ex:s2 ex:pred 'bah'. {" + "  ?s ?p ?o. " + "  optional {"
+				+ "   values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}. " + "  }" + " }" + "}";
 		// optimal order should be existence check of first statement
 		// followed by left join evaluation
-		String expectedQuery = "prefix ex: <ex:>"
-				+ "select ?s ?p ?o ?x where {"
-				+ " ex:s2 ex:pred 'bah'. {"
-				+ "  ex:s1 ex:pred ?v. {"
-				+ "   ?s ?p ?o. "
-				+ "   optional {"
-				+ "    values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}. "
-				+ "   }"
-				+ "  }"
-				+ " }"
-				+ "}";
+		String expectedQuery = "prefix ex: <ex:>" + "select ?s ?p ?o ?x where {" + " ex:s2 ex:pred 'bah'. {"
+				+ "  ex:s1 ex:pred ?v. {" + "   ?s ?p ?o. " + "   optional {"
+				+ "    values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}. " + "   }" + "  }" + " }" + "}";
 
 		testOptimizer(expectedQuery, query);
 	}
 
-	@Test(expected=AssertionError.class)
+	@Test(expected = AssertionError.class)
 	public void testContextOptimization()
 		throws RDF4JException
 	{
-		String query = "prefix ex: <ex:>"
-				+ "select ?x ?y ?z ?g ?p ?o where {"
-				+ " graph ?g {"
-				+ "  ex:s ?sp ?so. "
-				+ "  ?ps ex:p ?po. "
-				+ "  ?os ?op 'ex:o'. "
-				+ " }"
-				+ " ?x ?y ?z. "
-				+ "}";
+		String query = "prefix ex: <ex:>" + "select ?x ?y ?z ?g ?p ?o where {" + " graph ?g {"
+				+ "  ex:s ?sp ?so. " + "  ?ps ex:p ?po. " + "  ?os ?op 'ex:o'. " + " }" + " ?x ?y ?z. " + "}";
 		// optimal order should be ?g graph first
 		// as it is all statements about a subject in all graphs
 		// rather than all subjects in the default graph:
 		// card(?g) << card(?x)
 		// and assuming named graph has same access cost as default graph
-		String expectedQuery = "prefix ex: <ex:>"
-				+ "select ?x ?y ?z ?g ?p ?o where {"
-				+ " graph ?g {"
-				+ "  ex:s ?sp ?so. "
-				+ "  ?ps ex:p ?po. "
-				+ "  ?os ?op 'ex:o'. "
-				+ " }"
-				+ " ?x ?y ?z. "
-				+ "}";
+		String expectedQuery = "prefix ex: <ex:>" + "select ?x ?y ?z ?g ?p ?o where {" + " graph ?g {"
+				+ "  ex:s ?sp ?so. " + "  ?ps ex:p ?po. " + "  ?os ?op 'ex:o'. " + " }" + " ?x ?y ?z. " + "}";
 
 		testOptimizer(expectedQuery, query);
 	}
@@ -93,7 +67,8 @@ public class QueryJoinOptimizerTest {
 		QueryRoot optRoot = new QueryRoot(pq.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 
-		ParsedQuery expectedParsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, expectedQuery, null);
+		ParsedQuery expectedParsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, expectedQuery,
+				null);
 		QueryRoot root = new QueryRoot(expectedParsedQuery.getTupleExpr());
 		assertQueryModelTrees(root, optRoot);
 	}

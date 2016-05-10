@@ -21,26 +21,37 @@ import org.junit.Before;
 import org.junit.Test;
 
 public class DeleteInsertTest {
+
 	private Repository repo;
+
 	private String NS = "http://example.org/";
+
 	private RepositoryConnection con;
+
 	private IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
+
 	private ClassLoader cl = getClass().getClassLoader();
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp()
+		throws Exception
+	{
 		repo = OptimisticIsolationTest.getEmptyInitializedRepository(DeleteInsertTest.class);
 		con = repo.getConnection();
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown()
+		throws Exception
+	{
 		con.close();
 		repo.shutDown();
 	}
 
 	@Test
-	public void test() throws Exception {
+	public void test()
+		throws Exception
+	{
 		String load = IOUtil.readString(cl.getResource("test/insert-data.ru"));
 		con.prepareUpdate(QueryLanguage.SPARQL, load, NS).execute();
 		con.begin(level);

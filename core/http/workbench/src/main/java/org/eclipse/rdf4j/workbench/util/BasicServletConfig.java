@@ -15,8 +15,11 @@ import javax.servlet.ServletConfig;
 import javax.servlet.ServletContext;
 
 public class BasicServletConfig implements ServletConfig {
+
 	private String name;
+
 	private ServletContext context;
+
 	private Hashtable<String, String> params;
 
 	public BasicServletConfig(String name, ServletContext context) {
@@ -35,14 +38,12 @@ public class BasicServletConfig implements ServletConfig {
 		}
 	}
 
-	public BasicServletConfig(String name, ServletConfig config,
-			Map<String, String> params) {
+	public BasicServletConfig(String name, ServletConfig config, Map<String, String> params) {
 		this(name, config);
 		this.params.putAll(params);
 	}
 
-	public BasicServletConfig(String name, ServletContext context,
-			Map<String, String> params) {
+	public BasicServletConfig(String name, ServletContext context, Map<String, String> params) {
 		this.name = name;
 		this.context = context;
 		this.params = new Hashtable<String, String>(params);

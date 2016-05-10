@@ -31,8 +31,7 @@ import org.eclipse.rdf4j.sail.config.AbstractSailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 
 /**
- * Lists the members of a federation and which properties describe a resource
- * subject in a unique member.
+ * Lists the members of a federation and which properties describe a resource subject in a unique member.
  * 
  * @author James Leigh
  */
@@ -42,12 +41,12 @@ public class FederationConfig extends AbstractSailImplConfig {
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail/federation#";
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
-	
+
 	public static final IRI MEMBER = vf.createIRI(NAMESPACE + "member");
 
 	/**
-	 * For all triples with a predicate in this space, the container RDF store
-	 * contains all triples with that subject and any predicate in this space.
+	 * For all triples with a predicate in this space, the container RDF store contains all triples with that
+	 * subject and any predicate in this space.
 	 */
 	public static final IRI LOCALPROPERTYSPACE = vf.createIRI(NAMESPACE // NOPMD
 			+ "localPropertySpace");

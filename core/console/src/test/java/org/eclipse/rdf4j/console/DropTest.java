@@ -52,15 +52,18 @@ public class DropTest extends AbstractCommandTest {
 		manager = new LocalRepositoryManager(LOCATION.getRoot());
 		manager.initialize();
 		addRepositories(MEMORY_MEMBER_ID1);
-		manager.addRepositoryConfig(new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(MEMORY_MEMBER_ID1)));
+		manager.addRepositoryConfig(
+				new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(MEMORY_MEMBER_ID1)));
 		ConsoleState state = mock(ConsoleState.class);
 		when(state.getManager()).thenReturn(manager);
 		drop = new Drop(streams, state, new Close(streams, state), new LockRemover(streams));
 	}
 
-	private void setUserDropConfirm(boolean confirm) throws IOException {
-		when(streams.askProceed(startsWith("WARNING: you are about to drop repository '"), anyBoolean())).thenReturn(
-				confirm);
+	private void setUserDropConfirm(boolean confirm)
+		throws IOException
+	{
+		when(streams.askProceed(startsWith("WARNING: you are about to drop repository '"),
+				anyBoolean())).thenReturn(confirm);
 	}
 
 	@After
@@ -89,8 +92,8 @@ public class DropTest extends AbstractCommandTest {
 	{
 		setUserDropConfirm(true);
 		assertThat(manager.isSafeToRemove(MEMORY_MEMBER_ID1), is(equalTo(false)));
-		when(streams.askProceed(startsWith("WARNING: dropping this repository may break"), anyBoolean())).thenReturn(
-				false);
+		when(streams.askProceed(startsWith("WARNING: dropping this repository may break"),
+				anyBoolean())).thenReturn(false);
 		drop.execute("drop", MEMORY_MEMBER_ID1);
 		verify(streams).writeln("Drop aborted");
 	}

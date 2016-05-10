@@ -26,10 +26,9 @@ import org.eclipse.rdf4j.model.ValueFactory;
 public class Statements {
 
 	/**
-	 * Creates one or more {@link Statement} objects with the given subject,
-	 * predicate and object, one for each given context, and sends each created
-	 * statement to the supplied {@link Consumer}. If no context is supplied,
-	 * only a single statement (without any assigned context) is created.
+	 * Creates one or more {@link Statement} objects with the given subject, predicate and object, one for
+	 * each given context, and sends each created statement to the supplied {@link Consumer}. If no context is
+	 * supplied, only a single statement (without any assigned context) is created.
 	 * 
 	 * @param vf
 	 *        the {@link ValueFactory} to use for creating statements.
@@ -42,9 +41,8 @@ public class Statements {
 	 * @param consumer
 	 *        the {@link Consumer} function for the produced statements.
 	 * @param contexts
-	 *        the context(s) for which to produce statements. This argument is
-	 *        an optional vararg: leave it out completely to produce a single
-	 *        statement without context.
+	 *        the context(s) for which to produce statements. This argument is an optional vararg: leave it
+	 *        out completely to produce a single statement without context.
 	 */
 	public static void consume(ValueFactory vf, Resource subject, IRI predicate, Value object,
 			Consumer<Statement> consumer, Resource... contexts)
@@ -63,10 +61,9 @@ public class Statements {
 	}
 
 	/**
-	 * Creates one or more {@link Statement} objects with the given subject,
-	 * predicate and object, one for each given context. If no context is
-	 * supplied, only a single statement (without any assigned context) is
-	 * created.
+	 * Creates one or more {@link Statement} objects with the given subject, predicate and object, one for
+	 * each given context. If no context is supplied, only a single statement (without any assigned context)
+	 * is created.
 	 * 
 	 * @param vf
 	 *        the {@link ValueFactory} to use for creating statements.
@@ -77,14 +74,12 @@ public class Statements {
 	 * @param object
 	 *        the object of each statement. May not be null.
 	 * @param collection
-	 *        the collection of Statements to which the newly created Statements
-	 *        will be added. May not be null.
-	 * @return the input collection of Statements, with the newly created
-	 *         Statements added.
+	 *        the collection of Statements to which the newly created Statements will be added. May not be
+	 *        null.
+	 * @return the input collection of Statements, with the newly created Statements added.
 	 * @param contexts
-	 *        the context(s) for which to produce statements. This argument is
-	 *        an optional vararg: leave it out completely to produce a single
-	 *        statement without context.
+	 *        the context(s) for which to produce statements. This argument is an optional vararg: leave it
+	 *        out completely to produce a single statement without context.
 	 */
 	public static <C extends Collection<Statement>> C create(ValueFactory vf, Resource subject, IRI predicate,
 			Value object, C collection, Resource... contexts)

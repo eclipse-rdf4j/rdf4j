@@ -71,8 +71,7 @@ class Atts {
 	 * 
 	 * @param qName
 	 *        The QName of an attribute.
-	 * @return The attribute with the specified QName, or <tt>null</tt> if no
-	 *         such attribute could be found.
+	 * @return The attribute with the specified QName, or <tt>null</tt> if no such attribute could be found.
 	 */
 	public Att getAtt(String qName) {
 		for (int i = 0; i < attributes.size(); i++) {
@@ -93,8 +92,8 @@ class Atts {
 	 *        The namespace of an attribute.
 	 * @param localName
 	 *        The local name of an attribute.
-	 * @return The attribute with the specified namespace and local name, or
-	 *         <tt>null</tt> if no such attribute could be found.
+	 * @return The attribute with the specified namespace and local name, or <tt>null</tt> if no such
+	 *         attribute could be found.
 	 */
 	public Att getAtt(String namespace, String localName) {
 		for (int i = 0; i < attributes.size(); i++) {
@@ -113,8 +112,8 @@ class Atts {
 	 * 
 	 * @param qName
 	 *        The QName of an attribute.
-	 * @return The removed attribute, or <tt>null</tt> if no attribute with the
-	 *         specified QName could be found.
+	 * @return The removed attribute, or <tt>null</tt> if no attribute with the specified QName could be
+	 *         found.
 	 */
 	public Att removeAtt(String qName) {
 		for (int i = 0; i < attributes.size(); i++) {
@@ -130,15 +129,14 @@ class Atts {
 	}
 
 	/**
-	 * Removes the attribute with the specified namespace and local name and
-	 * returns it.
+	 * Removes the attribute with the specified namespace and local name and returns it.
 	 * 
 	 * @param namespace
 	 *        The namespace of an attribute.
 	 * @param localName
 	 *        The local name of an attribute.
-	 * @return The removed attribute, or <tt>null</tt> if no attribute with the
-	 *         specified namespace and local name could be found.
+	 * @return The removed attribute, or <tt>null</tt> if no attribute with the specified namespace and local
+	 *         name could be found.
 	 */
 	public Att removeAtt(String namespace, String localName) {
 		for (int i = 0; i < attributes.size(); i++) {

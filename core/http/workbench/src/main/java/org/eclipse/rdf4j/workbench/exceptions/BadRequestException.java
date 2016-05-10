@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.workbench.exceptions;
 import javax.servlet.ServletException;
 
 public class BadRequestException extends ServletException {
+
 	private static final long serialVersionUID = -6227037493079059474L;
 
 	public BadRequestException(String message) {

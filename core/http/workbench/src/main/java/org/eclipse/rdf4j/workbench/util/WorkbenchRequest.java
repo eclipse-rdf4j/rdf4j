@@ -36,8 +36,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 
 /**
- * Request wrapper used by {@link org.eclipse.rdf4j.workbench.base
- * TransformationServlet}.
+ * Request wrapper used by {@link org.eclipse.rdf4j.workbench.base TransformationServlet}.
  */
 public class WorkbenchRequest extends HttpServletRequestWrapper {
 
@@ -54,8 +53,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	private final ValueDecoder decoder;
 
 	/**
-	 * Wrap a request with an object aware of the current repository and
-	 * application defaults.
+	 * Wrap a request with an object aware of the current repository and application defaults.
 	 * 
 	 * @param repository
 	 *        currently connected repository
@@ -75,8 +73,8 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	{
 		super(request);
 		this.defaults = defaults;
-		this.decoder = new ValueDecoder(repository, (repository == null) ? SimpleValueFactory.getInstance()
-				: repository.getValueFactory());
+		this.decoder = new ValueDecoder(repository,
+				(repository == null) ? SimpleValueFactory.getInstance() : repository.getValueFactory());
 		String url = request.getRequestURL().toString();
 		if (ServletFileUpload.isMultipartContent(this)) {
 			parameters = getMultipartParameterMap();
@@ -105,10 +103,9 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	}
 
 	/***
-	 * Get the integer value associated with the given parameter name. Internally
-	 * uses getParameter(String), so looks in this order: 1. the query parameters
-	 * that were parsed at construction, using the last value if multiple exist.
-	 * 2. Request cookies. 3. The defaults.
+	 * Get the integer value associated with the given parameter name. Internally uses getParameter(String),
+	 * so looks in this order: 1. the query parameters that were parsed at construction, using the last value
+	 * if multiple exist. 2. Request cookies. 3. The defaults.
 	 * 
 	 * @return the value of the parameter, or zero if it is not present
 	 * @throws BadRequestException
@@ -173,8 +170,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	}
 
 	/**
-	 * Returns whether a non-null, non-empty value is available for the given
-	 * parameter name.
+	 * Returns whether a non-null, non-empty value is available for the given parameter name.
 	 * 
 	 * @param name
 	 *        parameter name to check
@@ -196,8 +192,8 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	}
 
 	/**
-	 * Returns a {@link org.eclipse.rdf4j.model.Resource} corresponding to the value of
-	 * the given parameter name.
+	 * Returns a {@link org.eclipse.rdf4j.model.Resource} corresponding to the value of the given parameter
+	 * name.
 	 * 
 	 * @param name
 	 *        of parameter to retrieve resource from
@@ -216,8 +212,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	}
 
 	/**
-	 * Gets a map of the all parameters with values, also caching them in this
-	 * {@link WorkbenchRequest}.
+	 * Gets a map of the all parameters with values, also caching them in this {@link WorkbenchRequest}.
 	 * 
 	 * @return a map of all parameters with values
 	 */
@@ -250,8 +245,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	 * 
 	 * @param name
 	 *        of the parameter to check
-	 * @return the URI, or null if the parameter has no value, is only
-	 *         whitespace, or equals "null"
+	 * @return the URI, or null if the parameter has no value, is only whitespace, or equals "null"
 	 * @throws BadRequestException
 	 *         if the value doesn't parse as a URI
 	 * @throws RepositoryException
@@ -289,13 +283,11 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	}
 
 	/**
-	 * Gets the {@link org.eclipse.rdf4j.model.Value} referred to by the parameter
-	 * value.
+	 * Gets the {@link org.eclipse.rdf4j.model.Value} referred to by the parameter value.
 	 * 
 	 * @param name
 	 *        of the parameter to check
-	 * @return the value, or null if the parameter has no value, is only
-	 *         whitespace, or equals "null"
+	 * @return the value, or null if the parameter has no value, is only whitespace, or equals "null"
 	 * @throws BadRequestException
 	 *         if the value doesn't parse as a URI
 	 * @throws RepositoryException

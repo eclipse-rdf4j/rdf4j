@@ -135,18 +135,21 @@ public class QueryResultsTest {
 	}
 
 	@Test
-	public void testGraphQueryResultEquals() throws QueryEvaluationException {
-		
+	public void testGraphQueryResultEquals()
+		throws QueryEvaluationException
+	{
+
 		StubGraphQueryResult toCompare = new StubGraphQueryResult();
-		
+
 		assertTrue(QueryResults.equals(gqr, toCompare));
 		gqr = new StubGraphQueryResult();
 		toCompare = new StubGraphQueryResult();
-		toCompare.statements.add(VF.createStatement(VF.createURI("urn:test-gqr-equals"), RDF.TYPE, RDF.PROPERTY));
-		
+		toCompare.statements.add(
+				VF.createStatement(VF.createURI("urn:test-gqr-equals"), RDF.TYPE, RDF.PROPERTY));
+
 		assertFalse(QueryResults.equals(gqr, toCompare));
 	}
-	
+
 	@Test
 	public void testDistinctGraphQueryResults()
 		throws QueryEvaluationException

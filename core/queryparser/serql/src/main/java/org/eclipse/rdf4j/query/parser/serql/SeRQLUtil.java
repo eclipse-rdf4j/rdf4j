@@ -17,8 +17,7 @@ import org.eclipse.rdf4j.common.text.StringUtil;
 public class SeRQLUtil {
 
 	/**
-	 * Encodes the supplied string for inclusion as a 'normal' string in a SeRQL
-	 * query.
+	 * Encodes the supplied string for inclusion as a 'normal' string in a SeRQL query.
 	 */
 	public static String encodeString(String s) {
 		s = StringUtil.gsub("\\", "\\\\", s);
@@ -32,15 +31,13 @@ public class SeRQLUtil {
 	}
 
 	/**
-	 * Decodes an encoded SeRQL string. Any \-escape sequences are substituted
-	 * with their decoded value.
+	 * Decodes an encoded SeRQL string. Any \-escape sequences are substituted with their decoded value.
 	 * 
 	 * @param s
 	 *        An encoded SeRQL string.
 	 * @return The unencoded string.
 	 * @exception IllegalArgumentException
-	 *            If the supplied string is not a correctly encoded SeRQL
-	 *            string.
+	 *            If the supplied string is not a correctly encoded SeRQL string.
 	 */
 	public static String decodeString(String s) {
 		int backSlashIdx = s.indexOf('\\');
@@ -94,14 +91,13 @@ public class SeRQLUtil {
 			else if (c == 'u') {
 				// \\uxxxx
 				if (backSlashIdx + 5 >= sLength) {
-					throw new IllegalArgumentException(
-							"Incomplete Unicode escape sequence in: " + s);
+					throw new IllegalArgumentException("Incomplete Unicode escape sequence in: " + s);
 				}
 				String xx = s.substring(backSlashIdx + 2, backSlashIdx + 6);
 
 				try {
 					c = (char)Integer.parseInt(xx, 16);
-					sb.append( c );
+					sb.append(c);
 
 					startIdx = backSlashIdx + 6;
 				}
@@ -113,14 +109,13 @@ public class SeRQLUtil {
 			else if (c == 'U') {
 				// \\Uxxxxxxxx
 				if (backSlashIdx + 9 >= sLength) {
-					throw new IllegalArgumentException(
-							"Incomplete Unicode escape sequence in: " + s);
+					throw new IllegalArgumentException("Incomplete Unicode escape sequence in: " + s);
 				}
 				String xx = s.substring(backSlashIdx + 2, backSlashIdx + 10);
 
 				try {
 					c = (char)Integer.parseInt(xx, 16);
-					sb.append( c );
+					sb.append(c);
 
 					startIdx = backSlashIdx + 10;
 				}

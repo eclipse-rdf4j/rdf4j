@@ -67,13 +67,15 @@ public class SPARQLTSVTupleTest extends AbstractQueryResultIOTupleTest {
 	public void testSingleVarResults()
 		throws Exception
 	{
-		assertRegex("\\?a\n" + "<foo:bar>\n" + "(2.0(E0)?|\"2.0\"\\^\\^<http://www.w3.org/2001/XMLSchema#double>)\n"
-				+ "_:bnode3\n" + "\"''single-quoted string\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
-				+ "\"\\\\\"\\\\\"double-quoted string\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
-				+ "\"space at the end         \"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
-				+ "\"space at the end         \"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
-				+ "\"\\\\\"\\\\\"double-quoted string with no datatype\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
-				+ "\"newline at the end \\\\n\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n?",
+		assertRegex(
+				"\\?a\n" + "<foo:bar>\n"
+						+ "(2.0(E0)?|\"2.0\"\\^\\^<http://www.w3.org/2001/XMLSchema#double>)\n" + "_:bnode3\n"
+						+ "\"''single-quoted string\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
+						+ "\"\\\\\"\\\\\"double-quoted string\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
+						+ "\"space at the end         \"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
+						+ "\"space at the end         \"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
+						+ "\"\\\\\"\\\\\"double-quoted string with no datatype\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
+						+ "\"newline at the end \\\\n\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n?",
 				toString(createTupleSingleVarMultipleBindingSets()));
 	}
 

@@ -61,41 +61,41 @@ public class Template {
 		throws MalformedSpinException
 	{
 		MapBindingSet args = new MapBindingSet();
-		for(Argument arg : arguments) {
+		for (Argument arg : arguments) {
 			IRI argPred = arg.getPredicate();
 			Value argValue = argValues.get(argPred);
-			if(argValue == null && !arg.isOptional()) {
-				throw new MalformedSpinException("Missing value for template argument: "+argPred);
+			if (argValue == null && !arg.isOptional()) {
+				throw new MalformedSpinException("Missing value for template argument: " + argPred);
 			}
-			if(argValue == null) {
+			if (argValue == null) {
 				argValue = arg.getDefaultValue();
 			}
-			if(argValue != null) {
+			if (argValue != null) {
 				args.addBinding(argPred.getLocalName(), argValue);
 			}
 		}
 
 		ParsedOperation callOp;
-		if(parsedOp instanceof ParsedBooleanQuery) {
+		if (parsedOp instanceof ParsedBooleanQuery) {
 			callOp = new ParsedBooleanTemplate(this, args);
 		}
-		else if(parsedOp instanceof ParsedTupleQuery) {
+		else if (parsedOp instanceof ParsedTupleQuery) {
 			callOp = new ParsedTupleTemplate(this, args);
 		}
-		else if(parsedOp instanceof ParsedGraphQuery) {
+		else if (parsedOp instanceof ParsedGraphQuery) {
 			callOp = new ParsedGraphTemplate(this, args);
 		}
-		else if(parsedOp instanceof ParsedUpdate) {
+		else if (parsedOp instanceof ParsedUpdate) {
 			callOp = new ParsedUpdateTemplate(this, args);
 		}
 		else {
-			throw new AssertionError("Unrecognised ParsedOperation: "+parsedOp.getClass());
+			throw new AssertionError("Unrecognised ParsedOperation: " + parsedOp.getClass());
 		}
 		return callOp;
 	}
 
 	@Override
 	public String toString() {
-		return IRI+"("+ Joiner.on(", ").join(arguments)+")";
+		return IRI + "(" + Joiner.on(", ").join(arguments) + ")";
 	}
 }

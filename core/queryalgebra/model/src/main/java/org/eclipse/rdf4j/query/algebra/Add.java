@@ -62,10 +62,9 @@ public class Add extends AbstractQueryModelNode implements UpdateExpr {
 
 	@Override
 	public boolean equals(Object other) {
-		if(other instanceof Add) {
+		if (other instanceof Add) {
 			Add o = (Add)other;
-			return silent == o.silent
-					&& nullEquals(sourceGraph, o.sourceGraph)
+			return silent == o.silent && nullEquals(sourceGraph, o.sourceGraph)
 					&& nullEquals(destinationGraph, o.destinationGraph);
 		}
 		return false;
@@ -73,11 +72,11 @@ public class Add extends AbstractQueryModelNode implements UpdateExpr {
 
 	@Override
 	public int hashCode() {
-		int result = silent ? 1 :0;
-		if(sourceGraph != null) {
+		int result = silent ? 1 : 0;
+		if (sourceGraph != null) {
 			result ^= sourceGraph.hashCode();
 		}
-		if(destinationGraph != null) {
+		if (destinationGraph != null) {
 			result ^= destinationGraph.hashCode();
 		}
 		return result;
@@ -102,8 +101,7 @@ public class Add extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * The named graph from which to add. If null, the default graph should be
-	 * used.
+	 * The named graph from which to add. If null, the default graph should be used.
 	 * 
 	 * @return Returns the graph.
 	 */
@@ -136,8 +134,7 @@ public class Add extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * The named graph to which to add. If null, the default graph should be
-	 * used.
+	 * The named graph to which to add. If null, the default graph should be used.
 	 * 
 	 * @return Returns the destinationGraph.
 	 */

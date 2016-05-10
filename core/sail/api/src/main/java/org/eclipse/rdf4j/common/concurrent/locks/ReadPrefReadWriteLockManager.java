@@ -8,10 +8,9 @@
 
 package org.eclipse.rdf4j.common.concurrent.locks;
 
-
 /**
- * A read/write lock manager with reader preference. This lock manager block any
- * requests for write locks until all read locks have been released.
+ * A read/write lock manager with reader preference. This lock manager block any requests for write locks
+ * until all read locks have been released.
  * 
  * @author Arjohn Kampman
  * @author James Leigh
@@ -34,13 +33,11 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	}
 
 	/**
-	 * Creates a new MultiReadSingleWriteLockManager, optionally with lock
-	 * tracking enabled.
+	 * Creates a new MultiReadSingleWriteLockManager, optionally with lock tracking enabled.
 	 * 
 	 * @param trackLocks
-	 *        Controls whether the lock manager will keep track of active locks.
-	 *        Enabling lock tracking will add some overhead, but can be very
-	 *        useful for debugging.
+	 *        Controls whether the lock manager will keep track of active locks. Enabling lock tracking will
+	 *        add some overhead, but can be very useful for debugging.
 	 */
 	public ReadPrefReadWriteLockManager(boolean trackLocks) {
 		super(trackLocks);
@@ -51,8 +48,8 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	 */
 
 	/**
-	 * Gets a read lock, if available. This method will return <tt>null</tt> if
-	 * the read lock is not immediately available.
+	 * Gets a read lock, if available. This method will return <tt>null</tt> if the read lock is not
+	 * immediately available.
 	 */
 	public Lock tryReadLock() {
 		if (isWriterActive()) {
@@ -62,14 +59,14 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 			if (isWriterActive()) {
 				return null;
 			}
-	
+
 			return createReadLock();
 		}
 	}
 
 	/**
-	 * Gets a read lock. This method blocks when a write lock is in use or has
-	 * been requested until the write lock is released.
+	 * Gets a read lock. This method blocks when a write lock is in use or has been requested until the write
+	 * lock is released.
 	 */
 	public synchronized Lock getReadLock()
 		throws InterruptedException
@@ -83,8 +80,8 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	}
 
 	/**
-	 * Gets an exclusive write lock, if available. This method will return
-	 * <tt>null</tt> if the write lock is not immediately available.
+	 * Gets an exclusive write lock, if available. This method will return <tt>null</tt> if the write lock is
+	 * not immediately available.
 	 */
 	public Lock tryWriteLock() {
 		if (isWriterActive() || isReaderActive())
@@ -93,16 +90,15 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 			if (isWriterActive() || isReaderActive()) {
 				return null;
 			}
-	
+
 			return createWriteLock();
 		}
 	}
 
 	/**
-	 * Gets an exclusive write lock. This method blocks when the write lock is in
-	 * use or has already been requested until the write lock is released. This
-	 * method also block when read locks are active until all of them are
-	 * released.
+	 * Gets an exclusive write lock. This method blocks when the write lock is in use or has already been
+	 * requested until the write lock is released. This method also block when read locks are active until all
+	 * of them are released.
 	 */
 	public Lock getWriteLock()
 		throws InterruptedException

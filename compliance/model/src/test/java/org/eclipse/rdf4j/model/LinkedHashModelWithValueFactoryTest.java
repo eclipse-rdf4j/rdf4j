@@ -14,15 +14,16 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import junit.framework.Test;
 
 /**
- * ValueFactory is not serializable. This test ensures that the
- * LinkedHashModel's getValueFactory() does not try to serialize a ValueFactory
- * with it.
+ * ValueFactory is not serializable. This test ensures that the LinkedHashModel's getValueFactory() does not
+ * try to serialize a ValueFactory with it.
  * 
  * @author James Leigh
  */
 public class LinkedHashModelWithValueFactoryTest extends ModelTest {
 
-	public static Test suite() throws Exception {
+	public static Test suite()
+		throws Exception
+	{
 		return ModelTest.suite(LinkedHashModelWithValueFactoryTest.class);
 	}
 

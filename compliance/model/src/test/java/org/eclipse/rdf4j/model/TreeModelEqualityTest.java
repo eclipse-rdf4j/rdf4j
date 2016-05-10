@@ -15,9 +15,9 @@ import org.eclipse.rdf4j.model.impl.TreeModel;
  * @author Arjohn Kampman
  */
 public class TreeModelEqualityTest extends ModelEqualityTest {
+
 	@Override
-	protected Model createEmptyModel()
-	{
+	protected Model createEmptyModel() {
 		return new TreeModel();
 	}
 }

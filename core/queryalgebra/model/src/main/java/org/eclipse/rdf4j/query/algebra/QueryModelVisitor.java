@@ -8,21 +8,17 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * An interface for query model visitors, implementing the Visitor pattern. Core
- * query model nodes will call their type-specific method when
- * {@link QueryModelNode#visit(QueryModelVisitor)} is called. The method
- * {@link #meetOther(QueryModelNode)} is provided as a hook for foreign query
- * model nodes.
+ * An interface for query model visitors, implementing the Visitor pattern. Core query model nodes will call
+ * their type-specific method when {@link QueryModelNode#visit(QueryModelVisitor)} is called. The method
+ * {@link #meetOther(QueryModelNode)} is provided as a hook for foreign query model nodes.
  */
 public interface QueryModelVisitor<X extends Exception> {
 
 	public void meet(QueryRoot node)
 		throws X;
 
-
 	public void meet(Add add)
-			throws X;
-
+		throws X;
 
 	public void meet(And node)
 		throws X;
@@ -38,12 +34,12 @@ public interface QueryModelVisitor<X extends Exception> {
 
 	public void meet(BNodeGenerator node)
 		throws X;
-	
+
 	public void meet(Bound node)
 		throws X;
 
 	public void meet(Clear clear)
-			throws X;
+		throws X;
 
 	public void meet(Coalesce node)
 		throws X;
@@ -58,22 +54,22 @@ public interface QueryModelVisitor<X extends Exception> {
 		throws X;
 
 	public void meet(DescribeOperator node)
-			throws X;
+		throws X;
 
 	public void meet(Copy copy)
-			throws X;
+		throws X;
 
 	public void meet(Count node)
 		throws X;
 
 	public void meet(Create create)
-			throws X;
+		throws X;
 
 	public void meet(Datatype node)
 		throws X;
 
 	public void meet(DeleteData deleteData)
-			throws X;
+		throws X;
 
 	public void meet(Difference node)
 		throws X;
@@ -115,7 +111,7 @@ public interface QueryModelVisitor<X extends Exception> {
 		throws X;
 
 	public void meet(InsertData insertData)
-			throws X;
+		throws X;
 
 	public void meet(Intersection node)
 		throws X;
@@ -157,7 +153,7 @@ public interface QueryModelVisitor<X extends Exception> {
 		throws X;
 
 	public void meet(Load load)
-			throws X;
+		throws X;
 
 	public void meet(LocalName node)
 		throws X;
@@ -172,10 +168,10 @@ public interface QueryModelVisitor<X extends Exception> {
 		throws X;
 
 	public void meet(Modify modify)
-			throws X;
+		throws X;
 
 	public void meet(Move move)
-			throws X;
+		throws X;
 
 	public void meet(MultiProjection node)
 		throws X;
@@ -197,7 +193,7 @@ public interface QueryModelVisitor<X extends Exception> {
 
 	public void meet(Projection node)
 		throws X;
-	
+
 	public void meet(ProjectionElem node)
 		throws X;
 
@@ -243,7 +239,7 @@ public interface QueryModelVisitor<X extends Exception> {
 	/**
 	 */
 	public void meet(ListMemberOperator node)
-			throws X;
+		throws X;
 
 	public void meet(Var node)
 		throws X;

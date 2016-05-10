@@ -25,8 +25,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
- * A query optimizer that prunes query model trees by removing superfluous parts
- * and/or by reducing complex parts with simpler parts.
+ * A query optimizer that prunes query model trees by removing superfluous parts and/or by reducing complex
+ * parts with simpler parts.
  * 
  * @author Arjohn Kampman
  * @deprecated Replaced by {@link QueryModelNormalizer}.
@@ -38,8 +38,7 @@ public class QueryModelPruner implements QueryOptimizer {
 	}
 
 	/**
-	 * Applies generally applicable optimizations: path expressions are sorted
-	 * from more to less specific.
+	 * Applies generally applicable optimizations: path expressions are sorted from more to less specific.
 	 * 
 	 * @param tupleExpr
 	 */
@@ -87,7 +86,8 @@ public class QueryModelPruner implements QueryOptimizer {
 			else if (condition instanceof ValueConstant) {
 				boolean conditionValue;
 				try {
-					conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(((ValueConstant)condition).getValue());
+					conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(
+							((ValueConstant)condition).getValue());
 				}
 				catch (ValueExprEvaluationException e) {
 					conditionValue = false;

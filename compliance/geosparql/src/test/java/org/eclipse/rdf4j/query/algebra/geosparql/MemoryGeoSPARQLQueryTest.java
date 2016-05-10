@@ -27,8 +27,8 @@ public class MemoryGeoSPARQLQueryTest extends SPARQLQueryTest {
 			public SPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
 					String resultFileURL, Dataset dataSet, boolean laxCardinality)
 			{
-				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality,
-						false);
+				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
+						laxCardinality, false);
 			}
 
 			@Override

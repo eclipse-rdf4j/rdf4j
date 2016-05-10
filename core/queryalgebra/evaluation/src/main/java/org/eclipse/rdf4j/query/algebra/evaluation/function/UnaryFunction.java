@@ -18,12 +18,13 @@ public abstract class UnaryFunction implements Function {
 		throws ValueExprEvaluationException
 	{
 		if (args.length != 1) {
-			throw new ValueExprEvaluationException(String.format("%s requires 1 argument, got %d", getURI(), args.length));
+			throw new ValueExprEvaluationException(
+					String.format("%s requires 1 argument, got %d", getURI(), args.length));
 		}
 
 		return evaluate(valueFactory, args[0]);
 	}
 
 	protected abstract Value evaluate(ValueFactory valueFactory, Value arg)
-			throws ValueExprEvaluationException;
+		throws ValueExprEvaluationException;
 }

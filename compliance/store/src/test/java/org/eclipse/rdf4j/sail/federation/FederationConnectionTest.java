@@ -23,7 +23,7 @@ import org.junit.runners.Parameterized.Parameters;
 @RunWith(Parameterized.class)
 public class FederationConnectionTest extends RepositoryConnectionTest {
 
-	@Parameters(name="{0}")
+	@Parameters(name = "{0}")
 	public static final IsolationLevel[] parametersNONE() {
 		// isolation is not supported
 		return new IsolationLevel[] { IsolationLevels.NONE };

@@ -40,17 +40,16 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 
 /**
- * Delegates all calls to the delegate RepositoryConnection. Conditionally
- * processes add/remove/read to common base method to make them easier to
- * override.
+ * Delegates all calls to the delegate RepositoryConnection. Conditionally processes add/remove/read to common
+ * base method to make them easier to override.
  * 
  * @author James Leigh
  * @see #isDelegatingAdd()
  * @see #isDelegatingRemove()
  * @see #isDelegatingRead()
  */
-public class RepositoryConnectionWrapper extends AbstractRepositoryConnection implements
-		DelegatingRepositoryConnection
+public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
+		implements DelegatingRepositoryConnection
 {
 
 	private volatile RepositoryConnection delegate;
@@ -87,8 +86,8 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection im
 	 * @see #add(Reader, String, RDFFormat, Resource...)
 	 * @see #add(Resource, IRI, Value, Resource...)
 	 * @see #add(URL, String, RDFFormat, Resource...)
-	 * @return <code>true</code> to delegate add methods, <code>false</code> to
-	 *         call {@link #addWithoutCommit(Resource, IRI, Value, Resource[])}
+	 * @return <code>true</code> to delegate add methods, <code>false</code> to call
+	 *         {@link #addWithoutCommit(Resource, IRI, Value, Resource[])}
 	 * @throws RepositoryException
 	 */
 	protected boolean isDelegatingAdd()
@@ -101,13 +100,11 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection im
 	 * If false then the following has/export/isEmpty methods will call
 	 * {@link #getStatements(Resource, IRI, Value, boolean, Resource[])}.
 	 * 
-	 * @see #exportStatements(Resource, IRI, Value, boolean, RDFHandler,
-	 *      Resource...)
+	 * @see #exportStatements(Resource, IRI, Value, boolean, RDFHandler, Resource...)
 	 * @see #hasStatement(Statement, boolean, Resource...)
 	 * @see #hasStatement(Resource, IRI, Value, boolean, Resource...)
 	 * @see #isEmpty()
-	 * @return <code>true</code> to delegate read methods, <code>false</code> to
-	 *         call
+	 * @return <code>true</code> to delegate read methods, <code>false</code> to call
 	 *         {@link #getStatements(Resource, IRI, Value, boolean, Resource[])}
 	 * @throws RepositoryException
 	 */
@@ -126,8 +123,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection im
 	 * @see #remove(Iteration, Resource...)
 	 * @see #remove(Statement, Resource...)
 	 * @see #remove(Resource, IRI, Value, Resource...)
-	 * @return <code>true</code> to delegate remove methods, <code>false</code>
-	 *         to call
+	 * @return <code>true</code> to delegate remove methods, <code>false</code> to call
 	 *         {@link #removeWithoutCommit(Resource, IRI, Value, Resource...)}
 	 * @throws RepositoryException
 	 */
@@ -513,8 +509,8 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection im
 	}
 
 	/**
-	 * Exports all statements contained in the supplied statement iterator and
-	 * all relevant namespace information to the supplied RDFHandler.
+	 * Exports all statements contained in the supplied statement iterator and all relevant namespace
+	 * information to the supplied RDFHandler.
 	 */
 	protected void exportStatements(RepositoryResult<Statement> stIter, RDFHandler handler)
 		throws RepositoryException, RDFHandlerException

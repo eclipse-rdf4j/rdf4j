@@ -24,8 +24,8 @@ public interface Binding extends Serializable {
 	public String getName();
 
 	/**
-	 * Gets the value of the binding. The returned value is never equal to
-	 * <tt>null</tt>, such a "binding" is considered to be unbound.
+	 * Gets the value of the binding. The returned value is never equal to <tt>null</tt>, such a "binding" is
+	 * considered to be unbound.
 	 * 
 	 * @return The value of the binding, never <tt>null</tt>.
 	 */
@@ -36,19 +36,19 @@ public interface Binding extends Serializable {
 	 * 
 	 * @param o
 	 *        The object to compare this binding to.
-	 * @return <tt>true</tt> if the other object is an instance of
-	 *         {@link Binding} and both their names and values are equal,
-	 *         <tt>false</tt> otherwise.
+	 * @return <tt>true</tt> if the other object is an instance of {@link Binding} and both their names and
+	 *         values are equal, <tt>false</tt> otherwise.
 	 */
 	public boolean equals(Object o);
 
 	/**
-	 * The hash code of a binding is defined as the bit-wise XOR of the hash
-	 * codes of its name and value:
+	 * The hash code of a binding is defined as the bit-wise XOR of the hash codes of its name and value:
 	 * 
 	 * <pre>
 	 * name.hashCode() &circ; value.hashCode()
-	 * </pre>.
+	 * </pre>
+	 * 
+	 * .
 	 * 
 	 * @return A hash code for the binding.
 	 */

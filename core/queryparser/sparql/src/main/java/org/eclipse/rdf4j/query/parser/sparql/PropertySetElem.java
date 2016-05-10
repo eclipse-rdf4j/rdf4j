@@ -9,9 +9,7 @@ package org.eclipse.rdf4j.query.parser.sparql;
 
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 
-
 /**
- *
  * @author Jeen
  */
 public class PropertySetElem {
@@ -19,9 +17,10 @@ public class PropertySetElem {
 	private boolean inverse;
 
 	private ValueConstant predicate;
-	
+
 	/**
-	 * @param inverse The inverse to set.
+	 * @param inverse
+	 *        The inverse to set.
 	 */
 	public void setInverse(boolean inverse) {
 		this.inverse = inverse;
@@ -35,7 +34,8 @@ public class PropertySetElem {
 	}
 
 	/**
-	 * @param predicate The predicate to set.
+	 * @param predicate
+	 *        The predicate to set.
 	 */
 	public void setPredicate(ValueConstant predicate) {
 		this.predicate = predicate;

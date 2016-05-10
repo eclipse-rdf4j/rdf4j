@@ -11,8 +11,7 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 
 /**
- * A utility class to help converting Sesame Models to and from RDF/JSON using
- * Jackson.
+ * A utility class to help converting Sesame Models to and from RDF/JSON using Jackson.
  * 
  * @author Peter Ansell
  */

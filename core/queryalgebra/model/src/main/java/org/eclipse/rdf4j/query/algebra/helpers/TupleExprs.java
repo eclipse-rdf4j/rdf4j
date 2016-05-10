@@ -23,19 +23,19 @@ import org.eclipse.rdf4j.query.algebra.Var;
 public class TupleExprs {
 
 	/**
-	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection}.
-	 * If the supplied TupleExpr is a {@link Join} or contains a {@link Join},
-	 * projections inside that Join's arguments will not be taken into
-	 * account.
+	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection}. If the supplied TupleExpr is
+	 * a {@link Join} or contains a {@link Join}, projections inside that Join's arguments will not be taken
+	 * into account.
 	 * 
 	 * @param t
 	 *        a tuple expression.
-	 * @return <code>true</code> if the TupleExpr contains a projection (outside
-	 *         of a Join), <code>false</code> otherwise.
+	 * @return <code>true</code> if the TupleExpr contains a projection (outside of a Join),
+	 *         <code>false</code> otherwise.
 	 */
 	public static boolean containsProjection(TupleExpr t) {
 		@SuppressWarnings("serial")
 		class VisitException extends Exception {
+
 			VisitException() {
 				super(null, null, false, false);
 			}
@@ -71,8 +71,8 @@ public class TupleExprs {
 	}
 
 	/**
-	 * Creates an (anonymous) Var representing a constant value. The variable
-	 * name will be derived from the actual value to guarantee uniqueness.
+	 * Creates an (anonymous) Var representing a constant value. The variable name will be derived from the
+	 * actual value to guarantee uniqueness.
 	 * 
 	 * @param value
 	 * @return an (anonymous) Var representing a constant value.

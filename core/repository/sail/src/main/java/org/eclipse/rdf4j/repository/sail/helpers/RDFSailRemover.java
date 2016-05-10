@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
 
 /**
- * An Sail-specific RDFHandler that removes RDF data from a repository. To be
- * used in combination with SPARQL DELETE DATA only.
+ * An Sail-specific RDFHandler that removes RDF data from a repository. To be used in combination with SPARQL
+ * DELETE DATA only.
  * 
  * @author jeen
  */
@@ -43,9 +43,8 @@ class RDFSailRemover extends AbstractRDFHandler {
 	private final UpdateContext uc;
 
 	/**
-	 * The contexts to remove the statements from. If this variable is a
-	 * non-empty array, statements will be removed from the corresponding
-	 * contexts.
+	 * The contexts to remove the statements from. If this variable is a non-empty array, statements will be
+	 * removed from the corresponding contexts.
 	 */
 	private Resource[] contexts = new Resource[0];
 
@@ -71,12 +70,11 @@ class RDFSailRemover extends AbstractRDFHandler {
 	 *---------*/
 
 	/**
-	 * Enforces the supplied contexts upon all statements that are reported to
-	 * this RDFSailRemover.
+	 * Enforces the supplied contexts upon all statements that are reported to this RDFSailRemover.
 	 * 
 	 * @param contexts
-	 *        the contexts to use. Use an empty array (not null!) to indicate no
-	 *        context(s) should be enforced.
+	 *        the contexts to use. Use an empty array (not null!) to indicate no context(s) should be
+	 *        enforced.
 	 */
 	public void enforceContext(Resource... contexts) {
 		OpenRDFUtil.verifyContextNotNull(contexts);
@@ -84,23 +82,19 @@ class RDFSailRemover extends AbstractRDFHandler {
 	}
 
 	/**
-	 * Checks whether this RDFRemover enforces its contexts upon all statements
-	 * that are reported to it.
+	 * Checks whether this RDFRemover enforces its contexts upon all statements that are reported to it.
 	 * 
-	 * @return <tt>true</tt> if it enforces its contexts, <tt>false</tt>
-	 *         otherwise.
+	 * @return <tt>true</tt> if it enforces its contexts, <tt>false</tt> otherwise.
 	 */
 	public boolean enforcesContext() {
 		return contexts.length != 0;
 	}
 
 	/**
-	 * Gets the contexts that this RDFRemover enforces upon all statements that
-	 * are reported to it (in case <tt>enforcesContext()</tt> returns
-	 * <tt>true</tt>).
+	 * Gets the contexts that this RDFRemover enforces upon all statements that are reported to it (in case
+	 * <tt>enforcesContext()</tt> returns <tt>true</tt>).
 	 * 
-	 * @return A Resource[] identifying the contexts, or <tt>null</tt> if no
-	 *         contexts is enforced.
+	 * @return A Resource[] identifying the contexts, or <tt>null</tt> if no contexts is enforced.
 	 */
 	public Resource[] getContexts() {
 		return contexts;

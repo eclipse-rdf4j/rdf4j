@@ -39,7 +39,7 @@ public class ProjectionIterator
 
 	public ProjectionIterator(Projection projection,
 			CloseableIteration<BindingSet, QueryEvaluationException> iter, BindingSet parentBindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		super(iter);
 		this.projection = projection;

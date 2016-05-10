@@ -21,8 +21,7 @@ import org.eclipse.rdf4j.sail.config.SailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailRegistry;
 
 /**
- * A {@link RepositoryFactory} that creates {@link SailRepository}s based on RDF
- * configuration data.
+ * A {@link RepositoryFactory} that creates {@link SailRepository}s based on RDF configuration data.
  * 
  * @author Arjohn Kampman
  */
@@ -104,8 +103,8 @@ public class SailRepositoryFactory implements RepositoryFactory {
 			((StackableSail)sail).setBaseSail(delegateSail);
 		}
 		catch (ClassCastException e) {
-			throw new RepositoryConfigException("Delegate configured but " + sail.getClass()
-					+ " is not a StackableSail");
+			throw new RepositoryConfigException(
+					"Delegate configured but " + sail.getClass() + " is not a StackableSail");
 		}
 	}
 }

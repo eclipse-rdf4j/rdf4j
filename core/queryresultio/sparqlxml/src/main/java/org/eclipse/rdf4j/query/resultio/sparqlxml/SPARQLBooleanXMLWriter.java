@@ -17,8 +17,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
 
 /**
  * A {@link BooleanQueryResultWriter} that writes boolean query results in the
- * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML
- * Format</a>.
+ * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML Format</a>.
  */
 public class SPARQLBooleanXMLWriter extends AbstractSPARQLXMLWriter implements BooleanQueryResultWriter {
 

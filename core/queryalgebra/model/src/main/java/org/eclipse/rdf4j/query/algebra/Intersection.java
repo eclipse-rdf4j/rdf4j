@@ -11,8 +11,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * The INTERSECT set operator, which returns the intersection of the result sets
- * of two tuple expressions.
+ * The INTERSECT set operator, which returns the intersection of the result sets of two tuple expressions.
  */
 public class Intersection extends BinaryTupleOperator {
 
@@ -24,8 +23,7 @@ public class Intersection extends BinaryTupleOperator {
 	}
 
 	/**
-	 * Creates a new intersection operator that operates on the two specified
-	 * arguments.
+	 * Creates a new intersection operator that operates on the two specified arguments.
 	 * 
 	 * @param leftArg
 	 *        The left argument of the intersection operator.

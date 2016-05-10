@@ -21,8 +21,8 @@ import org.eclipse.rdf4j.repository.event.RepositoryConnectionListener;
 import org.eclipse.rdf4j.repository.event.RepositoryListener;
 
 /**
- * This notifying decorator allows listeners to register with the repository or
- * connection and be notified when events occur.
+ * This notifying decorator allows listeners to register with the repository or connection and be notified
+ * when events occur.
  * 
  * @author James Leigh
  * @author Herko ter Horst
@@ -73,8 +73,8 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	}
 
 	/**
-	 * Registers a <tt>RepositoryListener</tt> that will receive notifications
-	 * of operations that are performed on this repository.
+	 * Registers a <tt>RepositoryListener</tt> that will receive notifications of operations that are
+	 * performed on this repository.
 	 */
 	public void addRepositoryListener(RepositoryListener listener) {
 		listeners.add(listener);
@@ -90,17 +90,15 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	}
 
 	/**
-	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive
-	 * notifications of operations that are performed on any< connections that
-	 * are created by this repository.
+	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive notifications of operations that
+	 * are performed on any< connections that are created by this repository.
 	 */
 	public void addRepositoryConnectionListener(RepositoryConnectionListener listener) {
 		conListeners.add(listener);
 	}
 
 	/**
-	 * Removes a registered <tt>RepositoryConnectionListener</tt> from this
-	 * repository.
+	 * Removes a registered <tt>RepositoryConnectionListener</tt> from this repository.
 	 */
 	public void removeRepositoryConnectionListener(RepositoryConnectionListener listener) {
 		conListeners.remove(listener);
@@ -111,8 +109,8 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 		throws RepositoryException
 	{
 		RepositoryConnection con = getDelegate().getConnection();
-		NotifyingRepositoryConnection ncon = new NotifyingRepositoryConnectionWrapper(this,
-				con, getDefaultReportDeltas());
+		NotifyingRepositoryConnection ncon = new NotifyingRepositoryConnectionWrapper(this, con,
+				getDefaultReportDeltas());
 
 		if (activated) {
 			for (RepositoryListener listener : listeners) {
@@ -140,8 +138,7 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	}
 
 	@Override
-	public void setDataDir(File dataDir)
-	{
+	public void setDataDir(File dataDir) {
 		super.setDataDir(dataDir);
 
 		if (activated) {

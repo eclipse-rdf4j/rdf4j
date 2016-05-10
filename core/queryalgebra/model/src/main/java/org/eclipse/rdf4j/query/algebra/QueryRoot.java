@@ -8,10 +8,9 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * A semantics-less query model node that is used as the root of query model
- * trees. This is a placeholder that facilitates modifications to query model
- * trees, including the replacement of the actual (semantically relevant) root
- * node with another root node.
+ * A semantics-less query model node that is used as the root of query model trees. This is a placeholder that
+ * facilitates modifications to query model trees, including the replacement of the actual (semantically
+ * relevant) root node with another root node.
  * 
  * @author Arjohn Kampman
  */

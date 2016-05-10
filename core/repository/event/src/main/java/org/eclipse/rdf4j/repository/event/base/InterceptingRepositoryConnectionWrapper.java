@@ -27,16 +27,17 @@ import org.eclipse.rdf4j.repository.event.InterceptingRepositoryConnection;
 import org.eclipse.rdf4j.repository.event.RepositoryConnectionInterceptor;
 
 /**
- * Wrapper that notifies interceptors of events on RepositoryConnections before
- * they happen. Any interceptor can block the operation by returning true from
- * the relevant notification method. To do so will also cause the notification
- * process to stop, i.e. no other interceptors will be notified. The order in
- * which interceptors are notified is unspecified.
+ * Wrapper that notifies interceptors of events on RepositoryConnections before they happen. Any interceptor
+ * can block the operation by returning true from the relevant notification method. To do so will also cause
+ * the notification process to stop, i.e. no other interceptors will be notified. The order in which
+ * interceptors are notified is unspecified.
  * 
  * @author Herko ter Horst
  * @see InterceptingRepositoryWrapper
  */
-public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectionWrapper implements InterceptingRepositoryConnection {
+public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectionWrapper
+		implements InterceptingRepositoryConnection
+{
 
 	/*-----------*
 	 * Variables *
@@ -59,8 +60,8 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 	 *---------*/
 
 	/**
-	 * Registers a <tt>RepositoryConnectionInterceptor</tt> that will receive
-	 * notifications of operations that are performed on this connection.
+	 * Registers a <tt>RepositoryConnectionInterceptor</tt> that will receive notifications of operations that
+	 * are performed on this connection.
 	 */
 	public void addRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor) {
 		interceptors.add(interceptor);
@@ -68,8 +69,7 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 	}
 
 	/**
-	 * Removes a registered <tt>RepositoryConnectionInterceptor</tt> from this
-	 * connection.
+	 * Removes a registered <tt>RepositoryConnectionInterceptor</tt> from this connection.
 	 */
 	public void removeRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor) {
 		interceptors.remove(interceptor);
@@ -77,14 +77,12 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 	}
 
 	@Override
-	protected boolean isDelegatingAdd()
-	{
+	protected boolean isDelegatingAdd() {
 		return !activated;
 	}
 
 	@Override
-	protected boolean isDelegatingRemove()
-	{
+	protected boolean isDelegatingRemove() {
 		return !activated;
 	}
 
@@ -123,7 +121,7 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 			getDelegate().clear(contexts);
 		}
 	}
-	
+
 	@Override
 	public void begin()
 		throws RepositoryException

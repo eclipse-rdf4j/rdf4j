@@ -22,8 +22,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 /**
- * Some general tests for {@link NogifyingSailConnectionWrapper} expected
- * behaviour.
+ * Some general tests for {@link NogifyingSailConnectionWrapper} expected behaviour.
  * 
  * @author Dale Visser
  */

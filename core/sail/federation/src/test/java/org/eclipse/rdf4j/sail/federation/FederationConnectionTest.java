@@ -101,7 +101,7 @@ public class FederationConnectionTest {
 
 	private static void assertHasStatement(String message, Resource subject, URI predicate, Value object,
 			SailConnection connection)
-				throws SailException
+		throws SailException
 	{
 		CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
 				(IRI)predicate, object, true);

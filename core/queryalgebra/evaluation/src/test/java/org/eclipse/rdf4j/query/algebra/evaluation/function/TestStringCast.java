@@ -30,7 +30,7 @@ public class TestStringCast {
 	private StringCast stringCast;
 
 	private ValueFactory f = SimpleValueFactory.getInstance();
-	
+
 	/**
 	 * @throws java.lang.Exception
 	 */
@@ -49,8 +49,8 @@ public class TestStringCast {
 		throws Exception
 	{
 	}
-	
-	@Test 
+
+	@Test
 	public void testCastPlainLiteral() {
 		Literal plainLit = f.createLiteral("foo");
 		try {
@@ -62,8 +62,8 @@ public class TestStringCast {
 			fail(e.getMessage());
 		}
 	}
-	
-	@Test 
+
+	@Test
 	public void testCastLangtagLiteral() {
 		Literal langLit = f.createLiteral("foo", "en");
 		try {
@@ -74,8 +74,8 @@ public class TestStringCast {
 			// do nothing, expected
 		}
 	}
-	
-	@Test 
+
+	@Test
 	public void testCastIntegerLiteral() {
 		Literal intLit = f.createLiteral(10);
 		try {
@@ -89,8 +89,8 @@ public class TestStringCast {
 			fail(e.getMessage());
 		}
 	}
-	
-	@Test 
+
+	@Test
 	public void testCastDateTimeLiteral() {
 		String lexVal = "2000-01-01T00:00:00";
 		Literal dtLit = f.createLiteral(XMLDatatypeUtil.parseCalendar(lexVal));
@@ -105,8 +105,8 @@ public class TestStringCast {
 			fail(e.getMessage());
 		}
 	}
-	
-	@Test 
+
+	@Test
 	public void testCastUnknownDatatypedLiteral() {
 		String lexVal = "foobar";
 		Literal dtLit = f.createLiteral(lexVal, f.createIRI("foo:unknownDt"));

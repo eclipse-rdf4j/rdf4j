@@ -12,7 +12,6 @@ import java.util.Properties;
 
 import org.slf4j.LoggerFactory;
 
-
 /**
  * Maven-related utility methods.
  * 
@@ -27,8 +26,7 @@ public class MavenUtil {
 	 *        The artifact's group ID.
 	 * @param artifactId
 	 *        The artifact's ID.
-	 * @return The parsed pom properties, or <tt>null</tt> if the resource could
-	 *         not be found.
+	 * @return The parsed pom properties, or <tt>null</tt> if the resource could not be found.
 	 */
 	public static Properties loadPomProperties(String groupId, String artifactId)
 		throws IOException
@@ -38,8 +36,7 @@ public class MavenUtil {
 	}
 
 	/**
-	 * Loads the version number from the <tt>pom.properties</tt> file for the
-	 * specified artifact.
+	 * Loads the version number from the <tt>pom.properties</tt> file for the specified artifact.
 	 * 
 	 * @param groupId
 	 *        The artifact's group ID.
@@ -60,7 +57,7 @@ public class MavenUtil {
 		catch (IOException e) {
 			LoggerFactory.getLogger(MavenUtil.class).warn("Unable to read version info", e);
 		}
-	
+
 		if (version == null) {
 			version = defaultVersion;
 		}

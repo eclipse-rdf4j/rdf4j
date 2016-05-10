@@ -116,7 +116,8 @@ public abstract class InferencingTest {
 			File dumpFile = dumpStatements(name,
 					RepositoryUtil.difference(expectedStatements, entailedStatements));
 
-			fail("Incomplete entailment, difference between expected and entailed dumped to file " + dumpFile);
+			fail("Incomplete entailment, difference between expected and entailed dumped to file "
+					+ dumpFile);
 		}
 		else if (!isPositiveTest && outputEntailed) {
 			File dumpFile = dumpStatements(name, expectedStatements);
@@ -286,8 +287,7 @@ public abstract class InferencingTest {
 	}
 
 	/**
-	 * Gets an instance of the Sail that should be tested. The returned
-	 * repository must not be initialized.
+	 * Gets an instance of the Sail that should be tested. The returned repository must not be initialized.
 	 * 
 	 * @return an uninitialized Sail.
 	 */

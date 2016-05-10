@@ -12,8 +12,7 @@ import java.util.Iterator;
 public class LookAheadIterationTest extends CloseableIterationTest {
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration()
-	{
+	protected CloseableIteration<String, Exception> createTestIteration() {
 		final Iterator<String> iter = stringList1.iterator();
 
 		return new LookAheadIteration<String, Exception>() {
@@ -34,8 +33,7 @@ public class LookAheadIterationTest extends CloseableIterationTest {
 	}
 
 	@Override
-	protected int getTestIterationSize()
-	{
+	protected int getTestIterationSize() {
 		return stringList1.size();
 	}
 }

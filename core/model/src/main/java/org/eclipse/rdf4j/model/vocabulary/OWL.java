@@ -16,8 +16,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 /**
  * Constants for OWL primitives and for the OWL namespace.
  * 
- * @see <a href="http://www.w3.org/TR/owl-ref/">OWL Web Ontology Language
- *      Reference</a>
+ * @see <a href="http://www.w3.org/TR/owl-ref/">OWL Web Ontology Language Reference</a>
  */
 public class OWL {
 

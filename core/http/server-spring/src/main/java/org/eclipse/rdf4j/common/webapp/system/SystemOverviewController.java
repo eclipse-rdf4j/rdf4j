@@ -37,8 +37,9 @@ public class SystemOverviewController implements Controller {
 		this.view = view;
 	}
 
-	public ModelAndView handleRequest(HttpServletRequest request,
-			HttpServletResponse response) throws Exception {
+	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response)
+		throws Exception
+	{
 		ModelAndView result = new ModelAndView();
 		result.setViewName(view);
 
@@ -60,6 +61,7 @@ public class SystemOverviewController implements Controller {
 	}
 
 	public static class ServerInfo {
+
 		private String os;
 
 		private String java;
@@ -67,11 +69,9 @@ public class SystemOverviewController implements Controller {
 		private String user;
 
 		public ServerInfo() {
-			os = System.getProperty("os.name") + " "
-					+ System.getProperty("os.version") + " ("
+			os = System.getProperty("os.name") + " " + System.getProperty("os.version") + " ("
 					+ System.getProperty("os.arch") + ")";
-			java = System.getProperty("java.vendor") + " "
-					+ System.getProperty("java.vm.name") + " "
+			java = System.getProperty("java.vendor") + " " + System.getProperty("java.vm.name") + " "
 					+ System.getProperty("java.version");
 			user = System.getProperty("user.name");
 		}
@@ -92,7 +92,9 @@ public class SystemOverviewController implements Controller {
 	public static class MemoryInfo {
 
 		private int maximum;
+
 		private int used;
+
 		private float percentageInUse;
 
 		public MemoryInfo() {
@@ -101,11 +103,11 @@ public class SystemOverviewController implements Controller {
 			long maxMemory = runtime.maxMemory();
 
 			// Memory usage (percentage)
-			percentageInUse = (float) ((float) usedMemory / (float) maxMemory);
+			percentageInUse = (float)((float)usedMemory / (float)maxMemory);
 
 			// Memory usage in MB
-			used = (int) (usedMemory / 1024 / 1024);
-			maximum = (int) (maxMemory / 1024 / 1024);
+			used = (int)(usedMemory / 1024 / 1024);
+			maximum = (int)(maxMemory / 1024 / 1024);
 		}
 
 		public int getMaximum() {

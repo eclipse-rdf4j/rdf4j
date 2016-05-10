@@ -73,7 +73,8 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		if (node != null && node != this) {
 			if (node.getParent() == this) {
 				result = true;
-			} else if (node.getParent() != null) {
+			}
+			else if (node.getParent() != null) {
 				result = isParent(node.getParent());
 			}
 		}
@@ -233,15 +234,14 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 
 	public boolean equals(Object other) {
 		boolean result = this == other;
-		if (!result && other instanceof NavigationNode
-				&& getClass().equals(other.getClass())) {
-			NavigationNode otherNode = (NavigationNode) other;
+		if (!result && other instanceof NavigationNode && getClass().equals(other.getClass())) {
+			NavigationNode otherNode = (NavigationNode)other;
 			result = getId().equals(otherNode.getId());
-			if (result
-					&& !(getParent() == null && otherNode.getParent() == null)) {
+			if (result && !(getParent() == null && otherNode.getParent() == null)) {
 				if (getParent() != null && otherNode.getParent() != null) {
 					result = getParent().equals(otherNode.getParent());
-				} else {
+				}
+				else {
 					result = false;
 				}
 			}

@@ -70,7 +70,8 @@ public class Concat implements Function {
 				concatBuilder.append(lit.getLabel());
 			}
 			else {
-				throw new ValueExprEvaluationException("unexpected argument type for concat operator: " + arg);
+				throw new ValueExprEvaluationException(
+						"unexpected argument type for concat operator: " + arg);
 			}
 		}
 

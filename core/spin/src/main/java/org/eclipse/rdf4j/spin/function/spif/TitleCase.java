@@ -19,7 +19,7 @@ public class TitleCase extends AbstractStringReplacer {
 	protected String transform(String s) {
 		StringBuilder buf = new StringBuilder(s.length());
 		char prev = '\0';
-		for (int i=0; i<s.length(); i++) {
+		for (int i = 0; i < s.length(); i++) {
 			char ch = s.charAt(i);
 			if (i == 0 || prev == ' ') {
 				buf.append(Character.toUpperCase(ch));

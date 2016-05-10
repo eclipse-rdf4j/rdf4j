@@ -10,16 +10,15 @@ package org.eclipse.rdf4j.rio.helpers;
 import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
- * Parser Settings that are specific to {@link org.eclipse.rdf4j.rio.RDFFormat#TURTLE}
- * parsers.
+ * Parser Settings that are specific to {@link org.eclipse.rdf4j.rio.RDFFormat#TURTLE} parsers.
  * 
  * @author Peter Ansell
  */
 public class TurtleParserSettings {
 
 	/**
-	 * Allows the Turtle parser to recognise <tt>@BASE</tt> and <tt>@PREFIX</tt>
-	 * in a similar way to the SPARQL case insensitive directives. 
+	 * Allows the Turtle parser to recognise <tt>@BASE</tt> and <tt>@PREFIX</tt> in a similar way to the
+	 * SPARQL case insensitive directives.
 	 * <p>
 	 * Defaults to false.
 	 */

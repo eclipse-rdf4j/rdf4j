@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.spin.SpinParser;
 
-
 public class SelectTupleFunction extends AbstractSpinFunction implements TupleFunction {
 
 	private SpinParser parser;
@@ -55,31 +54,33 @@ public class SelectTupleFunction extends AbstractSpinFunction implements TupleFu
 	}
 
 	@Override
-	public CloseableIteration<? extends List<? extends Value>,QueryEvaluationException> evaluate(ValueFactory valueFactory, Value... args)
+	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
+			ValueFactory valueFactory, Value... args)
 		throws QueryEvaluationException
 	{
 		QueryPreparer qp = getCurrentQueryPreparer();
-		if(args.length == 0 || !(args[0] instanceof Resource)) {
+		if (args.length == 0 || !(args[0] instanceof Resource)) {
 			throw new QueryEvaluationException("First argument must be a resource");
 		}
-		if((args.length % 2) == 0) {
+		if ((args.length % 2) == 0) {
 			throw new QueryEvaluationException("Old number of arguments required");
 		}
 		try {
-			ParsedQuery parsedQuery = parser.parseQuery((Resource) args[0], qp.getTripleSource());
-			if(parsedQuery instanceof ParsedTupleQuery) {
-				ParsedTupleQuery tupleQuery = (ParsedTupleQuery) parsedQuery;
+			ParsedQuery parsedQuery = parser.parseQuery((Resource)args[0], qp.getTripleSource());
+			if (parsedQuery instanceof ParsedTupleQuery) {
+				ParsedTupleQuery tupleQuery = (ParsedTupleQuery)parsedQuery;
 				TupleQuery queryOp = qp.prepare(tupleQuery);
 				addBindings(queryOp, args);
 				final TupleQueryResult queryResult = queryOp.evaluate();
 				return new TupleQueryResultIteration(queryResult);
 			}
-			else if(parsedQuery instanceof ParsedBooleanQuery) {
-				ParsedBooleanQuery booleanQuery = (ParsedBooleanQuery) parsedQuery;
+			else if (parsedQuery instanceof ParsedBooleanQuery) {
+				ParsedBooleanQuery booleanQuery = (ParsedBooleanQuery)parsedQuery;
 				BooleanQuery queryOp = qp.prepare(booleanQuery);
 				addBindings(queryOp, args);
 				Value result = BooleanLiteral.valueOf(queryOp.evaluate());
-				return new SingletonIteration<List<Value>,QueryEvaluationException>(Collections.singletonList(result));
+				return new SingletonIteration<List<Value>, QueryEvaluationException>(
+						Collections.singletonList(result));
 			}
 			else {
 				throw new QueryEvaluationException("First argument must be a SELECT or ASK query");
@@ -93,9 +94,8 @@ public class SelectTupleFunction extends AbstractSpinFunction implements TupleFu
 		}
 	}
 
-
-	static class TupleQueryResultIteration implements
-		CloseableIteration<List<Value>, QueryEvaluationException>
+	static class TupleQueryResultIteration
+			implements CloseableIteration<List<Value>, QueryEvaluationException>
 	{
 
 		private final TupleQueryResult queryResult;
@@ -122,7 +122,7 @@ public class SelectTupleFunction extends AbstractSpinFunction implements TupleFu
 		{
 			BindingSet bs = queryResult.next();
 			List<Value> values = new ArrayList<Value>(bindingNames.size());
-			for(String bindingName : bindingNames) {
+			for (String bindingName : bindingNames) {
 				values.add(bs.getValue(bindingName));
 			}
 			return values;

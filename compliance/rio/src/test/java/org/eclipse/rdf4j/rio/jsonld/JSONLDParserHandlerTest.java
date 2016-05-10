@@ -23,8 +23,7 @@ import org.eclipse.rdf4j.rio.jsonld.JSONLDParser;
 import org.eclipse.rdf4j.rio.jsonld.JSONLDWriter;
 
 /**
- * Unit tests for {@link JSONLDParser} related to handling of datatypes and
- * languages.
+ * Unit tests for {@link JSONLDParser} related to handling of datatypes and languages.
  * 
  * @author Peter Ansell
  */
@@ -64,8 +63,7 @@ public class JSONLDParserHandlerTest extends AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Helper method to write the given model to JSON-LD and return an
-	 * InputStream containing the results.
+	 * Helper method to write the given model to JSON-LD and return an InputStream containing the results.
 	 * 
 	 * @param statements
 	 * @return An {@link InputStream} containing the results.

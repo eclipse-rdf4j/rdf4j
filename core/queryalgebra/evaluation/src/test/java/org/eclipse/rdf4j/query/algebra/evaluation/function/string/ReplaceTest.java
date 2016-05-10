@@ -62,7 +62,7 @@ public class ReplaceTest {
 			fail(e.getMessage());
 		}
 	}
-	
+
 	@Test
 	public void testEvaluate2() {
 
@@ -79,7 +79,7 @@ public class ReplaceTest {
 			fail(e.getMessage());
 		}
 	}
-	
+
 	@Test
 	public void testEvaluate3() {
 
@@ -97,7 +97,7 @@ public class ReplaceTest {
 			fail(e.getMessage());
 		}
 	}
-	
+
 	@Test
 	public void testEvaluate4() {
 
@@ -114,7 +114,7 @@ public class ReplaceTest {
 			// do nothing, expected
 		}
 	}
-	
+
 	@Test
 	public void testEvaluate5() {
 
@@ -130,7 +130,7 @@ public class ReplaceTest {
 			fail(e.getMessage());
 		}
 	}
-	
+
 	@Test
 	public void testEvaluate6() {
 
@@ -146,7 +146,7 @@ public class ReplaceTest {
 			fail(e.getMessage());
 		}
 	}
-	
+
 	@Test
 	public void testEvaluate7() {
 

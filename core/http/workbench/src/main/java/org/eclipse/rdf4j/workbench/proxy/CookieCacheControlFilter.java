@@ -24,9 +24,8 @@ import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpServletResponseWrapper;
 
 /**
- * Browsers do not expire cache if Cookies have changed. Even if "Vary: Cookie"
- * header is set. This filter intercepts the Last-Modified and If-Modified-Since
- * headers to include modification of browser cookies.
+ * Browsers do not expire cache if Cookies have changed. Even if "Vary: Cookie" header is set. This filter
+ * intercepts the Last-Modified and If-Modified-Since headers to include modification of browser cookies.
  * 
  * @author James Leigh
  */
@@ -65,8 +64,8 @@ public class CookieCacheControlFilter implements Filter {
 		}
 
 		/**
-		 * This method hides the If-Modified-Since header if the browser's cookies
-		 * have changed since this page was cached.
+		 * This method hides the If-Modified-Since header if the browser's cookies have changed since this
+		 * page was cached.
 		 */
 		@Override
 		public long getDateHeader(String name) {
@@ -106,8 +105,7 @@ public class CookieCacheControlFilter implements Filter {
 		}
 
 		/**
-		 * This method tells the browser to track the last time the cookies
-		 * changed.
+		 * This method tells the browser to track the last time the cookies changed.
 		 */
 		@Override
 		public void addCookie(Cookie c) {
@@ -134,8 +132,7 @@ public class CookieCacheControlFilter implements Filter {
 		}
 
 		/**
-		 * The Last-Modified will include the last time the cookies changed for
-		 * this browser.
+		 * The Last-Modified will include the last time the cookies changed for this browser.
 		 */
 		@Override
 		public void setDateHeader(String name, long date) {

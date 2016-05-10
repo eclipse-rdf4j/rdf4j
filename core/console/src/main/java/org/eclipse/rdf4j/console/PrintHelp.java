@@ -34,9 +34,9 @@ public class PrintHelp implements Command {
 	protected static final String DROP = USAGE
 			+ "drop <repositoryID>   Drops the repository with the specified id\n";
 
-	protected static final String INFO = USAGE 
+	protected static final String INFO = USAGE
 			+ "info                  Shows information about the console\n";
-	
+
 	protected static final String OPEN = USAGE
 			+ "open <repositoryID>   Opens the repository with the specified ID\n";
 
@@ -46,8 +46,7 @@ public class PrintHelp implements Command {
 			+ "show {n, namespaces}     Shows all namespaces\n"
 			+ "show {c, contexts}       Shows all context identifiers\n";
 
-	protected static final String LOAD = USAGE
-			+ "load <file-or-url> [from <base-uri>] [into <context-id>]\n"
+	protected static final String LOAD = USAGE + "load <file-or-url> [from <base-uri>] [into <context-id>]\n"
 			+ "  <file-or-url>   The path or URL identifying the data file\n"
 			+ "  <base-uri>      The base URI to use for resolving relative references, defaults to <file-or-url>\n"
 			+ "  <context-id>    The ID of the context to add the data to, e.g. foo:bar or _:n123\n"
@@ -60,19 +59,17 @@ public class PrintHelp implements Command {
 	protected static final String CLEAR = USAGE + "clear                   Clears the entire repository\n"
 			+ "clear (<uri>|null)...   Clears the specified context(s)\n";
 
-	protected static final String SPARQL = USAGE 
+	protected static final String SPARQL = USAGE
 			+ "sparql <query>                       Evaluates the SPARQL query on the currently open repository.\n"
-			+ "sparql                               Starts multi-line input for large SPARQL queries.\n" 
-			+ "select|construct|ask|describe|prefix|base <rest-of-query>\n" 
-			+ "                                     Evaluates a SPARQL query on the currently open repository.\n"; 
-	     
-	
-	protected static final String SERQL = USAGE 
+			+ "sparql                               Starts multi-line input for large SPARQL queries.\n"
+			+ "select|construct|ask|describe|prefix|base <rest-of-query>\n"
+			+ "                                     Evaluates a SPARQL query on the currently open repository.\n";
+
+	protected static final String SERQL = USAGE
 			+ "serql <query>                 Evaluates the SeRQL query on the currently open repository\n"
-			+ "serql                         Starts multi-line input for large SeRQL queries.\n" ;
-	
-	protected static final String SET = USAGE
-			+ "set                            Shows all parameter values\n"
+			+ "serql                         Starts multi-line input for large SeRQL queries.\n";
+
+	protected static final String SET = USAGE + "set                            Shows all parameter values\n"
 			+ "set width=<number>             Set the width for query result tables\n"
 			+ "set log=<level>                Set the logging level (none, error, warning, info or debug)\n"
 			+ "set showPrefix=<true|false>    Toggles use of prefixed names in query results\n"
@@ -92,7 +89,7 @@ public class PrintHelp implements Command {
 	private final Map<String, String> topics = new HashMap<String, String>();
 
 	private final ConsoleIO consoleIO;
-	
+
 	PrintHelp(ConsoleIO consoleIO) {
 		super();
 		this.consoleIO = consoleIO;
@@ -141,8 +138,10 @@ public class PrintHelp implements Command {
 		consoleIO.writeln("open        Opens a repository to work on, takes a repository ID as argument");
 		consoleIO.writeln("close       Closes the current repository");
 		consoleIO.writeln("show        Displays an overview of various resources");
-		consoleIO.writeln("load        Loads a data file into a repository, takes a file path or URL as argument");
-		consoleIO.writeln("verify      Verifies the syntax of an RDF data file, takes a file path or URL as argument");
+		consoleIO.writeln(
+				"load        Loads a data file into a repository, takes a file path or URL as argument");
+		consoleIO.writeln(
+				"verify      Verifies the syntax of an RDF data file, takes a file path or URL as argument");
 		consoleIO.writeln("clear       Removes data from a repository");
 		consoleIO.writeln("sparql      Evaluate a SPARQL query");
 		consoleIO.writeln("serql       Evaluate a SeRQL query");

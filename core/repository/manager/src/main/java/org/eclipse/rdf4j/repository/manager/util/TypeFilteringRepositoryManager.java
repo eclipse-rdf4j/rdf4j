@@ -152,8 +152,8 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 			delegate.addRepositoryConfig(config);
 		}
 		else {
-			throw new UnsupportedOperationException("Only repositories of type " + type
-					+ " can be added to this manager.");
+			throw new UnsupportedOperationException(
+					"Only repositories of type " + type + " can be added to this manager.");
 		}
 	}
 

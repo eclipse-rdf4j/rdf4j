@@ -26,8 +26,8 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
 
 /**
- * A repository that automatically attempts to load the dataset supplied in a
- * (SPARQL) query (using FROM and FROM NAMED clauses).
+ * A repository that automatically attempts to load the dataset supplied in a (SPARQL) query (using FROM and
+ * FROM NAMED clauses).
  *
  * @author Arjohn Kampman
  * @author Jeen Broekstra
@@ -50,7 +50,8 @@ public class DatasetRepository extends RepositoryWrapper {
 			super.setDelegate(delegate);
 		}
 		else {
-			throw new IllegalArgumentException("delegate must be a SailRepository, is: " + delegate.getClass());
+			throw new IllegalArgumentException(
+					"delegate must be a SailRepository, is: " + delegate.getClass());
 		}
 	}
 
@@ -67,9 +68,8 @@ public class DatasetRepository extends RepositoryWrapper {
 	}
 
 	/**
-	 * Inspects if the dataset at the supplied URL location has been modified
-	 * since the last load into this repository and if so loads it into the
-	 * supplied context.
+	 * Inspects if the dataset at the supplied URL location has been modified since the last load into this
+	 * repository and if so loads it into the supplied context.
 	 * 
 	 * @param url
 	 *        the location of the dataset

@@ -11,9 +11,9 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.NoSuchElementException;
 
 /**
- * An Iteration that limits the amount of elements that it returns from an
- * underlying Iteration to a fixed amount. This class returns the first
- * <tt>limit</tt> elements from the underlying Iteration and drops the rest.
+ * An Iteration that limits the amount of elements that it returns from an underlying Iteration to a fixed
+ * amount. This class returns the first <tt>limit</tt> elements from the underlying Iteration and drops the
+ * rest.
  */
 public class LimitIteration<E, X extends Exception> extends IterationWrapper<E, X> {
 

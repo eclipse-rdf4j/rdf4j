@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
- 
+
 package org.eclipse.rdf4j.common.platform.support;
 
 import java.io.File;
@@ -16,11 +16,11 @@ import java.io.File;
 public class MacOSXPlatform extends PosixPlatform {
 
 	public static final String APPLICATION_DATA = "Library/Application Support/RDF4J";
-	
+
 	public String getName() {
 		return "Mac OS X";
 	}
-	
+
 	@Override
 	public File getOSApplicationDataDir() {
 		return new File(System.getProperty("user.home"), APPLICATION_DATA);
@@ -32,5 +32,5 @@ public class MacOSXPlatform extends PosixPlatform {
 
 	public boolean dataDirReplaceWhitespace() {
 		return false;
-	}	
+	}
 }

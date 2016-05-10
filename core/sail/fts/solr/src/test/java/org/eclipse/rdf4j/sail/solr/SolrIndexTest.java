@@ -136,8 +136,8 @@ public class SolrIndexTest {
 		long count = client.query(new SolrQuery("*:*").setRows(0)).getResults().getNumFound();
 		assertEquals(1, count);
 
-		QueryResponse response = client.query(new SolrQuery(SolrIndex.termQuery(SearchFields.URI_FIELD_NAME,
-				subject.toString())));
+		QueryResponse response = client.query(
+				new SolrQuery(SolrIndex.termQuery(SearchFields.URI_FIELD_NAME, subject.toString())));
 		Iterator<SolrDocument> docs = response.getResults().iterator();
 		assertTrue(docs.hasNext());
 
@@ -158,8 +158,8 @@ public class SolrIndexTest {
 		count = client.query(new SolrQuery("*:*").setRows(0)).getResults().getNumFound();
 		assertEquals(1, count); // #docs should *not* have increased
 
-		response = client.query(new SolrQuery(SolrIndex.termQuery(SearchFields.URI_FIELD_NAME,
-				subject.toString())));
+		response = client.query(
+				new SolrQuery(SolrIndex.termQuery(SearchFields.URI_FIELD_NAME, subject.toString())));
 		docs = response.getResults().iterator();
 		assertTrue(docs.hasNext());
 
@@ -174,11 +174,13 @@ public class SolrIndexTest {
 
 		// see if we can query for these literals
 		count = client.query(
-				new SolrQuery(SolrIndex.termQuery(SearchFields.TEXT_FIELD_NAME, object1.getLabel())).setRows(0)).getResults().getNumFound();
+				new SolrQuery(SolrIndex.termQuery(SearchFields.TEXT_FIELD_NAME, object1.getLabel())).setRows(
+						0)).getResults().getNumFound();
 		assertEquals(1, count);
 
 		count = client.query(
-				new SolrQuery(SolrIndex.termQuery(SearchFields.TEXT_FIELD_NAME, object2.getLabel())).setRows(0)).getResults().getNumFound();
+				new SolrQuery(SolrIndex.termQuery(SearchFields.TEXT_FIELD_NAME, object2.getLabel())).setRows(
+						0)).getResults().getNumFound();
 		assertEquals(1, count);
 
 		// remove the first statement
@@ -191,8 +193,8 @@ public class SolrIndexTest {
 		count = client.query(new SolrQuery("*:*").setRows(0)).getResults().getNumFound();
 		assertEquals(1, count);
 
-		response = client.query(new SolrQuery(SolrIndex.termQuery(SearchFields.URI_FIELD_NAME,
-				subject.toString())));
+		response = client.query(
+				new SolrQuery(SolrIndex.termQuery(SearchFields.URI_FIELD_NAME, subject.toString())));
 		docs = response.getResults().iterator();
 		assertTrue(docs.hasNext());
 
@@ -279,8 +281,8 @@ public class SolrIndexTest {
 	}
 
 	/**
-	 * Contexts can only be tested in combination with a sail, as the triples
-	 * have to be retrieved from the sail
+	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the
+	 * sail
 	 *
 	 * @throws Exception
 	 */
@@ -337,8 +339,8 @@ public class SolrIndexTest {
 	}
 
 	/**
-	 * Contexts can only be tested in combination with a sail, as the triples
-	 * have to be retrieved from the sail
+	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the
+	 * sail
 	 *
 	 * @throws Exception
 	 */
@@ -455,22 +457,14 @@ public class SolrIndexTest {
 
 	}
 
-	/*private void assertTexts(Set<String> texts, Document document) {
-		Set<String> toFind = new HashSet<String>(texts);
-		Set<String> found = new HashSet<String>();
-		for(Field field : document.getFields(LuceneIndex.TEXT_FIELD_NAME)) {
-			// is the field value expected and not yet been found?
-			if(toFind.remove(field.stringValue())) {
-				// add it to the found set
-				// (it was already remove from the toFind list in the if clause)
-				found.add(field.stringValue());
-			} else {
-				assertEquals("Was the text value '" + field.stringValue() + "' expected to exist?", false, true);
-			}
-		}
-
-		for(String notFound : toFind) {
-			assertEquals("Was the expected text value '" + notFound + "' found?", true, false);
-		}
-	}*/
+	/*
+	 * private void assertTexts(Set<String> texts, Document document) { Set<String> toFind = new
+	 * HashSet<String>(texts); Set<String> found = new HashSet<String>(); for(Field field :
+	 * document.getFields(LuceneIndex.TEXT_FIELD_NAME)) { // is the field value expected and not yet been
+	 * found? if(toFind.remove(field.stringValue())) { // add it to the found set // (it was already remove
+	 * from the toFind list in the if clause) found.add(field.stringValue()); } else { assertEquals(
+	 * "Was the text value '" + field.stringValue() + "' expected to exist?", false, true); } } for(String
+	 * notFound : toFind) { assertEquals("Was the expected text value '" + notFound + "' found?", true,
+	 * false); } }
+	 */
 }

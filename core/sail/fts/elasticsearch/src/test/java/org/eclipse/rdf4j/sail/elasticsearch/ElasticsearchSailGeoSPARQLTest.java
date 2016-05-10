@@ -40,7 +40,6 @@ public class ElasticsearchSailGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLT
 		super.testIntersectionQuery();
 	}
 
-
 	@Test
 	@Ignore // JTS is required
 	@Override

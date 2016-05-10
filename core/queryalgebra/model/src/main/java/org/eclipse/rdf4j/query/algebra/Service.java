@@ -15,11 +15,10 @@ import java.util.regex.Pattern;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
- * The SERVICE keyword as defined in <a
- * href="http://www.w3.org/TR/sparql11-federated- query/#defn_service">SERVICE
- * definition</a>. The service expression is evaluated at the specified service
- * URI. If the service reference is a variable, a value for this variable must
- * be available at evaluation time (e.g. from earlier computations).
+ * The SERVICE keyword as defined in <a href="http://www.w3.org/TR/sparql11-federated- query/#defn_service"
+ * >SERVICE definition</a>. The service expression is evaluated at the specified service URI. If the service
+ * reference is a variable, a value for this variable must be available at evaluation time (e.g. from earlier
+ * computations).
  * 
  * @author Andreas Schwarte
  */
@@ -41,8 +40,8 @@ public class Service extends UnaryTupleOperator {
 
 	private String baseURI;
 
-	/* prepared queries, including prefix. Contains %PROJECTION_VARS% to be replaced
-	 * at evaluation time. see 
+	/*
+	 * prepared queries, including prefix. Contains %PROJECTION_VARS% to be replaced at evaluation time. see
 	 */
 	private String preparedSelectQueryString;
 
@@ -106,8 +105,8 @@ public class Service extends UnaryTupleOperator {
 	}
 
 	/**
-	 * The SERVICE expression, either complete or just the expression e.g.
-	 * "SERVICE <url> { ... }" becomes " ... "
+	 * The SERVICE expression, either complete or just the expression e.g. "SERVICE <url> { ... }" becomes
+	 * " ... "
 	 * 
 	 * @param serviceExpressionString
 	 *        the inner expression as SPARQL String representation
@@ -133,8 +132,8 @@ public class Service extends UnaryTupleOperator {
 	}
 
 	/**
-	 * Returns a SELECT query string using the provided projection vars. The variables are
-	 * inserted into the preparedSelectQueryString in the SELECT clause.
+	 * Returns a SELECT query string using the provided projection vars. The variables are inserted into the
+	 * preparedSelectQueryString in the SELECT clause.
 	 * 
 	 * @param projectionVars
 	 * @return SELECT query string, utilizing the given projection variables
@@ -201,8 +200,8 @@ public class Service extends UnaryTupleOperator {
 	}
 
 	/**
-	 * Compute the variable names occurring in the service expression using tree
-	 * traversal, since these are necessary for building the SPARQL query.
+	 * Compute the variable names occurring in the service expression using tree traversal, since these are
+	 * necessary for building the SPARQL query.
 	 * 
 	 * @return the set of variable names in the given service expression
 	 */
@@ -224,8 +223,8 @@ public class Service extends UnaryTupleOperator {
 		return res;
 	}
 
-	private static Pattern subselectPattern = Pattern.compile("SELECT.*", Pattern.CASE_INSENSITIVE
-			| Pattern.DOTALL);
+	private static Pattern subselectPattern = Pattern.compile("SELECT.*",
+			Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
 	private void initPreparedQueryString() {
 
@@ -255,8 +254,7 @@ public class Service extends UnaryTupleOperator {
 	}
 
 	/**
-	 * Compute the prefix string only once to avoid computation overhead during
-	 * evaluation.
+	 * Compute the prefix string only once to avoid computation overhead during evaluation.
 	 * 
 	 * @param prefixDeclarations
 	 * @return a Prefix String or an empty string if there are no prefixes
@@ -274,9 +272,9 @@ public class Service extends UnaryTupleOperator {
 	}
 
 	/**
-	 * Parses a service expression to just have the inner expression, e.g. from
-	 * something like "SERVICE &lt;url&gt; { ... }" becomes " ... ", also applies
-	 * {@link String#trim()} to remove leading/tailing space
+	 * Parses a service expression to just have the inner expression, e.g. from something like
+	 * "SERVICE &lt;url&gt; { ... }" becomes " ... ", also applies {@link String#trim()} to remove
+	 * leading/tailing space
 	 * 
 	 * @param serviceExpression
 	 * @return the inner expression of the given service expression

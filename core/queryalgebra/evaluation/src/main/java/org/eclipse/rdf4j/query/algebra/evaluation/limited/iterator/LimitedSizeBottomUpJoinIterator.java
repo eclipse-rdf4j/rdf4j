@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BottomUpJoinIterator;
 public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 
 	private static final String SIZE_LIMIT_REACHED = "Size limited reached inside bottom up join operator, max size is:";
+
 	private AtomicLong used;
 
 	private long maxSize;
@@ -38,8 +39,8 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 	 * @param maxSize
 	 * @throws QueryEvaluationException
 	 */
-	public LimitedSizeBottomUpJoinIterator(EvaluationStrategy limitedSizeEvaluationStrategy,
-			Join join, BindingSet bindings, AtomicLong used, long maxSize)
+	public LimitedSizeBottomUpJoinIterator(EvaluationStrategy limitedSizeEvaluationStrategy, Join join,
+			BindingSet bindings, AtomicLong used, long maxSize)
 		throws QueryEvaluationException
 	{
 		super(limitedSizeEvaluationStrategy, join, bindings);
@@ -54,7 +55,7 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 		Iterator<BindingSet> iter = values.iterator();
 		while (iter.hasNext()) {
 			if (hashTableValues.add(iter.next()) && used.incrementAndGet() > maxSize) {
-				throw new QueryEvaluationException(SIZE_LIMIT_REACHED+maxSize);
+				throw new QueryEvaluationException(SIZE_LIMIT_REACHED + maxSize);
 			}
 		}
 	}
@@ -64,7 +65,7 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 		throws QueryEvaluationException
 	{
 		if (leftArgResults.add(b) && used.incrementAndGet() > maxSize) {
-			throw new QueryEvaluationException(SIZE_LIMIT_REACHED+maxSize);
+			throw new QueryEvaluationException(SIZE_LIMIT_REACHED + maxSize);
 		}
 	}
 
@@ -83,7 +84,7 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 	{
 		List<BindingSet> put = hashTable.put(hashKey, hashValue);
 		if (put == null && used.incrementAndGet() > maxSize) {
-			throw new QueryEvaluationException(SIZE_LIMIT_REACHED+maxSize);
+			throw new QueryEvaluationException(SIZE_LIMIT_REACHED + maxSize);
 		}
 	}
 
@@ -95,7 +96,5 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 		super.handleClose();
 		used.addAndGet(-htvSize);
 	}
-
-	
 
 }

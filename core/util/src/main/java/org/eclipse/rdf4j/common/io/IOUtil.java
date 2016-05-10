@@ -27,8 +27,7 @@ import java.util.Enumeration;
 import java.util.Properties;
 
 /**
- * Utility methods for I/O working with Readers, Writers, InputStreams and
- * OutputStreams.
+ * Utility methods for I/O working with Readers, Writers, InputStreams and OutputStreams.
  */
 public class IOUtil {
 
@@ -66,8 +65,7 @@ public class IOUtil {
 	}
 
 	/**
-	 * Reads all characters from the supplied reader and returns them as a
-	 * String.
+	 * Reads all characters from the supplied reader and returns them as a String.
 	 * 
 	 * @param r
 	 *        The Reader supplying the characters
@@ -80,15 +78,14 @@ public class IOUtil {
 	}
 
 	/**
-	 * Reads a string of at most length <tt>maxChars</tt> from the supplied
-	 * Reader.
+	 * Reads a string of at most length <tt>maxChars</tt> from the supplied Reader.
 	 * 
 	 * @param r
 	 *        The Reader to read the string from.
 	 * @param maxChars
 	 *        The maximum number of characters to read.
-	 * @return A String of length <tt>maxChars</tt>, or less if the supplied
-	 *         Reader did not contain that much characters.
+	 * @return A String of length <tt>maxChars</tt>, or less if the supplied Reader did not contain that much
+	 *         characters.
 	 */
 	public static String readString(Reader r, int maxChars)
 		throws IOException
@@ -115,8 +112,7 @@ public class IOUtil {
 	 * 
 	 * @param r
 	 *        The Reader supplying the characters
-	 * @return A character array containing all characters from the supplied
-	 *         reader.
+	 * @return A character array containing all characters from the supplied reader.
 	 */
 	public static char[] readChars(Reader r)
 		throws IOException
@@ -125,9 +121,9 @@ public class IOUtil {
 	}
 
 	/**
-	 * Fills the supplied character array with characters read from the specified
-	 * Reader. This method will only stop reading when the character array has
-	 * been filled completely, or the end of the stream has been reached.
+	 * Fills the supplied character array with characters read from the specified Reader. This method will
+	 * only stop reading when the character array has been filled completely, or the end of the stream has
+	 * been reached.
 	 * 
 	 * @param r
 	 *        The Reader to read the characters from.
@@ -161,20 +157,18 @@ public class IOUtil {
 	 * @param file
 	 *        The file to read.
 	 * @return A byte array containing all bytes from the specified file.
-	 * 
 	 * @throws IOException
 	 *         If an I/O error occurred while reading from the file.
 	 * @throws IllegalArgumentException
-	 *         If the file size exceeds the maximum array length (larger than
-	 *         {@link Integer#MAX_VALUE}.
+	 *         If the file size exceeds the maximum array length (larger than {@link Integer#MAX_VALUE}.
 	 */
 	public static byte[] readBytes(File file)
 		throws IOException
 	{
 		long fileSize = file.length();
 		if (fileSize > Integer.MAX_VALUE) {
-			throw new IllegalArgumentException("File size exceeds maximum array length (" + fileSize + " > "
-					+ Integer.MAX_VALUE + ")");
+			throw new IllegalArgumentException(
+					"File size exceeds maximum array length (" + fileSize + " > " + Integer.MAX_VALUE + ")");
 		}
 
 		FileInputStream in = new FileInputStream(file);
@@ -187,8 +181,7 @@ public class IOUtil {
 	}
 
 	/**
-	 * Reads all bytes from the supplied input stream and returns them as a byte
-	 * array.
+	 * Reads all bytes from the supplied input stream and returns them as a byte array.
 	 * 
 	 * @param in
 	 *        The InputStream supplying the bytes.
@@ -203,16 +196,14 @@ public class IOUtil {
 	}
 
 	/**
-	 * Reads at most <tt>maxBytes</tt> bytes from the supplied input stream and
-	 * returns them as a byte array.
+	 * Reads at most <tt>maxBytes</tt> bytes from the supplied input stream and returns them as a byte array.
 	 * 
 	 * @param in
 	 *        The InputStream supplying the bytes.
 	 * @param maxBytes
 	 *        The maximum number of bytes to read from the input stream.
-	 * @return A byte array of size <tt>maxBytes</tt> if the input stream can
-	 *         produce that amount of bytes, or a smaller byte array containing
-	 *         all available bytes from the stream otherwise.
+	 * @return A byte array of size <tt>maxBytes</tt> if the input stream can produce that amount of bytes, or
+	 *         a smaller byte array containing all available bytes from the stream otherwise.
 	 */
 	public static byte[] readBytes(InputStream in, int maxBytes)
 		throws IOException
@@ -232,9 +223,8 @@ public class IOUtil {
 	}
 
 	/**
-	 * Fills the supplied byte array with bytes read from the specified
-	 * InputStream. This method will only stop reading when the byte array has
-	 * been filled completely, or the end of the stream has been reached.
+	 * Fills the supplied byte array with bytes read from the specified InputStream. This method will only
+	 * stop reading when the byte array has been filled completely, or the end of the stream has been reached.
 	 * 
 	 * @param in
 	 *        The InputStream to read the bytes from.
@@ -299,8 +289,7 @@ public class IOUtil {
 	 * 
 	 * @param in
 	 *        the stream to read from. The stream will be closed by this method.
-	 * @return Properties loaded from the specified stream. The stream will be
-	 *         closed by this method.
+	 * @return Properties loaded from the specified stream. The stream will be closed by this method.
 	 * @throws IOException
 	 *         when the stream could not be read properly
 	 */
@@ -315,9 +304,9 @@ public class IOUtil {
 	 * 
 	 * @param in
 	 *        the stream to read from. The stream will be closed by this method.
-	 * @param defaults the default properties
-	 * @return Properties loaded from the specified stream. The stream will be
-	 *         closed by this method.
+	 * @param defaults
+	 *        the default properties
+	 * @return Properties loaded from the specified stream. The stream will be closed by this method.
 	 * @throws IOException
 	 *         when the stream could not be read properly
 	 */
@@ -358,8 +347,7 @@ public class IOUtil {
 	 * @param out
 	 *        the output stream to write to
 	 * @throws IOException
-	 *         when the properties could not be written to the output stream
-	 *         properly
+	 *         when the properties could not be written to the output stream properly
 	 */
 	public static void writeProperties(Properties props, OutputStream out, boolean includeDefaults)
 		throws IOException
@@ -384,8 +372,7 @@ public class IOUtil {
 	}
 
 	/**
-	 * Writes all data that can be read from the supplied InputStream to the
-	 * specified file.
+	 * Writes all data that can be read from the supplied InputStream to the specified file.
 	 * 
 	 * @param in
 	 *        An InputStream.
@@ -498,8 +485,7 @@ public class IOUtil {
 	 *        The file to write the data to.
 	 * @return The total number of bytes written.
 	 * @throws IOException
-	 *         If an I/O error occured while trying to write the data to the
-	 *         file.
+	 *         If an I/O error occured while trying to write the data to the file.
 	 */
 	public static final long transfer(InputStream in, File file)
 		throws IOException
@@ -515,8 +501,7 @@ public class IOUtil {
 	}
 
 	/**
-	 * Transfers all characters that can be read from <tt>in</tt> to <tt>out</tt>
-	 * .
+	 * Transfers all characters that can be read from <tt>in</tt> to <tt>out</tt> .
 	 * 
 	 * @param in
 	 *        The Reader to read characters from.
@@ -540,8 +525,7 @@ public class IOUtil {
 	}
 
 	/**
-	 * Writes all characters from a <tt>Reader</tt> to a file using the default
-	 * character encoding.
+	 * Writes all characters from a <tt>Reader</tt> to a file using the default character encoding.
 	 * 
 	 * @param reader
 	 *        The <tt>Reader</tt> containing the data to write to the file.
@@ -549,8 +533,7 @@ public class IOUtil {
 	 *        The file to write the data to.
 	 * @return The total number of characters written.
 	 * @throws IOException
-	 *         If an I/O error occured while trying to write the data to the
-	 *         file.
+	 *         If an I/O error occured while trying to write the data to the file.
 	 * @see java.io.FileWriter
 	 */
 	public static final long transfer(Reader reader, File file)

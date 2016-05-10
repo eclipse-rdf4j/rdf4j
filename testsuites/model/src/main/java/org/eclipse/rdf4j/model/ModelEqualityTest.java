@@ -39,13 +39,13 @@ public abstract class ModelEqualityTest {
 		testFilesEqual("test001a.ttl", "test001b.ttl");
 	}
 
-// TODO find foaf test example that we have a right to use.
-//	@Test
-//	public void testFoafExampleAdvanced()
-//		throws Exception
-//	{
-//		testFilesEqual("foaf-example-advanced.rdf", "foaf-example-advanced.rdf");
-//	}
+	// TODO find foaf test example that we have a right to use.
+	//	@Test
+	//	public void testFoafExampleAdvanced()
+	//		throws Exception
+	//	{
+	//		testFilesEqual("foaf-example-advanced.rdf", "foaf-example-advanced.rdf");
+	//	}
 
 	@Test
 	public void testSparqlGraph11()
@@ -102,7 +102,7 @@ public abstract class ModelEqualityTest {
 		assertNotNull("Test file not found: " + fileName, modelURL);
 
 		Model model = createEmptyModel();
-		
+
 		Optional<RDFFormat> rdfFormat = Rio.getParserFormatForFileName(fileName);
 		assertTrue("Unable to determine RDF format for file: " + fileName, rdfFormat.isPresent());
 

@@ -88,7 +88,7 @@ public class EvaluationStatistics {
 		public void meet(ZeroLengthPath node) {
 			Var subjVar = node.getSubjectVar();
 			Var objVar = node.getObjectVar();
-			if((subjVar != null && subjVar.hasValue()) || (objVar != null && objVar.hasValue())) {
+			if ((subjVar != null && subjVar.hasValue()) || (objVar != null && objVar.hasValue())) {
 				// subj = obj
 				cardinality = 1.0;
 			}
@@ -96,7 +96,8 @@ public class EvaluationStatistics {
 				// actual cardinality = count(union(subjs, objs))
 				// but cost is equivalent to ?s ?p ?o ?c (impl scans all statements)
 				// so due to the lower actual cardinality we value it in preference to a fully unbound statement pattern.
-				cardinality = getSubjectCardinality(subjVar) * getObjectCardinality(objVar) * getContextCardinality(node.getContextVar());
+				cardinality = getSubjectCardinality(subjVar) * getObjectCardinality(objVar)
+						* getContextCardinality(node.getContextVar());
 			}
 		}
 
@@ -106,7 +107,8 @@ public class EvaluationStatistics {
 			// actual cardinality = count(union(subjs, objs))
 			// but might require getting all statements
 			// so due to the lower actual cardinality we value it in preference to a fully unbound statement pattern.
-			cardinality = getSubjectCardinality(node.getSubjectVar()) * getObjectCardinality(node.getObjectVar()) * getContextCardinality(node.getContextVar());
+			cardinality = getSubjectCardinality(node.getSubjectVar())
+					* getObjectCardinality(node.getObjectVar()) * getContextCardinality(node.getContextVar());
 		}
 
 		@Override
@@ -125,10 +127,10 @@ public class EvaluationStatistics {
 				// more than one free variable in a single triple pattern
 				if (count == 1 && node.getServiceVars().size() > 1) {
 					cardinality = 100 + node.getServiceVars().size(); // TODO (should
-																						// be higher
-																						// than other
-																						// simple
-																						// stmts)
+																		// be higher
+																		// than other
+																		// simple
+																		// stmts)
 				}
 				else {
 					// only very selective statements should be better than this
@@ -149,9 +151,8 @@ public class EvaluationStatistics {
 		}
 
 		/**
-		 * Override this if you are able to determine the cardinality based not
-		 * only on the subjectVar itself but also the other vars (e.g. the
-		 * predicate value might determine a subject subset).
+		 * Override this if you are able to determine the cardinality based not only on the subjectVar itself
+		 * but also the other vars (e.g. the predicate value might determine a subject subset).
 		 */
 		protected double getSubjectCardinality(StatementPattern sp) {
 			return getSubjectCardinality(sp.getSubjectVar());
@@ -162,9 +163,8 @@ public class EvaluationStatistics {
 		}
 
 		/**
-		 * Override this if you are able to determine the cardinality based not
-		 * only on the predicateVar itself but also the other vars (e.g. the
-		 * subject value might determine a predicate subset).
+		 * Override this if you are able to determine the cardinality based not only on the predicateVar
+		 * itself but also the other vars (e.g. the subject value might determine a predicate subset).
 		 */
 		protected double getPredicateCardinality(StatementPattern sp) {
 			return getPredicateCardinality(sp.getPredicateVar());
@@ -175,9 +175,8 @@ public class EvaluationStatistics {
 		}
 
 		/**
-		 * Override this if you are able to determine the cardinality based not
-		 * only on the objectVar itself but also the other vars (e.g. the
-		 * predicate value might determine an object subset).
+		 * Override this if you are able to determine the cardinality based not only on the objectVar itself
+		 * but also the other vars (e.g. the predicate value might determine an object subset).
 		 */
 		protected double getObjectCardinality(StatementPattern sp) {
 			return getObjectCardinality(sp.getObjectVar());
@@ -188,9 +187,8 @@ public class EvaluationStatistics {
 		}
 
 		/**
-		 * Override this if you are able to determine the cardinality based not
-		 * only on the contextVar itself but also the other vars (e.g. the subject
-		 * value might determine a context subset).
+		 * Override this if you are able to determine the cardinality based not only on the contextVar itself
+		 * but also the other vars (e.g. the subject value might determine a context subset).
 		 */
 		protected double getContextCardinality(StatementPattern sp) {
 			return getContextCardinality(sp.getContextVar());

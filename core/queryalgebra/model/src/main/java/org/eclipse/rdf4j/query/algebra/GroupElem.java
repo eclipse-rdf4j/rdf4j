@@ -8,9 +8,8 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * A tuple operator that groups tuples that have a specific set of equivalent
- * variable bindings, and that can apply aggregate functions on the grouped
- * results.
+ * A tuple operator that groups tuples that have a specific set of equivalent variable bindings, and that can
+ * apply aggregate functions on the grouped results.
  * 
  * @author David Huynh
  * @author Arjohn Kampman

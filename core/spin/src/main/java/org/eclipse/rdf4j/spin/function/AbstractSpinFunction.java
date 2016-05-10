@@ -14,8 +14,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryPreparer;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.spin.QueryContext;
 
-
 public abstract class AbstractSpinFunction {
+
 	private final String uri;
 
 	private QueryPreparer queryPreparer;
@@ -31,14 +31,14 @@ public abstract class AbstractSpinFunction {
 	public QueryPreparer getQueryPreparer() {
 		return queryPreparer;
 	}
-	
+
 	public void setQueryPreparer(QueryPreparer queryPreparer) {
 		this.queryPreparer = queryPreparer;
 	}
 
 	protected QueryPreparer getCurrentQueryPreparer() {
 		QueryPreparer qp = (queryPreparer != null) ? queryPreparer : QueryContext.getQueryPreparer();
-		if(qp == null) {
+		if (qp == null) {
 			throw new IllegalStateException("No QueryPreparer!");
 		}
 		return qp;
@@ -47,11 +47,11 @@ public abstract class AbstractSpinFunction {
 	protected static void addBindings(Query query, Value... args)
 		throws ValueExprEvaluationException
 	{
-		for(int i=1; i<args.length; i+=2) {
-			if(!(args[i] instanceof Literal)) {
-				throw new ValueExprEvaluationException("Argument "+i+" must be a literal");
+		for (int i = 1; i < args.length; i += 2) {
+			if (!(args[i] instanceof Literal)) {
+				throw new ValueExprEvaluationException("Argument " + i + " must be a literal");
 			}
-			query.setBinding(((Literal)args[i]).getLabel(), args[i+1]);
+			query.setBinding(((Literal)args[i]).getLabel(), args[i + 1]);
 		}
 	}
 }

@@ -117,8 +117,8 @@ public class RDFCollectionsTest {
 		assertTrue(collection.contains(null, RDF.FIRST, b));
 		assertTrue(collection.contains(null, RDF.FIRST, c));
 	}
-	
-	@Test 
+
+	@Test
 	public void testRemove() {
 		Resource head = vf.createBNode();
 		Model m = RDFCollections.asRDF(values, head, new TreeModel());
@@ -128,7 +128,7 @@ public class RDFCollectionsTest {
 
 		// remove the entire collection
 		RDFCollections.extract(m, head, st -> m.remove(st));
-		
+
 		assertFalse(m.contains(null, RDF.FIRST, a));
 		assertFalse(m.contains(null, RDF.FIRST, b));
 		assertFalse(m.contains(null, RDF.FIRST, c));

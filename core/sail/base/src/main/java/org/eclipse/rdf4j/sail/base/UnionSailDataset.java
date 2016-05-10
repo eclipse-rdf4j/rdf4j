@@ -31,8 +31,7 @@ class UnionSailDataset implements SailDataset {
 	private final SailDataset[] datasets;
 
 	/**
-	 * Creates a new {@link SailDataset} that includes all the given
-	 * {@link SailDataset}s.
+	 * Creates a new {@link SailDataset} that includes all the given {@link SailDataset}s.
 	 * 
 	 * @param datasets
 	 */

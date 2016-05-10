@@ -14,11 +14,17 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailException;
 
 public interface SearchQueryInterpreter {
+
 	/**
 	 * Processes a TupleExpr into a set of SearchQueryEvaluators.
-	 * @param tupleExpr the TupleExpr to process.
-	 * @param bindings any bindings.
-	 * @param specs the Collection to add any SearchQueryEvaluators to.
+	 * 
+	 * @param tupleExpr
+	 *        the TupleExpr to process.
+	 * @param bindings
+	 *        any bindings.
+	 * @param specs
+	 *        the Collection to add any SearchQueryEvaluators to.
 	 */
-	void process(TupleExpr tupleExpr, BindingSet bindings, Collection<SearchQueryEvaluator> specs) throws SailException;
+	void process(TupleExpr tupleExpr, BindingSet bindings, Collection<SearchQueryEvaluator> specs)
+		throws SailException;
 }

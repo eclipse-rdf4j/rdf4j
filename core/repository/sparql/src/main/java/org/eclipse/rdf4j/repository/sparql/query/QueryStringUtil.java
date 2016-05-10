@@ -17,9 +17,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLUtil;
 
 /**
- * Utility class to perfom query string manipulations as used in
- * {@link SPARQLTupleQuery}, {@link SPARQLGraphQuery} and
- * {@link SPARQLBooleanQuery}.
+ * Utility class to perfom query string manipulations as used in {@link SPARQLTupleQuery},
+ * {@link SPARQLGraphQuery} and {@link SPARQLBooleanQuery}.
  * 
  * @author Andreas Schwarte
  * @see SPARQLTupleQuery
@@ -31,8 +30,7 @@ public class QueryStringUtil {
 	// TODO maybe add BASE declaration here as well?
 
 	/**
-	 * Retrieve a modified queryString into which all bindings of the given
-	 * argument are replaced.
+	 * Retrieve a modified queryString into which all bindings of the given argument are replaced.
 	 * 
 	 * @param queryString
 	 * @param bindings
@@ -51,8 +49,8 @@ public class QueryStringUtil {
 			String replacement = getReplacement(bindings.getValue(name));
 			if (replacement != null) {
 				String pattern = "[\\?\\$]" + name + "(?=\\W)";
-				select = select.replaceAll(pattern, "(" + Matcher.quoteReplacement(replacement) + " as ?" + name
-						+ ")");
+				select = select.replaceAll(pattern,
+						"(" + Matcher.quoteReplacement(replacement) + " as ?" + name + ")");
 
 				// we use Matcher.quoteReplacement to make sure things like newlines
 				// in literal values

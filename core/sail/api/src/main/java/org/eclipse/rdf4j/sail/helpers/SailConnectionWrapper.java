@@ -26,9 +26,8 @@ import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.eclipse.rdf4j.sail.UpdateContext;
 
 /**
- * An implementation of the SailConnection interface that wraps another
- * SailConnection object and forwards any method calls to the wrapped
- * connection.
+ * An implementation of the SailConnection interface that wraps another SailConnection object and forwards any
+ * method calls to the wrapped connection.
  * 
  * @author Jeen Broekstra
  */
@@ -48,8 +47,7 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	 *--------------*/
 
 	/**
-	 * Creates a new TransactionWrapper object that wraps the supplied
-	 * connection.
+	 * Creates a new TransactionWrapper object that wraps the supplied connection.
 	 */
 	public SailConnectionWrapper(SailConnection wrappedCon) {
 		this.wrappedCon = wrappedCon;
@@ -62,8 +60,7 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	/**
 	 * Gets the connection that is wrapped by this object.
 	 * 
-	 * @return The SailConnection object that was supplied to the constructor of
-	 *         this class.
+	 * @return The SailConnection object that was supplied to the constructor of this class.
 	 */
 	public SailConnection getWrappedConnection() {
 		return wrappedCon;
@@ -121,9 +118,8 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	}
 
 	/*
-	 * Not in the API, preserving for binary compatibility. Will be removed in future.
-	 * 
-	 * Should use {@link #size(Resource...)} instead, which is called by this method.
+	 * Not in the API, preserving for binary compatibility. Will be removed in future. Should use {@link
+	 * #size(Resource...)} instead, which is called by this method.
 	 */
 	public long size(Resource context)
 		throws SailException
@@ -174,7 +170,8 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	}
 
 	@Override
-	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
+	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj,
+			Resource... contexts)
 		throws SailException
 	{
 		wrappedCon.removeStatement(modify, subj, pred, obj, contexts);

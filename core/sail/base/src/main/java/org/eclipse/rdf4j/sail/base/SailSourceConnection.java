@@ -51,8 +51,7 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionBase;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
 /**
- * A {@link SailConnection} implementation that is based on an {@link SailStore}
- * .
+ * A {@link SailConnection} implementation that is based on an {@link SailStore} .
  * 
  * @author James Leigh
  */
@@ -70,8 +69,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	private final Map<UpdateContext, SailDataset> datasets = new HashMap<UpdateContext, SailDataset>();
 
 	/**
-	 * Outstanding changes that are underway, but not yet realized, by an active
-	 * operation.
+	 * Outstanding changes that are underway, but not yet realized, by an active operation.
 	 */
 	private final Map<UpdateContext, SailSink> explicitSinks = new HashMap<UpdateContext, SailSink>();
 
@@ -86,8 +84,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	private SailDataset inferredDataset;
 
 	/**
-	 * Outstanding inferred statements that are not yet flushed by a read
-	 * operation.
+	 * Outstanding inferred statements that are not yet flushed by a read operation.
 	 */
 	private SailSink inferredSink;
 
@@ -107,14 +104,12 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	private final IsolationLevel defaultIsolationLevel;
 
 	/**
-	 * An {@link SailSource} of only explicit statements when in an isolated
-	 * transaction.
+	 * An {@link SailSource} of only explicit statements when in an isolated transaction.
 	 */
 	private SailSource explicitOnlyBranch;
 
 	/**
-	 * An {@link SailSource} of only inferred statements when in an isolated
-	 * transaction.
+	 * An {@link SailSource} of only inferred statements when in an isolated transaction.
 	 */
 	private SailSource inferredOnlyBranch;
 
@@ -133,8 +128,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	 *--------------*/
 
 	/**
-	 * Creates a new {@link SailConnection}, using the given {@link SailStore}
-	 * to manage the state.
+	 * Creates a new {@link SailConnection}, using the given {@link SailStore} to manage the state.
 	 * 
 	 * @param sail
 	 * @param store
@@ -167,7 +161,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	@Override
 	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
 			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
-				throws SailException
+		throws SailException
 	{
 		flush();
 		logger.trace("Incoming query model:\n{}", tupleExpr);
@@ -243,7 +237,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	@Override
 	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj,
 			IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-				throws SailException
+		throws SailException
 	{
 		flush();
 		SailSource branch = branch(includeInferred);
@@ -523,7 +517,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	private boolean add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink,
 			Resource... contexts)
-				throws SailException
+		throws SailException
 	{
 		boolean modified = false;
 		if (contexts.length == 0) {
@@ -565,7 +559,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	private boolean remove(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink,
 			Resource... contexts)
-				throws SailException
+		throws SailException
 	{
 		boolean statementsRemoved = false;
 		CloseableIteration<? extends Statement, SailException> iter;

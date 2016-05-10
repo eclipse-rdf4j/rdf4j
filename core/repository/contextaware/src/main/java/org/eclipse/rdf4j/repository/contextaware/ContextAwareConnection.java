@@ -108,16 +108,16 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	/**
-	 * if false, no inferred statements are considered; if true, inferred
-	 * statements are considered if available
+	 * if false, no inferred statements are considered; if true, inferred statements are considered if
+	 * available
 	 */
 	public boolean isIncludeInferred() {
 		return includeInferred;
 	}
 
 	/**
-	 * if false, no inferred statements are considered; if true, inferred
-	 * statements are considered if available
+	 * if false, no inferred statements are considered; if true, inferred statements are considered if
+	 * available
 	 */
 	public void setIncludeInferred(boolean includeInferred) {
 		this.includeInferred = includeInferred;
@@ -167,18 +167,16 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	/**
-	 * The default context(s) to get the data from. Note that this parameter is a
-	 * vararg and as such is optional. If no contexts are supplied the method
-	 * operates on the entire repository.
+	 * The default context(s) to get the data from. Note that this parameter is a vararg and as such is
+	 * optional. If no contexts are supplied the method operates on the entire repository.
 	 */
 	public IRI[] getReadContexts() {
 		return readContexts;
 	}
 
 	/**
-	 * The default context(s) to get the data from. Note that this parameter is a
-	 * vararg and as such is optional. If no contexts are supplied the method
-	 * operates on the entire repository.
+	 * The default context(s) to get the data from. Note that this parameter is a vararg and as such is
+	 * optional. If no contexts are supplied the method operates on the entire repository.
 	 */
 	public void setReadContexts(IRI... readContexts) {
 		this.readContexts = readContexts;
@@ -188,12 +186,10 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	/**
-	 * The contexts to add the statements to. Note that this parameter is a
-	 * vararg and as such is optional. If no contexts are specified, each
-	 * statement is added to any context specified in the statement, or if the
-	 * statement contains no context, it is added without a context. If one or
-	 * more contexts are specified each statement is added to these contexts,
-	 * ignoring any context information in the statement itself.
+	 * The contexts to add the statements to. Note that this parameter is a vararg and as such is optional. If
+	 * no contexts are specified, each statement is added to any context specified in the statement, or if the
+	 * statement contains no context, it is added without a context. If one or more contexts are specified
+	 * each statement is added to these contexts, ignoring any context information in the statement itself.
 	 */
 	@Deprecated
 	public IRI[] getAddContexts() {
@@ -203,12 +199,10 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	/**
-	 * The contexts to add the statements to. Note that this parameter is a
-	 * vararg and as such is optional. If no contexts are specified, each
-	 * statement is added to any context specified in the statement, or if the
-	 * statement contains no context, it is added without a context. If one or
-	 * more contexts are specified each statement is added to these contexts,
-	 * ignoring any context information in the statement itself.
+	 * The contexts to add the statements to. Note that this parameter is a vararg and as such is optional. If
+	 * no contexts are specified, each statement is added to any context specified in the statement, or if the
+	 * statement contains no context, it is added without a context. If one or more contexts are specified
+	 * each statement is added to these contexts, ignoring any context information in the statement itself.
 	 */
 	@Deprecated
 	public void setAddContexts(IRI... addContexts) {
@@ -225,20 +219,18 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	/**
-	 * The context(s) to remove the data from. Note that this parameter is a
-	 * vararg and as such is optional. If no contexts are supplied the method
-	 * operates on the contexts associated with the statement itself, and if no
-	 * context is associated with the statement, on the entire repository.
+	 * The context(s) to remove the data from. Note that this parameter is a vararg and as such is optional.
+	 * If no contexts are supplied the method operates on the contexts associated with the statement itself,
+	 * and if no context is associated with the statement, on the entire repository.
 	 */
 	public IRI[] getRemoveContexts() {
 		return removeContexts;
 	}
 
 	/**
-	 * The context(s) to remove the data from. Note that this parameter is a
-	 * vararg and as such is optional. If no contexts are supplied the method
-	 * operates on the contexts associated with the statement itself, and if no
-	 * context is associated with the statement, on the entire repository.
+	 * The context(s) to remove the data from. Note that this parameter is a vararg and as such is optional.
+	 * If no contexts are supplied the method operates on the contexts associated with the statement itself,
+	 * and if no context is associated with the statement, on the entire repository.
 	 */
 	public void setRemoveContexts(IRI... removeContexts) {
 		this.removeContexts = removeContexts;
@@ -267,20 +259,18 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	/**
-	 * The default context to add the statements to. For INSERT/add operations
-	 * Each statement is added to any context specified in the statement, or if
-	 * the statement contains no context, it is added with the context specified
-	 * here.
+	 * The default context to add the statements to. For INSERT/add operations Each statement is added to any
+	 * context specified in the statement, or if the statement contains no context, it is added with the
+	 * context specified here.
 	 */
 	public IRI getInsertContext() {
 		return insertContext;
 	}
 
 	/**
-	 * The default context to add the statements to. For INSERT/add operations
-	 * Each statement is added to any context specified in the statement, or if
-	 * the statement contains no context, it is added with the context specified
-	 * here.
+	 * The default context to add the statements to. For INSERT/add operations Each statement is added to any
+	 * context specified in the statement, or if the statement contains no context, it is added with the
+	 * context specified here.
 	 */
 	public void setInsertContext(IRI insertContext) {
 		this.insertContext = insertContext;
@@ -357,7 +347,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	@Override
 	public <E extends Exception> void add(Iteration<? extends Statement, E> statementIter,
 			Resource... contexts)
-				throws RepositoryException, E
+		throws RepositoryException, E
 	{
 		final IRI insertContext = getInsertContext();
 		if (isNilContext(contexts)) {
@@ -365,8 +355,8 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 				protected Statement convert(Statement st) {
 					if (st.getContext() == null)
-						return getValueFactory().createStatement(st.getSubject(), st.getPredicate(), st.getObject(),
-								insertContext);
+						return getValueFactory().createStatement(st.getSubject(), st.getPredicate(),
+								st.getObject(), insertContext);
 					return st;
 				}
 			});
@@ -477,8 +467,8 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	/**
-	 * Exports all statements with a specific subject, predicate and/or object
-	 * from the repository, optionally from the specified contexts.
+	 * Exports all statements with a specific subject, predicate and/or object from the repository, optionally
+	 * from the specified contexts.
 	 * 
 	 * @param subj
 	 *        The subject, or null if the subject doesn't matter.
@@ -507,7 +497,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	@Override
 	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			RDFHandler handler, Resource... contexts)
-				throws RepositoryException, RDFHandlerException
+		throws RepositoryException, RDFHandlerException
 	{
 		if (isAllContext(contexts)) {
 			super.exportStatements(subj, pred, obj, includeInferred, handler, getReadContexts());
@@ -518,9 +508,8 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	/**
-	 * Gets all statements with a specific subject, predicate and/or object from
-	 * the repository. The result is optionally restricted to the specified set
-	 * of named contexts.
+	 * Gets all statements with a specific subject, predicate and/or object from the repository. The result is
+	 * optionally restricted to the specified set of named contexts.
 	 * 
 	 * @param subj
 	 *        A Resource specifying the subject, or <tt>null</tt> for a wildcard.
@@ -528,11 +517,9 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	 *        A URI specifying the predicate, or <tt>null</tt> for a wildcard.
 	 * @param obj
 	 *        A Value specifying the object, or <tt>null</tt> for a wildcard.
-	 * @return The statements matching the specified pattern. The result object
-	 *         is a {@link RepositoryResult} object, a lazy Iterator-like object
-	 *         containing {@link Statement}s and optionally throwing a
-	 *         {@link RepositoryException} when an error when a problem occurs
-	 *         during retrieval.
+	 * @return The statements matching the specified pattern. The result object is a {@link RepositoryResult}
+	 *         object, a lazy Iterator-like object containing {@link Statement}s and optionally throwing a
+	 *         {@link RepositoryException} when an error when a problem occurs during retrieval.
 	 * @see #getReadContexts()
 	 * @see #isIncludeInferred()
 	 */
@@ -550,7 +537,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	@Override
 	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts)
-				throws RepositoryException
+		throws RepositoryException
 	{
 		if (isAllContext(contexts)) {
 			return super.getStatements(subj, pred, obj, includeInferred, getReadContexts());
@@ -563,7 +550,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts)
-				throws RepositoryException
+		throws RepositoryException
 	{
 		if (isAllContext(contexts)) {
 			return super.hasStatement(subj, pred, obj, includeInferred, getReadContexts());
@@ -586,8 +573,8 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	/**
-	 * Checks whether the repository contains statements with a specific subject,
-	 * predicate and/or object, optionally in the specified contexts.
+	 * Checks whether the repository contains statements with a specific subject, predicate and/or object,
+	 * optionally in the specified contexts.
 	 * 
 	 * @param subj
 	 *        A Resource specifying the subject, or <tt>null</tt> for a wildcard.
@@ -595,8 +582,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	 *        A URI specifying the predicate, or <tt>null</tt> for a wildcard.
 	 * @param obj
 	 *        A Value specifying the object, or <tt>null</tt> for a wildcard.
-	 * @return true If a matching statement is in the repository in the specified
-	 *         context, false otherwise.
+	 * @return true If a matching statement is in the repository in the specified context, false otherwise.
 	 * @see #getReadContexts()
 	 * @see #isIncludeInferred()
 	 */
@@ -612,14 +598,11 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	/**
-	 * Checks whether the repository contains the specified statement, optionally
-	 * in the specified contexts.
+	 * Checks whether the repository contains the specified statement, optionally in the specified contexts.
 	 * 
 	 * @param st
-	 *        The statement to look for. Context information in the statement is
-	 *        ignored.
-	 * @return true If the repository contains the specified statement, false
-	 *         otherwise.
+	 *        The statement to look for. Context information in the statement is ignored.
+	 * @return true If the repository contains the specified statement, false otherwise.
 	 * @see #getReadContexts()
 	 * @see #isIncludeInferred()
 	 */
@@ -756,23 +739,21 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	/**
-	 * Removes the supplied statements from a specific context in this
-	 * repository, ignoring any context information carried by the statements
-	 * themselves.
+	 * Removes the supplied statements from a specific context in this repository, ignoring any context
+	 * information carried by the statements themselves.
 	 * 
 	 * @param statementIter
-	 *        The statements to remove. In case the iterator is a
-	 *        {@link CloseableIteration}, it will be closed before this method
-	 *        returns.
+	 *        The statements to remove. In case the iterator is a {@link CloseableIteration}, it will be
+	 *        closed before this method returns.
 	 * @throws RepositoryException
-	 *         If the statements could not be removed from the repository, for
-	 *         example because the repository is not writable.
+	 *         If the statements could not be removed from the repository, for example because the repository
+	 *         is not writable.
 	 * @see #getRemoveContexts()
 	 */
 	@Override
 	public <E extends Exception> void remove(Iteration<? extends Statement, E> statementIter,
 			Resource... contexts)
-				throws RepositoryException, E
+		throws RepositoryException, E
 	{
 		final IRI[] removeContexts = getRemoveContexts();
 		if (isAllContext(contexts) && removeContexts.length == 1) {
@@ -780,8 +761,8 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 				protected Statement convert(Statement st) {
 					if (st.getContext() == null)
-						return getValueFactory().createStatement(st.getSubject(), st.getPredicate(), st.getObject(),
-								removeContexts[0]);
+						return getValueFactory().createStatement(st.getSubject(), st.getPredicate(),
+								st.getObject(), removeContexts[0]);
 					return st;
 				}
 			});
@@ -792,8 +773,8 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	/**
-	 * Removes the statement with the specified subject, predicate and object
-	 * from the repository, optionally restricted to the specified contexts.
+	 * Removes the statement with the specified subject, predicate and object from the repository, optionally
+	 * restricted to the specified contexts.
 	 * 
 	 * @param subject
 	 *        The statement's subject.
@@ -802,8 +783,8 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	 * @param object
 	 *        The statement's object.
 	 * @throws RepositoryException
-	 *         If the statement could not be removed from the repository, for
-	 *         example because the repository is not writable.
+	 *         If the statement could not be removed from the repository, for example because the repository
+	 *         is not writable.
 	 * @see #getRemoveContexts()
 	 */
 	@Override
@@ -819,14 +800,13 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	/**
-	 * Removes the supplied statement from the specified contexts in the
-	 * repository.
+	 * Removes the supplied statement from the specified contexts in the repository.
 	 * 
 	 * @param st
 	 *        The statement to remove.
 	 * @throws RepositoryException
-	 *         If the statement could not be removed from the repository, for
-	 *         example because the repository is not writable.
+	 *         If the statement could not be removed from the repository, for example because the repository
+	 *         is not writable.
 	 * @see #getRemoveContexts()
 	 */
 	@Override
@@ -842,11 +822,9 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	/**
-	 * Returns the number of (explicit) statements that are in the specified
-	 * contexts in this repository.
+	 * Returns the number of (explicit) statements that are in the specified contexts in this repository.
 	 * 
-	 * @return The number of explicit statements from the specified contexts in
-	 *         this repository.
+	 * @return The number of explicit statements from the specified contexts in this repository.
 	 * @see #getReadContexts()
 	 */
 	@Override

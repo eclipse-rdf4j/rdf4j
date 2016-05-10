@@ -15,6 +15,7 @@ import com.google.common.base.Function;
 import com.google.common.collect.Iterators;
 
 class SingleValueToListTransformer<E> implements Function<E, List<? extends E>> {
+
 	private static final SingleValueToListTransformer<?> INSTANCE = new SingleValueToListTransformer<Object>();
 
 	@SuppressWarnings("unchecked")

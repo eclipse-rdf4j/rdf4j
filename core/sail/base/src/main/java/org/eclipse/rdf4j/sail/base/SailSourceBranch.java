@@ -28,8 +28,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * An {@link SailSource} that keeps a delta of its state from a backing
- * {@link SailSource}.
+ * An {@link SailSource} that keeps a delta of its state from a backing {@link SailSource}.
  * 
  * @author James Leigh
  */
@@ -41,14 +40,13 @@ class SailSourceBranch implements SailSource {
 	private final ReentrantLock semaphore = new ReentrantLock();
 
 	/**
-	 * The difference between this {@link SailSource} and the backing
-	 * {@link SailSource}.
+	 * The difference between this {@link SailSource} and the backing {@link SailSource}.
 	 */
 	private final LinkedList<Changeset> changes = new LinkedList<Changeset>();
 
 	/**
-	 * {@link SailSink} that have been created, but not yet
-	 * {@link SailSink#flush()}ed to this {@link SailSource}.
+	 * {@link SailSink} that have been created, but not yet {@link SailSink#flush()}ed to this
+	 * {@link SailSource}.
 	 */
 	private final Collection<Changeset> pending = new LinkedList<Changeset>();
 
@@ -70,8 +68,7 @@ class SailSourceBranch implements SailSource {
 	private final ModelFactory modelFactory;
 
 	/**
-	 * If this {@link SailSource} should be flushed to the backing
-	 * {@link SailSource} when it is not in use.
+	 * If this {@link SailSource} should be flushed to the backing {@link SailSource} when it is not in use.
 	 */
 	private final boolean autoFlush;
 
@@ -91,8 +88,7 @@ class SailSourceBranch implements SailSource {
 	private SailSink prepared;
 
 	/**
-	 * Creates a new in-memory {@link SailSource} derived from the given
-	 * {@link SailSource}.
+	 * Creates a new in-memory {@link SailSource} derived from the given {@link SailSource}.
 	 * 
 	 * @param backingSource
 	 */
@@ -111,9 +107,8 @@ class SailSourceBranch implements SailSource {
 	}
 
 	/**
-	 * Creates a new {@link SailSource} derived from the given {@link SailSource}
-	 * and if <code>autoFlush</code> is true, will automatically call
-	 * {@link #flush()} when not in use.
+	 * Creates a new {@link SailSource} derived from the given {@link SailSource} and if
+	 * <code>autoFlush</code> is true, will automatically call {@link #flush()} when not in use.
 	 * 
 	 * @param backingSource
 	 * @param modelFactory
@@ -376,7 +371,8 @@ class SailSourceBranch implements SailSource {
 		return change.getApproved() != null || change.getDeprecated() != null
 				|| change.getApprovedContexts() != null || change.getDeprecatedContexts() != null
 				|| change.getAddedNamespaces() != null || change.getRemovedPrefixes() != null
-				|| change.isStatementCleared() || change.isNamespaceCleared() || change.getObservations() != null;
+				|| change.isStatementCleared() || change.isNamespaceCleared()
+				|| change.getObservations() != null;
 	}
 
 	private SailDataset derivedFromSerializable(IsolationLevel level)

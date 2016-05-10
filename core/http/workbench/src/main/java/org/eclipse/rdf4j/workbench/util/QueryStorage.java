@@ -64,8 +64,7 @@ public class QueryStorage {
 	private static final String PRE = "PREFIX : <https://openrdf.org/workbench/>\n";
 
 	// SAVE needs xsd: prefix since explicit XSD data types will be substituted.
-	private static final String SAVE = "PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>\n"
-			+ PRE
+	private static final String SAVE = "PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>\n" + PRE
 			+ "INSERT DATA { $<query> :userName $<userName> ; :queryName $<queryName> ; "
 			+ ":repository $<repository> ; :shared $<shared> ; :queryLanguage $<queryLanguage> ; :query $<queryText> ; "
 			+ ":infer $<infer> ; :rowsPerPage $<rowsPerPage> . }";
@@ -86,9 +85,7 @@ public class QueryStorage {
 
 	private static final String MATCH = ":shared ?s ; :queryLanguage ?ql ; :query ?q ; :rowsPerPage ?rpp .\n";
 
-	private static final String UPDATE = PRE
-			+ "DELETE { $<query> "
-			+ MATCH
+	private static final String UPDATE = PRE + "DELETE { $<query> " + MATCH
 			+ "}\nINSERT { $<query> :shared $<shared> ; :queryLanguage $<queryLanguage> ; :query $<queryText> ; "
 			+ ":infer $<infer> ; :rowsPerPage $<rowsPerPage> . } WHERE { $<query> :userName ?user ; " + MATCH
 			+ UPDATE_FILTER;
@@ -143,13 +140,11 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Checks whether the current user/password credentials can really access the
-	 * current repository.
+	 * Checks whether the current user/password credentials can really access the current repository.
 	 * 
 	 * @param repository
 	 *        the current repository
-	 * @return true, if it is possible to request a statement from the repository
-	 *         with the given credentials
+	 * @return true, if it is possible to request a statement from the repository with the given credentials
 	 * @throws RepositoryException
 	 *         if there is an issue closing the connection
 	 */
@@ -174,9 +169,8 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Save a query. UNSAFE from an injection point of view. It is the
-	 * responsibility of the calling code to call checkAccess() with the full
-	 * credentials first.
+	 * Save a query. UNSAFE from an injection point of view. It is the responsibility of the calling code to
+	 * call checkAccess() with the full credentials first.
 	 * 
 	 * @param repository
 	 *        the repository the query is associated with
@@ -201,8 +195,8 @@ public class QueryStorage {
 		throws RDF4JException
 	{
 		if (QueryLanguage.SPARQL != queryLanguage && QueryLanguage.SERQL != queryLanguage) {
-			throw new RepositoryException("May only save SPARQL or SeRQL queries, not"
-					+ queryLanguage.toString());
+			throw new RepositoryException(
+					"May only save SPARQL or SeRQL queries, not" + queryLanguage.toString());
 		}
 		if (0 != rowsPerPage && 10 != rowsPerPage && 20 != rowsPerPage && 50 != rowsPerPage
 				&& 100 != rowsPerPage && 200 != rowsPerPage)
@@ -219,15 +213,13 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Determines whether the user with the given userName is allowed to update
-	 * or delete the given query.
+	 * Determines whether the user with the given userName is allowed to update or delete the given query.
 	 * 
 	 * @param query
 	 *        the node identifying the query of interest
 	 * @param currentUser
 	 *        the user to check access for
-	 * @return <tt>true</tt> if the given query was saved by the given user or
-	 *         the anonymous user
+	 * @return <tt>true</tt> if the given query was saved by the given user or the anonymous user
 	 */
 	public boolean canChange(final IRI query, final String currentUser)
 		throws RepositoryException, QueryEvaluationException, MalformedQueryException
@@ -236,15 +228,14 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Determines whether the user with the given userName is allowed to read the
-	 * given query.
+	 * Determines whether the user with the given userName is allowed to read the given query.
 	 * 
 	 * @param query
 	 *        the node identifying the query of interest
 	 * @param currentUser
 	 *        the user to check access for
-	 * @return <tt>true</tt> if the given query was saved by either the given
-	 *         user or the anonymous user, or is shared
+	 * @return <tt>true</tt> if the given query was saved by either the given user or the anonymous user, or
+	 *         is shared
 	 */
 	public boolean canRead(IRI query, String currentUser)
 		throws RepositoryException, QueryEvaluationException, MalformedQueryException
@@ -286,9 +277,8 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Delete the given query for the given user. It is the responsibility of the
-	 * calling code to call checkAccess() and canDelete() with the full
-	 * credentials first.
+	 * Delete the given query for the given user. It is the responsibility of the calling code to call
+	 * checkAccess() and canDelete() with the full credentials first.
 	 * 
 	 * @param query
 	 * @param userName
@@ -306,8 +296,8 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Update the entry for the given query. It is the responsibility of the
-	 * calling code to call checkAccess() with the full credentials first.
+	 * Update the entry for the given query. It is the responsibility of the calling code to call
+	 * checkAccess() with the full credentials first.
 	 * 
 	 * @param query
 	 *        the query to update
@@ -330,7 +320,8 @@ public class QueryStorage {
 	 *         if a problem occurs during the update
 	 */
 	public void updateQuery(final IRI query, final String userName, final boolean shared,
-			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage)
+			final QueryLanguage queryLanguage, final String queryText, final boolean infer,
+			final int rowsPerPage)
 		throws RepositoryException, UpdateExecutionException, MalformedQueryException
 	{
 		final QueryStringBuilder update = new QueryStringBuilder(UPDATE);
@@ -340,19 +331,18 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Prepares a query to retrieve the queries accessible to the given user in
-	 * the given repository. When evaluated, the query result will have the
-	 * following binding names: query, user, queryName, shared, queryLn,
-	 * queryText, rowsPerPage. It is the responsibility of the calling code to
-	 * call checkAccess() with the full credentials first.
+	 * Prepares a query to retrieve the queries accessible to the given user in the given repository. When
+	 * evaluated, the query result will have the following binding names: query, user, queryName, shared,
+	 * queryLn, queryText, rowsPerPage. It is the responsibility of the calling code to call checkAccess()
+	 * with the full credentials first.
 	 * 
 	 * @param repository
 	 *        that the saved queries run against
 	 * @param userName
 	 *        that is requesting the saved queries
 	 * @param builder
-	 *        receives a list of all the saved queries against the given
-	 *        repository and accessible to the given user
+	 *        receives a list of all the saved queries against the given repository and accessible to the
+	 *        given user
 	 * @throws RepositoryException
 	 *         if there's a problem connecting to the saved queries repository
 	 * @throws MalformedQueryException
@@ -380,8 +370,8 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Returns the URI for the saved query in the given repository with the given
-	 * name, owned by the given owner.
+	 * Returns the URI for the saved query in the given repository with the given name, owned by the given
+	 * owner.
 	 * 
 	 * @param repository
 	 *        The repository the query is associated with.
@@ -419,8 +409,8 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Retrieves the specified query text. No security checks are done here. If
-	 * the saved query exists, its text is returned.
+	 * Retrieves the specified query text. No security checks are done here. If the saved query exists, its
+	 * text is returned.
 	 * 
 	 * @param repository
 	 *        Repository that the saved query is associated with.
@@ -500,10 +490,9 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Imposes the rule that the query may not contain '''-quoted string, since
-	 * that is how we'll be quoting it in our SPARQL/Update statements. Quoting
-	 * the query with ''' assuming all string literals in the query are of the
-	 * STRING_LITERAL1, STRING_LITERAL2 or STRING_LITERAL_LONG2 types.
+	 * Imposes the rule that the query may not contain '''-quoted string, since that is how we'll be quoting
+	 * it in our SPARQL/Update statements. Quoting the query with ''' assuming all string literals in the
+	 * query are of the STRING_LITERAL1, STRING_LITERAL2 or STRING_LITERAL_LONG2 types.
 	 * 
 	 * @param queryText
 	 *        the query text

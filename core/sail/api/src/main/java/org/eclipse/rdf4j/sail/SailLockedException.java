@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.sail;
 
 /**
- * Indicates that a SAIL cannot be initialised because the configured persisted
- * location is locked.
+ * Indicates that a SAIL cannot be initialised because the configured persisted location is locked.
  * 
  * @author James Leigh
  */
@@ -42,22 +41,18 @@ public class SailLockedException extends SailException {
 	}
 
 	/**
-	 * Returns the name representing the Java virtual machine that acquired the
-	 * lock.
+	 * Returns the name representing the Java virtual machine that acquired the lock.
 	 * 
-	 * @return the name representing the Java virtual machine that acquired the
-	 *         lock.
+	 * @return the name representing the Java virtual machine that acquired the lock.
 	 */
 	public String getLockedBy() {
 		return lockedBy;
 	}
 
 	/**
-	 * Returns the name representing the Java virtual machine that requested the
-	 * lock.
+	 * Returns the name representing the Java virtual machine that requested the lock.
 	 * 
-	 * @return the name representing the Java virtual machine that requested the
-	 *         lock.
+	 * @return the name representing the Java virtual machine that requested the lock.
 	 */
 	public String getRequestedBy() {
 		return requestedBy;

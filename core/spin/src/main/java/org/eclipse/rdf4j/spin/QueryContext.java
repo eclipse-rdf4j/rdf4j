@@ -9,18 +9,15 @@ package org.eclipse.rdf4j.spin;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryPreparer;
 
-
-
 public class QueryContext {
+
 	private static final ThreadLocal<QueryPreparer> queryPreparer = new ThreadLocal<QueryPreparer>();
 
-	public static QueryPreparer getQueryPreparer() 
-	{
+	public static QueryPreparer getQueryPreparer() {
 		return queryPreparer.get();
 	}
 
-	public static QueryContext begin(QueryPreparer qp) 
-	{
+	public static QueryContext begin(QueryPreparer qp) {
 		return new QueryContext(qp);
 	}
 
@@ -33,7 +30,7 @@ public class QueryContext {
 
 	public void end() {
 		queryPreparer.remove();
-		if(previous != null) {
+		if (previous != null) {
 			queryPreparer.set(previous);
 		}
 	}

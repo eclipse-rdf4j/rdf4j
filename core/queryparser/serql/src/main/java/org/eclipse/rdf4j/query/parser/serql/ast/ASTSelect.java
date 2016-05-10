@@ -47,7 +47,7 @@ public class ASTSelect extends SimpleNode {
 	public boolean isReduced() {
 		return reduced;
 	}
-	
+
 	public boolean isWildcard() {
 		return wildcard;
 	}
@@ -61,8 +61,7 @@ public class ASTSelect extends SimpleNode {
 	}
 
 	@Override
-	public String toString()
-	{
+	public String toString() {
 		String result = super.toString();
 
 		if (distinct || reduced || wildcard) {

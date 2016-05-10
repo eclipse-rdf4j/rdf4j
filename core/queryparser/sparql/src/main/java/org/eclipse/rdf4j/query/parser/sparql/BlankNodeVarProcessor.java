@@ -24,14 +24,12 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilderTreeConstants;
 import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 
 /**
- * Processes blank nodes in the query body, replacing them with variables while
- * retaining scope.
+ * Processes blank nodes in the query body, replacing them with variables while retaining scope.
  * 
  * @author Arjohn Kampman
  */
 public class BlankNodeVarProcessor extends AbstractASTVisitor {
 
-	
 	public static Set<String> process(ASTOperationContainer qc)
 		throws MalformedQueryException
 	{
@@ -60,7 +58,7 @@ public class BlankNodeVarProcessor extends AbstractASTVisitor {
 		private String createAnonVarName() {
 			return "_anon_" + anonVarNo++;
 		}
-		
+
 		public Set<String> getUsedBNodeIDs() {
 			usedBNodeIDs.addAll(conversionMap.keySet());
 			return Collections.unmodifiableSet(usedBNodeIDs);
@@ -103,13 +101,14 @@ public class BlankNodeVarProcessor extends AbstractASTVisitor {
 			return super.visit(node, data);
 		}
 
-		private String findVarName(String bnodeID) throws VisitorException {
+		private String findVarName(String bnodeID)
+			throws VisitorException
+		{
 			if (bnodeID == null)
 				return null;
 			String varName = conversionMap.get(bnodeID);
 			if (varName == null && usedBNodeIDs.contains(bnodeID))
-				throw new VisitorException(
-						"BNodeID already used in another scope: " + bnodeID);
+				throw new VisitorException("BNodeID already used in another scope: " + bnodeID);
 			return varName;
 		}
 

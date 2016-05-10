@@ -99,7 +99,8 @@ public class DatasetRepositoryConnection extends RepositoryConnectionWrapper {
 		if (q instanceof SailTupleQuery) {
 			return wrap((SailTupleQuery)q);
 		}
-		throw new IllegalArgumentException(q.getClass().getSimpleName() + " not supported on DatasetRepository");
+		throw new IllegalArgumentException(
+				q.getClass().getSimpleName() + " not supported on DatasetRepository");
 	}
 
 	private BooleanQuery wrap(final SailBooleanQuery q) {

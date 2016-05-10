@@ -12,8 +12,7 @@ import java.io.IOException;
 import org.eclipse.rdf4j.query.BooleanQueryResultHandler;
 
 /**
- * The interface of objects that writer query results in a specific query result
- * format.
+ * The interface of objects that writer query results in a specific query result format.
  * 
  * @author Arjohn Kampman
  */

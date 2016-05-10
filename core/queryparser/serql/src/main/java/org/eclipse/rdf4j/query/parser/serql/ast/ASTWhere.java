@@ -23,7 +23,7 @@ public class ASTWhere extends SimpleNode {
 	{
 		return visitor.visit(this, data);
 	}
-	
+
 	public ASTBooleanExpr getCondition() {
 		return (ASTBooleanExpr)children.get(0);
 	}

@@ -45,7 +45,8 @@ public class SailConnectionTupleQuery extends SailConnectionQuery implements Tup
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter;
 
 			SailConnection sailCon = getSailConnection();
-			bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
+			bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(),
+					getIncludeInferred());
 
 			bindingsIter = enforceMaxQueryTime(bindingsIter);
 

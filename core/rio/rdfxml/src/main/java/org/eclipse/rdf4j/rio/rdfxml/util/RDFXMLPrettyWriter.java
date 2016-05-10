@@ -28,27 +28,23 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriter;
 
 /**
- * An extension of RDFXMLWriter that outputs a more concise form of RDF/XML. The
- * resulting output is semantically equivalent to the output of an RDFXMLWriter
- * (it produces the same set of statements), but it is usually easier to read
- * for humans.
+ * An extension of RDFXMLWriter that outputs a more concise form of RDF/XML. The resulting output is
+ * semantically equivalent to the output of an RDFXMLWriter (it produces the same set of statements), but it
+ * is usually easier to read for humans.
  * <p>
- * This is a quasi-streaming RDFWriter. Statements are cached as long as the
- * striped syntax is followed (i.e. the subject of the next statement is the
- * object of the previous statement) and written to the output when the stripe
- * is broken.
+ * This is a quasi-streaming RDFWriter. Statements are cached as long as the striped syntax is followed (i.e.
+ * the subject of the next statement is the object of the previous statement) and written to the output when
+ * the stripe is broken.
  * <p>
  * The abbreviations used are
- * <a href="http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-typed-nodes"
- * >typed node elements</a>, <a href=
- * "http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-empty-property-elements"
- * >empty property elements</a> and <a href=
- * "http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-node-property-elements"
- * >striped syntax</a>. Note that these abbreviations require that statements
- * are written in the appropriate order.
+ * <a href="http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-typed-nodes" >typed node elements</a>,
+ * <a href= "http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-empty-property-elements" >empty property
+ * elements</a> and
+ * <a href= "http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-node-property-elements" >striped
+ * syntax</a>. Note that these abbreviations require that statements are written in the appropriate order.
  * <p>
- * Striped syntax means that when the object of a statement is the subject of
- * the next statement we can nest the descriptions in each other.
+ * Striped syntax means that when the object of a statement is the subject of the next statement we can nest
+ * the descriptions in each other.
  * <p>
  * Example:
  * 
@@ -66,8 +62,7 @@ import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriter;
  * &lt;/rdf:Seq&gt;
  * </pre>
  * 
- * Typed node elements means that we write out type information in the short
- * form of
+ * Typed node elements means that we write out type information in the short form of
  * 
  * <pre>
  * &lt;foaf:Person rdf:about=&quot;...&quot;&gt;
@@ -111,13 +106,11 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	 *-----------*/
 
 	/*
-	 * We implement striped syntax by using two stacks, one for predicates and
-	 * one for subjects/objects.
+	 * We implement striped syntax by using two stacks, one for predicates and one for subjects/objects.
 	 */
 
 	/**
-	 * Stack for remembering the nodes (subjects/objects) of statements at each
-	 * level.
+	 * Stack for remembering the nodes (subjects/objects) of statements at each level.
 	 */
 	private final Stack<Node> nodeStack = new Stack<Node>();
 
@@ -131,8 +124,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	 *--------------*/
 
 	/**
-	 * Creates a new RDFXMLPrintWriter that will write to the supplied
-	 * OutputStream.
+	 * Creates a new RDFXMLPrintWriter that will write to the supplied OutputStream.
 	 * 
 	 * @param out
 	 *        The OutputStream to write the RDF/XML document to.
@@ -224,8 +216,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	}
 
 	/**
-	 * Write out the stacks until we find subject. If subject == null, write out
-	 * the entire stack
+	 * Write out the stacks until we find subject. If subject == null, write out the entire stack
 	 * 
 	 * @param newSubject
 	 */
@@ -378,9 +369,8 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	}
 
 	/**
-	 * Write out the opening tag of the subject or object of a statement up to
-	 * (but not including) the end of the tag. Used both in writeStartSubject and
-	 * writeEmptySubject.
+	 * Write out the opening tag of the subject or object of a statement up to (but not including) the end of
+	 * the tag. Used both in writeStartSubject and writeEmptySubject.
 	 */
 	private void writeNodeStartOfStartTag(Node node)
 		throws IOException, RDFHandlerException

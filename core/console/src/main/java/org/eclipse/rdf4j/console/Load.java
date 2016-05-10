@@ -152,8 +152,8 @@ class Load implements Command {
 			con.close();
 		}
 		final long endTime = System.nanoTime();
-		consoleIO.writeln("Data has been added to the repository (" + (endTime - startTime)
-				/ 1000000 + " ms)");
+		consoleIO.writeln(
+				"Data has been added to the repository (" + (endTime - startTime) / 1000000 + " ms)");
 	}
 
 	private Resource[] getContexts(Repository repository, String context) {

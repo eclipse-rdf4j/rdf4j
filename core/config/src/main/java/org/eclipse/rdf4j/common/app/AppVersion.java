@@ -12,10 +12,9 @@ import java.util.Locale;
 import org.eclipse.rdf4j.common.lang.ObjectUtil;
 
 /**
- * A product version in Aduna's version format (i.e. major.minor-modifier).
- * Where major stands for the major version number of the release, minor is the
- * minor version number, and modifier is a modifier for the release, e.g. beta1
- * or RC1. Combined, this results in versions like 2.0 and 4.1-beta1.
+ * A product version in Aduna's version format (i.e. major.minor-modifier). Where major stands for the major
+ * version number of the release, minor is the minor version number, and modifier is a modifier for the
+ * release, e.g. beta1 or RC1. Combined, this results in versions like 2.0 and 4.1-beta1.
  */
 public class AppVersion implements Comparable<AppVersion> {
 
@@ -59,32 +58,29 @@ public class AppVersion implements Comparable<AppVersion> {
 	}
 
 	/**
-	 * Creates a new <tt>major.minor.patch</tt> version number, e.g.
-	 * <tt>1.0.1</tt>.
+	 * Creates a new <tt>major.minor.patch</tt> version number, e.g. <tt>1.0.1</tt>.
 	 */
 	public AppVersion(int major, int minor, int patch) {
 		this(major, minor, patch, -1, null);
 	}
 
 	/**
-	 * Creates a new <tt>major.minor-modifier</tt> version number, e.g.
-	 * <tt>1.0-beta1</tt>.
+	 * Creates a new <tt>major.minor-modifier</tt> version number, e.g. <tt>1.0-beta1</tt>.
 	 */
 	public AppVersion(int major, int minor, String modifier) {
 		this(major, minor, -1, -1, modifier);
 	}
 
 	/**
-	 * Creates a new <tt>major.minor.patch-modifier</tt> version number, e.g.
-	 * <tt>1.0.1-SNAPSHOT</tt>.
+	 * Creates a new <tt>major.minor.patch-modifier</tt> version number, e.g. <tt>1.0.1-SNAPSHOT</tt>.
 	 */
 	public AppVersion(int major, int minor, int patch, String modifier) {
 		this(major, minor, patch, -1, modifier);
 	}
 
 	/**
-	 * Creates a new <tt>major.minor.patchMmilestone-modifier</tt> version
-	 * number, e.g. <tt>1.0.1M1-SNAPSHOT</tt>.
+	 * Creates a new <tt>major.minor.patchMmilestone-modifier</tt> version number, e.g.
+	 * <tt>1.0.1M1-SNAPSHOT</tt>.
 	 */
 	public AppVersion(int major, int minor, int patch, int milestone, String modifier) {
 		this.major = major;
@@ -183,33 +179,30 @@ public class AppVersion implements Comparable<AppVersion> {
 	}
 
 	/**
-	 * Checks if this version is older than the specified version, according to
-	 * the result of {@link #compareTo(AppVersion)}.
+	 * Checks if this version is older than the specified version, according to the result of
+	 * {@link #compareTo(AppVersion)}.
 	 */
 	public boolean olderThan(AppVersion other) {
 		return this.compareTo(other) < 0;
 	}
 
 	/**
-	 * Checks if this version is newer than the specified version, according to
-	 * the result of {@link #compareTo(AppVersion)}.
+	 * Checks if this version is newer than the specified version, according to the result of
+	 * {@link #compareTo(AppVersion)}.
 	 */
 	public boolean newerThan(AppVersion other) {
 		return this.compareTo(other) > 0;
 	}
 
 	/**
-	 * Compares two version numbers according to their major, minor, patch and
-	 * milestone version numbers, ordering from oldest to newest version. If all
-	 * version numbers are equal then their modifiers are
-	 * compared lexicographically (based on the Unicode value of each
-	 * character), ignoring case. Versions without a modifier or milestone are considered to
-	 * be the "final" versions and come after otherwise equal versions with a
-	 * modifier or milestone.
+	 * Compares two version numbers according to their major, minor, patch and milestone version numbers,
+	 * ordering from oldest to newest version. If all version numbers are equal then their modifiers are
+	 * compared lexicographically (based on the Unicode value of each character), ignoring case. Versions
+	 * without a modifier or milestone are considered to be the "final" versions and come after otherwise
+	 * equal versions with a modifier or milestone.
 	 * 
-	 * @return <tt>0</tt> if both versions are equal, a negative number if this
-	 *         version is older than <tt>other</tt>, or a positive number
-	 *         otherwise.
+	 * @return <tt>0</tt> if both versions are equal, a negative number if this version is older than
+	 *         <tt>other</tt>, or a positive number otherwise.
 	 */
 	public int compareTo(AppVersion other) {
 		int result = major - other.major;
@@ -221,7 +214,7 @@ public class AppVersion implements Comparable<AppVersion> {
 		if (result == 0) {
 			result = patch - other.patch;
 		}
-		
+
 		if (result == 0 && (milestone > -1 || other.milestone > -1)) {
 			if (milestone > -1) {
 				if (other.milestone == -1) {
@@ -350,7 +343,7 @@ public class AppVersion implements Comparable<AppVersion> {
 		if (milestone >= 0) {
 			sb.append('M').append(milestone);
 		}
-		
+
 		if (modifier != null) {
 			if (sb.length() > 0) {
 				sb.append('-');

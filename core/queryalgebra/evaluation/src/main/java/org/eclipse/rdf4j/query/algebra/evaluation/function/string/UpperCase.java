@@ -19,9 +19,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
- * The SPARQL built-in {@link Function} UCASE, as defined in <a
- * href="http://www.w3.org/TR/sparql11-query/#func-ucase">SPARQL Query Language
- * for RDF</a>
+ * The SPARQL built-in {@link Function} UCASE, as defined in
+ * <a href="http://www.w3.org/TR/sparql11-query/#func-ucase">SPARQL Query Language for RDF</a>
  * 
  * @author Jeen Broekstra
  */
@@ -42,8 +41,7 @@ public class UpperCase implements Function {
 			Literal literal = (Literal)args[0];
 
 			// UpperCase function accepts only string literal
-			if (QueryEvaluationUtil.isStringLiteral(literal))
-			{
+			if (QueryEvaluationUtil.isStringLiteral(literal)) {
 				String lexicalValue = literal.getLabel().toUpperCase();
 				Optional<String> language = literal.getLanguage();
 

@@ -140,8 +140,8 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	/**
-	 * Overrides the {@link FederatedServiceResolver} used by this instance, but
-	 * the given resolver is not shutDown when this instance is.
+	 * Overrides the {@link FederatedServiceResolver} used by this instance, but the given resolver is not
+	 * shutDown when this instance is.
 	 * 
 	 * @param reslover
 	 *        The SERVICE resolver to set.
@@ -150,7 +150,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 		this.serviceResolver = resolver;
 		for (Repository member : members) {
 			if (member instanceof FederatedServiceResolverClient) {
-				((FederatedServiceResolverClient) member).setFederatedServiceResolver(resolver);
+				((FederatedServiceResolverClient)member).setFederatedServiceResolver(resolver);
 			}
 		}
 	}
@@ -159,7 +159,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	public void setRepositoryResolver(RepositoryResolver resolver) {
 		for (Repository member : members) {
 			if (member instanceof RepositoryResolverClient) {
-				((RepositoryResolverClient) member).setRepositoryResolver(resolver);
+				((RepositoryResolverClient)member).setRepositoryResolver(resolver);
 			}
 		}
 	}
@@ -168,7 +168,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	public SesameClient getSesameClient() {
 		for (Repository member : members) {
 			if (member instanceof SesameClientDependent) {
-				SesameClient client = ((SesameClientDependent) member).getSesameClient();
+				SesameClient client = ((SesameClientDependent)member).getSesameClient();
 				if (client != null) {
 					return client;
 				}
@@ -181,7 +181,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	public void setSesameClient(SesameClient client) {
 		for (Repository member : members) {
 			if (member instanceof SesameClientDependent) {
-				((SesameClientDependent) member).setSesameClient(client);
+				((SesameClientDependent)member).setSesameClient(client);
 			}
 		}
 	}
@@ -190,7 +190,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	public HttpClient getHttpClient() {
 		for (Repository member : members) {
 			if (member instanceof HttpClientDependent) {
-				HttpClient client = ((HttpClientDependent) member).getHttpClient();
+				HttpClient client = ((HttpClientDependent)member).getHttpClient();
 				if (client != null) {
 					return client;
 				}
@@ -203,7 +203,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	public void setHttpClient(HttpClient client) {
 		for (Repository member : members) {
 			if (member instanceof HttpClientDependent) {
-				((HttpClientDependent) member).setHttpClient(client);
+				((HttpClientDependent)member).setHttpClient(client);
 			}
 		}
 	}
@@ -254,8 +254,8 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 			for (Repository member : members) {
 				connections.add(member.getConnection());
 			}
-			return readOnly ? new ReadOnlyConnection(this, connections) : new WritableConnection(this,
-					connections);
+			return readOnly ? new ReadOnlyConnection(this, connections)
+					: new WritableConnection(this, connections);
 		}
 		catch (RepositoryException e) {
 			closeAll(connections);
@@ -267,7 +267,9 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 		}
 	}
 
-	protected EvaluationStrategy createEvaluationStrategy(TripleSource tripleSource, Dataset dataset, FederatedServiceResolver resolver) {
+	protected EvaluationStrategy createEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+			FederatedServiceResolver resolver)
+	{
 		return new FederationStrategy(this, tripleSource, dataset, getFederatedServiceResolver());
 	}
 

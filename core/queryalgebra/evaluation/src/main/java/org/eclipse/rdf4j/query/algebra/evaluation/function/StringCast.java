@@ -32,8 +32,8 @@ public class StringCast implements Function {
 		throws ValueExprEvaluationException
 	{
 		if (args.length != 1) {
-			throw new ValueExprEvaluationException("xsd:string cast requires exactly 1 argument, got "
-					+ args.length);
+			throw new ValueExprEvaluationException(
+					"xsd:string cast requires exactly 1 argument, got " + args.length);
 		}
 
 		Value value = args[0];

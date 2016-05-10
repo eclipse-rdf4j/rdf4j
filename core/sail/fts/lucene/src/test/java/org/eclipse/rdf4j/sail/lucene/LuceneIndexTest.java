@@ -216,15 +216,15 @@ public class LuceneIndexTest {
 	}
 
 	/**
-	 * NB: this is a convenient but very slow way of getting termDocs. It is
-	 * sufficient for testing purposes.
+	 * NB: this is a convenient but very slow way of getting termDocs. It is sufficient for testing purposes.
 	 * 
 	 * @throws IOException
 	 */
 	private static PostingsEnum termDocs(IndexReader reader, Term term)
 		throws IOException
 	{
-		return MultiFields.getTermDocsEnum(reader, MultiFields.getLiveDocs(reader), term.field(), term.bytes());
+		return MultiFields.getTermDocsEnum(reader, MultiFields.getLiveDocs(reader), term.field(),
+				term.bytes());
 	}
 
 	private static boolean next(PostingsEnum docs)
@@ -298,8 +298,8 @@ public class LuceneIndexTest {
 	}
 
 	/**
-	 * Contexts can only be tested in combination with a sail, as the triples
-	 * have to be retrieved from the sail
+	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the
+	 * sail
 	 *
 	 * @throws Exception
 	 */
@@ -356,8 +356,8 @@ public class LuceneIndexTest {
 	}
 
 	/**
-	 * Contexts can only be tested in combination with a sail, as the triples
-	 * have to be retrieved from the sail
+	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the
+	 * sail
 	 *
 	 * @throws Exception
 	 */
@@ -474,22 +474,14 @@ public class LuceneIndexTest {
 
 	}
 
-	/*private void assertTexts(Set<String> texts, Document document) {
-		Set<String> toFind = new HashSet<String>(texts);
-		Set<String> found = new HashSet<String>();
-		for(Field field : document.getFields(LuceneIndex.TEXT_FIELD_NAME)) {
-			// is the field value expected and not yet been found?
-			if(toFind.remove(field.stringValue())) {
-				// add it to the found set
-				// (it was already remove from the toFind list in the if clause)
-				found.add(field.stringValue());
-			} else {
-				assertEquals("Was the text value '" + field.stringValue() + "' expected to exist?", false, true);
-			}
-		}
-	
-		for(String notFound : toFind) {
-			assertEquals("Was the expected text value '" + notFound + "' found?", true, false);
-		}
-	}*/
+	/*
+	 * private void assertTexts(Set<String> texts, Document document) { Set<String> toFind = new
+	 * HashSet<String>(texts); Set<String> found = new HashSet<String>(); for(Field field :
+	 * document.getFields(LuceneIndex.TEXT_FIELD_NAME)) { // is the field value expected and not yet been
+	 * found? if(toFind.remove(field.stringValue())) { // add it to the found set // (it was already remove
+	 * from the toFind list in the if clause) found.add(field.stringValue()); } else { assertEquals(
+	 * "Was the text value '" + field.stringValue() + "' expected to exist?", false, true); } } for(String
+	 * notFound : toFind) { assertEquals("Was the expected text value '" + notFound + "' found?", true,
+	 * false); } }
+	 */
 }

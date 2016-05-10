@@ -12,16 +12,14 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
- * Defines constants for the Sail repository schema which are used to initialize
- * repositories.
+ * Defines constants for the Sail repository schema which are used to initialize repositories.
  * 
  * @author Arjohn Kampman
  */
 public class SailConfigSchema {
 
 	/**
-	 * The Sail API schema namespace (
-	 * <tt>http://www.openrdf.org/config/sail#</tt>).
+	 * The Sail API schema namespace ( <tt>http://www.openrdf.org/config/sail#</tt>).
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail#";
 
@@ -30,7 +28,7 @@ public class SailConfigSchema {
 
 	/** <tt>http://www.openrdf.org/config/sail#delegate</tt> */
 	public final static IRI DELEGATE;
-	
+
 	/** <tt>http://www.openrdf.org/config/sail#iterationCacheSyncTreshold</tt> */
 	public final static IRI ITERATION_CACHE_SYNC_THRESHOLD;
 

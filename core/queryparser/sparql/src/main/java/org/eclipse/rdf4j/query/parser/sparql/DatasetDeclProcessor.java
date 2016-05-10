@@ -22,8 +22,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperation;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperationContainer;
 
 /**
- * Extracts a SPARQL {@link Dataset} from an ASTQueryContainer, if one is
- * contained.
+ * Extracts a SPARQL {@link Dataset} from an ASTQueryContainer, if one is contained.
  * 
  * @author Simon Schenk
  * @author Arjohn Kampman
@@ -31,8 +30,8 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperationContainer;
 public class DatasetDeclProcessor {
 
 	/**
-	 * Extracts a SPARQL {@link Dataset} from an ASTQueryContainer, if one is
-	 * contained. Returns null otherwise.
+	 * Extracts a SPARQL {@link Dataset} from an ASTQueryContainer, if one is contained. Returns null
+	 * otherwise.
 	 * 
 	 * @param qc
 	 *        The query model to resolve relative URIs in.

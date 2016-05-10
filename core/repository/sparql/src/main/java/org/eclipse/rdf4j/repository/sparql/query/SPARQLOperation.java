@@ -33,28 +33,31 @@ import org.eclipse.rdf4j.query.impl.SimpleDataset;
 public abstract class SPARQLOperation implements Operation {
 
 	private static Executor executor = Executors.newCachedThreadPool();
+
 	protected HttpClient client;
+
 	private String url;
+
 	protected Dataset dataset = new SimpleDataset();
 
 	private String operation;
-	
+
 	protected MapBindingSet bindings = new MapBindingSet();
 
 	public SPARQLOperation(HttpClient client, String url, String base, String operation) {
 		this.url = url;
 		this.operation = operation;
 		this.client = client;
-		boolean abs = base != null && base.length() > 0
-				&& new ParsedURI(base).isAbsolute();
+		boolean abs = base != null && base.length() > 0 && new ParsedURI(base).isAbsolute();
 		if (abs && !operation.toUpperCase().contains("BASE")) {
 			this.operation = "BASE <" + base + "> " + operation;
 		}
 	}
-	
+
 	public String getUrl() {
 		return url;
 	}
+
 	public BindingSet getBindings() {
 		return bindings;
 	}
@@ -112,7 +115,7 @@ public abstract class SPARQLOperation implements Operation {
 		}
 		return names;
 	}
-	
+
 	protected String getQueryString() {
 		if (bindings.size() == 0)
 			return operation;
@@ -130,16 +133,17 @@ public abstract class SPARQLOperation implements Operation {
 		}
 		return select + where;
 	}
-	
+
 	private String getReplacement(Value value) {
 		StringBuilder sb = new StringBuilder();
 		if (value instanceof IRI) {
-			return appendValue(sb, (IRI) value).toString();
-		} else if (value instanceof Literal) {
-			return appendValue(sb, (Literal) value).toString();
-		} else {
-			throw new IllegalArgumentException(
-					"BNode references not supported by SPARQL end-points");
+			return appendValue(sb, (IRI)value).toString();
+		}
+		else if (value instanceof Literal) {
+			return appendValue(sb, (Literal)value).toString();
+		}
+		else {
+			throw new IllegalArgumentException("BNode references not supported by SPARQL end-points");
 		}
 	}
 
@@ -164,6 +168,5 @@ public abstract class SPARQLOperation implements Operation {
 		}
 		return sb;
 	}
-
 
 }

@@ -11,16 +11,15 @@ import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ServerInterceptor;
 
 /**
- * Interceptor for protocol requests. Should not be a singleton bean! Configure
- * as inner bean in openrdf-servlet.xml
+ * Interceptor for protocol requests. Should not be a singleton bean! Configure as inner bean in
+ * openrdf-servlet.xml
  * 
  * @author Herko ter Horst
  */
 public class ProtocolInterceptor extends ServerInterceptor {
 
 	@Override
-	protected String getThreadName()
-	{
+	protected String getThreadName() {
 		return Protocol.PROTOCOL;
 	}
 }

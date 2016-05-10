@@ -36,8 +36,7 @@ public class IndentingWriter extends Writer {
 	protected Writer out;
 
 	/**
-	 * The current indentation level, i.e. the number of tabs to indent a start
-	 * or end tag.
+	 * The current indentation level, i.e. the number of tabs to indent a start or end tag.
 	 */
 	protected int indentationLevel = 0;
 
@@ -64,8 +63,7 @@ public class IndentingWriter extends Writer {
 	 *---------*/
 
 	/**
-	 * Sets the string that should be used for indentation. The default
-	 * indentation string is a tab character.
+	 * Sets the string that should be used for indentation. The default indentation string is a tab character.
 	 * 
 	 * @param indentString
 	 *        The indentation string, e.g. a tab or a number of spaces.
@@ -100,8 +98,8 @@ public class IndentingWriter extends Writer {
 	}
 
 	/**
-	 * Writes an end-of-line character sequence and triggers the indentation for
-	 * the text written on the next line.
+	 * Writes an end-of-line character sequence and triggers the indentation for the text written on the next
+	 * line.
 	 */
 	public void writeEOL()
 		throws IOException

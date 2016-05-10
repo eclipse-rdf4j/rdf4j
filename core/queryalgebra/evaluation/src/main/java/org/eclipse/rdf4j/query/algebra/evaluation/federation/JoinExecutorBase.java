@@ -15,12 +15,10 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-
 /**
- * Base class for any join parallel join executor. Note that this class extends
- * {@link LookAheadIteration} and thus any implementation of this class is
- * applicable for pipelining when used in a different thread (access to shared
- * variables is synchronized).
+ * Base class for any join parallel join executor. Note that this class extends {@link LookAheadIteration} and
+ * thus any implementation of this class is applicable for pipelining when used in a different thread (access
+ * to shared variables is synchronized).
  * 
  * @author Andreas Schwarte
  */
@@ -69,14 +67,13 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 	}
 
 	/**
-	 * Implementations must implement this method to handle bindings. Use the
-	 * following as a template <code>
+	 * Implementations must implement this method to handle bindings. Use the following as a template <code>
 	 * while (!closed && leftIter.hasNext()) {
 	 * 		// your code
 	 * }
-	 * </code> and add results to rightQueue. Note that addResult() is
-	 * implemented synchronized and thus thread safe. In case you can guarantee
-	 * sequential access, it is also possible to directly access rightQueue
+	 * </code> and add results to rightQueue. Note that addResult() is implemented synchronized and thus
+	 * thread safe. In case you can guarantee sequential access, it is also possible to directly access
+	 * rightQueue
 	 */
 	protected abstract void handleBindings()
 		throws Exception;

@@ -20,9 +20,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
- * The SPARQL built-in {@link Function} REPLACE, as defined in <a
- * href="http://www.w3.org/TR/sparql11-query/#func-substr">SPARQL Query Language
- * for RDF</a>.
+ * The SPARQL built-in {@link Function} REPLACE, as defined in
+ * <a href="http://www.w3.org/TR/sparql11-query/#func-substr">SPARQL Query Language for RDF</a>.
  * 
  * @author Jeen Broekstra
  */
@@ -36,7 +35,8 @@ public class Replace implements Function {
 		throws ValueExprEvaluationException
 	{
 		if (args.length < 3 || args.length > 4) {
-			throw new ValueExprEvaluationException("Incorrect number of arguments for REPLACE: " + args.length);
+			throw new ValueExprEvaluationException(
+					"Incorrect number of arguments for REPLACE: " + args.length);
 		}
 
 		try {
@@ -48,15 +48,15 @@ public class Replace implements Function {
 				flags = (Literal)args[3];
 			}
 
-			if (! QueryEvaluationUtil.isStringLiteral(arg)) {
+			if (!QueryEvaluationUtil.isStringLiteral(arg)) {
 				throw new ValueExprEvaluationException("incompatible operand for REPLACE: " + arg);
 			}
 
-			if (! QueryEvaluationUtil.isSimpleLiteral(pattern)) {
+			if (!QueryEvaluationUtil.isSimpleLiteral(pattern)) {
 				throw new ValueExprEvaluationException("incompatible operand for REPLACE: " + pattern);
 			}
 
-			if (! QueryEvaluationUtil.isSimpleLiteral(replacement)) {
+			if (!QueryEvaluationUtil.isSimpleLiteral(replacement)) {
 				throw new ValueExprEvaluationException("incompatible operand for REPLACE: " + replacement);
 			}
 

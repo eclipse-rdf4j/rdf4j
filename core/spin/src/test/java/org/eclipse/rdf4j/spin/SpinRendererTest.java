@@ -45,22 +45,23 @@ import org.junit.runners.Parameterized.Parameters;
 @RunWith(Parameterized.class)
 public class SpinRendererTest {
 
-	@Parameters(name="{0}")
+	@Parameters(name = "{0}")
 	public static Collection<Object[]> testData() {
 		List<Object[]> params = new ArrayList<Object[]>();
-		for(int i=0; ; i++) {
-			String suffix = String.valueOf(i+1);
-			String testFile = "/testcases/test"+suffix+".ttl";
+		for (int i = 0;; i++) {
+			String suffix = String.valueOf(i + 1);
+			String testFile = "/testcases/test" + suffix + ".ttl";
 			URL rdfURL = SpinRendererTest.class.getResource(testFile);
-			if(rdfURL == null) {
+			if (rdfURL == null) {
 				break;
 			}
-			params.add(new Object[] {testFile, rdfURL});
+			params.add(new Object[] { testFile, rdfURL });
 		}
 		return params;
 	}
 
 	private final URL testURL;
+
 	private final SpinRenderer renderer = new SpinRenderer();
 
 	public SpinRendererTest(String testName, URL testURL) {
@@ -68,7 +69,9 @@ public class SpinRendererTest {
 	}
 
 	@Test
-	public void testSpinRenderer() throws IOException, RDF4JException {
+	public void testSpinRenderer()
+		throws IOException, RDF4JException
+	{
 		StatementCollector expected = new StatementCollector();
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 		parser.setRDFHandler(expected);
@@ -78,24 +81,28 @@ public class SpinRendererTest {
 
 		// get query from sp:text
 		String query = null;
-		for(Statement stmt : expected.getStatements()) {
-			if(SP.TEXT_PROPERTY.equals(stmt.getPredicate())) {
+		for (Statement stmt : expected.getStatements()) {
+			if (SP.TEXT_PROPERTY.equals(stmt.getPredicate())) {
 				query = stmt.getObject().stringValue();
 				break;
 			}
 		}
 		assertNotNull(query);
 
-		ParsedOperation parsedOp = QueryParserUtil.parseOperation(QueryLanguage.SPARQL, query, testURL.toString());
+		ParsedOperation parsedOp = QueryParserUtil.parseOperation(QueryLanguage.SPARQL, query,
+				testURL.toString());
 
 		StatementCollector actual = new StatementCollector();
 		renderer.render(parsedOp, actual);
 
-		Object operation = (parsedOp instanceof ParsedQuery) ? ((ParsedQuery)parsedOp).getTupleExpr() : ((ParsedUpdate)parsedOp).getUpdateExprs();
-		assertTrue("Operation was\n"+operation+"\nExpected\n"+toRDF(expected)+"\nbut was\n"+toRDF(actual), Models.isomorphic(actual.getStatements(), expected.getStatements()));
+		Object operation = (parsedOp instanceof ParsedQuery) ? ((ParsedQuery)parsedOp).getTupleExpr()
+				: ((ParsedUpdate)parsedOp).getUpdateExprs();
+		assertTrue("Operation was\n" + operation + "\nExpected\n" + toRDF(expected) + "\nbut was\n"
+				+ toRDF(actual), Models.isomorphic(actual.getStatements(), expected.getStatements()));
 	}
 
-	private static String toRDF(StatementCollector stmts) throws RDFHandlerException
+	private static String toRDF(StatementCollector stmts)
+		throws RDFHandlerException
 	{
 		WriterConfig config = new WriterConfig();
 		config.set(BasicWriterSettings.PRETTY_PRINT, false);
@@ -104,7 +111,7 @@ public class SpinRendererTest {
 		rdfWriter.setWriterConfig(config);
 
 		rdfWriter.startRDF();
-		for (Map.Entry<String,String> entry : stmts.getNamespaces().entrySet()) {
+		for (Map.Entry<String, String> entry : stmts.getNamespaces().entrySet()) {
 			rdfWriter.handleNamespace(entry.getKey(), entry.getValue());
 		}
 		for (final Statement st : stmts.getStatements()) {

@@ -32,7 +32,7 @@ public class ExploreServlet extends TupleServlet {
 	private final Logger logger = LoggerFactory.getLogger(ExploreServlet.class);
 
 	protected static final String LIMIT = "limit_explore";
-	
+
 	protected static final int LIMIT_DEFAULT = 100;
 
 	public ExploreServlet() {
@@ -74,7 +74,8 @@ public class ExploreServlet extends TupleServlet {
 		// reporting of count in page.
 		int count = req.getInt("know_total");
 		if (count == 0) {
-			count = this.processResource(con, builder, value, 0, Integer.MAX_VALUE, false).getTotalResultCount();
+			count = this.processResource(con, builder, value, 0, Integer.MAX_VALUE,
+					false).getTotalResultCount();
 		}
 		this.cookies.addTotalResultCountCookie(req, resp, (int)count);
 		final int offset = req.getInt("offset");
@@ -89,8 +90,8 @@ public class ExploreServlet extends TupleServlet {
 	}
 
 	/**
-	 * Query the repository for all instances of the given value, optionally
-	 * writing the results into the HTTP response.
+	 * Query the repository for all instances of the given value, optionally writing the results into the HTTP
+	 * response.
 	 * 
 	 * @param con
 	 *        the connection to the repository
@@ -135,9 +136,8 @@ public class ExploreServlet extends TupleServlet {
 
 	/**
 	 * <p>
-	 * Render statements in the repository matching the given pattern to the HTTP
-	 * response. It is an implicit assumption when this calls
-	 * {@link #isFirstTimeSeen} that {@link #processResource} 's calls into here
+	 * Render statements in the repository matching the given pattern to the HTTP response. It is an implicit
+	 * assumption when this calls {@link #isFirstTimeSeen} that {@link #processResource} 's calls into here
 	 * have been made in the following order:
 	 * </p>
 	 * <ol>
@@ -172,8 +172,8 @@ public class ExploreServlet extends TupleServlet {
 				Statement statement = result.next();
 				if (isFirstTimeSeen(statement, pred, obj, context)) {
 					if (cursor.mayRender()) {
-						builder.result(statement.getSubject(), statement.getPredicate(), statement.getObject(),
-								statement.getContext());
+						builder.result(statement.getSubject(), statement.getPredicate(),
+								statement.getObject(), statement.getContext());
 					}
 					cursor.advance();
 				}
@@ -188,17 +188,14 @@ public class ExploreServlet extends TupleServlet {
 	 * Gets whether this is the first time the result quad has been seen.
 	 * 
 	 * @param patternPredicate
-	 *        the predicate asked for, or null if another quad element was asked
-	 *        for
+	 *        the predicate asked for, or null if another quad element was asked for
 	 * @param patternObject
 	 *        the object asked for, or null if another quad element was asked for
 	 * @param result
 	 *        the result statement to determine if we've already seen
 	 * @param patternContext
-	 *        the context asked for, or null if another quad element was asked
-	 *        for
-	 * @return true, if this is the first time the quad has been seen, false
-	 *         otherwise
+	 *        the context asked for, or null if another quad element was asked for
+	 * @return true, if this is the first time the quad has been seen, false otherwise
 	 */
 	private boolean isFirstTimeSeen(Statement result, IRI patternPredicate, Value patternObject,
 			Resource... patternContext)
@@ -210,7 +207,8 @@ public class ExploreServlet extends TupleServlet {
 		if (1 == patternContext.length) {
 			// I.e., when context matches explore value.
 			Resource ctx = patternContext[0];
-			firstTimeSeen = !(ctx.equals(resultSubject) || ctx.equals(resultPredicate) || ctx.equals(resultObject));
+			firstTimeSeen = !(ctx.equals(resultSubject) || ctx.equals(resultPredicate)
+					|| ctx.equals(resultObject));
 		}
 		else if (null != patternObject) {
 			// I.e., when object matches explore value.
@@ -228,8 +226,7 @@ public class ExploreServlet extends TupleServlet {
 	}
 
 	/**
-	 * Class for keeping track of location within the result set, relative to
-	 * offset and limit.
+	 * Class for keeping track of location within the result set, relative to offset and limit.
 	 * 
 	 * @author Dale Visser
 	 */
@@ -260,8 +257,8 @@ public class ExploreServlet extends TupleServlet {
 		}
 
 		/**
-		 * Gets the total number of results. Only meant to be called after
-		 * advance() has been called for all results in the set.
+		 * Gets the total number of results. Only meant to be called after advance() has been called for all
+		 * results in the set.
 		 * 
 		 * @return the number of times advance() has been called
 		 */
@@ -270,11 +267,10 @@ public class ExploreServlet extends TupleServlet {
 		}
 
 		/**
-		 * Gets the number of results that were actually rendered. Only meant to
-		 * be called after advance() has been called for all results in the set.
+		 * Gets the number of results that were actually rendered. Only meant to be called after advance() has
+		 * been called for all results in the set.
 		 * 
-		 * @return the number of times advance() has been called when
-		 *          this.mayRender() evaluated to true
+		 * @return the number of times advance() has been called when this.mayRender() evaluated to true
 		 */
 		public int getRenderedResultCount() {
 			return this.renderedResults;
@@ -288,8 +284,7 @@ public class ExploreServlet extends TupleServlet {
 		}
 
 		/**
-		 * Advances the cursor, incrementing the total count, and moving other
-		 * internal counters.
+		 * Advances the cursor, incrementing the total count, and moving other internal counters.
 		 */
 		public void advance() {
 			this.totalResults++;

@@ -148,15 +148,16 @@ public class NativeStoreConfig extends AbstractSailImplConfig {
 		super.parse(m, implNode);
 
 		try {
-			
-			Models.objectLiteral(m.filter(implNode, TRIPLE_INDEXES, null)).ifPresent(lit -> setTripleIndexes(lit.getLabel()));
+
+			Models.objectLiteral(m.filter(implNode, TRIPLE_INDEXES, null)).ifPresent(
+					lit -> setTripleIndexes(lit.getLabel()));
 			Models.objectLiteral(m.filter(implNode, FORCE_SYNC, null)).ifPresent(lit -> {
 				try {
 					setForceSync(lit.booleanValue());
 				}
 				catch (IllegalArgumentException e) {
-					throw new SailConfigException("Boolean value required for " + FORCE_SYNC + " property, found "
-							+ lit);
+					throw new SailConfigException(
+							"Boolean value required for " + FORCE_SYNC + " property, found " + lit);
 				}
 			});
 
@@ -165,29 +166,28 @@ public class NativeStoreConfig extends AbstractSailImplConfig {
 					setValueCacheSize(lit.intValue());
 				}
 				catch (NumberFormatException e) {
-					throw new SailConfigException("Integer value required for " + VALUE_CACHE_SIZE
-							+ " property, found " + lit);
+					throw new SailConfigException(
+							"Integer value required for " + VALUE_CACHE_SIZE + " property, found " + lit);
 				}
 			});
-			
+
 			Models.objectLiteral(m.filter(implNode, VALUE_ID_CACHE_SIZE, null)).ifPresent(lit -> {
 				try {
 					setValueIDCacheSize(lit.intValue());
 				}
 				catch (NumberFormatException e) {
-					throw new SailConfigException("Integer value required for " + VALUE_ID_CACHE_SIZE
-							+ " property, found " + lit);
+					throw new SailConfigException(
+							"Integer value required for " + VALUE_ID_CACHE_SIZE + " property, found " + lit);
 				}
 			});
-			
 
 			Models.objectLiteral(m.filter(implNode, NAMESPACE_CACHE_SIZE, null)).ifPresent(lit -> {
 				try {
 					setNamespaceCacheSize(lit.intValue());
 				}
 				catch (NumberFormatException e) {
-					throw new SailConfigException("Integer value required for " + NAMESPACE_CACHE_SIZE
-							+ " property, found " + lit);
+					throw new SailConfigException(
+							"Integer value required for " + NAMESPACE_CACHE_SIZE + " property, found " + lit);
 				}
 			});
 

@@ -26,8 +26,6 @@ public class Not extends UnaryFunction {
 	protected Value evaluate(ValueFactory valueFactory, Value arg)
 		throws ValueExprEvaluationException
 	{
-		return BooleanLiteral.valueOf(
-				!QueryEvaluationUtil.getEffectiveBooleanValue(arg)
-		);
+		return BooleanLiteral.valueOf(!QueryEvaluationUtil.getEffectiveBooleanValue(arg));
 	}
 }

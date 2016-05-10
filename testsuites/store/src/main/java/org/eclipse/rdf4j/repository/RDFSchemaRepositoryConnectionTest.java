@@ -29,7 +29,7 @@ import org.junit.runners.Parameterized.Parameters;
 @RunWith(Parameterized.class)
 public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnectionTest {
 
-	@Parameters(name="{0}")
+	@Parameters(name = "{0}")
 	public static final IsolationLevel[] parametersREAD_COMMITTED() {
 		return new IsolationLevel[] {
 				IsolationLevels.READ_COMMITTED,
@@ -38,9 +38,8 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 				IsolationLevels.SERIALIZABLE };
 	}
 
-
 	private IRI person;
-	
+
 	private IRI woman;
 
 	private IRI man;

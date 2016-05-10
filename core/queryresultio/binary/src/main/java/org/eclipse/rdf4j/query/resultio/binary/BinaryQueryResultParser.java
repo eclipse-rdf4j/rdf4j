@@ -52,8 +52,7 @@ import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 
 /**
- * Reader for the binary tuple result format. The format is explained in
- * {@link BinaryQueryResultConstants}.
+ * Reader for the binary tuple result format. The format is explained in {@link BinaryQueryResultConstants}.
  */
 public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 
@@ -74,16 +73,16 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 	 *--------------*/
 
 	/**
-	 * Creates a new parser for the binary query result format that will use an
-	 * instance of {@link SimpleValueFactory} to create Value objects.
+	 * Creates a new parser for the binary query result format that will use an instance of
+	 * {@link SimpleValueFactory} to create Value objects.
 	 */
 	public BinaryQueryResultParser() {
 		super();
 	}
 
 	/**
-	 * Creates a new parser for the binary query result format that will use the
-	 * supplied ValueFactory to create Value objects.
+	 * Creates a new parser for the binary query result format that will use the supplied ValueFactory to
+	 * create Value objects.
 	 */
 	public BinaryQueryResultParser(ValueFactory valueFactory) {
 		super(valueFactory);
@@ -139,10 +138,10 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 		}
 		columnHeaders = Collections.unmodifiableList(columnHeaders);
 
-		if(handler != null) {
+		if (handler != null) {
 			handler.startQueryResult(columnHeaders);
 		}
-		
+
 		// Read value tuples
 		List<Value> currentTuple = new ArrayList<Value>(columnCount);
 		List<Value> previousTuple = Collections.nCopies(columnCount, (Value)null);
@@ -157,7 +156,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 				processNamespace();
 			}
 			else if (recordTypeMarker == EMPTY_ROW_RECORD_MARKER) {
-				if(handler != null) {
+				if (handler != null) {
 					handler.handleSolution(EmptyBindingSet.getInstance());
 				}
 			}
@@ -193,7 +192,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 					previousTuple = Collections.unmodifiableList(currentTuple);
 					currentTuple = new ArrayList<Value>(columnCount);
 
-					if(handler != null) {
+					if (handler != null) {
 						handler.handleSolution(new ListBindingSet(columnHeaders, previousTuple));
 					}
 				}
@@ -202,7 +201,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 			recordTypeMarker = this.in.readByte();
 		}
 
-		if(handler != null) {
+		if (handler != null) {
 			handler.endQueryResult();
 		}
 	}
@@ -312,8 +311,8 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 	}
 
 	/**
-	 * Reads a string from the version 1 format, i.e. in Java's
-	 * {@link DataInput#modified-utf-8 Modified UTF-8}.
+	 * Reads a string from the version 1 format, i.e. in Java's {@link DataInput#modified-utf-8 Modified
+	 * UTF-8}.
 	 */
 	private String readStringV1()
 		throws IOException
@@ -322,9 +321,8 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 	}
 
 	/**
-	 * Reads a string from the version 2 format. Strings are encoded as UTF-8 and
-	 * are preceeded by a 32-bit integer (high byte first) specifying the length
-	 * of the encoded string.
+	 * Reads a string from the version 2 format. Strings are encoded as UTF-8 and are preceeded by a 32-bit
+	 * integer (high byte first) specifying the length of the encoded string.
 	 */
 	private String readStringV2()
 		throws IOException

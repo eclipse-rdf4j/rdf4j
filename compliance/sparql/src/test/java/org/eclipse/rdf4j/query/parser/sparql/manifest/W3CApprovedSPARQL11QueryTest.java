@@ -27,8 +27,8 @@ public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
 			public W3CApprovedSPARQL11QueryTest createSPARQLQueryTest(String testURI, String name,
 					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality)
 			{
-				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality,
-						false);
+				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
+						laxCardinality, false);
 			}
 
 			public W3CApprovedSPARQL11QueryTest createSPARQLQueryTest(String testURI, String name,

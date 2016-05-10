@@ -63,12 +63,12 @@ public class NegativeParserTest extends TestCase {
 			// Try parsing the input; this should result in an error being
 			// reported.
 			// targetParser.setDatatypeHandling(RDFParser.DatatypeHandling.IGNORE);
-			
+
 			targetParser.setRDFHandler(new StatementCollector());
 
 			InputStream in = this.getClass().getResourceAsStream(inputURL);
 			assertNotNull("Test resource was not found: inputURL=" + inputURL, in);
-			
+
 			System.err.println("test: " + inputURL);
 
 			targetParser.setParseErrorListener(el);
@@ -78,8 +78,8 @@ public class NegativeParserTest extends TestCase {
 
 			if (failureMode.ignoreFailure()) {
 				this.didIgnoreFailure = true;
-				System.err.println("Ignoring Negative Parser Test that does not report an expected error: "
-						+ inputURL);
+				System.err.println(
+						"Ignoring Negative Parser Test that does not report an expected error: " + inputURL);
 			}
 			else {
 				this.didIgnoreFailure = false;

@@ -32,8 +32,7 @@ import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
 
 /**
- * A SAIL implementation using B-Tree indexing on disk for storing and querying
- * its data.
+ * A SAIL implementation using B-Tree indexing on disk for storing and querying its data.
  * 
  * @author Arjohn Kampman
  * @author jeen
@@ -53,9 +52,8 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	private volatile String tripleIndexes;
 
 	/**
-	 * Flag indicating whether updates should be synced to disk forcefully. This
-	 * may have a severe impact on write performance. By default, this feature is
-	 * disabled.
+	 * Flag indicating whether updates should be synced to disk forcefully. This may have a severe impact on
+	 * write performance. By default, this feature is disabled.
 	 */
 	private volatile boolean forceSync = false;
 
@@ -124,8 +122,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 *---------*/
 
 	/**
-	 * Sets the triple indexes for the native store, must be called before
-	 * initialization.
+	 * Sets the triple indexes for the native store, must be called before initialization.
 	 * 
 	 * @param tripleIndexes
 	 *        An index strings, e.g. <tt>spoc,posc</tt>.
@@ -143,10 +140,9 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	/**
-	 * Specifiec whether updates should be synced to disk forcefully, must be
-	 * called before initialization. Enabling this feature may prevent corruption
-	 * in case of events like power loss, but can have a severe impact on write
-	 * performance. By default, this feature is disabled.
+	 * Specifiec whether updates should be synced to disk forcefully, must be called before initialization.
+	 * Enabling this feature may prevent corruption in case of events like power loss, but can have a severe
+	 * impact on write performance. By default, this feature is disabled.
 	 */
 	public void setForceSync(boolean forceSync) {
 		this.forceSync = forceSync;
@@ -186,8 +182,8 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	/**
-	 * Overrides the {@link FederatedServiceResolver} used by this instance, but
-	 * the given resolver is not shutDown when this instance is.
+	 * Overrides the {@link FederatedServiceResolver} used by this instance, but the given resolver is not
+	 * shutDown when this instance is.
 	 * 
 	 * @param resolver
 	 *        The SERVICE resolver to set.
@@ -200,8 +196,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 * Initializes this NativeStore.
 	 * 
 	 * @exception SailException
-	 *            If this NativeStore could not be initialized using the
-	 *            parameters that have been set.
+	 *            If this NativeStore could not be initialized using the parameters that have been set.
 	 */
 	@Override
 	protected void initializeInternal()
@@ -256,8 +251,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 						}
 					};
 				}
-			})
-			{
+			}) {
 
 				@Override
 				public SailSource getExplicitSailSource() {
@@ -333,13 +327,11 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	/**
-	 * This call will block when {@link IsolationLevels#NONE} is provided when
-	 * there are active transactions with a higher isolation and block when a
-	 * higher isolation is provided when there are active transactions with
-	 * {@link IsolationLevels#NONE} isolation. Store is either exclusively in
-	 * {@link IsolationLevels#NONE} isolation with potentially zero or more
-	 * transactions, or exclusively in higher isolation mode with potentially
-	 * zero or more transactions.
+	 * This call will block when {@link IsolationLevels#NONE} is provided when there are active transactions
+	 * with a higher isolation and block when a higher isolation is provided when there are active
+	 * transactions with {@link IsolationLevels#NONE} isolation. Store is either exclusively in
+	 * {@link IsolationLevels#NONE} isolation with potentially zero or more transactions, or exclusively in
+	 * higher isolation mode with potentially zero or more transactions.
 	 * 
 	 * @param level
 	 *        indicating desired mode {@link IsolationLevels#NONE} or higher
@@ -367,17 +359,16 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 		catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new SailException(e);
-		} finally {
+		}
+		finally {
 			txnLockManager.unlock();
 		}
 	}
 
 	/**
-	 * Checks if any {@link IsolationLevels#NONE} isolation transactions are
-	 * active.
+	 * Checks if any {@link IsolationLevels#NONE} isolation transactions are active.
 	 * 
-	 * @return <code>true</code> if at least one transaction has direct access to
-	 *         the indexes
+	 * @return <code>true</code> if at least one transaction has direct access to the indexes
 	 */
 	boolean isIsolationDisabled() {
 		return disabledIsolationLockManager.isActiveLock();

@@ -19,8 +19,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 public class SESAME {
 
 	/**
-	 * The Sesame Schema namespace (
-	 * <tt>http://www.openrdf.org/schema/sesame#</tt>).
+	 * The Sesame Schema namespace ( <tt>http://www.openrdf.org/schema/sesame#</tt>).
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/schema/sesame#";
 
@@ -30,8 +29,7 @@ public class SESAME {
 	public static final String PREFIX = "sesame";
 
 	/**
-	 * An immutable {@link Namespace} constant that represents the Sesame Schema
-	 * namespace.
+	 * An immutable {@link Namespace} constant that represents the Sesame Schema namespace.
 	 */
 	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
 
@@ -45,8 +43,7 @@ public class SESAME {
 	public final static IRI DIRECTTYPE;
 
 	/**
-	 * The SPARQL null context identifier (
-	 * <tt>http://www.openrdf.org/schema/sesame#nil</tt>)
+	 * The SPARQL null context identifier ( <tt>http://www.openrdf.org/schema/sesame#nil</tt>)
 	 */
 	public final static IRI NIL;
 
@@ -54,7 +51,7 @@ public class SESAME {
 	 * <tt>http://www.openrdf.org/schema/sesame#wildcard</tt>
 	 */
 	public final static IRI WILDCARD;
-	
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 		DIRECTSUBCLASSOF = factory.createIRI(SESAME.NAMESPACE, "directSubClassOf");
@@ -62,7 +59,7 @@ public class SESAME {
 		DIRECTTYPE = factory.createIRI(SESAME.NAMESPACE, "directType");
 
 		NIL = factory.createIRI(NAMESPACE, "nil");
-		
+
 		WILDCARD = factory.createIRI(NAMESPACE, "wildcard");
 	}
 }

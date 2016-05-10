@@ -51,13 +51,15 @@ public class NativeStoreConsistencyTest {
 	 *---------*/
 
 	@Test
-	public void testSES1867IndexCorruption() throws Exception {
+	public void testSES1867IndexCorruption()
+		throws Exception
+	{
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		IRI oldContext = vf.createIRI("http://example.org/oldContext");
 		IRI newContext = vf.createIRI("http://example.org/newContext");
 
 		File dataDir = tempDir.newFolder("nativestore-consistency");
-		
+
 		Repository repo = new SailRepository(new NativeStore(dataDir, "spoc,psoc"));
 		repo.initialize();
 
@@ -90,7 +92,7 @@ public class NativeStoreConsistencyTest {
 
 		// Step 4: check the repository size with SPOC only
 		new File(dataDir, "triples.prop").delete(); // delete triples.prop to
-																	// update index usage
+													// update index usage
 		repo = new SailRepository(new NativeStore(dataDir, "spoc"));
 		repo.initialize();
 		conn = repo.getConnection();
@@ -102,7 +104,7 @@ public class NativeStoreConsistencyTest {
 
 		// Step 5: check the repository size with PSOC only
 		new File(dataDir, "triples.prop").delete(); // delete triples.prop to
-																	// update index usage
+													// update index usage
 		repo = new SailRepository(new NativeStore(dataDir, "psoc"));
 		repo.initialize();
 		conn = repo.getConnection();
@@ -115,8 +117,10 @@ public class NativeStoreConsistencyTest {
 		// Step 6: computing the differences of the contents of the indices
 		System.out.println("Computing differences of sets...");
 
-		Collection<? extends Statement> differenceA = RepositoryUtil.difference(spocStatements, psocStatements);
-		Collection<? extends Statement> differenceB = RepositoryUtil.difference(psocStatements, spocStatements);
+		Collection<? extends Statement> differenceA = RepositoryUtil.difference(spocStatements,
+				psocStatements);
+		Collection<? extends Statement> differenceB = RepositoryUtil.difference(psocStatements,
+				spocStatements);
 
 		System.out.println("Difference SPOC MINUS PSOC: " + differenceA.size());
 		System.out.println("Difference PSOC MINUS SPOC: " + differenceB.size());
@@ -130,7 +134,7 @@ public class NativeStoreConsistencyTest {
 		for (Statement st : differenceB) {
 			System.out.println("  * " + st);
 		}
-		
+
 		assertEquals(0, differenceA.size());
 		assertEquals(0, differenceB.size());
 	}

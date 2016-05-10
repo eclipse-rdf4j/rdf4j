@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * An abstract superclass for binary tuple operators which, by definition, has
- * two arguments.
+ * An abstract superclass for binary tuple operators which, by definition, has two arguments.
  */
 public abstract class BinaryTupleOperator extends AbstractQueryModelNode implements TupleExpr {
 
@@ -64,8 +63,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	 * Sets the left argument of this binary tuple operator.
 	 * 
 	 * @param leftArg
-	 *        The (new) left argument for this operator, must not be
-	 *        <tt>null</tt>.
+	 *        The (new) left argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setLeftArg(TupleExpr leftArg) {
 		assert leftArg != null : "leftArg must not be null";
@@ -86,8 +84,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	 * Sets the right argument of this binary tuple operator.
 	 * 
 	 * @param rightArg
-	 *        The (new) right argument for this operator, must not be
-	 *        <tt>null</tt>.
+	 *        The (new) right argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setRightArg(TupleExpr rightArg) {
 		assert rightArg != null : "rightArg must not be null";

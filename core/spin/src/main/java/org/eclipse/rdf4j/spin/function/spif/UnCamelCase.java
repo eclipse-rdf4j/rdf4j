@@ -22,14 +22,16 @@ public class UnCamelCase extends UnaryFunction {
 	}
 
 	@Override
-	protected Value evaluate(ValueFactory valueFactory, Value arg) throws ValueExprEvaluationException {
+	protected Value evaluate(ValueFactory valueFactory, Value arg)
+		throws ValueExprEvaluationException
+	{
 		if (!(arg instanceof Literal)) {
 			throw new ValueExprEvaluationException("Argument must be a string");
 		}
 		String s = ((Literal)arg).getLabel();
 		StringBuilder buf = new StringBuilder(s.length() + 10);
 		char prev = '\0';
-		for (int i=0; i<s.length(); i++) {
+		for (int i = 0; i < s.length(); i++) {
 			char ch = s.charAt(i);
 			if (Character.isLowerCase(prev) && Character.isUpperCase(ch)) {
 				buf.append(' ');

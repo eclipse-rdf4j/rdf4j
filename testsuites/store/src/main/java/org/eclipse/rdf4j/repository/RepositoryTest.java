@@ -127,7 +127,7 @@ public abstract class RepositoryTest {
 		finally {
 			conn.close();
 		}
-		
+
 		testRepository.shutDown();
 		testRepository.initialize();
 

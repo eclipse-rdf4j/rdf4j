@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.common.io.IOUtil;
 import org.springframework.web.servlet.View;
 
 /**
- * 
  * @author Herko ter Horst
  */
 public class SimpleCustomResponseView implements View {

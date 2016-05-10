@@ -12,13 +12,11 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.springframework.web.servlet.handler.HandlerInterceptorAdapter;
 
-
 /**
- * Base class for single-use request interceptors. This implementation sets the
- * thread name to something sensible at the start of the request handling and
- * resets the name at the end. This is useful for logging frameworks that make
- * use of thread names, such as Log4J. Should not be a singleton bean! Configure
- * as inner bean in openrdf-servlet.xml
+ * Base class for single-use request interceptors. This implementation sets the thread name to something
+ * sensible at the start of the request handling and resets the name at the end. This is useful for logging
+ * frameworks that make use of thread names, such as Log4J. Should not be a singleton bean! Configure as inner
+ * bean in openrdf-servlet.xml
  * 
  * @author Herko ter Horst
  */
@@ -48,8 +46,7 @@ public abstract class ServerInterceptor extends HandlerInterceptorAdapter {
 	}
 
 	/**
-	 * Determine the thread name to use. Called before the request is forwarded
-	 * to a handler.
+	 * Determine the thread name to use. Called before the request is forwarded to a handler.
 	 * 
 	 * @return a name that makes sense based on the request
 	 * @throws ServerHTTPException
@@ -59,17 +56,16 @@ public abstract class ServerInterceptor extends HandlerInterceptorAdapter {
 		throws ServerHTTPException;
 
 	/**
-	 * Set attributes for this request. Called before the request is forwarded to
-	 * a handler. By default, this method does nothing.
+	 * Set attributes for this request. Called before the request is forwarded to a handler. By default, this
+	 * method does nothing.
 	 * 
 	 * @param request
 	 *        the request
 	 * @throws ClientHTTPException
-	 *         if it was impossible to set one or more attributes due to a bad
-	 *         request on the part of the client
+	 *         if it was impossible to set one or more attributes due to a bad request on the part of the
+	 *         client
 	 * @throws ServerHTTPException
-	 *         if it was impossible to set one or more attributes due to an
-	 *         internal error
+	 *         if it was impossible to set one or more attributes due to an internal error
 	 */
 	protected void setRequestAttributes(HttpServletRequest request)
 		throws ClientHTTPException, ServerHTTPException
@@ -77,13 +73,11 @@ public abstract class ServerInterceptor extends HandlerInterceptorAdapter {
 	}
 
 	/**
-	 * Clean up resources used in handling this request. Called after the request
-	 * is handled and a the view is rendered (or an exception has occurred). By
-	 * default, this method does nothing.
+	 * Clean up resources used in handling this request. Called after the request is handled and a the view is
+	 * rendered (or an exception has occurred). By default, this method does nothing.
 	 * 
 	 * @throws ServerHTTPException
-	 *         if some resources could not be cleaned up because of an internal
-	 *         error
+	 *         if some resources could not be cleaned up because of an internal error
 	 */
 	protected void cleanUpResources()
 		throws ServerHTTPException

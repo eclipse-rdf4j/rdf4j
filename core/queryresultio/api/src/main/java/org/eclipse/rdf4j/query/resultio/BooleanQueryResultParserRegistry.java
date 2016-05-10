@@ -10,13 +10,12 @@ package org.eclipse.rdf4j.query.resultio;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 
 /**
- * A registry that keeps track of the available
- * {@link BooleanQueryResultParserFactory}s.
+ * A registry that keeps track of the available {@link BooleanQueryResultParserFactory}s.
  * 
  * @author Arjohn Kampman
  */
-public class BooleanQueryResultParserRegistry extends
-		FileFormatServiceRegistry<QueryResultFormat, BooleanQueryResultParserFactory>
+public class BooleanQueryResultParserRegistry
+		extends FileFormatServiceRegistry<QueryResultFormat, BooleanQueryResultParserFactory>
 {
 
 	/**

@@ -42,7 +42,7 @@ public class ModelsTest {
 	private IRI foo;
 
 	private IRI bar;
-	
+
 	private BNode baz;
 
 	@Before
@@ -99,22 +99,22 @@ public class ModelsTest {
 		assertFalse(Models.isomorphic(model1, model2));
 
 	}
-	
+
 	@Test
 	public void testModelsIsomorphicContext() {
 		model1.add(foo, RDF.TYPE, bar);
 		model2.add(foo, RDF.TYPE, bar, foo);
 		assertFalse(Models.isomorphic(model1, model2));
-		
+
 		model1.add(foo, RDF.TYPE, bar, foo);
 		model2.add(foo, RDF.TYPE, bar);
-		
+
 		assertTrue(Models.isomorphic(model1, model2));
 
 		model1.add(foo, RDF.TYPE, bar, baz);
 
 		assertFalse(Models.isomorphic(model1, model2));
-		
+
 		model2.add(foo, RDF.TYPE, bar, VF.createBNode());
 
 		assertTrue(Models.isomorphic(model1, model2));
@@ -200,12 +200,12 @@ public class ModelsTest {
 		Literal lit = VF.createLiteral(1.0);
 		model1.add(foo, bar, lit);
 		model1.add(foo, bar, foo);
-		
+
 		Value result = Models.objectLiteral(model1).orElse(null);
 		assertNotNull(result);
 		assertEquals(lit, result);
 	}
-	
+
 	public void testPredicate() {
 		model1.add(foo, bar, foo);
 		model1.add(foo, foo, foo);
@@ -236,7 +236,7 @@ public class ModelsTest {
 		assertNotNull(result);
 		assertTrue(result.equals(bar) || result.equals(foo));
 	}
-	
+
 	public void testSubjectBNode() {
 		model1.add(foo, bar, foo);
 		model1.add(foo, foo, foo);

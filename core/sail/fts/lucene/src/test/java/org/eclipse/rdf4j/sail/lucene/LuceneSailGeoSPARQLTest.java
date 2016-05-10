@@ -29,7 +29,6 @@ public class LuceneSailGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLTest {
 		sail.setLuceneIndex(index);
 	}
 
-
 	@Test
 	@Ignore // JTS is required
 	@Override
@@ -38,7 +37,6 @@ public class LuceneSailGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLTest {
 	{
 		super.testIntersectionQuery();
 	}
-
 
 	@Test
 	@Ignore // JTS is required

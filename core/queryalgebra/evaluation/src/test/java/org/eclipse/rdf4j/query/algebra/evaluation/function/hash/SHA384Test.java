@@ -23,7 +23,8 @@ public class SHA384Test extends HashFunctionTest {
 	{
 		setHashFunction(new SHA384());
 		setToHash("abc");
-		setExpectedDigest("cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7");
+		setExpectedDigest(
+				"cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7");
 	}
 
 }

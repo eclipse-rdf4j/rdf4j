@@ -9,10 +9,9 @@
 package org.eclipse.rdf4j.common.iteration;
 
 /**
- * An {@link Iteration} that can be closed to free resources that it is holding.
- * CloseableIterations automatically free their resources when exhausted. If not
- * read until exhaustion or if you want to make sure the iteration is properly
- * closed, any code using the iterator should be placed in a try-with-resources
+ * An {@link Iteration} that can be closed to free resources that it is holding. CloseableIterations
+ * automatically free their resources when exhausted. If not read until exhaustion or if you want to make sure
+ * the iteration is properly closed, any code using the iterator should be placed in a try-with-resources
  * block, closing the iteration automatically, e.g.:
  * 
  * <pre>
@@ -28,8 +27,8 @@ package org.eclipse.rdf4j.common.iteration;
 public interface CloseableIteration<E, X extends Exception> extends Iteration<E, X>, AutoCloseable {
 
 	/**
-	 * Closes this iteration, freeing any resources that it is holding. If the
-	 * iteration has already been closed then invoking this method has no effect.
+	 * Closes this iteration, freeing any resources that it is holding. If the iteration has already been
+	 * closed then invoking this method has no effect.
 	 */
 	@Override
 	public void close()

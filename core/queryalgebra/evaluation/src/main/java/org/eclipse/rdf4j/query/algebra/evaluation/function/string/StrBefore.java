@@ -19,9 +19,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
- * The SPARQL built-in {@link Function} STRBEFORE, as defined in <a
- * href="http://www.w3.org/TR/sparql11-query/#func-substr">SPARQL Query Language
- * for RDF</a>.
+ * The SPARQL built-in {@link Function} STRBEFORE, as defined in
+ * <a href="http://www.w3.org/TR/sparql11-query/#func-substr">SPARQL Query Language for RDF</a>.
  * 
  * @author Jeen Broekstra
  */
@@ -35,7 +34,8 @@ public class StrBefore implements Function {
 		throws ValueExprEvaluationException
 	{
 		if (args.length != 2) {
-			throw new ValueExprEvaluationException("Incorrect number of arguments for STRBEFORE: " + args.length);
+			throw new ValueExprEvaluationException(
+					"Incorrect number of arguments for STRBEFORE: " + args.length);
 		}
 
 		Value leftArg = args[0];
@@ -45,15 +45,13 @@ public class StrBefore implements Function {
 			Literal leftLit = (Literal)leftArg;
 			Literal rightLit = (Literal)rightArg;
 
-			
-			if (QueryEvaluationUtil.compatibleArguments(leftLit, rightLit))
-			{
+			if (QueryEvaluationUtil.compatibleArguments(leftLit, rightLit)) {
 				Optional<String> leftLanguage = leftLit.getLanguage();
 				IRI leftDt = leftLit.getDatatype();
 
 				String lexicalValue = leftLit.getLabel();
 				String substring = rightLit.getLabel();
-				
+
 				int index = lexicalValue.indexOf(substring);
 
 				String substringBefore = "";
@@ -65,7 +63,7 @@ public class StrBefore implements Function {
 					leftLanguage = Optional.empty();
 					leftDt = null;
 				}
-				
+
 				if (leftLanguage.isPresent()) {
 					return valueFactory.createLiteral(substringBefore, leftLanguage.get());
 				}
@@ -77,11 +75,13 @@ public class StrBefore implements Function {
 				}
 			}
 			else {
-				throw new ValueExprEvaluationException("incompatible operands for STRBEFORE: " + leftArg + ", " + rightArg);
+				throw new ValueExprEvaluationException(
+						"incompatible operands for STRBEFORE: " + leftArg + ", " + rightArg);
 			}
 		}
 		else {
-			throw new ValueExprEvaluationException("incompatible operands for STRBEFORE: " + leftArg + ", " + rightArg);
+			throw new ValueExprEvaluationException(
+					"incompatible operands for STRBEFORE: " + leftArg + ", " + rightArg);
 		}
 	}
 }

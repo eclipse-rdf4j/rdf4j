@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnectionWrapper;
 import org.eclipse.rdf4j.sail.model.SailModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 public abstract class AbstractForwardChainingInferencerConnection extends InferencerConnectionWrapper
 		implements SailConnectionListener
 {
@@ -150,8 +151,8 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	}
 
 	/**
-	 * Adds all basic set of axiom statements from which the complete set can be
-	 * inferred to the underlying Sail.
+	 * Adds all basic set of axiom statements from which the complete set can be inferred to the underlying
+	 * Sail.
 	 */
 	protected abstract void addAxiomStatements()
 		throws SailException;

@@ -21,11 +21,10 @@ import org.eclipse.rdf4j.repository.event.RepositoryConnectionInterceptor;
 import org.eclipse.rdf4j.repository.event.RepositoryInterceptor;
 
 /**
- * Wrapper that notifies interceptors of events on Repositories before they
- * happen. Any interceptor can block the operation by returning true from the
- * relevant notification method. To do so will also cause the notification
- * process to stop, i.e. no other interceptors will be notified. The order in
- * which interceptors are notified is unspecified.
+ * Wrapper that notifies interceptors of events on Repositories before they happen. Any interceptor can block
+ * the operation by returning true from the relevant notification method. To do so will also cause the
+ * notification process to stop, i.e. no other interceptors will be notified. The order in which interceptors
+ * are notified is unspecified.
  * 
  * @author Herko ter Horst
  * @see InterceptingRepositoryConnectionWrapper
@@ -59,8 +58,8 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 	 *---------*/
 
 	/**
-	 * Registers a <tt>RepositoryInterceptor</tt> that will receive
-	 * notifications of operations that are performed on this repository.
+	 * Registers a <tt>RepositoryInterceptor</tt> that will receive notifications of operations that are
+	 * performed on this repository.
 	 */
 	public void addRepositoryInterceptor(RepositoryInterceptor interceptor) {
 		interceptors.add(interceptor);
@@ -68,8 +67,7 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 	}
 
 	/**
-	 * Removes a registered <tt>RepositoryInterceptor</tt> from this
-	 * repository.
+	 * Removes a registered <tt>RepositoryInterceptor</tt> from this repository.
 	 */
 	public void removeRepositoryInterceptor(RepositoryInterceptor interceptor) {
 		interceptors.remove(interceptor);
@@ -77,17 +75,15 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 	}
 
 	/**
-	 * Registers a <tt>RepositoryConnectionInterceptor</tt> that will receive
-	 * notifications of operations that are performed on any connections that are
-	 * created by this repository.
+	 * Registers a <tt>RepositoryConnectionInterceptor</tt> that will receive notifications of operations that
+	 * are performed on any connections that are created by this repository.
 	 */
 	public void addRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor) {
 		conInterceptors.add(interceptor);
 	}
 
 	/**
-	 * Removes a registered <tt>RepositoryConnectionInterceptor</tt> from this
-	 * repository.
+	 * Removes a registered <tt>RepositoryConnectionInterceptor</tt> from this repository.
 	 */
 	public void removeRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor) {
 		conInterceptors.remove(interceptor);

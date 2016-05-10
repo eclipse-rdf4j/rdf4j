@@ -15,8 +15,8 @@ import org.junit.Ignore;
 import junit.framework.Test;
 
 /**
- * JUnit test for the N3 parser that uses the tests that are available <a
- * href="http://www.w3.org/2000/10/swap/test/n3parser.tests">online</a>.
+ * JUnit test for the N3 parser that uses the tests that are available
+ * <a href="http://www.w3.org/2000/10/swap/test/n3parser.tests">online</a>.
  */
 @Ignore("FIXME: This test is badly broken")
 public class N3ParserTest extends N3ParserTestCase {

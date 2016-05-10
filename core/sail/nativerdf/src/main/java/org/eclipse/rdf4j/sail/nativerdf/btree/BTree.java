@@ -29,9 +29,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Implementation of an on-disk B-Tree using the <tt>java.nio</tt> classes that
- * are available in JDK 1.4 and newer. Documentation about B-Trees can be found
- * on-line at the following URLs:
+ * Implementation of an on-disk B-Tree using the <tt>java.nio</tt> classes that are available in JDK 1.4 and
+ * newer. Documentation about B-Trees can be found on-line at the following URLs:
  * <ul>
  * <li>http://cis.stvincent.edu/swd/btree/btree.html</li>,
  * <li>http://bluerwhite.org/btree/</li>, and
@@ -51,10 +50,9 @@ public class BTree {
 	 *-----------*/
 
 	/**
-	 * Magic number "BTree File" to detect whether the file is actually a BTree
-	 * file. The first three bytes of the file should be equal to this magic
-	 * number. Note: this header has only been introduced in Sesame 2.3. The old
-	 * "header" can be recognized using {@link BTree#OLD_MAGIC_NUMBER}.
+	 * Magic number "BTree File" to detect whether the file is actually a BTree file. The first three bytes of
+	 * the file should be equal to this magic number. Note: this header has only been introduced in Sesame
+	 * 2.3. The old "header" can be recognized using {@link BTree#OLD_MAGIC_NUMBER}.
 	 */
 	private static final byte[] MAGIC_NUMBER = new byte[] { 'b', 't', 'f' };
 
@@ -71,9 +69,8 @@ public class BTree {
 	private static final int HEADER_LENGTH = 16;
 
 	/**
-	 * The size of the node cache. Note that this is not a hard limit. All nodes
-	 * that are actively used are always cached. Also, a minimum of
-	 * {@link NODE_CACHE_SIZE} nodes of unused nodes is kept in the cache.
+	 * The size of the node cache. Note that this is not a hard limit. All nodes that are actively used are
+	 * always cached. Also, a minimum of {@link NODE_CACHE_SIZE} nodes of unused nodes is kept in the cache.
 	 */
 	private static final int NODE_CACHE_SIZE = 10;
 
@@ -94,25 +91,24 @@ public class BTree {
 	private final NioFile nioFile;
 
 	/**
-	 * Flag indicating whether file writes should be forced to disk using
-	 * {@link FileChannel#force(boolean)}.
+	 * Flag indicating whether file writes should be forced to disk using {@link FileChannel#force(boolean)}.
 	 */
 	private final boolean forceSync;
 
 	/**
-	 * Object used to determine whether one value is lower, equal or greater than
-	 * another value. This determines the order of values in the BTree.
+	 * Object used to determine whether one value is lower, equal or greater than another value. This
+	 * determines the order of values in the BTree.
 	 */
 	private final RecordComparator comparator;
 
 	/**
-	 * A read/write lock that is used to prevent changes to the BTree while
-	 * readers are active in order to prevent concurrency issues.
+	 * A read/write lock that is used to prevent changes to the BTree while readers are active in order to
+	 * prevent concurrency issues.
 	 */
 	private final ReentrantReadWriteLock btreeLock = new ReentrantReadWriteLock();
 
-	/* 
-	 * Node caching 
+	/*
+	 * Node caching
 	 */
 
 	/**
@@ -121,16 +117,14 @@ public class BTree {
 	private final Map<Integer, Node> nodeCache = new HashMap<Integer, Node>(NODE_CACHE_SIZE);
 
 	/**
-	 * Map of cached nodes that are no longer "in use", sorted from least
-	 * recently used to most recently used. This collection is used to remove
-	 * nodes from the cache when it is full. Note: needs to be synchronized
-	 * through nodeCache (data strucures should prob be merged in a NodeCache
-	 * class)
+	 * Map of cached nodes that are no longer "in use", sorted from least recently used to most recently used.
+	 * This collection is used to remove nodes from the cache when it is full. Note: needs to be synchronized
+	 * through nodeCache (data strucures should prob be merged in a NodeCache class)
 	 */
 	private final Map<Integer, Node> mruNodes = new LinkedHashMap<Integer, Node>(NODE_CACHE_SIZE);
 
-	/* 
-	 * Info about allocated and unused nodes in the file 
+	/*
+	 * Info about allocated and unused nodes in the file
 	 */
 
 	/**
@@ -143,9 +137,8 @@ public class BTree {
 	 */
 
 	/**
-	 * The block size to use for calculating BTree node size. For optimal
-	 * performance, the specified block size should be equal to the file system's
-	 * block size.
+	 * The block size to use for calculating BTree node size. For optimal performance, the specified block
+	 * size should be equal to the file system's block size.
 	 */
 	private final int blockSize;
 
@@ -155,20 +148,17 @@ public class BTree {
 	private final int valueSize;
 
 	/**
-	 * The size of a slot storing a node ID and a value. Value derived from
-	 * valueSize.
+	 * The size of a slot storing a node ID and a value. Value derived from valueSize.
 	 */
 	private final int slotSize;
 
 	/**
-	 * The maximum number of outgoing branches for a node. Value derived from
-	 * blockSize and slotSize.
+	 * The maximum number of outgoing branches for a node. Value derived from blockSize and slotSize.
 	 */
 	private final int branchFactor;
 
 	/**
-	 * The minimum number of values for a node (except for the root). Value
-	 * derived from branchFactor.
+	 * The minimum number of values for a node (except for the root). Value derived from branchFactor.
 	 */
 	private final int minValueCount;
 
@@ -182,15 +172,13 @@ public class BTree {
 	 *-----------*/
 
 	/**
-	 * The ID of the root node, <tt>0</tt> to indicate that there is no root node
-	 * (i.e. the BTree is empty).
+	 * The ID of the root node, <tt>0</tt> to indicate that there is no root node (i.e. the BTree is empty).
 	 */
 	private volatile int rootNodeID;
 
 	/**
-	 * The depth of this BTree (the cache variable), < 0 indicating it is
-	 * unknown, 0 for an empty BTree, 1 for a BTree with just a root node, and so
-	 * on.
+	 * The depth of this BTree (the cache variable), < 0 indicating it is unknown, 0 for an empty BTree, 1 for
+	 * a BTree with just a root node, and so on.
 	 */
 	private volatile int height = -1;
 
@@ -204,19 +192,17 @@ public class BTree {
 	 *--------------*/
 
 	/**
-	 * Creates a new BTree that uses an instance of
-	 * <tt>DefaultRecordComparator</tt> to compare values.
+	 * Creates a new BTree that uses an instance of <tt>DefaultRecordComparator</tt> to compare values.
 	 * 
 	 * @param dataDir
 	 *        The directory for the BTree data.
 	 * @param filenamePrefix
 	 *        The prefix for all files used by this BTree.
 	 * @param blockSize
-	 *        The size (in bytes) of a file block for a single node. Ideally, the
-	 *        size specified is the size of a block in the used file system.
+	 *        The size (in bytes) of a file block for a single node. Ideally, the size specified is the size
+	 *        of a block in the used file system.
 	 * @param valueSize
-	 *        The size (in bytes) of the fixed-length values that are or will be
-	 *        stored in the B-Tree.
+	 *        The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
 	 * @throws IOException
 	 *         In case the initialization of the B-Tree file failed.
 	 * @see DefaultRecordComparator
@@ -228,23 +214,20 @@ public class BTree {
 	}
 
 	/**
-	 * Creates a new BTree that uses an instance of
-	 * <tt>DefaultRecordComparator</tt> to compare values.
+	 * Creates a new BTree that uses an instance of <tt>DefaultRecordComparator</tt> to compare values.
 	 * 
 	 * @param dataDir
 	 *        The directory for the BTree data.
 	 * @param filenamePrefix
 	 *        The prefix for all files used by this BTree.
 	 * @param blockSize
-	 *        The size (in bytes) of a file block for a single node. Ideally, the
-	 *        size specified is the size of a block in the used file system.
+	 *        The size (in bytes) of a file block for a single node. Ideally, the size specified is the size
+	 *        of a block in the used file system.
 	 * @param valueSize
-	 *        The size (in bytes) of the fixed-length values that are or will be
-	 *        stored in the B-Tree.
+	 *        The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
 	 * @param forceSync
-	 *        Flag indicating whether updates should be synced to disk forcefully
-	 *        by calling {@link FileChannel#force(boolean)}. This may have a
-	 *        severe impact on write performance.
+	 *        Flag indicating whether updates should be synced to disk forcefully by calling
+	 *        {@link FileChannel#force(boolean)}. This may have a severe impact on write performance.
 	 * @throws IOException
 	 *         In case the initialization of the B-Tree file failed.
 	 * @see DefaultRecordComparator
@@ -256,52 +239,50 @@ public class BTree {
 	}
 
 	/**
-	 * Creates a new BTree that uses the supplied <tt>RecordComparator</tt> to
-	 * compare the values that are or will be stored in the B-Tree.
+	 * Creates a new BTree that uses the supplied <tt>RecordComparator</tt> to compare the values that are or
+	 * will be stored in the B-Tree.
 	 * 
 	 * @param dataDir
 	 *        The directory for the BTree data.
 	 * @param filenamePrefix
 	 *        The prefix for all files used by this BTree.
 	 * @param blockSize
-	 *        The size (in bytes) of a file block for a single node. Ideally, the
-	 *        size specified is the size of a block in the used file system.
+	 *        The size (in bytes) of a file block for a single node. Ideally, the size specified is the size
+	 *        of a block in the used file system.
 	 * @param valueSize
-	 *        The size (in bytes) of the fixed-length values that are or will be
-	 *        stored in the B-Tree.
+	 *        The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
 	 * @param comparator
-	 *        The <tt>RecordComparator</tt> to use for determining whether one
-	 *        value is smaller, larger or equal to another.
+	 *        The <tt>RecordComparator</tt> to use for determining whether one value is smaller, larger or
+	 *        equal to another.
 	 * @throws IOException
 	 *         In case the initialization of the B-Tree file failed.
 	 */
-	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize, RecordComparator comparator)
+	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize,
+			RecordComparator comparator)
 		throws IOException
 	{
 		this(dataDir, filenamePrefix, blockSize, valueSize, comparator, false);
 	}
 
 	/**
-	 * Creates a new BTree that uses the supplied <tt>RecordComparator</tt> to
-	 * compare the values that are or will be stored in the B-Tree.
+	 * Creates a new BTree that uses the supplied <tt>RecordComparator</tt> to compare the values that are or
+	 * will be stored in the B-Tree.
 	 * 
 	 * @param dataDir
 	 *        The directory for the BTree data.
 	 * @param filenamePrefix
 	 *        The prefix for all files used by this BTree.
 	 * @param blockSize
-	 *        The size (in bytes) of a file block for a single node. Ideally, the
-	 *        size specified is the size of a block in the used file system.
+	 *        The size (in bytes) of a file block for a single node. Ideally, the size specified is the size
+	 *        of a block in the used file system.
 	 * @param valueSize
-	 *        The size (in bytes) of the fixed-length values that are or will be
-	 *        stored in the B-Tree.
+	 *        The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
 	 * @param comparator
-	 *        The <tt>RecordComparator</tt> to use for determining whether one
-	 *        value is smaller, larger or equal to another.
+	 *        The <tt>RecordComparator</tt> to use for determining whether one value is smaller, larger or
+	 *        equal to another.
 	 * @param forceSync
-	 *        Flag indicating whether updates should be synced to disk forcefully
-	 *        by calling {@link FileChannel#force(boolean)}. This may have a
-	 *        severe impact on write performance.
+	 *        Flag indicating whether updates should be synced to disk forcefully by calling
+	 *        {@link FileChannel#force(boolean)}. This may have a severe impact on write performance.
 	 * @throws IOException
 	 *         In case the initialization of the B-Tree file failed.
 	 */
@@ -364,17 +345,18 @@ public class BTree {
 
 			if (Arrays.equals(MAGIC_NUMBER, magicNumber)) {
 				if (version > FILE_FORMAT_VERSION) {
-					throw new IOException("Unable to read BTree file " + file + "; it uses a newer file format");
+					throw new IOException(
+							"Unable to read BTree file " + file + "; it uses a newer file format");
 				}
 				else if (version != FILE_FORMAT_VERSION) {
-					throw new IOException("Unable to read BTree file " + file + "; invalid file format version: "
-							+ version);
+					throw new IOException("Unable to read BTree file " + file
+							+ "; invalid file format version: " + version);
 				}
 			}
 			else if (Arrays.equals(OLD_MAGIC_NUMBER, magicNumber)) {
 				if (version != 1) {
-					throw new IOException("Unable to read BTree file " + file + "; invalid file format version: "
-							+ version);
+					throw new IOException("Unable to read BTree file " + file
+							+ "; invalid file format version: " + version);
 				}
 				// Write new magic number to file
 				logger.info("Updating file header for btree file '{}'", file.getAbsolutePath());
@@ -433,9 +415,8 @@ public class BTree {
 	}
 
 	/**
-	 * Closes any opened files and release any resources used by this B-Tree. Any
-	 * pending changes will be synchronized to disk before closing. Once the
-	 * B-Tree has been closed, it can no longer be used.
+	 * Closes any opened files and release any resources used by this B-Tree. Any pending changes will be
+	 * synchronized to disk before closing. Once the B-Tree has been closed, it can no longer be used.
 	 */
 	public void close()
 		throws IOException
@@ -444,13 +425,12 @@ public class BTree {
 	}
 
 	/**
-	 * Closes any opened files and release any resources used by this B-Tree. Any
-	 * pending changes are optionally synchronized to disk before closing. Once
-	 * the B-Tree has been closed, it can no longer be used.
+	 * Closes any opened files and release any resources used by this B-Tree. Any pending changes are
+	 * optionally synchronized to disk before closing. Once the B-Tree has been closed, it can no longer be
+	 * used.
 	 * 
 	 * @param syncChanges
-	 *        Flag indicating whether pending changes should be synchronized to
-	 *        disk.
+	 *        Flag indicating whether pending changes should be synchronized to disk.
 	 */
 	private void close(boolean syncChanges)
 		throws IOException
@@ -518,10 +498,9 @@ public class BTree {
 	 * Gets the value that matches the specified key.
 	 * 
 	 * @param key
-	 *        A value that is equal to the value that should be retrieved, at
-	 *        least as far as the RecordComparator of this BTree is concerned.
-	 * @return The value matching the key, or <tt>null</tt> if no such value
-	 *         could be found.
+	 *        A value that is equal to the value that should be retrieved, at least as far as the
+	 *        RecordComparator of this BTree is concerned.
+	 * @return The value matching the key, or <tt>null</tt> if no such value could be found.
 	 */
 	public byte[] get(byte[] key)
 		throws IOException
@@ -571,26 +550,23 @@ public class BTree {
 	}
 
 	/**
-	 * Returns an iterator that iterates over all values between minValue and
-	 * maxValue, inclusive.
+	 * Returns an iterator that iterates over all values between minValue and maxValue, inclusive.
 	 */
 	public RecordIterator iterateRange(byte[] minValue, byte[] maxValue) {
 		return new RangeIterator(null, null, minValue, maxValue);
 	}
 
 	/**
-	 * Returns an iterator that iterates over all values and returns the values
-	 * that match the supplied searchKey after searchMask has been applied to the
-	 * value.
+	 * Returns an iterator that iterates over all values and returns the values that match the supplied
+	 * searchKey after searchMask has been applied to the value.
 	 */
 	public RecordIterator iterateValues(byte[] searchKey, byte[] searchMask) {
 		return new RangeIterator(searchKey, searchMask, null, null);
 	}
 
 	/**
-	 * Returns an iterator that iterates over all values between minValue and
-	 * maxValue (inclusive) and returns the values that match the supplied
-	 * searchKey after searchMask has been applied to the value.
+	 * Returns an iterator that iterates over all values between minValue and maxValue (inclusive) and returns
+	 * the values that match the supplied searchKey after searchMask has been applied to the value.
 	 */
 	public RecordIterator iterateRangedValues(byte[] searchKey, byte[] searchMask, byte[] minValue,
 			byte[] maxValue)
@@ -611,8 +587,7 @@ public class BTree {
 	}
 
 	/**
-	 * Gives an estimate of the number of values between <tt>minValue</tt> and
-	 * <tt>maxValue</tt>.
+	 * Gives an estimate of the number of values between <tt>minValue</tt> and <tt>maxValue</tt>.
 	 * 
 	 * @param minValue
 	 *        the lower bound of the range.
@@ -760,8 +735,8 @@ public class BTree {
 	}
 
 	/**
-	 * Estimates the number of values contained by a averagely filled node node
-	 * at the specified <tt>nodeDepth</tt> (the root is at depth 1).
+	 * Estimates the number of values contained by a averagely filled node node at the specified
+	 * <tt>nodeDepth</tt> (the root is at depth 1).
 	 */
 	private long getTreeSizeEstimate(int nodeDepth)
 		throws IOException
@@ -814,9 +789,8 @@ public class BTree {
 	}
 
 	/**
-	 * Inserts the supplied value into the B-Tree. In case an equal value is
-	 * already present in the B-Tree this value is overwritten with the new value
-	 * and the old value is returned by this method.
+	 * Inserts the supplied value into the B-Tree. In case an equal value is already present in the B-Tree
+	 * this value is overwritten with the new value and the old value is returned by this method.
 	 * 
 	 * @param value
 	 *        The value to insert into the B-Tree.
@@ -904,8 +878,8 @@ public class BTree {
 				if (insertResult.overflowValue != null) {
 					// Child node overflowed, insert overflow in this node
 					byte[] oldValue = insertResult.oldValue;
-					insertResult = insertInNode(insertResult.overflowValue, insertResult.overflowNodeID, valueIdx,
-							node);
+					insertResult = insertInNode(insertResult.overflowValue, insertResult.overflowNodeID,
+							valueIdx, node);
 					insertResult.oldValue = oldValue;
 				}
 			}
@@ -950,8 +924,7 @@ public class BTree {
 		byte[] overflowValue = null;
 
 		/**
-		 * The nodeID to the right of 'overflowValue' that was removed from a
-		 * child node due to overflow.
+		 * The nodeID to the right of 'overflowValue' that was removed from a child node due to overflow.
 		 */
 		int overflowNodeID = 0;
 	}
@@ -960,10 +933,8 @@ public class BTree {
 	 * Removes the value that matches the specified key from the B-Tree.
 	 * 
 	 * @param key
-	 *        A key that matches the value that should be removed from the
-	 *        B-Tree.
-	 * @return The value that was removed from the B-Tree, or <tt>null</tt> if no
-	 *         matching value was found.
+	 *        A key that matches the value that should be removed from the B-Tree.
+	 * @return The value that was removed from the B-Tree, or <tt>null</tt> if no matching value was found.
 	 * @throws IOException
 	 *         If an I/O error occurred.
 	 */
@@ -1010,16 +981,14 @@ public class BTree {
 	}
 
 	/**
-	 * Removes the value that matches the specified key from the tree starting at
-	 * the specified node and returns the removed value.
+	 * Removes the value that matches the specified key from the tree starting at the specified node and
+	 * returns the removed value.
 	 * 
 	 * @param key
-	 *        A key that matches the value that should be removed from the
-	 *        B-Tree.
+	 *        A key that matches the value that should be removed from the B-Tree.
 	 * @param node
 	 *        The root of the (sub) tree.
-	 * @return The value that was removed from the B-Tree, or <tt>null</tt> if no
-	 *         matching value was found.
+	 * @return The value that was removed from the B-Tree, or <tt>null</tt> if no matching value was found.
 	 * @throws IOException
 	 *         If an I/O error occurred.
 	 */
@@ -1066,8 +1035,7 @@ public class BTree {
 	}
 
 	/**
-	 * Removes the largest value from the tree starting at the specified node and
-	 * returns the removed value.
+	 * Removes the largest value from the tree starting at the specified node and returns the removed value.
 	 * 
 	 * @param node
 	 *        The root of the (sub) tree.
@@ -1084,8 +1052,8 @@ public class BTree {
 
 		if (node.isLeaf()) {
 			if (node.isEmpty()) {
-				throw new IllegalArgumentException("Trying to remove largest value from an empty node in "
-						+ getFile());
+				throw new IllegalArgumentException(
+						"Trying to remove largest value from an empty node in " + getFile());
 			}
 			return node.removeValueRight(nodeValueCount - 1);
 		}
@@ -1105,8 +1073,8 @@ public class BTree {
 		if (childNode.getValueCount() < minValueCount) {
 			// Child node contains too few values, try to borrow one from its right
 			// sibling
-			Node rightSibling = (childIdx < parentNode.getValueCount()) ? parentNode.getChildNode(childIdx + 1)
-					: null;
+			Node rightSibling = (childIdx < parentNode.getValueCount())
+					? parentNode.getChildNode(childIdx + 1) : null;
 
 			if (rightSibling != null && rightSibling.getValueCount() > minValueCount) {
 				// Right sibling has enough values to give one up
@@ -1125,7 +1093,8 @@ public class BTree {
 					// Both siblings contain the minimum amount of values,
 					// merge the child node with its left or right sibling
 					if (leftSibling != null) {
-						leftSibling.mergeWithRightSibling(parentNode.removeValueRight(childIdx - 1), childNode);
+						leftSibling.mergeWithRightSibling(parentNode.removeValueRight(childIdx - 1),
+								childNode);
 					}
 					else {
 						childNode.mergeWithRightSibling(parentNode.removeValueRight(childIdx), rightSibling);
@@ -1351,7 +1320,8 @@ public class BTree {
 		 */
 		public Node(int id) {
 			if (id <= 0) {
-				throw new IllegalArgumentException("id must be larger than 0, is: " + id + " in " + getFile());
+				throw new IllegalArgumentException(
+						"id must be larger than 0, is: " + id + " in " + getFile());
 			}
 
 			this.id = id;
@@ -1423,8 +1393,7 @@ public class BTree {
 		/**
 		 * Checks if this node has any values.
 		 * 
-		 * @return <tt>true</tt> if this node has no values, <tt>fals</tt> if it
-		 *         has.
+		 * @return <tt>true</tt> if this node has no values, <tt>fals</tt> if it has.
 		 */
 		public boolean isEmpty() {
 			return valueCount == 0;
@@ -1451,8 +1420,8 @@ public class BTree {
 		}
 
 		/**
-		 * Removes the value that can be found at the specified valueIdx and the
-		 * node ID directly to the right of it.
+		 * Removes the value that can be found at the specified valueIdx and the node ID directly to the right
+		 * of it.
 		 * 
 		 * @param valueIdx
 		 *        A legal value index.
@@ -1485,8 +1454,8 @@ public class BTree {
 		}
 
 		/**
-		 * Removes the value that can be found at the specified valueIdx and the
-		 * node ID directly to the left of it.
+		 * Removes the value that can be found at the specified valueIdx and the node ID directly to the left
+		 * of it.
 		 * 
 		 * @param valueIdx
 		 *        A legal value index.
@@ -1543,12 +1512,10 @@ public class BTree {
 		}
 
 		/**
-		 * Searches the node for values that match the specified key and returns
-		 * its index. If no such value can be found, the index of the first value
-		 * that is larger is returned as a negative value by multiplying the index
-		 * with -1 and substracting 1 (result = -index - 1). The index can be
-		 * calculated from this negative value using the same function, i.e.:
-		 * index = -result - 1.
+		 * Searches the node for values that match the specified key and returns its index. If no such value
+		 * can be found, the index of the first value that is larger is returned as a negative value by
+		 * multiplying the index with -1 and substracting 1 (result = -index - 1). The index can be calculated
+		 * from this negative value using the same function, i.e.: index = -result - 1.
 		 */
 		public int search(byte[] key) {
 			int low = 0;
@@ -1623,10 +1590,9 @@ public class BTree {
 		}
 
 		/**
-		 * Splits the node, moving half of its values to the supplied new node,
-		 * inserting the supplied value-nodeID pair and returning the median
-		 * value. The behaviour of this method when called on a node that isn't
-		 * full is not specified and can produce unexpected results!
+		 * Splits the node, moving half of its values to the supplied new node, inserting the supplied
+		 * value-nodeID pair and returning the median value. The behaviour of this method when called on a
+		 * node that isn't full is not specified and can produce unexpected results!
 		 * 
 		 * @throws IOException
 		 */
@@ -1672,8 +1638,9 @@ public class BTree {
 		public void mergeWithRightSibling(byte[] medianValue, Node rightSibling)
 			throws IOException
 		{
-			assert valueCount + rightSibling.getValueCount() + 1 < branchFactor : "Nodes contain too many values to be merged; left: "
-					+ valueCount + "; right: " + rightSibling.getValueCount();
+			assert valueCount + rightSibling.getValueCount()
+					+ 1 < branchFactor : "Nodes contain too many values to be merged; left: " + valueCount
+							+ "; right: " + rightSibling.getValueCount();
 
 			// Append median value from parent node
 			insertValueNodeIDPair(valueCount, medianValue, 0);
@@ -1705,8 +1672,8 @@ public class BTree {
 		public void rotateRight(int valueIdx, Node leftChildNode, Node rightChildNode)
 			throws IOException
 		{
-			rightChildNode.insertNodeIDValuePair(0, leftChildNode.getChildNodeID(leftChildNode.getValueCount()),
-					this.getValue(valueIdx - 1));
+			rightChildNode.insertNodeIDValuePair(0,
+					leftChildNode.getChildNodeID(leftChildNode.getValueCount()), this.getValue(valueIdx - 1));
 			setValue(valueIdx - 1, leftChildNode.removeValueRight(leftChildNode.getValueCount() - 1));
 			notifyRotatedRight(valueIdx, leftChildNode, rightChildNode);
 		}
@@ -1720,7 +1687,7 @@ public class BTree {
 
 		public void deregister(NodeListener listener) {
 			synchronized (listeners) {
-	  		   assert listeners.contains(listener);
+				assert listeners.contains(listener);
 				listeners.remove(listener);
 			}
 		}
@@ -1844,18 +1811,16 @@ public class BTree {
 		}
 
 		/**
-		 * Shifts the data between <tt>startOffset</tt> (inclusive) and
-		 * <tt>endOffset</tt> (exclusive) <tt>shift</tt> positions to the right.
-		 * Negative shift values can be used to shift data to the left.
+		 * Shifts the data between <tt>startOffset</tt> (inclusive) and <tt>endOffset</tt> (exclusive)
+		 * <tt>shift</tt> positions to the right. Negative shift values can be used to shift data to the left.
 		 */
 		private void shiftData(int startOffset, int endOffset, int shift) {
 			System.arraycopy(data, startOffset, data, startOffset + shift, endOffset - startOffset);
 		}
 
 		/**
-		 * Clears the data between <tt>startOffset</tt> (inclusive) and
-		 * <tt>endOffset</tt> (exclusive). All bytes in this range will be set to
-		 * 0.
+		 * Clears the data between <tt>startOffset</tt> (inclusive) and <tt>endOffset</tt> (exclusive). All
+		 * bytes in this range will be set to 0.
 		 */
 		private void clearData(int startOffset, int endOffset) {
 			Arrays.fill(data, startOffset, endOffset, (byte)0);
@@ -1882,28 +1847,24 @@ public class BTree {
 	private interface NodeListener {
 
 		/**
-		 * Signals to registered node listeners that a value has been added to a
-		 * node.
+		 * Signals to registered node listeners that a value has been added to a node.
 		 * 
 		 * @param node
 		 *        The node which the value has been added to.
 		 * @param index
 		 *        The index where the value was inserted.
-		 * @return Indicates whether the node listener should be deregistered as a
-		 *         result of this event.
+		 * @return Indicates whether the node listener should be deregistered as a result of this event.
 		 */
 		public boolean valueAdded(Node node, int index);
 
 		/**
-		 * Signals to registered node listeners that a value has been removed from
-		 * a node.
+		 * Signals to registered node listeners that a value has been removed from a node.
 		 * 
 		 * @param node
 		 *        The node which the value has been removed from.
 		 * @param index
 		 *        The index where the value was removed.
-		 * @return Indicates whether the node listener should be deregistered as a
-		 *         result of this event.
+		 * @return Indicates whether the node listener should be deregistered as a result of this event.
 		 */
 		public boolean valueRemoved(Node node, int index);
 
@@ -1919,31 +1880,27 @@ public class BTree {
 		 * @param node
 		 *        The node which has been split.
 		 * @param newNode
-		 *        The newly allocated node containing the "right" half of the
-		 *        values.
+		 *        The newly allocated node containing the "right" half of the values.
 		 * @param medianIdx
-		 *        The index where the node has been split. The value at this index
-		 *        has been moved to the node's parent.
-		 * @return Indicates whether the node listener should be deregistered as a
-		 *         result of this event.
+		 *        The index where the node has been split. The value at this index has been moved to the
+		 *        node's parent.
+		 * @return Indicates whether the node listener should be deregistered as a result of this event.
 		 */
 		public boolean nodeSplit(Node node, Node newNode, int medianIdx)
 			throws IOException;
 
 		/**
-		 * Signals to registered node listeners that two nodes have been merged.
-		 * All values from the source node have been appended to the value of the
-		 * target node.
+		 * Signals to registered node listeners that two nodes have been merged. All values from the source
+		 * node have been appended to the value of the target node.
 		 * 
 		 * @param sourceNode
 		 *        The node that donated its values to the target node.
 		 * @param targetNode
 		 *        The node in which the values have been merged.
 		 * @param mergeIdx
-		 *        The index of <tt>sourceNode</tt>'s values in <tt>targetNode</tt>
-		 *        .
-		 * @return Indicates whether the node listener should be deregistered with
-		 *         the <em>source node</em> as a result of this event.
+		 *        The index of <tt>sourceNode</tt>'s values in <tt>targetNode</tt> .
+		 * @return Indicates whether the node listener should be deregistered with the <em>source node</em> as
+		 *         a result of this event.
 		 */
 		public boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx)
 			throws IOException;
@@ -2073,13 +2030,17 @@ public class BTree {
 
 				byte[] value = findNext(revisitValue.getAndSet(false));
 				while (value != null) {
-					if (maxValue != null && comparator.compareBTreeValues(maxValue, value, 0, value.length) < 0) {
+					if (maxValue != null
+							&& comparator.compareBTreeValues(maxValue, value, 0, value.length) < 0)
+					{
 						// Reached maximum value, stop iterating
 						close();
 						value = null;
 						break;
 					}
-					else if (searchKey != null && !ByteArrayUtil.matchesPattern(value, searchMask, searchKey)) {
+					else if (searchKey != null
+							&& !ByteArrayUtil.matchesPattern(value, searchMask, searchKey))
+					{
 						// Value doesn't match search key/mask
 						value = findNext(false);
 						continue;
@@ -2472,8 +2433,8 @@ public class BTree {
 			random.nextBytes(value);
 			btree.insert(value);
 			if (i % 50000 == 0) {
-				System.out.println("Inserted " + i + " values in " + (System.currentTimeMillis() - startTime)
-						+ " ms");
+				System.out.println(
+						"Inserted " + i + " values in " + (System.currentTimeMillis() - startTime) + " ms");
 			}
 		}
 
@@ -2516,31 +2477,23 @@ public class BTree {
 		btree.print(System.out);
 
 		/*
-		 * System.out.println("Adding values..."); btree.startTransaction();
-		 * btree.insert("C".getBytes()); btree.insert("N".getBytes());
-		 * btree.insert("G".getBytes()); btree.insert("A".getBytes());
-		 * btree.insert("H".getBytes()); btree.insert("E".getBytes());
-		 * btree.insert("K".getBytes()); btree.insert("Q".getBytes());
-		 * btree.insert("M".getBytes()); btree.insert("F".getBytes());
-		 * btree.insert("W".getBytes()); btree.insert("L".getBytes());
-		 * btree.insert("T".getBytes()); btree.insert("Z".getBytes());
-		 * btree.insert("D".getBytes()); btree.insert("P".getBytes());
-		 * btree.insert("R".getBytes()); btree.insert("X".getBytes());
-		 * btree.insert("Y".getBytes()); btree.insert("S".getBytes());
-		 * btree.commitTransaction(); btree.print(System.out);
-		 * System.out.println("Removing values..."); System.out.println("Removing
-		 * H..."); btree.remove("H".getBytes()); btree.commitTransaction();
-		 * btree.print(System.out); System.out.println("Removing T...");
-		 * btree.remove("T".getBytes()); btree.commitTransaction();
-		 * btree.print(System.out); System.out.println("Removing R...");
-		 * btree.remove("R".getBytes()); btree.commitTransaction();
-		 * btree.print(System.out); System.out.println("Removing E...");
-		 * btree.remove("E".getBytes()); btree.commitTransaction();
-		 * btree.print(System.out); System.out.println("Values from I to U:");
-		 * RecordIterator iter = btree.iterateRange("I".getBytes(),
-		 * "V".getBytes()); byte[] value = iter.next(); while (value != null) {
-		 * System.out.print(new String(value) + " "); value = iter.next(); }
-		 * System.out.println();
+		 * System.out.println("Adding values..."); btree.startTransaction(); btree.insert("C".getBytes());
+		 * btree.insert("N".getBytes()); btree.insert("G".getBytes()); btree.insert("A".getBytes());
+		 * btree.insert("H".getBytes()); btree.insert("E".getBytes()); btree.insert("K".getBytes());
+		 * btree.insert("Q".getBytes()); btree.insert("M".getBytes()); btree.insert("F".getBytes());
+		 * btree.insert("W".getBytes()); btree.insert("L".getBytes()); btree.insert("T".getBytes());
+		 * btree.insert("Z".getBytes()); btree.insert("D".getBytes()); btree.insert("P".getBytes());
+		 * btree.insert("R".getBytes()); btree.insert("X".getBytes()); btree.insert("Y".getBytes());
+		 * btree.insert("S".getBytes()); btree.commitTransaction(); btree.print(System.out);
+		 * System.out.println("Removing values..."); System.out.println("Removing H..."); btree.remove("
+		 * H".getBytes()); btree.commitTransaction(); btree.print(System.out); System.out.println(
+		 * "Removing T..."); btree.remove("T".getBytes()); btree.commitTransaction(); btree.print(System.out);
+		 * System.out.println("Removing R..."); btree.remove("R".getBytes()); btree.commitTransaction();
+		 * btree.print(System.out); System.out.println("Removing E..."); btree.remove("E".getBytes());
+		 * btree.commitTransaction(); btree.print(System.out); System.out.println("Values from I to U:");
+		 * RecordIterator iter = btree.iterateRange("I".getBytes(), "V".getBytes()); byte[] value =
+		 * iter.next(); while (value != null) { System.out.print(new String(value) + " "); value =
+		 * iter.next(); } System.out.println();
 		 */
 	}
 

@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
 
 /**
- * A statement iterator that wraps a RecordIterator containing statement records
- * and translates these records to {@link Statement} objects.
+ * A statement iterator that wraps a RecordIterator containing statement records and translates these records
+ * to {@link Statement} objects.
  */
 class NativeStatementIterator extends LookAheadIteration<Statement, SailException> {
 
@@ -64,7 +64,7 @@ class NativeStatementIterator extends LookAheadIteration<Statement, SailExceptio
 			Resource subj = (Resource)valueStore.getValue(subjID);
 
 			int predID = ByteArrayUtil.getInt(nextValue, TripleStore.PRED_IDX);
-		IRI pred = (IRI)valueStore.getValue(predID);
+			IRI pred = (IRI)valueStore.getValue(predID);
 
 			int objID = ByteArrayUtil.getInt(nextValue, TripleStore.OBJ_IDX);
 			Value obj = valueStore.getValue(objID);

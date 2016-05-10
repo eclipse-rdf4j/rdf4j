@@ -145,9 +145,8 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.util.UUIDable;
 
 /**
- * Default evaluation strategy for Sesame queries, to evaluate one
- * {@link TupleExpr} on the given {@link TripleSource}, optionally using the
- * given {@link Dataset}.
+ * Default evaluation strategy for Sesame queries, to evaluate one {@link TupleExpr} on the given
+ * {@link TripleSource}, optionally using the given {@link Dataset}.
  * 
  * @author Jeen Broekstra
  * @author James Leigh
@@ -175,7 +174,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	private final long iterationCacheSyncThreshold;
 
 	private final UUID uuid;
-	
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -198,7 +197,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
 		this.uuid = UUID.randomUUID();
-		
+
 		EvaluationStrategies.register(this);
 	}
 
@@ -207,11 +206,10 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	 *---------*/
 
 	@Override
-	public UUID getUUID()
-	{
+	public UUID getUUID() {
 		return uuid;
 	}
-	
+
 	public FederatedService getService(String serviceUrl)
 		throws QueryEvaluationException
 	{
@@ -221,7 +219,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		if (expr instanceof StatementPattern) {
 			return evaluate((StatementPattern)expr, bindings);
@@ -260,7 +258,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ArbitraryLengthPath alp,
 			final BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		final Scope scope = alp.getScope();
 		final Var subjectVar = alp.getSubjectVar();
@@ -275,7 +273,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ZeroLengthPath zlp,
 			final BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 
 		final Var subjectVar = zlp.getSubjectVar();
@@ -314,7 +312,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
 			String serviceUri, CloseableIteration<BindingSet, QueryEvaluationException> bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		try {
 			FederatedService fs = serviceResolver.getService(serviceUri);
@@ -333,7 +331,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		Var serviceRef = service.getServiceRef();
 
@@ -437,7 +435,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(DescribeOperator operator,
 			final BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(operator.getArg(), bindings);
 		return new DescribeIteration(iter, this, operator.getBindingNames(), bindings);
@@ -445,7 +443,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(StatementPattern sp,
 			final BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		final Var subjVar = sp.getSubjectVar();
 		final Var predVar = sp.getPredicateVar();
@@ -485,11 +483,11 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 				if (contextValue != null) {
 					contexts = new Resource[] { (Resource)contextValue };
 				}
-				/* TODO activate this to have an exclusive (rather than inclusive) interpretation of the default graph in SPARQL querying.
-				else if (sp.getScope() == Scope.DEFAULT_CONTEXTS ) {
-					contexts = new Resource[] { (Resource)null };
-				}
-				*/
+				/*
+				 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the
+				 * default graph in SPARQL querying. else if (sp.getScope() == Scope.DEFAULT_CONTEXTS ) {
+				 * contexts = new Resource[] { (Resource)null }; }
+				 */
 				else {
 					contexts = new Resource[0];
 				}
@@ -621,7 +619,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(UnaryTupleOperator expr,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		if (expr instanceof Projection) {
 			return evaluate((Projection)expr, bindings);
@@ -672,7 +670,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSetAssignment bsa,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		final Iterator<BindingSet> iter = bsa.getBindingSets().iterator();
 		if (bindings.size() == 0) { // empty binding set
@@ -695,10 +693,10 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 					for (String name : assignedBindings.getBindingNames()) {
 						final Value assignedValue = assignedBindings.getValue(name);
 						if (assignedValue != null) { // can be null if set to
-														// UNDEF
-							// check that the binding assignment does not
-							// overwrite
-							// existing bindings.
+															// UNDEF
+														// check that the binding assignment does not
+														// overwrite
+														// existing bindings.
 							Value bValue = b.getValue(name);
 							if (bValue == null || assignedValue.equals(bValue)) {
 								if (result == null) {
@@ -730,7 +728,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Projection projection,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		CloseableIteration<BindingSet, QueryEvaluationException> result;
 
@@ -741,7 +739,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(MultiProjection multiProjection,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		CloseableIteration<BindingSet, QueryEvaluationException> result;
 		result = this.evaluate(multiProjection.getArg(), bindings);
@@ -751,7 +749,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Filter filter,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		CloseableIteration<BindingSet, QueryEvaluationException> result;
 		result = this.evaluate(filter.getArg(), bindings);
@@ -777,7 +775,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Extension extension,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		CloseableIteration<BindingSet, QueryEvaluationException> result;
 		try {
@@ -796,7 +794,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Distinct distinct,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		return new DistinctIteration<BindingSet, QueryEvaluationException>(
 				evaluate(distinct.getArg(), bindings));
@@ -804,7 +802,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Reduced reduced,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		return new ReducedIteration<BindingSet, QueryEvaluationException>(
 				evaluate(reduced.getArg(), bindings));
@@ -829,7 +827,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BinaryTupleOperator expr,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		if (expr instanceof Join) {
 			return evaluate((Join)expr, bindings);
@@ -875,7 +873,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(LeftJoin leftJoin,
 			final BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		if (TupleExprs.containsProjection(leftJoin.getRightArg())) {
 			return new HashJoinIteration(this, leftJoin, bindings);
@@ -905,7 +903,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	@SuppressWarnings("unchecked")
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Union union,
 			final BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
 
@@ -934,7 +932,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Intersection intersection,
 			final BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
 
@@ -963,7 +961,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Difference difference,
 			final BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
 
@@ -992,21 +990,21 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(SingletonSet singletonSet,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		return new SingletonIteration<BindingSet, QueryEvaluationException>(bindings);
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(EmptySet emptySet,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		return new EmptyIteration<BindingSet, QueryEvaluationException>();
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ExternalSet external,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		return external.evaluate(bindings);
 	}
@@ -1288,8 +1286,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	/**
 	 * Determines whether the operand (a variable) contains a Resource.
 	 * 
-	 * @return <tt>true</tt> if the operand contains a Resource, <tt>false</tt>
-	 *         otherwise.
+	 * @return <tt>true</tt> if the operand contains a Resource, <tt>false</tt> otherwise.
 	 */
 	public Value evaluate(IsResource node, BindingSet bindings)
 		throws ValueExprEvaluationException, QueryEvaluationException
@@ -1301,8 +1298,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	/**
 	 * Determines whether the operand (a variable) contains a URI.
 	 * 
-	 * @return <tt>true</tt> if the operand contains a URI, <tt>false</tt>
-	 *         otherwise.
+	 * @return <tt>true</tt> if the operand contains a URI, <tt>false</tt> otherwise.
 	 */
 	public Value evaluate(IsURI node, BindingSet bindings)
 		throws ValueExprEvaluationException, QueryEvaluationException
@@ -1314,8 +1310,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	/**
 	 * Determines whether the operand (a variable) contains a BNode.
 	 * 
-	 * @return <tt>true</tt> if the operand contains a BNode, <tt>false</tt>
-	 *         otherwise.
+	 * @return <tt>true</tt> if the operand contains a BNode, <tt>false</tt> otherwise.
 	 */
 	public Value evaluate(IsBNode node, BindingSet bindings)
 		throws ValueExprEvaluationException, QueryEvaluationException
@@ -1327,8 +1322,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	/**
 	 * Determines whether the operand (a variable) contains a Literal.
 	 * 
-	 * @return <tt>true</tt> if the operand contains a Literal, <tt>false</tt>
-	 *         otherwise.
+	 * @return <tt>true</tt> if the operand contains a Literal, <tt>false</tt> otherwise.
 	 */
 	public Value evaluate(IsLiteral node, BindingSet bindings)
 		throws ValueExprEvaluationException, QueryEvaluationException
@@ -1338,12 +1332,10 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	}
 
 	/**
-	 * Determines whether the operand (a variable) contains a numeric datatyped
-	 * literal, i.e. a literal with datatype xsd:float, xsd:double, xsd:decimal,
-	 * or a derived datatype of xsd:decimal.
+	 * Determines whether the operand (a variable) contains a numeric datatyped literal, i.e. a literal with
+	 * datatype xsd:float, xsd:double, xsd:decimal, or a derived datatype of xsd:decimal.
 	 * 
-	 * @return <tt>true</tt> if the operand contains a numeric datatyped
-	 *         literal, <tt>false</tt> otherwise.
+	 * @return <tt>true</tt> if the operand contains a numeric datatyped literal, <tt>false</tt> otherwise.
 	 */
 	public Value evaluate(IsNumeric node, BindingSet bindings)
 		throws ValueExprEvaluationException, QueryEvaluationException
@@ -1416,11 +1408,10 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	}
 
 	/**
-	 * Determines whether the two operands match according to the
-	 * <code>regex</code> operator.
+	 * Determines whether the two operands match according to the <code>regex</code> operator.
 	 * 
-	 * @return <tt>true</tt> if the operands match according to the
-	 *         <tt>regex</tt> operator, <tt>false</tt> otherwise.
+	 * @return <tt>true</tt> if the operands match according to the <tt>regex</tt> operator, <tt>false</tt>
+	 *         otherwise.
 	 */
 	public Value evaluate(Regex node, BindingSet bindings)
 		throws ValueExprEvaluationException, QueryEvaluationException
@@ -1509,13 +1500,12 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	}
 
 	/**
-	 * Determines whether the two operands match according to the
-	 * <code>like</code> operator. The operator is defined as a string
-	 * comparison with the possible use of an asterisk (*) at the end and/or the
-	 * start of the second operand to indicate substring matching.
+	 * Determines whether the two operands match according to the <code>like</code> operator. The operator is
+	 * defined as a string comparison with the possible use of an asterisk (*) at the end and/or the start of
+	 * the second operand to indicate substring matching.
 	 * 
-	 * @return <tt>true</tt> if the operands match according to the
-	 *         <tt>like</tt> operator, <tt>false</tt> otherwise.
+	 * @return <tt>true</tt> if the operands match according to the <tt>like</tt> operator, <tt>false</tt>
+	 *         otherwise.
 	 */
 	public Value evaluate(Like node, BindingSet bindings)
 		throws ValueExprEvaluationException, QueryEvaluationException
@@ -1965,8 +1955,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	}
 
 	/**
-	 * Returns the limit of the current variable bindings before any further
-	 * projection.
+	 * Returns the limit of the current variable bindings before any further projection.
 	 */
 	protected long getLimit(QueryModelNode node) {
 		long offset = 0;

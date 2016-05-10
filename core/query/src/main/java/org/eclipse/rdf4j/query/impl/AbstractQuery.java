@@ -31,8 +31,8 @@ public abstract class AbstractQuery extends AbstractOperation implements Query {
 
 	@Deprecated
 	public void setMaxQueryTime(int maxQueryTime) {
-			setMaxExecutionTime(maxQueryTime);
-			
+		setMaxExecutionTime(maxQueryTime);
+
 	}
 
 	@Deprecated

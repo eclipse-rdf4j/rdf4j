@@ -35,7 +35,8 @@ public class ParseDate extends BinaryFunction {
 	static {
 		try {
 			datatypeFactory = DatatypeFactory.newInstance();
-		} catch (DatatypeConfigurationException e) {
+		}
+		catch (DatatypeConfigurationException e) {
 			throw new Error("Could not instantiate javax.xml.datatype.DatatypeFactory", e);
 		}
 	}
@@ -52,8 +53,8 @@ public class ParseDate extends BinaryFunction {
 		if (!(arg1 instanceof Literal) || !(arg2 instanceof Literal)) {
 			throw new ValueExprEvaluationException("Both arguments must be literals");
 		}
-		Literal value = (Literal) arg1;
-		Literal format = (Literal) arg2;
+		Literal value = (Literal)arg1;
+		Literal format = (Literal)arg2;
 
 		FieldAwareGregorianCalendar cal = new FieldAwareGregorianCalendar();
 
@@ -61,22 +62,23 @@ public class ParseDate extends BinaryFunction {
 		formatter.setCalendar(cal);
 		try {
 			formatter.parse(value.getLabel());
-		} catch (ParseException e) {
+		}
+		catch (ParseException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 
 		XMLGregorianCalendar xmlCal = datatypeFactory.newXMLGregorianCalendar(cal);
-		if(!cal.isDateSet()) {
+		if (!cal.isDateSet()) {
 			xmlCal.setYear(DatatypeConstants.FIELD_UNDEFINED);
 			xmlCal.setMonth(DatatypeConstants.FIELD_UNDEFINED);
 			xmlCal.setDay(DatatypeConstants.FIELD_UNDEFINED);
 		}
-		if(!cal.isTimeSet()) {
+		if (!cal.isTimeSet()) {
 			xmlCal.setHour(DatatypeConstants.FIELD_UNDEFINED);
 			xmlCal.setMinute(DatatypeConstants.FIELD_UNDEFINED);
 			xmlCal.setSecond(DatatypeConstants.FIELD_UNDEFINED);
 		}
-		if(!cal.isMillisecondSet()) {
+		if (!cal.isMillisecondSet()) {
 			xmlCal.setMillisecond(DatatypeConstants.FIELD_UNDEFINED);
 		}
 
@@ -85,10 +87,10 @@ public class ParseDate extends BinaryFunction {
 		if (!cal.isTimezoneSet()) {
 			int len = dateValue.length();
 			if (dateValue.endsWith("Z")) {
-				dateValue = dateValue.substring(0, len-1);
+				dateValue = dateValue.substring(0, len - 1);
 			}
-			else if (dateValue.charAt(len-6) == '+' || dateValue.charAt(len-6) == '-') {
-				dateValue = dateValue.substring(0, len-6);
+			else if (dateValue.charAt(len - 6) == '+' || dateValue.charAt(len - 6) == '-') {
+				dateValue = dateValue.substring(0, len - 6);
 			}
 		}
 
@@ -96,6 +98,7 @@ public class ParseDate extends BinaryFunction {
 	}
 
 	static final class FieldAwareGregorianCalendar extends GregorianCalendar {
+
 		Set<Integer> fieldsSet = new HashSet<Integer>();
 
 		@Override
@@ -105,23 +108,19 @@ public class ParseDate extends BinaryFunction {
 		}
 
 		boolean isDateSet() {
-			return fieldsSet.contains(Calendar.YEAR)
-				|| fieldsSet.contains(Calendar.MONTH)
-				|| fieldsSet.contains(Calendar.DAY_OF_MONTH)
-				|| fieldsSet.contains(Calendar.DAY_OF_WEEK)
-				|| fieldsSet.contains(Calendar.DAY_OF_WEEK_IN_MONTH)
-				|| fieldsSet.contains(Calendar.DAY_OF_YEAR);
+			return fieldsSet.contains(Calendar.YEAR) || fieldsSet.contains(Calendar.MONTH)
+					|| fieldsSet.contains(Calendar.DAY_OF_MONTH) || fieldsSet.contains(Calendar.DAY_OF_WEEK)
+					|| fieldsSet.contains(Calendar.DAY_OF_WEEK_IN_MONTH)
+					|| fieldsSet.contains(Calendar.DAY_OF_YEAR);
 		}
 
 		boolean isTimeSet() {
-			return fieldsSet.contains(Calendar.HOUR_OF_DAY)
-				|| fieldsSet.contains(Calendar.HOUR)
-				|| fieldsSet.contains(Calendar.MINUTE)
-				|| fieldsSet.contains(Calendar.SECOND);
+			return fieldsSet.contains(Calendar.HOUR_OF_DAY) || fieldsSet.contains(Calendar.HOUR)
+					|| fieldsSet.contains(Calendar.MINUTE) || fieldsSet.contains(Calendar.SECOND);
 		}
 
 		boolean isMillisecondSet() {
-				return fieldsSet.contains(Calendar.MILLISECOND);
+			return fieldsSet.contains(Calendar.MILLISECOND);
 		}
 
 		boolean isTimezoneSet() {

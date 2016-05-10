@@ -76,13 +76,13 @@ public class SimpleLogRecord implements LogRecord {
 		result.append("): ");
 		result.append(message);
 		Iterator<String> tracerator = stackTrace.iterator();
-		if(tracerator.hasNext()) {
+		if (tracerator.hasNext()) {
 			result.append("\n\t");
 			result.append(tracerator.next());
-			if(tracerator.hasNext()) {
+			if (tracerator.hasNext()) {
 				result.append("\n\t");
 				result.append(tracerator.next());
-				result.append("\n\t... "+(stackTrace.size()-2)+" more lines");
+				result.append("\n\t... " + (stackTrace.size() - 2) + " more lines");
 			}
 		}
 		return result.toString();

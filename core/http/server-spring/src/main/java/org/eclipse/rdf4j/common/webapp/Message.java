@@ -8,13 +8,12 @@
 package org.eclipse.rdf4j.common.webapp;
 
 /**
- * 
  * @author Herko ter Horst
  */
 public class Message {
 
 	public static final String ATTRIBUTE_KEY = "message";
-	
+
 	public static enum Type {
 		ERROR,
 		WARN,

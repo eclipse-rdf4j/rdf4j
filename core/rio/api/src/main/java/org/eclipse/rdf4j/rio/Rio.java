@@ -30,9 +30,8 @@ import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
 /**
  * Static methods for parsing and writing RDF for all available syntaxes.
  * <p>
- * It includes methods for searching for {@link RDFFormat}s based on MIME types
- * and file extensions, creating {@link RDFParser}s and {@link RDFWriter}s, and
- * directly parsing and writing.
+ * It includes methods for searching for {@link RDFFormat}s based on MIME types and file extensions, creating
+ * {@link RDFParser}s and {@link RDFWriter}s, and directly parsing and writing.
  * 
  * @author Arjohn Kampman
  * @author Peter Ansell
@@ -40,13 +39,11 @@ import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
 public class Rio {
 
 	/**
-	 * Tries to match a MIME type against the list of RDF formats that can be
-	 * parsed.
+	 * Tries to match a MIME type against the list of RDF formats that can be parsed.
 	 * 
 	 * @param mimeType
 	 *        A MIME type, e.g. "application/rdf+xml".
-	 * @return An RDFFormat object if a match was found, or
-	 *         {@link Optional#empty()} otherwise.
+	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getParserFormatForMIMEType(String, RDFFormat)
 	 */
 	public static Optional<RDFFormat> getParserFormatForMIMEType(String mimeType) {
@@ -54,13 +51,11 @@ public class Rio {
 	}
 
 	/**
-	 * Tries to match the extension of a file name against the list of RDF
-	 * formats that can be parsed.
+	 * Tries to match the extension of a file name against the list of RDF formats that can be parsed.
 	 * 
 	 * @param fileName
 	 *        A file name.
-	 * @return An RDFFormat object if a match was found, or
-	 *         {@link Optional#empty()} otherwise.
+	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getParserFormatForFileName(String, RDFFormat)
 	 */
 	public static Optional<RDFFormat> getParserFormatForFileName(String fileName) {
@@ -68,13 +63,11 @@ public class Rio {
 	}
 
 	/**
-	 * Tries to match a MIME type against the list of RDF formats that can be
-	 * written.
+	 * Tries to match a MIME type against the list of RDF formats that can be written.
 	 * 
 	 * @param mimeType
 	 *        A MIME type, e.g. "application/rdf+xml".
-	 * @return An RDFFormat object if a match was found, or
-	 *         {@link Optional#empty()} otherwise.
+	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getWriterFormatForMIMEType(String, RDFFormat)
 	 */
 	public static Optional<RDFFormat> getWriterFormatForMIMEType(String mimeType) {
@@ -82,13 +75,11 @@ public class Rio {
 	}
 
 	/**
-	 * Tries to match the extension of a file name against the list of RDF
-	 * formats that can be written.
+	 * Tries to match the extension of a file name against the list of RDF formats that can be written.
 	 * 
 	 * @param fileName
 	 *        A file name.
-	 * @return An RDFFormat object if a match was found, or
-	 *         {@link Optional#empty()} otherwise.
+	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getWriterFormatForFileName(String, RDFFormat)
 	 */
 	public static Optional<RDFFormat> getWriterFormatForFileName(String fileName) {
@@ -96,10 +87,9 @@ public class Rio {
 	}
 
 	/**
-	 * Convenience methods for creating RDFParser objects. This method uses the
-	 * registry returned by {@link RDFParserRegistry#getInstance()} to get a
-	 * factory for the specified format and uses this factory to create the
-	 * appropriate parser.
+	 * Convenience methods for creating RDFParser objects. This method uses the registry returned by
+	 * {@link RDFParserRegistry#getInstance()} to get a factory for the specified format and uses this factory
+	 * to create the appropriate parser.
 	 * 
 	 * @throws UnsupportedRDFormatException
 	 *         If no parser is available for the specified RDF format.
@@ -114,8 +104,8 @@ public class Rio {
 	}
 
 	/**
-	 * Convenience methods for creating RDFParser objects that use the specified
-	 * ValueFactory to create RDF model objects.
+	 * Convenience methods for creating RDFParser objects that use the specified ValueFactory to create RDF
+	 * model objects.
 	 * 
 	 * @throws UnsupportedRDFormatException
 	 *         If no parser is available for the specified RDF format.
@@ -131,10 +121,9 @@ public class Rio {
 	}
 
 	/**
-	 * Convenience methods for creating RDFWriter objects. This method uses the
-	 * registry returned by {@link RDFWriterRegistry#getInstance()} to get a
-	 * factory for the specified format and uses this factory to create the
-	 * appropriate writer.
+	 * Convenience methods for creating RDFWriter objects. This method uses the registry returned by
+	 * {@link RDFWriterRegistry#getInstance()} to get a factory for the specified format and uses this factory
+	 * to create the appropriate writer.
 	 * 
 	 * @throws UnsupportedRDFormatException
 	 *         If no writer is available for the specified RDF format.
@@ -149,10 +138,9 @@ public class Rio {
 	}
 
 	/**
-	 * Convenience methods for creating RDFWriter objects. This method uses the
-	 * registry returned by {@link RDFWriterRegistry#getInstance()} to get a
-	 * factory for the specified format and uses this factory to create the
-	 * appropriate writer.
+	 * Convenience methods for creating RDFWriter objects. This method uses the registry returned by
+	 * {@link RDFWriterRegistry#getInstance()} to get a factory for the specified format and uses this factory
+	 * to create the appropriate writer.
 	 * 
 	 * @throws UnsupportedRDFormatException
 	 *         If no writer is available for the specified RDF format.
@@ -167,22 +155,19 @@ public class Rio {
 	}
 
 	/**
-	 * Adds RDF data from an {@link InputStream} to a {@link Model}, optionally
-	 * to one or more named contexts.
+	 * Adds RDF data from an {@link InputStream} to a {@link Model}, optionally to one or more named contexts.
 	 * 
 	 * @param in
 	 *        An InputStream from which RDF data can be read.
 	 * @param baseURI
-	 *        The base URI to resolve any relative URIs that are in the data
-	 *        against.
+	 *        The base URI to resolve any relative URIs that are in the data against.
 	 * @param dataFormat
 	 *        The serialization format of the data.
 	 * @param contexts
-	 *        The contexts to add the data to. If one or more contexts are
-	 *        supplied the method ignores contextual information in the actual
-	 *        data. If no contexts are supplied the contextual information in the
-	 *        input stream is used, if no context information is available the
-	 *        data is added without any context.
+	 *        The contexts to add the data to. If one or more contexts are supplied the method ignores
+	 *        contextual information in the actual data. If no contexts are supplied the contextual
+	 *        information in the input stream is used, if no context information is available the data is
+	 *        added without any context.
 	 * @return A {@link Model} containing the parsed statements.
 	 * @throws IOException
 	 *         If an I/O error occurred while reading from the input stream.
@@ -199,23 +184,20 @@ public class Rio {
 	}
 
 	/**
-	 * Adds RDF data from a {@link Reader} to a {@link Model}, optionally to one
-	 * or more named contexts. <b>Note: using a Reader to upload byte-based data
-	 * means that you have to be careful not to destroy the data's character
-	 * encoding by enforcing a default character encoding upon the bytes. If
-	 * possible, adding such data using an InputStream is to be preferred.</b>
+	 * Adds RDF data from a {@link Reader} to a {@link Model}, optionally to one or more named contexts.
+	 * <b>Note: using a Reader to upload byte-based data means that you have to be careful not to destroy the
+	 * data's character encoding by enforcing a default character encoding upon the bytes. If possible, adding
+	 * such data using an InputStream is to be preferred.</b>
 	 * 
 	 * @param reader
 	 *        A Reader from which RDF data can be read.
 	 * @param baseURI
-	 *        The base URI to resolve any relative URIs that are in the data
-	 *        against.
+	 *        The base URI to resolve any relative URIs that are in the data against.
 	 * @param dataFormat
 	 *        The serialization format of the data.
 	 * @param contexts
-	 *        The contexts to add the data to. If one or more contexts are
-	 *        specified the data is added to these contexts, ignoring any context
-	 *        information in the data itself.
+	 *        The contexts to add the data to. If one or more contexts are specified the data is added to
+	 *        these contexts, ignoring any context information in the data itself.
 	 * @return A {@link Model} containing the parsed statements.
 	 * @throws IOException
 	 *         If an I/O error occurred while reading from the reader.
@@ -232,30 +214,26 @@ public class Rio {
 	}
 
 	/**
-	 * Adds RDF data from an {@link InputStream} to a {@link Model}, optionally
-	 * to one or more named contexts.
+	 * Adds RDF data from an {@link InputStream} to a {@link Model}, optionally to one or more named contexts.
 	 * 
 	 * @param in
 	 *        An InputStream from which RDF data can be read.
 	 * @param baseURI
-	 *        The base URI to resolve any relative URIs that are in the data
-	 *        against.
+	 *        The base URI to resolve any relative URIs that are in the data against.
 	 * @param dataFormat
 	 *        The serialization format of the data.
 	 * @param settings
-	 *        The {@link ParserConfig} containing settings for configuring the
-	 *        parser.
+	 *        The {@link ParserConfig} containing settings for configuring the parser.
 	 * @param valueFactory
 	 *        The {@link ValueFactory} used by the parser to create statements.
 	 * @param errors
-	 *        The {@link ParseErrorListener} used by the parser to signal errors,
-	 *        including errors that do not generate an {@link RDFParseException}.
+	 *        The {@link ParseErrorListener} used by the parser to signal errors, including errors that do not
+	 *        generate an {@link RDFParseException}.
 	 * @param contexts
-	 *        The contexts to add the data to. If one or more contexts are
-	 *        supplied the method ignores contextual information in the actual
-	 *        data. If no contexts are supplied the contextual information in the
-	 *        input stream is used, if no context information is available the
-	 *        data is added without any context.
+	 *        The contexts to add the data to. If one or more contexts are supplied the method ignores
+	 *        contextual information in the actual data. If no contexts are supplied the contextual
+	 *        information in the input stream is used, if no context information is available the data is
+	 *        added without any context.
 	 * @return A {@link Model} containing the parsed statements.
 	 * @throws IOException
 	 *         If an I/O error occurred while reading from the input stream.
@@ -280,31 +258,27 @@ public class Rio {
 	}
 
 	/**
-	 * Adds RDF data from a {@link Reader} to a {@link Model}, optionally to one
-	 * or more named contexts. <b>Note: using a Reader to upload byte-based data
-	 * means that you have to be careful not to destroy the data's character
-	 * encoding by enforcing a default character encoding upon the bytes. If
-	 * possible, adding such data using an InputStream is to be preferred.</b>
+	 * Adds RDF data from a {@link Reader} to a {@link Model}, optionally to one or more named contexts.
+	 * <b>Note: using a Reader to upload byte-based data means that you have to be careful not to destroy the
+	 * data's character encoding by enforcing a default character encoding upon the bytes. If possible, adding
+	 * such data using an InputStream is to be preferred.</b>
 	 * 
 	 * @param reader
 	 *        A Reader from which RDF data can be read.
 	 * @param baseURI
-	 *        The base URI to resolve any relative URIs that are in the data
-	 *        against.
+	 *        The base URI to resolve any relative URIs that are in the data against.
 	 * @param dataFormat
 	 *        The serialization format of the data.
 	 * @param settings
-	 *        The {@link ParserConfig} containing settings for configuring the
-	 *        parser.
+	 *        The {@link ParserConfig} containing settings for configuring the parser.
 	 * @param valueFactory
 	 *        The {@link ValueFactory} used by the parser to create statements.
 	 * @param errors
-	 *        The {@link ParseErrorListener} used by the parser to signal errors,
-	 *        including errors that do not generate an {@link RDFParseException}.
+	 *        The {@link ParseErrorListener} used by the parser to signal errors, including errors that do not
+	 *        generate an {@link RDFParseException}.
 	 * @param contexts
-	 *        The contexts to add the data to. If one or more contexts are
-	 *        specified the data is added to these contexts, ignoring any context
-	 *        information in the data itself.
+	 *        The contexts to add the data to. If one or more contexts are specified the data is added to
+	 *        these contexts, ignoring any context information in the data itself.
 	 * @return A {@link Model} containing the parsed statements.
 	 * @throws IOException
 	 *         If an I/O error occurred while reading from the reader.
@@ -329,8 +303,7 @@ public class Rio {
 	}
 
 	/**
-	 * Writes the given statements to the given {@link OutputStream} in the given
-	 * format.
+	 * Writes the given statements to the given {@link OutputStream} in the given format.
 	 * <p>
 	 * If the collection is a {@link Model}, its namespaces will also be written.
 	 * 
@@ -352,8 +325,7 @@ public class Rio {
 	}
 
 	/**
-	 * Writes the given statements to the given {@link Writer} in the given
-	 * format.
+	 * Writes the given statements to the given {@link Writer} in the given format.
 	 * <p>
 	 * If the collection is a {@link Model}, its namespaces will also be written.
 	 * 
@@ -375,8 +347,7 @@ public class Rio {
 	}
 
 	/**
-	 * Writes the given statements to the given {@link OutputStream} in the given
-	 * format.
+	 * Writes the given statements to the given {@link OutputStream} in the given format.
 	 * <p>
 	 * If the collection is a {@link Model}, its namespaces will also be written.
 	 * 
@@ -387,8 +358,7 @@ public class Rio {
 	 * @param dataFormat
 	 *        The {@link RDFFormat} to use when writing the statements.
 	 * @param settings
-	 *        The {@link WriterConfig} containing settings for configuring the
-	 *        writer.
+	 *        The {@link WriterConfig} containing settings for configuring the writer.
 	 * @throws RDFHandlerException
 	 *         Thrown if there is an error writing the statements.
 	 * @throws UnsupportedRDFormatException
@@ -404,8 +374,7 @@ public class Rio {
 	}
 
 	/**
-	 * Writes the given statements to the given {@link Writer} in the given
-	 * format.
+	 * Writes the given statements to the given {@link Writer} in the given format.
 	 * <p>
 	 * If the collection is a {@link Model}, its namespaces will also be written.
 	 * 
@@ -416,8 +385,7 @@ public class Rio {
 	 * @param dataFormat
 	 *        The {@link RDFFormat} to use when writing the statements.
 	 * @param settings
-	 *        The {@link WriterConfig} containing settings for configuring the
-	 *        writer.
+	 *        The {@link WriterConfig} containing settings for configuring the writer.
 	 * @throws RDFHandlerException
 	 *         Thrown if there is an error writing the statements.
 	 * @throws UnsupportedRDFormatException
@@ -460,8 +428,7 @@ public class Rio {
 	}
 
 	/**
-	 * Writes the given statement to the given {@link OutputStream} in the given
-	 * format.
+	 * Writes the given statement to the given {@link OutputStream} in the given format.
 	 * <p>
 	 * 
 	 * @param st
@@ -482,8 +449,7 @@ public class Rio {
 	}
 
 	/**
-	 * Writes the given single statement to the given {@link OutputStream} in the
-	 * given format.
+	 * Writes the given single statement to the given {@link OutputStream} in the given format.
 	 * 
 	 * @param st
 	 *        The statement to be written.
@@ -492,8 +458,7 @@ public class Rio {
 	 * @param dataFormat
 	 *        The {@link RDFFormat} to use when writing the statement.
 	 * @param settings
-	 *        The {@link WriterConfig} containing setting for configuring the
-	 *        writer.
+	 *        The {@link WriterConfig} containing setting for configuring the writer.
 	 * @throws RDFHandlerException
 	 *         Thrown if there is an error writing the statement.
 	 * @throws UnsupportedRDFormatException
@@ -508,8 +473,7 @@ public class Rio {
 	}
 
 	/**
-	 * Writes the given single statement to the given {@link Writer} in the given
-	 * format.
+	 * Writes the given single statement to the given {@link Writer} in the given format.
 	 * <p>
 	 * 
 	 * @param statement
@@ -530,8 +494,7 @@ public class Rio {
 	}
 
 	/**
-	 * Writes the given single statement to the given {@link Writer} in the given
-	 * format.
+	 * Writes the given single statement to the given {@link Writer} in the given format.
 	 * <p>
 	 * 
 	 * @param statement
@@ -541,8 +504,7 @@ public class Rio {
 	 * @param dataFormat
 	 *        The {@link RDFFormat} to use when writing the statement.
 	 * @param settings
-	 *        The {@link WriterConfig} containing settings for configuring the
-	 *        writer.
+	 *        The {@link WriterConfig} containing settings for configuring the writer.
 	 * @throws RDFHandlerException
 	 *         Thrown if there is an error writing the statement.
 	 * @throws UnsupportedRDFormatException
@@ -586,40 +548,37 @@ public class Rio {
 		String outputFile = args[1];
 
 		try (FileOutputStream outStream = new FileOutputStream(outputFile);
-				FileInputStream inStream = new FileInputStream(inputFile);) {
+				FileInputStream inStream = new FileInputStream(inputFile);)
+		{
 			createParser(getParserFormatForFileName(inputFile).orElse(RDFFormat.RDFXML)).setRDFHandler(
-					createWriter(getWriterFormatForFileName(outputFile).orElse(RDFFormat.RDFXML), outStream)).parse(
-					inStream, "file:" + inputFile);
+					createWriter(getWriterFormatForFileName(outputFile).orElse(RDFFormat.RDFXML),
+							outStream)).parse(inStream, "file:" + inputFile);
 		}
 	}
 
 	/**
-	 * Helper method to use to create a lambda for
-	 * {@link Optional#orElseThrow(Supplier)} to indicate a format is
-	 * unsupported.
+	 * Helper method to use to create a lambda for {@link Optional#orElseThrow(Supplier)} to indicate a format
+	 * is unsupported.
 	 * 
 	 * @param unsupportedFormat
 	 *        The format that was not found.
-	 * @return A lambda that can be used to generate an exception if the format
-	 *         is not found.
+	 * @return A lambda that can be used to generate an exception if the format is not found.
 	 */
 	public static Supplier<UnsupportedRDFormatException> unsupportedFormat(RDFFormat unsupportedFormat) {
-		return () -> new UnsupportedRDFormatException("Did not recognise RDF format object "
-				+ unsupportedFormat);
+		return () -> new UnsupportedRDFormatException(
+				"Did not recognise RDF format object " + unsupportedFormat);
 	}
 
 	/**
-	 * Helper method to use to create a lambda for
-	 * {@link Optional#orElseThrow(Supplier)} to indicate a format is
-	 * unsupported.
+	 * Helper method to use to create a lambda for {@link Optional#orElseThrow(Supplier)} to indicate a format
+	 * is unsupported.
 	 * 
 	 * @param unsupportedFormat
 	 *        The format that was not found.
-	 * @return A lambda that can be used to generate an exception if the format
-	 *         is not found.
+	 * @return A lambda that can be used to generate an exception if the format is not found.
 	 */
 	public static Supplier<UnsupportedRDFormatException> unsupportedFormat(String unsupportedFormat) {
-		return () -> new UnsupportedRDFormatException("Did not recognise RDF format string "
-				+ unsupportedFormat);
+		return () -> new UnsupportedRDFormatException(
+				"Did not recognise RDF format string " + unsupportedFormat);
 	}
 }

@@ -16,8 +16,7 @@ import java.util.BitSet;
 public class ByteArrayUtil {
 
 	/**
-	 * Puts the entire <tt>source</tt> array in the <tt>target</tt> array at
-	 * offset <tt>offset</tt>.
+	 * Puts the entire <tt>source</tt> array in the <tt>target</tt> array at offset <tt>offset</tt>.
 	 */
 	public static void put(byte[] source, byte[] target, int offset) {
 		System.arraycopy(source, 0, target, offset, source.length);
@@ -31,8 +30,7 @@ public class ByteArrayUtil {
 	}
 
 	/**
-	 * Gets the subarray of length <tt>length</tt> from <tt>array</tt> that
-	 * starts at <tt>offset</tt>.
+	 * Gets the subarray of length <tt>length</tt> from <tt>array</tt> that starts at <tt>offset</tt>.
 	 */
 	public static byte[] get(byte[] array, int offset, int length) {
 		byte[] result = new byte[length];
@@ -81,10 +79,7 @@ public class ByteArrayUtil {
 	 *        the position up to which to look
 	 * @param key
 	 *        the byte to find
-	 * 
-	 * @return the position of the byte in the array, or -1 if the byte was not
-	 *         found in the array
-	 * 
+	 * @return the position of the byte in the array, or -1 if the byte was not found in the array
 	 */
 	public static int find(byte[] a, int fromIndex, int toIndex, byte key) {
 		int result = -1;
@@ -114,9 +109,7 @@ public class ByteArrayUtil {
 	 *        the position up to which to look
 	 * @param key
 	 *        the bytes to find
-	 * 
-	 * @return the position of the bytes in the array, or -1 if the bytes were
-	 *         not found in the array
+	 * @return the position of the bytes in the array, or -1 if the bytes were not found in the array
 	 */
 	public static int find(byte[] a, int fromIndex, int toIndex, byte[] key) {
 		int result = -1;
@@ -151,9 +144,9 @@ public class ByteArrayUtil {
 	}
 
 	/**
-	 * Checks whether <tt>value</tt> matches <tt>pattern</tt> with respect to the
-	 * bits specified by <tt>mask</tt>. In other words: this method returns true
-	 * if <tt>(value[i] ^ pattern[i]) &amp; mask[i] == 0</tt> for all i.
+	 * Checks whether <tt>value</tt> matches <tt>pattern</tt> with respect to the bits specified by
+	 * <tt>mask</tt>. In other words: this method returns true if
+	 * <tt>(value[i] ^ pattern[i]) &amp; mask[i] == 0</tt> for all i.
 	 */
 	public static boolean matchesPattern(byte[] value, byte[] mask, byte[] pattern) {
 		for (int i = 0; i < value.length; i++) {
@@ -166,8 +159,8 @@ public class ByteArrayUtil {
 	}
 
 	/**
-	 * Checks whether <tt>subValue</tt> matches the region in <tt>superValue</tt>
-	 * starting at offset <tt>offset</tt>.
+	 * Checks whether <tt>subValue</tt> matches the region in <tt>superValue</tt> starting at offset
+	 * <tt>offset</tt>.
 	 */
 	public static boolean regionMatches(byte[] subValue, byte[] superValue, int offset) {
 		for (int i = 0; i < subValue.length; i++) {
@@ -180,8 +173,7 @@ public class ByteArrayUtil {
 	}
 
 	/**
-	 * Compares two regions of bytes, indicating whether one is larger than the
-	 * other.
+	 * Compares two regions of bytes, indicating whether one is larger than the other.
 	 * 
 	 * @param array1
 	 *        The first byte array.
@@ -193,9 +185,8 @@ public class ByteArrayUtil {
 	 *        The start of the region in the second array.
 	 * @param length
 	 *        The length of the region that should be compared.
-	 * @return A negative number when the first region is smaller than the
-	 *         second, a positive number when the first region is larger than the
-	 *         second, or 0 if the regions are equal.
+	 * @return A negative number when the first region is smaller than the second, a positive number when the
+	 *         first region is larger than the second, or 0 if the regions are equal.
 	 */
 	public static int compareRegion(byte[] array1, int startIdx1, byte[] array2, int startIdx2, int length) {
 		int result = 0;
@@ -236,10 +227,9 @@ public class ByteArrayUtil {
 	}
 
 	/**
-	 * Returns the hexadecimal value of the supplied byte array. The resulting
-	 * string always uses two hexadecimals per byte. As a result, the length of
-	 * the resulting string is guaranteed to be twice the length of the supplied
-	 * byte array.
+	 * Returns the hexadecimal value of the supplied byte array. The resulting string always uses two
+	 * hexadecimals per byte. As a result, the length of the resulting string is guaranteed to be twice the
+	 * length of the supplied byte array.
 	 */
 	public static String toHexString(byte[] array) {
 		StringBuilder sb = new StringBuilder(2 * array.length);

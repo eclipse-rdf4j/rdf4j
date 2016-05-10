@@ -22,8 +22,7 @@ import org.junit.Test;
 public class MemURITest {
 
 	/**
-	 * Verifies that MemURI's hash code is the same as the hash code of an
-	 * equivalent URIImpl.
+	 * Verifies that MemURI's hash code is the same as the hash code of an equivalent URIImpl.
 	 */
 	@Test
 	public void testEqualsAndHash()

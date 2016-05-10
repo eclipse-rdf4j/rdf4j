@@ -11,7 +11,9 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 
 public class ParsedGraphTemplate extends ParsedGraphQuery implements ParsedTemplate {
+
 	private final Template template;
+
 	private final BindingSet args;
 
 	public ParsedGraphTemplate(Template template, BindingSet args) {

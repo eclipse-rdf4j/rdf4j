@@ -15,8 +15,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.ModelAndView;
 
 /**
- * Interceptor that inserts the navigation model for the current Spring view
- * into the model.
+ * Interceptor that inserts the navigation model for the current Spring view into the model.
  * 
  * @author Herko ter Horst
  */
@@ -48,8 +47,8 @@ public class NavigationHandlerInterceptor implements HandlerInterceptor {
 		}
 
 		if (mav != null && sessionNavigationModel != null) {
-			mav.addObject("view", sessionNavigationModel.findView(request.getRequestURI().substring(
-					request.getContextPath().length())));
+			mav.addObject("view", sessionNavigationModel.findView(
+					request.getRequestURI().substring(request.getContextPath().length())));
 		}
 	}
 

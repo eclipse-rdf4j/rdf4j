@@ -46,31 +46,25 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * <h2><a name="whySailConnectionListener">Sail Connection Listener instead of
- * implementing add/remove</a></h2> Using SailConnectionListener, see <a
- * href="#whySailConnectionListener">above</a> The LuceneIndex is adapted based
- * on events coming from the wrapped Sail, rather than by overriding the
- * addStatement and removeStatements methods. This approach has two benefits:
- * (1) when the wrapped Sail only reports statements that were not stored
- * before, the LuceneIndex does not have to do the check on the skipped
- * statemements and (2) the method for removing Statements from the Lucene index
- * does not have to take wildcards into account, making its implementation
- * simpler. <h2>Synchronized Methods</h2> LuceneSailConnection uses a listener
- * to collect removed statements. The listener should not be active during the
- * removal of contexts, as this is not needed (context removal is implemented
- * differently). To realize this, all methods that can do changes are
- * synchronized and during context removal, the listener is disabled. Thus, all
- * methods of this connection that can change data are synchronized. <h2>
- * Evaluating Queries - possible optimizations</h2> Arjohn has answered this
- * question in the sesame-dev mailinglist on 13.8.2007: <b>Is there a
- * QueryModelNode that can contain a fixed (perhaps very long) list of Query
- * result bindings?</b> There is currently no such node, but there are two
- * options to get similar behaviour: 1) Include the result bindings as OR-ed
- * constraints in the query model. E.g. if you have a result binding like
- * {{x=1,y=1},{x=2,y=2}}, this translates to the constraints (x=1 and y=1) or
- * (x=2 and y=2). 2) The LuceneSail could iterate over the LuceneQueryResult and
- * supply the various results as query input parameters to the underlying Sail.
- * This is similar to using PreparedStatement's in JDBC.
+ * <h2><a name="whySailConnectionListener">Sail Connection Listener instead of implementing add/remove</a>
+ * </h2> Using SailConnectionListener, see <a href="#whySailConnectionListener">above</a> The LuceneIndex is
+ * adapted based on events coming from the wrapped Sail, rather than by overriding the addStatement and
+ * removeStatements methods. This approach has two benefits: (1) when the wrapped Sail only reports statements
+ * that were not stored before, the LuceneIndex does not have to do the check on the skipped statemements and
+ * (2) the method for removing Statements from the Lucene index does not have to take wildcards into account,
+ * making its implementation simpler.
+ * <h2>Synchronized Methods</h2> LuceneSailConnection uses a listener to collect removed statements. The
+ * listener should not be active during the removal of contexts, as this is not needed (context removal is
+ * implemented differently). To realize this, all methods that can do changes are synchronized and during
+ * context removal, the listener is disabled. Thus, all methods of this connection that can change data are
+ * synchronized.
+ * <h2>Evaluating Queries - possible optimizations</h2> Arjohn has answered this question in the sesame-dev
+ * mailinglist on 13.8.2007: <b>Is there a QueryModelNode that can contain a fixed (perhaps very long) list of
+ * Query result bindings?</b> There is currently no such node, but there are two options to get similar
+ * behaviour: 1) Include the result bindings as OR-ed constraints in the query model. E.g. if you have a
+ * result binding like {{x=1,y=1},{x=2,y=2}}, this translates to the constraints (x=1 and y=1) or (x=2 and
+ * y=2). 2) The LuceneSail could iterate over the LuceneQueryResult and supply the various results as query
+ * input parameters to the underlying Sail. This is similar to using PreparedStatement's in JDBC.
  * 
  * @author sauermann
  * @author christian.huetter
@@ -89,8 +83,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	final private LuceneSailBuffer buffer = new LuceneSailBuffer();
 
 	/**
-	 * The listener that listens to the underlying connection. It is disabled
-	 * during clearContext operations.
+	 * The listener that listens to the underlying connection. It is disabled during clearContext operations.
 	 */
 	protected final SailConnectionListener connectionListener = new SailConnectionListener() {
 
@@ -126,8 +119,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	};
 
 	/**
-	 * To remember if the iterator was already closed and only free resources
-	 * once
+	 * To remember if the iterator was already closed and only free resources once
 	 */
 	private boolean mustclose = false;
 
@@ -140,7 +132,6 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 		/*
 		 * Using SailConnectionListener, see <a href="#whySailConnectionListener">above</a>
-
 		 */
 
 		wrappedConnection.addConnectionListener(connectionListener);
@@ -234,8 +225,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 						luceneIndex.clear();
 					}
 					else
-						throw new RuntimeException("Cannot interpret operation " + op + " of type "
-								+ op.getClass().getName());
+						throw new RuntimeException(
+								"Cannot interpret operation " + op + " of type " + op.getClass().getName());
 					i.remove();
 				}
 			}
@@ -251,23 +242,24 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		}
 	}
 
-	private void addRemoveStatements(Set<Statement> toAdd, Set<Statement> toRemove) throws IOException
+	private void addRemoveStatements(Set<Statement> toAdd, Set<Statement> toRemove)
+		throws IOException
 	{
-		logger.debug("indexing {}/removing {} statements...", toAdd.size(),
-				toRemove.size());
+		logger.debug("indexing {}/removing {} statements...", toAdd.size(), toRemove.size());
 		luceneIndex.begin();
 		try {
 			luceneIndex.addRemoveStatements(toAdd, toRemove);
 			luceneIndex.commit();
 		}
-		catch(IOException e) {
+		catch (IOException e) {
 			logger.error("Rolling back", e);
 			luceneIndex.rollback();
 			throw e;
 		}
 	}
 
-	private void clearContexts(Resource... contexts) throws IOException
+	private void clearContexts(Resource... contexts)
+		throws IOException
 	{
 		logger.debug("clearing contexts...");
 		luceneIndex.begin();
@@ -275,7 +267,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			luceneIndex.clearContexts(contexts);
 			luceneIndex.commit();
 		}
-		catch(IOException e) {
+		catch (IOException e) {
 			logger.error("Rolling back", e);
 			luceneIndex.rollback();
 			throw e;
@@ -298,7 +290,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 		List<SearchQueryEvaluator> queries = new ArrayList<SearchQueryEvaluator>();
 
-		for(SearchQueryInterpreter interpreter : sail.getSearchQueryInterpreters()) {
+		for (SearchQueryInterpreter interpreter : sail.getSearchQueryInterpreters()) {
 			interpreter.process(tupleExpr, bindings, queries);
 		}
 
@@ -312,9 +304,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	/**
-	 * Evaluate the given Lucene queries, generate bindings from the query
-	 * result, add the bindings to the query tree, and remove the Lucene queries
-	 * from the given query tree.
+	 * Evaluate the given Lucene queries, generate bindings from the query result, add the bindings to the
+	 * query tree, and remove the Lucene queries from the given query tree.
 	 * 
 	 * @param queries
 	 * @param tupleExpr
@@ -332,7 +323,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		try {
 			this.luceneIndex.beginReading();
 		}
-		catch(IOException e) {
+		catch (IOException e) {
 			throw new SailException(e);
 		}
 		this.mustclose = true;
@@ -349,7 +340,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 				// add bindings to the query tree
 				BindingSetAssignment bsa = new BindingSetAssignment();
 				bsa.setBindingSets(bindingSets);
-				if(bindingSets instanceof BindingSetCollection) {
+				if (bindingSets instanceof BindingSetCollection) {
 					bsa.setBindingNames(((BindingSetCollection)bindingSets).getBindingNames());
 				}
 				addBindingSets(query, bsa);
@@ -376,7 +367,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		QueryModelNode principalNode = query.getParentQueryModelNode();
 		final Projection projection = (Projection)getParentNodeOfType(principalNode, Projection.class);
 		if (projection == null) {
-			logger.error("Could not add bindings to the query tree because no projection was found for the query node: {}",
+			logger.error(
+					"Could not add bindings to the query tree because no projection was found for the query node: {}",
 					principalNode);
 			return;
 		}
@@ -477,7 +469,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		Iterable<BindingSet> rightIter = right.getBindingSets();
 		int leftSize = size(leftIter, 16);
 		int rightSize = size(rightIter, 16);
-		List<BindingSet> output = new ArrayList<BindingSet>(leftSize*rightSize);
+		List<BindingSet> output = new ArrayList<BindingSet>(leftSize * rightSize);
 
 		for (BindingSet l : leftIter) {
 			for (BindingSet r : rightIter) {

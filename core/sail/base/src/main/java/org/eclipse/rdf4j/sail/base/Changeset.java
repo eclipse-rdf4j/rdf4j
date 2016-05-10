@@ -25,41 +25,38 @@ import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * Set of changes applied to an {@link SailSourceBranch} awaiting to be flushed
- * into its backing {@link SailSource}.
+ * Set of changes applied to an {@link SailSourceBranch} awaiting to be flushed into its backing
+ * {@link SailSource}.
  * 
  * @author James Leigh
  */
 abstract class Changeset implements SailSink, ModelFactory {
 
 	/**
-	 * Set of {@link SailDataset}s that are currently using this {@link Changeset}
-	 * to derive the state of the {@link SailSource}.
+	 * Set of {@link SailDataset}s that are currently using this {@link Changeset} to derive the state of the
+	 * {@link SailSource}.
 	 */
 	private Set<SailDatasetImpl> refbacks;
 
 	/**
-	 * {@link Changeset}s that have been {@link #flush()}ed to the same
-	 * {@link SailSourceBranch}, since this object was {@link #flush()}ed.
+	 * {@link Changeset}s that have been {@link #flush()}ed to the same {@link SailSourceBranch}, since this
+	 * object was {@link #flush()}ed.
 	 */
 	private Set<Changeset> prepend;
 
 	/**
-	 * When in {@link IsolationLevels#SERIALIZABLE} this contains all the
-	 * observed {@link StatementPattern}s that were observed by
-	 * {@link ObservingSailDataset}.
+	 * When in {@link IsolationLevels#SERIALIZABLE} this contains all the observed {@link StatementPattern}s
+	 * that were observed by {@link ObservingSailDataset}.
 	 */
 	private Set<StatementPattern> observations;
 
 	/**
-	 * Statements that have been added as part of a transaction, but has not yet
-	 * been committed.
+	 * Statements that have been added as part of a transaction, but has not yet been committed.
 	 */
 	private Model approved;
 
 	/**
-	 * Explicit statements that have been removed as part of a transaction, but
-	 * have not yet been committed.
+	 * Explicit statements that have been removed as part of a transaction, but have not yet been committed.
 	 */
 	private Model deprecated;
 
@@ -120,8 +117,8 @@ abstract class Changeset implements SailSink, ModelFactory {
 				for (Changeset changeset : prepend) {
 					Model approved = changeset.getApproved();
 					Model deprecated = changeset.getDeprecated();
-					if (approved != null && approved.contains(subj, pred, obj, contexts) || deprecated != null
-							&& deprecated.contains(subj, pred, obj, contexts))
+					if (approved != null && approved.contains(subj, pred, obj, contexts)
+							|| deprecated != null && deprecated.contains(subj, pred, obj, contexts))
 					{
 						throw new SailConflictException("Observed State has Changed");
 					}
@@ -204,8 +201,8 @@ abstract class Changeset implements SailSink, ModelFactory {
 		}
 		else {
 			for (Resource ctx : contexts) {
-				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
-						new Var("g", ctx)));
+				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred),
+						new Var("o", obj), new Var("g", ctx)));
 			}
 		}
 	}

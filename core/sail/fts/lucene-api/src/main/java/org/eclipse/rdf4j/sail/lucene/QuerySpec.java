@@ -18,9 +18,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import com.google.common.base.Supplier;
 
 /**
- * A QuerySpec holds information extracted from a TupleExpr corresponding with a
- * single Lucene query. Access the patterns or use the get-methods to get the
- * names of the variables to bind.
+ * A QuerySpec holds information extracted from a TupleExpr corresponding with a single Lucene query. Access
+ * the patterns or use the get-methods to get the names of the variables to bind.
  */
 public class QuerySpec implements SearchQueryEvaluator {
 
@@ -163,8 +162,8 @@ public class QuerySpec implements SearchQueryEvaluator {
 	}
 
 	/**
-	 * the type of query, must equal {@link LuceneSailSchema#LUCENE_QUERY}. A
-	 * null type is possible, but not valid.
+	 * the type of query, must equal {@link LuceneSailSchema#LUCENE_QUERY}. A null type is possible, but not
+	 * valid.
 	 * 
 	 * @return the type of the Query or null, if no type assigned.
 	 */
@@ -180,8 +179,8 @@ public class QuerySpec implements SearchQueryEvaluator {
 	}
 
 	/**
-	 * return the literal expression of the query or null, if none set. (null
-	 * values are possible, but not valid).
+	 * return the literal expression of the query or null, if none set. (null values are possible, but not
+	 * valid).
 	 * 
 	 * @return the query or null
 	 */
@@ -192,8 +191,7 @@ public class QuerySpec implements SearchQueryEvaluator {
 	}
 
 	/**
-	 * @return The URI of the property who's literal values should be searched,
-	 *         or <code>null</code>
+	 * @return The URI of the property who's literal values should be searched, or <code>null</code>
 	 */
 	public IRI getPropertyURI() {
 		return propertyURI;

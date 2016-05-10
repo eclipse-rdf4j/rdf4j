@@ -20,7 +20,6 @@ public class NTriplesWriterSettings {
 	 * Boolean setting for writer to determine if unicode escapes are used.
 	 * <p>
 	 * Defaults to false.
-	 * 
 	 */
 	public static final RioSetting<Boolean> ESCAPE_UNICODE = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.escapeunicode", "Escape Unicode characters", Boolean.FALSE);

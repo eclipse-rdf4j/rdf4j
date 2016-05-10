@@ -34,8 +34,8 @@ public class RDFInserter extends AbstractRDFInserter {
 	 *--------------*/
 
 	/**
-	 * Creates a new RDFInserter object that preserves bnode IDs and that does
-	 * not enforce any context upon statements that are reported to it.
+	 * Creates a new RDFInserter object that preserves bnode IDs and that does not enforce any context upon
+	 * statements that are reported to it.
 	 * 
 	 * @param con
 	 *        The connection to use for the add operations.
@@ -50,7 +50,8 @@ public class RDFInserter extends AbstractRDFInserter {
 	 *---------*/
 
 	@Override
-	protected void addNamespace(String prefix, String name) throws RDF4JException
+	protected void addNamespace(String prefix, String name)
+		throws RDF4JException
 	{
 		if (con.getNamespace(prefix) == null) {
 			con.setNamespace(prefix, name);
@@ -58,7 +59,8 @@ public class RDFInserter extends AbstractRDFInserter {
 	}
 
 	@Override
-	protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) throws RDF4JException
+	protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt)
+		throws RDF4JException
 	{
 		if (enforcesContext()) {
 			con.add(subj, pred, obj, contexts);

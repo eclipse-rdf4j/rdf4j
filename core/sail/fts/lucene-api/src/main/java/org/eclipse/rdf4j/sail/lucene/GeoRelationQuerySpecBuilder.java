@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.QueryModelVisitorBase;
 import org.eclipse.rdf4j.sail.SailException;
 
 public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
+
 	private SearchIndex index;
 
 	public GeoRelationQuerySpecBuilder(SearchIndex index) {
@@ -38,38 +39,44 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 
 	@Override
 	public void process(TupleExpr tupleExpr, BindingSet bindings,
-			final Collection<SearchQueryEvaluator> results) throws SailException {
+			final Collection<SearchQueryEvaluator> results)
+		throws SailException
+	{
 
 		tupleExpr.visit(new QueryModelVisitorBase<SailException>() {
-			final Map<String,GeoRelationQuerySpec> specs = new HashMap<String,GeoRelationQuerySpec>();
+
+			final Map<String, GeoRelationQuerySpec> specs = new HashMap<String, GeoRelationQuerySpec>();
 
 			@Override
-			public void meet(FunctionCall f) throws SailException {
-				if(f.getURI().startsWith(GEOF.NAMESPACE)) {
+			public void meet(FunctionCall f)
+				throws SailException
+			{
+				if (f.getURI().startsWith(GEOF.NAMESPACE)) {
 					List<ValueExpr> args = f.getArgs();
-					if(args.size() != 2) {
+					if (args.size() != 2) {
 						return;
 					}
 
 					Literal qshape = getLiteral(args.get(0));
 					String varShape = getVarName(args.get(1));
 
-					if(qshape == null || varShape == null) {
+					if (qshape == null || varShape == null) {
 						return;
 					}
 
 					Filter filter = null;
 					String fVar = null;
 					QueryModelNode parent = f.getParentNode();
-					if(parent instanceof ExtensionElem) {
+					if (parent instanceof ExtensionElem) {
 						fVar = ((ExtensionElem)parent).getName();
 						QueryModelNode extension = parent.getParentNode();
 						filter = getFilter(extension.getParentNode(), fVar);
-					} else if(parent instanceof Filter) {
-						filter = (Filter) parent;
+					}
+					else if (parent instanceof Filter) {
+						filter = (Filter)parent;
 					}
 
-					if(filter == null) {
+					if (filter == null) {
 						return;
 					}
 
@@ -85,11 +92,13 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 
 			@Override
 			public void meet(StatementPattern sp) {
-				URI propertyName = (URI) sp.getPredicateVar().getValue();
-				if(propertyName != null && index.isGeoField(SearchFields.getPropertyField(propertyName)) && !sp.getObjectVar().hasValue()) {
+				URI propertyName = (URI)sp.getPredicateVar().getValue();
+				if (propertyName != null && index.isGeoField(SearchFields.getPropertyField(propertyName))
+						&& !sp.getObjectVar().hasValue())
+				{
 					String objectVarName = sp.getObjectVar().getName();
 					GeoRelationQuerySpec spec = specs.remove(objectVarName);
-					if(spec != null && isChildOf(sp, spec.getFilter())) {
+					if (spec != null && isChildOf(sp, spec.getFilter())) {
 						spec.setGeometryPattern(sp);
 						results.add(spec);
 					}
@@ -99,7 +108,7 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 	}
 
 	private static boolean isChildOf(QueryModelNode child, QueryModelNode parent) {
-		if(child.getParentNode() == parent) {
+		if (child.getParentNode() == parent) {
 			return true;
 		}
 		return isChildOf(child.getParentNode(), parent);
@@ -107,14 +116,14 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 
 	private static Filter getFilter(QueryModelNode node, String varName) {
 		Filter filter = null;
-		if(node instanceof Filter) {
-			Filter f = (Filter) node;
+		if (node instanceof Filter) {
+			Filter f = (Filter)node;
 			ValueExpr condition = f.getCondition();
-			if(varName.equals(getVarName(condition))) {
+			if (varName.equals(getVarName(condition))) {
 				filter = f;
 			}
 		}
-		else if(node != null) {
+		else if (node != null) {
 			filter = getFilter(node.getParentNode(), varName);
 		}
 		return filter;
@@ -122,27 +131,27 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 
 	private static Literal getLiteral(ValueExpr v) {
 		Value value = getValue(v);
-		if(value instanceof Literal) {
-			return (Literal) value;
+		if (value instanceof Literal) {
+			return (Literal)value;
 		}
 		return null;
 	}
 
 	private static Value getValue(ValueExpr v) {
 		Value value = null;
-		if(v instanceof ValueConstant) {
+		if (v instanceof ValueConstant) {
 			value = ((ValueConstant)v).getValue();
 		}
-		else if(v instanceof Var) {
+		else if (v instanceof Var) {
 			value = ((Var)v).getValue();
 		}
 		return value;
 	}
 
 	private static String getVarName(ValueExpr v) {
-		if(v instanceof Var) {
-			Var var = (Var) v;
-			if(!var.isConstant()) {
+		if (v instanceof Var) {
+			Var var = (Var)v;
+			if (!var.isConstant()) {
 				return var.getName();
 			}
 		}

@@ -21,8 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Resource cache expiry filter for Tomcat 6, based on code authored by Saket
- * Kumar.
+ * Resource cache expiry filter for Tomcat 6, based on code authored by Saket Kumar.
  * 
  * @see <a href="http://bit.ly/tomcat-6-caching">Enable Caching in Tomcat 6</a>
  * @author Dale Visser
@@ -37,24 +36,21 @@ public class CacheFilter implements Filter {
 	private final static String CACHE_CONTROL = "Cache-Control";
 
 	/**
-	 * Maximum allowed expiry lifetime in seconds, set to one year according to
-	 * the advice in RFC 2616.
+	 * Maximum allowed expiry lifetime in seconds, set to one year according to the advice in RFC 2616.
 	 * 
 	 * @see <a href="https://www.ietf.org/rfc/rfc2616.txt">RFC 2616: HTTP/1.1</a>
 	 */
 	public final static long MAX_EXPIRY = (365 * 24 + 6) * 60 * 60;
 
 	/**
-	 * Minimum allowed expiry lifetime, zero, which corresponds to not caching at
-	 * all.
+	 * Minimum allowed expiry lifetime, zero, which corresponds to not caching at all.
 	 */
 	public final static long MIN_EXPIRY = 0;
 
 	private Long expiry = null;
 
 	/**
-	 * Set a maximum expiry Cache-Control header applicable to the client and to
-	 * intermediate caching servers.
+	 * Set a maximum expiry Cache-Control header applicable to the client and to intermediate caching servers.
 	 */
 	@Override
 	public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
@@ -67,11 +63,9 @@ public class CacheFilter implements Filter {
 	}
 
 	/**
-	 * Parse the Cache-Control configuration parameter as a long integer, and set
-	 * the filter expiry value, modulo the minimum and maximum expiry
-	 * constraints. If the configuration parameter is not present, or not a valid
-	 * long integer value, then no Cache-Control headers will be applied by the
-	 * filter.
+	 * Parse the Cache-Control configuration parameter as a long integer, and set the filter expiry value,
+	 * modulo the minimum and maximum expiry constraints. If the configuration parameter is not present, or
+	 * not a valid long integer value, then no Cache-Control headers will be applied by the filter.
 	 * 
 	 * @see #MIN_EXPIRY
 	 * @see #MAX_EXPIRY

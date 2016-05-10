@@ -51,8 +51,8 @@ import org.eclipse.rdf4j.repository.event.base.RepositoryConnectionListenerAdapt
 import org.eclipse.rdf4j.repository.sail.config.RepositoryResolverClient;
 
 /**
- * An implementation of the {@link RepositoryManager} interface that operates
- * directly on the repository data files in the local file system.
+ * An implementation of the {@link RepositoryManager} interface that operates directly on the repository data
+ * files in the local file system.
  * 
  * @author Arjohn Kampman
  */
@@ -84,12 +84,10 @@ public class LocalRepositoryManager extends RepositoryManager {
 	 *--------------*/
 
 	/**
-	 * Creates a new RepositoryManager that operates on the specfified base
-	 * directory.
+	 * Creates a new RepositoryManager that operates on the specfified base directory.
 	 * 
 	 * @param baseDir
-	 *        The base directory where data for repositories can be stored, among
-	 *        other things.
+	 *        The base directory where data for repositories can be stored, among other things.
 	 */
 	public LocalRepositoryManager(File baseDir) {
 		super();
@@ -223,19 +221,16 @@ public class LocalRepositoryManager extends RepositoryManager {
 	}
 
 	/**
-	 * Creates the stack of Repository objects for the repository represented by
-	 * the specified {@link org.eclipse.rdf4j.repository.config.RepositoryImplConfig}.
-	 * Uses a {@link org.eclipse.rdf4j.repository.config.RepositoryFactory} to create
-	 * the repository and initialize it.
+	 * Creates the stack of Repository objects for the repository represented by the specified
+	 * {@link org.eclipse.rdf4j.repository.config.RepositoryImplConfig}. Uses a
+	 * {@link org.eclipse.rdf4j.repository.config.RepositoryFactory} to create the repository and initialize
+	 * it.
 	 * 
 	 * @param config
-	 *        The node representing the to-be-created repository in the
-	 *        configuration.
-	 * @return The created repository, or <tt>null</tt> if no such repository
-	 *         exists.
+	 *        The node representing the to-be-created repository in the configuration.
+	 * @return The created repository, or <tt>null</tt> if no such repository exists.
 	 * @throws RepositoryConfigException
-	 *         If no repository could be created due to invalid or incomplete
-	 *         configuration data.
+	 *         If no repository could be created due to invalid or incomplete configuration data.
 	 */
 	private Repository createRepositoryStack(RepositoryImplConfig config)
 		throws RepositoryConfigException
@@ -247,7 +242,8 @@ public class LocalRepositoryManager extends RepositoryManager {
 			((RepositoryResolverClient)repository).setRepositoryResolver(this);
 		}
 		if (repository instanceof FederatedServiceResolverClient) {
-			((FederatedServiceResolverClient)repository).setFederatedServiceResolver(getFederatedServiceResolver());
+			((FederatedServiceResolverClient)repository).setFederatedServiceResolver(
+					getFederatedServiceResolver());
 		}
 		if (repository instanceof SesameClientDependent) {
 			((SesameClientDependent)repository).setSesameClient(client);
@@ -264,7 +260,8 @@ public class LocalRepositoryManager extends RepositoryManager {
 			catch (ClassCastException e) {
 				throw new RepositoryConfigException(
 						"Delegate specified for repository that is not a DelegatingRepository: "
-								+ delegate.getClass(), e);
+								+ delegate.getClass(),
+						e);
 			}
 		}
 		return repository;
@@ -422,21 +419,25 @@ public class LocalRepositoryManager extends RepositoryManager {
 								try {
 									if (isRepositoryConfigContext(cleanupCon, context)) {
 										String repositoryID = getRepositoryID(cleanupCon, context);
-										logger.debug("Reacting to modified repository config for {}", repositoryID);
+										logger.debug("Reacting to modified repository config for {}",
+												repositoryID);
 										Repository repository = removeInitializedRepository(repositoryID);
 										if (repository != null) {
-											logger.debug("Modified repository {} has been initialized, refreshing...",
+											logger.debug(
+													"Modified repository {} has been initialized, refreshing...",
 													repositoryID);
 											// refresh single repository
 											refreshRepository(cleanupCon, repositoryID, repository);
 										}
 										else {
-											logger.debug("Modified repository {} has not been initialized, skipping...",
+											logger.debug(
+													"Modified repository {} has not been initialized, skipping...",
 													repositoryID);
 										}
 									}
 									else {
-										logger.debug("Context {} doesn't contain repository config information.",
+										logger.debug(
+												"Context {} doesn't contain repository config information.",
 												context);
 									}
 								}
@@ -468,7 +469,8 @@ public class LocalRepositoryManager extends RepositoryManager {
 		{
 			String result = null;
 
-			RepositoryResult<Statement> idStatements = con.getStatements(null, REPOSITORYID, null, true, context);
+			RepositoryResult<Statement> idStatements = con.getStatements(null, REPOSITORYID, null, true,
+					context);
 			try {
 				if (idStatements.hasNext()) {
 					Statement idStatement = idStatements.next();
@@ -490,7 +492,8 @@ public class LocalRepositoryManager extends RepositoryManager {
 		File dataDir = getRepositoryDir(repositoryID);
 
 		if (dataDir.isDirectory()) {
-			logger.debug("Cleaning up data dir {} for repository {}", dataDir.getAbsolutePath(), repositoryID);
+			logger.debug("Cleaning up data dir {} for repository {}", dataDir.getAbsolutePath(),
+					repositoryID);
 			FileUtil.deleteDir(dataDir);
 		}
 	}

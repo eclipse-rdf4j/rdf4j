@@ -104,7 +104,7 @@ public class AppConfiguration implements Configuration {
 		this(applicationId);
 		setLongName(longName);
 	}
-	
+
 	/**
 	 * Create the application configuration.
 	 * 
@@ -201,8 +201,7 @@ public class AppConfiguration implements Configuration {
 	}
 
 	/**
-	 * Get the long name of the application (e.g. "Aduna AutoFocus" or "OpenRDF
-	 * Sesame Server").
+	 * Get the long name of the application (e.g. "Aduna AutoFocus" or "OpenRDF Sesame Server").
 	 * 
 	 * @return the long name of the application
 	 */
@@ -221,9 +220,8 @@ public class AppConfiguration implements Configuration {
 	}
 
 	/**
-	 * Get the full name of the application, which consists of the long name and
-	 * the version number (e.g. "Aduna AutoFocus 4.0-beta1" or "OpenRDF Sesame
-	 * Webclient 2.0")
+	 * Get the full name of the application, which consists of the long name and the version number (e.g.
+	 * "Aduna AutoFocus 4.0-beta1" or "OpenRDF Sesame Webclient 2.0")
 	 * 
 	 * @return the full name of the application
 	 */
@@ -274,8 +272,7 @@ public class AppConfiguration implements Configuration {
 	 * Set the command line arguments specified to the application.
 	 * 
 	 * @param args
-	 *        A String array containing the arguments as specified to the main
-	 *        method.
+	 *        A String array containing the arguments as specified to the main method.
 	 */
 	public void setCommandLineArgs(final String[] args) {
 		this.commandLineArgs = (String[])args.clone();
@@ -301,8 +298,7 @@ public class AppConfiguration implements Configuration {
 	 * Configure the data dir.
 	 * 
 	 * @param dataDirParam
-	 *        the data dir to use. If null, determination of the data dir will be
-	 *        deferred to Platform.
+	 *        the data dir to use. If null, determination of the data dir will be deferred to Platform.
 	 */
 	private void configureDataDir() {
 		if (dataDirName != null) {

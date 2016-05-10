@@ -92,8 +92,7 @@ public class ProtocolTest {
 	}
 
 	/**
-	 * Tests the server's methods for updating the data in the default context of
-	 * a repository.
+	 * Tests the server's methods for updating the data in the default context of a repository.
 	 */
 	@Test
 	public void testNullContext_PUT()
@@ -105,8 +104,7 @@ public class ProtocolTest {
 	}
 
 	/**
-	 * Tests the server's methods for deleting the data from the default context
-	 * of a repository.
+	 * Tests the server's methods for deleting the data from the default context of a repository.
 	 */
 	@Test
 	public void testNullContext_DELETE()
@@ -118,8 +116,7 @@ public class ProtocolTest {
 	}
 
 	/**
-	 * Tests the server's methods for updating the data in a named context of a
-	 * repository.
+	 * Tests the server's methods for updating the data in a named context of a repository.
 	 */
 	@Test
 	public void testNamedContext_PUT()
@@ -132,8 +129,7 @@ public class ProtocolTest {
 	}
 
 	/**
-	 * Tests the server's methods for deleting the data from a named context of a
-	 * repository.
+	 * Tests the server's methods for deleting the data from a named context of a repository.
 	 */
 	@Test
 	public void testNamedContext_DELETE()
@@ -146,21 +142,19 @@ public class ProtocolTest {
 	}
 
 	/**
-	 * Tests the server's methods for quering a repository using GET requests to
-	 * send SeRQL-select queries.
+	 * Tests the server's methods for quering a repository using GET requests to send SeRQL-select queries.
 	 */
 	@Test
 	public void testSeRQLselect()
 		throws Exception
 	{
-		TupleQueryResult queryResult = evaluateTupleQuery(TestServer.REPOSITORY_URL, "select * from {X} P {Y}",
-				QueryLanguage.SERQL);
+		TupleQueryResult queryResult = evaluateTupleQuery(TestServer.REPOSITORY_URL,
+				"select * from {X} P {Y}", QueryLanguage.SERQL);
 		QueryResultIO.writeTuple(queryResult, TupleQueryResultFormat.SPARQL, System.out);
 	}
 
 	/**
-	 * Checks that the server accepts a direct POST with a content type of
-	 * "application/sparql-query".
+	 * Checks that the server accepts a direct POST with a content type of "application/sparql-query".
 	 */
 	@Test
 	public void testQueryDirect_POST()
@@ -182,8 +176,7 @@ public class ProtocolTest {
 	}
 
 	/**
-	 * Checks that the server accepts a direct POST with a content type of
-	 * "application/sparql-update".
+	 * Checks that the server accepts a direct POST with a content type of "application/sparql-update".
 	 */
 	@Test
 	public void testUpdateDirect_POST()
@@ -205,8 +198,7 @@ public class ProtocolTest {
 	}
 
 	/**
-	 * Checks that the requested content type is returned when accept header
-	 * explicitly set.
+	 * Checks that the requested content type is returned when accept header explicitly set.
 	 */
 	@Test
 	public void testContentTypeForGraphQuery1_GET()
@@ -252,8 +244,7 @@ public class ProtocolTest {
 	}
 
 	/**
-	 * Checks that a proper error (HTTP 406) is returned when accept header is
-	 * set incorrectly on graph query.
+	 * Checks that a proper error (HTTP 406) is returned when accept header is set incorrectly on graph query.
 	 */
 	@Test
 	public void testContentTypeForGraphQuery2_GET()
@@ -289,8 +280,7 @@ public class ProtocolTest {
 	}
 
 	/**
-	 * Checks that a suitable RDF content type is returned when accept header not
-	 * explicitly set.
+	 * Checks that a suitable RDF content type is returned when accept header not explicitly set.
 	 */
 	@Test
 	public void testContentTypeForGraphQuery3_GET()

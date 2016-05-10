@@ -40,8 +40,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A forward-chaining inferencer that infers new statements using a SPARQL or
- * SeRQL graph query.
+ * A forward-chaining inferencer that infers new statements using a SPARQL or SeRQL graph query.
  * 
  * @author Dale Visser
  */
@@ -69,14 +68,11 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	 * Create a new custom inferencer.
 	 * 
 	 * @param language
-	 *        language that <tt>queryText</tt> and <tt>matcherText</tt> are
-	 *        expressed in
+	 *        language that <tt>queryText</tt> and <tt>matcherText</tt> are expressed in
 	 * @param queryText
-	 *        a query that returns an RDF graph of inferred statements to be
-	 *        added to the underlying Sail
+	 *        a query that returns an RDF graph of inferred statements to be added to the underlying Sail
 	 * @param matcherText
-	 *        a query that returns an RDF graph of existing inferred statements
-	 *        already added previously
+	 *        a query that returns an RDF graph of existing inferred statements already added previously
 	 * @throws MalformedQueryException
 	 *         if there is a problem parsing either of the given queries
 	 * @throws UnsupportedQueryLanguageException
@@ -97,14 +93,11 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	 * @param baseSail
 	 *        an underlying Sail, such as another inferencer or a SailRepository
 	 * @param language
-	 *        language that <tt>queryText</tt> and <tt>matcherText</tt> are
-	 *        expressed in
+	 *        language that <tt>queryText</tt> and <tt>matcherText</tt> are expressed in
 	 * @param queryText
-	 *        a query that returns an RDF graph of inferred statements to be
-	 *        added to the underlying Sail
+	 *        a query that returns an RDF graph of inferred statements to be added to the underlying Sail
 	 * @param matcherText
-	 *        a query that returns an RDF graph of existing inferred statements
-	 *        already added previously
+	 *        a query that returns an RDF graph of existing inferred statements already added previously
 	 * @throws MalformedQueryException
 	 *         if there is a problem parsing either of the given queries
 	 * @throws UnsupportedQueryLanguageException
@@ -120,18 +113,14 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Called in order to set all the fields needed for the inferencer to
-	 * function.
+	 * Called in order to set all the fields needed for the inferencer to function.
 	 * 
 	 * @param language
-	 *        language that <tt>queryText</tt> and <tt>matcherText</tt> are
-	 *        expressed in
+	 *        language that <tt>queryText</tt> and <tt>matcherText</tt> are expressed in
 	 * @param queryText
-	 *        a query that returns an RDF graph of inferred statements to be
-	 *        added to the underlying Sail
+	 *        a query that returns an RDF graph of inferred statements to be added to the underlying Sail
 	 * @param matcherText
-	 *        a query that returns an RDF graph of existing inferred statements
-	 *        already added previously
+	 *        a query that returns an RDF graph of existing inferred statements already added previously
 	 * @throws MalformedQueryException
 	 *         if there is a problem parsing either of the given queries
 	 * @throws SailException
@@ -143,7 +132,8 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 		customQuery = QueryParserUtil.parseGraphQuery(language, queryText, null);
 		String matcherQuery = matcherText;
 		if (matcherText.trim().isEmpty()) {
-			matcherQuery = CustomGraphQueryInferencerConfig.buildMatcherQueryFromRuleQuery(language, queryText);
+			matcherQuery = CustomGraphQueryInferencerConfig.buildMatcherQueryFromRuleQuery(language,
+					queryText);
 		}
 		customMatcher = QueryParserUtil.parseGraphQuery(language, matcherQuery, null);
 		customQuery.getTupleExpr().visit(new AbstractQueryModelVisitor<SailException>() {
@@ -201,8 +191,8 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	/**
 	 * Exposed for test purposes.
 	 * 
-	 * @return a computed collection of the statement subjects that, when added
-	 *         or removed, trigger an update of inferred statements
+	 * @return a computed collection of the statement subjects that, when added or removed, trigger an update
+	 *         of inferred statements
 	 */
 	public Collection<Value> getWatchSubjects() {
 		return Collections.unmodifiableCollection(watchSubjects);
@@ -211,8 +201,8 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	/**
 	 * Exposed for test purposes.
 	 * 
-	 * @return a computed collection of the statement predicates that, when added
-	 *         or removed, trigger an update of inferred statements
+	 * @return a computed collection of the statement predicates that, when added or removed, trigger an
+	 *         update of inferred statements
 	 */
 	public Collection<Value> getWatchPredicates() {
 		return Collections.unmodifiableCollection(watchPredicates);
@@ -221,8 +211,8 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	/**
 	 * Exposed for test purposes.
 	 * 
-	 * @return a computed collection of the statement objects that, when added or
-	 *         removed, trigger an update of inferred statements
+	 * @return a computed collection of the statement objects that, when added or removed, trigger an update
+	 *         of inferred statements
 	 */
 	public Collection<Value> getWatchObjects() {
 		return Collections.unmodifiableCollection(watchObjects);

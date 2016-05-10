@@ -16,23 +16,21 @@ import org.eclipse.rdf4j.common.io.NioFile;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
 
 /**
- * A cache for fixed size byte array records. This cache uses a temporary file
- * to store the records. This file is deleted upon calling {@link #discard()}.
+ * A cache for fixed size byte array records. This cache uses a temporary file to store the records. This file
+ * is deleted upon calling {@link #discard()}.
  * 
  * @author Arjohn Kampman
  */
 final class SequentialRecordCache extends RecordCache {
 
 	/**
-	 * Magic number "Sequential Record Cache" to detect whether the file is
-	 * actually a sequential record cache file. The first three bytes of the file
-	 * should be equal to this magic number.
+	 * Magic number "Sequential Record Cache" to detect whether the file is actually a sequential record cache
+	 * file. The first three bytes of the file should be equal to this magic number.
 	 */
 	private static final byte[] MAGIC_NUMBER = new byte[] { 's', 'r', 'c' };
 
 	/**
-	 * The file format version number, stored as the fourth byte in sequential
-	 * record cache files.
+	 * The file format version number, stored as the fourth byte in sequential record cache files.
 	 */
 	private static final byte FILE_FORMAT_VERSION = 1;
 

@@ -62,7 +62,7 @@ public class InterceptorTest {
 			Object proxy = Proxy.newProxyInstance(cl, classes, handler);
 			return (RepositoryConnection)proxy;
 		}
-		
+
 		@Override
 		public ValueFactory getValueFactory() {
 			return SimpleValueFactory.getInstance();
@@ -86,7 +86,9 @@ public class InterceptorTest {
 			return false;
 		}
 
-		public RepositoryConnectionStub() throws RepositoryException {
+		public RepositoryConnectionStub()
+			throws RepositoryException
+		{
 			super(new RepositoryStub());
 			setDelegate(getRepository().getConnection());
 		}

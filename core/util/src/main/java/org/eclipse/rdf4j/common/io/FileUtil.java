@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
- 
+
 package org.eclipse.rdf4j.common.io;
 
 import java.io.File;
@@ -13,7 +13,6 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.StringTokenizer;
-
 
 /**
  * Utility methods for operations on Files.
@@ -114,8 +113,8 @@ public class FileUtil {
 	 * 
 	 * @param fileName
 	 *        A file name.
-	 * @return The file name extension (e.g. "exe" or "txt"), or <tt>null</tt>
-	 *         if the file name does not have a (valid) extension.
+	 * @return The file name extension (e.g. "exe" or "txt"), or <tt>null</tt> if the file name does not have
+	 *         a (valid) extension.
 	 */
 	public static String getFileExtension(String fileName) {
 		int lastDotIdx = fileName.lastIndexOf('.');
@@ -132,8 +131,7 @@ public class FileUtil {
 	}
 
 	/**
-	 * Checks whether the specified file name is a legal (DOS/Windows-) file
-	 * name.
+	 * Checks whether the specified file name is a legal (DOS/Windows-) file name.
 	 */
 	public static boolean isLegalFileName(String fileName) {
 		for (int i = 0; i < fileName.length(); i++) {
@@ -147,18 +145,18 @@ public class FileUtil {
 	}
 
 	/**
-	 * Checks whether the specified character is a legal (DOS/Windows-) file
-	 * name character.
+	 * Checks whether the specified character is a legal (DOS/Windows-) file name character.
 	 */
 	public static boolean isLegalFileNameChar(char c) {
 		return ILLEGAL_FILE_NAME_CHARS.indexOf(c) == -1;
 	}
 
 	/**
-	 * Copies the contents of file <tt>source</tt> to file
-	 * <tt>destination</tt>.
+	 * Copies the contents of file <tt>source</tt> to file <tt>destination</tt>.
 	 */
-	public static void copyFile(File source, File destination) throws IOException {
+	public static void copyFile(File source, File destination)
+		throws IOException
+	{
 		FileInputStream in = null;
 		try {
 			in = new FileInputStream(source);
@@ -178,7 +176,9 @@ public class FileUtil {
 	 * @exception IOException
 	 *            If the creation of the directory failed.
 	 */
-	public static void createDirIfNotExists(File dir) throws IOException {
+	public static void createDirIfNotExists(File dir)
+		throws IOException
+	{
 		if (!dir.exists() && !dir.mkdirs()) {
 			throw new IOException("Unable to create directory: " + dir.toString());
 		}
@@ -213,16 +213,15 @@ public class FileUtil {
 	}
 
 	/**
-	 * Deletes all files and directories in the specified directory. Nothing
-	 * happens when the specified File is not a directory.
+	 * Deletes all files and directories in the specified directory. Nothing happens when the specified File
+	 * is not a directory.
 	 * 
-	 * @return true when all files in the specified directory were successfully
-	 *         deleted, when there where no files or when the specified file was
-	 *         not a directory.
+	 * @return true when all files in the specified directory were successfully deleted, when there where no
+	 *         files or when the specified file was not a directory.
 	 */
 	public static boolean deleteFiles(File directory) {
 		boolean result = true;
-		
+
 		if (directory.isDirectory()) {
 			File[] list = directory.listFiles();
 			for (int i = list.length; i-- > 0;) {
@@ -232,16 +231,16 @@ public class FileUtil {
 				}
 			}
 		}
-		
+
 		return result;
 	}
 
 	/**
-	 * Deletes all files and directories in the specified directory. Nothing
-	 * happens when the specified File is not a directory.
+	 * Deletes all files and directories in the specified directory. Nothing happens when the specified File
+	 * is not a directory.
 	 * 
-	 * @return true when all children were successfully deleted, when there were
-	 *         no children or when the file was not a directory.
+	 * @return true when all children were successfully deleted, when there were no children or when the file
+	 *         was not a directory.
 	 */
 	public static boolean deleteChildren(File directory) {
 		boolean result = true;
@@ -257,16 +256,16 @@ public class FileUtil {
 	}
 
 	/**
-	 * Moves the given file and all files under it (if it's a directory) to the
-	 * given location, excluding the given collection of File objects!
+	 * Moves the given file and all files under it (if it's a directory) to the given location, excluding the
+	 * given collection of File objects!
 	 * 
 	 * @param from
 	 *        File or directory to be moved
 	 * @param to
 	 *        The file or directory to rename to
 	 * @param excludes
-	 *        The File objects to be excluded; if a directory is excluded, all
-	 *        files under it are excluded as well!
+	 *        The File objects to be excluded; if a directory is excluded, all files under it are excluded as
+	 *        well!
 	 * @return Whether moving was succesfull
 	 */
 	public static boolean moveRecursive(File from, File to, Collection<File> excludes) {
@@ -308,24 +307,25 @@ public class FileUtil {
 	}
 
 	/**
-	 * Creates a new and empty directory in the default temp directory using the
-	 * given prefix. This methods uses {@link File#createTempFile} to create a
-	 * new tmp file, deletes it and creates a directory for it instead.
+	 * Creates a new and empty directory in the default temp directory using the given prefix. This methods
+	 * uses {@link File#createTempFile} to create a new tmp file, deletes it and creates a directory for it
+	 * instead.
 	 * 
-	 * @param prefix The prefix string to be used in generating the diretory's
-	 * name; must be at least three characters long.
+	 * @param prefix
+	 *        The prefix string to be used in generating the diretory's name; must be at least three
+	 *        characters long.
 	 * @return A newly-created empty directory.
-	 * @throws IOException If no directory could be created.
+	 * @throws IOException
+	 *         If no directory could be created.
 	 */
 	public static File createTempDir(String prefix)
 		throws IOException
 	{
 		String tmpDirStr = System.getProperty("java.io.tmpdir");
 		if (tmpDirStr == null) {
-			throw new IOException(
-				"System property 'java.io.tmpdir' does not specify a tmp dir");
+			throw new IOException("System property 'java.io.tmpdir' does not specify a tmp dir");
 		}
-		
+
 		File tmpDir = new File(tmpDirStr);
 		if (!tmpDir.exists()) {
 			boolean created = tmpDir.mkdirs();
@@ -333,7 +333,7 @@ public class FileUtil {
 				throw new IOException("Unable to create tmp dir " + tmpDir);
 			}
 		}
-		
+
 		File resultDir = null;
 		int suffix = (int)System.currentTimeMillis();
 		int failureCount = 0;
@@ -343,25 +343,26 @@ public class FileUtil {
 			failureCount++;
 		}
 		while (resultDir.exists() && failureCount < 50);
-		
+
 		if (resultDir.exists()) {
-			throw new IOException(failureCount + 
-				" attempts to generate a non-existent directory name failed, giving up");
+			throw new IOException(
+					failureCount + " attempts to generate a non-existent directory name failed, giving up");
 		}
 		boolean created = resultDir.mkdir();
 		if (!created) {
 			throw new IOException("Failed to create tmp directory");
 		}
-		
+
 		return resultDir;
 	}
 
 	/**
-	 * Deletes the specified diretory and any files and directories in it
-	 * recursively.
+	 * Deletes the specified diretory and any files and directories in it recursively.
 	 * 
-	 * @param dir The directory to remove.
-	 * @throws IOException If the directory could not be removed.
+	 * @param dir
+	 *        The directory to remove.
+	 * @throws IOException
+	 *         If the directory could not be removed.
 	 */
 	public static void deleteDir(File dir)
 		throws IOException
@@ -369,11 +370,11 @@ public class FileUtil {
 		if (!dir.isDirectory()) {
 			throw new IOException("Not a directory " + dir);
 		}
-		
+
 		File[] files = dir.listFiles();
 		for (int i = 0; i < files.length; i++) {
 			File file = files[i];
-			
+
 			if (file.isDirectory()) {
 				deleteDir(file);
 			}
@@ -384,7 +385,7 @@ public class FileUtil {
 				}
 			}
 		}
-		
+
 		dir.delete();
 	}
 }

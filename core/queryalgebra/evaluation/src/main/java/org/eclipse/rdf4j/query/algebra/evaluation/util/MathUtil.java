@@ -29,18 +29,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 public class MathUtil {
 
 	/**
-	 * The default expansion scale used in division operations resulting
-	 * in a decimal value with non-terminating decimal expansion. The OpenRDF
-	 * default is 24 digits, a value used in various other SPARQL
-	 * implementations, to make comparison between these systems easy.
+	 * The default expansion scale used in division operations resulting in a decimal value with
+	 * non-terminating decimal expansion. The OpenRDF default is 24 digits, a value used in various other
+	 * SPARQL implementations, to make comparison between these systems easy.
 	 */
 	public static final int DEFAULT_DECIMAL_EXPANSION_SCALE = 24;
 
 	private static int decimalExpansionScale = DEFAULT_DECIMAL_EXPANSION_SCALE;
 
 	/**
-	 * Computes the result of applying the supplied math operator on the supplied
-	 * left and right operand.
+	 * Computes the result of applying the supplied math operator on the supplied left and right operand.
 	 * 
 	 * @param leftLit
 	 *        a numeric datatype literal
@@ -48,16 +46,16 @@ public class MathUtil {
 	 *        a numeric datatype literal
 	 * @param op
 	 *        a mathematical operator, as definied by MathExpr.MathOp.
-	 * @return a numeric datatype literal containing the result of the operation.
-	 *         The result will be datatype according to the most specific data
-	 *         type the two operands have in common per the SPARQL/XPath spec.
+	 * @return a numeric datatype literal containing the result of the operation. The result will be datatype
+	 *         according to the most specific data type the two operands have in common per the SPARQL/XPath
+	 *         spec.
 	 * @throws ValueExprEvaluationException
 	 */
 	public static Literal compute(Literal leftLit, Literal rightLit, MathOp op)
 		throws ValueExprEvaluationException
 	{
 		final ValueFactory vf = SimpleValueFactory.getInstance();
-		
+
 		IRI leftDatatype = leftLit.getDatatype();
 		IRI rightDatatype = rightLit.getDatatype();
 
@@ -154,8 +152,8 @@ public class MathUtil {
 						catch (ArithmeticException e) {
 							// non-terminating decimal expansion in quotient, using
 							// scaling and rounding.
-							result = left.setScale(getDecimalExpansionScale(), RoundingMode.HALF_UP).divide(right,
-									RoundingMode.HALF_UP);
+							result = left.setScale(getDecimalExpansionScale(), RoundingMode.HALF_UP).divide(
+									right, RoundingMode.HALF_UP);
 						}
 
 						return vf.createLiteral(result);
@@ -175,7 +173,8 @@ public class MathUtil {
 					case MULTIPLY:
 						return vf.createLiteral(left.multiply(right));
 					case DIVIDE:
-						throw new RuntimeException("Integer divisions should be processed as decimal divisions");
+						throw new RuntimeException(
+								"Integer divisions should be processed as decimal divisions");
 					default:
 						throw new IllegalArgumentException("Unknown operator: " + op);
 				}
@@ -190,9 +189,8 @@ public class MathUtil {
 	}
 
 	/**
-	 * Returns the decimal expansion scale used in division operations resulting
-	 * in a decimal value with non-terminating decimal expansion. By default,
-	 * this value is set to 24.
+	 * Returns the decimal expansion scale used in division operations resulting in a decimal value with
+	 * non-terminating decimal expansion. By default, this value is set to 24.
 	 * 
 	 * @return The decimal expansion scale.
 	 */
@@ -201,13 +199,12 @@ public class MathUtil {
 	}
 
 	/**
-	 * Sets the decimal expansion scale used in divisions resulting in a decimal
-	 * value with non-terminating decimal expansion.
+	 * Sets the decimal expansion scale used in divisions resulting in a decimal value with non-terminating
+	 * decimal expansion.
 	 * 
 	 * @param decimalExpansionScale
-	 *        The decimal expansion scale to set. Note that a mimimum of 18 is
-	 *        required to stay compliant with the XPath specification of
-	 *        xsd:decimal operations.
+	 *        The decimal expansion scale to set. Note that a mimimum of 18 is required to stay compliant with
+	 *        the XPath specification of xsd:decimal operations.
 	 */
 	public static void setDecimalExpansionScale(int decimalExpansionScale) {
 		MathUtil.decimalExpansionScale = decimalExpansionScale;

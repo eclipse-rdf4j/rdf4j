@@ -43,7 +43,7 @@ public class SPARQLUpdateOperation implements TransactionOperation, Serializable
 	public SPARQLUpdateOperation() {
 		super();
 	}
-	
+
 	public SPARQLUpdateOperation(String updateString, String baseURI, boolean includeInferred,
 			Dataset dataset, Binding... bindings)
 	{
@@ -61,13 +61,13 @@ public class SPARQLUpdateOperation implements TransactionOperation, Serializable
 			Update preparedUpdate = con.prepareUpdate(QueryLanguage.SPARQL, getUpdateString(), getBaseURI());
 			preparedUpdate.setIncludeInferred(isIncludeInferred());
 			preparedUpdate.setDataset(getDataset());
-			
+
 			if (getBindings() != null) {
 				for (Binding binding : getBindings()) {
 					preparedUpdate.setBinding(binding.getName(), binding.getValue());
 				}
 			}
-			
+
 			preparedUpdate.execute();
 		}
 		catch (MalformedQueryException e) {
@@ -76,7 +76,7 @@ public class SPARQLUpdateOperation implements TransactionOperation, Serializable
 		catch (UpdateExecutionException e) {
 			throw new RepositoryException(e);
 		}
-		
+
 	}
 
 	/**

@@ -64,8 +64,7 @@ public class LogConfigurator extends JoranConfigurator {
 	}
 
 	@Override
-	public void addInstanceRules(RuleStore rs)
-	{
+	public void addInstanceRules(RuleStore rs) {
 		// parent rules already added
 		super.addInstanceRules(rs);
 		rs.addRule(new ElementSelector("configuration/appender/logreader"), new LogReaderAction());
@@ -78,8 +77,7 @@ public class LogConfigurator extends JoranConfigurator {
 		boolean def = false;
 
 		@Override
-		public void begin(InterpretationContext ec, String name, Attributes attributes)
-		{
+		public void begin(InterpretationContext ec, String name, Attributes attributes) {
 			className = attributes.getValue(CLASS_ATTRIBUTE);
 			def = (attributes.getValue("default") != null)
 					&& attributes.getValue("default").equalsIgnoreCase("true");
@@ -87,8 +85,7 @@ public class LogConfigurator extends JoranConfigurator {
 		}
 
 		@Override
-		public void end(InterpretationContext ec, String arg1)
-		{
+		public void end(InterpretationContext ec, String arg1) {
 			Object o = ec.peekObject();
 			if (o != className) {
 				addWarn("The object on the top the of the stack is not the logreader classname pushed earlier.");

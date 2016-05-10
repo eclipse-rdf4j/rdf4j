@@ -33,17 +33,15 @@ import junit.framework.TestSuite;
 public abstract class ModelTest extends TestCase {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
-	
+
 	public static Test suite(Class<? extends ModelTest> theClass)
-			throws Exception {
+		throws Exception
+	{
 		TestSuite suite = new TestSuite(theClass);
-		if (suite.testCount() == 1
-				&& "warning".equals(((TestCase) suite.tests().nextElement())
-						.getName())) {
+		if (suite.testCount() == 1 && "warning".equals(((TestCase)suite.tests().nextElement()).getName())) {
 			suite = new TestSuite(theClass.getName());
 		}
-		Constructor<? extends Test> constructor = theClass
-				.getConstructor(String.class);
+		Constructor<? extends Test> constructor = theClass.getConstructor(String.class);
 		for (String name : getTestNames(ApacheSetTestCase.class)) {
 			suite.addTest(constructor.newInstance("model:" + name));
 			suite.addTest(constructor.newInstance("filtered:" + name));
@@ -76,11 +74,14 @@ public abstract class ModelTest extends TestCase {
 	}
 
 	@Override
-	public void runBare() throws Throwable {
+	public void runBare()
+		throws Throwable
+	{
 		String[] name = getName().split(":", 2);
 		if (name.length < 2) {
 			super.runBare();
-		} else if ("model".equals(name[0])) {
+		}
+		else if ("model".equals(name[0])) {
 			(new ApacheSetTestCase(name[1]) {
 
 				@Override
@@ -108,7 +109,8 @@ public abstract class ModelTest extends TestCase {
 						IRI o = createURI(seeds[rand.nextInt(seeds.length)]);
 						if (rand.nextInt() % 2 == 0) {
 							list.add(vf.createStatement(s, p, o));
-						} else {
+						}
+						else {
 							IRI c = createURI(seeds[rand.nextInt(seeds.length)]);
 							list.add(vf.createStatement(s, p, o, c));
 						}
@@ -116,7 +118,8 @@ public abstract class ModelTest extends TestCase {
 					return list.toArray();
 				}
 			}).runBare();
-		} else if ("filtered".equals(name[0])) {
+		}
+		else if ("filtered".equals(name[0])) {
 			(new ApacheSetTestCase(name[1]) {
 
 				@Override
@@ -144,7 +147,8 @@ public abstract class ModelTest extends TestCase {
 						IRI o = createURI(seeds[rand.nextInt(seeds.length)]);
 						if (rand.nextInt() % 2 == 0) {
 							list.add(vf.createStatement(s, p, o));
-						} else {
+						}
+						else {
 							IRI c = createURI(seeds[rand.nextInt(seeds.length)]);
 							list.add(vf.createStatement(s, p, o, c));
 						}
@@ -152,9 +156,12 @@ public abstract class ModelTest extends TestCase {
 					return list.toArray();
 				}
 			}).runBare();
-		} else if ("cfiltered".equals(name[0])) {
+		}
+		else if ("cfiltered".equals(name[0])) {
 			(new ApacheSetTestCase(name[1]) {
+
 				private IRI ctx0 = createURI("test0");
+
 				private IRI ctx1 = createURI("test1");
 
 				@Override
@@ -187,7 +194,8 @@ public abstract class ModelTest extends TestCase {
 					return list.toArray();
 				}
 			}).runBare();
-		} else if ("subjects".equals(name[0])) {
+		}
+		else if ("subjects".equals(name[0])) {
 			(new ApacheSetTestCase(name[1]) {
 
 				@Override
@@ -214,12 +222,14 @@ public abstract class ModelTest extends TestCase {
 					return list.toArray();
 				}
 			}).runBare();
-		} else if ("predicates".equals(name[0])) {
+		}
+		else if ("predicates".equals(name[0])) {
 			(new ApacheSetTestCase(name[1]) {
 
 				@Override
 				public Set makeEmptySet() {
-					return new LinkedHashModel().filter(createURI("test1"), null, createURI("test2")).predicates();
+					return new LinkedHashModel().filter(createURI("test1"), null,
+							createURI("test2")).predicates();
 				}
 
 				@Override
@@ -241,7 +251,8 @@ public abstract class ModelTest extends TestCase {
 					return list.toArray();
 				}
 			}).runBare();
-		} else if ("objects".equals(name[0])) {
+		}
+		else if ("objects".equals(name[0])) {
 			(new ApacheSetTestCase(name[1]) {
 
 				@Override
@@ -268,12 +279,14 @@ public abstract class ModelTest extends TestCase {
 					return list.toArray();
 				}
 			}).runBare();
-		} else if ("contexts".equals(name[0])) {
+		}
+		else if ("contexts".equals(name[0])) {
 			(new ApacheSetTestCase(name[1]) {
 
 				@Override
 				public Set makeEmptySet() {
-					return new LinkedHashModel().filter(createURI("test"), RDF.VALUE, createLiteral("value")).contexts();
+					return new LinkedHashModel().filter(createURI("test"), RDF.VALUE,
+							createLiteral("value")).contexts();
 				}
 
 				@Override

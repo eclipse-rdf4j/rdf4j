@@ -19,9 +19,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
- * The SPARQL built-in {@link Function} LCASE, as defined in <a
- * href="http://www.w3.org/TR/sparql11-query/#func-lcase">SPARQL Query Language
- * for RDF</a>
+ * The SPARQL built-in {@link Function} LCASE, as defined in
+ * <a href="http://www.w3.org/TR/sparql11-query/#func-lcase">SPARQL Query Language for RDF</a>
  * 
  * @author Jeen Broekstra
  */
@@ -41,10 +40,8 @@ public class LowerCase implements Function {
 		if (args[0] instanceof Literal) {
 			Literal literal = (Literal)args[0];
 
-
 			// LowerCase function accepts only string literals.
-			if (QueryEvaluationUtil.isStringLiteral(literal))
-			{
+			if (QueryEvaluationUtil.isStringLiteral(literal)) {
 				String lexicalValue = literal.getLabel().toLowerCase();
 				Optional<String> language = literal.getLanguage();
 

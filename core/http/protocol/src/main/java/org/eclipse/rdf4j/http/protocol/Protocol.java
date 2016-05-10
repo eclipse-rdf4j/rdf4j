@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.rio.ntriples.NTriplesUtil;
 public abstract class Protocol {
 
 	/**
-	 * Defines the action a particular transaction update is executing.  
+	 * Defines the action a particular transaction update is executing.
 	 *
 	 * @author Jeen Broekstra
 	 */
@@ -134,8 +134,7 @@ public abstract class Protocol {
 	public static final String NAMED_GRAPH_PARAM_NAME = "named-graph-uri";
 
 	/**
-	 * Parameter name for the Accept parameter (may also be used as the name of
-	 * the Accept HTTP header).
+	 * Parameter name for the Accept parameter (may also be used as the name of the Accept HTTP header).
 	 */
 	public static final String ACCEPT_PARAM_NAME = "Accept";
 
@@ -143,7 +142,7 @@ public abstract class Protocol {
 	 * Parameter name for the isolation level used in transactions.
 	 */
 	public static final String ISOLATION_LEVEL_PARAM_NAME = "isolation-level";
-	
+
 	/**
 	 * Parameter name for the action parameter used in transactions.
 	 */
@@ -203,21 +202,19 @@ public abstract class Protocol {
 	 * MIME type for www forms: <tt>application/x-www-form-urlencoded</tt>.
 	 */
 	public static final String FORM_MIME_TYPE = "application/x-www-form-urlencoded";
-	
+
 	/**
 	 * MIME type for SPARQL update: <tt>application/sparql-query</tt>.
 	 */
 	public static final String SPARQL_QUERY_MIME_TYPE = "application/sparql-query";
-	
+
 	/**
 	 * MIME type for SPARQL update: <tt>application/sparql-update</tt>.
 	 */
 	public static final String SPARQL_UPDATE_MIME_TYPE = "application/sparql-update";
 
 	/**
-	 * Parameter for server instruction to preserve blank node ids when parsing
-	 * request data.
-	 * 
+	 * Parameter for server instruction to preserve blank node ids when parsing request data.
 	 */
 	public static final String PRESERVE_BNODE_ID_PARAM_NAME = "preserveNodeId";
 
@@ -242,13 +239,11 @@ public abstract class Protocol {
 	}
 
 	/**
-	 * Get the location of the server configuration resource on the specified
-	 * server.
+	 * Get the location of the server configuration resource on the specified server.
 	 * 
 	 * @param serverLocation
 	 *        the base location of a server implementing this REST protocol.
-	 * @return the location of the server configuration resource on the specified
-	 *         server
+	 * @return the location of the server configuration resource on the specified server
 	 */
 	public static final String getConfigLocation(String serverLocation) {
 		return getServerDir(serverLocation) + CONFIG;
@@ -259,23 +254,20 @@ public abstract class Protocol {
 	 * 
 	 * @param serverLocation
 	 *        the base location of a server implementing this REST protocol.
-	 * @return the location of the repository list resource on the specified
-	 *         server
+	 * @return the location of the repository list resource on the specified server
 	 */
 	public static final String getRepositoriesLocation(String serverLocation) {
 		return getServerDir(serverLocation) + REPOSITORIES;
 	}
 
 	/**
-	 * Get the location of a specific repository resource on the specified
-	 * server.
+	 * Get the location of a specific repository resource on the specified server.
 	 * 
 	 * @param serverLocation
 	 *        the base location of a server implementing this REST protocol.
 	 * @param repositoryID
 	 *        the ID of the repository
-	 * @return the location of a specific repository resource on the specified
-	 *         server
+	 * @return the location of a specific repository resource on the specified server
 	 */
 	public static final String getRepositoryLocation(String serverLocation, String repositoryID) {
 		return getRepositoriesLocation(serverLocation) + "/" + repositoryID;
@@ -286,8 +278,7 @@ public abstract class Protocol {
 	 * 
 	 * @param repositoryLocation
 	 *        the location of a repository implementing this REST protocol.
-	 * @return the location of the statements resource for the specified
-	 *         repository
+	 * @return the location of the statements resource for the specified repository
 	 */
 	public static final String getStatementsLocation(String repositoryLocation) {
 		return repositoryLocation + "/" + STATEMENTS;
@@ -298,8 +289,7 @@ public abstract class Protocol {
 	 * 
 	 * @param repositoryLocation
 	 *        the location of a repository implementing this REST protocol.
-	 * @return the location of the transaction resources for the specified
-	 *         repository
+	 * @return the location of the transaction resources for the specified repository
 	 */
 	public static final String getTransactionsLocation(String repositoryLocation) {
 		return repositoryLocation + "/" + TRANSACTIONS;
@@ -335,49 +325,44 @@ public abstract class Protocol {
 	 * 
 	 * @param repositoryLocation
 	 *        the location of a repository implementing this REST protocol.
-	 * @return the location of the contexts lists resource for the specified
-	 *         repository
+	 * @return the location of the contexts lists resource for the specified repository
 	 */
 	public static final String getContextsLocation(String repositoryLocation) {
 		return repositoryLocation + "/" + CONTEXTS;
 	}
 
 	/**
-	 * Get the location of the namespaces lists resource for a specific
-	 * repository on the specified server.
+	 * Get the location of the namespaces lists resource for a specific repository on the specified server.
 	 * 
 	 * @param repositoryLocation
 	 *        the base location of a server implementing this REST protocol.
-	 * @return the location of the namespaces lists resource for a specific
-	 *         repository on the specified server
+	 * @return the location of the namespaces lists resource for a specific repository on the specified server
 	 */
 	public static final String getNamespacesLocation(String repositoryLocation) {
 		return repositoryLocation + "/" + NAMESPACES;
 	}
 
 	/**
-	 * Get the location of the namespace with the specified prefix for a specific
-	 * repository on the specified server.
+	 * Get the location of the namespace with the specified prefix for a specific repository on the specified
+	 * server.
 	 * 
 	 * @param repositoryLocation
 	 *        the location of a repository implementing this REST protocol.
 	 * @param prefix
 	 *        the namespace prefix
-	 * @return the location of the the namespace with the specified prefix for a
-	 *         specific repository on the specified server
+	 * @return the location of the the namespace with the specified prefix for a specific repository on the
+	 *         specified server
 	 */
 	public static final String getNamespacePrefixLocation(String repositoryLocation, String prefix) {
 		return getNamespacesLocation(repositoryLocation) + "/" + prefix;
 	}
 
 	/**
-	 * Get the location of the 'size' resource for a specific repository on the
-	 * specified server.
+	 * Get the location of the 'size' resource for a specific repository on the specified server.
 	 * 
 	 * @param repositoryLocation
 	 *        the location of a repository implementing this REST protocol.
-	 * @return the location of the 'size' resource for a specific repository on
-	 *         the specified server
+	 * @return the location of the 'size' resource for a specific repository on the specified server
 	 */
 	public static final String getSizeLocation(String repositoryLocation) {
 		return repositoryLocation + "/" + SIZE;
@@ -388,15 +373,15 @@ public abstract class Protocol {
 	 * 
 	 * @param value
 	 *        The value to encode, possibly <tt>null</tt>.
-	 * @return The protocol-serialized representation of the supplied value, or
-	 *         {@link #NULL_PARAM_VALUE} if the supplied value was <tt>null</tt>.
+	 * @return The protocol-serialized representation of the supplied value, or {@link #NULL_PARAM_VALUE} if
+	 *         the supplied value was <tt>null</tt>.
 	 */
 	public static String encodeValue(Value value) {
 		if (value instanceof BNode) {
 			// SES-2129 special treatment of blank node names to avoid problems with round-tripping.
 			return "_:" + ((BNode)value).getID();
 		}
-		
+
 		// for everything else we just use N-Triples serialization.
 		return NTriplesUtil.toNTriplesString(value);
 	}
@@ -460,8 +445,8 @@ public abstract class Protocol {
 	 * 
 	 * @param context
 	 *        The context to encode, possibly <tt>null</tt>.
-	 * @return The protocol-serialized representation of the supplied context, or
-	 *         {@link #NULL_PARAM_VALUE} if the supplied value was <tt>null</tt>.
+	 * @return The protocol-serialized representation of the supplied context, or {@link #NULL_PARAM_VALUE} if
+	 *         the supplied value was <tt>null</tt>.
 	 */
 	public static String encodeContext(Resource context) {
 		if (context == null) {
@@ -479,8 +464,8 @@ public abstract class Protocol {
 	 *        the encoded value
 	 * @param valueFactory
 	 *        the factory to use for constructing the Resource
-	 * @return the decoded Resource, or null if the encoded values was null or
-	 *         equal to {@link #NULL_PARAM_VALUE}
+	 * @return the decoded Resource, or null if the encoded values was null or equal to
+	 *         {@link #NULL_PARAM_VALUE}
 	 */
 	public static Resource decodeContext(String encodedValue, ValueFactory valueFactory) {
 		if (encodedValue == null) {
@@ -521,8 +506,8 @@ public abstract class Protocol {
 	 *        the encoded values
 	 * @param valueFactory
 	 *        the factory to use for constructing the Resources
-	 * @return the decoded Resources, or an empty array if the supplied
-	 *         <tt>encodedValues</tt> was <tt>null</tt>.
+	 * @return the decoded Resources, or an empty array if the supplied <tt>encodedValues</tt> was
+	 *         <tt>null</tt>.
 	 */
 	public static Resource[] decodeContexts(String[] encodedValues, ValueFactory valueFactory) {
 		Resource[] result;

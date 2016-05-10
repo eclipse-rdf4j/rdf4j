@@ -22,9 +22,8 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * TupleQuery specific to the HTTP protocol. Methods in this class may throw the
- * specific RepositoryException subclass UnautorizedException, the semantics of
- * which is defined by the HTTP protocol.
+ * TupleQuery specific to the HTTP protocol. Methods in this class may throw the specific RepositoryException
+ * subclass UnautorizedException, the semantics of which is defined by the HTTP protocol.
  * 
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @author Arjohn Kampman
@@ -33,8 +32,10 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 
 	private final HTTPRepositoryConnection conn;
-	
-	public HTTPTupleQuery(HTTPRepositoryConnection conn, QueryLanguage ql, String queryString, String baseURI) {
+
+	public HTTPTupleQuery(HTTPRepositoryConnection conn, QueryLanguage ql, String queryString,
+			String baseURI)
+	{
 		super(conn.getSesameSession(), ql, queryString, baseURI);
 		this.conn = conn;
 	}
@@ -45,8 +46,9 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 		SparqlSession client = getHttpClient();
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
-			return client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(), getMaxExecutionTime(), getBindingsArray());
-		} 
+			return client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
+					getMaxExecutionTime(), getBindingsArray());
+		}
 		catch (IOException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
 		}
@@ -64,8 +66,8 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 		SparqlSession client = getHttpClient();
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
-			client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, includeInferred, getMaxExecutionTime(),
-					handler, getBindingsArray());
+			client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, includeInferred,
+					getMaxExecutionTime(), handler, getBindingsArray());
 		}
 		catch (IOException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);

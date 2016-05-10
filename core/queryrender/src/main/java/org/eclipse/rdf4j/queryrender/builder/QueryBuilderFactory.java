@@ -18,8 +18,7 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 
 /**
  * <p>
- * Factory class for obtaining instances of {@link QueryBuilder} objects for the
- * various types of queries.
+ * Factory class for obtaining instances of {@link QueryBuilder} objects for the various types of queries.
  * </p>
  * 
  * @author Michael Grove

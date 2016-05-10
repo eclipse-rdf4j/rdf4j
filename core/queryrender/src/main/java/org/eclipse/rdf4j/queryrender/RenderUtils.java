@@ -43,8 +43,7 @@ public final class RenderUtils {
 	}
 
 	/**
-	 * Return the SPARQL query string rendering of the
-	 * {@link org.eclipse.rdf4j.model.Value}
+	 * Return the SPARQL query string rendering of the {@link org.eclipse.rdf4j.model.Value}
 	 * 
 	 * @param theValue
 	 *        the value to render
@@ -56,8 +55,8 @@ public final class RenderUtils {
 	}
 
 	/**
-	 * Append the SPARQL query string rendering of the
-	 * {@link org.eclipse.rdf4j.model.Value} to the supplied {@link StringBuilder}.
+	 * Append the SPARQL query string rendering of the {@link org.eclipse.rdf4j.model.Value} to the supplied
+	 * {@link StringBuilder}.
 	 * 
 	 * @param value
 	 *        the value to render
@@ -136,10 +135,9 @@ public final class RenderUtils {
 	}
 
 	/**
-	 * Properly escape out any special characters in the query string. Replaces
-	 * unescaped double quotes with \" and replaces slashes '\' which are not a
-	 * valid escape sequence such as \t or \n with a double slash '\\' so they
-	 * are unescaped correctly by a SPARQL parser.
+	 * Properly escape out any special characters in the query string. Replaces unescaped double quotes with
+	 * \" and replaces slashes '\' which are not a valid escape sequence such as \t or \n with a double slash
+	 * '\\' so they are unescaped correctly by a SPARQL parser.
 	 * 
 	 * @param theString
 	 *        the query string to escape chars in

@@ -52,9 +52,8 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	private final DB db;
 
 	/**
-	 * Number of items cached before internal collection is synced to disk. If
-	 * set to 0, no disk-syncing is done and all internal caching is kept in
-	 * memory.
+	 * Number of items cached before internal collection is synced to disk. If set to 0, no disk-syncing is
+	 * done and all internal caching is kept in memory.
 	 */
 	private final long iterationSyncThreshold;
 

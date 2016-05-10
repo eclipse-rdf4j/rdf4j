@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 
 /**
- * Transform the condition into a filter and the right side into an
- * {@link AlternativeCursor}, then evaluate as a {@link ParallelJoinCursor}.
+ * Transform the condition into a filter and the right side into an {@link AlternativeCursor}, then evaluate
+ * as a {@link ParallelJoinCursor}.
  * 
  * @author James Leigh
  */
@@ -39,9 +39,8 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 	private final LeftJoin join;
 
 	/**
-	 * The set of binding names that are "in scope" for the filter. The filter
-	 * must not include bindings that are (only) included because of the
-	 * depth-first evaluation strategy in the evaluation of the constraint.
+	 * The set of binding names that are "in scope" for the filter. The filter must not include bindings that
+	 * are (only) included because of the depth-first evaluation strategy in the evaluation of the constraint.
 	 */
 	private final Set<String> scopeBindingNames;
 
@@ -102,8 +101,8 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 	private void addToRightQueue(ValueExpr condition, BindingSet leftBindings)
 		throws QueryEvaluationException, InterruptedException
 	{
-		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(join.getRightArg(),
-				leftBindings);
+		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(
+				join.getRightArg(), leftBindings);
 		if (condition != null) {
 			result = new FilterCursor(result, condition, scopeBindingNames, strategy);
 		}

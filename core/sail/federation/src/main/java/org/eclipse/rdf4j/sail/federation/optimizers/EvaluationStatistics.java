@@ -115,7 +115,8 @@ public class EvaluationStatistics {
 		@Override
 		public void meet(Join node) {
 			double cost = 1;
-			for (TupleExpr arg : new TupleExpr[] { node.getLeftArg(), // NOPMD
+			for (TupleExpr arg : new TupleExpr[] {
+					node.getLeftArg(), // NOPMD
 					node.getRightArg() })
 			{
 				arg.visit(this);
@@ -136,7 +137,8 @@ public class EvaluationStatistics {
 		@Override
 		protected void meetBinaryTupleOperator(BinaryTupleOperator node) {
 			double cost = 0;
-			for (TupleExpr arg : new TupleExpr[] { node.getLeftArg(), // NOPMD
+			for (TupleExpr arg : new TupleExpr[] {
+					node.getLeftArg(), // NOPMD
 					node.getRightArg() })
 			{
 				arg.visit(this);

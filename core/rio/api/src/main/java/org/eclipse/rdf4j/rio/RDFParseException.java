@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.rio;
 import org.eclipse.rdf4j.RDF4JException;
 
 /**
- * A parse exception that can be thrown by a parser when it encounters an error
- * from which it cannot or doesn't want to recover.
+ * A parse exception that can be thrown by a parser when it encounters an error from which it cannot or
+ * doesn't want to recover.
  */
 public class RDFParseException extends RDF4JException {
 
@@ -56,9 +56,8 @@ public class RDFParseException extends RDF4JException {
 	}
 
 	/**
-	 * Creates a new ParseException wrapping another exception. The
-	 * ParseException will inherit its message from the supplied source
-	 * exception.
+	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message
+	 * from the supplied source exception.
 	 * 
 	 * @param t
 	 *        The source exception.
@@ -68,9 +67,8 @@ public class RDFParseException extends RDF4JException {
 	}
 
 	/**
-	 * Creates a new ParseException wrapping another exception. The
-	 * ParseException will inherit its message from the supplied source
-	 * exception.
+	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message
+	 * from the supplied source exception.
 	 * 
 	 * @param msg
 	 *        An error message.
@@ -82,9 +80,8 @@ public class RDFParseException extends RDF4JException {
 	}
 
 	/**
-	 * Creates a new ParseException wrapping another exception. The
-	 * ParseException will inherit its message from the supplied source
-	 * exception.
+	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message
+	 * from the supplied source exception.
 	 * 
 	 * @param t
 	 *        The source exception.
@@ -100,9 +97,8 @@ public class RDFParseException extends RDF4JException {
 	}
 
 	/**
-	 * Creates a new ParseException wrapping another exception. The
-	 * ParseException will inherit its message from the supplied source
-	 * exception.
+	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message
+	 * from the supplied source exception.
 	 * 
 	 * @param t
 	 *        The source exception.
@@ -124,8 +120,7 @@ public class RDFParseException extends RDF4JException {
 	/**
 	 * Gets the line number associated with this parse exception.
 	 * 
-	 * @return A line number, or -1 if no line number is available or
-	 *         applicable.
+	 * @return A line number, or -1 if no line number is available or applicable.
 	 */
 	public long getLineNumber() {
 		return lineNo;
@@ -134,18 +129,16 @@ public class RDFParseException extends RDF4JException {
 	/**
 	 * Gets the column number associated with this parse exception.
 	 * 
-	 * @return A column number, or -1 if no column number is available or
-	 *         applicable.
+	 * @return A column number, or -1 if no column number is available or applicable.
 	 */
 	public long getColumnNumber() {
 		return columnNo;
 	}
 
 	/**
-	 * Creates a string to that shows the specified line and column number.
-	 * Negative line numbers are interpreted as unknowns. Example output: "[line
-	 * 12, column 34]". If the specified line number is negative, this method
-	 * returns an empty string.
+	 * Creates a string to that shows the specified line and column number. Negative line numbers are
+	 * interpreted as unknowns. Example output: "[line 12, column 34]". If the specified line number is
+	 * negative, this method returns an empty string.
 	 */
 	public static String getLocationString(long lineNo, long columnNo) {
 		if (lineNo < 0) {

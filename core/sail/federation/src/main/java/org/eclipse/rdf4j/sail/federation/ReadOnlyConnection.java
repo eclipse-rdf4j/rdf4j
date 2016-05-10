@@ -17,8 +17,8 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 
 /**
- * Finishes the {@link AbstractFederationConnection} by throwing
- * {@link SailReadOnlyException}s for all write operations.
+ * Finishes the {@link AbstractFederationConnection} by throwing {@link SailReadOnlyException}s for all write
+ * operations.
  * 
  * @author James Leigh
  */

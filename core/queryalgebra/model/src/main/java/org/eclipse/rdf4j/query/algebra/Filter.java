@@ -8,10 +8,9 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * The FILTER operator, as defined in <a
- * href="http://www.w3.org/TR/rdf-sparql-query/#defn_algFilter">SPARQL Query
- * Language for RDF</a>. The FILTER operator filters specific results from the
- * underlying tuple expression based on a configurable condition.
+ * The FILTER operator, as defined in <a href="http://www.w3.org/TR/rdf-sparql-query/#defn_algFilter">SPARQL
+ * Query Language for RDF</a>. The FILTER operator filters specific results from the underlying tuple
+ * expression based on a configurable condition.
  * 
  * @author Arjohn Kampman
  */

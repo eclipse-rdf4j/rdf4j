@@ -11,8 +11,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * The UNION set operator, which return the union of the result sets of two
- * tuple expressions.
+ * The UNION set operator, which return the union of the result sets of two tuple expressions.
  */
 public class Union extends BinaryTupleOperator {
 

@@ -25,7 +25,7 @@ public class FederationTest extends RDFStoreTest {
 	public FederationTest() {
 		super();
 	}
-	
+
 	/*---------*
 	 * Methods *
 	 *---------*/

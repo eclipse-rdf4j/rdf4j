@@ -16,13 +16,13 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.model.SailModel;
 
-
 /**
- *
  * @author Mark
  */
 public class SailModelNamespacesTest extends ModelNamespacesTest {
+
 	private Sail sail;
+
 	private SailConnection conn;
 
 	@Override
@@ -33,19 +33,22 @@ public class SailModelNamespacesTest extends ModelNamespacesTest {
 			conn = sail.getConnection();
 			conn.begin();
 			return new SailModel(conn, false);
-		} catch (SailException e) {
+		}
+		catch (SailException e) {
 			throw new ModelException(e);
 		}
 	}
 
 	@Override
-	public void tearDown() throws Exception {
-		if(conn != null) {
+	public void tearDown()
+		throws Exception
+	{
+		if (conn != null) {
 			conn.commit();
 			conn.close();
 			conn = null;
 		}
-		if(sail != null) {
+		if (sail != null) {
 			sail.shutDown();
 			sail = null;
 		}

@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.http.protocol.transaction;
 
 /**
- * Interface defining tags and attribute names for the XML serialization of
- * transactions.
+ * Interface defining tags and attribute names for the XML serialization of transactions.
  * 
  * @author Arjohn Kampman
  * @author Leo Sauermann

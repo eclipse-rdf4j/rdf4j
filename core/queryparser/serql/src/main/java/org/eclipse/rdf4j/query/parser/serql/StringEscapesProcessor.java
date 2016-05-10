@@ -14,10 +14,9 @@ import org.eclipse.rdf4j.query.parser.serql.ast.ASTString;
 import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 
 /**
- * Processes escape sequences in strings, replacing the escape sequence with
- * their actual value. Escape sequences for SPARQL are documented in section <a
- * href="http://www.w3.org/TR/rdf-sparql-query/#grammarEscapes">A.7 Escape
- * sequences in strings</a>.
+ * Processes escape sequences in strings, replacing the escape sequence with their actual value. Escape
+ * sequences for SPARQL are documented in section
+ * <a href="http://www.w3.org/TR/rdf-sparql-query/#grammarEscapes">A.7 Escape sequences in strings</a>.
  * 
  * @author Arjohn Kampman
  */

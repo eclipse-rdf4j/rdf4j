@@ -42,11 +42,12 @@ public class SystemInfoController implements Controller {
 		this.view = view;
 	}
 
-	public ModelAndView handleRequest(HttpServletRequest request,
-			HttpServletResponse response) throws Exception {
+	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response)
+		throws Exception
+	{
 		ModelAndView result = new ModelAndView();
 		result.setViewName(view);
-		
+
 		Map<String, Object> model = new HashMap<String, Object>();
 		model.put("appConfig", config);
 		model.put("server", server);
@@ -67,6 +68,7 @@ public class SystemInfoController implements Controller {
 	}
 
 	public static class ServerInfo {
+
 		private String os;
 
 		private String java;
@@ -74,11 +76,9 @@ public class SystemInfoController implements Controller {
 		private String user;
 
 		public ServerInfo() {
-			os = System.getProperty("os.name") + " "
-					+ System.getProperty("os.version") + " ("
+			os = System.getProperty("os.name") + " " + System.getProperty("os.version") + " ("
 					+ System.getProperty("os.arch") + ")";
-			java = System.getProperty("java.vendor") + " "
-					+ System.getProperty("java.vm.name") + " "
+			java = System.getProperty("java.vendor") + " " + System.getProperty("java.vm.name") + " "
 					+ System.getProperty("java.version");
 			user = System.getProperty("user.name");
 		}
@@ -99,7 +99,9 @@ public class SystemInfoController implements Controller {
 	public static class MemoryInfo {
 
 		private int maximum;
+
 		private int used;
+
 		private float percentageInUse;
 
 		public MemoryInfo() {
@@ -108,11 +110,11 @@ public class SystemInfoController implements Controller {
 			long maxMemory = runtime.maxMemory();
 
 			// Memory usage (percentage)
-			percentageInUse = (float) ((float) usedMemory / (float) maxMemory);
+			percentageInUse = (float)((float)usedMemory / (float)maxMemory);
 
 			// Memory usage in MB
-			used = (int) (usedMemory / 1024 / 1024);
-			maximum = (int) (maxMemory / 1024 / 1024);
+			used = (int)(usedMemory / 1024 / 1024);
+			maximum = (int)(maxMemory / 1024 / 1024);
 		}
 
 		public int getMaximum() {
@@ -127,7 +129,7 @@ public class SystemInfoController implements Controller {
 			return percentageInUse;
 		}
 	}
-	
+
 	private Map getJavaPropStrings() {
 		Properties sysProps = System.getProperties();
 		ArrayList keyList = new ArrayList(sysProps.keySet());
@@ -142,7 +144,7 @@ public class SystemInfoController implements Controller {
 		}
 		return result;
 	}
-	
+
 	private Map getEnvVarStrings() {
 		Map<String, String> envProps = System.getenv();
 		ArrayList keyList = new ArrayList(envProps.keySet());

@@ -16,21 +16,20 @@ import java.util.Map;
  * Group represents a logical group of views in a NavigationModel.
  * 
  * @author Herko ter Horst
- * 
  */
 public class Group extends AbstractNavigationNode {
 
 	protected Map<String, Group> groups;
 
 	protected Map<String, View> views;
-	
+
 	protected Map<String, View> viewNames;
 
 	/**
 	 * Construct a new group with the specified ID.
 	 * 
 	 * @param id
-	 *            the ID of the group
+	 *        the ID of the group
 	 */
 	public Group(String id) {
 		super(id);
@@ -43,7 +42,7 @@ public class Group extends AbstractNavigationNode {
 	 * Add a group to this group. The group becomes a sub-group of this group.
 	 * 
 	 * @param group
-	 *            the group to add
+	 *        the group to add
 	 */
 	public void addGroup(Group group) {
 		group.setParent(this);
@@ -54,9 +53,9 @@ public class Group extends AbstractNavigationNode {
 	 * Get the sub-group with the specified ID.
 	 * 
 	 * @param id
-	 *            the ID of the sub-group
-	 * @return the sub-group with the specified ID, or null if this group
-	 *         doesn't contain a sub-group with that ID
+	 *        the ID of the sub-group
+	 * @return the sub-group with the specified ID, or null if this group doesn't contain a sub-group with
+	 *         that ID
 	 */
 	public Group getGroup(String id) {
 		return groups.get(id);
@@ -75,12 +74,12 @@ public class Group extends AbstractNavigationNode {
 	 * Add a view to this group.
 	 * 
 	 * @param view
-	 *            the view to add
+	 *        the view to add
 	 */
 	public void addView(View view) {
 		view.setParent(this);
 		views.put(view.getId(), view);
-		viewNames.put(view.getId()+view.getViewSuffix(), view);
+		viewNames.put(view.getId() + view.getViewSuffix(), view);
 	}
 
 	public View getView(String viewId) {
@@ -91,9 +90,8 @@ public class Group extends AbstractNavigationNode {
 	 * Get the view with the specified name.
 	 * 
 	 * @param viewName
-	 *            the name of the view (ID+suffix)
-	 * @return the view with the specified name, or null if this group doesn't
-	 *         contain a view with that name
+	 *        the name of the view (ID+suffix)
+	 * @return the view with the specified name, or null if this group doesn't contain a view with that name
 	 */
 	public View getViewByName(String viewName) {
 		return viewNames.get(viewName);
@@ -106,9 +104,9 @@ public class Group extends AbstractNavigationNode {
 		if (indexOfSeparator > 0) {
 			String groupId = viewName.substring(0, indexOfSeparator);
 			Group subGroup = getGroup(groupId);
-			result = subGroup.findViewInternal(viewName
-					.substring(indexOfSeparator + 1));
-		} else {
+			result = subGroup.findViewInternal(viewName.substring(indexOfSeparator + 1));
+		}
+		else {
 			result = getViewByName(viewName);
 		}
 
@@ -133,11 +131,11 @@ public class Group extends AbstractNavigationNode {
 
 	protected void copyGroupsAndViews(Group group) {
 		for (Group subGroup : getGroups()) {
-			Group clonedGroup = (Group) subGroup.clone();
+			Group clonedGroup = (Group)subGroup.clone();
 			group.addGroup(clonedGroup);
 		}
 		for (View view : getViews()) {
-			View clonedView = (View) view.clone();
+			View clonedView = (View)view.clone();
 			group.addView(clonedView);
 		}
 	}

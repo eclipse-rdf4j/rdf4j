@@ -18,12 +18,13 @@ public abstract class BinaryFunction implements Function {
 		throws ValueExprEvaluationException
 	{
 		if (args.length != 2) {
-			throw new ValueExprEvaluationException(String.format("%s requires 2 arguments, got %d", getURI(), args.length));
+			throw new ValueExprEvaluationException(
+					String.format("%s requires 2 arguments, got %d", getURI(), args.length));
 		}
 
 		return evaluate(valueFactory, args[0], args[1]);
 	}
 
 	protected abstract Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2)
-			throws ValueExprEvaluationException;
+		throws ValueExprEvaluationException;
 }

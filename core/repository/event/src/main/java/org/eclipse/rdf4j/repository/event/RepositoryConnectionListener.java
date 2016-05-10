@@ -25,7 +25,6 @@ public interface RepositoryConnectionListener {
 
 	/**
 	 * @deprecated since release 2.7.0. Use {@link #begin(RepositoryConnection)} instead.
-	 *  
 	 * @param conn
 	 * @param autoCommit
 	 */
@@ -33,7 +32,7 @@ public interface RepositoryConnectionListener {
 	public abstract void setAutoCommit(RepositoryConnection conn, boolean autoCommit);
 
 	public abstract void begin(RepositoryConnection conn);
-	
+
 	public abstract void commit(RepositoryConnection conn);
 
 	public abstract void rollback(RepositoryConnection conn);
@@ -52,6 +51,6 @@ public interface RepositoryConnectionListener {
 
 	public abstract void clearNamespaces(RepositoryConnection conn);
 
-	public abstract void execute(RepositoryConnection conn, QueryLanguage ql, String update,
-			String baseURI, Update operation);
+	public abstract void execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
+			Update operation);
 }

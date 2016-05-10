@@ -21,7 +21,8 @@ public class StackTracePatternLayout extends PatternLayout {
 
 	static final String DEFAULT_CONVERSION_PATTERN = "[%-5p] %d{ISO8601} [%t] %m%n%ex";
 
-	public static final Pattern DEFAULT_PARSER_PATTERN = Pattern.compile("\\[([^\\]]*)\\] ([^\\[]*)\\[([^\\]]*)\\] (.*)");
+	public static final Pattern DEFAULT_PARSER_PATTERN = Pattern.compile(
+			"\\[([^\\]]*)\\] ([^\\[]*)\\[([^\\]]*)\\] (.*)");
 
 	/**
 	 * Construct a StacktracePatternLayout with the default conversion pattern.
@@ -35,8 +36,7 @@ public class StackTracePatternLayout extends PatternLayout {
 	 * 
 	 * @param conversionPattern
 	 *        the conversion pattern to use
-	 * @see <a
-	 *      href="https://logging.apache.org/log4j/1.2/apidocs/org/apache/log4j/PatternLayout.html">
+	 * @see <a href="https://logging.apache.org/log4j/1.2/apidocs/org/apache/log4j/PatternLayout.html">
 	 *      Information on Log4J conversion patterns.</a>
 	 */
 	public StackTracePatternLayout(String conversionPattern) {

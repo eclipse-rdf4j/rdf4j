@@ -67,7 +67,7 @@ public class ASTServiceGraphPattern extends SimpleNode {
 			for (int i = 1; i < getBeginTokenLinePos(); i++) {
 				substring = substring.substring(substring.indexOf("\n") + 1);
 			}
-			
+
 			// snip away until begin token column pos
 			substring = substring.substring(getBeginTokenColumnPos() - 1);
 

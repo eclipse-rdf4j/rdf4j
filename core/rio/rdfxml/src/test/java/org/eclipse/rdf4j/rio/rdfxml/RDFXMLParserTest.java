@@ -27,17 +27,18 @@ import org.hamcrest.CoreMatchers;
 import org.hamcrest.Matchers;
 import org.junit.Test;
 
-
 public class RDFXMLParserTest {
 
 	@Test
-	public void rdfXmlLoadedFromInsideAJarResolvesRelativeUris() throws Exception {
+	public void rdfXmlLoadedFromInsideAJarResolvesRelativeUris()
+		throws Exception
+	{
 		URL zipfileUrl = RDFXMLParserTest.class.getResource("sample-with-rdfxml-data.zip");
 
 		assertNotNull("The sample-data.zip file must be present for this test", zipfileUrl);
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
-		
+
 		String url = "jar:" + zipfileUrl + "!/index.rdf";
 
 		RDFParser parser = new RDFXMLParser();
@@ -51,17 +52,16 @@ public class RDFXMLParserTest {
 
 		Collection<Statement> stmts = sc.getStatements();
 
-		assertThat(stmts, Matchers.<Statement>iterableWithSize(2));
+		assertThat(stmts, Matchers.<Statement> iterableWithSize(2));
 
 		Iterator<Statement> iter = stmts.iterator();
 
-		Statement stmt1 = iter.next(),
-				stmt2 = iter.next();
+		Statement stmt1 = iter.next(), stmt2 = iter.next();
 
 		assertEquals(vf.createIRI("http://www.example.com/#"), stmt1.getSubject());
 		assertEquals(vf.createIRI("http://www.example.com/ns/#document-about"), stmt1.getPredicate());
 
-		Resource res = (Resource) stmt1.getObject();
+		Resource res = (Resource)stmt1.getObject();
 
 		String resourceUrl = res.stringValue();
 

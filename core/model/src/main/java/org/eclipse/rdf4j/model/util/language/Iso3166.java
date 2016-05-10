@@ -19,10 +19,9 @@ import java.util.Map;
 /**
  * Country code names from ISO 3166.
  * <p>
- * An encapsulation of registry of ISO 3166. This was updated on 24th July 2001
- * from <a
- * href="http://www.din.de/gremien/nas/nabd/iso3166ma/codlstp1/db_en.html">
- * http://www.din.de/gremien/nas/nabd/iso3166ma/codlstp1/db_en.html</a>
+ * An encapsulation of registry of ISO 3166. This was updated on 24th July 2001 from
+ * <a href="http://www.din.de/gremien/nas/nabd/iso3166ma/codlstp1/db_en.html"> http://www.din.de/gremien/nas/
+ * nabd/iso3166ma/codlstp1/db_en.html</a>
  * 
  * @author jjc
  */

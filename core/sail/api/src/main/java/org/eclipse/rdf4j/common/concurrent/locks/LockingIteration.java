@@ -14,9 +14,8 @@ import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 
 /**
- * An Iteration that holds on to a lock until the Iteration is closed. Upon
- * closing, the underlying Iteration is closed before the lock is released. This
- * iterator closes itself as soon as all elements have been read.
+ * An Iteration that holds on to a lock until the Iteration is closed. Upon closing, the underlying Iteration
+ * is closed before the lock is released. This iterator closes itself as soon as all elements have been read.
  */
 public class LockingIteration<E, X extends Exception> extends IterationWrapper<E, X> {
 
@@ -37,8 +36,7 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 	 * Creates a new LockingIteration.
 	 * 
 	 * @param lock
-	 *        The lock to release when the itererator is closed, must not be
-	 *        <tt>null</tt>.
+	 *        The lock to release when the itererator is closed, must not be <tt>null</tt>.
 	 * @param iter
 	 *        The underlying Iteration, must not be <tt>null</tt>.
 	 */

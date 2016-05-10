@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.hash;
 
-
 import org.junit.Before;
 
 /**

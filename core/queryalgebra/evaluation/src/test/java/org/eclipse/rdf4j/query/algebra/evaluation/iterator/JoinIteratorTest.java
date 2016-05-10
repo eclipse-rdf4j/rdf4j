@@ -27,18 +27,22 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.Test;
 
 /**
- *
  * @author MJAHale
  */
 public class JoinIteratorTest {
+
 	private final ValueFactory vf = ValueFactoryImpl.getInstance();
+
 	private final EvaluationStrategy evaluator = new SimpleEvaluationStrategy(null, null);
 
 	/**
-	 * Tests joins between two different BindingSetAssignments with the same BindingSets but ordered differently.
+	 * Tests joins between two different BindingSetAssignments with the same BindingSets but ordered
+	 * differently.
 	 */
 	@Test
-	public void testBindingSetAssignmentJoin() throws QueryEvaluationException {
+	public void testBindingSetAssignmentJoin()
+		throws QueryEvaluationException
+	{
 		testBindingSetAssignmentJoin(5, 5, EmptyBindingSet.getInstance());
 
 		{
@@ -54,12 +58,13 @@ public class JoinIteratorTest {
 		}
 	}
 
-	private void testBindingSetAssignmentJoin(int expectedSize, int n, BindingSet bindings) throws QueryEvaluationException {
+	private void testBindingSetAssignmentJoin(int expectedSize, int n, BindingSet bindings)
+		throws QueryEvaluationException
+	{
 		BindingSetAssignment left = new BindingSetAssignment();
 		{
 			List<BindingSet> leftb = new ArrayList<BindingSet>();
-			for(int i=0; i<n; i++)
-			{
+			for (int i = 0; i < n; i++) {
 				QueryBindingSet b = new QueryBindingSet();
 				b.addBinding("a", vf.createLiteral(i));
 				leftb.add(b);
@@ -70,8 +75,7 @@ public class JoinIteratorTest {
 		BindingSetAssignment right = new BindingSetAssignment();
 		{
 			List<BindingSet> rightb = new ArrayList<BindingSet>();
-			for(int i=n; i>=0; i--)
-			{
+			for (int i = n; i >= 0; i--) {
 				QueryBindingSet b = new QueryBindingSet();
 				b.addBinding("a", vf.createLiteral(i));
 				rightb.add(b);
@@ -90,8 +94,8 @@ public class JoinIteratorTest {
 		assertEquals(lr, rl);
 
 		// check bindings
-		for(BindingSet b : lr) {
-			for(String name : bindings.getBindingNames()) {
+		for (BindingSet b : lr) {
+			for (String name : bindings.getBindingNames()) {
 				assertEquals(bindings.getValue(name), b.getValue(name));
 			}
 		}

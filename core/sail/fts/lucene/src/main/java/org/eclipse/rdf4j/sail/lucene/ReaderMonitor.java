@@ -15,13 +15,12 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.store.Directory;
 
 /**
- * ReaderMonitor holds IndexReader and IndexSearcher. When ReaderMonitor is
- * closed it do not close IndexReader and IndexSearcher as long as someone reads
- * from them. Variable readingCount remember how many times it was read.
+ * ReaderMonitor holds IndexReader and IndexSearcher. When ReaderMonitor is closed it do not close IndexReader
+ * and IndexSearcher as long as someone reads from them. Variable readingCount remember how many times it was
+ * read.
  * 
  * @author Tomasz Trela, DFKI Gmbh
- * @deprecated since 4.1.0. Use the LuceneSail in package
- *             {@code org.openrdf.sail.lucene} instead.
+ * @deprecated since 4.1.0. Use the LuceneSail in package {@code org.openrdf.sail.lucene} instead.
  */
 @Deprecated
 public class ReaderMonitor extends AbstractReaderMonitor {
@@ -34,8 +33,7 @@ public class ReaderMonitor extends AbstractReaderMonitor {
 	private IOException indexSearcherCreateException;
 
 	/**
-	 * If exception occur when create indexReader it will be thrown on
-	 * getIndexReader or get IndexSearcher
+	 * If exception occur when create indexReader it will be thrown on getIndexReader or get IndexSearcher
 	 * 
 	 * @param index
 	 * @param directory

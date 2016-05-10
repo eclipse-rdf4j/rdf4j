@@ -31,10 +31,9 @@ public class SesameClientImpl implements SesameClient, HttpClientDependent {
 	private CloseableHttpClient dependentClient;
 
 	private ExecutorService executor = null;
-	
+
 	/**
-	 * Optional {@link HttpClientBuilder} to create the inner
-	 * {@link #httpClient} (if not provided externally)
+	 * Optional {@link HttpClientBuilder} to create the inner {@link #httpClient} (if not provided externally)
 	 */
 	private HttpClientBuilder httpClientBuilder;
 
@@ -62,26 +61,27 @@ public class SesameClientImpl implements SesameClient, HttpClientDependent {
 	}
 
 	/**
-	 * @param httpClient The httpClient to use for remote/service calls.
+	 * @param httpClient
+	 *        The httpClient to use for remote/service calls.
 	 */
 	public synchronized void setHttpClient(HttpClient httpClient) {
 		this.httpClient = httpClient;
 	}
 
 	/**
-	 * Set an optional {@link HttpClientBuilder} to create the inner
-	 * {@link #httpClient} (if the latter is not provided externally
-	 * as dependent client).
+	 * Set an optional {@link HttpClientBuilder} to create the inner {@link #httpClient} (if the latter is not
+	 * provided externally as dependent client).
 	 *
-	 * @param httpClientBuilder the builder for the managed HttpClient
+	 * @param httpClientBuilder
+	 *        the builder for the managed HttpClient
 	 * @see HttpClientBuilders
 	 */
 	public synchronized void setHttpClientBuilder(HttpClientBuilder httpClientBuilder) {
 		this.httpClientBuilder = httpClientBuilder;
 	}
-	
+
 	private CloseableHttpClient createHttpClient() {
-		if (this.httpClientBuilder!=null) {
+		if (this.httpClientBuilder != null) {
 			return httpClientBuilder.build();
 		}
 		return HttpClients.createSystem();
@@ -119,9 +119,8 @@ public class SesameClientImpl implements SesameClient, HttpClientDependent {
 	}
 
 	/**
-	 * (re)initializes the connection manager and HttpClient (if not already
-	 * done), for example after a shutdown has been invoked earlier. Invoking
-	 * this method multiple times will have no effect.
+	 * (re)initializes the connection manager and HttpClient (if not already done), for example after a
+	 * shutdown has been invoked earlier. Invoking this method multiple times will have no effect.
 	 */
 	public synchronized void initialize() {
 		if (executor == null) {

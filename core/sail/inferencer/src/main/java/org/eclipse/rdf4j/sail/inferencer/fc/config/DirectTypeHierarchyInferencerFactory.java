@@ -14,8 +14,7 @@ import org.eclipse.rdf4j.sail.config.SailImplConfig;
 import org.eclipse.rdf4j.sail.inferencer.fc.DirectTypeHierarchyInferencer;
 
 /**
- * A {@link SailFactory} that creates {@link DirectTypeHierarchyInferencer}s
- * based on RDF configuration data.
+ * A {@link SailFactory} that creates {@link DirectTypeHierarchyInferencer}s based on RDF configuration data.
  * 
  * @author Arjohn Kampman
  */

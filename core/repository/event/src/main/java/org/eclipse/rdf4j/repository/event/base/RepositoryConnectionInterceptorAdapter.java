@@ -29,7 +29,7 @@ public class RepositoryConnectionInterceptorAdapter implements RepositoryConnect
 	public boolean begin(RepositoryConnection conn) {
 		return false;
 	}
-	
+
 	public boolean clear(RepositoryConnection conn, Resource... contexts) {
 		return false;
 	}
@@ -74,6 +74,5 @@ public class RepositoryConnectionInterceptorAdapter implements RepositoryConnect
 	{
 		return false;
 	}
-
 
 }

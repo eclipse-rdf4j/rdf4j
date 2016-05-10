@@ -49,7 +49,7 @@ public class Argument {
 	@Override
 	public String toString() {
 		StringBuilder buf = new StringBuilder();
-		if(valueType != null) {
+		if (valueType != null) {
 			buf.append(valueType).append(" ");
 		}
 		buf.append(IRI);

@@ -14,8 +14,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
- * An abstract superclass for n-ary tuple operators which have one or more
- * arguments.
+ * An abstract superclass for n-ary tuple operators which have one or more arguments.
  */
 public abstract class AbstractNaryTupleOperator extends AbstractNaryOperator<TupleExpr> implements TupleExpr {
 

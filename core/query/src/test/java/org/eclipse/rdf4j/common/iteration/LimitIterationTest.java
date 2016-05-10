@@ -20,14 +20,12 @@ public class LimitIterationTest extends CloseableIterationTest {
 	}
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration()
-	{
+	protected CloseableIteration<String, Exception> createTestIteration() {
 		return createLimitIteration(5);
 	}
 
 	@Override
-	protected int getTestIterationSize()
-	{
+	protected int getTestIterationSize() {
 		return 5;
 	}
 

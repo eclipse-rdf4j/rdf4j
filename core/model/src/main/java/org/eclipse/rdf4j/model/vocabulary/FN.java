@@ -14,8 +14,7 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
- * Defines constants for the standard <a
- * href="http://www.w3.org/TR/xpath-functions/">XPath functions</a>.
+ * Defines constants for the standard <a href="http://www.w3.org/TR/xpath-functions/">XPath functions</a>.
  * 
  * @see <a href="http://www.w3.org/TR/xpath-functions/">XPath functions</a>
  * @author Jeen Broekstra
@@ -23,8 +22,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 public class FN {
 
 	/**
-	 * The XPath functions namespace (
-	 * <tt>	http://www.w3.org/2005/xpath-functions#</tt>).
+	 * The XPath functions namespace ( <tt>	http://www.w3.org/2005/xpath-functions#</tt>).
 	 */
 	public static final String NAMESPACE = "http://www.w3.org/2005/xpath-functions#";
 
@@ -34,8 +32,7 @@ public class FN {
 	public static final String PREFIX = "fn";
 
 	/**
-	 * An immutable {@link Namespace} constant that represents the XPath
-	 * Functions namespace.
+	 * An immutable {@link Namespace} constant that represents the XPath Functions namespace.
 	 */
 	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
 

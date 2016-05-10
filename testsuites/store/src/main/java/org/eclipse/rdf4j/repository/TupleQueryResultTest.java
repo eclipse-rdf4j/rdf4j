@@ -111,7 +111,8 @@ public abstract class TupleQueryResultTest {
 	private void addData()
 		throws IOException, UnsupportedRDFormatException, RDFParseException, RepositoryException
 	{
-		InputStream defaultGraph = TupleQueryResultTest.class.getResourceAsStream("/testcases/default-graph-1.ttl");
+		InputStream defaultGraph = TupleQueryResultTest.class.getResourceAsStream(
+				"/testcases/default-graph-1.ttl");
 		try {
 			con.add(defaultGraph, "", RDFFormat.TURTLE);
 		}
@@ -137,33 +138,12 @@ public abstract class TupleQueryResultTest {
 	}
 
 	/*
-	 * deprecated
-	public void testIsDistinct()
-		throws Exception
-	{
-		TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SERQL, emptyResultQuery).evaluate();
-
-		try {
-			if (result.isDistinct()) {
-				fail("query result should not be distinct.");
-			}
-		}
-		finally {
-			result.close();
-		}
-
-		result = con.prepareTupleQuery(QueryLanguage.SERQL, singleResultQuery).evaluate();
-
-		try {
-			if (!result.isDistinct()) {
-				fail("query result should be distinct.");
-			}
-		}
-		finally {
-			result.close();
-		}
-	}
-	*/
+	 * deprecated public void testIsDistinct() throws Exception { TupleQueryResult result =
+	 * con.prepareTupleQuery(QueryLanguage.SERQL, emptyResultQuery).evaluate(); try { if (result.isDistinct())
+	 * { fail("query result should not be distinct."); } } finally { result.close(); } result =
+	 * con.prepareTupleQuery(QueryLanguage.SERQL, singleResultQuery).evaluate(); try { if
+	 * (!result.isDistinct()) { fail("query result should be distinct."); } } finally { result.close(); } }
+	 */
 
 	@Test
 	public void testIterator()

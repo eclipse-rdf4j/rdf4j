@@ -30,14 +30,15 @@ public class LuceneDocumentDistance extends LuceneDocumentResult implements Docu
 
 	private static Set<String> requiredFields(String geoProperty, boolean includeContext) {
 		Set<String> fields = Sets.newHashSet(SearchFields.URI_FIELD_NAME, geoProperty);
-		if(includeContext) {
+		if (includeContext) {
 			fields.add(SearchFields.CONTEXT_FIELD_NAME);
 		}
 		return fields;
 	}
 
 	@Deprecated
-	public LuceneDocumentDistance(ScoreDoc doc, String geoProperty, URI units, Point origin, boolean includeContext, LuceneIndex index)
+	public LuceneDocumentDistance(ScoreDoc doc, String geoProperty, URI units, Point origin,
+			boolean includeContext, LuceneIndex index)
 	{
 		super(doc, index, requiredFields(geoProperty, includeContext));
 		this.geoProperty = geoProperty;

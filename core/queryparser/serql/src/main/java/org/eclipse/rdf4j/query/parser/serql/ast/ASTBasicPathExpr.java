@@ -27,7 +27,7 @@ public class ASTBasicPathExpr extends ASTPathExpr {
 	public ASTNode getHead() {
 		return (ASTNode)children.get(0);
 	}
-	
+
 	public ASTBasicPathExprTail getTail() {
 		return (ASTBasicPathExprTail)children.get(1);
 	}

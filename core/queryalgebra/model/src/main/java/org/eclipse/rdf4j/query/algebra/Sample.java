@@ -21,7 +21,7 @@ public class Sample extends AbstractAggregateOperator {
 	public Sample(ValueExpr arg, boolean distinct) {
 		super(arg, distinct);
 	}
-	
+
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

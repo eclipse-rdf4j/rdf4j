@@ -20,8 +20,7 @@ import org.eclipse.rdf4j.queryrender.QueryRenderer;
 
 /**
  * <p>
- * Implementation of the {@link QueryRenderer} interface which renders queries
- * into the SPARQL syntax.
+ * Implementation of the {@link QueryRenderer} interface which renders queries into the SPARQL syntax.
  * </p>
  * 
  * @author Michael Grove

@@ -70,7 +70,8 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 				try {
 					SPARQLBooleanSAXParser valueParser = new SPARQLBooleanSAXParser();
 
-					SimpleSAXParser booleanSAXParser = new SimpleSAXParser(XMLReaderFactory.createXMLReader());
+					SimpleSAXParser booleanSAXParser = new SimpleSAXParser(
+							XMLReaderFactory.createXMLReader());
 					booleanSAXParser.setListener(valueParser);
 					booleanSAXParser.parse(uncloseable);
 
@@ -86,7 +87,8 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 							throw (IOException)e.getCause();
 						}
 						else {
-							throw new QueryResultParseException("Found an issue with the query result handler", e);
+							throw new QueryResultParseException(
+									"Found an issue with the query result handler", e);
 						}
 					}
 					// if there were no exceptions up to this point, return the
@@ -105,7 +107,8 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 
 			if (attemptParseTuple) {
 				try {
-					SimpleSAXParser resultsSAXParser = new SimpleSAXParser(XMLReaderFactory.createXMLReader());
+					SimpleSAXParser resultsSAXParser = new SimpleSAXParser(
+							XMLReaderFactory.createXMLReader());
 					resultsSAXParser.setPreserveWhitespace(true);
 
 					resultsSAXParser.setListener(new SPARQLResultsSAXParser(this.valueFactory, this.handler));
@@ -143,7 +146,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 		finally {
 			uncloseable.doClose();
 		}
-		
+
 		return result;
 	}
 

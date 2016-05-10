@@ -14,8 +14,7 @@ import org.eclipse.rdf4j.sail.config.SailImplConfig;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 
 /**
- * A {@link SailFactory} that creates {@link NativeStore}s based on RDF
- * configuration data.
+ * A {@link SailFactory} that creates {@link NativeStore}s based on RDF configuration data.
  * 
  * @author Arjohn Kampman
  */

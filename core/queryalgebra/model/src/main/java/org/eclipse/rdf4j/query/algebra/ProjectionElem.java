@@ -18,9 +18,9 @@ public class ProjectionElem extends AbstractQueryModelNode {
 	private String targetName;
 
 	private boolean aggregateOperatorInExpression;
-	
+
 	private ExtensionElem sourceExpression;
-	
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -109,7 +109,8 @@ public class ProjectionElem extends AbstractQueryModelNode {
 	}
 
 	/**
-	 * @param aggregateOperatorInExpression The aggregateOperatorInExpression to set.
+	 * @param aggregateOperatorInExpression
+	 *        The aggregateOperatorInExpression to set.
 	 */
 	public void setAggregateOperatorInExpression(boolean aggregateOperatorInExpression) {
 		this.aggregateOperatorInExpression = aggregateOperatorInExpression;
@@ -123,11 +124,11 @@ public class ProjectionElem extends AbstractQueryModelNode {
 	}
 
 	/**
-	 * @param sourceExpression The sourceExpression to set.
+	 * @param sourceExpression
+	 *        The sourceExpression to set.
 	 */
 	public void setSourceExpression(ExtensionElem sourceExpression) {
 		this.sourceExpression = sourceExpression;
 	}
-	
-	
+
 }

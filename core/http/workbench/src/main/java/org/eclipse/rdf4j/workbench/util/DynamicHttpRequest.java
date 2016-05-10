@@ -14,15 +14,21 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletRequestWrapper;
 
 public class DynamicHttpRequest extends HttpServletRequestWrapper {
+
 	private String contextPath;
+
 	private String method;
+
 	private String pathInfo;
+
 	private String queryString;
+
 	private String servletPath;
+
 	private Locale locale;
 
 	public DynamicHttpRequest(ServletRequest request) {
-		super((HttpServletRequest) request);
+		super((HttpServletRequest)request);
 		contextPath = super.getContextPath();
 		method = super.getMethod();
 		pathInfo = super.getPathInfo();

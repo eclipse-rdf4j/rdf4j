@@ -25,7 +25,8 @@ abstract class GeometricUnaryFunction implements Function {
 		throws ValueExprEvaluationException
 	{
 		if (args.length != 1) {
-			throw new ValueExprEvaluationException(getURI() + " requires exactly 1 argument, got " + args.length);
+			throw new ValueExprEvaluationException(
+					getURI() + " requires exactly 1 argument, got " + args.length);
 		}
 
 		SpatialContext geoContext = SpatialSupport.getSpatialContext();

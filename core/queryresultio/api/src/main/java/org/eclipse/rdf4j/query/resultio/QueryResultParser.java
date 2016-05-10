@@ -30,10 +30,10 @@ public interface QueryResultParser {
 	 * @return The {@link QueryResultFormat} supported by this parser.
 	 */
 	QueryResultFormat getQueryResultFormat();
-	
+
 	/**
-	 * Sets the {@link QueryResultHandler} to be used when parsing query results
-	 * using {@link #parseQueryResult(InputStream)}.
+	 * Sets the {@link QueryResultHandler} to be used when parsing query results using
+	 * {@link #parseQueryResult(InputStream)}.
 	 * 
 	 * @param handler
 	 *        The {@link QueryResultHandler} to use for handling results.
@@ -41,8 +41,7 @@ public interface QueryResultParser {
 	void setQueryResultHandler(QueryResultHandler handler);
 
 	/**
-	 * Sets the ValueFactory that the parser will use to create Value objects for
-	 * the parsed query result.
+	 * Sets the ValueFactory that the parser will use to create Value objects for the parsed query result.
 	 * 
 	 * @param valueFactory
 	 *        The value factory that the parser should use.
@@ -50,8 +49,8 @@ public interface QueryResultParser {
 	void setValueFactory(ValueFactory valueFactory);
 
 	/**
-	 * Parse the query results out of the given {@link InputStream} into the
-	 * handler setup using {@link #setQueryResultHandler(QueryResultHandler)}.
+	 * Parse the query results out of the given {@link InputStream} into the handler setup using
+	 * {@link #setQueryResultHandler(QueryResultHandler)}.
 	 * 
 	 * @param in
 	 *        The {@link InputStream} to parse the results from.
@@ -60,13 +59,11 @@ public interface QueryResultParser {
 	 * @throws QueryResultParseException
 	 *         If the query results are not parsable by this parser.
 	 * @throws QueryResultHandlerException
-	 *         If the {@link QueryResultHandler} set in
-	 *         {@link #setQueryResultHandler(QueryResultHandler)} throws an
-	 *         exception.
+	 *         If the {@link QueryResultHandler} set in {@link #setQueryResultHandler(QueryResultHandler)}
+	 *         throws an exception.
 	 */
 	void parseQueryResult(InputStream in)
 		throws IOException, QueryResultParseException, QueryResultHandlerException;
-	
 
 	/**
 	 * Sets all supplied parser configuration options.
@@ -79,14 +76,12 @@ public interface QueryResultParser {
 	/**
 	 * Retrieves the current parser configuration as a single object.
 	 * 
-	 * @return a parser configuration object representing the current
-	 *         configuration of the parser.
+	 * @return a parser configuration object representing the current configuration of the parser.
 	 */
 	public ParserConfig getParserConfig();
 
 	/**
-	 * @return A collection of {@link RioSetting}s that are supported by this
-	 *         QueryResultParser.
+	 * @return A collection of {@link RioSetting}s that are supported by this QueryResultParser.
 	 */
 	public Collection<RioSetting<?>> getSupportedSettings();
 

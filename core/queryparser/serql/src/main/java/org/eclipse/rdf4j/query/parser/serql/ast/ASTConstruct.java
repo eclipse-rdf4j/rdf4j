@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.serql.ast;
 
-
 public class ASTConstruct extends SimpleNode {
 
 	private boolean distinct = false;

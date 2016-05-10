@@ -37,8 +37,7 @@ public class ClearOperation extends ContextOperation implements Serializable {
 	}
 
 	@Override
-	public boolean equals(Object other)
-	{
+	public boolean equals(Object other) {
 		if (other instanceof ClearOperation) {
 			return super.equals(other);
 		}

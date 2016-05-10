@@ -25,7 +25,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	private boolean anonymous = false;
 
 	private boolean constant = false;
-	
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -105,7 +105,8 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	public boolean equals(Object other) {
 		if (other instanceof Var) {
 			Var o = (Var)other;
-			return name.equals(o.getName()) && nullEquals(value, o.getValue()) && anonymous == o.isAnonymous();
+			return name.equals(o.getName()) && nullEquals(value, o.getValue())
+					&& anonymous == o.isAnonymous();
 		}
 		return false;
 	}
@@ -135,7 +136,8 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	}
 
 	/**
-	 * @param constant The constant to set.
+	 * @param constant
+	 *        The constant to set.
 	 */
 	public void setConstant(boolean constant) {
 		this.constant = constant;

@@ -64,7 +64,8 @@ class JSONLDInternalRDFParser implements com.github.jsonldjava.core.RDFParser {
 				datatype = XMLSchema.STRING.stringValue();
 			}
 
-			result.addQuad(subject, predicate, value, datatype, literal.getLanguage().orElse(null), graphName);
+			result.addQuad(subject, predicate, value, datatype, literal.getLanguage().orElse(null),
+					graphName);
 		}
 		else {
 			result.addQuad(subject, predicate, getResourceValue((Resource)object), graphName);

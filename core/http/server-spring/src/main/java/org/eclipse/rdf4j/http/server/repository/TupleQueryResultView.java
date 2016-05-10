@@ -32,8 +32,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * View used to render tuple query results. Renders results in a format
- * specified using a parameter or Accept header.
+ * View used to render tuple query results. Renders results in a format specified using a parameter or Accept
+ * header.
  * 
  * @author Herko ter Horst
  * @author Arjohn Kampman

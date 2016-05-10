@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.spin.SpinParser;
 
-
 public class AskFunction extends AbstractSpinFunction implements Function {
 
 	private SpinParser parser;
@@ -47,14 +46,14 @@ public class AskFunction extends AbstractSpinFunction implements Function {
 		throws ValueExprEvaluationException
 	{
 		QueryPreparer qp = getCurrentQueryPreparer();
-		if(args.length == 0 || !(args[0] instanceof Resource)) {
+		if (args.length == 0 || !(args[0] instanceof Resource)) {
 			throw new ValueExprEvaluationException("First argument must be a resource");
 		}
-		if((args.length % 2) == 0) {
+		if ((args.length % 2) == 0) {
 			throw new ValueExprEvaluationException("Old number of arguments required");
 		}
 		try {
-			ParsedBooleanQuery askQuery = parser.parseAskQuery((Resource) args[0], qp.getTripleSource());
+			ParsedBooleanQuery askQuery = parser.parseAskQuery((Resource)args[0], qp.getTripleSource());
 			BooleanQuery queryOp = qp.prepare(askQuery);
 			addBindings(queryOp, args);
 			return BooleanLiteral.valueOf(queryOp.evaluate());

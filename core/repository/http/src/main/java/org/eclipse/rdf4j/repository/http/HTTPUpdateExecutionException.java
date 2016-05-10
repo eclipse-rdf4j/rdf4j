@@ -13,9 +13,7 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
-
 /**
- *
  * @author Jeen Broekstra
  */
 public class HTTPUpdateExecutionException extends UpdateExecutionException {
@@ -28,6 +26,7 @@ public class HTTPUpdateExecutionException extends UpdateExecutionException {
 	public HTTPUpdateExecutionException(String msg) {
 		super(msg);
 	}
+
 	/**
 	 * @param msg
 	 * @param cause
@@ -46,11 +45,11 @@ public class HTTPUpdateExecutionException extends UpdateExecutionException {
 	public boolean isCausedByIOException() {
 		return getCause() instanceof IOException;
 	}
-	
+
 	public boolean isCausedByRepositoryException() {
 		return getCause() instanceof RepositoryException;
 	}
-	
+
 	public boolean isCausedByMalformedQueryException() {
 		return getCause() instanceof MalformedQueryException;
 	}

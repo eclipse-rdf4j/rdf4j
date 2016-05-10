@@ -36,8 +36,8 @@ public class SimpleBNode implements BNode {
 	 *--------------*/
 
 	/**
-	 * Creates a new, unitialized blank node. This blank node's ID needs to be
-	 * {@link #setID(String) set} before the normal methods can be used.
+	 * Creates a new, unitialized blank node. This blank node's ID needs to be {@link #setID(String) set}
+	 * before the normal methods can be used.
 	 */
 	protected SimpleBNode() {
 	}

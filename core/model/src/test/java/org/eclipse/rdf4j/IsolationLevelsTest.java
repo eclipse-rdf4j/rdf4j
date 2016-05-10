@@ -26,8 +26,7 @@ public class IsolationLevelsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.IsolationLevels#isCompatibleWith(org.eclipse.rdf4j.IsolationLevel)}
-	 * .
+	 * {@link org.eclipse.rdf4j.IsolationLevels#isCompatibleWith(org.eclipse.rdf4j.IsolationLevel)} .
 	 */
 	@Test
 	public void testIsCompatibleWith() {
@@ -86,7 +85,8 @@ public class IsolationLevelsTest {
 		supportedLevels.add(IsolationLevels.SERIALIZABLE);
 
 		try {
-			IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(null, supportedLevels);
+			IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(null,
+					supportedLevels);
 			fail("should have resulted in an IllegalArgumentException");
 		}
 		catch (IllegalArgumentException e) {

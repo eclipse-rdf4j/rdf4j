@@ -18,8 +18,7 @@ import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * An extension of {@link SailConcurrencyTest} for testing the class
- * {@link NativeStore}.
+ * An extension of {@link SailConcurrencyTest} for testing the class {@link NativeStore}.
  */
 public class NativeStoreInterruptTest extends SailInterruptTest {
 

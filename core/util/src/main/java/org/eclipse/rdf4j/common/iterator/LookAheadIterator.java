@@ -21,6 +21,7 @@ public abstract class LookAheadIterator<E> extends AbstractCloseableIterator<E> 
 	 *-----------*/
 
 	private E nextElement;
+
 	private IOException closeException;
 
 	/*--------------*
@@ -35,23 +36,19 @@ public abstract class LookAheadIterator<E> extends AbstractCloseableIterator<E> 
 	 *---------*/
 
 	/**
-	 * Gets the next element. Subclasses should implement this method so that it
-	 * returns the next element.
+	 * Gets the next element. Subclasses should implement this method so that it returns the next element.
 	 * 
-	 * @return The next element, or <tt>null</tt> if no more elements are
-	 *         available.
+	 * @return The next element, or <tt>null</tt> if no more elements are available.
 	 */
 	protected abstract E getNextElement();
 
-	public final boolean hasNext()
-	{
+	public final boolean hasNext() {
 		lookAhead();
 
 		return nextElement != null;
 	}
 
-	public final E next()
-	{
+	public final E next() {
 		lookAhead();
 
 		E result = nextElement;
@@ -66,23 +63,19 @@ public abstract class LookAheadIterator<E> extends AbstractCloseableIterator<E> 
 	}
 
 	/**
-	 * Fetches the next element if it hasn't been fetched yet and stores it in
-	 * {@link #nextElement}.
+	 * Fetches the next element if it hasn't been fetched yet and stores it in {@link #nextElement}.
 	 * 
 	 * @throws X
 	 */
-	private void lookAhead()
-	{
+	private void lookAhead() {
 		if (nextElement == null && !isClosed()) {
 			nextElement = getNextElement();
 
 			if (nextElement == null) {
-				try
-				{
+				try {
 					close();
 				}
-				catch(IOException ioe)
-				{
+				catch (IOException ioe) {
 					closeException = ioe;
 				}
 			}
@@ -105,10 +98,9 @@ public abstract class LookAheadIterator<E> extends AbstractCloseableIterator<E> 
 	}
 
 	protected void handleAlreadyClosed()
-			throws IOException
+		throws IOException
 	{
-		if(closeException != null)
-		{
+		if (closeException != null) {
 			throw closeException;
 		}
 	}

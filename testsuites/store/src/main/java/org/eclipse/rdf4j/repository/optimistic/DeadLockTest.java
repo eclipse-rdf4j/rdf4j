@@ -24,17 +24,27 @@ import org.junit.Before;
 import org.junit.Test;
 
 public class DeadLockTest {
+
 	private Repository repo;
+
 	private RepositoryConnection a;
+
 	private RepositoryConnection b;
+
 	private IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
+
 	private String NS = "http://rdf.example.org/";
+
 	private URI PAINTER;
+
 	private URI PICASSO;
+
 	private URI REMBRANDT;
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp()
+		throws Exception
+	{
 		repo = OptimisticIsolationTest.getEmptyInitializedRepository(DeadLockTest.class);
 		ValueFactory uf = repo.getValueFactory();
 		PAINTER = uf.createURI(NS, "Painter");
@@ -45,19 +55,24 @@ public class DeadLockTest {
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown()
+		throws Exception
+	{
 		a.close();
 		b.close();
 		repo.shutDown();
 	}
 
 	@Test
-	public void test() throws Exception {
+	public void test()
+		throws Exception
+	{
 		final CountDownLatch start = new CountDownLatch(2);
 		final CountDownLatch end = new CountDownLatch(2);
 		final CountDownLatch commit = new CountDownLatch(1);
 		final Exception e1 = new Exception();
 		new Thread(new Runnable() {
+
 			public void run() {
 				try {
 					start.countDown();
@@ -65,15 +80,18 @@ public class DeadLockTest {
 					a.add(PICASSO, RDF.TYPE, PAINTER);
 					commit.await();
 					a.commit();
-				} catch (Exception e) {
+				}
+				catch (Exception e) {
 					e1.initCause(e);
-				} finally {
+				}
+				finally {
 					end.countDown();
 				}
 			}
 		}).start();
 		final Exception e2 = new Exception();
 		new Thread(new Runnable() {
+
 			public void run() {
 				try {
 					start.countDown();
@@ -81,9 +99,11 @@ public class DeadLockTest {
 					b.add(REMBRANDT, RDF.TYPE, PAINTER);
 					commit.await();
 					b.commit();
-				} catch (Exception e) {
+				}
+				catch (Exception e) {
 					e2.initCause(e);
-				} finally {
+				}
+				finally {
 					end.countDown();
 				}
 			}

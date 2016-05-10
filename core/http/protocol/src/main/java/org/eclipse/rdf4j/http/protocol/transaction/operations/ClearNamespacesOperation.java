@@ -35,14 +35,12 @@ public class ClearNamespacesOperation implements TransactionOperation, Serializa
 	}
 
 	@Override
-	public boolean equals(Object other)
-	{
+	public boolean equals(Object other) {
 		return other instanceof ClearNamespacesOperation;
 	}
 
 	@Override
-	public int hashCode()
-	{
+	public int hashCode() {
 		return 101;
 	}
 }

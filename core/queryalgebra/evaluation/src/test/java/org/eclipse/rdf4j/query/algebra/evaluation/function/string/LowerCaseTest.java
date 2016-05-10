@@ -27,7 +27,6 @@ public class LowerCaseTest {
 
 	private ValueFactory f = SimpleValueFactory.getInstance();
 
-	
 	/**
 	 * @throws java.lang.Exception
 	 */
@@ -49,40 +48,40 @@ public class LowerCaseTest {
 
 	@Test
 	public void testEvaluate1() {
-		
+
 		Literal pattern = f.createLiteral("foobar");
-		
+
 		try {
 			Literal result = lcaseFunc.evaluate(f, pattern);
-			
+
 			assertTrue(result.getLabel().equals("foobar"));
 		}
 		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
-	
+
 	@Test
 	public void testEvaluate2() {
-		
+
 		Literal pattern = f.createLiteral("FooBar");
-		
+
 		try {
 			Literal result = lcaseFunc.evaluate(f, pattern);
-			
+
 			assertTrue(result.getLabel().equals("foobar"));
 		}
 		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
-	
+
 	@Test
 	public void testEvaluate3() {
-		
+
 		Literal pattern = f.createLiteral("FooBar");
 		Literal startIndex = f.createLiteral(4);
-		
+
 		try {
 			lcaseFunc.evaluate(f, pattern, startIndex);
 			fail("illegal number of parameters");

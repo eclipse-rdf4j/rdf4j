@@ -12,8 +12,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 
 /**
- * An extension of {@link SimpleLiteral} that stores a calendar value to avoid
- * parsing.
+ * An extension of {@link SimpleLiteral} that stores a calendar value to avoid parsing.
  * 
  * @author David Huynh
  * @author Arjohn Kampman
@@ -25,8 +24,8 @@ public class CalendarLiteral extends SimpleLiteral {
 	private final XMLGregorianCalendar calendar;
 
 	/**
-	 * Creates a literal for the specified calendar using a datatype appropriate
-	 * for the value indicated by {@link XMLGregorianCalendar#getXMLSchemaType()}.
+	 * Creates a literal for the specified calendar using a datatype appropriate for the value indicated by
+	 * {@link XMLGregorianCalendar#getXMLSchemaType()}.
 	 */
 	protected CalendarLiteral(XMLGregorianCalendar calendar) {
 		super(calendar.toXMLFormat(), XMLDatatypeUtil.qnameToURI(calendar.getXMLSchemaType()));
@@ -34,8 +33,7 @@ public class CalendarLiteral extends SimpleLiteral {
 	}
 
 	@Override
-	public XMLGregorianCalendar calendarValue()
-	{
+	public XMLGregorianCalendar calendarValue() {
 		return calendar;
 	}
 }

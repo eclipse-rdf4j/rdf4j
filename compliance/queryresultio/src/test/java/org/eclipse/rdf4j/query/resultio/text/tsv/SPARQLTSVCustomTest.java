@@ -37,9 +37,8 @@ public class SPARQLTSVCustomTest {
 	/**
 	 * Only Literals with the XML Schema numeric types should be simplified.
 	 * <p>
-	 * NOTE: This will fail when using RDF-1.1, as the datatype
-	 * {@link XMLSchema#STRING} is implied and hence is not generally
-	 * represented.
+	 * NOTE: This will fail when using RDF-1.1, as the datatype {@link XMLSchema#STRING} is implied and hence
+	 * is not generally represented.
 	 * 
 	 * @throws Exception
 	 */
@@ -49,8 +48,9 @@ public class SPARQLTSVCustomTest {
 		throws Exception
 	{
 		List<String> bindingNames = Arrays.asList("test");
-		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames, Arrays.asList(new ListBindingSet(
-				bindingNames, SimpleValueFactory.getInstance().createLiteral("1", XMLSchema.STRING))));
+		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
+				Arrays.asList(new ListBindingSet(bindingNames,
+						SimpleValueFactory.getInstance().createLiteral("1", XMLSchema.STRING))));
 		String result = writeTupleResult(tqr);
 		assertEquals("?test\n\"1\"^^<http://www.w3.org/2001/XMLSchema#string>\n", result);
 	}
@@ -65,8 +65,8 @@ public class SPARQLTSVCustomTest {
 		throws Exception
 	{
 		List<String> bindingNames = Arrays.asList("test");
-		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames, Arrays.asList(new ListBindingSet(
-				bindingNames, SimpleValueFactory.getInstance().createLiteral("1"))));
+		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames, Arrays.asList(
+				new ListBindingSet(bindingNames, SimpleValueFactory.getInstance().createLiteral("1"))));
 		String result = writeTupleResult(tqr);
 		assertEquals("?test\n\"1\"\n", result);
 	}

@@ -32,8 +32,7 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
 
 /**
- * An implementation of the RDFWriter interface that writes RDF documents in
- * XML-serialized RDF format.
+ * An implementation of the RDFWriter interface that writes RDF documents in XML-serialized RDF format.
  */
 public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
@@ -229,8 +228,8 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		String predString = pred.toString();
 		int predSplitIdx = XMLUtil.findURISplitIndex(predString);
 		if (predSplitIdx == -1) {
-			throw new RDFHandlerException("Unable to create XML namespace-qualified name for predicate: "
-					+ predString);
+			throw new RDFHandlerException(
+					"Unable to create XML namespace-qualified name for predicate: " + predString);
 		}
 
 		String predNamespace = predString.substring(0, predSplitIdx);
@@ -468,16 +467,14 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	/**
-	 * Create a syntactically valid node id from the supplied blank node id. This
-	 * is necessary because RDF/XML syntax enforces the blank node id is a valid
-	 * NCName.
+	 * Create a syntactically valid node id from the supplied blank node id. This is necessary because RDF/XML
+	 * syntax enforces the blank node id is a valid NCName.
 	 * 
 	 * @param bNode
 	 *        a blank node identifier
-	 * @return the blank node identifier converted to a form that is a valid
-	 *         NCName.
-	 * @see <a href="http://www.w3.org/TR/REC-rdf-syntax/#rdf-id">section 7.2.34
-	 *      of the RDF/XML Syntax specification</a>
+	 * @return the blank node identifier converted to a form that is a valid NCName.
+	 * @see <a href="http://www.w3.org/TR/REC-rdf-syntax/#rdf-id">section 7.2.34 of the RDF/XML Syntax
+	 *      specification</a>
 	 */
 	protected String getValidNodeId(BNode bNode)
 		throws IOException
@@ -487,7 +484,8 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 			StringBuilder builder = new StringBuilder();
 			if (validNodeId.isEmpty()) {
 				if (this.getWriterConfig().get(BasicParserSettings.PRESERVE_BNODE_IDS)) {
-					throw new IOException("Cannot consistently write blank nodes with empty internal identifiers");
+					throw new IOException(
+							"Cannot consistently write blank nodes with empty internal identifiers");
 				}
 				builder.append("genid-hash-");
 				builder.append(Integer.toHexString(System.identityHashCode(bNode)));

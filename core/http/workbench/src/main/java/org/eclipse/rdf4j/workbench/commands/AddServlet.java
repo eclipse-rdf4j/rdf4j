@@ -87,8 +87,9 @@ public class AddServlet extends TransformationServlet {
 		RDFFormat format = null;
 		if ("autodetect".equals(contentType)) {
 			format = Rio.getParserFormatForFileName(contentFileName).orElseThrow(
-					() -> new BadRequestException("Could not automatically determine Content-Type for content: "
-							+ contentFileName));
+					() -> new BadRequestException(
+							"Could not automatically determine Content-Type for content: "
+									+ contentFileName));
 		}
 		else {
 			format = Rio.getParserFormatForMIMEType(contentType).orElseThrow(
@@ -119,9 +120,8 @@ public class AddServlet extends TransformationServlet {
 
 		RDFFormat format = null;
 		if ("autodetect".equals(contentType)) {
-			format = Rio.getParserFormatForFileName(url.getFile()).orElseThrow(
-					() -> new BadRequestException("Could not automatically determine Content-Type for content: "
-							+ url.getFile()));
+			format = Rio.getParserFormatForFileName(url.getFile()).orElseThrow(() -> new BadRequestException(
+					"Could not automatically determine Content-Type for content: " + url.getFile()));
 		}
 		else {
 			format = Rio.getParserFormatForMIMEType(contentType).orElseThrow(

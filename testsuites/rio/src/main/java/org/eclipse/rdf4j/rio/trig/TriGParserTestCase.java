@@ -27,8 +27,8 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
- * JUnit test for the TriG parser that uses the tests that are available <a
- * href="http://www.w3.org/2013/TrigTests/">online</a>.
+ * JUnit test for the TriG parser that uses the tests that are available
+ * <a href="http://www.w3.org/2013/TrigTests/">online</a>.
  */
 public abstract class TriGParserTestCase {
 
@@ -100,7 +100,8 @@ public abstract class TriGParserTestCase {
 		positiveQuery.append("     ?test mf:action ?inputURL . ");
 		positiveQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveQuery.toString()).evaluate();
+		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL,
+				positiveQuery.toString()).evaluate();
 
 		// Add all positive parser tests to the test suite
 		while (queryResult.hasNext()) {
@@ -136,14 +137,16 @@ public abstract class TriGParserTestCase {
 		negativeQuery.append("     ?test mf:action ?inputURL . ");
 		negativeQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeQuery.toString()).evaluate();
+		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL,
+				negativeQuery.toString()).evaluate();
 
 		// Add all negative parser tests to the test suite
 		while (queryResult.hasNext()) {
 			BindingSet bindingSet = queryResult.next();
 			IRI nextTestUri = (IRI)bindingSet.getValue("test");
 			String nextTestName = ((Literal)bindingSet.getValue("testName")).getLabel();
-			String nextTestFile = removeBase(((IRI)bindingSet.getValue("inputURL")).toString(), manifestBaseUrl);
+			String nextTestFile = removeBase(((IRI)bindingSet.getValue("inputURL")).toString(),
+					manifestBaseUrl);
 			String nextInputURL = fileBasePath + nextTestFile;
 
 			String nextBaseUrl = testBaseUrl + nextTestFile;
@@ -161,7 +164,8 @@ public abstract class TriGParserTestCase {
 		throws Exception
 	{
 		StringBuilder positiveEvalQuery = new StringBuilder();
-		positiveEvalQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
+		positiveEvalQuery.append(
+				" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		positiveEvalQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
 		positiveEvalQuery.append(" PREFIX rdft: <http://www.w3.org/ns/rdftest#>\n");
 		positiveEvalQuery.append(" SELECT ?test ?testName ?inputURL ?outputURL \n");
@@ -172,14 +176,16 @@ public abstract class TriGParserTestCase {
 		positiveEvalQuery.append("     ?test mf:result ?outputURL . ");
 		positiveEvalQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveEvalQuery.toString()).evaluate();
+		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL,
+				positiveEvalQuery.toString()).evaluate();
 
 		// Add all positive eval tests to the test suite
 		while (queryResult.hasNext()) {
 			BindingSet bindingSet = queryResult.next();
 			IRI nextTestUri = (IRI)bindingSet.getValue("test");
 			String nextTestName = ((Literal)bindingSet.getValue("testName")).getLabel();
-			String nextTestFile = removeBase(((IRI)bindingSet.getValue("inputURL")).toString(), manifestBaseUrl);
+			String nextTestFile = removeBase(((IRI)bindingSet.getValue("inputURL")).toString(),
+					manifestBaseUrl);
 			String nextInputURL = fileBasePath + nextTestFile;
 			String nextOutputURL = fileBasePath
 					+ removeBase(((IRI)bindingSet.getValue("outputURL")).toString(), manifestBaseUrl);
@@ -212,7 +218,8 @@ public abstract class TriGParserTestCase {
 		throws Exception
 	{
 		StringBuilder negativeEvalQuery = new StringBuilder();
-		negativeEvalQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
+		negativeEvalQuery.append(
+				" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		negativeEvalQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
 		negativeEvalQuery.append(" PREFIX rdft: <http://www.w3.org/ns/rdftest#>\n");
 		negativeEvalQuery.append(" SELECT ?test ?testName ?inputURL ?outputURL \n");
@@ -222,7 +229,8 @@ public abstract class TriGParserTestCase {
 		negativeEvalQuery.append("     ?test mf:action ?inputURL . ");
 		negativeEvalQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeEvalQuery.toString()).evaluate();
+		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL,
+				negativeEvalQuery.toString()).evaluate();
 
 		// Add all negative eval tests to the test suite
 		while (queryResult.hasNext()) {
@@ -243,14 +251,13 @@ public abstract class TriGParserTestCase {
 	}
 
 	/**
-	 * @return An implementation of a TriG parser to test compliance with the
-	 *         TriG Test Suite TriG tests.
+	 * @return An implementation of a TriG parser to test compliance with the TriG Test Suite TriG tests.
 	 */
 	protected abstract RDFParser createTriGParser();
 
 	/**
-	 * @return An implementation of an N-Quads parser to test compliance with the
-	 *         TriG Test Suite N-Quads tests.
+	 * @return An implementation of an N-Quads parser to test compliance with the TriG Test Suite N-Quads
+	 *         tests.
 	 */
 	protected abstract RDFParser createNQuadsParser();
 

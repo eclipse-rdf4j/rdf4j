@@ -18,8 +18,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
- * Extends the Apache Commons Collections test, {@link AbstractTestSet} to
- * enable testing of the OpenRDF Model collection implementations.
+ * Extends the Apache Commons Collections test, {@link AbstractTestSet} to enable testing of the OpenRDF Model
+ * collection implementations.
  */
 public abstract class ApacheSetTestCase extends AbstractTestSet {
 
@@ -57,8 +57,7 @@ public abstract class ApacheSetTestCase extends AbstractTestSet {
 	public abstract Object getOneElement();
 
 	/**
-	 * Override this method to indicate that null's are not supported by Model
-	 * implementations.
+	 * Override this method to indicate that null's are not supported by Model implementations.
 	 */
 	@Override
 	public boolean isNullSupported() {
@@ -84,12 +83,11 @@ public abstract class ApacheSetTestCase extends AbstractTestSet {
 	public abstract Collection makeConfirmedCollection();
 
 	/**
-	 * Converts the standard list of elements returned by the super class
-	 * implementation of {@link AbstractTestCollection#getFullNonNullElements()}
-	 * into a set of objects suitable for insertion into a {@link Model}.
+	 * Converts the standard list of elements returned by the super class implementation of
+	 * {@link AbstractTestCollection#getFullNonNullElements()} into a set of objects suitable for insertion
+	 * into a {@link Model}.
 	 * 
-	 * @return A set of non-null elements that will be returned by
-	 *         {@link #getFullElements()}.
+	 * @return A set of non-null elements that will be returned by {@link #getFullElements()}.
 	 */
 	@Override
 	public Object[] getFullNonNullElements() {
@@ -97,15 +95,13 @@ public abstract class ApacheSetTestCase extends AbstractTestSet {
 	}
 
 	/**
-	 * Converts the standard list of elements returned by the super class
-	 * implementation of {@link AbstractTestCollection#getFullNonNullElements()}
-	 * into a set of objects suitable for insertion into a {@link Model}.
+	 * Converts the standard list of elements returned by the super class implementation of
+	 * {@link AbstractTestCollection#getFullNonNullElements()} into a set of objects suitable for insertion
+	 * into a {@link Model}.
 	 * <p>
-	 * IMPORTANT: These elements must not be present in the results of
-	 * {@link #getFullNonNullElements()}.
+	 * IMPORTANT: These elements must not be present in the results of {@link #getFullNonNullElements()}.
 	 * 
-	 * @return A set of non-null elements that will be returned by
-	 *         {@link #getOtherElements()}.
+	 * @return A set of non-null elements that will be returned by {@link #getOtherElements()}.
 	 */
 	@Override
 	public Object[] getOtherNonNullElements() {
@@ -113,8 +109,7 @@ public abstract class ApacheSetTestCase extends AbstractTestSet {
 	}
 
 	/**
-	 * A method that must be overridden to generate a set of non-null elements
-	 * using the given seets.
+	 * A method that must be overridden to generate a set of non-null elements using the given seets.
 	 * 
 	 * @param seeds
 	 * @return
@@ -122,8 +117,7 @@ public abstract class ApacheSetTestCase extends AbstractTestSet {
 	public abstract Object[] convert(Object[] seeds);
 
 	/**
-	 * Creates a URI using the given seed in both the prefix and the suffix of
-	 * the URI.
+	 * Creates a URI using the given seed in both the prefix and the suffix of the URI.
 	 * 
 	 * @param seed
 	 *        The object to use as a value to create a {@link IRI}.

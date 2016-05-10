@@ -14,9 +14,8 @@ import org.eclipse.rdf4j.rio.rdfxml.RDFXMLParserTestCase;
 import junit.framework.Test;
 
 /**
- * JUnit test for the RDF/XML parser that uses the test manifest that is
- * available <a
- * href="http://www.w3.org/2000/10/rdf-tests/rdfcore/Manifest.rdf">online</a>.
+ * JUnit test for the RDF/XML parser that uses the test manifest that is available
+ * <a href="http://www.w3.org/2000/10/rdf-tests/rdfcore/Manifest.rdf">online</a>.
  */
 public class RDFXMLParserTest extends RDFXMLParserTestCase {
 

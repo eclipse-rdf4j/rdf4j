@@ -33,8 +33,7 @@ import org.junit.Test;
 public class RDFXMLParserCustomTest {
 
 	/**
-	 * Test with the default ParserConfig settings. Ie, setParserConfig is not
-	 * called.
+	 * Test with the default ParserConfig settings. Ie, setParserConfig is not called.
 	 * 
 	 * @throws Exception
 	 */
@@ -51,7 +50,8 @@ public class RDFXMLParserCustomTest {
 			// 64k
 			// entity limit rather than OOMing
 			aParser.parse(
-					this.getClass().getResourceAsStream("/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
+					this.getClass().getResourceAsStream(
+							"/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
 					"http://example.org");
 			fail("Parser did not throw an exception");
 		}
@@ -81,7 +81,8 @@ public class RDFXMLParserCustomTest {
 			// this should trigger a SAX parse exception that will blow up at the
 			// 64k entity limit rather than OOMing
 			aParser.parse(
-					this.getClass().getResourceAsStream("/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
+					this.getClass().getResourceAsStream(
+							"/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
 					"http://example.org");
 			fail("Parser did not throw an exception");
 		}
@@ -112,7 +113,8 @@ public class RDFXMLParserCustomTest {
 			// this should trigger a SAX parse exception that will blow up at the
 			// 64k entity limit rather than OOMing
 			aParser.parse(
-					this.getClass().getResourceAsStream("/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
+					this.getClass().getResourceAsStream(
+							"/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
 					"http://example.org");
 			fail("Parser did not throw an exception");
 		}
@@ -125,11 +127,11 @@ public class RDFXMLParserCustomTest {
 	/**
 	 * Test with Secure processing setting off.
 	 * <p>
-	 * IMPORTANT: Only turn this on to verify it is still working, as there is no
-	 * way to safely perform this test.
+	 * IMPORTANT: Only turn this on to verify it is still working, as there is no way to safely perform this
+	 * test.
 	 * <p>
-	 * WARNING: This test will cause an OutOfMemoryException when it eventually
-	 * fails, as it will eventually fail.
+	 * WARNING: This test will cause an OutOfMemoryException when it eventually fails, as it will eventually
+	 * fail.
 	 * 
 	 * @throws Exception
 	 */
@@ -149,7 +151,8 @@ public class RDFXMLParserCustomTest {
 		try {
 			// IMPORTANT: This will not use the entity limit
 			aParser.parse(
-					this.getClass().getResourceAsStream("/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
+					this.getClass().getResourceAsStream(
+							"/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
 					"http://example.org");
 			fail("Parser did not throw an exception");
 		}

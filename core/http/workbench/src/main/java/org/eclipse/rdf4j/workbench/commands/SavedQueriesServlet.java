@@ -101,8 +101,8 @@ public class SavedQueriesServlet extends TransformationServlet {
 			user = "";
 		}
 		if (!storage.checkAccess(repo)) {
-			throw new BadRequestException(
-					"User '" + user + "' not authorized to access repository '" + repo.getRepositoryURL() + "'");
+			throw new BadRequestException("User '" + user + "' not authorized to access repository '"
+					+ repo.getRepositoryURL() + "'");
 		}
 		storage.selectSavedQueries(repo, user, builder);
 	}

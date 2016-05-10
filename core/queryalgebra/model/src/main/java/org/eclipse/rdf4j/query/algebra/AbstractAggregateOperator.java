@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * Base class for shared functionality of aggregate operators (e.g. DISTINCT
- * setting)
+ * Base class for shared functionality of aggregate operators (e.g. DISTINCT setting)
  * 
  * @author Jeen Broekstra
  */
@@ -39,15 +38,16 @@ public abstract class AbstractAggregateOperator extends UnaryValueOperator imple
 		return this.distinct;
 	}
 
-    @Override
-    public int hashCode() {
-        int distHash = (isDistinct() ? 1 : 0);
-        if (arg == null) {
-            return 73 + distHash;
-        } else {
-            return arg.hashCode() + distHash;
-        }
-    }
+	@Override
+	public int hashCode() {
+		int distHash = (isDistinct() ? 1 : 0);
+		if (arg == null) {
+			return 73 + distHash;
+		}
+		else {
+			return arg.hashCode() + distHash;
+		}
+	}
 
 	@Override
 	public AbstractAggregateOperator clone() {

@@ -21,8 +21,9 @@ public interface Command {
 	 * 
 	 * @param parameters
 	 *        parameters typed by user
-	 * @throws IOException 
-	 * 	if a problem occurs reading or writing
+	 * @throws IOException
+	 *         if a problem occurs reading or writing
 	 */
-	void execute(String... parameters) throws IOException;
+	void execute(String... parameters)
+		throws IOException;
 }

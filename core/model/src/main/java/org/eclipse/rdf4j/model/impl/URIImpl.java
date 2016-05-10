@@ -11,8 +11,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 
 /**
  * @author Jeen Broekstra
- * @deprecated since 4.0. Use {@link SimpleIRI} instead for extending, and
- *             {@link ValueFactory} for instantiation.
+ * @deprecated since 4.0. Use {@link SimpleIRI} instead for extending, and {@link ValueFactory} for
+ *             instantiation.
  */
 @Deprecated
 public class URIImpl extends SimpleIRI {

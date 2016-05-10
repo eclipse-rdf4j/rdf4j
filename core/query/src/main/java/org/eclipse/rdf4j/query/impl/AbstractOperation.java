@@ -31,7 +31,6 @@ public abstract class AbstractOperation implements Operation {
 
 	private int maxExecutionTime = 0;
 
-
 	/*--------------*
 	 * Constructors *
 	 *--------------*/

@@ -294,8 +294,8 @@ public class SpinParser {
 		throws RDF4JException
 	{
 		List<IRI> nextRules = new ArrayList<IRI>();
-		CloseableIteration<? extends IRI, ? extends RDF4JException> iter = Statements.getObjectURIs(
-				ruleProp, SPIN.NEXT_RULE_PROPERTY_PROPERTY, store);
+		CloseableIteration<? extends IRI, ? extends RDF4JException> iter = Statements.getObjectURIs(ruleProp,
+				SPIN.NEXT_RULE_PROPERTY_PROPERTY, store);
 		try {
 			while (iter.hasNext()) {
 				nextRules.add(iter.next());
@@ -507,7 +507,7 @@ public class SpinParser {
 
 	private Template getTemplate(final IRI tmplUri, final IRI queryType, final Set<IRI> abstractTmpls,
 			final TripleSource store)
-				throws RDF4JException
+		throws RDF4JException
 	{
 		try {
 			return templateCache.get(tmplUri, new Callable<Template>() {
@@ -535,7 +535,7 @@ public class SpinParser {
 
 	private Template parseTemplateInternal(IRI tmplUri, IRI queryType, Set<IRI> abstractTmpls,
 			TripleSource store)
-				throws RDF4JException
+		throws RDF4JException
 	{
 		Set<IRI> possibleTmplTypes = new HashSet<IRI>();
 		CloseableIteration<? extends IRI, ? extends RDF4JException> typeIter = Statements.getObjectURIs(
@@ -620,7 +620,7 @@ public class SpinParser {
 
 	public org.eclipse.rdf4j.query.algebra.evaluation.function.Function parseFunction(IRI funcUri,
 			TripleSource store)
-				throws RDF4JException
+		throws RDF4JException
 	{
 		for (FunctionParser functionParser : functionParsers) {
 			org.eclipse.rdf4j.query.algebra.evaluation.function.Function function = functionParser.parse(

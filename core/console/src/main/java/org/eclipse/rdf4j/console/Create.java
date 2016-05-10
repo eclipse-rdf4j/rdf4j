@@ -96,7 +96,8 @@ public class Create implements Command {
 					final String configString = configTemplate.render(valueMap);
 					final Repository systemRepo = this.state.getManager().getSystemRepository();
 					final Model graph = new LinkedHashModel();
-					final RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, systemRepo.getValueFactory());
+					final RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE,
+							systemRepo.getValueFactory());
 					rdfParser.setRDFHandler(new StatementCollector(graph));
 					rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);
 					final Resource repositoryNode = Models.subject(
@@ -139,7 +140,7 @@ public class Create implements Command {
 
 	private boolean inputParameters(final Map<String, String> valueMap,
 			final Map<String, List<String>> variableMap, Map<String, String> multilineInput)
-				throws IOException
+		throws IOException
 	{
 		if (!variableMap.isEmpty()) {
 			consoleIO.writeln("Please specify values for the following variables:");
@@ -163,7 +164,8 @@ public class Create implements Command {
 				consoleIO.write(" [" + values.get(0) + "]");
 			}
 			consoleIO.write(": ");
-			String value = multilineInput.containsKey(var) ? consoleIO.readMultiLineInput() : consoleIO.readln();
+			String value = multilineInput.containsKey(var) ? consoleIO.readMultiLineInput()
+					: consoleIO.readln();
 			eof = (value == null);
 			if (eof) {
 				break; // for loop
@@ -179,7 +181,7 @@ public class Create implements Command {
 
 	private InputStream createTemplateStream(final String templateName, final String templateFileName,
 			final File templatesDir, final File templateFile)
-				throws FileNotFoundException
+		throws FileNotFoundException
 	{
 		InputStream templateStream = null;
 		if (templateFile.exists()) {

@@ -56,8 +56,7 @@ public class NamespacesTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Namespaces#asMap(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Namespaces#asMap(java.util.Set)}.
 	 */
 	@Test
 	public final void testAsMapEmpty() {
@@ -67,8 +66,7 @@ public class NamespacesTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Namespaces#asMap(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Namespaces#asMap(java.util.Set)}.
 	 */
 	@Test
 	public final void testAsMapOne() {
@@ -85,8 +83,7 @@ public class NamespacesTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Namespaces#asMap(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Namespaces#asMap(java.util.Set)}.
 	 */
 	@Test
 	public final void testAsMapMultiple() {
@@ -115,8 +112,7 @@ public class NamespacesTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
 	 */
 	@Test
 	public final void testWrapClear()
@@ -139,8 +135,7 @@ public class NamespacesTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
 	 */
 	@Test
 	public final void testWrapContainsKey()
@@ -161,8 +156,7 @@ public class NamespacesTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
 	 */
 	@Test
 	public final void testWrapContainsValue()
@@ -183,8 +177,7 @@ public class NamespacesTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
 	 */
 	@Test
 	public final void testWrapEntrySet()
@@ -215,8 +208,7 @@ public class NamespacesTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
 	 */
 	@Test
 	public final void testWrapGet()
@@ -234,8 +226,7 @@ public class NamespacesTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
 	 */
 	@Test
 	public final void testWrapIsEmpty()
@@ -253,8 +244,7 @@ public class NamespacesTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
 	 */
 	@Test
 	public final void testWrapKeySet()
@@ -284,8 +274,7 @@ public class NamespacesTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
 	 */
 	@Test
 	public final void testWrapPut()
@@ -327,8 +316,7 @@ public class NamespacesTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
 	 */
 	@Test
 	public final void testWrapPutAll()
@@ -386,8 +374,7 @@ public class NamespacesTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
 	 */
 	@Test
 	public final void testWrapRemove()
@@ -445,8 +432,7 @@ public class NamespacesTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Namespaces#wrap(java.util.Set)}.
 	 */
 	@Test
 	public final void testWrapValues()

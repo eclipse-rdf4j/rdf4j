@@ -16,8 +16,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 /**
  * Vocabulary constants for the Dublin Core Metadata Initiative Metadata Terms.
  * 
- * @see <a href="http://dublincore.org/documents/dcmi-terms/">DCMI Metadata
- *      Terms</a>
+ * @see <a href="http://dublincore.org/documents/dcmi-terms/">DCMI Metadata Terms</a>
  * @author Peter Ansell
  */
 public class DCTERMS {
@@ -33,8 +32,7 @@ public class DCTERMS {
 	public static final String PREFIX = "dcterms";
 
 	/**
-	 * An immutable {@link Namespace} constant that represents the Dublin Core
-	 * Terms namespace.
+	 * An immutable {@link Namespace} constant that represents the Dublin Core Terms namespace.
 	 */
 	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
 

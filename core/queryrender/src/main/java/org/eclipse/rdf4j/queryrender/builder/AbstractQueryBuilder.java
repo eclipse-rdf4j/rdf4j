@@ -288,7 +288,8 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 			final String theObj)
 	{
 		if (isConstruct()) {
-			mProjectionPatterns.add(new StatementPattern(new Var(theSubj), new Var(thePred), new Var(theObj)));
+			mProjectionPatterns.add(
+					new StatementPattern(new Var(theSubj), new Var(thePred), new Var(theObj)));
 		}
 
 		return this;
@@ -297,7 +298,8 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-	public QueryBuilder<T> addProjectionStatement(final String theSubj, final Value thePred, final Value theObj)
+	public QueryBuilder<T> addProjectionStatement(final String theSubj, final Value thePred,
+			final Value theObj)
 	{
 		if (isConstruct()) {
 			mProjectionPatterns.add(new StatementPattern(new Var(theSubj), GroupBuilder.valueToVar(thePred),

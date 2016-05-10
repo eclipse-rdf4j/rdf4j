@@ -27,8 +27,8 @@ import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 
 /**
- * An embedded http server for SPARQL query testing. Initializes a memory store
- * repository for each specified reposiotoryId.
+ * An embedded http server for SPARQL query testing. Initializes a memory store repository for each specified
+ * reposiotoryId.
  * 
  * @author Andreas Schwarte
  */
@@ -94,8 +94,8 @@ public class SPARQLEmbeddedServer {
 	public void stop()
 		throws Exception
 	{
-		Repository systemRepo = new HTTPRepository(Protocol.getRepositoryLocation(getServerUrl(),
-				SystemRepository.ID));
+		Repository systemRepo = new HTTPRepository(
+				Protocol.getRepositoryLocation(getServerUrl(), SystemRepository.ID));
 		RepositoryConnection con = systemRepo.getConnection();
 		try {
 			con.clear();
@@ -112,8 +112,8 @@ public class SPARQLEmbeddedServer {
 	private void createTestRepositories()
 		throws RepositoryException, RepositoryConfigException
 	{
-		Repository systemRep = new HTTPRepository(Protocol.getRepositoryLocation(getServerUrl(),
-				SystemRepository.ID));
+		Repository systemRep = new HTTPRepository(
+				Protocol.getRepositoryLocation(getServerUrl(), SystemRepository.ID));
 
 		// create a memory store for each provided repository id
 		for (String repId : repositoryIds) {

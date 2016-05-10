@@ -24,13 +24,11 @@ import org.eclipse.rdf4j.spin.Argument;
 import org.eclipse.rdf4j.spin.MalformedSpinException;
 import org.eclipse.rdf4j.spin.SpinParser;
 
+public class SpinFunctionParser implements FunctionParser {
 
-public class SpinFunctionParser implements FunctionParser
-{
 	private final SpinParser parser;
 
-	public SpinFunctionParser(SpinParser parser)
-	{
+	public SpinFunctionParser(SpinParser parser) {
 		this.parser = parser;
 	}
 
@@ -43,16 +41,16 @@ public class SpinFunctionParser implements FunctionParser
 			return null;
 		}
 		ParsedQuery query = parser.parseQuery((Resource)body, store);
-		if(query instanceof ParsedGraphQuery) {
+		if (query instanceof ParsedGraphQuery) {
 			throw new MalformedSpinException("Function body must be an ASK or SELECT query");
 		}
 
-		Map<IRI,Argument> templateArgs = parser.parseArguments(funcUri, store);
+		Map<IRI, Argument> templateArgs = parser.parseArguments(funcUri, store);
 
 		SpinFunction func = new SpinFunction(funcUri.stringValue());
 		func.setParsedQuery(query);
 		List<IRI> orderedArgs = SpinParser.orderArguments(templateArgs.keySet());
-		for(IRI IRI : orderedArgs) {
+		for (IRI IRI : orderedArgs) {
 			Argument arg = templateArgs.get(IRI);
 			func.addArgument(arg);
 		}

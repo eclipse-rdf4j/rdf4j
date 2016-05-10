@@ -89,7 +89,7 @@ public class TestQueryServlet {
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(false);
 		assertThat(servlet.getQueryText(request), is(equalTo("")));
 	}
-	
+
 	@Test
 	public void testGetQueryTextUnrecognizedRef()
 		throws BadRequestException, RDF4JException

@@ -29,15 +29,15 @@ public class DecimalFormat extends BinaryFunction {
 		if (!(arg1 instanceof Literal) || !(arg2 instanceof Literal)) {
 			throw new ValueExprEvaluationException("Both arguments must be literals");
 		}
-		Literal number = (Literal) arg1;
-		Literal format = (Literal) arg2;
+		Literal number = (Literal)arg1;
+		Literal format = (Literal)arg2;
 
 		java.text.DecimalFormat formatter = new java.text.DecimalFormat(format.getLabel());
 		String value;
-		if (XMLSchema.INT.equals(number.getDatatype())
-			|| XMLSchema.LONG.equals(number.getDatatype())
-			|| XMLSchema.SHORT.equals(number.getDatatype())
-			|| XMLSchema.BYTE.equals(number.getDatatype())) {
+		if (XMLSchema.INT.equals(number.getDatatype()) || XMLSchema.LONG.equals(number.getDatatype())
+				|| XMLSchema.SHORT.equals(number.getDatatype())
+				|| XMLSchema.BYTE.equals(number.getDatatype()))
+		{
 			value = formatter.format(number.longValue());
 		}
 		else if (XMLSchema.DECIMAL.equals(number.getDatatype())) {

@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.query.algebra;
 import java.util.Set;
 
 /**
- * A generalized projection (allowing the bindings to be renamed) on a tuple
- * expression.
+ * A generalized projection (allowing the bindings to be renamed) on a tuple expression.
  */
 public class Projection extends UnaryTupleOperator {
 
@@ -22,7 +21,7 @@ public class Projection extends UnaryTupleOperator {
 	private ProjectionElemList projElemList = new ProjectionElemList();
 
 	private Var projectionContext = null;
-	
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -117,7 +116,8 @@ public class Projection extends UnaryTupleOperator {
 	}
 
 	/**
-	 * @param projectionContext The projectionContext to set.
+	 * @param projectionContext
+	 *        The projectionContext to set.
 	 */
 	public void setProjectionContext(Var projectionContext) {
 		this.projectionContext = projectionContext;

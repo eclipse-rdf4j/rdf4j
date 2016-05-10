@@ -63,14 +63,15 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	{
 		System.err.println("temporarily disabled testTransactionIsolationForRead() for HTTPRepository");
 	}
-	
+
 	@Ignore("temporarily disabled for HTTPRepository")
 	@Test
 	@Override
 	public void testTransactionIsolationForReadWithDeleteOperation()
-	throws Exception 
+		throws Exception
 	{
-		System.err.println("temporarily disabled testTransactionIsolationForReadWithDeleteOperation() for HTTPRepository");
+		System.err.println(
+				"temporarily disabled testTransactionIsolationForReadWithDeleteOperation() for HTTPRepository");
 	}
 
 	@Ignore("temporarily disabled for HTTPRepository")
@@ -176,9 +177,8 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 		throws Exception
 	{
 		try {
-			testCon.add(
-					RepositoryConnectionTest.class.getResourceAsStream(TEST_DIR_PREFIX + "malformed-literals.ttl"),
-					"", RDFFormat.TURTLE);
+			testCon.add(RepositoryConnectionTest.class.getResourceAsStream(
+					TEST_DIR_PREFIX + "malformed-literals.ttl"), "", RDFFormat.TURTLE);
 		}
 		catch (RDF4JException e) {
 			fail("upload of malformed literals should not fail with error in default configuration for HTTPRepository");
@@ -191,7 +191,8 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	public void testAddMalformedLiteralsStrictConfig()
 		throws Exception
 	{
-		System.err.println("SES-1833: temporarily disabled testAddMalformedLiteralsStrictConfig() for HTTPRepository");
+		System.err.println(
+				"SES-1833: temporarily disabled testAddMalformedLiteralsStrictConfig() for HTTPRepository");
 	}
 
 }

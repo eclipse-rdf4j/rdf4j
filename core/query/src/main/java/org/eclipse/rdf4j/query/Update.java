@@ -8,8 +8,8 @@
 package org.eclipse.rdf4j.query;
 
 /**
- * An update operation on a repository that can be formulated in one of the
- * supported query languages (for example SPARQL).
+ * An update operation on a repository that can be formulated in one of the supported query languages (for
+ * example SPARQL).
  * 
  * @author Jeen
  */

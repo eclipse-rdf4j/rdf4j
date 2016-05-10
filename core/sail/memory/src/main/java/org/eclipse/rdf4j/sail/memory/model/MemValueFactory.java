@@ -25,8 +25,8 @@ import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
- * A factory for MemValue objects that keeps track of created objects to prevent
- * the creation of duplicate objects, minimizing memory usage as a result.
+ * A factory for MemValue objects that keeps track of created objects to prevent the creation of duplicate
+ * objects, minimizing memory usage as a result.
  * 
  * @author Arjohn Kampman
  * @author David Huynh
@@ -38,30 +38,26 @@ public class MemValueFactory extends AbstractValueFactory {
 	 *------------*/
 
 	/**
-	 * Registry containing the set of MemURI objects as used by a MemoryStore.
-	 * This registry enables the reuse of objects, minimizing the number of
-	 * objects in main memory.
+	 * Registry containing the set of MemURI objects as used by a MemoryStore. This registry enables the reuse
+	 * of objects, minimizing the number of objects in main memory.
 	 */
 	private final WeakObjectRegistry<MemIRI> uriRegistry = new WeakObjectRegistry<MemIRI>();
 
 	/**
-	 * Registry containing the set of MemBNode objects as used by a MemoryStore.
-	 * This registry enables the reuse of objects, minimizing the number of
-	 * objects in main memory.
+	 * Registry containing the set of MemBNode objects as used by a MemoryStore. This registry enables the
+	 * reuse of objects, minimizing the number of objects in main memory.
 	 */
 	private final WeakObjectRegistry<MemBNode> bnodeRegistry = new WeakObjectRegistry<MemBNode>();
 
 	/**
-	 * Registry containing the set of MemLiteral objects as used by a
-	 * MemoryStore. This registry enables the reuse of objects, minimizing the
-	 * number of objects in main memory.
+	 * Registry containing the set of MemLiteral objects as used by a MemoryStore. This registry enables the
+	 * reuse of objects, minimizing the number of objects in main memory.
 	 */
 	private final WeakObjectRegistry<MemLiteral> literalRegistry = new WeakObjectRegistry<MemLiteral>();
 
 	/**
-	 * Registry containing the set of namespce strings as used by MemURI objects
-	 * in a MemoryStore. This registry enables the reuse of objects, minimizing
-	 * the number of objects in main memory.
+	 * Registry containing the set of namespce strings as used by MemURI objects in a MemoryStore. This
+	 * registry enables the reuse of objects, minimizing the number of objects in main memory.
 	 */
 	private final WeakObjectRegistry<String> namespaceRegistry = new WeakObjectRegistry<String>();
 
@@ -77,15 +73,13 @@ public class MemValueFactory extends AbstractValueFactory {
 	}
 
 	/**
-	 * Returns a previously created MemValue that is equal to the supplied value,
-	 * or <tt>null</tt> if the supplied value is a new value or is equal to
-	 * <tt>null</tt>.
+	 * Returns a previously created MemValue that is equal to the supplied value, or <tt>null</tt> if the
+	 * supplied value is a new value or is equal to <tt>null</tt>.
 	 * 
 	 * @param value
 	 *        The MemValue equivalent of the supplied value, or <tt>null</tt>.
-	 * @return A previously created MemValue that is equal to <tt>value</tt>, or
-	 *         <tt>null</tt> if no such value exists or if <tt>value</tt> is
-	 *         equal to <tt>null</tt>.
+	 * @return A previously created MemValue that is equal to <tt>value</tt>, or <tt>null</tt> if no such
+	 *         value exists or if <tt>value</tt> is equal to <tt>null</tt>.
 	 */
 	public MemValue getMemValue(Value value) {
 		if (value instanceof Resource) {
@@ -157,8 +151,8 @@ public class MemValueFactory extends AbstractValueFactory {
 	}
 
 	/**
-	 * Checks whether the supplied value is an instance of <tt>MemValue</tt> and
-	 * whether it has been created by this MemValueFactory.
+	 * Checks whether the supplied value is an instance of <tt>MemValue</tt> and whether it has been created
+	 * by this MemValueFactory.
 	 */
 	private boolean isOwnMemValue(Value value) {
 		return value instanceof MemValue && ((MemValue)value).getCreator() == this;
@@ -167,9 +161,8 @@ public class MemValueFactory extends AbstractValueFactory {
 	/**
 	 * Gets all URIs that are managed by this value factory.
 	 * <p>
-	 * <b>Warning:</b> This method is not synchronized. To iterate over the
-	 * returned set in a thread-safe way, this method should only be called while
-	 * synchronizing on this object.
+	 * <b>Warning:</b> This method is not synchronized. To iterate over the returned set in a thread-safe way,
+	 * this method should only be called while synchronizing on this object.
 	 * 
 	 * @return An unmodifiable Set of MemURI objects.
 	 */
@@ -180,9 +173,8 @@ public class MemValueFactory extends AbstractValueFactory {
 	/**
 	 * Gets all bnodes that are managed by this value factory.
 	 * <p>
-	 * <b>Warning:</b> This method is not synchronized. To iterate over the
-	 * returned set in a thread-safe way, this method should only be called while
-	 * synchronizing on this object.
+	 * <b>Warning:</b> This method is not synchronized. To iterate over the returned set in a thread-safe way,
+	 * this method should only be called while synchronizing on this object.
 	 * 
 	 * @return An unmodifiable Set of MemBNode objects.
 	 */
@@ -193,9 +185,8 @@ public class MemValueFactory extends AbstractValueFactory {
 	/**
 	 * Gets all literals that are managed by this value factory.
 	 * <p>
-	 * <b>Warning:</b> This method is not synchronized. To iterate over the
-	 * returned set in a thread-safe way, this method should only be called while
-	 * synchronizing on this object.
+	 * <b>Warning:</b> This method is not synchronized. To iterate over the returned set in a thread-safe way,
+	 * this method should only be called while synchronizing on this object.
 	 * 
 	 * @return An unmodifiable Set of MemURI objects.
 	 */
@@ -204,10 +195,9 @@ public class MemValueFactory extends AbstractValueFactory {
 	}
 
 	/**
-	 * Gets or creates a MemValue for the supplied Value. If the factory already
-	 * contains a MemValue object that is equivalent to the supplied value then
-	 * this equivalent value will be returned. Otherwise a new MemValue will be
-	 * created, stored for future calls and then returned.
+	 * Gets or creates a MemValue for the supplied Value. If the factory already contains a MemValue object
+	 * that is equivalent to the supplied value then this equivalent value will be returned. Otherwise a new
+	 * MemValue will be created, stored for future calls and then returned.
 	 * 
 	 * @param value
 	 *        A Resource or Literal.

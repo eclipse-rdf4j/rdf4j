@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
- 
+
 package org.eclipse.rdf4j.common.net;
 
 import java.util.LinkedList;
@@ -13,50 +13,26 @@ import java.util.StringTokenizer;
 
 import org.eclipse.rdf4j.common.text.StringUtil;
 
-
 /**
- * A replacement for Java's own URI: java.net.URI. Java's implementation is
- * quite buggy in that it doesn't resolve relative URIs correctly.
+ * A replacement for Java's own URI: java.net.URI. Java's implementation is quite buggy in that it doesn't
+ * resolve relative URIs correctly.
  * <p>
- * Note: this implementation is not guaranteed to handle ipv6 addresses
- * correctly (yet).
+ * Note: this implementation is not guaranteed to handle ipv6 addresses correctly (yet).
  */
 public class ParsedURI implements java.lang.Cloneable {
 
-/*
-	// Tesing method
-	public static void main(String[] args)
-		throws Exception
-	{
-		URI baseURI = new URI(args[0]);
-		baseURI.normalize();
-
-		URI uri = null;
-
-		for (int i = 0; i < 100; i++) {
-			uri = baseURI.resolve(args[1]);
-		}
-
-		try { Thread.sleep(1000); } catch (Exception e) {}
-
-		long startTime = System.currentTimeMillis();
-		for (int i = 0; i < 100; i++) {
-			uri = baseURI.resolve(args[1]);
-		}
-		long endTime = System.currentTimeMillis();
-
-		System.out.println(args[0] + " was parsed as:");
-		System.out.println("scheme = " + uri.getScheme());
-		System.out.println("schemeSpecificPart = " + uri.getSchemeSpecificPart());
-		System.out.println("authority = " + uri.getAuthority());
-		System.out.println("path = " + uri.getPath());
-		System.out.println("query = " + uri.getQuery());
-		System.out.println("fragment = " + uri.getFragment());
-		System.out.println("full URI = " + uri.toString());
-
-		System.out.println(" parsed 100 times in " + (endTime-startTime) + "ms");
-	}
-*/
+	/*
+	 * // Tesing method public static void main(String[] args) throws Exception { URI baseURI = new
+	 * URI(args[0]); baseURI.normalize(); URI uri = null; for (int i = 0; i < 100; i++) { uri =
+	 * baseURI.resolve(args[1]); } try { Thread.sleep(1000); } catch (Exception e) {} long startTime =
+	 * System.currentTimeMillis(); for (int i = 0; i < 100; i++) { uri = baseURI.resolve(args[1]); } long
+	 * endTime = System.currentTimeMillis(); System.out.println(args[0] + " was parsed as:");
+	 * System.out.println("scheme = " + uri.getScheme()); System.out.println("schemeSpecificPart = " +
+	 * uri.getSchemeSpecificPart()); System.out.println("authority = " + uri.getAuthority());
+	 * System.out.println("path = " + uri.getPath()); System.out.println("query = " + uri.getQuery());
+	 * System.out.println("fragment = " + uri.getFragment()); System.out.println("full URI = " +
+	 * uri.toString()); System.out.println(" parsed 100 times in " + (endTime-startTime) + "ms"); }
+	 */
 
 	/*-----------*
 	 * Variables *
@@ -64,12 +40,16 @@ public class ParsedURI implements java.lang.Cloneable {
 
 	// For all URIs:
 	private String _scheme;
+
 	private String _schemeSpecificPart;
+
 	private String _fragment;
 
 	// For hierarchical URIs:
 	private String _authority;
+
 	private String _path;
+
 	private String _query;
 
 	/*--------------*
@@ -115,14 +95,10 @@ public class ParsedURI implements java.lang.Cloneable {
 	}
 
 	/**
-	 * Checks whether this URI is a relative URI that references itself (i.e. it
-	 * only contains an anchor).
+	 * Checks whether this URI is a relative URI that references itself (i.e. it only contains an anchor).
 	 */
 	public boolean isSelfReference() {
-		return _scheme == null
-			&& _authority == null
-			&& _query == null
-			&& _path.length() == 0;
+		return _scheme == null && _authority == null && _query == null && _path.length() == 0;
 	}
 
 	public String getScheme() {
@@ -154,11 +130,9 @@ public class ParsedURI implements java.lang.Cloneable {
 	 *------------------------------*/
 
 	/**
-	 * Normalizes the path of this URI if it has one. Normalizing a path means
-	 * that any unnecessary '.' and '..' segments are removed. For example, the
-	 * URI <tt>http://server.com/a/b/../c/./d</tt> would be normalized to
-	 * <tt>http://server.com/a/c/d</tt>. A URI doens't have a path if it is
-	 * opaque.
+	 * Normalizes the path of this URI if it has one. Normalizing a path means that any unnecessary '.' and
+	 * '..' segments are removed. For example, the URI <tt>http://server.com/a/b/../c/./d</tt> would be
+	 * normalized to <tt>http://server.com/a/c/d</tt>. A URI doens't have a path if it is opaque.
 	 */
 	public void normalize() {
 		if (_path == null) {
@@ -193,7 +167,7 @@ public class ParsedURI implements java.lang.Cloneable {
 		StringTokenizer st = new StringTokenizer(_path, "/");
 
 		while (st.hasMoreTokens()) {
-			segments.add( st.nextToken() );
+			segments.add(st.nextToken());
 		}
 
 		boolean lastSegmentRemoved = false;
@@ -236,7 +210,7 @@ public class ParsedURI implements java.lang.Cloneable {
 				i++;
 			}
 		}
-		
+
 		// Construct the normalized path
 
 		StringBuilder newPath = new StringBuilder(_path.length());
@@ -247,7 +221,7 @@ public class ParsedURI implements java.lang.Cloneable {
 
 		int segmentCount = segments.size();
 		for (i = 0; i < segmentCount - 1; i++) {
-			newPath.append( segments.get(i) );
+			newPath.append(segments.get(i));
 			newPath.append('/');
 		}
 
@@ -291,10 +265,7 @@ public class ParsedURI implements java.lang.Cloneable {
 		// relURI._scheme == null
 
 		// RFC, step 2:
-		if (relURI._authority == null &&
-			relURI._query == null &&
-			relURI._path.length() == 0)
-		{
+		if (relURI._authority == null && relURI._query == null && relURI._path.length() == 0) {
 			// Reference to this URI
 			ParsedURI result = (ParsedURI)this.clone();
 
@@ -506,7 +477,7 @@ public class ParsedURI implements java.lang.Cloneable {
 			int i = 2;
 			for (; i < s.length(); i++) {
 				char c = s.charAt(i);
-				if (c == '/' || c == '?' ||c == '#') {
+				if (c == '/' || c == '?' || c == '#') {
 					// c is equal to one of the illegal chars
 					break;
 				}

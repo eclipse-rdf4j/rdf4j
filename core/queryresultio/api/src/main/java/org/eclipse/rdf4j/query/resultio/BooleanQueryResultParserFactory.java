@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.query.resultio;
 
 /**
- * Returns {@link BooleanQueryResultParser}s for a specific boolean query
- * result format.
+ * Returns {@link BooleanQueryResultParser}s for a specific boolean query result format.
  * 
  * @author Arjohn Kampman
  */

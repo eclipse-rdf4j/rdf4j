@@ -39,17 +39,18 @@ public class NavigationTest {
 		assertEquals("system group should have 1 subgroup", 1, systemGroup.getGroups().size());
 		assertEquals("system group should have 2 views", 2, systemGroup.getViews().size());
 		View loggingView = systemGroup.getViews().get(1);
-		assertFalse("logging view should not be hidden", loggingView.isHidden());	
-		assertTrue("logging view should be enabled", loggingView.isEnabled());	
+		assertFalse("logging view should not be hidden", loggingView.isHidden());
+		assertTrue("logging view should be enabled", loggingView.isEnabled());
 		assertEquals("Path for logging is not correct", "/system/logging.view", loggingView.getPath());
-		assertEquals("Icon for logging is not correct", "/images/icons/system_logging.png", loggingView.getIcon());
+		assertEquals("Icon for logging is not correct", "/images/icons/system_logging.png",
+				loggingView.getIcon());
 		assertEquals("I18N for logging is not correct", "system.logging.title", loggingView.getI18n());
 		Group loggingGroup = systemGroup.getGroups().get(0);
-		assertEquals("logging subgroup should have 1 views", 1, loggingGroup.getViews().size());	
-		assertTrue("logging subgroup should be hidden", loggingGroup.isHidden());	
-		assertTrue("logging subgroup should be enabled", loggingGroup.isEnabled());	
+		assertEquals("logging subgroup should have 1 views", 1, loggingGroup.getViews().size());
+		assertTrue("logging subgroup should be hidden", loggingGroup.isHidden());
+		assertTrue("logging subgroup should be enabled", loggingGroup.isEnabled());
 		View loggingOverview = loggingGroup.getViews().get(0);
-		assertFalse("logging overview should be disabled", loggingOverview.isEnabled());	
+		assertFalse("logging overview should be disabled", loggingOverview.isEnabled());
 	}
 
 	@Test

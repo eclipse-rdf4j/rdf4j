@@ -41,8 +41,8 @@ import org.xml.sax.SAXException;
 import org.xml.sax.SAXParseException;
 
 /**
- * A parser that can parse RDF files that are in the <a
- * href="http://www.w3.org/2004/03/trix/">TriX format</a>.
+ * A parser that can parse RDF files that are in the <a href="http://www.w3.org/2004/03/trix/">TriX format</a>
+ * .
  * 
  * @author Arjohn Kampman
  */
@@ -53,16 +53,16 @@ public class TriXParser extends AbstractRDFParser {
 	 *--------------*/
 
 	/**
-	 * Creates a new TriXParser that will use a {@link SimpleValueFactory} to
-	 * create objects for resources, bNodes, literals and statements.
+	 * Creates a new TriXParser that will use a {@link SimpleValueFactory} to create objects for resources,
+	 * bNodes, literals and statements.
 	 */
 	public TriXParser() {
 		super();
 	}
 
 	/**
-	 * Creates a new TriXParser that will use the supplied ValueFactory to create
-	 * objects for resources, bNodes, literals and statements.
+	 * Creates a new TriXParser that will use the supplied ValueFactory to create objects for resources,
+	 * bNodes, literals and statements.
 	 * 
 	 * @param valueFactory
 	 *        A ValueFactory.
@@ -139,7 +139,7 @@ public class TriXParser extends AbstractRDFParser {
 		finally {
 			clear();
 		}
-		
+
 		if (rdfHandler != null) {
 			rdfHandler.endRDF();
 		}

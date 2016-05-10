@@ -42,8 +42,7 @@ public class QueryModelNodeReplacer extends AbstractQueryModelVisitor<RuntimeExc
 	}
 
 	@Override
-	public void meet(Filter node)
-	{
+	public void meet(Filter node) {
 		if (replacement == null) {
 			replaceNode(node, node.getArg());
 		}
@@ -58,8 +57,7 @@ public class QueryModelNodeReplacer extends AbstractQueryModelVisitor<RuntimeExc
 	}
 
 	@Override
-	protected void meetBinaryTupleOperator(BinaryTupleOperator node)
-	{
+	protected void meetBinaryTupleOperator(BinaryTupleOperator node) {
 		if (node.getLeftArg() == former) {
 			if (replacement == null) {
 				replaceNode(node, node.getRightArg());
@@ -80,8 +78,7 @@ public class QueryModelNodeReplacer extends AbstractQueryModelVisitor<RuntimeExc
 	}
 
 	@Override
-	protected void meetBinaryValueOperator(BinaryValueOperator node)
-	{
+	protected void meetBinaryValueOperator(BinaryValueOperator node) {
 		if (former == node.getLeftArg()) {
 			if (replacement == null) {
 				replaceNode(node, node.getRightArg());
@@ -102,8 +99,7 @@ public class QueryModelNodeReplacer extends AbstractQueryModelVisitor<RuntimeExc
 	}
 
 	@Override
-	protected void meetUnaryTupleOperator(UnaryTupleOperator node)
-	{
+	protected void meetUnaryTupleOperator(UnaryTupleOperator node) {
 		assert former == node.getArg();
 		if (replacement == null) {
 			removeNode(node);
@@ -114,8 +110,7 @@ public class QueryModelNodeReplacer extends AbstractQueryModelVisitor<RuntimeExc
 	}
 
 	@Override
-	protected void meetUnaryValueOperator(UnaryValueOperator node)
-	{
+	protected void meetUnaryValueOperator(UnaryValueOperator node) {
 		assert former == node.getArg();
 		if (replacement == null) {
 			removeNode(node);
@@ -126,8 +121,7 @@ public class QueryModelNodeReplacer extends AbstractQueryModelVisitor<RuntimeExc
 	}
 
 	@Override
-	protected void meetNode(QueryModelNode node)
-	{
+	protected void meetNode(QueryModelNode node) {
 		throw new IllegalArgumentException("Unhandled Node: " + node);
 	}
 }
