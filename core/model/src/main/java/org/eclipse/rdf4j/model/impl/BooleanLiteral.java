@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.model.impl;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
- * An extension of {@link SimpleLiteral} that stores a boolean value to avoid
- * parsing.
+ * An extension of {@link SimpleLiteral} that stores a boolean value to avoid parsing.
  * 
  * @author David Huynh
  * @author Arjohn Kampman
@@ -51,15 +50,13 @@ public class BooleanLiteral extends SimpleLiteral {
 	 *---------*/
 
 	@Override
-	public boolean booleanValue()
-	{
+	public boolean booleanValue() {
 		return value;
 	}
 
 	/**
-	 * Returns a {@link BooleanLiteral} for the specified value. This method
-	 * uses the constants {@link #TRUE} and {@link #FALSE} as result values,
-	 * preventing the often unnecessary creation of new
+	 * Returns a {@link BooleanLiteral} for the specified value. This method uses the constants {@link #TRUE}
+	 * and {@link #FALSE} as result values, preventing the often unnecessary creation of new
 	 * {@link BooleanLiteral} objects.
 	 */
 	public static BooleanLiteral valueOf(boolean value) {

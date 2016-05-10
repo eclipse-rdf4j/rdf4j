@@ -49,9 +49,10 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 
 		try {
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter;
-			
+
 			SailConnection sailCon = getConnection().getSailConnection();
-			bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
+			bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(),
+					getIncludeInferred());
 
 			// Filters out all partial and invalid matches
 			bindingsIter = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter) {
@@ -66,7 +67,7 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 							&& (context == null || context instanceof Resource);
 				}
 			};
-			
+
 			bindingsIter = enforceMaxQueryTime(bindingsIter);
 
 			// Convert the BindingSet objects to actual RDF statements

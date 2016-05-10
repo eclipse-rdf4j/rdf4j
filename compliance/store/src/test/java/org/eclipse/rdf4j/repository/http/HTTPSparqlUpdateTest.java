@@ -48,7 +48,7 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 	{
 		server.stop();
 	}
-	
+
 	@Override
 	protected Repository newRepository()
 		throws Exception
@@ -83,30 +83,30 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 			con.begin();
 			Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update1.toString());
 			operation.setBinding("x", bob);
-			
 
 			operation.execute();
 
 			con.commit();
-		
+
 			// only bob's name should have been deleted (due to the binding)
 			assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true));
 			assertTrue(con.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true));
 
 		}
 		catch (Exception e) {
-			if(con.isActive()) {
+			if (con.isActive()) {
 				con.rollback();
 			}
 		}
 	}
-	
+
 	@Ignore
 	@Test
 	@Override
 	public void testConsecutiveUpdatesInSameTransaction() {
 		// transaction isolation is not supported for HTTP connections. disabling
 		// test.
-		System.err.println("temporarily disabled testConsecutiveUpdatesInSameTransaction() for HTTPRepository. See SES-1652");
+		System.err.println(
+				"temporarily disabled testConsecutiveUpdatesInSameTransaction() for HTTPRepository. See SES-1652");
 	}
 }

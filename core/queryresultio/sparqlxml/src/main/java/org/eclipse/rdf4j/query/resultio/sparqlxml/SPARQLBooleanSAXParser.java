@@ -13,7 +13,6 @@ import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstan
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.RESULT_SET_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.RESULT_TAG;
 
-
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.xml.SimpleSAXAdapter;
@@ -33,13 +32,17 @@ class SPARQLBooleanSAXParser extends SimpleSAXAdapter {
 	 *---------*/
 
 	@Override
-	public void startTag(String tagName, Map<String, String> atts, String text) throws SAXException {
+	public void startTag(String tagName, Map<String, String> atts, String text)
+		throws SAXException
+	{
 		if (BOOLEAN_TAG.equals(tagName)) {
 			if (BOOLEAN_TRUE.equalsIgnoreCase(text)) {
 				value = true;
-			} else if (BOOLEAN_FALSE.equalsIgnoreCase(text)) {
+			}
+			else if (BOOLEAN_FALSE.equalsIgnoreCase(text)) {
 				value = false;
-			} else {
+			}
+			else {
 				throw new SAXException("Illegal value for element " + BOOLEAN_TAG + ": " + text);
 			}
 		}
@@ -51,7 +54,9 @@ class SPARQLBooleanSAXParser extends SimpleSAXAdapter {
 	}
 
 	@Override
-	public void endDocument() throws SAXException {
+	public void endDocument()
+		throws SAXException
+	{
 		if (value == null) {
 			throw new SAXException("Malformed document, " + BOOLEAN_TAG + " element not found");
 		}

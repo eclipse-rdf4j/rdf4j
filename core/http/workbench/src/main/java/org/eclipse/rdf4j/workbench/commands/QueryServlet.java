@@ -96,14 +96,20 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	/**
-	 * @return the names of the cookies that will be retrieved from the request,
-	 *         and returned in the response
+	 * @return the names of the cookies that will be retrieved from the request, and returned in the response
 	 */
 	@Override
 	public String[] getCookieNames() {
 		String[] result;
 		if (writeQueryCookie) {
-			result = new String[] { QUERY, REF, LIMIT, QUERY_LN, INFER, "total_result_count", "show-datatypes" };
+			result = new String[] {
+					QUERY,
+					REF,
+					LIMIT,
+					QUERY_LN,
+					INFER,
+					"total_result_count",
+					"show-datatypes" };
 		}
 		else {
 			result = new String[] { REF, LIMIT, QUERY_LN, INFER, "total_result_count", "show-datatypes" };
@@ -140,12 +146,10 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	/**
-	 * Long query strings could blow past the Tomcat default 8k HTTP header limit
-	 * if stuffed into a cookie. In this case, we need to set a flag to avoid
-	 * this happening before
-	 * {@link TransformationServlet#service(HttpServletRequest, HttpServletResponse)}
-	 * is called. A much lower limit on the size of the query text is used to
-	 * stay well below the Tomcat limitation.
+	 * Long query strings could blow past the Tomcat default 8k HTTP header limit if stuffed into a cookie. In
+	 * this case, we need to set a flag to avoid this happening before
+	 * {@link TransformationServlet#service(HttpServletRequest, HttpServletResponse)} is called. A much lower
+	 * limit on the size of the query text is used to stay well below the Tomcat limitation.
 	 */
 	@Override
 	public final void service(final HttpServletRequest req, final HttpServletResponse resp)
@@ -157,8 +161,8 @@ public class QueryServlet extends TransformationServlet {
 
 	/**
 	 * <p>
-	 * Determines if the servlet should write out the query text into a cookie as
-	 * received, or write it's hash instead.
+	 * Determines if the servlet should write out the query text into a cookie as received, or write it's hash
+	 * instead.
 	 * </p>
 	 * <p>
 	 * Note: This is a separate method for testing purposes.
@@ -240,8 +244,10 @@ public class QueryServlet extends TransformationServlet {
 		}
 		else if ("edit".equals(action)) {
 			if (canReadSavedQuery(req)) {
-				/* only need read access for edit action, since we are only reading the saved query text
-				   to present it in the editor */
+				/*
+				 * only need read access for edit action, since we are only reading the saved query text to
+				 * present it in the editor
+				 */
 				final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 				builder.transform(xslPath, "query.xsl");
 				builder.start(EDIT_PARAMS);
@@ -294,7 +300,8 @@ public class QueryServlet extends TransformationServlet {
 				final int rowsPerPage = Integer.valueOf(req.getParameter(LIMIT));
 				if (existed) {
 					final IRI query = storage.selectSavedQuery(http, userName, queryName);
-					storage.updateQuery(query, userName, shared, queryLanguage, queryText, infer, rowsPerPage);
+					storage.updateQuery(query, userName, shared, queryLanguage, queryText, infer,
+							rowsPerPage);
 				}
 				else {
 					storage.saveQuery(http, queryName, userName, shared, queryLanguage, queryText, infer,
@@ -327,7 +334,8 @@ public class QueryServlet extends TransformationServlet {
 				ext = format.get().getDefaultFileExtension();
 			}
 			else {
-				final Optional<QueryResultFormat> tupleFormat = QueryResultIO.getWriterFormatForMIMEType(accept);
+				final Optional<QueryResultFormat> tupleFormat = QueryResultIO.getWriterFormatForMIMEType(
+						accept);
 
 				if (tupleFormat.isPresent()) {
 					result = tupleFormat.get().getDefaultMIMEType();
@@ -354,7 +362,7 @@ public class QueryServlet extends TransformationServlet {
 
 	private void service(final WorkbenchRequest req, final HttpServletResponse resp, final OutputStream out,
 			final String xslPath)
-				throws BadRequestException, RDF4JException, UnsupportedQueryResultFormatException, IOException
+		throws BadRequestException, RDF4JException, UnsupportedQueryResultFormatException, IOException
 	{
 		final RepositoryConnection con = repository.getConnection();
 		con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
@@ -393,8 +401,8 @@ public class QueryServlet extends TransformationServlet {
 	/**
 	 * @param req
 	 *        for looking at the request parameters
-	 * @return the query text, if it can somehow be retrieved from request
-	 *         parameters, otherwise an empty string
+	 * @return the query text, if it can somehow be retrieved from request parameters, otherwise an empty
+	 *         string
 	 * @throws BadRequestException
 	 *         if a problem occurs grabbing the request from storage
 	 * @throws RDF4JException
@@ -440,12 +448,10 @@ public class QueryServlet extends TransformationServlet {
 		throws BadRequestException, RDF4JException
 	{
 		if (req.isParameterPresent(REF)) {
-			return "id".equals(req.getParameter(REF))
-					? storage.canRead(
-							storage.selectSavedQuery((HTTPRepository)repository,
-									getUserNameFromParameter(req, "owner"), req.getParameter(QUERY)),
-							getUserNameFromParameter(req, SERVER_USER))
-					: true;
+			return "id".equals(req.getParameter(REF)) ? storage.canRead(
+					storage.selectSavedQuery((HTTPRepository)repository,
+							getUserNameFromParameter(req, "owner"), req.getParameter(QUERY)),
+					getUserNameFromParameter(req, SERVER_USER)) : true;
 		}
 		else {
 			throw new BadRequestException("Expected 'ref' parameter in request.");

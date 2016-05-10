@@ -13,6 +13,7 @@ import java.io.IOException;
  * A bulk updater that updates documents one-by-one.
  */
 public class SimpleBulkUpdater implements BulkUpdater {
+
 	private final AbstractSearchIndex index;
 
 	public SimpleBulkUpdater(AbstractSearchIndex index) {
@@ -20,17 +21,23 @@ public class SimpleBulkUpdater implements BulkUpdater {
 	}
 
 	@Override
-	public void add(SearchDocument doc) throws IOException {
+	public void add(SearchDocument doc)
+		throws IOException
+	{
 		index.addDocument(doc);
 	}
 
 	@Override
-	public void update(SearchDocument doc) throws IOException {
+	public void update(SearchDocument doc)
+		throws IOException
+	{
 		index.updateDocument(doc);
 	}
 
 	@Override
-	public void delete(SearchDocument doc) throws IOException {
+	public void delete(SearchDocument doc)
+		throws IOException
+	{
 		index.deleteDocument(doc);
 	}
 

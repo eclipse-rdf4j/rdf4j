@@ -50,8 +50,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 
 /**
- * Writer for the binary tuple result format. The format is explained in
- * {@link BinaryQueryResultConstants}.
+ * Writer for the binary tuple result format. The format is explained in {@link BinaryQueryResultConstants}.
  * 
  * @author Arjohn Kampman
  */
@@ -69,8 +68,8 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	private CharsetEncoder charsetEncoder = Charset.forName("UTF-8").newEncoder();
 
 	/**
-	 * Map containing the namespace IDs (Integer objects) that have been defined
-	 * in the document, stored using the concerning namespace (Strings).
+	 * Map containing the namespace IDs (Integer objects) that have been defined in the document, stored using
+	 * the concerning namespace (Strings).
 	 */
 	private Map<String, Integer> namespaceTable = new HashMap<String, Integer>(32);
 
@@ -200,7 +199,8 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 						writeLiteral((Literal)value);
 					}
 					else {
-						throw new TupleQueryResultHandlerException("Unknown Value object type: " + value.getClass());
+						throw new TupleQueryResultHandlerException(
+								"Unknown Value object type: " + value.getClass());
 					}
 				}
 

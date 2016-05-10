@@ -26,23 +26,25 @@ public class BuildURI implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+	public Value evaluate(ValueFactory valueFactory, Value... args)
+		throws ValueExprEvaluationException
+	{
 		if (args.length < 1) {
 			throw new ValueExprEvaluationException("Incorrect number of arguments");
 		}
 		if (!(args[0] instanceof Literal)) {
 			throw new ValueExprEvaluationException("First argument must be a string");
 		}
-		Literal s = (Literal) args[0];
+		Literal s = (Literal)args[0];
 		String tmpl = s.getLabel();
 		Map<String, String> mappings = new HashMap<String, String>(args.length);
-		for (int i=1; i<args.length; i++) {
+		for (int i = 1; i < args.length; i++) {
 			mappings.put(Integer.toString(i), args[i].stringValue());
 		}
 		String newValue = StrSubstitutor.replace(tmpl, mappings, "{?", "}");
-		if (tmpl.charAt(0) == '<' && tmpl.charAt(tmpl.length()-1) == '>') {
-			return valueFactory.createURI(newValue.substring(1, newValue.length()-1));
+		if (tmpl.charAt(0) == '<' && tmpl.charAt(tmpl.length() - 1) == '>') {
+			return valueFactory.createURI(newValue.substring(1, newValue.length() - 1));
 		}
-		throw new ValueExprEvaluationException("Invalid URI template: "+tmpl);
+		throw new ValueExprEvaluationException("Invalid URI template: " + tmpl);
 	}
 }

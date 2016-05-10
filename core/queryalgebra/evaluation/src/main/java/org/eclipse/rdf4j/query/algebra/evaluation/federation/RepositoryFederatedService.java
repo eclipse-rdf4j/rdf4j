@@ -42,8 +42,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Federated Service wrapping the {@link Repository} to communicate with a
- * SPARQL endpoint.
+ * Federated Service wrapping the {@link Repository} to communicate with a SPARQL endpoint.
  * 
  * @author Andreas Schwarte
  */
@@ -52,10 +51,9 @@ public class RepositoryFederatedService implements FederatedService {
 	final static Logger logger = LoggerFactory.getLogger(RepositoryFederatedService.class);
 
 	/**
-	 * A convenience iteration for SERVICE expression which evaluates
-	 * intermediate results in batches and manages all results. Uses
-	 * {@link JoinExecutorBase} facilities to guarantee correct access to the
-	 * final results
+	 * A convenience iteration for SERVICE expression which evaluates intermediate results in batches and
+	 * manages all results. Uses {@link JoinExecutorBase} facilities to guarantee correct access to the final
+	 * results
 	 * 
 	 * @author as
 	 */
@@ -69,8 +67,9 @@ public class RepositoryFederatedService implements FederatedService {
 		 * @param inputBindings
 		 * @throws QueryEvaluationException
 		 */
-		public BatchingServiceIteration(CloseableIteration<BindingSet, QueryEvaluationException> inputBindings,
-				int blockSize, Service service)
+		public BatchingServiceIteration(
+				CloseableIteration<BindingSet, QueryEvaluationException> inputBindings, int blockSize,
+				Service service)
 			throws QueryEvaluationException
 		{
 			super(inputBindings, null, EmptyBindingSet.getInstance());
@@ -99,7 +98,7 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	protected final Repository rep;
-	
+
 	// flag indicating whether the repository shall be closed in #shutdown()
 	protected boolean shutDown = true;
 
@@ -107,17 +106,17 @@ public class RepositoryFederatedService implements FederatedService {
 
 	/**
 	 * @param repo
-	 * 			the repository to be used
+	 *        the repository to be used
 	 */
 	public RepositoryFederatedService(Repository repo) {
 		this(repo, true);
 	}
-	
+
 	/**
 	 * @param repo
-	 * 			the repository to be used
+	 *        the repository to be used
 	 * @param shutDown
-	 * 			a flag indicating whether the repository shall be closed in {@link #shutdown()}
+	 *        a flag indicating whether the repository shall be closed in {@link #shutdown()}
 	 */
 	public RepositoryFederatedService(Repository repo, boolean shutDown) {
 		super();
@@ -126,9 +125,8 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	/**
-	 * Evaluate the provided sparqlQueryString at the initialized
-	 * {@link Repository} of this {@link FederatedService}. Insert bindings
-	 * into SELECT query and evaluate
+	 * Evaluate the provided sparqlQueryString at the initialized {@link Repository} of this
+	 * {@link FederatedService}. Insert bindings into SELECT query and evaluate
 	 */
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service,
@@ -157,15 +155,14 @@ public class RepositoryFederatedService implements FederatedService {
 			throw new QueryEvaluationException(e);
 		}
 		catch (RepositoryException e) {
-			throw new QueryEvaluationException("Repository for endpoint " + rep.toString()
-					+ " could not be initialized.", e);
+			throw new QueryEvaluationException(
+					"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
 		}
 	}
 
 	/**
-	 * Evaluate the provided sparqlQueryString at the initialized
-	 * {@link Repository} of this {@link FederatedService}. Insert
-	 * bindings, send ask query and return final result
+	 * Evaluate the provided sparqlQueryString at the initialized {@link Repository} of this
+	 * {@link FederatedService}. Insert bindings, send ask query and return final result
 	 */
 	@Override
 	public boolean ask(Service service, BindingSet bindings, String baseUri)
@@ -190,8 +187,8 @@ public class RepositoryFederatedService implements FederatedService {
 			throw new QueryEvaluationException(e);
 		}
 		catch (RepositoryException e) {
-			throw new QueryEvaluationException("Repository for endpoint " + rep.toString()
-					+ " could not be initialized.", e);
+			throw new QueryEvaluationException(
+					"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
 		}
 	}
 
@@ -218,10 +215,9 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	/**
-	 * Evaluate the SPARQL query that can be constructed from the SERVICE node at
-	 * the initialized {@link Repository} of this {@link FederatedService}.
-	 * Use specified bindings as constraints to the query. Try to evaluate using
-	 * BINDINGS clause, if this yields an exception fall back to the naive
+	 * Evaluate the SPARQL query that can be constructed from the SERVICE node at the initialized
+	 * {@link Repository} of this {@link FederatedService}. Use specified bindings as constraints to the
+	 * query. Try to evaluate using BINDINGS clause, if this yields an exception fall back to the naive
 	 * implementation. This method deals with SILENT SERVICEs.
 	 */
 	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateInternal(Service service,
@@ -264,7 +260,8 @@ public class RepositoryFederatedService implements FederatedService {
 
 			String queryString = service.getSelectQueryString(projectionVars);
 
-			List<String> relevantBindingNames = getRelevantBindingNames(allBindings, service.getServiceVars());
+			List<String> relevantBindingNames = getRelevantBindingNames(allBindings,
+					service.getServiceVars());
 
 			if (relevantBindingNames.size() != 0) {
 				// append the VALUES clause to the query
@@ -275,7 +272,7 @@ public class RepositoryFederatedService implements FederatedService {
 			TupleQueryResult res = null;
 			try {
 				query.setMaxQueryTime(60); // TODO how to retrieve max query value
-													// from actual setting?
+											// from actual setting?
 				res = query.evaluate();
 			}
 			catch (QueryEvaluationException q) {
@@ -290,10 +287,10 @@ public class RepositoryFederatedService implements FederatedService {
 
 			if (relevantBindingNames.size() == 0)
 				result = new CrossProductIteration(res, allBindings); // cross
-																									// product
+																	// product
 			else
 				result = new ServiceJoinConversionIteration(res, allBindings); // common
-																									// join
+																			// join
 
 			result = service.isSilent() ? new SilentIteration(result) : result;
 			return result;
@@ -303,8 +300,8 @@ public class RepositoryFederatedService implements FederatedService {
 			Iterations.closeCloseable(result);
 			if (service.isSilent())
 				return new CollectionIteration<BindingSet, QueryEvaluationException>(allBindings);
-			throw new QueryEvaluationException("Repository for endpoint " + rep.toString()
-					+ " could not be initialized.", e);
+			throw new QueryEvaluationException(
+					"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
 		}
 		catch (MalformedQueryException e) {
 			// this exception must not be silenced, bug in our code
@@ -396,17 +393,15 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	/**
-	 * Compute the relevant binding names using the variables occuring in the
-	 * service expression and the input bindings. The idea is find all variables
-	 * which need to be projected in the subquery, i.e. those that will not be
-	 * bound by an input binding.
+	 * Compute the relevant binding names using the variables occuring in the service expression and the input
+	 * bindings. The idea is find all variables which need to be projected in the subquery, i.e. those that
+	 * will not be bound by an input binding.
 	 * <p>
 	 * If the resulting list is empty, the cross product needs to be formed.
 	 * 
 	 * @param bindings
 	 * @param serviceVars
-	 * @return the list of relevant bindings (if empty: the cross product needs
-	 *         to be formed)
+	 * @return the list of relevant bindings (if empty: the cross product needs to be formed)
 	 */
 	private List<String> getRelevantBindingNames(List<BindingSet> bindings, Set<String> serviceVars) {
 
@@ -423,15 +418,13 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	/**
-	 * Computes the VALUES clause for the set of relevant input bindings. The
-	 * VALUES clause is attached to a subquery for block-nested-loop evaluation.
-	 * Implementation note: we use a special binding to mark the rowIndex of the
-	 * input binding.
+	 * Computes the VALUES clause for the set of relevant input bindings. The VALUES clause is attached to a
+	 * subquery for block-nested-loop evaluation. Implementation note: we use a special binding to mark the
+	 * rowIndex of the input binding.
 	 * 
 	 * @param bindings
 	 * @param relevantBindingNames
-	 * @return a string with the VALUES clause for the given set of relevant
-	 *         input bindings
+	 * @return a string with the VALUES clause for the given set of relevant input bindings
 	 * @throws QueryEvaluationException
 	 */
 	private String buildVALUESClause(List<BindingSet> bindings, List<String> relevantBindingNames)
@@ -451,8 +444,8 @@ public class RepositoryFederatedService implements FederatedService {
 		for (BindingSet b : bindings) {
 			sb.append(" (");
 			sb.append("\"").append(rowIdx++).append("\" "); // identification of
-																			// the row for post
-																			// processing
+															// the row for post
+															// processing
 			for (String bName : relevantBindingNames) {
 				appendValueAsString(sb, b.getValue(bName)).append(" ");
 			}

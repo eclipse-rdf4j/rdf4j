@@ -29,21 +29,21 @@ public final class Statements {
 	private Statements() {
 	}
 
-	public static Iteration<? extends Resource, QueryEvaluationException> listResources(final Resource subj, final TripleSource store)
-			throws QueryEvaluationException
+	public static Iteration<? extends Resource, QueryEvaluationException> listResources(final Resource subj,
+			final TripleSource store)
+		throws QueryEvaluationException
 	{
 		return new ConvertingIteration<Value, Resource, QueryEvaluationException>(
 				new FilterIteration<Value, QueryEvaluationException>(list(subj, store))
-				{
+		{
 
 					@Override
 					protected boolean accept(Value v)
 						throws QueryEvaluationException
-					{
+			{
 						return (v instanceof Resource);
 					}
-				})
-		{
+				}) {
 
 			@Override
 			protected Resource convert(Value v)
@@ -54,13 +54,15 @@ public final class Statements {
 		};
 	}
 
-	public static Iteration<? extends Value, QueryEvaluationException> list(final Resource subj, final TripleSource store)
+	public static Iteration<? extends Value, QueryEvaluationException> list(final Resource subj,
+			final TripleSource store)
 		throws QueryEvaluationException
 	{
-		if(subj == null) {
+		if (subj == null) {
 			throw new NullPointerException("RDF list subject cannot be null");
 		}
-		return new Iteration<Value,QueryEvaluationException>() {
+		return new Iteration<Value, QueryEvaluationException>() {
+
 			Resource list = subj;
 
 			@Override
@@ -75,12 +77,12 @@ public final class Statements {
 				throws QueryEvaluationException
 			{
 				Value v = singleValue(list, RDF.FIRST, store);
-				if(v == null) {
-					throw new QueryEvaluationException("List missing rdf:first: "+list);
+				if (v == null) {
+					throw new QueryEvaluationException("List missing rdf:first: " + list);
 				}
-				Resource nextList = (Resource) singleValue(list, RDF.REST, store);
-				if(nextList == null) {
-					throw new QueryEvaluationException("List missing rdf:rest: "+list);
+				Resource nextList = (Resource)singleValue(list, RDF.REST, store);
+				if (nextList == null) {
+					throw new QueryEvaluationException("List missing rdf:rest: " + list);
 				}
 				list = nextList;
 				return v;
@@ -107,8 +109,8 @@ public final class Statements {
 				return ((Literal)v).booleanValue();
 			}
 			catch (IllegalArgumentException e) {
-				throw new QueryEvaluationException("Value for " + pred
-						+ " must be of datatype " + XMLSchema.BOOLEAN + ": " + subj);
+				throw new QueryEvaluationException(
+						"Value for " + pred + " must be of datatype " + XMLSchema.BOOLEAN + ": " + subj);
 			}
 		}
 		else {
@@ -133,8 +135,8 @@ public final class Statements {
 			if (stmts.hasNext()) {
 				stmt = stmts.next();
 				if (stmts.hasNext()) {
-					throw new QueryEvaluationException("Multiple statements for pattern: " + subj + " " + pred
-							+ " " + obj);
+					throw new QueryEvaluationException(
+							"Multiple statements for pattern: " + subj + " " + pred + " " + obj);
 				}
 			}
 			else {
@@ -152,18 +154,17 @@ public final class Statements {
 		throws QueryEvaluationException
 	{
 		return new ConvertingIteration<Statement, IRI, QueryEvaluationException>(
-				new FilterIteration<Statement, QueryEvaluationException>(store.getStatements(null, predicate,
-						object))
+				new FilterIteration<Statement, QueryEvaluationException>(
+						store.getStatements(null, predicate, object))
 				{
 
 					@Override
 					protected boolean accept(Statement stmt)
 						throws QueryEvaluationException
-					{
+				{
 						return (stmt.getSubject() instanceof IRI);
 					}
-				})
-		{
+				}) {
 
 			@Override
 			protected IRI convert(Statement stmt)
@@ -179,18 +180,17 @@ public final class Statements {
 		throws QueryEvaluationException
 	{
 		return new ConvertingIteration<Statement, Resource, QueryEvaluationException>(
-				new FilterIteration<Statement, QueryEvaluationException>(store.getStatements(subject, predicate,
-						null))
+				new FilterIteration<Statement, QueryEvaluationException>(
+						store.getStatements(subject, predicate, null))
 				{
 
 					@Override
 					protected boolean accept(Statement stmt)
 						throws QueryEvaluationException
-					{
+				{
 						return (stmt.getObject() instanceof Resource);
 					}
-				})
-		{
+				}) {
 
 			@Override
 			protected Resource convert(Statement stmt)
@@ -206,18 +206,17 @@ public final class Statements {
 		throws QueryEvaluationException
 	{
 		return new ConvertingIteration<Statement, IRI, QueryEvaluationException>(
-				new FilterIteration<Statement, QueryEvaluationException>(store.getStatements(subject, predicate,
-						null))
+				new FilterIteration<Statement, QueryEvaluationException>(
+						store.getStatements(subject, predicate, null))
 				{
 
 					@Override
 					protected boolean accept(Statement stmt)
 						throws QueryEvaluationException
-					{
+				{
 						return (stmt.getObject() instanceof IRI);
 					}
-				})
-		{
+				}) {
 
 			@Override
 			protected IRI convert(Statement stmt)
@@ -233,18 +232,17 @@ public final class Statements {
 		throws QueryEvaluationException
 	{
 		return new ConvertingIteration<Statement, Literal, QueryEvaluationException>(
-				new FilterIteration<Statement, QueryEvaluationException>(store.getStatements(subject, predicate,
-						null))
+				new FilterIteration<Statement, QueryEvaluationException>(
+						store.getStatements(subject, predicate, null))
 				{
 
 					@Override
 					protected boolean accept(Statement stmt)
 						throws QueryEvaluationException
-					{
+				{
 						return (stmt.getObject() instanceof Literal);
 					}
-				})
-		{
+				}) {
 
 			@Override
 			protected Literal convert(Statement stmt)

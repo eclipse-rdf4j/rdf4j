@@ -16,15 +16,20 @@ import org.eclipse.rdf4j.spin.QueryContext;
 public class QueryContextIteration implements CloseableIteration<BindingSet, QueryEvaluationException> {
 
 	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
+
 	private final QueryPreparer queryPreparer;
 
-	public QueryContextIteration(CloseableIteration<? extends BindingSet, QueryEvaluationException> iter, QueryPreparer queryPreparer) {
+	public QueryContextIteration(CloseableIteration<? extends BindingSet, QueryEvaluationException> iter,
+			QueryPreparer queryPreparer)
+	{
 		this.iter = iter;
 		this.queryPreparer = queryPreparer;
 	}
 
 	@Override
-	public boolean hasNext() throws QueryEvaluationException {
+	public boolean hasNext()
+		throws QueryEvaluationException
+	{
 		QueryContext qctx = QueryContext.begin(queryPreparer);
 		try {
 			return iter.hasNext();
@@ -35,7 +40,9 @@ public class QueryContextIteration implements CloseableIteration<BindingSet, Que
 	}
 
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
+	public BindingSet next()
+		throws QueryEvaluationException
+	{
 		QueryContext qctx = QueryContext.begin(queryPreparer);
 		try {
 			return iter.next();
@@ -46,7 +53,9 @@ public class QueryContextIteration implements CloseableIteration<BindingSet, Que
 	}
 
 	@Override
-	public void remove() throws QueryEvaluationException {
+	public void remove()
+		throws QueryEvaluationException
+	{
 		QueryContext qctx = QueryContext.begin(queryPreparer);
 		try {
 			iter.remove();
@@ -57,7 +66,9 @@ public class QueryContextIteration implements CloseableIteration<BindingSet, Que
 	}
 
 	@Override
-	public void close() throws QueryEvaluationException {
+	public void close()
+		throws QueryEvaluationException
+	{
 		QueryContext qctx = QueryContext.begin(queryPreparer);
 		try {
 			iter.close();

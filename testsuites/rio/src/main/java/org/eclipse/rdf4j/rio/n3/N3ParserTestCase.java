@@ -37,8 +37,8 @@ import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
- * JUnit test for the N3 parser that uses the tests that are available <a
- * href="http://www.w3.org/2000/10/swap/test/n3parser.tests">online</a>.
+ * JUnit test for the N3 parser that uses the tests that are available
+ * <a href="http://www.w3.org/2000/10/swap/test/n3parser.tests">online</a>.
  */
 public abstract class N3ParserTestCase {
 
@@ -76,7 +76,7 @@ public abstract class N3ParserTestCase {
 				+ "USING NAMESPACE n3test = <http://www.w3.org/2004/11/n3test#>";
 
 		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
-		while(queryResult.hasNext()) {
+		while (queryResult.hasNext()) {
 			BindingSet bindingSet = queryResult.next();
 			String testURI = bindingSet.getValue("testURI").toString();
 			String inputURL = bindingSet.getValue("inputURL").toString();
@@ -88,14 +88,13 @@ public abstract class N3ParserTestCase {
 		queryResult.close();
 
 		// Add all negative parser tests to the test suite
-		query = "SELECT testURI, inputURL "
-				+ "FROM {testURI} rdf:type {n3test:NegativeParserTest}; "
+		query = "SELECT testURI, inputURL " + "FROM {testURI} rdf:type {n3test:NegativeParserTest}; "
 				+ "               n3test:inputDocument {inputURL} "
 				+ "USING NAMESPACE n3test = <http://www.w3.org/2004/11/n3test#>";
 
 		queryResult = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
 
-		while(queryResult.hasNext()) {
+		while (queryResult.hasNext()) {
 			BindingSet bindingSet = queryResult.next();
 			String testURI = bindingSet.getValue("testURI").toString();
 			String inputURL = bindingSet.getValue("inputURL").toString();
@@ -249,7 +248,8 @@ public abstract class N3ParserTestCase {
 	} // end inner class NegativeParserTest
 
 	private static URL url(String uri)
-			throws MalformedURLException {
+		throws MalformedURLException
+	{
 		if (!uri.startsWith("injar:"))
 			return new URL(uri);
 		int start = uri.indexOf(':') + 3;
@@ -258,7 +258,8 @@ public abstract class N3ParserTestCase {
 		try {
 			String jar = URLDecoder.decode(encoded, "UTF-8");
 			return new URL("jar:" + jar + '!' + uri.substring(end));
-		} catch (UnsupportedEncodingException e) {
+		}
+		catch (UnsupportedEncodingException e) {
 			throw new AssertionError(e);
 		}
 	}
@@ -272,7 +273,8 @@ public abstract class N3ParserTestCase {
 		try {
 			String encoded = URLEncoder.encode(jar, "UTF-8");
 			return "injar://" + encoded + uri.substring(end + 1);
-		} catch (UnsupportedEncodingException e) {
+		}
+		catch (UnsupportedEncodingException e) {
 			throw new AssertionError(e);
 		}
 	}

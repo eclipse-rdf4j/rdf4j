@@ -14,8 +14,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterFactory;
 
 /**
- * A {@link BooleanQueryResultWriterFactory} for writers of plain text boolean
- * query results.
+ * A {@link BooleanQueryResultWriterFactory} for writers of plain text boolean query results.
  * 
  * @author Arjohn Kampman
  */

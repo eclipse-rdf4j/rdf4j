@@ -16,8 +16,8 @@ import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * An extension of the {@link SailConnection} interface offering methods that
- * can be used by inferencers to store and remove inferred statements.
+ * An extension of the {@link SailConnection} interface offering methods that can be used by inferencers to
+ * store and remove inferred statements.
  */
 public interface InferencerConnection extends NotifyingSailConnection {
 
@@ -31,9 +31,8 @@ public interface InferencerConnection extends NotifyingSailConnection {
 	 * @param obj
 	 *        The object of the statement to add.
 	 * @param contexts
-	 *        The context(s) to add the statement to. Note that this parameter is
-	 *        a vararg and as such is optional. If no contexts are supplied the
-	 *        method operates on the entire repository.
+	 *        The context(s) to add the statement to. Note that this parameter is a vararg and as such is
+	 *        optional. If no contexts are supplied the method operates on the entire repository.
 	 * @throws SailException
 	 *         If the statement could not be added.
 	 * @throws IllegalStateException
@@ -53,9 +52,8 @@ public interface InferencerConnection extends NotifyingSailConnection {
 	 * @param obj
 	 *        The object of the statement that should be removed.
 	 * @param contexts
-	 *        The context(s) from which to remove the statements. Note that this
-	 *        parameter is a vararg and as such is optional. If no contexts are
-	 *        supplied the method operates on the entire repository.
+	 *        The context(s) from which to remove the statements. Note that this parameter is a vararg and as
+	 *        such is optional. If no contexts are supplied the method operates on the entire repository.
 	 * @throws SailException
 	 *         If the statement could not be removed.
 	 * @throws IllegalStateException
@@ -66,13 +64,12 @@ public interface InferencerConnection extends NotifyingSailConnection {
 		throws SailException;
 
 	/**
-	 * Removes all inferred statements from the specified/all contexts. If no
-	 * contexts are specified the method operates on the entire repository.
+	 * Removes all inferred statements from the specified/all contexts. If no contexts are specified the
+	 * method operates on the entire repository.
 	 * 
 	 * @param contexts
-	 *        The context(s) from which to remove the statements. Note that this
-	 *        parameter is a vararg and as such is optional. If no contexts are
-	 *        supplied the method operates on the entire repository.
+	 *        The context(s) from which to remove the statements. Note that this parameter is a vararg and as
+	 *        such is optional. If no contexts are supplied the method operates on the entire repository.
 	 * @throws SailException
 	 *         If the statements could not be removed.
 	 * @throws IllegalStateException
@@ -82,8 +79,8 @@ public interface InferencerConnection extends NotifyingSailConnection {
 		throws SailException;
 
 	/**
-	 * Flushes any pending updates to be processed and the resulting changes to
-	 * be reported to registered {@link SailConnectionListener}s.
+	 * Flushes any pending updates to be processed and the resulting changes to be reported to registered
+	 * {@link SailConnectionListener}s.
 	 * 
 	 * @throws SailException
 	 *         If the updates could not be processed.

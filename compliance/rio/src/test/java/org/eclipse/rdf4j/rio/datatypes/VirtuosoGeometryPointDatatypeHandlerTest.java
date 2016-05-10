@@ -17,8 +17,7 @@ import org.eclipse.rdf4j.rio.datatypes.AbstractDatatypeHandlerTest;
 import org.eclipse.rdf4j.rio.datatypes.VirtuosoGeometryDatatypeHandler;
 
 /**
- * Test for {@link VirtuosoDatatypeHandler} with
- * http://www.openlinksw.com/schemas/virtrdf#Geometry .
+ * Test for {@link VirtuosoDatatypeHandler} with http://www.openlinksw.com/schemas/virtrdf#Geometry .
  * 
  * @author Peter Ansell
  */
@@ -46,9 +45,9 @@ public class VirtuosoGeometryPointDatatypeHandlerTest extends AbstractDatatypeHa
 
 	@Override
 	protected Literal getNormalisedLiteralForRecognisedDatatypeAndValue() {
-		return SimpleValueFactory.getInstance().createLiteral(
-				"POINT(123.0000 143.000)",
-				SimpleValueFactory.getInstance().createIRI("http://www.openlinksw.com/schemas/virtrdf#", "Geometry"));
+		return SimpleValueFactory.getInstance().createLiteral("POINT(123.0000 143.000)",
+				SimpleValueFactory.getInstance().createIRI("http://www.openlinksw.com/schemas/virtrdf#",
+						"Geometry"));
 	}
 
 	// -------------------------------------

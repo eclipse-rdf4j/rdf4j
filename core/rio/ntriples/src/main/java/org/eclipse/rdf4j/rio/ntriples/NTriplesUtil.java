@@ -26,8 +26,8 @@ import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
 public class NTriplesUtil {
 
 	/**
-	 * Parses an N-Triples value, creates an object for it using the supplied
-	 * ValueFactory and returns this object.
+	 * Parses an N-Triples value, creates an object for it using the supplied ValueFactory and returns this
+	 * object.
 	 * 
 	 * @param nTriplesValue
 	 *        The N-Triples value to parse.
@@ -55,8 +55,8 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Parses an N-Triples resource, creates an object for it using the supplied
-	 * ValueFactory and returns this object.
+	 * Parses an N-Triples resource, creates an object for it using the supplied ValueFactory and returns this
+	 * object.
 	 * 
 	 * @param nTriplesResource
 	 *        The N-Triples resource to parse.
@@ -81,8 +81,8 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Parses an N-Triples URI, creates an object for it using the supplied
-	 * ValueFactory and returns this object.
+	 * Parses an N-Triples URI, creates an object for it using the supplied ValueFactory and returns this
+	 * object.
 	 * 
 	 * @param nTriplesURI
 	 *        The N-Triples URI to parse.
@@ -106,8 +106,8 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Parses an N-Triples bNode, creates an object for it using the supplied
-	 * ValueFactory and returns this object.
+	 * Parses an N-Triples bNode, creates an object for it using the supplied ValueFactory and returns this
+	 * object.
 	 * 
 	 * @param nTriplesBNode
 	 *        The N-Triples bNode to parse.
@@ -129,8 +129,8 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Parses an N-Triples literal, creates an object for it using the supplied
-	 * ValueFactory and returns this object.
+	 * Parses an N-Triples literal, creates an object for it using the supplied ValueFactory and returns this
+	 * object.
 	 * 
 	 * @param nTriplesLiteral
 	 *        The N-Triples literal to parse.
@@ -152,7 +152,8 @@ public class NTriplesUtil {
 				int startDtIdx = nTriplesLiteral.indexOf("^^", endLabelIdx);
 
 				if (startLangIdx != -1 && startDtIdx != -1) {
-					throw new IllegalArgumentException("Literals can not have both a language and a datatype");
+					throw new IllegalArgumentException(
+							"Literals can not have both a language and a datatype");
 				}
 
 				// Get label
@@ -180,11 +181,10 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Finds the end of the label in a literal string. This method takes into
-	 * account that characters can be escaped using backslashes.
+	 * Finds the end of the label in a literal string. This method takes into account that characters can be
+	 * escaped using backslashes.
 	 * 
-	 * @return The index of the double quote ending the label, or <tt>-1</tt> if
-	 *         it could not be found.
+	 * @return The index of the double quote ending the label, or <tt>-1</tt> if it could not be found.
 	 */
 	private static int findEndOfLabel(String nTriplesLiteral) {
 		// First character of literal is guaranteed to be a double
@@ -221,15 +221,14 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Creates an N-Triples string for the supplied value. If the supplied value
-	 * is a {@link Literal}, it optionally ignores the xsd:string datatype, since
-	 * this datatype is implicit in RDF-1.1.
+	 * Creates an N-Triples string for the supplied value. If the supplied value is a {@link Literal}, it
+	 * optionally ignores the xsd:string datatype, since this datatype is implicit in RDF-1.1.
 	 * 
 	 * @param value
 	 *        The value to write.
 	 * @param xsdStringToPlainLiteral
-	 *        True to omit serialising the xsd:string datatype and false to
-	 *        always serialise the datatype for literals.
+	 *        True to omit serialising the xsd:string datatype and false to always serialise the datatype for
+	 *        literals.
 	 */
 	public static String toNTriplesString(Value value, boolean xsdStringToPlainLiteral) {
 		if (value instanceof Resource) {
@@ -253,17 +252,17 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Appends the N-Triples representation of the given {@link Value} to the
-	 * given {@link Appendable}, optionally not serialising the datatype a
-	 * {@link Literal} with the xsd:string datatype as it is implied for RDF-1.1.
+	 * Appends the N-Triples representation of the given {@link Value} to the given {@link Appendable},
+	 * optionally not serialising the datatype a {@link Literal} with the xsd:string datatype as it is implied
+	 * for RDF-1.1.
 	 * 
 	 * @param value
 	 *        The value to write.
 	 * @param appendable
 	 *        The object to append to.
 	 * @param xsdStringToPlainLiteral
-	 *        True to omit serialising the xsd:string datatype and false to
-	 *        always serialise the datatype for literals.
+	 *        True to omit serialising the xsd:string datatype and false to always serialise the datatype for
+	 *        literals.
 	 * @throws IOException
 	 */
 	public static void append(Value value, Appendable appendable, boolean xsdStringToPlainLiteral,
@@ -377,14 +376,14 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Creates an N-Triples string for the supplied literal, optionally ignoring
-	 * the xsd:string datatype as it is implied for RDF-1.1.
+	 * Creates an N-Triples string for the supplied literal, optionally ignoring the xsd:string datatype as it
+	 * is implied for RDF-1.1.
 	 * 
 	 * @param lit
 	 *        The literal to write.
 	 * @param xsdStringToPlainLiteral
-	 *        True to omit serialising the xsd:string datatype and false to
-	 *        always serialise the datatype for literals.
+	 *        True to omit serialising the xsd:string datatype and false to always serialise the datatype for
+	 *        literals.
 	 */
 	public static String toNTriplesString(Literal lit, boolean xsdStringToPlainLiteral) {
 		try {
@@ -406,17 +405,16 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Appends the N-Triples representation of the given {@link Literal} to the
-	 * given {@link Appendable}, optionally ignoring the xsd:string datatype as
-	 * it is implied for RDF-1.1.
+	 * Appends the N-Triples representation of the given {@link Literal} to the given {@link Appendable},
+	 * optionally ignoring the xsd:string datatype as it is implied for RDF-1.1.
 	 * 
 	 * @param lit
 	 *        The literal to write.
 	 * @param appendable
 	 *        The object to append to.
 	 * @param xsdStringToPlainLiteral
-	 *        True to omit serialising the xsd:string datatype and false to
-	 *        always serialise the datatype for literals.
+	 *        True to omit serialising the xsd:string datatype and false to always serialise the datatype for
+	 *        literals.
 	 * @throws IOException
 	 */
 	public static void append(Literal lit, Appendable appendable, boolean xsdStringToPlainLiteral)
@@ -446,8 +444,7 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Checks whether the supplied character is a letter or number according to
-	 * the N-Triples specification.
+	 * Checks whether the supplied character is a letter or number according to the N-Triples specification.
 	 * 
 	 * @see #isLetter
 	 * @see #isNumber
@@ -457,8 +454,8 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Checks whether the supplied character is a letter according to the
-	 * N-Triples specification. N-Triples letters are A - Z and a - z.
+	 * Checks whether the supplied character is a letter according to the N-Triples specification. N-Triples
+	 * letters are A - Z and a - z.
 	 */
 	public static boolean isLetter(int c) {
 		return (c >= 65 && c <= 90) || // A - Z
@@ -466,18 +463,17 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Checks whether the supplied character is a number according to the
-	 * N-Triples specification. N-Triples numbers are 0 - 9.
+	 * Checks whether the supplied character is a number according to the N-Triples specification. N-Triples
+	 * numbers are 0 - 9.
 	 */
 	public static boolean isNumber(int c) {
 		return (c >= 48 && c <= 57); // 0 - 9
 	}
 
 	/**
-	 * Escapes a Unicode string to an all-ASCII character sequence. Any special
-	 * characters are escaped using backslashes (<tt>"</tt> becomes <tt>\"</tt>,
-	 * etc.), and non-ascii/non-printable characters are escaped using Unicode
-	 * escapes (<tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>).
+	 * Escapes a Unicode string to an all-ASCII character sequence. Any special characters are escaped using
+	 * backslashes (<tt>"</tt> becomes <tt>\"</tt>, etc.), and non-ascii/non-printable characters are escaped
+	 * using Unicode escapes (<tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>).
 	 */
 	public static String escapeString(String label) {
 		try {
@@ -491,10 +487,9 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Escapes a Unicode string to an all-ASCII character sequence. Any special
-	 * characters are escaped using backslashes (<tt>"</tt> becomes <tt>\"</tt>,
-	 * etc.), and non-ascii/non-printable characters are escaped using Unicode
-	 * escapes (<tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>).
+	 * Escapes a Unicode string to an all-ASCII character sequence. Any special characters are escaped using
+	 * backslashes (<tt>"</tt> becomes <tt>\"</tt>, etc.), and non-ascii/non-printable characters are escaped
+	 * using Unicode escapes (<tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>).
 	 * 
 	 * @throws IOException
 	 */
@@ -505,11 +500,10 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Escapes a Unicode string to an N-Triples compatible character sequence.
-	 * Any special characters are escaped using backslashes (<tt>"</tt> becomes
-	 * <tt>\"</tt>, etc.), and non-ascii/non-printable characters are escaped
-	 * using Unicode escapes (<tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>)
-	 * if the option is selected.
+	 * Escapes a Unicode string to an N-Triples compatible character sequence. Any special characters are
+	 * escaped using backslashes (<tt>"</tt> becomes <tt>\"</tt>, etc.), and non-ascii/non-printable
+	 * characters are escaped using Unicode escapes (<tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>) if the
+	 * option is selected.
 	 * 
 	 * @throws IOException
 	 */
@@ -564,17 +558,15 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Unescapes an escaped Unicode string. Any Unicode sequences (
-	 * <tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>) are restored to the
-	 * value indicated by the hexadecimal argument and any backslash-escapes (
-	 * <tt>\"</tt>, <tt>\\</tt>, etc.) are decoded to their original form.
+	 * Unescapes an escaped Unicode string. Any Unicode sequences ( <tt>&#x5C;uxxxx</tt> and
+	 * <tt>&#x5C;Uxxxxxxxx</tt>) are restored to the value indicated by the hexadecimal argument and any
+	 * backslash-escapes ( <tt>\"</tt>, <tt>\\</tt>, etc.) are decoded to their original form.
 	 * 
 	 * @param s
 	 *        An escaped Unicode string.
 	 * @return The unescaped string.
 	 * @throws IllegalArgumentException
-	 *         If the supplied string is not a correctly escaped N-Triples
-	 *         string.
+	 *         If the supplied string is not a correctly escaped N-Triples string.
 	 */
 	public static String unescapeString(String s) {
 		int backSlashIdx = s.indexOf('\\');
@@ -643,7 +635,8 @@ public class NTriplesUtil {
 					startIdx = backSlashIdx + 6;
 				}
 				catch (NumberFormatException e) {
-					throw new IllegalArgumentException("Illegal Unicode escape sequence '\\u" + xx + "' in: " + s);
+					throw new IllegalArgumentException(
+							"Illegal Unicode escape sequence '\\u" + xx + "' in: " + s);
 				}
 			}
 			else if (c == 'U') {
@@ -658,9 +651,10 @@ public class NTriplesUtil {
 					sb.append(Character.toChars(codePoint));
 
 					startIdx = backSlashIdx + 10;
- 				}
+				}
 				catch (NumberFormatException e) {
-					throw new IllegalArgumentException("Illegal Unicode escape sequence '\\U" + xx + "' in: " + s);
+					throw new IllegalArgumentException(
+							"Illegal Unicode escape sequence '\\U" + xx + "' in: " + s);
 				}
 			}
 			else {
@@ -676,8 +670,7 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Converts a decimal value to a hexadecimal string represention of the
-	 * specified length.
+	 * Converts a decimal value to a hexadecimal string represention of the specified length.
 	 * 
 	 * @param decimal
 	 *        A decimal value.

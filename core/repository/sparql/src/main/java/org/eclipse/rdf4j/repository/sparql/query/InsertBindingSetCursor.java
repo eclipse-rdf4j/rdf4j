@@ -18,20 +18,21 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * 
  * @author James Leigh
  */
-public class InsertBindingSetCursor extends
-		IterationWrapper<BindingSet, QueryEvaluationException> {
+public class InsertBindingSetCursor extends IterationWrapper<BindingSet, QueryEvaluationException> {
 
 	private BindingSet bindings;
 
-	public InsertBindingSetCursor(
-			CloseableIteration<BindingSet, QueryEvaluationException> delegate,
-			BindingSet bindings) {
+	public InsertBindingSetCursor(CloseableIteration<BindingSet, QueryEvaluationException> delegate,
+			BindingSet bindings)
+	{
 		super(delegate);
 		this.bindings = bindings;
 	}
 
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
+	public BindingSet next()
+		throws QueryEvaluationException
+	{
 		BindingSet next = super.next();
 		if (next == null) {
 			return null;

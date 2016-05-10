@@ -20,9 +20,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A registry that stores services by some key. Upon initialization, the
- * registry searches for service description files at
- * <tt>META-INF/services/&lt;service class name&gt;</tt> and initializes itself
+ * A registry that stores services by some key. Upon initialization, the registry searches for service
+ * description files at <tt>META-INF/services/&lt;service class name&gt;</tt> and initializes itself
  * accordingly.
  * 
  * @see javax.imageio.spi.ServiceRegistry
@@ -63,14 +62,13 @@ public abstract class ServiceRegistry<K, S> {
 	}
 
 	/**
-	 * Adds a service to the registry. Any service that is currently registered
-	 * for the same key (as specified by {@link #getKey(Object)}) will be
-	 * replaced with the new service.
+	 * Adds a service to the registry. Any service that is currently registered for the same key (as specified
+	 * by {@link #getKey(Object)}) will be replaced with the new service.
 	 * 
 	 * @param service
 	 *        The service that should be added to the registry.
-	 * @return The previous service that was registered for the same key, or
-	 *         {@link Optional#empty()} if there was no such service.
+	 * @return The previous service that was registered for the same key, or {@link Optional#empty()} if there
+	 *         was no such service.
 	 */
 	public Optional<S> add(S service) {
 		return Optional.ofNullable(services.put(getKey(service), service));
@@ -91,8 +89,7 @@ public abstract class ServiceRegistry<K, S> {
 	 * 
 	 * @param key
 	 *        The key identifying which service to get.
-	 * @return The service for the specified key, or {@link Optional#empty()} if
-	 *         no such service is avaiable.
+	 * @return The service for the specified key, or {@link Optional#empty()} if no such service is avaiable.
 	 */
 	public Optional<S> get(K key) {
 		return Optional.ofNullable(services.get(key));
@@ -103,8 +100,7 @@ public abstract class ServiceRegistry<K, S> {
 	 * 
 	 * @param key
 	 *        The key identifying which service to search for.
-	 * @return <tt>true</tt> if a service for the specific key is available,
-	 *         <tt>false</tt> otherwise.
+	 * @return <tt>true</tt> if a service for the specific key is available, <tt>false</tt> otherwise.
 	 */
 	public boolean has(K key) {
 		return services.containsKey(key);

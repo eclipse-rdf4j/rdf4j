@@ -52,7 +52,6 @@ public class BTreeBenchmark {
 		FileUtil.deleteDir(dir);
 	}
 
-
 	@Test
 	public void testAddAscending()
 		throws Exception

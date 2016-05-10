@@ -14,8 +14,7 @@ import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.contextaware.ContextAwareRepository;
 
 /**
- * A {@link RepositoryFactory} that creates {@link ContextAwareRepository}s
- * based on RDF configuration data.
+ * A {@link RepositoryFactory} that creates {@link ContextAwareRepository}s based on RDF configuration data.
  * 
  * @author James Leigh
  */
@@ -64,7 +63,7 @@ public class ContextAwareFactory implements RepositoryFactory {
 			repo.setRemoveContexts(config.getRemoveContexts());
 			repo.setArchiveContexts(config.getArchiveContexts());
 			repo.setInsertContext(config.getInsertContext());
-			
+
 			return repo;
 		}
 

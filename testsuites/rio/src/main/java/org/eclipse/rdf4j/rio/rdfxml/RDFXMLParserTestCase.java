@@ -47,9 +47,8 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.xml.sax.SAXException;
 
 /**
- * JUnit test for the RDF/XML parser that uses the test manifest that is
- * available <a
- * href="http://www.w3.org/2000/10/rdf-tests/rdfcore/Manifest.rdf">online</a>.
+ * JUnit test for the RDF/XML parser that uses the test manifest that is available
+ * <a href="http://www.w3.org/2000/10/rdf-tests/rdfcore/Manifest.rdf">online</a>.
  */
 public abstract class RDFXMLParserTestCase {
 
@@ -108,7 +107,8 @@ public abstract class RDFXMLParserTestCase {
 
 		// Add all negative parser tests
 		query = "select TESTCASE, INPUT " + "from {TESTCASE} rdf:type {test:NegativeParserTest}; "
-				+ "                test:inputDocument {INPUT}; " + "                test:status {\"APPROVED\"} "
+				+ "                test:inputDocument {INPUT}; "
+				+ "                test:status {\"APPROVED\"} "
 				+ "using namespace test = <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>";
 		queryResult = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
 		while (queryResult.hasNext()) {

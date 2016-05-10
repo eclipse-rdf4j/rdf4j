@@ -14,8 +14,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterFactory;
 
 /**
- * A {@link BooleanQueryResultWriterFactory} for writers of SPARQL/JSON query
- * boolean results.
+ * A {@link BooleanQueryResultWriterFactory} for writers of SPARQL/JSON query boolean results.
  * 
  * @author Peter Ansell
  */

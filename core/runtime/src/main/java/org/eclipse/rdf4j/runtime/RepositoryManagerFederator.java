@@ -41,8 +41,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Utility class for handling the details of federating "user repositories"
- * managed by a {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}.
+ * Utility class for handling the details of federating "user repositories" managed by a
+ * {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}.
  * 
  * @author Dale Visser
  */
@@ -55,12 +55,12 @@ public class RepositoryManagerFederator {
 	private final ValueFactory valueFactory;
 
 	/**
-	 * Create an instance capable of federating "user repositories" within the
-	 * given {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}.
+	 * Create an instance capable of federating "user repositories" within the given
+	 * {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}.
 	 * 
 	 * @param manager
-	 *        must manage the repositories to be added to new federations, and
-	 *        becomes the manager of any created federations
+	 *        must manage the repositories to be added to new federations, and becomes the manager of any
+	 *        created federations
 	 */
 	public RepositoryManagerFederator(RepositoryManager manager) {
 		this.manager = manager;
@@ -68,10 +68,8 @@ public class RepositoryManagerFederator {
 	}
 
 	/**
-	 * Adds a new repository to the
-	 * {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}, which is a
-	 * federation of the given repository id's, which must also refer to
-	 * repositories already managed by the
+	 * Adds a new repository to the {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}, which is a
+	 * federation of the given repository id's, which must also refer to repositories already managed by the
 	 * {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}.
 	 * 
 	 * @param fedID
@@ -79,22 +77,20 @@ public class RepositoryManagerFederator {
 	 * @param description
 	 *        the desired description for the new federation repository
 	 * @param members
-	 *        the identifiers of the repositories to federate, which must already
-	 *        exist and be managed by the
+	 *        the identifiers of the repositories to federate, which must already exist and be managed by the
 	 *        {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}
 	 * @param readonly
 	 *        whether the federation is read-only
 	 * @param distinct
 	 *        whether the federation enforces distinct results from its members
 	 * @throws MalformedURLException
-	 *         if the {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}
-	 *         has a malformed location
+	 *         if the {@link org.eclipse.rdf4j.repository.manager.RepositoryManager} has a malformed location
 	 * @throws RDF4JException
 	 *         if a problem otherwise occurs while creating the federation
 	 */
 	public void addFed(String fedID, String description, Collection<String> members, boolean readonly,
 			boolean distinct)
-				throws MalformedURLException, RDF4JException
+		throws MalformedURLException, RDF4JException
 	{
 		if (members.contains(fedID)) {
 			throw new RepositoryConfigException(
@@ -104,7 +100,8 @@ public class RepositoryManagerFederator {
 		BNode fedRepoNode = valueFactory.createBNode();
 		LOGGER.debug("Federation repository root node: {}", fedRepoNode);
 		addToGraph(graph, fedRepoNode, RDF.TYPE, RepositoryConfigSchema.REPOSITORY);
-		addToGraph(graph, fedRepoNode, RepositoryConfigSchema.REPOSITORYID, valueFactory.createLiteral(fedID));
+		addToGraph(graph, fedRepoNode, RepositoryConfigSchema.REPOSITORYID,
+				valueFactory.createLiteral(fedID));
 		addToGraph(graph, fedRepoNode, RDFS.LABEL, valueFactory.createLiteral(description));
 		RepositoryConnection con = manager.getSystemRepository().getConnection();
 		try {
@@ -120,7 +117,7 @@ public class RepositoryManagerFederator {
 
 	private void addImplementation(Collection<String> members, Model graph, BNode fedRepoNode,
 			RepositoryConnection con, boolean readonly, boolean distinct)
-				throws RDF4JException, MalformedURLException
+		throws RDF4JException, MalformedURLException
 	{
 		BNode implRoot = valueFactory.createBNode();
 		addToGraph(graph, fedRepoNode, RepositoryConfigSchema.REPOSITORYIMPL, implRoot);
@@ -131,7 +128,7 @@ public class RepositoryManagerFederator {
 
 	private void addSail(Collection<String> members, Model graph, BNode implRoot, RepositoryConnection con,
 			boolean readonly, boolean distinct)
-				throws RDF4JException, MalformedURLException
+		throws RDF4JException, MalformedURLException
 	{
 		BNode sailRoot = valueFactory.createBNode();
 		addToGraph(graph, implRoot, SailRepositorySchema.SAILIMPL, sailRoot);

@@ -135,7 +135,7 @@ public class FileLogReader extends AbstractLogReader {
 			do {
 				log.seek(byteOffset--);
 				currentByte = log.readByte();
-				if(currentByte != '\n' && currentByte != '\r') {
+				if (currentByte != '\n' && currentByte != '\r') {
 					bytesRead.add(0, currentByte);
 				}
 			}
@@ -151,10 +151,10 @@ public class FileLogReader extends AbstractLogReader {
 			byte[] lineBytes = new byte[bytesRead.size()];
 			int index = 0;
 			Iterator<Byte> byteIt = bytesRead.iterator();
-			while(byteIt.hasNext()) {
+			while (byteIt.hasNext()) {
 				lineBytes[index] = byteIt.next();
 				index++;
-			}	
+			}
 			String lastLine = new String(lineBytes, "UTF-8");
 
 			if (lastLine != null) {

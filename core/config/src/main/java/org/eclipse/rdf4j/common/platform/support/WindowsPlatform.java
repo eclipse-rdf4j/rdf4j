@@ -25,8 +25,7 @@ public class WindowsPlatform extends AbstractPlatform {
 	public static final String ADUNA_APPLICATION_DATA = "RDF4J";
 
 	/**
-	 * indication whether this is a windows9x platform: 0 means not initialized,
-	 * -1 means false, 1 means true
+	 * indication whether this is a windows9x platform: 0 means not initialized, -1 means false, 1 means true
 	 */
 	private int isWin9x = 0;
 
@@ -82,8 +81,7 @@ public class WindowsPlatform extends AbstractPlatform {
 	}
 
 	/**
-	 * Returns an application data directory in the "Application Data" userdir of
-	 * Windows.
+	 * Returns an application data directory in the "Application Data" userdir of Windows.
 	 */
 	public File getOSApplicationDataDir() {
 		File result = new File(getUserHome(), APPLICATION_DATA);

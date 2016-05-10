@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * Checks whether a language tag (e.g. "en-US") matches some language range
- * (e.g. "en" or "*").
+ * Checks whether a language tag (e.g. "en-US") matches some language range (e.g. "en" or "*").
  */
 public class LangMatches extends BinaryValueOperator {
 

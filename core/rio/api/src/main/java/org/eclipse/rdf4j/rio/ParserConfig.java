@@ -18,8 +18,7 @@ import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
 import org.eclipse.rdf4j.rio.helpers.TriXParserSettings;
 
 /**
- * A container object for easy setting and passing of {@link RDFParser}
- * configuration options.
+ * A container object for easy setting and passing of {@link RDFParser} configuration options.
  * 
  * @author Jeen Broekstra
  * @author Peter Ansell
@@ -42,16 +41,14 @@ public class ParserConfig extends RioConfig implements Serializable {
 	/**
 	 * Creates a ParserConfig object with the supplied config settings.
 	 * 
-	 * @deprecated Use {@link ParserConfig#ParserConfig()} instead and set
-	 *             preserveBNodeIDs using {@link #set(RioSetting, Object)} with
-	 *             {@link BasicParserSettings#PRESERVE_BNODE_IDS}.
+	 * @deprecated Use {@link ParserConfig#ParserConfig()} instead and set preserveBNodeIDs using
+	 *             {@link #set(RioSetting, Object)} with {@link BasicParserSettings#PRESERVE_BNODE_IDS}.
 	 *             <p>
-	 *             The other parameters are all deprecated and this constructor
-	 *             may be removed in a future release.
+	 *             The other parameters are all deprecated and this constructor may be removed in a future
+	 *             release.
 	 *             <p>
-	 *             This constructor calls #setNonFatalErrors using a best-effort
-	 *             algorithm that may not match the exact semantics of the
-	 *             pre-2.7 constructor.
+	 *             This constructor calls #setNonFatalErrors using a best-effort algorithm that may not match
+	 *             the exact semantics of the pre-2.7 constructor.
 	 */
 	@Deprecated
 	public ParserConfig(boolean verifyData, boolean stopAtFirstError, boolean preserveBNodeIDs,
@@ -90,21 +87,19 @@ public class ParserConfig extends RioConfig implements Serializable {
 	}
 
 	/**
-	 * This method indicates a list of optional errors that the parser should
-	 * attempt to recover from.
+	 * This method indicates a list of optional errors that the parser should attempt to recover from.
 	 * <p>
-	 * If recovery is not possible, then the parser will still abort with an
-	 * exception.
+	 * If recovery is not possible, then the parser will still abort with an exception.
 	 * <p>
-	 * Calls to this method will override previous calls, including the
-	 * backwards-compatibility settings setup in the deprecated constructor.
+	 * Calls to this method will override previous calls, including the backwards-compatibility settings setup
+	 * in the deprecated constructor.
 	 * <p>
 	 * Non-Fatal errors that are detected MUST be reported to the error listener.
 	 * 
 	 * @param nonFatalErrors
 	 *        The set of parser errors that are relevant to
-	 * @return Either a copy of this config, if it is immutable, or this object,
-	 *         to allow chaining of method calls.
+	 * @return Either a copy of this config, if it is immutable, or this object, to allow chaining of method
+	 *         calls.
 	 */
 	public ParserConfig setNonFatalErrors(Set<RioSetting<?>> nonFatalErrors) {
 		this.nonFatalErrors = new HashSet<RioSetting<?>>(nonFatalErrors);
@@ -112,13 +107,13 @@ public class ParserConfig extends RioConfig implements Serializable {
 	}
 
 	/**
-	 * Add a non-fatal error to the set used by parsers to determine whether they
-	 * should attempt to recover from a particular parsing error.
+	 * Add a non-fatal error to the set used by parsers to determine whether they should attempt to recover
+	 * from a particular parsing error.
 	 * 
 	 * @param nextNonFatalError
 	 *        A non-fatal error that a parser should attempt to recover from.
-	 * @return Either a copy of this config, if it is immutable, or this object,
-	 *         to allow chaining of method calls.
+	 * @return Either a copy of this config, if it is immutable, or this object, to allow chaining of method
+	 *         calls.
 	 */
 	public ParserConfig addNonFatalError(RioSetting<?> nextNonFatalError) {
 		this.nonFatalErrors.add(nextNonFatalError);
@@ -126,26 +121,23 @@ public class ParserConfig extends RioConfig implements Serializable {
 	}
 
 	/**
-	 * This method is used by the parser to check whether they should throw an
-	 * exception or attempt to recover from a non-fatal error.
+	 * This method is used by the parser to check whether they should throw an exception or attempt to recover
+	 * from a non-fatal error.
 	 * <p>
-	 * If this method returns false, then the given non-fatal error will cause
-	 * the parser to throw an exception.
+	 * If this method returns false, then the given non-fatal error will cause the parser to throw an
+	 * exception.
 	 * <p>
-	 * If this method returns true, then the parser will do its best to recover
-	 * from the error, potentially by dropping triples or creating triples that
-	 * do not exactly match the source.
+	 * If this method returns true, then the parser will do its best to recover from the error, potentially by
+	 * dropping triples or creating triples that do not exactly match the source.
 	 * <p>
-	 * By default this method will always return false until
-	 * {@link #setNonFatalErrors(Set)} is called to specify the set of errors
-	 * that are non-fatal in the given context.
+	 * By default this method will always return false until {@link #setNonFatalErrors(Set)} is called to
+	 * specify the set of errors that are non-fatal in the given context.
 	 * <p>
 	 * Non-Fatal errors that are detected MUST be reported to the error listener.
 	 * 
 	 * @param errorToCheck
-	 * @return True if the user has setup the parser configuration to indicate
-	 *         that this error is not necessarily fatal and false if the user has
-	 *         not indicated that this error is fatal.
+	 * @return True if the user has setup the parser configuration to indicate that this error is not
+	 *         necessarily fatal and false if the user has not indicated that this error is fatal.
 	 */
 	public boolean isNonFatalError(RioSetting<?> errorToCheck) {
 		return nonFatalErrors.contains(errorToCheck);
@@ -171,8 +163,7 @@ public class ParserConfig extends RioConfig implements Serializable {
 	}
 
 	/**
-	 * @deprecated All non-fatal errors must be specified using
-	 *             {@link #setNonFatalErrors(Set)} or
+	 * @deprecated All non-fatal errors must be specified using {@link #setNonFatalErrors(Set)} or
 	 *             {@link #addNonFatalError(RioSetting)} and checked using
 	 *             {@link #isNonFatalError(RioSetting)}.
 	 */
@@ -184,19 +175,16 @@ public class ParserConfig extends RioConfig implements Serializable {
 	/**
 	 * This method is preserved for backwards compatibility.
 	 * <p>
-	 * Code should be gradually migrated to use
-	 * {@link BasicParserSettings#PRESERVE_BNODE_IDS}.
+	 * Code should be gradually migrated to use {@link BasicParserSettings#PRESERVE_BNODE_IDS}.
 	 * 
-	 * @return Returns the {@link BasicParserSettings#PRESERVE_BNODE_IDS}
-	 *         setting.
+	 * @return Returns the {@link BasicParserSettings#PRESERVE_BNODE_IDS} setting.
 	 */
 	public boolean isPreserveBNodeIDs() {
 		return this.get(BasicParserSettings.PRESERVE_BNODE_IDS);
 	}
 
 	/**
-	 * @deprecated Datatype handling is now split across
-	 *             {@link BasicParserSettings#VERIFY_DATATYPE_VALUES},
+	 * @deprecated Datatype handling is now split across {@link BasicParserSettings#VERIFY_DATATYPE_VALUES},
 	 *             {@link BasicParserSettings#FAIL_ON_UNKNOWN_DATATYPES} and
 	 *             {@link BasicParserSettings#NORMALIZE_DATATYPE_VALUES}.
 	 *             <p>
@@ -213,7 +201,7 @@ public class ParserConfig extends RioConfig implements Serializable {
 		this.nonFatalErrors.clear();
 		return this;
 	}
-	
+
 	@Override
 	public <T extends Object> ParserConfig set(RioSetting<T> setting, T value) {
 		super.set(setting, value);

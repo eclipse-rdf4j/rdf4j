@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.binary;
 
-
 class BinaryRDFConstants {
 
 	/**

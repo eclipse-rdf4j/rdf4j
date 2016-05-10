@@ -32,8 +32,8 @@ public class ContextStatement extends SimpleStatement {
 	 *--------------*/
 
 	/**
-	 * Creates a new Statement with the supplied subject, predicate and object
-	 * for the specified associated context.
+	 * Creates a new Statement with the supplied subject, predicate and object for the specified associated
+	 * context.
 	 * 
 	 * @param subject
 	 *        The statement's subject, must not be <tt>null</tt>.
@@ -42,8 +42,7 @@ public class ContextStatement extends SimpleStatement {
 	 * @param object
 	 *        The statement's object, must not be <tt>null</tt>.
 	 * @param context
-	 *        The statement's context, <tt>null</tt> to indicate no context is
-	 *        associated.
+	 *        The statement's context, <tt>null</tt> to indicate no context is associated.
 	 */
 	protected ContextStatement(Resource subject, IRI predicate, Value object, Resource context) {
 		super(subject, predicate, object);
@@ -55,14 +54,12 @@ public class ContextStatement extends SimpleStatement {
 	 *---------*/
 
 	@Override
-	public Resource getContext()
-	{
+	public Resource getContext() {
 		return context;
 	}
 
 	@Override
-	public String toString()
-	{
+	public String toString() {
 		StringBuilder sb = new StringBuilder(256);
 
 		sb.append(super.toString());

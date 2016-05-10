@@ -36,10 +36,10 @@ public class CustomGraphQueryInferencerNativeRepositoryConnectionTest extends Re
 		throws IOException, MalformedQueryException, UnsupportedQueryLanguageException, SailException
 	{
 		dataDir = FileUtil.createTempDir("nativestore");
-		return new SailRepository(new CustomGraphQueryInferencer(new NativeStore(dataDir, "spoc"),
-				QueryLanguage.SPARQL,
-				ResourceUtil.getString("/testcases/custom-query-inferencing/predicate/rule.rq"),
-				ResourceUtil.getString("/testcases/custom-query-inferencing/predicate/match.rq")));
+		return new SailRepository(
+				new CustomGraphQueryInferencer(new NativeStore(dataDir, "spoc"), QueryLanguage.SPARQL,
+						ResourceUtil.getString("/testcases/custom-query-inferencing/predicate/rule.rq"),
+						ResourceUtil.getString("/testcases/custom-query-inferencing/predicate/match.rq")));
 	}
 
 	@Override

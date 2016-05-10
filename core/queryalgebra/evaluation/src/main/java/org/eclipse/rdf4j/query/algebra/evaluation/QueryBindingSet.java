@@ -22,10 +22,9 @@ import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.util.iterators.ConvertingIterator;
 
 /**
- * An implementation of the {@link BindingSet} interface that is used to evalate
- * query object models. This implementations differs from {@link MapBindingSet}
- * in that it maps variable names to Value objects and that the Binding objects
- * are created lazily.
+ * An implementation of the {@link BindingSet} interface that is used to evalate query object models. This
+ * implementations differs from {@link MapBindingSet} in that it maps variable names to Value objects and that
+ * the Binding objects are created lazily.
  */
 public class QueryBindingSet extends AbstractBindingSet {
 
@@ -60,8 +59,7 @@ public class QueryBindingSet extends AbstractBindingSet {
 	}
 
 	/**
-	 * Adds a new binding to the binding set. The binding's name must not already
-	 * be part of this binding set.
+	 * Adds a new binding to the binding set. The binding's name must not already be part of this binding set.
 	 * 
 	 * @param binding
 	 *        The binding to add this this BindingSet.
@@ -71,8 +69,7 @@ public class QueryBindingSet extends AbstractBindingSet {
 	}
 
 	/**
-	 * Adds a new binding to the binding set. The binding's name must not already
-	 * be part of this binding set.
+	 * Adds a new binding to the binding set. The binding's name must not already be part of this binding set.
 	 * 
 	 * @param name
 	 *        The binding's name, must not be bound in this binding set already.

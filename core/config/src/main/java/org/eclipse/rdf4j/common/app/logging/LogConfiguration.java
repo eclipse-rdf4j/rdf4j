@@ -24,30 +24,31 @@ public interface LogConfiguration extends Configuration {
 	public static final String LOGGING_DIR = "logs";
 
 	public static final String LOG_FILE = "main.log";
-	
+
 	public static final String USER_EVENT_LOG_FILE = "user-event.log";
-	
+
 	public static final String ADMIN_EVENT_LOG_FILE = "admin-event.log";
-	
+
 	public static final String USER_EVENT_LOGGER_NAME = "event.user";
-	
+
 	public static final String ADMIN_EVENT_LOGGER_NAME = "event.admin";
 
 	/**
 	 * Set the base location on the file system for logging configuration and data
 	 *
-	 * @param baseDir the base location on the file system for logging configuration and data
-	 * @throws IOException 
+	 * @param baseDir
+	 *        the base location on the file system for logging configuration and data
+	 * @throws IOException
 	 */
-	public abstract void setBaseDir(File baseDir) throws IOException;
-	
+	public abstract void setBaseDir(File baseDir)
+		throws IOException;
+
 	/**
 	 * The base location on the file system for logging configuration and data
 	 * 
 	 * @return the base location on the file system for logging configuration and data
 	 */
 	public abstract File getBaseDir();
-	
 
 	/**
 	 * The location on the file system where logging configuration is stored.
@@ -64,20 +65,19 @@ public interface LogConfiguration extends Configuration {
 	public abstract File getLoggingDir();
 
 	/**
-	 * A reader that can read logging information as stored by the specific
-	 * logger's appender.
+	 * A reader that can read logging information as stored by the specific logger's appender.
 	 * 
-	 * @param appender Name of the appender to which the LogReader is attached
-	 * 
-	 * @return a reader that can read logging information as stored by the logger
-	 *         configured through this LogConfiguration
-	 */	
+	 * @param appender
+	 *        Name of the appender to which the LogReader is attached
+	 * @return a reader that can read logging information as stored by the logger configured through this
+	 *         LogConfiguration
+	 */
 	public abstract LogReader getLogReader(String appender);
-	
+
 	/**
 	 * Default (fallback) LogReader instance.
 	 * 
-	 * @return  default (fallback) LogReader instance.
+	 * @return default (fallback) LogReader instance.
 	 */
 	public abstract LogReader getDefaultLogReader();
 
@@ -92,13 +92,12 @@ public interface LogConfiguration extends Configuration {
 	 * Enable or disable debug logging.
 	 * 
 	 * @param enabled
-	 *        set to true if debug logging should be enabled, set to false
-	 *        otherwise
+	 *        set to true if debug logging should be enabled, set to false otherwise
 	 */
 	public abstract void setDebugLoggingEnabled(boolean enabled);
-	
+
 	public abstract void setAppConfiguration(AppConfiguration config);
-	
+
 	public abstract AppConfiguration getAppConfiguration();
 
 }

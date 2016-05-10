@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.query.parser;
 import org.eclipse.rdf4j.query.QueryLanguage;
 
 /**
- * A QueryParserFactory returns {@link QueryParser}s for a specific query
- * language.
+ * A QueryParserFactory returns {@link QueryParser}s for a specific query language.
  * 
  * @author Arjohn Kampman
  */
@@ -23,7 +22,7 @@ public interface QueryParserFactory {
 	public QueryLanguage getQueryLanguage();
 
 	/**
-	 * Returns a QueryParser instance. 
+	 * Returns a QueryParser instance.
 	 */
 	public QueryParser getParser();
 }

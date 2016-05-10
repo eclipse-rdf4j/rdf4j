@@ -25,7 +25,7 @@ public class ASTOr extends ASTBooleanExpr {
 	{
 		return visitor.visit(this, data);
 	}
-	
+
 	public List<ASTBooleanExpr> getOperandList() {
 		return new CastingList<ASTBooleanExpr>(children);
 	}

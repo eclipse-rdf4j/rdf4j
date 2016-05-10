@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 
 /**
- * A lexical rdf term Comparator, this class does not compare numerically and is
- * therefore a bit faster than a SPARQL compliant comparator.
+ * A lexical rdf term Comparator, this class does not compare numerically and is therefore a bit faster than a
+ * SPARQL compliant comparator.
  * 
  * @author james
  * @author Arjohn Kampman
@@ -133,11 +133,10 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 	}
 
 	/**
-	 * Compares two literal datatypes and indicates if one should be ordered
-	 * after the other. This algorithm ensures that compatible ordered datatypes
-	 * (numeric and date/time) are grouped together so that
-	 * {@link QueryEvaluationUtil#compareLiterals(Literal, Literal, CompareOp)}
-	 * is used in consecutive ordering steps.
+	 * Compares two literal datatypes and indicates if one should be ordered after the other. This algorithm
+	 * ensures that compatible ordered datatypes (numeric and date/time) are grouped together so that
+	 * {@link QueryEvaluationUtil#compareLiterals(Literal, Literal, CompareOp)} is used in consecutive
+	 * ordering steps.
 	 */
 	private int compareDatatypes(IRI leftDatatype, IRI rightDatatype) {
 		if (XMLDatatypeUtil.isNumericDatatype(leftDatatype)) {

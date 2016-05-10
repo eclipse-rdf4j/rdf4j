@@ -34,10 +34,9 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
 /**
- * The RDF4J Console is a command-line application for interacting with RDF4J.
- * It reads commands from standard input and prints feedback to standard output.
- * Available options include loading and querying of data in repositories,
- * repository creation and verification of RDF files.
+ * The RDF4J Console is a command-line application for interacting with RDF4J. It reads commands from standard
+ * input and prints feedback to standard output. Available options include loading and querying of data in
+ * repositories, repository creation and verification of RDF files.
  * 
  * @author Jeen Broekstra
  * @author Arjohn Kampman
@@ -103,8 +102,8 @@ public class Console implements ConsoleState, ConsoleParameters {
 		Option exitOnErrorMode = new Option("x", "exitOnError", false,
 				"immediately exit the console on the first error");
 		final Options options = new Options();
-		OptionGroup cautionGroup = new OptionGroup().addOption(cautiousOption).addOption(forceOption).addOption(
-				exitOnErrorMode);
+		OptionGroup cautionGroup = new OptionGroup().addOption(cautiousOption).addOption(
+				forceOption).addOption(exitOnErrorMode);
 		OptionGroup locationGroup = new OptionGroup().addOption(serverURLOption).addOption(dirOption);
 		options.addOptionGroup(locationGroup).addOptionGroup(cautionGroup);
 		options.addOption(helpOption).addOption(versionOption).addOption(echoOption).addOption(quietOption);
@@ -225,8 +224,8 @@ public class Console implements ConsoleState, ConsoleParameters {
 		throws IOException
 	{
 		appConfig.init();
-		consoleIO = new ConsoleIO(new BufferedReader(new InputStreamReader(System.in)), System.out, System.err,
-				this);
+		consoleIO = new ConsoleIO(new BufferedReader(new InputStreamReader(System.in)), System.out,
+				System.err, this);
 		commandMap.put("federate", new Federate(consoleIO, this));
 		this.queryEvaluator = new QueryEvaluator(consoleIO, this, this);
 		LockRemover lockRemover = new LockRemover(consoleIO);
@@ -284,7 +283,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 		throws IOException
 	{
 		boolean exit = false;
-		
+
 		// only try to parse the command if non-empty.
 		if (0 < command.length()) {
 			final String[] tokens = parse(command);

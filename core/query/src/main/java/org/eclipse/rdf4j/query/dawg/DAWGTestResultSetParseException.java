@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.query.dawg;
 import org.eclipse.rdf4j.RDF4JException;
 
 /**
- * An exception that is thrown to indicate that the parsing of a DAWG Test
- * Result Set graph failed due to an incompatible or incomplete graph.
+ * An exception that is thrown to indicate that the parsing of a DAWG Test Result Set graph failed due to an
+ * incompatible or incomplete graph.
  */
 public class DAWGTestResultSetParseException extends RDF4JException {
 

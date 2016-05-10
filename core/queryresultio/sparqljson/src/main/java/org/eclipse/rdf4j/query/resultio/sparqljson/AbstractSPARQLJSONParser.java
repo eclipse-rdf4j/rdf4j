@@ -30,8 +30,8 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 
 /**
- * Abstract base class for SPARQL Results JSON Parsers. Provides a common
- * implementation of both boolean and tuple parsing.
+ * Abstract base class for SPARQL Results JSON Parsers. Provides a common implementation of both boolean and
+ * tuple parsing.
  * 
  * @author Peter Ansell
  * @author Sebastian Schaffert
@@ -120,7 +120,8 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 		boolean result = false;
 
 		if (jp.nextToken() != JsonToken.START_OBJECT) {
-			throw new QueryResultParseException("Expected SPARQL Results JSON document to start with an Object",
+			throw new QueryResultParseException(
+					"Expected SPARQL Results JSON document to start with an Object",
 					jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 		}
 
@@ -146,10 +147,11 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 							throw new QueryResultParseException(
 									"Found tuple results variables when attempting to parse SPARQL Results JSON to boolean result");
 						}
-						
+
 						if (jp.nextToken() != JsonToken.START_ARRAY) {
 							throw new QueryResultParseException("Expected variable labels to be an array",
-									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+									jp.getCurrentLocation().getLineNr(),
+									jp.getCurrentLocation().getColumnNr());
 						}
 
 						while (jp.nextToken() != JsonToken.END_ARRAY) {
@@ -177,7 +179,8 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 						List<String> linksList = new ArrayList<String>();
 						if (jp.nextToken() != JsonToken.START_ARRAY) {
 							throw new QueryResultParseException("Expected links to be an array",
-									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+									jp.getCurrentLocation().getLineNr(),
+									jp.getCurrentLocation().getColumnNr());
 						}
 
 						while (jp.nextToken() != JsonToken.END_ARRAY) {
@@ -190,7 +193,8 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 					}
 					else {
-						throw new QueryResultParseException("Found unexpected object in head field: " + headStr,
+						throw new QueryResultParseException(
+								"Found unexpected object in head field: " + headStr,
 								jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 					}
 				}
@@ -201,9 +205,9 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 							"Found tuple results bindings when attempting to parse SPARQL Results JSON to boolean result");
 				}
 				if (jp.nextToken() != JsonToken.START_OBJECT) {
-					throw new QueryResultParseException("Found unexpected token in results object: "
-							+ jp.getCurrentName(), jp.getCurrentLocation().getLineNr(),
-							jp.getCurrentLocation().getColumnNr());
+					throw new QueryResultParseException(
+							"Found unexpected token in results object: " + jp.getCurrentName(),
+							jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 				}
 
 				while (jp.nextToken() != JsonToken.END_OBJECT) {
@@ -211,7 +215,8 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 					if (jp.getCurrentName().equals(BINDINGS)) {
 						if (jp.nextToken() != JsonToken.START_ARRAY) {
 							throw new QueryResultParseException("Found unexpected token in bindings object",
-									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+									jp.getCurrentLocation().getLineNr(),
+									jp.getCurrentLocation().getColumnNr());
 						}
 
 						while (jp.nextToken() != JsonToken.END_ARRAY) {
@@ -219,8 +224,9 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 							MapBindingSet nextBindingSet = new MapBindingSet();
 
 							if (jp.getCurrentToken() != JsonToken.START_OBJECT) {
-								throw new QueryResultParseException("Did not find object in bindings array: "
-										+ jp.getCurrentName(), jp.getCurrentLocation().getLineNr(),
+								throw new QueryResultParseException(
+										"Did not find object in bindings array: " + jp.getCurrentName(),
+										jp.getCurrentLocation().getLineNr(),
 										jp.getCurrentLocation().getColumnNr());
 							}
 
@@ -228,14 +234,17 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 								if (jp.getCurrentToken() != JsonToken.FIELD_NAME) {
 									throw new QueryResultParseException("Did not find binding name",
-											jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+											jp.getCurrentLocation().getLineNr(),
+											jp.getCurrentLocation().getColumnNr());
 								}
 
 								final String bindingStr = jp.getCurrentName();
 
 								if (jp.nextToken() != JsonToken.START_OBJECT) {
-									throw new QueryResultParseException("Did not find object for binding value",
-											jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+									throw new QueryResultParseException(
+											"Did not find object for binding value",
+											jp.getCurrentLocation().getLineNr(),
+											jp.getCurrentLocation().getColumnNr());
 								}
 
 								String lang = null;
@@ -246,8 +255,9 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 								while (jp.nextToken() != JsonToken.END_OBJECT) {
 
 									if (jp.getCurrentToken() != JsonToken.FIELD_NAME) {
-										throw new QueryResultParseException("Did not find value attribute under "
-												+ bindingStr + " field", jp.getCurrentLocation().getLineNr(),
+										throw new QueryResultParseException(
+												"Did not find value attribute under " + bindingStr + " field",
+												jp.getCurrentLocation().getLineNr(),
 												jp.getCurrentLocation().getColumnNr());
 									}
 									String fieldName = jp.getCurrentName();
@@ -269,14 +279,16 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 										value = jp.getText();
 									}
 									else {
-										throw new QueryResultParseException("Unexpected field name: " + fieldName,
+										throw new QueryResultParseException(
+												"Unexpected field name: " + fieldName,
 												jp.getCurrentLocation().getLineNr(),
 												jp.getCurrentLocation().getColumnNr());
 
 									}
 								}
 
-								nextBindingSet.addBinding(bindingStr, parseValue(type, value, lang, datatype));
+								nextBindingSet.addBinding(bindingStr,
+										parseValue(type, value, lang, datatype));
 							}
 							// parsing of solution finished, report result return to
 							// bindings state
@@ -301,9 +313,9 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 						jp.nextToken();
 					}
 					else {
-						throw new QueryResultParseException("Found unexpected field in results: "
-								+ jp.getCurrentName(), jp.getCurrentLocation().getLineNr(),
-								jp.getCurrentLocation().getColumnNr());
+						throw new QueryResultParseException(
+								"Found unexpected field in results: " + jp.getCurrentName(),
+								jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 					}
 				}
 			}
@@ -320,7 +332,8 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 				}
 			}
 			else {
-				throw new QueryResultParseException("Found unexpected object in top level " + baseStr + " field",
+				throw new QueryResultParseException(
+						"Found unexpected object in top level " + baseStr + " field",
 						jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 			}
 		}
@@ -332,8 +345,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 	 * Parse a value out of the elements for a binding.
 	 * 
 	 * @param type
-	 *        {@link #LITERAL}, {@link #TYPED_LITERAL}, {@link #BNODE} or
-	 *        {@link #URI}
+	 *        {@link #LITERAL}, {@link #TYPED_LITERAL}, {@link #BNODE} or {@link #URI}
 	 * @param value
 	 *        actual value text
 	 * @param language

@@ -18,21 +18,19 @@ import org.eclipse.rdf4j.rio.helpers.RioSettingImpl;
 public class BasicQueryWriterSettings {
 
 	/**
-	 * Specifies whether the writer should add the proprietary
-	 * "http://www.openrdf.org/schema/qname#qname" annotations to output.
+	 * Specifies whether the writer should add the proprietary "http://www.openrdf.org/schema/qname#qname"
+	 * annotations to output.
 	 * <p>
 	 * Defaults to false.
-	 * 
 	 */
 	public final static RioSetting<Boolean> ADD_SESAME_QNAME = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.query.resultio.addsesameqname", "Add Sesame QName", false);
 
 	/**
-	 * Specifies a callback function name for wrapping JSON results to support
-	 * the JSONP cross-origin request methodology.
+	 * Specifies a callback function name for wrapping JSON results to support the JSONP cross-origin request
+	 * methodology.
 	 * <p>
 	 * Defaults to "sesamecallback".
-	 * 
 	 */
 	public static final RioSetting<String> JSONP_CALLBACK = new RioSettingImpl<String>(
 			"org.eclipse.rdf4j.query.resultio.jsonpcallback", "JSONP callback function", "sesamecallback");

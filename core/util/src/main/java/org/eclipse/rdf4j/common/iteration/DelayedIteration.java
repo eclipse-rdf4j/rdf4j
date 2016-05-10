@@ -11,12 +11,11 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.NoSuchElementException;
 
 /**
- * An iteration that delays the creation of the underlying iteration until it is
- * being accessed. This is mainly useful for situations where iteration creation
- * adds considerable overhead but where the iteration may not actually be used,
- * or where a created iteration consumes scarce resources like JDBC-connections
- * or memory. Subclasses must implement the <tt>createIteration</tt> method,
- * which is called once when the iteration is first needed.
+ * An iteration that delays the creation of the underlying iteration until it is being accessed. This is
+ * mainly useful for situations where iteration creation adds considerable overhead but where the iteration
+ * may not actually be used, or where a created iteration consumes scarce resources like JDBC-connections or
+ * memory. Subclasses must implement the <tt>createIteration</tt> method, which is called once when the
+ * iteration is first needed.
  */
 public abstract class DelayedIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
 
@@ -42,8 +41,8 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	 *---------*/
 
 	/**
-	 * Creates the iteration that should be iterated over. This method is called
-	 * only once, when the iteration is first needed.
+	 * Creates the iteration that should be iterated over. This method is called only once, when the iteration
+	 * is first needed.
 	 */
 	protected abstract Iteration<? extends E, ? extends X> createIteration()
 		throws X;
@@ -104,8 +103,8 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	}
 
 	/**
-	 * Closes this iteration as well as the underlying iteration if it has
-	 * already been created and happens to be a {@link CloseableIteration}.
+	 * Closes this iteration as well as the underlying iteration if it has already been created and happens to
+	 * be a {@link CloseableIteration}.
 	 */
 	@Override
 	protected void handleClose()

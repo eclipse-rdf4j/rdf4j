@@ -13,8 +13,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
 
 /**
- * A cache for fixed size byte array records. This cache uses a temporary file
- * to store the records. This file is deleted upon calling {@link #discard()}.
+ * A cache for fixed size byte array records. This cache uses a temporary file to store the records. This file
+ * is deleted upon calling {@link #discard()}.
  * 
  * @author Arjohn Kampman
  */
@@ -58,9 +58,8 @@ abstract class RecordCache {
 	}
 
 	/**
-	 * Gets the number of records currently stored in the cache, throwing an
-	 * {@link IllegalStateException} if the cache is no longer {@link #isValid()
-	 * valid}.
+	 * Gets the number of records currently stored in the cache, throwing an {@link IllegalStateException} if
+	 * the cache is no longer {@link #isValid() valid}.
 	 * 
 	 * @return
 	 * @throws IllegalStateException
@@ -108,7 +107,9 @@ abstract class RecordCache {
 			RecordIterator recIter = otherCache.getRecords();
 			try {
 				byte[] record;
-				while ((record = recIter.next()) != null && recordCount.incrementAndGet() <= maxRecords.get()) {
+				while ((record = recIter.next()) != null
+						&& recordCount.incrementAndGet() <= maxRecords.get())
+				{
 					storeRecordInternal(record);
 				}
 			}
@@ -135,9 +136,8 @@ abstract class RecordCache {
 		throws IOException;
 
 	/**
-	 * Gets all records that are stored in the cache, throwing an
-	 * {@link IllegalStateException} if the cache is no longer {@link #isValid()
-	 * valid}.
+	 * Gets all records that are stored in the cache, throwing an {@link IllegalStateException} if the cache
+	 * is no longer {@link #isValid() valid}.
 	 * 
 	 * @return An iterator over all records.
 	 * @throws IllegalStateException
@@ -154,9 +154,8 @@ abstract class RecordCache {
 	protected abstract RecordIterator getRecordsInternal();
 
 	/**
-	 * Checks whether the cache is still valid. Caches are valid if the number of
-	 * stored records is smaller than or equal to the {@link #getMaxRecords()
-	 * maximum number of records}.
+	 * Checks whether the cache is still valid. Caches are valid if the number of stored records is smaller
+	 * than or equal to the {@link #getMaxRecords() maximum number of records}.
 	 */
 	public final boolean isValid() {
 		return recordCount.get() <= maxRecords.get();

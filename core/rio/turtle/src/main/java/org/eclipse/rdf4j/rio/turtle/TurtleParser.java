@@ -39,23 +39,19 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
 
 /**
- * RDF parser for <a href="http://www.dajobe.org/2004/01/turtle/">Turtle</a>
- * files. This parser is not thread-safe, therefore its public methods are
- * synchronized.
+ * RDF parser for <a href="http://www.dajobe.org/2004/01/turtle/">Turtle</a> files. This parser is not
+ * thread-safe, therefore its public methods are synchronized.
  * <p>
- * This implementation is based on the 2006/01/02 version of the Turtle
- * specification, with slight deviations:
+ * This implementation is based on the 2006/01/02 version of the Turtle specification, with slight deviations:
  * <ul>
- * <li>Normalization of integer, floating point and boolean values is dependent
- * on the specified datatype handling. According to the specification, integers
- * and booleans should be normalized, but floats don't.</li>
- * <li>Comments can be used anywhere in the document, and extend to the end of
- * the line. The Turtle grammar doesn't allow comments to be used inside triple
- * constructs that extend over multiple lines, but the author's own parser
- * deviates from this too.</li>
- * <li>The localname part of a prefixed named is allowed to start with a number
- * (cf. <a href="http://www.w3.org/TR/turtle/">the W3C Turtle Working Draft</a>
- * ).</li>
+ * <li>Normalization of integer, floating point and boolean values is dependent on the specified datatype
+ * handling. According to the specification, integers and booleans should be normalized, but floats don't.
+ * </li>
+ * <li>Comments can be used anywhere in the document, and extend to the end of the line. The Turtle grammar
+ * doesn't allow comments to be used inside triple constructs that extend over multiple lines, but the
+ * author's own parser deviates from this too.</li>
+ * <li>The localname part of a prefixed named is allowed to start with a number (cf.
+ * <a href="http://www.w3.org/TR/turtle/">the W3C Turtle Working Draft</a> ).</li>
  * </ul>
  * 
  * @author Arjohn Kampman
@@ -81,16 +77,14 @@ public class TurtleParser extends AbstractRDFParser {
 	 *--------------*/
 
 	/**
-	 * Creates a new TurtleParser that will use a {@link SimpleValueFactory} to
-	 * create RDF model objects.
+	 * Creates a new TurtleParser that will use a {@link SimpleValueFactory} to create RDF model objects.
 	 */
 	public TurtleParser() {
 		super();
 	}
 
 	/**
-	 * Creates a new TurtleParser that will use the supplied ValueFactory to
-	 * create RDF model objects.
+	 * Creates a new TurtleParser that will use the supplied ValueFactory to create RDF model objects.
 	 * 
 	 * @param valueFactory
 	 *        A ValueFactory.
@@ -115,23 +109,19 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Implementation of the <tt>parse(InputStream, String)</tt> method defined
-	 * in the RDFParser interface.
+	 * Implementation of the <tt>parse(InputStream, String)</tt> method defined in the RDFParser interface.
 	 * 
 	 * @param in
-	 *        The InputStream from which to read the data, must not be
-	 *        <tt>null</tt>. The InputStream is supposed to contain UTF-8 encoded
-	 *        Unicode characters, as per the Turtle specification.
+	 *        The InputStream from which to read the data, must not be <tt>null</tt>. The InputStream is
+	 *        supposed to contain UTF-8 encoded Unicode characters, as per the Turtle specification.
 	 * @param baseURI
-	 *        The URI associated with the data in the InputStream, must not be
-	 *        <tt>null</tt>.
+	 *        The URI associated with the data in the InputStream, must not be <tt>null</tt>.
 	 * @throws IOException
 	 *         If an I/O error occurred while data was read from the InputStream.
 	 * @throws RDFParseException
 	 *         If the parser has found an unrecoverable parse error.
 	 * @throws RDFHandlerException
-	 *         If the configured statement handler encountered an unrecoverable
-	 *         error.
+	 *         If the configured statement handler encountered an unrecoverable error.
 	 * @throws IllegalArgumentException
 	 *         If the supplied input stream or base URI is <tt>null</tt>.
 	 */
@@ -153,21 +143,18 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Implementation of the <tt>parse(Reader, String)</tt> method defined in the
-	 * RDFParser interface.
+	 * Implementation of the <tt>parse(Reader, String)</tt> method defined in the RDFParser interface.
 	 * 
 	 * @param reader
 	 *        The Reader from which to read the data, must not be <tt>null</tt>.
 	 * @param baseURI
-	 *        The URI associated with the data in the Reader, must not be
-	 *        <tt>null</tt>.
+	 *        The URI associated with the data in the Reader, must not be <tt>null</tt>.
 	 * @throws IOException
 	 *         If an I/O error occurred while data was read from the InputStream.
 	 * @throws RDFParseException
 	 *         If the parser has found an unrecoverable parse error.
 	 * @throws RDFHandlerException
-	 *         If the configured statement handler encountered an unrecoverable
-	 *         error.
+	 *         If the configured statement handler encountered an unrecoverable error.
 	 * @throws IllegalArgumentException
 	 *         If the supplied reader or base URI is <tt>null</tt>.
 	 */
@@ -292,7 +279,8 @@ public class TurtleParser extends AbstractRDFParser {
 		}
 		else if (directive.length() >= 5 && directive.substring(0, 5).equalsIgnoreCase("@base")) {
 			if (!this.getParserConfig().get(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES)) {
-				reportFatalError("Cannot strictly support case-insensitive @base directive in compliance mode.");
+				reportFatalError(
+						"Cannot strictly support case-insensitive @base directive in compliance mode.");
 			}
 			if (directive.length() > 5) {
 				unread(directive.substring(5));
@@ -420,7 +408,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 			if (c == '.' || // end of triple
 					c == ']' || c == '}') // end of predicateObjectList inside blank
-													// node
+									// node
 			{
 				break;
 			}
@@ -576,8 +564,8 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Parses an implicit blank node. This method parses the token <tt>[]</tt>
-	 * and predicateObjectLists that are surrounded by square brackets.
+	 * Parses an implicit blank node. This method parses the token <tt>[]</tt> and predicateObjectLists that
+	 * are surrounded by square brackets.
 	 */
 	protected Resource parseImplicitBlank()
 		throws IOException, RDFParseException, RDFHandlerException
@@ -616,8 +604,8 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Parses an RDF value. This method parses uriref, qname, node ID, quoted
-	 * literal, integer, double and boolean.
+	 * Parses an RDF value. This method parses uriref, qname, node ID, quoted literal, integer, double and
+	 * boolean.
 	 */
 	protected Value parseValue()
 		throws IOException, RDFParseException, RDFHandlerException
@@ -728,8 +716,7 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Parses a quoted string, which is either a "normal string" or a """long
-	 * string""".
+	 * Parses a quoted string, which is either a "normal string" or a """long string""".
 	 */
 	protected String parseQuotedString()
 		throws IOException, RDFParseException
@@ -769,8 +756,7 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Parses a "normal string". This method requires that the opening character
-	 * has already been parsed.
+	 * Parses a "normal string". This method requires that the opening character has already been parsed.
 	 */
 	protected String parseString(int closingCharacter)
 		throws IOException, RDFParseException
@@ -803,8 +789,8 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Parses a """long string""". This method requires that the first three
-	 * characters have already been parsed.
+	 * Parses a """long string""". This method requires that the first three characters have already been
+	 * parsed.
 	 */
 	protected String parseLongString(int closingCharacter)
 		throws IOException, RDFParseException
@@ -1012,8 +998,7 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Parses qnames and boolean values, which have equivalent starting
-	 * characters.
+	 * Parses qnames and boolean values, which have equivalent starting characters.
 	 */
 	protected Value parseQNameOrBoolean()
 		throws IOException, RDFParseException
@@ -1201,9 +1186,9 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Verifies that the supplied character code point <tt>codePoint</tt> is one
-	 * of the expected characters specified in <tt>expected</tt>. This method
-	 * will throw a <tt>ParseException</tt> if this is not the case.
+	 * Verifies that the supplied character code point <tt>codePoint</tt> is one of the expected characters
+	 * specified in <tt>expected</tt>. This method will throw a <tt>ParseException</tt> if this is not the
+	 * case.
 	 */
 	protected void verifyCharacterOrFail(int codePoint, String expected)
 		throws RDFParseException
@@ -1234,14 +1219,12 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Consumes any white space characters (space, tab, line feed, newline) and
-	 * comments (#-style) from <tt>reader</tt>. After this method has been
-	 * called, the first character that is returned by <tt>reader</tt> is either
-	 * a non-ignorable character, or EOF. For convenience, this character is also
+	 * Consumes any white space characters (space, tab, line feed, newline) and comments (#-style) from
+	 * <tt>reader</tt>. After this method has been called, the first character that is returned by
+	 * <tt>reader</tt> is either a non-ignorable character, or EOF. For convenience, this character is also
 	 * returned by this method.
 	 * 
-	 * @return The next character code point that will be returned by
-	 *         <tt>reader</tt>.
+	 * @return The next character code point that will be returned by <tt>reader</tt>.
 	 */
 	protected int skipWSC()
 		throws IOException, RDFHandlerException
@@ -1266,8 +1249,8 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Consumes characters from reader until the first EOL has been read. This
-	 * line of text is then passed to the {@link #rdfHandler} as a comment.
+	 * Consumes characters from reader until the first EOL has been read. This line of text is then passed to
+	 * the {@link #rdfHandler} as a comment.
 	 */
 	protected void processComment()
 		throws IOException, RDFHandlerException
@@ -1297,8 +1280,7 @@ public class TurtleParser extends AbstractRDFParser {
 	/**
 	 * Reads the next Unicode code point.
 	 * 
-	 * @return the next Unicode code point, or -1 if the end of the stream has
-	 *         been reached.
+	 * @return the next Unicode code point, or -1 if the end of the stream has been reached.
 	 * @throws IOException
 	 */
 	protected int readCodePoint()
@@ -1312,9 +1294,8 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Pushes back a single code point by copying it to the front of the buffer.
-	 * After this method returns, a call to {@link #readCodePoint()} will return
-	 * the same code point c again.
+	 * Pushes back a single code point by copying it to the front of the buffer. After this method returns, a
+	 * call to {@link #readCodePoint()} will return the same code point c again.
 	 * 
 	 * @param codePoint
 	 *        a single Unicode code point.
@@ -1335,10 +1316,9 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Pushes back the supplied string by copying it to the front of the buffer.
-	 * After this method returns, successive calls to {@link #readCodePoint()}
-	 * will return the code points in the supplied string again, starting at the
-	 * first in the String..
+	 * Pushes back the supplied string by copying it to the front of the buffer. After this method returns,
+	 * successive calls to {@link #readCodePoint()} will return the code points in the supplied string again,
+	 * starting at the first in the String..
 	 * 
 	 * @param string
 	 *        the string to un-read.
@@ -1360,11 +1340,9 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Peeks at the next Unicode code point without advancing the reader, and
-	 * returns its value.
+	 * Peeks at the next Unicode code point without advancing the reader, and returns its value.
 	 * 
-	 * @return the next Unicode code point, or -1 if the end of the stream has
-	 *         been reached.
+	 * @return the next Unicode code point, or -1 if the end of the stream has been reached.
 	 * @throws IOException
 	 */
 	protected int peekCodePoint()
@@ -1380,8 +1358,7 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Overrides {@link AbstractRDFParser#reportWarning(String)}, adding line number
-	 * information to the error.
+	 * Overrides {@link AbstractRDFParser#reportWarning(String)}, adding line number information to the error.
 	 */
 	@Override
 	protected void reportWarning(String msg) {
@@ -1389,8 +1366,8 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Overrides {@link AbstractRDFParser#reportError(String, RioSetting)}, adding
-	 * line number information to the error.
+	 * Overrides {@link AbstractRDFParser#reportError(String, RioSetting)}, adding line number information to
+	 * the error.
 	 */
 	@Override
 	protected void reportError(String msg, RioSetting<Boolean> setting)
@@ -1400,8 +1377,8 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Overrides {@link AbstractRDFParser#reportFatalError(String)}, adding line
-	 * number information to the error.
+	 * Overrides {@link AbstractRDFParser#reportFatalError(String)}, adding line number information to the
+	 * error.
 	 */
 	@Override
 	protected void reportFatalError(String msg)
@@ -1411,8 +1388,8 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Overrides {@link AbstractRDFParser#reportFatalError(Exception)}, adding line
-	 * number information to the error.
+	 * Overrides {@link AbstractRDFParser#reportFatalError(Exception)}, adding line number information to the
+	 * error.
 	 */
 	@Override
 	protected void reportFatalError(Exception e)

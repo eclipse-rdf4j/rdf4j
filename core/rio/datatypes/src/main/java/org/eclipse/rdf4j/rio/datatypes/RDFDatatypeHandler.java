@@ -15,8 +15,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.DatatypeHandler;
 
 /**
- * An implementation of a datatype handler that can process {@link RDF} built-in
- * datatypes.
+ * An implementation of a datatype handler that can process {@link RDF} built-in datatypes.
  * 
  * @author Peter Ansell
  */

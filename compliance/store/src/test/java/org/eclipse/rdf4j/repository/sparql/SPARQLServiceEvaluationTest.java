@@ -45,9 +45,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Test suite for evaluation of SPARQL queries involving SERVICE clauses. The
- * test suite starts up an embedded Jetty server running Sesame, which functions
- * as the SPARQL endpoint to test against.
+ * Test suite for evaluation of SPARQL queries involving SERVICE clauses. The test suite starts up an embedded
+ * Jetty server running Sesame, which functions as the SPARQL endpoint to test against.
  * 
  * @author Jeen Broekstra
  */
@@ -118,8 +117,8 @@ public class SPARQLServiceEvaluationTest {
 
 		RepositoryConnection con = rep.getConnection();
 		try {
-			con.add(dataset, "",
-					Rio.getParserFormatForFileName(datasetFile).orElseThrow(Rio.unsupportedFormat(datasetFile)));
+			con.add(dataset, "", Rio.getParserFormatForFileName(datasetFile).orElseThrow(
+					Rio.unsupportedFormat(datasetFile)));
 		}
 		finally {
 			dataset.close();

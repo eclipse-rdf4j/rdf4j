@@ -46,8 +46,7 @@ public abstract class AbstractHTTPQuery extends AbstractQuery {
 	}
 
 	/**
-	 * @return Returns the {@link SparqlSession} to be used for all HTTP based
-	 *         interaction
+	 * @return Returns the {@link SparqlSession} to be used for all HTTP based interaction
 	 */
 	protected SparqlSession getHttpClient() {
 		return httpClient;

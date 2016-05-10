@@ -42,13 +42,12 @@ import org.eclipse.rdf4j.sail.federation.algebra.NaryJoin;
 import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
 
 /**
- * Search for Join, LeftJoin, and Union arguments that can be evaluated in a
- * single member.
+ * Search for Join, LeftJoin, and Union arguments that can be evaluated in a single member.
  * 
  * @author James Leigh
  */
-public class FederationJoinOptimizer extends AbstractQueryModelVisitor<RepositoryException> implements
-		QueryOptimizer
+public class FederationJoinOptimizer extends AbstractQueryModelVisitor<RepositoryException>
+		implements QueryOptimizer
 {
 
 	private final Collection<? extends RepositoryConnection> members;
@@ -170,7 +169,8 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	{
 		super.meet(node);
 		List<Owned<TupleExpr>> ows = new ArrayList<Owned<TupleExpr>>();
-		for (TupleExpr arg : new TupleExpr[] { node.getLeftArg(), // NOPMD
+		for (TupleExpr arg : new TupleExpr[] {
+				node.getLeftArg(), // NOPMD
 				node.getRightArg() })
 		{
 			RepositoryConnection member = getSingleOwner(arg);
@@ -326,30 +326,30 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 			RepositoryConnection result = null;
 
 			// Avoid querying repositories if given a set of explicit contexts only belonging to one federation member
-			if(contextToMemberMap == null) {
+			if (contextToMemberMap == null) {
 				contextToMemberMap = createContextToMemberMap(members);
 			}
 			Set<RepositoryConnection> results = new HashSet<RepositoryConnection>();
 			Collection<Resource> explicitContexts;
-			if(ctx.length > 0) {
+			if (ctx.length > 0) {
 				explicitContexts = Arrays.asList(ctx);
 			}
-			else if(dataset != null) {
+			else if (dataset != null) {
 				// all graphs
 				explicitContexts = new ArrayList<Resource>();
 				explicitContexts.addAll(dataset.getDefaultGraphs());
 				explicitContexts.addAll(dataset.getNamedGraphs());
 			}
 			else {
-				explicitContexts = Collections.<Resource>emptyList();
+				explicitContexts = Collections.<Resource> emptyList();
 			}
-			for(Resource context : explicitContexts) {
+			for (Resource context : explicitContexts) {
 				List<RepositoryConnection> contextRepos = contextToMemberMap.get(context);
-				if(contextRepos != null) {
+				if (contextRepos != null) {
 					results.addAll(contextRepos);
 				}
 			}
-			if(results.size() == 1) {
+			if (results.size() == 1) {
 				result = results.iterator().next();
 			}
 			else {
@@ -445,8 +445,8 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	}
 
 	/**
-	 * If two basic graph patterns have the same subject and can be run on the
-	 * same member, we can change the order.
+	 * If two basic graph patterns have the same subject and can be run on the same member, we can change the
+	 * order.
 	 */
 	private LocalJoin findLocalJoin(Var subj, List<LocalJoin> vars) {
 		LocalJoin result = null;
@@ -593,7 +593,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 				TupleExpr union = null;
 				for (RepositoryConnection member : members) {
 					TupleExpr arg = new OwnedTupleExpr(member, e.getJoin() // NOPMD
-					.clone());
+							.clone());
 					union = union == null ? arg : new Union(union, arg); // NOPMD
 				}
 				if (union != null) {

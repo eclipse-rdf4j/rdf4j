@@ -22,8 +22,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * <p>
- * Collection of utility methods for building the various ValueExpr objects in
- * the Sesame query API.
+ * Collection of utility methods for building the various ValueExpr objects in the Sesame query API.
  * </p>
  * 
  * @author Michael Grove
@@ -31,8 +30,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 public class ValueExprFactory {
 
 	public static LangMatches langMatches(String theVar, String theLang) {
-		return new LangMatches(new Lang(new Var(theVar)), new ValueConstant(
-				SimpleValueFactory.getInstance().createLiteral(theLang)));
+		return new LangMatches(new Lang(new Var(theVar)),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(theLang)));
 	}
 
 	public static Bound bound(String theVar) {

@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model;
 
-
 /**
  * The supertype of all RDF resources (IRIs and blank nodes).
  */

@@ -23,8 +23,7 @@ import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
 
 /**
- * A small wrapper around {@link QueryResultWriter} to make it easier to
- * generate results in servlets.
+ * A small wrapper around {@link QueryResultWriter} to make it easier to generate results in servlets.
  * 
  * @author peter
  */
@@ -55,8 +54,7 @@ public class TupleResultBuilder {
 	}
 
 	/**
-	 * This must be called before calling {@link #namedResult(String, Object)} or
-	 * {@link #result(Object...)}.
+	 * This must be called before calling {@link #namedResult(String, Object)} or {@link #result(Object...)}.
 	 * 
 	 * @param variables
 	 *        one or more variable names
@@ -101,8 +99,8 @@ public class TupleResultBuilder {
 	 * {@link #start(String...)} must be called before using this method.
 	 * 
 	 * @param result
-	 *        a single result, one value for each variable, in the same order as
-	 *        the variable names were provided
+	 *        a single result, one value for each variable, in the same order as the variable names were
+	 *        provided
 	 * @return this builder, for the convenience of chaining calls
 	 * @throws QueryResultHandlerException
 	 */
@@ -160,12 +158,10 @@ public class TupleResultBuilder {
 	}
 
 	/**
-	 * This must be called if {@link #start(String...)} is used, after all
-	 * results are generated using either {@link #namedResult(String, Object)} or
-	 * {@link #result(Object...)}.
+	 * This must be called if {@link #start(String...)} is used, after all results are generated using either
+	 * {@link #namedResult(String, Object)} or {@link #result(Object...)}.
 	 * <p>
-	 * This must not be called if {@link #bool(boolean)} or {@link #endBoolean()}
-	 * have been called.
+	 * This must not be called if {@link #bool(boolean)} or {@link #endBoolean()} have been called.
 	 * 
 	 * @return This object, for chaining with other calls.
 	 * @throws QueryResultHandlerException

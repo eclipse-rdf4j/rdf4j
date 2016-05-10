@@ -13,8 +13,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
- * An extension of {@link SailConcurrencyTest} for testing the class
- * {@link MemoryStore}.
+ * An extension of {@link SailConcurrencyTest} for testing the class {@link MemoryStore}.
  */
 public class MemoryStoreConcurrencyTest extends SailConcurrencyTest {
 

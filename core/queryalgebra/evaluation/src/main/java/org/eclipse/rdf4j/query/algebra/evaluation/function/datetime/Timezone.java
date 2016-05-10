@@ -21,9 +21,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * The SPARQL built-in {@link Function} TIMEZONE, as defined in <a
- * href="http://www.w3.org/TR/sparql11-query/#func-timezone">SPARQL Query
- * Language for RDF</a>
+ * The SPARQL built-in {@link Function} TIMEZONE, as defined in
+ * <a href="http://www.w3.org/TR/sparql11-query/#func-timezone">SPARQL Query Language for RDF</a>
  * 
  * @author Jeen Broekstra
  */
@@ -76,7 +75,8 @@ public class Timezone implements Function {
 						return valueFactory.createLiteral(tzDuration.toString(), XMLSchema.DAYTIMEDURATION);
 					}
 					else {
-						throw new ValueExprEvaluationException("can not determine timezone from value: " + argValue);
+						throw new ValueExprEvaluationException(
+								"can not determine timezone from value: " + argValue);
 					}
 				}
 				catch (IllegalArgumentException e) {

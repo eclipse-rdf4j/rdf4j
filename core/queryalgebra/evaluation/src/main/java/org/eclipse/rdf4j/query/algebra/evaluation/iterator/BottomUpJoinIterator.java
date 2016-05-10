@@ -24,9 +24,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
- * Join Iterator that executes a basic bottom-up hash-join algorithm. To be used
- * in cases where interleaved iteration joining is not appropriate (e.g. when
- * the join arguments are subselects).
+ * Join Iterator that executes a basic bottom-up hash-join algorithm. To be used in cases where interleaved
+ * iteration joining is not appropriate (e.g. when the join arguments are subselects).
  * 
  * @author jeen
  * @deprecated replaced by HashJoinIteration

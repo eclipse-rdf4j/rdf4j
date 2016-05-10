@@ -22,8 +22,8 @@ abstract class GeometricRelationFunction implements Function {
 		throws ValueExprEvaluationException
 	{
 		if (args.length != 2) {
-			throw new ValueExprEvaluationException(getURI() + " requires exactly 2 arguments, got "
-					+ args.length);
+			throw new ValueExprEvaluationException(
+					getURI() + " requires exactly 2 arguments, got " + args.length);
 		}
 
 		SpatialContext geoContext = SpatialSupport.getSpatialContext();

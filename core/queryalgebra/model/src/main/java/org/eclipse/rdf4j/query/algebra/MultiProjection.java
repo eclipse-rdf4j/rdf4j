@@ -14,8 +14,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * A "multi-projection" that can produce multiple solutions from a single set of
- * bindings.
+ * A "multi-projection" that can produce multiple solutions from a single set of bindings.
  */
 public class MultiProjection extends UnaryTupleOperator {
 

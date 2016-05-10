@@ -69,8 +69,8 @@ public class TransactionStartController extends AbstractController {
 			logger.info("transaction started");
 		}
 		else {
-			throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED, "Method not allowed: "
-					+ reqMethod);
+			throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
+					"Method not allowed: " + reqMethod);
 		}
 		return result;
 	}
@@ -86,7 +86,7 @@ public class TransactionStartController extends AbstractController {
 		final String isolationLevelString = request.getParameter(Protocol.ISOLATION_LEVEL_PARAM_NAME);
 		if (isolationLevelString != null) {
 			final IRI level = SimpleValueFactory.getInstance().createIRI(isolationLevelString);
-			
+
 			// FIXME this needs to be adapted to accommodate custom isolation levels
 			// from third party stores.
 			for (IsolationLevel standardLevel : IsolationLevels.values()) {

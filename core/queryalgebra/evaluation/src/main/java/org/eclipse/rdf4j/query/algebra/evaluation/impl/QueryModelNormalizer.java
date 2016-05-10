@@ -34,12 +34,14 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 
 /**
- * A query optimizer that (partially) normalizes query models to a canonical
- * form. Note: this implementation does not yet cover all query node types.
+ * A query optimizer that (partially) normalizes query models to a canonical form. Note: this implementation
+ * does not yet cover all query node types.
  * 
  * @author Arjohn Kampman
  */
-public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeException> implements QueryOptimizer {
+public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeException>
+		implements QueryOptimizer
+{
 
 	public QueryModelNormalizer() {
 	}
@@ -120,7 +122,8 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 		else if (condition instanceof ValueConstant) {
 			boolean conditionValue;
 			try {
-				conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(((ValueConstant)condition).getValue());
+				conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(
+						((ValueConstant)condition).getValue());
 			}
 			catch (ValueExprEvaluationException e) {
 				conditionValue = false;
@@ -206,7 +209,8 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 		else if (condition instanceof ValueConstant) {
 			boolean conditionValue;
 			try {
-				conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(((ValueConstant)condition).getValue());
+				conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(
+						((ValueConstant)condition).getValue());
 			}
 			catch (ValueExprEvaluationException e) {
 				conditionValue = false;
@@ -241,8 +245,8 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 	}
 
 	/**
-	 * Checks whether the left join is "well designed" as defined in section 4.2
-	 * of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
+	 * Checks whether the left join is "well designed" as defined in section 4.2 of
+	 * "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
 	 */
 	private boolean isWellDesigned(LeftJoin leftJoin) {
 		VarNameCollector optionalVarCollector = new VarNameCollector();

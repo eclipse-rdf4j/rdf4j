@@ -27,9 +27,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Interceptor for repository requests. Handles the opening and closing of
- * connections to the repository specified in the request. Should not be a
- * singleton bean! Configure as inner bean in openrdf-servlet.xml
+ * Interceptor for repository requests. Handles the opening and closing of connections to the repository
+ * specified in the request. Should not be a singleton bean! Configure as inner bean in openrdf-servlet.xml
  * 
  * @author Herko ter Horst
  * @author Arjohn Kampman
@@ -118,7 +117,7 @@ public class RepositoryInterceptor extends ServerInterceptor {
 				// FIXME SES-1833 this should be configurable by the user.
 				repositoryCon.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 				repositoryCon.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
-				
+
 				// FIXME: hack for repositories that return connections that are not
 				// in auto-commit mode by default
 				if (!repositoryCon.isAutoCommit()) {

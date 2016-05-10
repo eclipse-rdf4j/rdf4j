@@ -27,9 +27,8 @@ import org.eclipse.rdf4j.util.iterators.FilterIterator;
 /**
  * Basic implementation of Graph.
  * 
- * @deprecated since release 2.7.0. Use a {@link org.eclipse.rdf4j.model.Model}
- *             implementation (e.g. {@link TreeModel} or {@link LinkedHashModel}
- *             instead.
+ * @deprecated since release 2.7.0. Use a {@link org.eclipse.rdf4j.model.Model} implementation (e.g.
+ *             {@link TreeModel} or {@link LinkedHashModel} instead.
  * @author Arjohn Kampman
  */
 @Deprecated

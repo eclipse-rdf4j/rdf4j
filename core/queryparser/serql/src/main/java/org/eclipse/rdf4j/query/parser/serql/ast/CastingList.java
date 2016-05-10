@@ -12,8 +12,7 @@ import java.util.AbstractList;
 import java.util.List;
 
 /**
- * A list that wraps another list and casts its elements to a specific subtype
- * of the list's element type.
+ * A list that wraps another list and casts its elements to a specific subtype of the list's element type.
  */
 class CastingList<E> extends AbstractList<E> {
 
@@ -26,7 +25,7 @@ class CastingList<E> extends AbstractList<E> {
 	@SuppressWarnings("unchecked")
 	@Override
 	public E get(int index) {
-		return (E) _elements.get(index);
+		return (E)_elements.get(index);
 	}
 
 	@Override

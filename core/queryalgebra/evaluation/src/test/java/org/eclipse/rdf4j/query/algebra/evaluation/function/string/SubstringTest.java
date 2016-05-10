@@ -27,7 +27,6 @@ public class SubstringTest {
 
 	private ValueFactory f = SimpleValueFactory.getInstance();
 
-	
 	/**
 	 * @throws java.lang.Exception
 	 */
@@ -49,44 +48,44 @@ public class SubstringTest {
 
 	@Test
 	public void testEvaluate1() {
-		
+
 		Literal pattern = f.createLiteral("foobar");
 		Literal startIndex = f.createLiteral(4);
-		
+
 		try {
 			Literal result = substrFunc.evaluate(f, pattern, startIndex);
-			
+
 			assertTrue(result.getLabel().equals("bar"));
 		}
 		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
-	
+
 	@Test
 	public void testEvaluate2() {
-		
+
 		Literal pattern = f.createLiteral("foobar");
 		Literal startIndex = f.createLiteral(4);
 		Literal length = f.createLiteral(2);
-		
+
 		try {
 			Literal result = substrFunc.evaluate(f, pattern, startIndex, length);
-			
+
 			assertTrue(result.getLabel().equals("ba"));
 		}
 		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
 	}
-	
+
 	@Test
 	public void testEvaluate3() {
-		
+
 		Literal pattern = f.createLiteral("foobar");
 		Literal startIndex = f.createLiteral(4);
 		Literal length = f.createLiteral(5);
-		
+
 		try {
 			substrFunc.evaluate(f, pattern, startIndex, length);
 			fail("illegal length spec should have resulted in error");
@@ -96,12 +95,11 @@ public class SubstringTest {
 		}
 	}
 
-	
 	@Test
 	public void testEvaluate4() {
-		
+
 		Literal pattern = f.createLiteral("foobar");
-		
+
 		try {
 			substrFunc.evaluate(f, pattern);
 			fail("illegal number of args hould have resulted in error");

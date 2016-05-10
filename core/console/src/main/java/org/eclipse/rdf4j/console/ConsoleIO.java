@@ -43,7 +43,9 @@ class ConsoleIO {
 		this.appInfo = info;
 	}
 
-	protected String readCommand() throws IOException {
+	protected String readCommand()
+		throws IOException
+	{
 		String repositoryID = appInfo.getRepositoryID();
 		if (!quiet) {
 			if (repositoryID != null) {
@@ -53,14 +55,13 @@ class ConsoleIO {
 		}
 		String line = input.readLine().trim();
 		if (line.endsWith(".")) {
-			line = line.substring(0, line.length() - 1); 
+			line = line.substring(0, line.length() - 1);
 		}
 		return line;
 	}
-	
+
 	/**
-	 * Reads multiple lines from the input until a line that with a '.' on its own is
-	 * read.
+	 * Reads multiple lines from the input until a line that with a '.' on its own is read.
 	 */
 	protected String readMultiLineInput()
 		throws IOException
@@ -134,7 +135,9 @@ class ConsoleIO {
 		writeError(PLEASE_OPEN_FIRST);
 	}
 
-	protected void writeParseError(final String prefix, final long lineNo, final long colNo, final String msg) {
+	protected void writeParseError(final String prefix, final long lineNo, final long colNo,
+			final String msg)
+	{
 		String locationString = RDFParseException.getLocationString(lineNo, colNo);
 		int locSize = locationString.length();
 		final StringBuilder builder = new StringBuilder(locSize + prefix.length() + msg.length() + 3);

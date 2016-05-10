@@ -45,8 +45,8 @@ import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
  * 
  * @author James Leigh
  */
-public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryException> implements
-		QueryOptimizer
+public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryException>
+		implements QueryOptimizer
 {
 
 	private static final String END_BLOCK = "}\n";
@@ -341,8 +341,8 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 		Var pred = node.getPredicateVar();
 		Var obj = node.getObjectVar();
 		Var ctx = node.getContextVar();
-		boolean cokay = ctx == null && scope.equals(Scope.DEFAULT_CONTEXTS) || ctx != null
-				&& scope.equals(Scope.NAMED_CONTEXTS);
+		boolean cokay = ctx == null && scope.equals(Scope.DEFAULT_CONTEXTS)
+				|| ctx != null && scope.equals(Scope.NAMED_CONTEXTS);
 		boolean sokay = !subj.hasValue() || subj.isAnonymous() || subj.getValue() instanceof IRI;
 		boolean ookay = !obj.hasValue() || obj.isAnonymous() || obj.getValue() instanceof IRI
 				|| obj.getValue() instanceof Literal;

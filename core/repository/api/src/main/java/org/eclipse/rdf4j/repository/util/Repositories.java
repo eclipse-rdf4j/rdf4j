@@ -27,18 +27,16 @@ import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
 import org.eclipse.rdf4j.rio.RDFHandler;
 
 /**
- * Utility for dealing with {@link Repository} and {@link RepositoryConnection}
- * objects.
+ * Utility for dealing with {@link Repository} and {@link RepositoryConnection} objects.
  * 
  * @author Peter Ansell
  */
 public final class Repositories {
 
 	/**
-	 * Opens a {@link RepositoryConnection} to the given Repository, sends the
-	 * connection to the given {@link Consumer}, before either rolling back the
-	 * transaction if it failed, or committing the transaction if it was
-	 * successful.
+	 * Opens a {@link RepositoryConnection} to the given Repository, sends the connection to the given
+	 * {@link Consumer}, before either rolling back the transaction if it failed, or committing the
+	 * transaction if it was successful.
 	 * 
 	 * @param repository
 	 *        The {@link Repository} to open a connection to.
@@ -47,8 +45,7 @@ public final class Repositories {
 	 * @throws RepositoryException
 	 *         If there was an exception dealing with the Repository.
 	 * @throws UnknownTransactionStateException
-	 *         If the transaction state was not properly recognised. (Optional
-	 *         specific exception)
+	 *         If the transaction state was not properly recognised. (Optional specific exception)
 	 */
 	public static void consume(Repository repository, Consumer<RepositoryConnection> processFunction)
 		throws RepositoryException, UnknownTransactionStateException
@@ -60,10 +57,9 @@ public final class Repositories {
 	}
 
 	/**
-	 * Opens a {@link RepositoryConnection} to the given Repository, sends the
-	 * connection to the given {@link Consumer}, before either rolling back the
-	 * transaction if it failed, or committing the transaction if it was
-	 * successful.
+	 * Opens a {@link RepositoryConnection} to the given Repository, sends the connection to the given
+	 * {@link Consumer}, before either rolling back the transaction if it failed, or committing the
+	 * transaction if it was successful.
 	 * 
 	 * @param repository
 	 *        The {@link Repository} to open a connection to.
@@ -74,12 +70,11 @@ public final class Repositories {
 	 * @throws RepositoryException
 	 *         If there was an exception dealing with the Repository.
 	 * @throws UnknownTransactionStateException
-	 *         If the transaction state was not properly recognised. (Optional
-	 *         specific exception)
+	 *         If the transaction state was not properly recognised. (Optional specific exception)
 	 */
 	public static void consume(Repository repository, Consumer<RepositoryConnection> processFunction,
 			Consumer<RepositoryException> exceptionHandler)
-				throws RepositoryException, UnknownTransactionStateException
+		throws RepositoryException, UnknownTransactionStateException
 	{
 		try {
 			consume(repository, processFunction);
@@ -90,10 +85,9 @@ public final class Repositories {
 	}
 
 	/**
-	 * Opens a {@link RepositoryConnection} to the given Repository, sends the
-	 * connection to the given {@link Consumer}, before either rolling back the
-	 * transaction if it failed, or committing the transaction if it was
-	 * successful.
+	 * Opens a {@link RepositoryConnection} to the given Repository, sends the connection to the given
+	 * {@link Consumer}, before either rolling back the transaction if it failed, or committing the
+	 * transaction if it was successful.
 	 * 
 	 * @param repository
 	 *        The {@link Repository} to open a connection to.
@@ -106,24 +100,21 @@ public final class Repositories {
 	}
 
 	/**
-	 * Opens a {@link RepositoryConnection} to the given Repository, sends the
-	 * connection to the given {@link Function}, before either rolling back the
-	 * transaction if it failed, or committing the transaction if it was
-	 * successful.
+	 * Opens a {@link RepositoryConnection} to the given Repository, sends the connection to the given
+	 * {@link Function}, before either rolling back the transaction if it failed, or committing the
+	 * transaction if it was successful.
 	 * 
 	 * @param <T>
 	 *        The type of the return value.
 	 * @param repository
 	 *        The {@link Repository} to open a connection to.
 	 * @param processFunction
-	 *        A {@link Function} that performs an action on the connection and
-	 *        returns a result.
+	 *        A {@link Function} that performs an action on the connection and returns a result.
 	 * @return The result of applying the function.
 	 * @throws RepositoryException
 	 *         If there was an exception dealing with the Repository.
 	 * @throws UnknownTransactionStateException
-	 *         If the transaction state was not properly recognised. (Optional
-	 *         specific exception)
+	 *         If the transaction state was not properly recognised. (Optional specific exception)
 	 */
 	public static <T> T get(Repository repository, Function<RepositoryConnection, T> processFunction)
 		throws RepositoryException, UnknownTransactionStateException
@@ -151,32 +142,28 @@ public final class Repositories {
 	}
 
 	/**
-	 * Opens a {@link RepositoryConnection} to the given Repository, sends the
-	 * connection to the given {@link Function}, before either rolling back the
-	 * transaction if it failed, or committing the transaction if it was
-	 * successful.
+	 * Opens a {@link RepositoryConnection} to the given Repository, sends the connection to the given
+	 * {@link Function}, before either rolling back the transaction if it failed, or committing the
+	 * transaction if it was successful.
 	 * 
 	 * @param <T>
 	 *        The type of the return value.
 	 * @param repository
 	 *        The {@link Repository} to open a connection to.
 	 * @param processFunction
-	 *        A {@link Function} that performs an action on the connection and
-	 *        returns a result.
+	 *        A {@link Function} that performs an action on the connection and returns a result.
 	 * @param exceptionHandler
 	 *        A {@link Consumer} that handles an exception if one was generated.
-	 * @return The result of applying the function, or <tt>null</tt> if an
-	 *         exception occurs and the exception handler does not rethrow the
-	 *         exception.
+	 * @return The result of applying the function, or <tt>null</tt> if an exception occurs and the exception
+	 *         handler does not rethrow the exception.
 	 * @throws RepositoryException
 	 *         If there was an exception dealing with the Repository.
 	 * @throws UnknownTransactionStateException
-	 *         If the transaction state was not properly recognised. (Optional
-	 *         specific exception)
+	 *         If the transaction state was not properly recognised. (Optional specific exception)
 	 */
 	public static <T> T get(Repository repository, Function<RepositoryConnection, T> processFunction,
 			Consumer<RepositoryException> exceptionHandler)
-				throws RepositoryException, UnknownTransactionStateException
+		throws RepositoryException, UnknownTransactionStateException
 	{
 		try {
 			return get(repository, processFunction);
@@ -188,20 +175,17 @@ public final class Repositories {
 	}
 
 	/**
-	 * Opens a {@link RepositoryConnection} to the given Repository, sends the
-	 * connection to the given {@link Function}, before either rolling back the
-	 * transaction if it failed, or committing the transaction if it was
-	 * successful.
+	 * Opens a {@link RepositoryConnection} to the given Repository, sends the connection to the given
+	 * {@link Function}, before either rolling back the transaction if it failed, or committing the
+	 * transaction if it was successful.
 	 * 
 	 * @param <T>
 	 *        The type of the return value.
 	 * @param repository
 	 *        The {@link Repository} to open a connection to.
 	 * @param processFunction
-	 *        A {@link Function} that performs an action on the connection and
-	 *        returns a result.
-	 * @return The result of applying the function, or <tt>null</tt> if an
-	 *         exception is thrown.
+	 *        A {@link Function} that performs an action on the connection and returns a result.
+	 * @return The result of applying the function, or <tt>null</tt> if an exception is thrown.
 	 */
 	public static <T> T getSilent(Repository repository, Function<RepositoryConnection, T> processFunction) {
 		return get(repository, processFunction, e -> {
@@ -209,9 +193,8 @@ public final class Repositories {
 	}
 
 	/**
-	 * Performs a SPARQL Select query on the given Repository and passes the
-	 * results to the given {@link Function} with the result from the function
-	 * returned by the method.
+	 * Performs a SPARQL Select query on the given Repository and passes the results to the given
+	 * {@link Function} with the result from the function returned by the method.
 	 * 
 	 * @param <T>
 	 *        The type of the return value.
@@ -220,14 +203,12 @@ public final class Repositories {
 	 * @param query
 	 *        The SPARQL Select query to execute.
 	 * @param processFunction
-	 *        A {@link Function} that performs an action on the results of the
-	 *        query and returns a result.
+	 *        A {@link Function} that performs an action on the results of the query and returns a result.
 	 * @return The result of processing the query results.
 	 * @throws RepositoryException
 	 *         If there was an exception dealing with the Repository.
 	 * @throws UnknownTransactionStateException
-	 *         If the transaction state was not properly recognised. (Optional
-	 *         specific exception)
+	 *         If the transaction state was not properly recognised. (Optional specific exception)
 	 * @throws MalformedQueryException
 	 *         If the supplied query is malformed
 	 * @throws QueryEvaluationException
@@ -235,8 +216,8 @@ public final class Repositories {
 	 */
 	public static <T> T tupleQuery(Repository repository, String query,
 			Function<TupleQueryResult, T> processFunction)
-				throws RepositoryException, UnknownTransactionStateException, MalformedQueryException,
-				QueryEvaluationException
+		throws RepositoryException, UnknownTransactionStateException, MalformedQueryException,
+		QueryEvaluationException
 	{
 		return get(repository, conn -> {
 			TupleQuery preparedQuery = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
@@ -247,8 +228,8 @@ public final class Repositories {
 	}
 
 	/**
-	 * Performs a SPARQL Select query on the given Repository and passes the
-	 * results to the given {@link TupleQueryResultHandler}.
+	 * Performs a SPARQL Select query on the given Repository and passes the results to the given
+	 * {@link TupleQueryResultHandler}.
 	 * 
 	 * @param repository
 	 *        The {@link Repository} to open a connection to.
@@ -259,8 +240,7 @@ public final class Repositories {
 	 * @throws RepositoryException
 	 *         If there was an exception dealing with the Repository.
 	 * @throws UnknownTransactionStateException
-	 *         If the transaction state was not properly recognised. (Optional
-	 *         specific exception)
+	 *         If the transaction state was not properly recognised. (Optional specific exception)
 	 * @throws MalformedQueryException
 	 *         If the supplied query is malformed
 	 * @throws QueryEvaluationException
@@ -277,9 +257,8 @@ public final class Repositories {
 	}
 
 	/**
-	 * Performs a SPARQL Construct or Describe query on the given Repository and
-	 * passes the results to the given {@link Function} with the result from the
-	 * function returned by the method.
+	 * Performs a SPARQL Construct or Describe query on the given Repository and passes the results to the
+	 * given {@link Function} with the result from the function returned by the method.
 	 * 
 	 * @param <T>
 	 *        The type of the return value.
@@ -288,14 +267,12 @@ public final class Repositories {
 	 * @param query
 	 *        The SPARQL Construct or Describe query to execute.
 	 * @param processFunction
-	 *        A {@link Function} that performs an action on the results of the
-	 *        query and returns a result.
+	 *        A {@link Function} that performs an action on the results of the query and returns a result.
 	 * @return The result of processing the query results.
 	 * @throws RepositoryException
 	 *         If there was an exception dealing with the Repository.
 	 * @throws UnknownTransactionStateException
-	 *         If the transaction state was not properly recognised. (Optional
-	 *         specific exception)
+	 *         If the transaction state was not properly recognised. (Optional specific exception)
 	 * @throws MalformedQueryException
 	 *         If the supplied query is malformed
 	 * @throws QueryEvaluationException
@@ -303,8 +280,8 @@ public final class Repositories {
 	 */
 	public static <T> T graphQuery(Repository repository, String query,
 			Function<GraphQueryResult, T> processFunction)
-				throws RepositoryException, UnknownTransactionStateException, MalformedQueryException,
-				QueryEvaluationException
+		throws RepositoryException, UnknownTransactionStateException, MalformedQueryException,
+		QueryEvaluationException
 	{
 		return get(repository, conn -> {
 			GraphQuery preparedQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
@@ -315,8 +292,8 @@ public final class Repositories {
 	}
 
 	/**
-	 * Performs a SPARQL Construct or Describe query on the given Repository and
-	 * passes the results to the given {@link RDFHandler}.
+	 * Performs a SPARQL Construct or Describe query on the given Repository and passes the results to the
+	 * given {@link RDFHandler}.
 	 * 
 	 * @param repository
 	 *        The {@link Repository} to open a connection to.
@@ -327,8 +304,7 @@ public final class Repositories {
 	 * @throws RepositoryException
 	 *         If there was an exception dealing with the Repository.
 	 * @throws UnknownTransactionStateException
-	 *         If the transaction state was not properly recognised. (Optional
-	 *         specific exception)
+	 *         If the transaction state was not properly recognised. (Optional specific exception)
 	 * @throws MalformedQueryException
 	 *         If the supplied query is malformed
 	 * @throws QueryEvaluationException
@@ -345,22 +321,19 @@ public final class Repositories {
 	}
 
 	/**
-	 * Creates a {@link Supplier} of {@link RepositoryException} objects that be
-	 * passed to {@link Optional#orElseThrow(Supplier)} to generate exceptions as
-	 * necessary.
+	 * Creates a {@link Supplier} of {@link RepositoryException} objects that be passed to
+	 * {@link Optional#orElseThrow(Supplier)} to generate exceptions as necessary.
 	 * 
 	 * @param message
 	 *        The message to be used for the exception
-	 * @return A {@link Supplier} that will create {@link RepositoryException}
-	 *         objects with the given message.
+	 * @return A {@link Supplier} that will create {@link RepositoryException} objects with the given message.
 	 */
 	public static Supplier<RepositoryException> repositoryException(String message) {
 		return () -> new RepositoryException(message);
 	}
 
 	/**
-	 * Private constructor to prevent instantiation, this is a static helper
-	 * class.
+	 * Private constructor to prevent instantiation, this is a static helper class.
 	 */
 	private Repositories() {
 	}

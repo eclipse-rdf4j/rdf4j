@@ -22,8 +22,9 @@ public class NativeStoreCustomInferencingTest extends CustomGraphQueryInferencer
 
 	@Rule
 	public TemporaryFolder tempDir = new TemporaryFolder();
-	
-	public NativeStoreCustomInferencingTest(String resourceFolder, Expectation testData, QueryLanguage language)
+
+	public NativeStoreCustomInferencingTest(String resourceFolder, Expectation testData,
+			QueryLanguage language)
 	{
 		super(resourceFolder, testData, language);
 	}

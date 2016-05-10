@@ -22,7 +22,6 @@ import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpServletResponseWrapper;
 
 /**
- * 
  * @author Herko ter Horst
  */
 public class PathFilter implements Filter {

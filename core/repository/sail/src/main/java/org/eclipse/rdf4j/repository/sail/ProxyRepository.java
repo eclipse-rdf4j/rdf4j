@@ -21,20 +21,17 @@ import org.eclipse.rdf4j.repository.sail.config.RepositoryResolverClient;
 /**
  * <p>
  * {@link org.eclipse.rdf4j.repository.Repository} implementation that takes a
- * {@link org.eclipse.rdf4j.repository.sail.config.RepositoryResolver} instance and
- * the id of a managed repository, and delegate all calls through to the given
- * repository.
+ * {@link org.eclipse.rdf4j.repository.sail.config.RepositoryResolver} instance and the id of a managed
+ * repository, and delegate all calls through to the given repository.
  * </p>
  * <p>
- * The purpose is to allow {@link org.eclipse.rdf4j.sail.Sail}s to refer to other
- * local repositories using a unique identifier without having to go through an
- * HTTP layer.
+ * The purpose is to allow {@link org.eclipse.rdf4j.sail.Sail}s to refer to other local repositories using a
+ * unique identifier without having to go through an HTTP layer.
  * </p>
  * <p>
- * The implementation is independent of
- * {@link org.eclipse.rdf4j.repository.DelegatingRepository} so that it is freed from
- * having to provide implementation details in its configuration data. Instead,
- * it only has to provide an unambiguous local identifier to the proxy.
+ * The implementation is independent of {@link org.eclipse.rdf4j.repository.DelegatingRepository} so that it
+ * is freed from having to provide implementation details in its configuration data. Instead, it only has to
+ * provide an unambiguous local identifier to the proxy.
  * </p>
  * 
  * @author Dale Visser

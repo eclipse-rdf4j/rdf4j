@@ -20,14 +20,13 @@ import junit.framework.Test;
 
 import junit.framework.Test;
 
-
 /**
  * @author Jeen Broekstra
  */
 public class W3CApprovedSPARQL11UpdateTest extends SPARQLUpdateConformanceTest {
 
-	public W3CApprovedSPARQL11UpdateTest(String testURI, String name, String requestFile,
-			IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
+	public W3CApprovedSPARQL11UpdateTest(String testURI, String name, String requestFile, IRI defaultGraphURI,
+			Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
 			Map<String, IRI> resultNamedGraphs)
 	{
 		super(testURI, name, requestFile, defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
@@ -60,4 +59,3 @@ public class W3CApprovedSPARQL11UpdateTest extends SPARQLUpdateConformanceTest {
 	}
 
 }
-

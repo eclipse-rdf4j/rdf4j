@@ -39,12 +39,12 @@ public class InfoServlet extends TransformationServlet {
 		throws Exception
 	{
 		String id = info.getId();
-		
+
 		// "Caching" of servlet instances can cause this request to succeed even
 		// if the repository has been deleted. Client-side code using InfoServlet
 		// for repository existential checks expects an error response when the id 
 		// no longer exists. 
-		if (null != id && !manager.hasRepositoryConfig(id)){
+		if (null != id && !manager.hasRepositoryConfig(id)) {
 			throw new RepositoryConfigException(id + " does not exist.");
 		}
 		TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());

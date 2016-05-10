@@ -10,8 +10,16 @@ package org.eclipse.rdf4j.sail.lucene;
 import java.io.IOException;
 
 public interface BulkUpdater {
-	void add(SearchDocument doc) throws IOException;
-	void update(SearchDocument doc) throws IOException;
-	void delete(SearchDocument doc) throws IOException;
-	void end() throws IOException;
+
+	void add(SearchDocument doc)
+		throws IOException;
+
+	void update(SearchDocument doc)
+		throws IOException;
+
+	void delete(SearchDocument doc)
+		throws IOException;
+
+	void end()
+		throws IOException;
 }

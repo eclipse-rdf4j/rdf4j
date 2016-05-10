@@ -18,26 +18,28 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
 /**
- * Inserts original bindings into the result, uses ?__rowIdx to resolve original
- * bindings. See {@link ServiceJoinIterator} and {@link SPARQLFederatedService}.
+ * Inserts original bindings into the result, uses ?__rowIdx to resolve original bindings. See
+ * {@link ServiceJoinIterator} and {@link SPARQLFederatedService}.
  * 
  * @author Andreas Schwarte
  */
-public class ServiceJoinConversionIteration extends
-		ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+public class ServiceJoinConversionIteration
+		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException>
+{
 
 	protected final List<BindingSet> bindings;
 
-	public ServiceJoinConversionIteration(
-			CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			List<BindingSet> bindings) {
+	public ServiceJoinConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+			List<BindingSet> bindings)
+	{
 		super(iter);
 		this.bindings = bindings;
 	}
 
 	@Override
 	protected BindingSet convert(BindingSet bIn)
-			throws QueryEvaluationException {
+		throws QueryEvaluationException
+	{
 
 		// overestimate the capacity
 		QueryBindingSet res = new QueryBindingSet(bIn.size() + bindings.size());
@@ -53,13 +55,14 @@ public class ServiceJoinConversionIteration extends
 			}
 			res.addBinding(b.getName(), b.getValue());
 		}
-		
+
 		// should never occur: in such case we would have to create the cross product (which
 		// is dealt with in another place)
 		if (bIndex == -1)
-			throw new QueryEvaluationException("Invalid join. Probably this is due to non-standard behavior of the SPARQL endpoint. " +
-					"Please report to the developers.");
-		
+			throw new QueryEvaluationException(
+					"Invalid join. Probably this is due to non-standard behavior of the SPARQL endpoint. "
+							+ "Please report to the developers.");
+
 		res.addAll(bindings.get(bIndex));
 		return res;
 	}

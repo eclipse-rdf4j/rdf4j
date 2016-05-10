@@ -18,9 +18,9 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
 
 /**
- * An extension of {@link TurtleWriter} that writes RDF documents in <a
- * href="http://www.wiwiss.fu-berlin.de/suhl/bizer/TriG/Spec/">TriG</a> format
- * by adding graph scopes to the Turtle document.
+ * An extension of {@link TurtleWriter} that writes RDF documents in
+ * <a href="http://www.wiwiss.fu-berlin.de/suhl/bizer/TriG/Spec/">TriG</a> format by adding graph scopes to
+ * the Turtle document.
  * 
  * @author Arjohn Kampman
  */
@@ -63,8 +63,7 @@ public class TriGWriter extends TurtleWriter {
 	 *---------*/
 
 	@Override
-	public RDFFormat getRDFFormat()
-	{
+	public RDFFormat getRDFFormat() {
 		return RDFFormat.TRIG;
 	}
 

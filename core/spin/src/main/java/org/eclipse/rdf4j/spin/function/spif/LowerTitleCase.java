@@ -19,7 +19,7 @@ public class LowerTitleCase extends AbstractStringReplacer {
 	protected String transform(String s) {
 		StringBuilder buf = new StringBuilder(s.length());
 		char prev = '\0';
-		for (int i=0; i<s.length(); i++) {
+		for (int i = 0; i < s.length(); i++) {
 			char ch = s.charAt(i);
 			if (prev == ' ') {
 				buf.append(Character.toUpperCase(ch));

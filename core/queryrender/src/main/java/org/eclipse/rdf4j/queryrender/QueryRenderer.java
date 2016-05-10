@@ -27,8 +27,7 @@ public interface QueryRenderer {
 	public QueryLanguage getLanguage();
 
 	/**
-	 * Render the query object to a string in the language supported by this
-	 * renderer
+	 * Render the query object to a string in the language supported by this renderer
 	 * 
 	 * @param theQuery
 	 *        the query to render

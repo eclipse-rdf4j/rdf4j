@@ -49,8 +49,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * An implementation of {@link SailStore} that keeps committed statements in a
- * {@link MemStatementList}.
+ * An implementation of {@link SailStore} that keeps committed statements in a {@link MemStatementList}.
  * 
  * @author James Leigh
  */
@@ -79,8 +78,7 @@ class MemorySailStore implements SailStore {
 	private final MemNamespaceStore namespaceStore = new MemNamespaceStore();
 
 	/**
-	 * Lock manager used to give the snapshot cleanup thread exclusive access to
-	 * the statement list.
+	 * Lock manager used to give the snapshot cleanup thread exclusive access to the statement list.
 	 */
 	private final ReadWriteLockManager statementListLockManager;
 
@@ -90,14 +88,13 @@ class MemorySailStore implements SailStore {
 	final ReentrantLock txnLockManager = new ReentrantLock();
 
 	/**
-	 * Cleanup thread that removes deprecated statements when no other threads
-	 * are accessing this list. Seee {@link #scheduleSnapshotCleanup()}.
+	 * Cleanup thread that removes deprecated statements when no other threads are accessing this list. Seee
+	 * {@link #scheduleSnapshotCleanup()}.
 	 */
 	private volatile Thread snapshotCleanupThread;
 
 	/**
-	 * Semaphore used to synchronize concurrent access to
-	 * {@link #snapshotCleanupThread}.
+	 * Semaphore used to synchronize concurrent access to {@link #snapshotCleanupThread}.
 	 */
 	private final Object snapshotCleanupThreadSemaphore = new Object();
 
@@ -155,12 +152,10 @@ class MemorySailStore implements SailStore {
 	}
 
 	/**
-	 * Creates a StatementIterator that contains the statements matching the
-	 * specified pattern of subject, predicate, object, context. Inferred
-	 * statements are excluded when <tt>explicitOnly</tt> is set to <tt>true</tt>
-	 * . Statements from the null context are excluded when
-	 * <tt>namedContextsOnly</tt> is set to <tt>true</tt>. The returned
-	 * StatementIterator will assume the specified read mode.
+	 * Creates a StatementIterator that contains the statements matching the specified pattern of subject,
+	 * predicate, object, context. Inferred statements are excluded when <tt>explicitOnly</tt> is set to
+	 * <tt>true</tt> . Statements from the null context are excluded when <tt>namedContextsOnly</tt> is set to
+	 * <tt>true</tt>. The returned StatementIterator will assume the specified read mode.
 	 */
 	CloseableIteration<MemStatement, SailException> createStatementIterator(Resource subj, IRI pred,
 			Value obj, Boolean explicit, int snapshot, Resource... contexts)
@@ -246,8 +241,8 @@ class MemorySailStore implements SailStore {
 	}
 
 	/**
-	 * Removes statements from old snapshots from the main statement list and
-	 * resets the snapshot to 1 for the rest of the statements.
+	 * Removes statements from old snapshots from the main statement list and resets the snapshot to 1 for the
+	 * rest of the statements.
 	 * 
 	 * @throws InterruptedException
 	 */
@@ -422,8 +417,8 @@ class MemorySailStore implements SailStore {
 							MemStatement st = iter.next();
 							int since = st.getSinceSnapshot();
 							int till = st.getTillSnapshot();
-							if (serializable < since && since < nextSnapshot || serializable < till
-									&& till < nextSnapshot)
+							if (serializable < since && since < nextSnapshot
+									|| serializable < till && till < nextSnapshot)
 							{
 								throw new SailConflictException("Observed State has Changed");
 							}
@@ -489,11 +484,12 @@ class MemorySailStore implements SailStore {
 				observations = new HashSet<StatementPattern>();
 			}
 			if (contexts == null) {
-				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
-						new Var("g", null)));
+				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred),
+						new Var("o", obj), new Var("g", null)));
 			}
 			else if (contexts.length == 0) {
-				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj)));
+				observations.add(
+						new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj)));
 			}
 			else {
 				for (Resource ctx : contexts) {
@@ -557,7 +553,8 @@ class MemorySailStore implements SailStore {
 			}
 		}
 
-		private MemStatement addStatement(Resource subj, IRI pred, Value obj, Resource context, boolean explicit)
+		private MemStatement addStatement(Resource subj, IRI pred, Value obj, Resource context,
+				boolean explicit)
 			throws SailException
 		{
 			// Get or create MemValues for the operands
@@ -709,8 +706,8 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-				Resource... contexts)
+		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
+				Value obj, Resource... contexts)
 			throws SailException
 		{
 			boolean releaseLock = true;

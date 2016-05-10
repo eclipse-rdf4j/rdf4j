@@ -47,8 +47,7 @@ import junit.framework.TestCase;
 import junit.framework.TestSuite;
 
 /**
- * A SPARQL 1.1 Update test, created by reading in a W3C working-group style
- * manifest.
+ * A SPARQL 1.1 Update test, created by reading in a W3C working-group style manifest.
  *
  * @author Jeen Broekstra
  */
@@ -406,7 +405,7 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 
 	protected static String getManifestName(Repository manifestRep, RepositoryConnection con,
 			String manifestFileURL)
-				throws QueryEvaluationException, RepositoryException, MalformedQueryException
+		throws QueryEvaluationException, RepositoryException, MalformedQueryException
 	{
 		// Try to extract suite name from manifest file
 		TupleQuery manifestNameQuery = con.prepareTupleQuery(QueryLanguage.SERQL,

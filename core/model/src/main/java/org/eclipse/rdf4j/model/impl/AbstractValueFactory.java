@@ -27,10 +27,9 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
- * Abstract base class for {@link ValueFactory} implementations. It implements
- * all basic {@link Value} creation methods by using the default implementations
- * ({@link SimpleBNode}, {@link SimpleIRI}, etc), and type-optimized subclasses
- * (e.g. {@link BooleanLiteral}, {@link NumericLiteral}) where possible.
+ * Abstract base class for {@link ValueFactory} implementations. It implements all basic {@link Value}
+ * creation methods by using the default implementations ({@link SimpleBNode}, {@link SimpleIRI}, etc), and
+ * type-optimized subclasses (e.g. {@link BooleanLiteral}, {@link NumericLiteral}) where possible.
  * 
  * @author Arjohn Kampman
  * @author Jeen Broekstra
@@ -38,8 +37,8 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 public abstract class AbstractValueFactory implements ValueFactory {
 
 	/**
-	 * "universal" ID for bnode prefixes to prevent blank node clashes (unique
-	 * per classloaded instance of this class)
+	 * "universal" ID for bnode prefixes to prevent blank node clashes (unique per classloaded instance of
+	 * this class)
 	 */
 	private static long lastBNodePrefixUID = 0;
 
@@ -130,8 +129,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	/**
-	 * Generates a new bnode prefix and resets <tt>nextBNodeID</tt> to <tt>1</tt>
-	 * .
+	 * Generates a new bnode prefix and resets <tt>nextBNodeID</tt> to <tt>1</tt> .
 	 */
 	protected void initBNodeParams() {
 		// BNode prefix is based on currentTimeMillis(). Combined with a
@@ -155,8 +153,8 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	/**
-	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value
-	 * and {@link XMLSchema#BYTE} as parameters.
+	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#BYTE} as
+	 * parameters.
 	 */
 	@Override
 	public Literal createLiteral(byte value) {
@@ -164,8 +162,8 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	/**
-	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value
-	 * and {@link XMLSchema#SHORT} as parameters.
+	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#SHORT} as
+	 * parameters.
 	 */
 	@Override
 	public Literal createLiteral(short value) {
@@ -173,8 +171,8 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	/**
-	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value
-	 * and {@link XMLSchema#INT} as parameters.
+	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#INT} as
+	 * parameters.
 	 */
 	@Override
 	public Literal createLiteral(int value) {
@@ -182,8 +180,8 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	/**
-	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value
-	 * and {@link XMLSchema#LONG} as parameters.
+	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#LONG} as
+	 * parameters.
 	 */
 	@Override
 	public Literal createLiteral(long value) {
@@ -191,16 +189,15 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	/**
-	 * Calls {@link #createNumericLiteral(Number, IRI)} with the supplied value
-	 * and datatype as parameters.
+	 * Calls {@link #createNumericLiteral(Number, IRI)} with the supplied value and datatype as parameters.
 	 */
 	protected Literal createIntegerLiteral(Number value, IRI datatype) {
 		return createNumericLiteral(value, datatype);
 	}
 
 	/**
-	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and
-	 * {@link XMLSchema#FLOAT} as parameters.
+	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#FLOAT} as
+	 * parameters.
 	 */
 	@Override
 	public Literal createLiteral(float value) {
@@ -208,8 +205,8 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	/**
-	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and
-	 * {@link XMLSchema#DOUBLE} as parameters.
+	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#DOUBLE} as
+	 * parameters.
 	 */
 	@Override
 	public Literal createLiteral(double value) {
@@ -227,16 +224,14 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	/**
-	 * Calls {@link #createNumericLiteral(Number, IRI)} with the supplied value
-	 * and datatype as parameters.
+	 * Calls {@link #createNumericLiteral(Number, IRI)} with the supplied value and datatype as parameters.
 	 */
 	protected Literal createFPLiteral(Number value, IRI datatype) {
 		return createNumericLiteral(value, datatype);
 	}
 
 	/**
-	 * Creates specific optimized subtypes of SimpleLiteral for numeric
-	 * datatypes.
+	 * Creates specific optimized subtypes of SimpleLiteral for numeric datatypes.
 	 */
 	protected Literal createNumericLiteral(Number number, IRI datatype) {
 		if (number instanceof BigDecimal) {
@@ -249,9 +244,8 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	/**
-	 * Calls {@link ValueFactory#createLiteral(String, IRI)} with the
-	 * String-value of the supplied calendar and the appropriate datatype as
-	 * parameters.
+	 * Calls {@link ValueFactory#createLiteral(String, IRI)} with the String-value of the supplied calendar
+	 * and the appropriate datatype as parameters.
 	 * 
 	 * @see XMLGregorianCalendar#toXMLFormat()
 	 * @see XMLGregorianCalendar#getXMLSchemaType()
@@ -263,9 +257,8 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	/**
-	 * Converts the supplied {@link Date} to a {@link XMLGregorianCalendar}, then
-	 * calls {@link ValueFactory#createLiteral(XMLGregorianCalendar)}.
-	 * 
+	 * Converts the supplied {@link Date} to a {@link XMLGregorianCalendar}, then calls
+	 * {@link ValueFactory#createLiteral(XMLGregorianCalendar)}.
 	 */
 	@Override
 	public Literal createLiteral(Date date) {

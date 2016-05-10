@@ -23,52 +23,57 @@ import org.eclipse.rdf4j.model.vocabulary.GEO;
 public final class SearchFields {
 
 	/**
-	 * The name of the Document field holding the document identifier. This
-	 * consists of the Resource identifier (URI or BNodeID) and the Context ID
-	 * (the format is "resourceId|contextId")
+	 * The name of the Document field holding the document identifier. This consists of the Resource
+	 * identifier (URI or BNodeID) and the Context ID (the format is "resourceId|contextId")
 	 */
 	public static final String ID_FIELD_NAME = "id";
+
 	/**
-	 * The name of the Document field holding the Resource identifier. The value
-	 * stored in this field is either a URI or a BNode ID.
+	 * The name of the Document field holding the Resource identifier. The value stored in this field is
+	 * either a URI or a BNode ID.
 	 */
 	public static final String URI_FIELD_NAME = "uri";
+
 	/**
-	 * The name of the Document field that holds multiple text values of a
-	 * Resource. The field is called "text", as it contains all text, but was
-	 * called "ALL" during the discussion. For each statement-literal of the
-	 * resource, the object literal is stored in a field using the
-	 * predicate-literal and additionally in a TEXT_FIELD_NAME-literal field. The
-	 * reasons are given in the documentation of
+	 * The name of the Document field that holds multiple text values of a Resource. The field is called
+	 * "text", as it contains all text, but was called "ALL" during the discussion. For each statement-literal
+	 * of the resource, the object literal is stored in a field using the predicate-literal and additionally
+	 * in a TEXT_FIELD_NAME-literal field. The reasons are given in the documentation of
 	 * {@link #addPropertyFields(String, String, Document)}
 	 */
 	public static final String TEXT_FIELD_NAME = "text";
+
 	/**
 	 * The name of the Document field holding the context identifer(s).
 	 */
 	public static final String CONTEXT_FIELD_NAME = "context";
+
 	/**
 	 * the null context
 	 */
 	public static final String CONTEXT_NULL = "null";
+
 	/**
-	 * String used to prefix BNode IDs with so that we can distinguish BNode
-	 * fields from URI fields in Documents. The prefix is chosen so that it is
-	 * invalid as a (part of a) URI scheme.
+	 * String used to prefix BNode IDs with so that we can distinguish BNode fields from URI fields in
+	 * Documents. The prefix is chosen so that it is invalid as a (part of a) URI scheme.
 	 */
 	public static final String BNODE_ID_PREFIX = "!";
 
 	public static final String HIGHLIGHTER_PRE_TAG = "<B>";
+
 	public static final String HIGHLIGHTER_POST_TAG = "</B>";
-	public static final Pattern HIGHLIGHTER_PATTERN = Pattern.compile("("+HIGHLIGHTER_PRE_TAG+".+?"+HIGHLIGHTER_POST_TAG+")");
+
+	public static final Pattern HIGHLIGHTER_PATTERN = Pattern.compile(
+			"(" + HIGHLIGHTER_PRE_TAG + ".+?" + HIGHLIGHTER_POST_TAG + ")");
 
 	private static final ValueFactory valueFactory = ValueFactoryImpl.getInstance();
 
-	private SearchFields() {}
+	private SearchFields() {
+	}
 
 	/**
-	 * Returns the String ID corresponding with the specified Resource. The id
-	 * string is either the URI or a bnode prefixed with a "!".
+	 * Returns the String ID corresponding with the specified Resource. The id string is either the URI or a
+	 * bnode prefixed with a "!".
 	 */
 	public static String getResourceID(Resource resource) {
 		if (resource instanceof URI) {
@@ -83,8 +88,7 @@ public final class SearchFields {
 	}
 
 	/**
-	 * Get the ID for a context. Context can be null, then the "null" string is
-	 * returned
+	 * Get the ID for a context. Context can be null, then the "null" string is returned
 	 * 
 	 * @param resource
 	 *        the context
@@ -98,8 +102,7 @@ public final class SearchFields {
 	}
 
 	/**
-	 * Parses an id-string (a serialized resource) back to a resource Inverse
-	 * method of {@link getResourceID}
+	 * Parses an id-string (a serialized resource) back to a resource Inverse method of {@link getResourceID}
 	 * 
 	 * @param idString
 	 */
@@ -113,7 +116,7 @@ public final class SearchFields {
 	}
 
 	public static Resource createContext(String idString) {
-		if(CONTEXT_NULL.equals(idString)) {
+		if (CONTEXT_NULL.equals(idString)) {
 			return null;
 		}
 		else {
@@ -123,8 +126,8 @@ public final class SearchFields {
 
 	public static String getLiteralPropertyValueAsString(Statement statement) {
 		Value object = statement.getObject();
-		if(object instanceof Literal) {
-			return ((Literal) object).getLabel();
+		if (object instanceof Literal) {
+			return ((Literal)object).getLabel();
 		}
 		else {
 			return null;
@@ -171,13 +174,12 @@ public final class SearchFields {
 		return valueFactory.createLiteral(d);
 	}
 
-	public static String getSnippet(String highlightedValue)
-	{
-		if(highlightedValue.length() > 100) {
+	public static String getSnippet(String highlightedValue) {
+		if (highlightedValue.length() > 100) {
 			StringBuilder buf = new StringBuilder();
 			String separator = "";
 			Matcher matcher = HIGHLIGHTER_PATTERN.matcher(highlightedValue);
-			for(int i=0; i<2 && matcher.find(); i++) {
+			for (int i = 0; i < 2 && matcher.find(); i++) {
 				buf.append(separator);
 				buf.append(matcher.group());
 				separator = "...";

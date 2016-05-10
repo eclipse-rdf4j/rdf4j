@@ -28,15 +28,13 @@ import org.eclipse.rdf4j.sail.SailLockedException;
 import org.eclipse.rdf4j.sail.StackableSail;
 
 /**
- * An implementation of the {@link Repository} interface that operates on a
- * (stack of) {@link Sail Sail} object(s). The behaviour of the repository is
- * determined by the Sail stack that it operates on; for example, the repository
- * will only support RDF Schema or OWL semantics if the Sail stack includes an
+ * An implementation of the {@link Repository} interface that operates on a (stack of) {@link Sail Sail}
+ * object(s). The behaviour of the repository is determined by the Sail stack that it operates on; for
+ * example, the repository will only support RDF Schema or OWL semantics if the Sail stack includes an
  * inferencer for this.
  * <p>
- * Creating a repository object of this type is very easy. For example, the
- * following code creates and initializes a main-memory store with RDF Schema
- * semantics:
+ * Creating a repository object of this type is very easy. For example, the following code creates and
+ * initializes a main-memory store with RDF Schema semantics:
  * 
  * <pre>
  * Repository repository = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()));
@@ -176,8 +174,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	}
 
 	/**
-	 * Gets the Sail object that is on top of the Sail stack that this repository
-	 * operates on.
+	 * Gets the Sail object that is on top of the Sail stack that this repository operates on.
 	 * 
 	 * @return A Sail object.
 	 */

@@ -9,30 +9,31 @@
 /* JavaCCOptions:MULTI=true,NODE_USES_PARSER=false,VISITOR=true,TRACK_TOKENS=false,NODE_PREFIX=AST,NODE_EXTENDS=,NODE_FACTORY=,SUPPORT_CLASS_VISIBILITY_PUBLIC=true */
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
-public
-class ASTPathOneInPropertySet extends SimpleNode {
-  private boolean inverse;
+public class ASTPathOneInPropertySet extends SimpleNode {
 
-public ASTPathOneInPropertySet(int id) {
-    super(id);
-  }
+	private boolean inverse;
 
-  public ASTPathOneInPropertySet(SyntaxTreeBuilder p, int id) {
-    super(p, id);
-  }
+	public ASTPathOneInPropertySet(int id) {
+		super(id);
+	}
 
-  
-  public void setInverse(boolean inverse) {
+	public ASTPathOneInPropertySet(SyntaxTreeBuilder p, int id) {
+		super(p, id);
+	}
+
+	public void setInverse(boolean inverse) {
 		this.inverse = inverse;
-  }
-  
-  public boolean isInverse() {
-	  return this.inverse;
-  }
+	}
 
-  /** Accept the visitor. **/
-  public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
-    return visitor.visit(this, data);
-  }
+	public boolean isInverse() {
+		return this.inverse;
+	}
+
+	/** Accept the visitor. **/
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
+		throws VisitorException
+	{
+		return visitor.visit(this, data);
+	}
 }
 /* JavaCC - OriginalChecksum=99a68ed20670a36747c41bc81d152543 (do not edit this line) */

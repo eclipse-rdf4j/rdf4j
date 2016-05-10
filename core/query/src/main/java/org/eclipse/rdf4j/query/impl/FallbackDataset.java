@@ -13,9 +13,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.Dataset;
 
-
 /**
- *
  * @author james
  */
 public class FallbackDataset implements Dataset, Serializable {
@@ -34,6 +32,7 @@ public class FallbackDataset implements Dataset, Serializable {
 	}
 
 	private Dataset primary;
+
 	private Dataset fallback;
 
 	private FallbackDataset(Dataset primary, Dataset secondary) {

@@ -59,7 +59,9 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
-	public void testEndOfLine() throws Exception {
+	public void testEndOfLine()
+		throws Exception
+	{
 		TupleQueryResultFormat format = getTupleFormat();
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
@@ -72,7 +74,9 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 	}
 
 	@Test
-	public void testEmptyResults() throws Exception {
+	public void testEmptyResults()
+		throws Exception
+	{
 		TupleQueryResultFormat format = getTupleFormat();
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
@@ -97,14 +101,10 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 		QueryResults.report(createTupleSingleVarMultipleBindingSets(), writer);
 
 		System.out.println(out.toString("UTF-8"));
-		assertRegex("a\r\n" + "foo:bar\r\n" + "2.0(E0)?\r\n"
-				+ "_:bnode3\r\n" + "''single-quoted string\r\n"
-				+ "\"\"\"\"\"double-quoted string\"\r\n"
-				+ "space at the end         \r\n"
-				+ "space at the end         \r\n"
-				+ "\"\"\"\"\"double-quoted string with no datatype\"\r\n"
-				+ "\"newline at the end \n\"(\r\n)?",
-				out.toString("UTF-8"));
+		assertRegex("a\r\n" + "foo:bar\r\n" + "2.0(E0)?\r\n" + "_:bnode3\r\n" + "''single-quoted string\r\n"
+				+ "\"\"\"\"\"double-quoted string\"\r\n" + "space at the end         \r\n"
+				+ "space at the end         \r\n" + "\"\"\"\"\"double-quoted string with no datatype\"\r\n"
+				+ "\"newline at the end \n\"(\r\n)?", out.toString("UTF-8"));
 	}
 
 	@Test
@@ -120,9 +120,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 		QueryResults.report(createTupleMultipleBindingSets(), writer);
 
 		assertRegex(
-				"a,b,c\r\n"
-						+ "foo:bar,_:bnode,baz\r\n"
-						+ "1,,Hello World!\r\n"
+				"a,b,c\r\n" + "foo:bar,_:bnode,baz\r\n" + "1,,Hello World!\r\n"
 						+ "http://example.org/test/ns/bindingA,http://example.com/other/ns/bindingB,\"http://example.com/other/ns/binding,C\"\r\n"
 						+ "\"string with newline at the end       \n\",string with space at the end         ,    \r\n"
 						+ "''single-quoted string,\"\"\"\"\"double-quoted string\",\t\tunencoded tab characters followed by encoded \t\t(\r\n)?",
@@ -165,7 +163,8 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 
 				for (Binding binding : bs1) {
 					if (binding.getValue() instanceof BNode) {
-						newBNodeMapping.put((BNode)binding.getValue(), (BNode)bs2.getValue(binding.getName()));
+						newBNodeMapping.put((BNode)binding.getValue(),
+								(BNode)bs2.getValue(binding.getName()));
 					}
 				}
 
@@ -230,8 +229,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 		return true;
 	}
 
-	protected static boolean equals(Value value1, Value value2)
-	{
+	protected static boolean equals(Value value1, Value value2) {
 		try {
 			return QueryEvaluationUtil.compare(value1, value2, Compare.CompareOp.EQ);
 		}

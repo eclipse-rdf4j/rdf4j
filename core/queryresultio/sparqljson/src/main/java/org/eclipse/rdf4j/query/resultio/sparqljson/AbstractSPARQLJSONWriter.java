@@ -39,8 +39,8 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Lf2SpacesIndenter;
 
 /**
- * An abstract class to implement the base functionality for both
- * SPARQLBooleanJSONWriter and SPARQLResultsJSONWriter.
+ * An abstract class to implement the base functionality for both SPARQLBooleanJSONWriter and
+ * SPARQLResultsJSONWriter.
  * 
  * @author Peter Ansell
  */
@@ -241,8 +241,8 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 				Lf2SpacesIndenter indenter = Lf2SpacesIndenter.instance.withLinefeed("\n");
 				// By default Jackson does not pretty print, so enable this unless
 				// PRETTY_PRINT setting is disabled
-				DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(indenter).withObjectIndenter(
-						indenter);
+				DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(
+						indenter).withObjectIndenter(indenter);
 				jg.setPrettyPrinter(pp);
 			}
 

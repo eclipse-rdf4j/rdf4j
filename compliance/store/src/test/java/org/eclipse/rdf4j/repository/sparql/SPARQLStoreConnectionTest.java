@@ -95,10 +95,12 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 
 	@Override
 	@Ignore
-	public void testDuplicateFilter() throws Exception {
+	public void testDuplicateFilter()
+		throws Exception
+	{
 		System.err.println("temporarily disabled testDuplicateFilter() for SPARQLRepository");
 	}
-	
+
 	@Override
 	@Ignore
 	public void testAddDelete()
@@ -106,7 +108,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	{
 		System.err.println("temporarily disabled testAddDelete() for SPARQLRepository");
 	}
-	
+
 	@Override
 	@Ignore
 	public void testAddRemoveInsert()
@@ -114,7 +116,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	{
 		System.err.println("temporarily disabled testAddRemoveInsert() for SPARQLRepository");
 	}
-	
+
 	@Override
 	@Ignore
 	public void testSizeRollback()
@@ -202,7 +204,8 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	public void testGetStatementsInMultipleContexts()
 		throws Exception
 	{
-		System.err.println("temporarily disabled testGetStatementsInMultipleContexts() for SPARQLRepository: implementation of statement context using SPARQL not yet complete");
+		System.err.println(
+				"temporarily disabled testGetStatementsInMultipleContexts() for SPARQLRepository: implementation of statement context using SPARQL not yet complete");
 		// TODO see SES-1776
 	}
 
@@ -212,7 +215,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	{
 		// enable quad mode
 		enableQuadModeOnConnection((SPARQLConnection)testCon);
-		
+
 		testCon.clear();
 
 		testCon.begin();
@@ -221,33 +224,29 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		testCon.commit();
 
 		List<Statement> res;
-		
+
 		// test 1: alice statement should have context 1
 		res = Iterations.asList(testCon.getStatements(alice, null, null, false));
 		Assert.assertEquals(1, res.size());
 		Assert.assertEquals(context1, res.iterator().next().getContext());
-		
+
 		// test 2: bob statement should have default named graph
 		res = Iterations.asList(testCon.getStatements(bob, null, null, false));
 		Assert.assertEquals(1, res.size());
 		Assert.assertEquals(null, res.iterator().next().getContext());
-		
+
 		// test 3: bound statement should fetch context
 		res = Iterations.asList(testCon.getStatements(alice, name, nameAlice, false));
 		Assert.assertEquals(1, res.size());
-		Assert.assertEquals(context1, res.iterator().next().getContext());		
-		
+		Assert.assertEquals(context1, res.iterator().next().getContext());
+
 	}
-	
+
 	/**
-	 * Enable the quadMode on the given connection. This is done
-	 * via reflection here as the test setup already creates the
-	 * repository and connection and we do not have a chance to
-	 * set the mode easily inside the test (as quadMode is an
-	 * immutable field of the connection). 
-	 * 
-	 * Note: this is only done such that we can reuse the test
-	 * infrastructure of the base class.
+	 * Enable the quadMode on the given connection. This is done via reflection here as the test setup already
+	 * creates the repository and connection and we do not have a chance to set the mode easily inside the
+	 * test (as quadMode is an immutable field of the connection). Note: this is only done such that we can
+	 * reuse the test infrastructure of the base class.
 	 */
 	private void enableQuadModeOnConnection(SPARQLConnection con)
 		throws Exception
@@ -262,13 +261,14 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 
 		quadModeField.set(con, true);
 	}
-	
+
 	@Override
 	@Ignore
 	public void testGetStatementsInSingleContext()
 		throws Exception
 	{
-		System.err.println("temporarily disabled testGetStatementsInSingleContext() for SPARQLRepository: implementation of statement context using SPARQL not yet complete");
+		System.err.println(
+				"temporarily disabled testGetStatementsInSingleContext() for SPARQLRepository: implementation of statement context using SPARQL not yet complete");
 		// TODO see SES-1776
 	}
 
@@ -286,7 +286,8 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	public void testGetStatementsMalformedLanguageLiteral()
 		throws Exception
 	{
-		System.err.println("temporarily disabled testGetStatementsMalformedLanguageLiteral() for SPARQLRepository");
+		System.err.println(
+				"temporarily disabled testGetStatementsMalformedLanguageLiteral() for SPARQLRepository");
 	}
 
 	@Override
@@ -357,14 +358,15 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	{
 		System.err.println("temporarily disabled testTransactionIsolationForRead() for SPARQLRepository");
 	}
-	
+
 	@Ignore("temporarily disabled for SPARQLRepository")
 	@Test
 	@Override
 	public void testTransactionIsolationForReadWithDeleteOperation()
-	throws Exception 
+		throws Exception
 	{
-		System.err.println("temporarily disabled testTransactionIsolationForReadWithDeleteOperation() for SPARQLRepository");
+		System.err.println(
+				"temporarily disabled testTransactionIsolationForReadWithDeleteOperation() for SPARQLRepository");
 	}
 
 	@Override
@@ -469,7 +471,8 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		queryBuilder.append(" WHERE { [] foaf:name ?name; ");
 		queryBuilder.append("            foaf:mbox ?mbox. }");
 
-		GraphQueryResult result = testCon.prepareGraphQuery(QueryLanguage.SPARQL, queryBuilder.toString()).evaluate();
+		GraphQueryResult result = testCon.prepareGraphQuery(QueryLanguage.SPARQL,
+				queryBuilder.toString()).evaluate();
 
 		try {
 			assertTrue(result != null);
@@ -523,11 +526,13 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 				Statement st = result.next();
 				assertTrue(name.equals(st.getPredicate()) || mbox.equals(st.getPredicate()));
 				if (name.equals(st.getPredicate())) {
-					assertTrue("unexpected value for name: " + st.getObject(), nameBob.equals(st.getObject()));
+					assertTrue("unexpected value for name: " + st.getObject(),
+							nameBob.equals(st.getObject()));
 				}
 				else {
 					assertTrue(mbox.equals(st.getPredicate()));
-					assertTrue("unexpected value for mbox: " + st.getObject(), mboxBob.equals(st.getObject()));
+					assertTrue("unexpected value for mbox: " + st.getObject(),
+							mboxBob.equals(st.getObject()));
 				}
 
 			}
@@ -555,7 +560,8 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		queryBuilder.append(" WHERE { [] foaf:name ?name ;");
 		queryBuilder.append("            foaf:mbox ?mbox . ");
 		queryBuilder.append(" } ");
-		TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder.toString()).evaluate();
+		TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SPARQL,
+				queryBuilder.toString()).evaluate();
 
 		try {
 			assertTrue(result != null);
@@ -589,7 +595,8 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		queryBuilder.append(" SELECT ?person");
 		queryBuilder.append(" WHERE { ?person foaf:name \"").append(Александър.getLabel()).append("\" . } ");
 
-		TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder.toString()).evaluate();
+		TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SPARQL,
+				queryBuilder.toString()).evaluate();
 
 		try {
 			assertNotNull(result);

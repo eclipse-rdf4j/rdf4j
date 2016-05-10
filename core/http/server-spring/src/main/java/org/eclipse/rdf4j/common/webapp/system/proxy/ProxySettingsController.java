@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.common.app.net.ProxySettings;
 import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
 
 /**
- * 
  * @author Herko ter Horst
  */
 public class ProxySettingsController {

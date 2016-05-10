@@ -13,9 +13,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * A simple lexer that tokenizes a syntactically legal input SPARQL query string
- * on prolog items (prefixes, base declarations, IRIs, comments, and syntactical
- * tokens such as keywords, opening and closing brackets, and hashes).
+ * A simple lexer that tokenizes a syntactically legal input SPARQL query string on prolog items (prefixes,
+ * base declarations, IRIs, comments, and syntactical tokens such as keywords, opening and closing brackets,
+ * and hashes).
  * 
  * @author Jeen Broekstra
  */
@@ -45,9 +45,10 @@ public class QueryPrologLexer {
 
 	private static final Pattern IRI_PATTERN = Pattern.compile("^<([^>]*)>*");
 
-	private static final Pattern PREFIX_PATTERN = Pattern.compile("^prefix([^:]+):", Pattern.CASE_INSENSITIVE);
+	private static final Pattern PREFIX_PATTERN = Pattern.compile("^prefix([^:]+):",
+			Pattern.CASE_INSENSITIVE);
 
-//	private static final Pattern COMMENT_PATTERN = Pattern.compile("^#([^\n]+/)");
+	//	private static final Pattern COMMENT_PATTERN = Pattern.compile("^#([^\n]+/)");
 	private static final Pattern COMMENT_PATTERN = Pattern.compile("^(#.*((\r)?\n|(\r)?\n*))*");
 
 	public static class Token {
@@ -66,9 +67,8 @@ public class QueryPrologLexer {
 		}
 
 		/**
-		 * Get the corresponding string value for this token. For example in the
-		 * case of an {@link TokenType#IRI} token, this will return the string
-		 * representation of that IRI.
+		 * Get the corresponding string value for this token. For example in the case of an
+		 * {@link TokenType#IRI} token, this will return the string representation of that IRI.
 		 */
 		public String getStringValue() {
 			return s;
@@ -81,18 +81,16 @@ public class QueryPrologLexer {
 	}
 
 	/**
-	 * Tokenizes a syntactically legal input SPARQL query on prolog elements. The
-	 * last token in the returned list is of type {@link TokenType#REST_OF_QUERY}
-	 * and contains the SPARQL query string minus the prolog.
+	 * Tokenizes a syntactically legal input SPARQL query on prolog elements. The last token in the returned
+	 * list is of type {@link TokenType#REST_OF_QUERY} and contains the SPARQL query string minus the prolog.
 	 * 
 	 * @param input
 	 *        a syntactically legal SPARQL query string
-	 * @return a list with tokens for each prolog element. If the input string is
-	 *         syntactically legal SPARQL, the final returned token is guaranteed
-	 *         to be of type {@link TokenType#REST_OF_QUERY} and to contain the
-	 *         SPARQL query string minus the prolog. If the input string is not
-	 *         syntactically legal SPARQL, the method will still return normally
-	 *         but no guarantees about the returned list are made.
+	 * @return a list with tokens for each prolog element. If the input string is syntactically legal SPARQL,
+	 *         the final returned token is guaranteed to be of type {@link TokenType#REST_OF_QUERY} and to
+	 *         contain the SPARQL query string minus the prolog. If the input string is not syntactically
+	 *         legal SPARQL, the method will still return normally but no guarantees about the returned list
+	 *         are made.
 	 */
 	public static List<Token> lex(String input) {
 		final List<Token> result = new ArrayList<QueryPrologLexer.Token>();
@@ -143,17 +141,15 @@ public class QueryPrologLexer {
 	}
 
 	/**
-	 * Tokenizes the input string on prolog elements and returns the final Token.
-	 * If the input string is a syntactically legal SPARQL query, this Token will
-	 * be of type {@link TokenType#REST_OF_QUERY} and contain the query string
-	 * minus prolog.
+	 * Tokenizes the input string on prolog elements and returns the final Token. If the input string is a
+	 * syntactically legal SPARQL query, this Token will be of type {@link TokenType#REST_OF_QUERY} and
+	 * contain the query string minus prolog.
 	 * 
 	 * @param input
 	 *        a syntactically legal SPARQL string
-	 * @return if the input is syntactically legal SPARQL, a Token containing the
-	 *         query string without prolog. If the input is not syntactically
-	 *         legal, the method will still exist normally, but no guarantees are
-	 *         made about the returned object.
+	 * @return if the input is syntactically legal SPARQL, a Token containing the query string without prolog.
+	 *         If the input is not syntactically legal, the method will still exist normally, but no
+	 *         guarantees are made about the returned object.
 	 */
 	public static Token getRestOfQueryToken(String input) {
 		Token result = null;
@@ -196,9 +192,9 @@ public class QueryPrologLexer {
 	}
 
 	/**
-	 * Reads the first comment line from the input, and returns
-	 * the comment line (including the line break character) without
-	 * the leading "#". 
+	 * Reads the first comment line from the input, and returns the comment line (including the line break
+	 * character) without the leading "#".
+	 * 
 	 * @param input
 	 * @param index
 	 * @return

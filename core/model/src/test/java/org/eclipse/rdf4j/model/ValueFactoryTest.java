@@ -23,15 +23,13 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.junit.Before;
 import org.junit.Test;
 
-
 /**
- *
  * @author jeen
  */
 public class ValueFactoryTest {
 
 	private ValueFactory f;
-	
+
 	/**
 	 * @throws java.lang.Exception
 	 */
@@ -61,7 +59,7 @@ public class ValueFactoryTest {
 		assertNotNull(l);
 		assertEquals("true", l.getLabel());
 		assertEquals(l.getDatatype(), XMLSchema.BOOLEAN);
-		
+
 		l = f.createLiteral(false);
 		assertNotNull(l);
 		assertEquals("false", l.getLabel());
@@ -74,7 +72,7 @@ public class ValueFactoryTest {
 	@Test
 	public void testCreateLiteralByte() {
 		byte b = new Integer(42).byteValue();
-		
+
 		Literal l = f.createLiteral(b);
 		assertNotNull(l);
 		assertEquals("42", l.getLabel());
@@ -86,7 +84,7 @@ public class ValueFactoryTest {
 	 */
 	@Test
 	public void testCreateLiteralShort() {
-		
+
 		short s = Short.parseShort("42");
 
 		Literal l = f.createLiteral(s);
@@ -122,7 +120,7 @@ public class ValueFactoryTest {
 	 */
 	@Test
 	public void testCreateLiteralFloat() {
-		
+
 		Literal l = f.createLiteral(42.0f);
 		assertNotNull(l);
 		assertEquals("42.0", l.getLabel());
@@ -142,7 +140,9 @@ public class ValueFactoryTest {
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.impl.AbstractValueFactory#createLiteral(javax.xml.datatype.XMLGregorianCalendar)}.
+	 * Test method for
+	 * {@link org.eclipse.rdf4j.model.impl.AbstractValueFactory#createLiteral(javax.xml.datatype.XMLGregorianCalendar)}
+	 * .
 	 */
 	@Test
 	public void testCreateLiteralXMLGregorianCalendar() {
@@ -162,14 +162,15 @@ public class ValueFactoryTest {
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.impl.AbstractValueFactory#createLiteral(java.util.Date)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.impl.AbstractValueFactory#createLiteral(java.util.Date)}
+	 * .
 	 */
 	@Test
 	public void testCreateLiteralDate() {
 		Literal l = f.createLiteral(new Date());
 		assertNotNull(l);
 		assertEquals(l.getDatatype(), XMLSchema.DATETIME);
-		
+
 	}
 
 }

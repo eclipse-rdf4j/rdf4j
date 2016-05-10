@@ -31,8 +31,8 @@ public class FloatCast implements Function {
 		throws ValueExprEvaluationException
 	{
 		if (args.length != 1) {
-			throw new ValueExprEvaluationException("xsd:float cast requires exactly 1 argument, got "
-					+ args.length);
+			throw new ValueExprEvaluationException(
+					"xsd:float cast requires exactly 1 argument, got " + args.length);
 		}
 
 		if (args[0] instanceof Literal) {

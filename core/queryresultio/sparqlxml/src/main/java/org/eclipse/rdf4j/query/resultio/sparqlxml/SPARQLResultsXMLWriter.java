@@ -14,9 +14,8 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 
 /**
- * A {@link TupleQueryResultWriter} that writes tuple query results in the <a
- * href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML
- * Format</a>.
+ * A {@link TupleQueryResultWriter} that writes tuple query results in the
+ * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML Format</a>.
  */
 public class SPARQLResultsXMLWriter extends AbstractSPARQLXMLWriter implements TupleQueryResultWriter {
 

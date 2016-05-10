@@ -40,23 +40,25 @@ import org.junit.runners.Parameterized.Parameters;
 @RunWith(Parameterized.class)
 public class SpinParserTest {
 
-	@Parameters(name="{0}")
+	@Parameters(name = "{0}")
 	public static Collection<Object[]> testData() {
 		List<Object[]> params = new ArrayList<Object[]>();
-		for(int i=0; ; i++) {
-			String suffix = String.valueOf(i+1);
-			String testFile = "/testcases/test"+suffix+".ttl";
+		for (int i = 0;; i++) {
+			String suffix = String.valueOf(i + 1);
+			String testFile = "/testcases/test" + suffix + ".ttl";
 			URL rdfURL = SpinParserTest.class.getResource(testFile);
-			if(rdfURL == null) {
+			if (rdfURL == null) {
 				break;
 			}
-			params.add(new Object[] {testFile, rdfURL});
+			params.add(new Object[] { testFile, rdfURL });
 		}
 		return params;
 	}
 
 	private final URL testURL;
+
 	private final SpinParser textParser = new SpinParser(SpinParser.Input.TEXT_ONLY);
+
 	private final SpinParser rdfParser = new SpinParser(SpinParser.Input.RDF_ONLY);
 
 	public SpinParserTest(String testName, URL testURL) {
@@ -64,7 +66,9 @@ public class SpinParserTest {
 	}
 
 	@Test
-	public void testSpinParser() throws IOException, RDF4JException {
+	public void testSpinParser()
+		throws IOException, RDF4JException
+	{
 		StatementCollector expected = new StatementCollector();
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 		parser.setRDFHandler(expected);
@@ -74,8 +78,8 @@ public class SpinParserTest {
 
 		// get query resource from sp:text
 		Resource queryResource = null;
-		for(Statement stmt : expected.getStatements()) {
-			if(SP.TEXT_PROPERTY.equals(stmt.getPredicate())) {
+		for (Statement stmt : expected.getStatements()) {
+			if (SP.TEXT_PROPERTY.equals(stmt.getPredicate())) {
 				queryResource = stmt.getSubject();
 				break;
 			}
@@ -86,11 +90,13 @@ public class SpinParserTest {
 		ParsedOperation textParsedOp = textParser.parse(queryResource, store);
 		ParsedOperation rdfParsedOp = rdfParser.parse(queryResource, store);
 
-		if(textParsedOp instanceof ParsedQuery) {
-			assertEquals(((ParsedQuery)textParsedOp).getTupleExpr(), ((ParsedQuery)rdfParsedOp).getTupleExpr());
+		if (textParsedOp instanceof ParsedQuery) {
+			assertEquals(((ParsedQuery)textParsedOp).getTupleExpr(),
+					((ParsedQuery)rdfParsedOp).getTupleExpr());
 		}
 		else {
-			assertEquals(((ParsedUpdate)textParsedOp).getUpdateExprs(), ((ParsedUpdate)rdfParsedOp).getUpdateExprs());
+			assertEquals(((ParsedUpdate)textParsedOp).getUpdateExprs(),
+					((ParsedUpdate)rdfParsedOp).getUpdateExprs());
 		}
 	}
 }

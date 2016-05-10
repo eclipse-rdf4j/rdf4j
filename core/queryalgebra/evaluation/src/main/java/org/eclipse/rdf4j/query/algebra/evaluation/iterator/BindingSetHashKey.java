@@ -14,8 +14,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 
 /**
- * Compact and efficient representation of a binding set for use as a key in
- * hash maps.
+ * Compact and efficient representation of a binding set for use as a key in hash maps.
  * 
  * @author MJAHale
  */

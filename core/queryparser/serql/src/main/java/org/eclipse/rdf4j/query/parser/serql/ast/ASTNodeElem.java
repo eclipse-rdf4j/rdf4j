@@ -23,7 +23,7 @@ public class ASTNodeElem extends SimpleNode {
 	{
 		return visitor.visit(this, data);
 	}
-	
+
 	/**
 	 * Gets the node element's child node.
 	 *

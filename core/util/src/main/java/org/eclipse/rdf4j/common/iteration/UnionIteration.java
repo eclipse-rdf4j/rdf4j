@@ -12,9 +12,8 @@ import java.util.Arrays;
 import java.util.Iterator;
 
 /**
- * An Iteration that returns the bag union of the results of a number of
- * Iterations. 'Bag union' means that the UnionIteration does not filter
- * duplicate objects.
+ * An Iteration that returns the bag union of the results of a number of Iterations. 'Bag union' means that
+ * the UnionIteration does not filter duplicate objects.
  */
 public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E, X> {
 
@@ -31,8 +30,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	 *--------------*/
 
 	/**
-	 * Creates a new UnionIteration that returns the bag union of the results of
-	 * a number of Iterations.
+	 * Creates a new UnionIteration that returns the bag union of the results of a number of Iterations.
 	 * 
 	 * @param args
 	 *        The Iterations containing the elements to iterate over.
@@ -42,8 +40,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	}
 
 	/**
-	 * Creates a new UnionIteration that returns the bag union of the results of
-	 * a number of Iterations.
+	 * Creates a new UnionIteration that returns the bag union of the results of a number of Iterations.
 	 * 
 	 * @param args
 	 *        The Iterations containing the elements to iterate over.

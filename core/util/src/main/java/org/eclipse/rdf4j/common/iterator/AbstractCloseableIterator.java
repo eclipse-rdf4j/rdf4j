@@ -34,16 +34,14 @@ public abstract class AbstractCloseableIterator<E> implements Iterator<E>, Close
 	/**
 	 * Checks whether this Iterator has been closed.
 	 * 
-	 * @return <tt>true</tt> if the Iterator has been closed,
-	 *         <tt>false</tt> otherwise.
+	 * @return <tt>true</tt> if the Iterator has been closed, <tt>false</tt> otherwise.
 	 */
 	public final boolean isClosed() {
 		return closed.get();
 	}
 
 	/**
-	 * Calls {@link #handleClose()} upon first call and makes sure this method
-	 * gets called only once.
+	 * Calls {@link #handleClose()} upon first call and makes sure this method gets called only once.
 	 */
 	@Override
 	public final void close()
@@ -58,9 +56,8 @@ public abstract class AbstractCloseableIterator<E> implements Iterator<E>, Close
 	}
 
 	/**
-	 * Called by {@link #close} when it is called for the first time. This method
-	 * is only called once on each iteration. By default, this method does
-	 * nothing.
+	 * Called by {@link #close} when it is called for the first time. This method is only called once on each
+	 * iteration. By default, this method does nothing.
 	 * 
 	 * @throws X
 	 */
@@ -70,7 +67,7 @@ public abstract class AbstractCloseableIterator<E> implements Iterator<E>, Close
 	}
 
 	protected void handleAlreadyClosed()
-			throws IOException
+		throws IOException
 	{
 	}
 }

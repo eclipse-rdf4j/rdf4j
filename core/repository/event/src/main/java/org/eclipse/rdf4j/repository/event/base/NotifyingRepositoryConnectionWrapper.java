@@ -32,15 +32,14 @@ import org.eclipse.rdf4j.repository.event.NotifyingRepositoryConnection;
 import org.eclipse.rdf4j.repository.event.RepositoryConnectionListener;
 
 /**
- * This broadcaster is used by the RepositoryBroadcaster to wrap the delegate
- * repository connection. Listeners are notified of changes after they have
- * occurred.
+ * This broadcaster is used by the RepositoryBroadcaster to wrap the delegate repository connection. Listeners
+ * are notified of changes after they have occurred.
  * 
  * @author James Leigh
  * @author Herko ter Horst
  */
-public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWrapper implements
-		NotifyingRepositoryConnection
+public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWrapper
+		implements NotifyingRepositoryConnection
 {
 
 	/*-----------*
@@ -81,8 +80,8 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 	}
 
 	/**
-	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive
-	 * notifications of operations that are performed on this connection.
+	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive notifications of operations that
+	 * are performed on this connection.
 	 */
 	public void addRepositoryConnectionListener(RepositoryConnectionListener listener) {
 		listeners.add(listener);
@@ -90,8 +89,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 	}
 
 	/**
-	 * Removes a registered <tt>RepositoryConnectionListener</tt> from this
-	 * connection.
+	 * Removes a registered <tt>RepositoryConnectionListener</tt> from this connection.
 	 */
 	public void removeRepositoryConnectionListener(RepositoryConnectionListener listener) {
 		listeners.remove(listener);

@@ -13,8 +13,7 @@ import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.parser.QueryPrologLexer.Token;
 
 /**
- * Utility class for creating query parsers and parsing queries in various query
- * languages.
+ * Utility class for creating query parsers and parsing queries in various query languages.
  */
 public class QueryParserUtil {
 
@@ -34,9 +33,8 @@ public class QueryParserUtil {
 	 * @param operation
 	 *        The operation.
 	 * @param baseURI
-	 *        The base URI to resolve any relative URIs that are in the operation
-	 *        against, can be <tt>null</tt> if the operation does not contain any
-	 *        relative URIs.
+	 *        The base URI to resolve any relative URIs that are in the operation against, can be
+	 *        <tt>null</tt> if the operation does not contain any relative URIs.
 	 * @return The model for the parsed operation.
 	 * @throws MalformedQueryException
 	 *         If the supplied operation was malformed.
@@ -78,9 +76,8 @@ public class QueryParserUtil {
 	 * @param update
 	 *        The update operation.
 	 * @param baseURI
-	 *        The base URI to resolve any relative URIs that are in the operation
-	 *        against, can be <tt>null</tt> if the update operation does not
-	 *        contain any relative URIs.
+	 *        The base URI to resolve any relative URIs that are in the operation against, can be
+	 *        <tt>null</tt> if the update operation does not contain any relative URIs.
 	 * @return The model for the parsed update operation.
 	 * @throws MalformedQueryException
 	 *         If the supplied update operation was malformed.
@@ -102,9 +99,8 @@ public class QueryParserUtil {
 	 * @param query
 	 *        The query.
 	 * @param baseURI
-	 *        The base URI to resolve any relative URIs that are in the query
-	 *        against, can be <tt>null</tt> if the query does not contain any
-	 *        relative URIs.
+	 *        The base URI to resolve any relative URIs that are in the query against, can be <tt>null</tt> if
+	 *        the query does not contain any relative URIs.
 	 * @return The query model for the parsed query.
 	 * @throws MalformedQueryException
 	 *         If the supplied query was malformed.
@@ -200,14 +196,12 @@ public class QueryParserUtil {
 	}
 
 	/**
-	 * Removes SPARQL prefix and base declarations, if any, from the supplied
-	 * SPARQL query string. The supplied query string is assumed to be
-	 * syntactically legal.
+	 * Removes SPARQL prefix and base declarations, if any, from the supplied SPARQL query string. The
+	 * supplied query string is assumed to be syntactically legal.
 	 * 
 	 * @param queryString
 	 *        a syntactically legal SPARQL query string
-	 * @return a substring of queryString, with prefix and base declarations
-	 *         removed.
+	 * @return a substring of queryString, with prefix and base declarations removed.
 	 */
 	public static String removeSPARQLQueryProlog(String queryString) {
 		final Token t = QueryPrologLexer.getRestOfQueryToken(queryString);

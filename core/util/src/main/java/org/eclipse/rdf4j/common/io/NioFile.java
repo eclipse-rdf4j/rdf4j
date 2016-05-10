@@ -17,12 +17,10 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
 
 /**
- * File wrapper that protects against concurrent file closing events due to e.g.
- * {@link Thread#interrupt() thread interrupts}. In case the file channel that
- * is used by this class is closed due to such an event, it will try to reopen
- * the channel. The thread that causes the {@link ClosedByInterruptException} is
- * not protected, assuming the interrupt is intended to end the thread's
- * operation.
+ * File wrapper that protects against concurrent file closing events due to e.g. {@link Thread#interrupt()
+ * thread interrupts}. In case the file channel that is used by this class is closed due to such an event, it
+ * will try to reopen the channel. The thread that causes the {@link ClosedByInterruptException} is not
+ * protected, assuming the interrupt is intended to end the thread's operation.
  * 
  * @author Arjohn Kampman
  */
@@ -99,8 +97,7 @@ public final class NioFile {
 	/**
 	 * Closed any open channels and then deletes the file.
 	 * 
-	 * @return <tt>true</tt> if the file has been deleted successfully,
-	 *         <tt>false</tt> otherwise.
+	 * @return <tt>true</tt> if the file has been deleted successfully, <tt>false</tt> otherwise.
 	 * @throws IOException
 	 *         If there was a problem closing the open file channel.
 	 */
@@ -171,8 +168,7 @@ public final class NioFile {
 	}
 
 	/**
-	 * Performs a protected
-	 * {@link FileChannel#transferTo(long, long, WritableByteChannel)} call.
+	 * Performs a protected {@link FileChannel#transferTo(long, long, WritableByteChannel)} call.
 	 */
 	public long transferTo(long position, long count, WritableByteChannel target)
 		throws IOException

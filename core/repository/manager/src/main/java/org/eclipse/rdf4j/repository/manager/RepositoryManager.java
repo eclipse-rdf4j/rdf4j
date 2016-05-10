@@ -32,12 +32,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A manager for {@link Repository}s. Every <tt>RepositoryManager</tt> has one
- * SYSTEM repository and zero or more "user repositories". The SYSTEM repository
- * contains data that describes the configuration of the other repositories
- * (their IDs, which implementations of the Repository API to use, access
- * rights, etc.). The other repositories are instantiated based on this
- * configuration data.
+ * A manager for {@link Repository}s. Every <tt>RepositoryManager</tt> has one SYSTEM repository and zero or
+ * more "user repositories". The SYSTEM repository contains data that describes the configuration of the other
+ * repositories (their IDs, which implementations of the Repository API to use, access rights, etc.). The
+ * other repositories are instantiated based on this configuration data.
  * 
  * @author Arjohn Kampman
  * @see RepositoryProvider
@@ -70,8 +68,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	}
 
 	/**
-	 * Create a new RepositoryManager using the given map to store repository
-	 * information.
+	 * Create a new RepositoryManager using the given map to store repository information.
 	 * 
 	 * @param initializedRepositories
 	 *        A map that will be used to store repository information.
@@ -85,8 +82,8 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 *---------*/
 
 	/**
-	 * Indicates if this RepositoryManager has been initialized. Note that the
-	 * initialization status may change if the Repository is shut down.
+	 * Indicates if this RepositoryManager has been initialized. Note that the initialization status may
+	 * change if the Repository is shut down.
 	 * 
 	 * @return true iff the repository manager has been initialized.
 	 */
@@ -105,7 +102,8 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	/**
 	 * Should be called before {@link #initialize()}.
 	 * 
-	 * @param httpClient The httpClient to use for remote/service calls.
+	 * @param httpClient
+	 *        The httpClient to use for remote/service calls.
 	 */
 	public abstract void setHttpClient(HttpClient httpClient);
 
@@ -140,15 +138,13 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	}
 
 	/**
-	 * Generates an ID for a new repository based on the specified base name. The
-	 * base name may for example be a repository name entered by the user. The
-	 * generated ID will contain a variant of this name that does not occur as a
-	 * repository ID in this manager yet and is suitable for use as a file name
-	 * (e.g. for the repository's data directory).
+	 * Generates an ID for a new repository based on the specified base name. The base name may for example be
+	 * a repository name entered by the user. The generated ID will contain a variant of this name that does
+	 * not occur as a repository ID in this manager yet and is suitable for use as a file name (e.g. for the
+	 * repository's data directory).
 	 * 
 	 * @param baseName
-	 *        The String on which the returned ID should be based, must not be
-	 *        <tt>null</tt>.
+	 *        The String on which the returned ID should be based, must not be <tt>null</tt>.
 	 * @return A new repository ID derived from the specified base name.
 	 * @throws RepositoryException
 	 * @throws RepositoryConfigException
@@ -218,21 +214,18 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	}
 
 	/**
-	 * Adds or updates the configuration of a repository to the manager's system
-	 * repository. The system repository may already contain a configuration for
-	 * a repository with the same ID as specified by <tt>config</tt>, in which
-	 * case all previous configuration data for that repository will be cleared
+	 * Adds or updates the configuration of a repository to the manager's system repository. The system
+	 * repository may already contain a configuration for a repository with the same ID as specified by
+	 * <tt>config</tt>, in which case all previous configuration data for that repository will be cleared
 	 * before the new configuration is added.
 	 * 
 	 * @param config
-	 *        The repository configuration that should be added to or updated in
-	 *        the system repository.
+	 *        The repository configuration that should be added to or updated in the system repository.
 	 * @throws RepositoryException
 	 *         If the manager failed to update it's system repository.
 	 * @throws RepositoryConfigException
-	 *         If the manager doesn't know how to update a configuration due to
-	 *         inconsistent configuration data in the system repository. For
-	 *         example, this happens when there are multiple existing
+	 *         If the manager doesn't know how to update a configuration due to inconsistent configuration
+	 *         data in the system repository. For example, this happens when there are multiple existing
 	 *         configurations with the concerning ID.
 	 */
 	public void addRepositoryConfig(RepositoryConfig config)
@@ -242,22 +235,19 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	}
 
 	/**
-	 * Removes the configuration for the specified repository from the manager's
-	 * system repository if such a configuration is present. Returns
-	 * <tt>true</tt> if the system repository actually contained the specified
-	 * repository configuration.
+	 * Removes the configuration for the specified repository from the manager's system repository if such a
+	 * configuration is present. Returns <tt>true</tt> if the system repository actually contained the
+	 * specified repository configuration.
 	 * 
 	 * @param repositoryID
 	 *        The ID of the repository whose configuration needs to be removed.
 	 * @throws RepositoryException
 	 *         If the manager failed to update it's system repository.
 	 * @throws RepositoryConfigException
-	 *         If the manager doesn't know how to remove a configuration due to
-	 *         inconsistent configuration data in the system repository. For
-	 *         example, this happens when there are multiple existing
+	 *         If the manager doesn't know how to remove a configuration due to inconsistent configuration
+	 *         data in the system repository. For example, this happens when there are multiple existing
 	 *         configurations with the concerning ID.
-	 * @deprecated since 2.6.7. Use {@link #removeRepository(String repositoryID)}
-	 *             instead.
+	 * @deprecated since 2.6.7. Use {@link #removeRepository(String repositoryID)} instead.
 	 */
 	@Deprecated
 	public boolean removeRepositoryConfig(String repositoryID)
@@ -281,8 +271,8 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 					cleanUpRepository(repositoryID);
 				}
 				catch (IOException e) {
-					throw new RepositoryException("Unable to clean up resources for removed repository "
-							+ repositoryID, e);
+					throw new RepositoryException(
+							"Unable to clean up resources for removed repository " + repositoryID, e);
 				}
 			}
 		}
@@ -296,8 +286,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * 
 	 * @param repositoryID
 	 *        id to check
-	 * @return true if there is no existing proxy reference to the given id,
-	 *         false otherwise
+	 * @return true if there is no existing proxy reference to the given id, false otherwise
 	 * @throws RepositoryException
 	 */
 	public boolean isSafeToRemove(String repositoryID)
@@ -314,21 +303,18 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	}
 
 	/**
-	 * Removes the specified repository by deleting its configuration from the
-	 * manager's system repository if such a configuration is present, and
-	 * removing any persistent data associated with the repository. Returns
-	 * <tt>true</tt> if the system repository actually contained the specified
-	 * repository configuration. <strong>NB this operation can not be
-	 * undone!</strong>
+	 * Removes the specified repository by deleting its configuration from the manager's system repository if
+	 * such a configuration is present, and removing any persistent data associated with the repository.
+	 * Returns <tt>true</tt> if the system repository actually contained the specified repository
+	 * configuration. <strong>NB this operation can not be undone!</strong>
 	 * 
 	 * @param repositoryID
 	 *        The ID of the repository that needs to be removed.
 	 * @throws RepositoryException
 	 *         If the manager failed to update its system repository.
 	 * @throws RepositoryConfigException
-	 *         If the manager doesn't know how to remove a repository due to
-	 *         inconsistent configuration data in the system repository. For
-	 *         example, this happens when there are multiple existing
+	 *         If the manager doesn't know how to remove a repository due to inconsistent configuration data
+	 *         in the system repository. For example, this happens when there are multiple existing
 	 *         configurations with the concerning ID.
 	 */
 	public boolean removeRepository(String repositoryID)
@@ -352,8 +338,8 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 					cleanUpRepository(repositoryID);
 				}
 				catch (IOException e) {
-					throw new RepositoryException("Unable to clean up resources for removed repository "
-							+ repositoryID, e);
+					throw new RepositoryException(
+							"Unable to clean up resources for removed repository " + repositoryID, e);
 				}
 			}
 		}
@@ -366,11 +352,10 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * 
 	 * @param identity
 	 *        A repository ID.
-	 * @return An initialized Repository object, or <tt>null</tt> if no
-	 *         repository was known for the specified ID.
+	 * @return An initialized Repository object, or <tt>null</tt> if no repository was known for the specified
+	 *         ID.
 	 * @throws RepositoryConfigException
-	 *         If no repository could be created due to invalid or incomplete
-	 *         configuration data.
+	 *         If no repository could be created due to invalid or incomplete configuration data.
 	 */
 	@Override
 	public Repository getRepository(String identity)
@@ -401,8 +386,8 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	}
 
 	/**
-	 * Returns all initialized repositories. This method returns fast as no lazy
-	 * creation of repositories takes place.
+	 * Returns all initialized repositories. This method returns fast as no lazy creation of repositories
+	 * takes place.
 	 * 
 	 * @return a collection containing the IDs of all initialized repositories.
 	 * @see #getRepositoryIDs()
@@ -415,8 +400,8 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	}
 
 	/**
-	 * Returns all initialized repositories. This method returns fast as no lazy
-	 * creation of repositories takes place.
+	 * Returns all initialized repositories. This method returns fast as no lazy creation of repositories
+	 * takes place.
 	 * 
 	 * @return a set containing the initialized repositories.
 	 * @see #getAllRepositories()
@@ -458,8 +443,8 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	}
 
 	/**
-	 * Returns all configured repositories. This may be an expensive operation as
-	 * it initializes repositories that have not been initialized yet.
+	 * Returns all configured repositories. This may be an expensive operation as it initializes repositories
+	 * that have not been initialized yet.
 	 * 
 	 * @return The Set of all Repositories defined in the SystemRepository.
 	 * @see #getInitializedRepositories()
@@ -483,11 +468,9 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * 
 	 * @param id
 	 *        A repository ID.
-	 * @return The created and initialized repository, or <tt>null</tt> if no
-	 *         such repository exists.
+	 * @return The created and initialized repository, or <tt>null</tt> if no such repository exists.
 	 * @throws RepositoryConfigException
-	 *         If no repository could be created due to invalid or incomplete
-	 *         configuration data.
+	 *         If no repository could be created due to invalid or incomplete configuration data.
 	 * @throws RepositoryException
 	 *         If the repository could not be initialized.
 	 */
@@ -499,8 +482,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * 
 	 * @param id
 	 *        A repository ID.
-	 * @return A Repository object, or <tt>null</tt> if no repository was known
-	 *         for the specified ID.
+	 * @return A Repository object, or <tt>null</tt> if no repository was known for the specified ID.
 	 * @throws RepositoryException
 	 *         When not able to retrieve existing configurations
 	 */
@@ -616,7 +598,8 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 			logger.error("Failed to process repository configuration changes", e);
 		}
 		catch (RepositoryConfigException e) {
-			logger.warn("Unable to determine if configuration for {} is still present in the system repository",
+			logger.warn(
+					"Unable to determine if configuration for {} is still present in the system repository",
 					repositoryID);
 		}
 		catch (IOException e) {
@@ -625,8 +608,8 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	}
 
 	/**
-	 * Clean up a removed repository. Note that the configuration for this
-	 * repository is no longer present in the system repository.
+	 * Clean up a removed repository. Note that the configuration for this repository is no longer present in
+	 * the system repository.
 	 * 
 	 * @param repositoryID
 	 *        the ID of the repository to clean up

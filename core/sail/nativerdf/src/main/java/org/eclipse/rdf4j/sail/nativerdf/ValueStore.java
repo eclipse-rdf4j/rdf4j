@@ -34,8 +34,8 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeResource;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
 
 /**
- * File-based indexed storage and retrieval of RDF values. ValueStore maps RDF
- * values to integer IDs and vice-versa.
+ * File-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and
+ * vice-versa.
  * 
  * @author Arjohn Kampman
  */
@@ -78,46 +78,41 @@ public class ValueStore extends AbstractValueFactory {
 	 *-----------*/
 
 	/**
-	 * Used to do the actual storage of values, once they're translated to byte
-	 * arrays.
+	 * Used to do the actual storage of values, once they're translated to byte arrays.
 	 */
 	private final DataStore dataStore;
 
 	/**
-	 * Lock manager used to prevent the removal of values over multiple method
-	 * calls. Note that values can still be added when read locks are active.
+	 * Lock manager used to prevent the removal of values over multiple method calls. Note that values can
+	 * still be added when read locks are active.
 	 */
 	private final ReadWriteLockManager lockManager = new WritePrefReadWriteLockManager();
 
 	/**
-	 * An object that indicates the revision of the value store, which is used to
-	 * check if cached value IDs are still valid. In order to be valid, the
-	 * ValueStoreRevision object of a NativeValue needs to be equal to this
-	 * object.
+	 * An object that indicates the revision of the value store, which is used to check if cached value IDs
+	 * are still valid. In order to be valid, the ValueStoreRevision object of a NativeValue needs to be equal
+	 * to this object.
 	 */
 	private volatile ValueStoreRevision revision;
 
 	/**
-	 * A simple cache containing the [VALUE_CACHE_SIZE] most-recently used values
-	 * stored by their ID.
+	 * A simple cache containing the [VALUE_CACHE_SIZE] most-recently used values stored by their ID.
 	 */
 	private final LRUCache<Integer, NativeValue> valueCache;
 
 	/**
-	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs
-	 * stored by their value.
+	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
 	 */
 	private final LRUCache<NativeValue, Integer> valueIDCache;
 
 	/**
-	 * A simple cache containing the [NAMESPACE_CACHE_SIZE] most-recently used
-	 * namespaces stored by their ID.
+	 * A simple cache containing the [NAMESPACE_CACHE_SIZE] most-recently used namespaces stored by their ID.
 	 */
 	private final LRUCache<Integer, String> namespaceCache;
 
 	/**
-	 * A simple cache containing the [NAMESPACE_ID_CACHE_SIZE] most-recently used
-	 * namespace-IDs stored by their namespace.
+	 * A simple cache containing the [NAMESPACE_ID_CACHE_SIZE] most-recently used namespace-IDs stored by
+	 * their namespace.
 	 */
 	private final LRUCache<String, Integer> namespaceIDCache;
 
@@ -140,7 +135,7 @@ public class ValueStore extends AbstractValueFactory {
 
 	public ValueStore(File dataDir, boolean forceSync, int valueCacheSize, int valueIDCacheSize,
 			int namespaceCacheSize, int namespaceIDCacheSize)
-				throws IOException
+		throws IOException
 	{
 		super();
 		dataStore = new DataStore(dataDir, FILENAME_PREFIX, forceSync);
@@ -158,8 +153,8 @@ public class ValueStore extends AbstractValueFactory {
 	 *---------*/
 
 	/**
-	 * Creates a new revision object for this value store, invalidating any IDs
-	 * cached in NativeValue objects that were created by this value store.
+	 * Creates a new revision object for this value store, invalidating any IDs cached in NativeValue objects
+	 * that were created by this value store.
 	 */
 	private void setNewRevision() {
 		revision = new ValueStoreRevision(this);
@@ -170,8 +165,8 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	/**
-	 * Gets a read lock on this value store that can be used to prevent values
-	 * from being removed while the lock is active.
+	 * Gets a read lock on this value store that can be used to prevent values from being removed while the
+	 * lock is active.
 	 */
 	public Lock getReadLock()
 		throws InterruptedException
@@ -184,8 +179,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * 
 	 * @param id
 	 *        A value ID.
-	 * @return The value for the ID, or <tt>null</tt> no such value could be
-	 *         found.
+	 * @return The value for the ID, or <tt>null</tt> no such value could be found.
 	 * @exception IOException
 	 *            If an I/O error occurred.
 	 */
@@ -216,8 +210,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * 
 	 * @param value
 	 *        A value.
-	 * @return The ID for the specified value, or {@link NativeValue#UNKNOWN_ID}
-	 *         if no such ID could be found.
+	 * @return The ID for the specified value, or {@link NativeValue#UNKNOWN_ID} if no such ID could be found.
 	 * @exception IOException
 	 *            If an I/O error occurred.
 	 */
@@ -287,9 +280,8 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	/**
-	 * Stores the supplied value and returns the ID that has been assigned to it.
-	 * In case the value was already present, the value will not be stored again
-	 * and the ID of the existing value is returned.
+	 * Stores the supplied value and returns the ID that has been assigned to it. In case the value was
+	 * already present, the value will not be stored again and the ID of the existing value is returned.
 	 * 
 	 * @param value
 	 *        The Value to store.
@@ -394,8 +386,8 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	/**
-	 * Closes the ValueStore, releasing any file references, etc. Once closed,
-	 * the ValueStore can no longer be used.
+	 * Closes the ValueStore, releasing any file references, etc. Once closed, the ValueStore can no longer be
+	 * used.
 	 * 
 	 * @exception IOException
 	 *            If an I/O error occurred.
@@ -461,8 +453,7 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	/**
-	 * Checks if the supplied Value object is a NativeValue object that has been
-	 * created by this ValueStore.
+	 * Checks if the supplied Value object is a NativeValue object that has been created by this ValueStore.
 	 */
 	private boolean isOwnValue(Value value) {
 		return value instanceof NativeValue
@@ -763,9 +754,9 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	/**
-	 * Creates a NativeURI that is equal to the supplied URI. This method returns
-	 * the supplied URI itself if it is already a NativeURI that has been created
-	 * by this ValueStore, which prevents unnecessary object creations.
+	 * Creates a NativeURI that is equal to the supplied URI. This method returns the supplied URI itself if
+	 * it is already a NativeURI that has been created by this ValueStore, which prevents unnecessary object
+	 * creations.
 	 * 
 	 * @return A NativeURI for the specified URI.
 	 */
@@ -778,10 +769,9 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	/**
-	 * Creates a NativeBNode that is equal to the supplied bnode. This method
-	 * returns the supplied bnode itself if it is already a NativeBNode that has
-	 * been created by this ValueStore, which prevents unnecessary object
-	 * creations.
+	 * Creates a NativeBNode that is equal to the supplied bnode. This method returns the supplied bnode
+	 * itself if it is already a NativeBNode that has been created by this ValueStore, which prevents
+	 * unnecessary object creations.
 	 * 
 	 * @return A NativeBNode for the specified bnode.
 	 */
@@ -794,10 +784,9 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	/**
-	 * Creates an NativeLiteral that is equal to the supplied literal. This
-	 * method returns the supplied literal itself if it is already a
-	 * NativeLiteral that has been created by this ValueStore, which prevents
-	 * unnecessary object creations.
+	 * Creates an NativeLiteral that is equal to the supplied literal. This method returns the supplied
+	 * literal itself if it is already a NativeLiteral that has been created by this ValueStore, which
+	 * prevents unnecessary object creations.
 	 * 
 	 * @return A NativeLiteral for the specified literal.
 	 */

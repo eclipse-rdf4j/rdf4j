@@ -60,18 +60,15 @@ public class RepositoryConfigUtil {
 	}
 
 	/**
-	 * Is configuration information for the specified repository ID present in
-	 * the (system) repository?
+	 * Is configuration information for the specified repository ID present in the (system) repository?
 	 * 
 	 * @param repository
 	 *        the repository to look in
 	 * @param repositoryID
 	 *        the repositoryID to look for
-	 * @return true if configurion information for the specified repository ID
-	 *         was found, false otherwise
+	 * @return true if configurion information for the specified repository ID was found, false otherwise
 	 * @throws RepositoryException
-	 *         if an error occurred while trying to retrieve information from the
-	 *         (system) repository
+	 *         if an error occurred while trying to retrieve information from the (system) repository
 	 * @throws RepositoryConfigException
 	 */
 	public static boolean hasRepositoryConfig(Repository repository, String repositoryID)
@@ -114,20 +111,18 @@ public class RepositoryConfigUtil {
 	}
 
 	/**
-	 * Update the specified Repository with the specified set of
-	 * RepositoryConfigs. This will overwrite all existing configurations in the
-	 * Repository that have a Repository ID occurring in these RepositoryConfigs.
+	 * Update the specified Repository with the specified set of RepositoryConfigs. This will overwrite all
+	 * existing configurations in the Repository that have a Repository ID occurring in these
+	 * RepositoryConfigs.
 	 * 
 	 * @param repository
 	 *        The Repository whose contents will be modified.
 	 * @param configs
-	 *        The RepositoryConfigs that should be added to or updated in the
-	 *        Repository. The RepositoryConfig's ID may already occur in the
-	 *        Repository, in which case all previous configuration data for that
-	 *        Repository will be cleared before the RepositoryConfig is added.
+	 *        The RepositoryConfigs that should be added to or updated in the Repository. The
+	 *        RepositoryConfig's ID may already occur in the Repository, in which case all previous
+	 *        configuration data for that Repository will be cleared before the RepositoryConfig is added.
 	 * @throws RepositoryException
-	 *         When access to the Repository's RepositoryConnection causes a
-	 *         RepositoryException.
+	 *         When access to the Repository's RepositoryConnection causes a RepositoryException.
 	 * @throws RepositoryConfigException
 	 */
 	public static void updateRepositoryConfigs(Repository repository, RepositoryConfig... configs)
@@ -144,20 +139,16 @@ public class RepositoryConfigUtil {
 	}
 
 	/**
-	 * Update the specified RepositoryConnection with the specified set of
-	 * RepositoryConfigs. This will overwrite all existing configurations in the
-	 * Repository that have a Repository ID occurring in these RepositoryConfigs.
-	 * 
-	 * Note: this method does NOT commit the updates on the connection.
+	 * Update the specified RepositoryConnection with the specified set of RepositoryConfigs. This will
+	 * overwrite all existing configurations in the Repository that have a Repository ID occurring in these
+	 * RepositoryConfigs. Note: this method does NOT commit the updates on the connection.
 	 * 
 	 * @param con
 	 *        the repository connection to perform the update on
 	 * @param configs
-	 *        The RepositoryConfigs that should be added to or updated in the
-	 *        Repository. The RepositoryConfig's ID may already occur in the
-	 *        Repository, in which case all previous configuration data for that
-	 *        Repository will be cleared before the RepositoryConfig is added.
-	 * 
+	 *        The RepositoryConfigs that should be added to or updated in the Repository. The
+	 *        RepositoryConfig's ID may already occur in the Repository, in which case all previous
+	 *        configuration data for that Repository will be cleared before the RepositoryConfig is added.
 	 * @throws RepositoryException
 	 * @throws RepositoryConfigException
 	 */
@@ -189,18 +180,15 @@ public class RepositoryConfigUtil {
 	}
 
 	/**
-	 * Removes one or more Repository configurations from a Repository. Nothing
-	 * happens when this Repository does not contain configurations for these
-	 * Repository IDs.
+	 * Removes one or more Repository configurations from a Repository. Nothing happens when this Repository
+	 * does not contain configurations for these Repository IDs.
 	 * 
 	 * @param repository
 	 *        The Repository to remove the configurations from.
 	 * @param repositoryIDs
-	 *        The IDs of the Repositories whose configurations need to be
-	 *        removed.
+	 *        The IDs of the Repositories whose configurations need to be removed.
 	 * @throws RepositoryException
-	 *         Whenever access to the Repository's RepositoryConnection causes a
-	 *         RepositoryException.
+	 *         Whenever access to the Repository's RepositoryConnection causes a RepositoryException.
 	 * @throws RepositoryConfigException
 	 */
 	public static boolean removeRepositoryConfigs(Repository repository, String... repositoryIDs)
@@ -247,7 +235,8 @@ public class RepositoryConfigUtil {
 		throws RepositoryException, RepositoryConfigException
 	{
 		Literal idLiteral = con.getRepository().getValueFactory().createLiteral(repositoryID);
-		List<Statement> idStatementList = Iterations.asList(con.getStatements(null, REPOSITORYID, idLiteral, true));
+		List<Statement> idStatementList = Iterations.asList(
+				con.getStatements(null, REPOSITORYID, idLiteral, true));
 
 		if (idStatementList.size() == 1) {
 			return idStatementList.get(0);

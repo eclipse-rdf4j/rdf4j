@@ -30,7 +30,9 @@ import com.google.common.collect.Iterables;
  */
 @Deprecated
 public class SolrSearchQuery implements SearchQuery {
+
 	private final SolrQuery query;
+
 	private SolrIndex index;
 
 	public SolrSearchQuery(SolrQuery q, SolrIndex index) {
@@ -40,9 +42,10 @@ public class SolrSearchQuery implements SearchQuery {
 
 	@Override
 	public Iterable<? extends DocumentScore> query(Resource resource)
-			throws IOException {
+		throws IOException
+	{
 		QueryResponse response;
-		if(query.getHighlight()) {
+		if (query.getHighlight()) {
 			query.addField("*");
 		}
 		else {
@@ -50,23 +53,25 @@ public class SolrSearchQuery implements SearchQuery {
 		}
 		query.addField("score");
 		try {
-			if(resource != null) {
+			if (resource != null) {
 				response = index.search(resource, query);
 			}
 			else {
 				response = index.search(query);
 			}
-		} catch(SolrServerException e) {
+		}
+		catch (SolrServerException e) {
 			throw new IOException(e);
 		}
 		SolrDocumentList results = response.getResults();
-		final Map<String,Map<String,List<String>>> highlighting = response.getHighlighting();
-		return Iterables.transform(results, new Function<SolrDocument,DocumentScore>()
-		{
+		final Map<String, Map<String, List<String>>> highlighting = response.getHighlighting();
+		return Iterables.transform(results, new Function<SolrDocument, DocumentScore>() {
+
 			@Override
 			public DocumentScore apply(SolrDocument document) {
 				SolrSearchDocument doc = new SolrSearchDocument(document);
-				Map<String,List<String>> docHighlighting = (highlighting != null) ? highlighting.get(doc.getId()) : null;
+				Map<String, List<String>> docHighlighting = (highlighting != null)
+						? highlighting.get(doc.getId()) : null;
 				return new SolrDocumentScore(doc, docHighlighting);
 			}
 		});

@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.query.algebra;
 import java.util.List;
 
 /**
- *
  * @author Jeen
  */
 public class Coalesce extends NAryValueOperator {
@@ -18,11 +17,11 @@ public class Coalesce extends NAryValueOperator {
 	public Coalesce() {
 		super();
 	}
-	
+
 	public Coalesce(List<ValueExpr> args) {
 		super(args);
 	}
-	
+
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

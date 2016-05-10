@@ -27,9 +27,9 @@ import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
 
 /**
- * A filter on SAX events to make life easier on the RDF parser itself. This
- * filter does things like combining a call to startElement() that is directly
- * followed by a call to endElement() to a single call to emptyElement().
+ * A filter on SAX events to make life easier on the RDF parser itself. This filter does things like combining
+ * a call to startElement() that is directly followed by a call to endElement() to a single call to
+ * emptyElement().
  */
 class SAXFilter implements ContentHandler {
 
@@ -43,8 +43,7 @@ class SAXFilter implements ContentHandler {
 	private RDFXMLParser rdfParser;
 
 	/**
-	 * A Locator indicating a position in the text that is currently being parsed
-	 * by the SAX parser.
+	 * A Locator indicating a position in the text that is currently being parsed by the SAX parser.
 	 */
 	private Locator locator;
 
@@ -64,22 +63,20 @@ class SAXFilter implements ContentHandler {
 	private ParsedURI documentURI;
 
 	/**
-	 * Flag indicating whether the parser parses stand-alone RDF documents. In
-	 * stand-alone documents, the rdf:RDF element is optional if it contains just
-	 * one element.
+	 * Flag indicating whether the parser parses stand-alone RDF documents. In stand-alone documents, the
+	 * rdf:RDF element is optional if it contains just one element.
 	 */
 	private boolean parseStandAloneDocuments = true;
 
 	/**
-	 * Variable used to defer reporting of start tags. Reporting start tags is
-	 * deferred to be able to combine a start tag and an immediately following
-	 * end tag to a single call to emptyElement().
+	 * Variable used to defer reporting of start tags. Reporting start tags is deferred to be able to combine
+	 * a start tag and an immediately following end tag to a single call to emptyElement().
 	 */
 	private ElementInfo deferredElement = null;
 
 	/**
-	 * New namespace mappings that have been reported for the next start tag by
-	 * the SAX parser, but that are not yet assigned to an ElementInfo object.
+	 * New namespace mappings that have been reported for the next start tag by the SAX parser, but that are
+	 * not yet assigned to an ElementInfo object.
 	 */
 	private Map<String, String> newNamespaceMappings = new LinkedHashMap<String, String>();
 
@@ -104,14 +101,14 @@ class SAXFilter implements ContentHandler {
 	private int xmlLiteralStackHeight;
 
 	/**
-	 * The prefixes that are defined in the XML literal itself (this in contrast
-	 * to the namespaces from the XML literal's context).
+	 * The prefixes that are defined in the XML literal itself (this in contrast to the namespaces from the
+	 * XML literal's context).
 	 */
 	private List<String> xmlLiteralPrefixes = new ArrayList<String>();
 
 	/**
-	 * The prefixes that were used in an XML literal, but that were not defined
-	 * in it (but rather in the XML literal's context).
+	 * The prefixes that were used in an XML literal, but that were not defined in it (but rather in the XML
+	 * literal's context).
 	 */
 	private List<String> unknownPrefixesInXMLLiteral = new ArrayList<String>();
 
@@ -333,7 +330,8 @@ class SAXFilter implements ContentHandler {
 			// FIXME: in parseLiteralMode we should also check if start- and
 			// end-tags match but these start tags are not tracked yet.
 
-			if (rdfParser.getParserConfig().get(XMLParserSettings.FAIL_ON_MISMATCHED_TAGS) && !parseLiteralMode)
+			if (rdfParser.getParserConfig().get(XMLParserSettings.FAIL_ON_MISMATCHED_TAGS)
+					&& !parseLiteralMode)
 			{
 				// Verify that the end tag matches the start tag.
 				ElementInfo elInfo;
@@ -447,7 +445,7 @@ class SAXFilter implements ContentHandler {
 				}
 				else {
 					charBuf.append(ch, start, length);
-					
+
 					// if the element is not empty we need to process it as such. Otherwise,
 					// we keep the start element deferred for now.
 					if (deferredElement != null && charBuf.toString().trim().length() > 0) {
@@ -508,8 +506,8 @@ class SAXFilter implements ContentHandler {
 					if (localName.equals("ID") || localName.equals("about") || localName.equals("resource")
 							|| localName.equals("parseType") || localName.equals("type"))
 					{
-						rdfParser.reportWarning("use of unqualified attribute " + localName
-								+ " has been deprecated");
+						rdfParser.reportWarning(
+								"use of unqualified attribute " + localName + " has been deprecated");
 						namespace = RDF.NAMESPACE;
 					}
 				}
@@ -548,8 +546,7 @@ class SAXFilter implements ContentHandler {
 	 *---------------------------------*/
 
 	/**
-	 * Appends a start tag to charBuf. This method is used during the parsing of
-	 * an XML Literal.
+	 * Appends a start tag to charBuf. This method is used during the parsing of an XML Literal.
 	 */
 	private void appendStartTag(String qName, Attributes attributes) {
 		// Write start of start tag
@@ -582,17 +579,15 @@ class SAXFilter implements ContentHandler {
 	}
 
 	/**
-	 * Appends an end tag to charBuf. This method is used during the parsing of
-	 * an XML Literal.
+	 * Appends an end tag to charBuf. This method is used during the parsing of an XML Literal.
 	 */
 	private void appendEndTag(String qName) {
 		charBuf.append("</" + qName + ">");
 	}
 
 	/**
-	 * Inserts prefix mappings from an XML Literal's context for all prefixes
-	 * that are used in the XML Literal and that are not defined in the XML
-	 * Literal itself.
+	 * Inserts prefix mappings from an XML Literal's context for all prefixes that are used in the XML Literal
+	 * and that are not defined in the XML Literal itself.
 	 */
 	private void insertUsedContextPrefixes() {
 		int unknownPrefixesCount = unknownPrefixesInXMLLiteral.size();

@@ -39,8 +39,9 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 import org.junit.Test;
 
 public class ContextAwareConnectionTest {
-	static class GraphQueryStub extends AbstractQuery implements
-			GraphQuery {
+
+	static class GraphQueryStub extends AbstractQuery implements GraphQuery {
+
 		public GraphQueryResult evaluate() {
 			return null;
 		}
@@ -50,8 +51,10 @@ public class ContextAwareConnectionTest {
 	}
 
 	static class InvocationHandlerStub implements InvocationHandler {
+
 		public Object invoke(Object proxy, Method method, Object[] args)
-				throws Throwable {
+			throws Throwable
+		{
 			return null;
 		}
 	}
@@ -60,18 +63,21 @@ public class ContextAwareConnectionTest {
 	}
 
 	static class RepositoryStub extends RepositoryWrapper {
+
 		@Override
-		public RepositoryConnection getConnection() throws RepositoryException {
+		public RepositoryConnection getConnection()
+			throws RepositoryException
+		{
 			ClassLoader cl = ContextAwareConnectionTest.class.getClassLoader();
 			Class<?>[] classes = new Class[] { RepositoryConnection.class };
 			InvocationHandlerStub handler = new InvocationHandlerStub();
 			Object proxy = Proxy.newProxyInstance(cl, classes, handler);
-			return (RepositoryConnection) proxy;
+			return (RepositoryConnection)proxy;
 		}
 	}
 
-	static class TupleQueryStub extends AbstractQuery implements
-			TupleQuery {
+	static class TupleQueryStub extends AbstractQuery implements TupleQuery {
+
 		public TupleQueryResult evaluate() {
 			return null;
 		}
@@ -80,8 +86,8 @@ public class ContextAwareConnectionTest {
 		}
 	}
 
-	private static class RepositoryConnectionStub extends
-			RepositoryConnectionWrapper {
+	private static class RepositoryConnectionStub extends RepositoryConnectionWrapper {
+
 		public RepositoryConnectionStub() {
 			super(new RepositoryStub());
 		}
@@ -92,15 +98,19 @@ public class ContextAwareConnectionTest {
 	String queryString = "SELECT ?o WHERE { ?s ?p ?o}";
 
 	@Test
-	public void testGraphQuery() throws Exception {
+	public void testGraphQuery()
+		throws Exception
+	{
 		RepositoryConnection stub = new RepositoryConnectionStub() {
+
 			@Override
-			public GraphQuery prepareGraphQuery(QueryLanguage ql, String query,
-					String baseURI) throws MalformedQueryException,
-					RepositoryException {
+			public GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String baseURI)
+				throws MalformedQueryException, RepositoryException
+			{
 				assertEquals(SPARQL, ql);
 				assertEquals(queryString, query);
 				return new GraphQueryStub() {
+
 					@Override
 					public void setDataset(Dataset dataset) {
 						Set<IRI> contexts = Collections.singleton(context);
@@ -118,15 +128,19 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testQuery() throws Exception {
+	public void testQuery()
+		throws Exception
+	{
 		RepositoryConnection stub = new RepositoryConnectionStub() {
+
 			@Override
-			public Query prepareQuery(QueryLanguage ql, String query,
-					String baseURI) throws MalformedQueryException,
-					RepositoryException {
+			public Query prepareQuery(QueryLanguage ql, String query, String baseURI)
+				throws MalformedQueryException, RepositoryException
+			{
 				assertEquals(SPARQL, ql);
 				assertEquals(queryString, query);
 				return new QueryStub() {
+
 					@Override
 					public void setDataset(Dataset dataset) {
 						Set<IRI> contexts = Collections.singleton(context);
@@ -144,15 +158,19 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testTupleQuery() throws Exception {
+	public void testTupleQuery()
+		throws Exception
+	{
 		RepositoryConnection stub = new RepositoryConnectionStub() {
+
 			@Override
-			public TupleQuery prepareTupleQuery(QueryLanguage ql, String query,
-					String baseURI) throws MalformedQueryException,
-					RepositoryException {
+			public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI)
+				throws MalformedQueryException, RepositoryException
+			{
 				assertEquals(SPARQL, ql);
 				assertEquals(queryString, query);
 				return new TupleQueryStub() {
+
 					@Override
 					public void setDataset(Dataset dataset) {
 						Set<IRI> contexts = Collections.singleton(context);
@@ -170,7 +188,9 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testIncludeInferred() throws Exception {
+	public void testIncludeInferred()
+		throws Exception
+	{
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -181,7 +201,9 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testMaxQueryTime() throws Exception {
+	public void testMaxQueryTime()
+		throws Exception
+	{
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -192,7 +214,9 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testQueryLanguage() throws Exception {
+	public void testQueryLanguage()
+		throws Exception
+	{
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -203,7 +227,9 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testBaseURI() throws Exception {
+	public void testBaseURI()
+		throws Exception
+	{
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -214,7 +240,9 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testReadContexts() throws Exception {
+	public void testReadContexts()
+		throws Exception
+	{
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -225,7 +253,9 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testRemoveContexts() throws Exception {
+	public void testRemoveContexts()
+		throws Exception
+	{
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -236,7 +266,9 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testAddContexts() throws Exception {
+	public void testAddContexts()
+		throws Exception
+	{
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -247,7 +279,9 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testArchiveContexts() throws Exception {
+	public void testArchiveContexts()
+		throws Exception
+	{
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);
@@ -258,7 +292,9 @@ public class ContextAwareConnectionTest {
 	}
 
 	@Test
-	public void testInsertContexts() throws Exception {
+	public void testInsertContexts()
+		throws Exception
+	{
 		RepositoryConnection stub = new RepositoryConnectionStub();
 		Repository repo = stub.getRepository();
 		ContextAwareConnection a = new ContextAwareConnection(repo, stub);

@@ -11,8 +11,8 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 
 /**
- * An iteration extension that keeps a reference to the AbstractSailConnection from
- * which it originates and signals when it is closed.
+ * An iteration extension that keeps a reference to the AbstractSailConnection from which it originates and
+ * signals when it is closed.
  * 
  * @author Jeen Broekstra
  */
@@ -30,7 +30,8 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T, E> {
 	 * @param connection
 	 *        the connection from which this iteration originates.
 	 */
-	public SailBaseIteration(CloseableIteration<? extends T, ? extends E> iter, AbstractSailConnection connection)
+	public SailBaseIteration(CloseableIteration<? extends T, ? extends E> iter,
+			AbstractSailConnection connection)
 	{
 		super(iter);
 		this.connection = connection;

@@ -31,21 +31,23 @@ public class ObjectFunction extends AbstractSpinFunction implements Function {
 	{
 		QueryPreparer qp = getCurrentQueryPreparer();
 		if (args.length != 2) {
-			throw new ValueExprEvaluationException(String.format("%s requires 2 arguments, got %d", getURI(), args.length));
+			throw new ValueExprEvaluationException(
+					String.format("%s requires 2 arguments, got %d", getURI(), args.length));
 		}
 		Value subj = args[0];
-		if(!(subj instanceof Resource)) {
+		if (!(subj instanceof Resource)) {
 			throw new ValueExprEvaluationException("First argument must be a subject");
 		}
 		Value pred = args[1];
-		if(!(pred instanceof IRI)) {
+		if (!(pred instanceof IRI)) {
 			throw new ValueExprEvaluationException("Second argument must be a predicate");
 		}
 
 		try {
-			CloseableIteration<? extends Statement, QueryEvaluationException> stmts = qp.getTripleSource().getStatements((Resource) subj, (IRI) pred, null);
+			CloseableIteration<? extends Statement, QueryEvaluationException> stmts = qp.getTripleSource().getStatements(
+					(Resource)subj, (IRI)pred, null);
 			try {
-				if(stmts.hasNext()) {
+				if (stmts.hasNext()) {
 					return stmts.next().getObject();
 				}
 				else {
@@ -56,7 +58,7 @@ public class ObjectFunction extends AbstractSpinFunction implements Function {
 				stmts.close();
 			}
 		}
-		catch(QueryEvaluationException e) {
+		catch (QueryEvaluationException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 	}

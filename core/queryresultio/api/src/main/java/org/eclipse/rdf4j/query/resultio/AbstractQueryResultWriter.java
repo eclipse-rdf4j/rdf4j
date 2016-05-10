@@ -15,8 +15,7 @@ import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 /**
- * Base class for {@link QueryResultWriter}s offering common functionality for
- * query result writers.
+ * Base class for {@link QueryResultWriter}s offering common functionality for query result writers.
  * 
  * @author Peter Ansell
  */

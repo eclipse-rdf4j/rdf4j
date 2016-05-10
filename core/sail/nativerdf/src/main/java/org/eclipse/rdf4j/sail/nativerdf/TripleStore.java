@@ -33,11 +33,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * File-based indexed storage and retrieval of RDF statements. TripleStore
- * stores statements in the form of four integer IDs. Each ID represent an RDF
- * value that is stored in a {@link ValueStore}. The four IDs refer to the
- * statement's subject, predicate, object and context. The ID <tt>0</tt> is used
- * to represent the "null" context and doesn't map to an actual RDF value.
+ * File-based indexed storage and retrieval of RDF statements. TripleStore stores statements in the form of
+ * four integer IDs. Each ID represent an RDF value that is stored in a {@link ValueStore}. The four IDs refer
+ * to the statement's subject, predicate, object and context. The ID <tt>0</tt> is used to represent the
+ * "null" context and doesn't map to an actual RDF value.
  * 
  * @author Arjohn Kampman
  */
@@ -63,22 +62,18 @@ class TripleStore {
 	private static final String VERSION_KEY = "version";
 
 	/**
-	 * The key used to store the triple indexes specification that specifies
-	 * which triple indexes exist.
+	 * The key used to store the triple indexes specification that specifies which triple indexes exist.
 	 */
 	private static final String INDEXES_KEY = "triple-indexes";
 
 	/**
 	 * The version number for the current triple store.
 	 * <ul>
-	 * <li>version 0: The first version which used a single spo-index. This
-	 * version did not have a properties file yet.
-	 * <li>version 1: Introduces configurable triple indexes and the properties
-	 * file.
-	 * <li>version 10: Introduces a context field, essentially making this a quad
-	 * store.
-	 * <li>version 10a: Introduces transaction flags, this is backwards
-	 * compatible with version 10.
+	 * <li>version 0: The first version which used a single spo-index. This version did not have a properties
+	 * file yet.
+	 * <li>version 1: Introduces configurable triple indexes and the properties file.
+	 * <li>version 10: Introduces a context field, essentially making this a quad store.
+	 * <li>version 10a: Introduces transaction flags, this is backwards compatible with version 10.
 	 * </ul>
 	 */
 	private static final int SCHEME_VERSION = 10;
@@ -102,26 +97,23 @@ class TripleStore {
 	static final int FLAG_IDX = 16;
 
 	/**
-	 * Bit field indicating that a statement has been explicitly added (instead
-	 * of being inferred).
+	 * Bit field indicating that a statement has been explicitly added (instead of being inferred).
 	 */
 	static final byte EXPLICIT_FLAG = (byte)0x1; // 0000 0001
 
 	/**
-	 * Bit field indicating that a statement has been added in a (currently
-	 * active) transaction.
+	 * Bit field indicating that a statement has been added in a (currently active) transaction.
 	 */
 	static final byte ADDED_FLAG = (byte)0x2; // 0000 0010
 
 	/**
-	 * Bit field indicating that a statement has been removed in a (currently
-	 * active) transaction.
+	 * Bit field indicating that a statement has been removed in a (currently active) transaction.
 	 */
 	static final byte REMOVED_FLAG = (byte)0x4; // 0000 0100
 
 	/**
-	 * Bit field indicating that the explicit flag has been toggled (from true to
-	 * false, or vice versa) in a (currently active) transaction.
+	 * Bit field indicating that the explicit flag has been toggled (from true to false, or vice versa) in a
+	 * (currently active) transaction.
 	 */
 	static final byte TOGGLE_EXPLICIT_FLAG = (byte)0x8; // 0000 1000
 
@@ -273,9 +265,8 @@ class TripleStore {
 	}
 
 	/**
-	 * Parses a comma/whitespace-separated list of index specifications. Index
-	 * specifications are required to consists of 4 characters: 's', 'p', 'o' and
-	 * 'c'.
+	 * Parses a comma/whitespace-separated list of index specifications. Index specifications are required to
+	 * consists of 4 characters: 's', 'p', 'o' and 'c'.
 	 * 
 	 * @param indexSpecStr
 	 *        A string like "spoc, pocs, cosp".
@@ -295,8 +286,8 @@ class TripleStore {
 				if (index.length() != 4 || index.indexOf('s') == -1 || index.indexOf('p') == -1
 						|| index.indexOf('o') == -1 || index.indexOf('c') == -1)
 				{
-					throw new SailException("invalid value '" + index + "' in index specification: "
-							+ indexSpecStr);
+					throw new SailException(
+							"invalid value '" + index + "' in index specification: " + indexSpecStr);
 				}
 
 				indexes.add(index);
@@ -356,7 +347,8 @@ class TripleStore {
 				logger.info("Read invalid or unknown transaction status, trying to roll back");
 				try {
 					rollback();
-					logger.info("Successfully performed a rollback for invalid or unknown transaction status");
+					logger.info(
+							"Successfully performed a rollback for invalid or unknown transaction status");
 				}
 				catch (IOException e) {
 					logger.error("Failed to perform rollback for invalid or unknown transaction status", e);
@@ -441,9 +433,9 @@ class TripleStore {
 		for (TripleIndex index : indexes) {
 			index.getBTree().close();
 		}
-		
+
 		txnStatusFile.close();
-		
+
 		// Should have been removed upon commit() or rollback(), but just to be sure
 		if (updatedTriplesCache != null) {
 			updatedTriplesCache.discard();
@@ -516,7 +508,8 @@ class TripleStore {
 		if (readTransaction && explicit) {
 			// Filter implicit statements from the result
 			btreeIter = new ExplicitStatementFilter(btreeIter);
-		} else if (!explicit) {
+		}
+		else if (!explicit) {
 			// Filter out explicit statements from the result
 			btreeIter = new ImplicitStatementFilter(btreeIter);
 		}
@@ -788,10 +781,9 @@ class TripleStore {
 	 * @param context
 	 *        The context for the pattern, or <tt>-1</tt> for a wildcard.
 	 * @param explicit
-	 *        Flag indicating whether explicit or inferred statements should be
-	 *        removed; <tt>true</tt> removes explicit statements that match the
-	 *        pattern, <tt>false</tt> removes inferred statements that match the
-	 *        pattern.
+	 *        Flag indicating whether explicit or inferred statements should be removed; <tt>true</tt> removes
+	 *        explicit statements that match the pattern, <tt>false</tt> removes inferred statements that
+	 *        match the pattern.
 	 * @return The number of triples that were removed.
 	 * @throws IOException
 	 */
@@ -862,8 +854,8 @@ class TripleStore {
 		// some 10% of the number of triples
 		long maxRecords = indexes.get(0).getBTree().getValueCountEstimate() / 10L;
 		if (updatedTriplesCache == null) {
-			updatedTriplesCache = new SortedRecordCache(dir, RECORD_LENGTH, maxRecords, new TripleComparator(
-					"spoc"));
+			updatedTriplesCache = new SortedRecordCache(dir, RECORD_LENGTH, maxRecords,
+					new TripleComparator("spoc"));
 		}
 		else {
 			assert updatedTriplesCache.getRecordCount() == 0L : "updatedTripleCache should have been cleared upon commit or rollback";
@@ -1133,7 +1125,8 @@ class TripleStore {
 			throws IOException
 		{
 			tripleComparator = new TripleComparator(fieldSeq);
-			btree = new BTree(dir, getFilenamePrefix(fieldSeq), 2048, RECORD_LENGTH, tripleComparator, forceSync);
+			btree = new BTree(dir, getFilenamePrefix(fieldSeq), 2048, RECORD_LENGTH, tripleComparator,
+					forceSync);
 		}
 
 		private String getFilenamePrefix(String fieldSeq) {
@@ -1149,10 +1142,9 @@ class TripleStore {
 		}
 
 		/**
-		 * Determines the 'score' of this index on the supplied pattern of
-		 * subject, predicate, object and context IDs. The higher the score, the
-		 * better the index is suited for matching the pattern. Lowest score is 0,
-		 * which means that the index will perform a sequential scan.
+		 * Determines the 'score' of this index on the supplied pattern of subject, predicate, object and
+		 * context IDs. The higher the score, the better the index is suited for matching the pattern. Lowest
+		 * score is 0, which means that the index will perform a sequential scan.
 		 */
 		public int getPatternScore(int subj, int pred, int obj, int context) {
 			int score = 0;
@@ -1211,8 +1203,8 @@ class TripleStore {
 	 *------------------------------*/
 
 	/**
-	 * A RecordComparator that can be used to create indexes with a configurable
-	 * order of the subject, predicate, object and context fields.
+	 * A RecordComparator that can be used to create indexes with a configurable order of the subject,
+	 * predicate, object and context fields.
 	 */
 	private static class TripleComparator implements RecordComparator {
 
@@ -1244,8 +1236,8 @@ class TripleStore {
 						fieldIdx = CONTEXT_IDX;
 						break;
 					default:
-						throw new IllegalArgumentException("invalid character '" + field + "' in field sequence: "
-								+ new String(fieldSeq));
+						throw new IllegalArgumentException("invalid character '" + field
+								+ "' in field sequence: " + new String(fieldSeq));
 				}
 
 				int diff = ByteArrayUtil.compareRegion(key, fieldIdx, data, offset + fieldIdx, 4);

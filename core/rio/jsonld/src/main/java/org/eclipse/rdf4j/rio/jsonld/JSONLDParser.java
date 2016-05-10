@@ -40,8 +40,7 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 	}
 
 	/**
-	 * Creates a Sesame JSONLD Parser using the given {@link ValueFactory} to
-	 * create new {@link Value}s.
+	 * Creates a Sesame JSONLD Parser using the given {@link ValueFactory} to create new {@link Value}s.
 	 * 
 	 * @param valueFactory
 	 *        The ValueFactory to use

@@ -44,7 +44,8 @@ public class RepositoryListController extends AbstractController {
 
 	static {
 		StringBuilder query = new StringBuilder(256);
-		query.append("SELECT id, title, \"true\"^^xsd:boolean as \"readable\", \"true\"^^xsd:boolean as \"writable\"");
+		query.append(
+				"SELECT id, title, \"true\"^^xsd:boolean as \"readable\", \"true\"^^xsd:boolean as \"writable\"");
 		query.append("FROM {} rdf:type {sys:Repository};");
 		query.append("        [rdfs:label {title}];");
 		query.append("        sys:repositoryID {id} ");
@@ -122,7 +123,7 @@ public class RepositoryListController extends AbstractController {
 				throw new ServerHTTPException(e.getMessage(), e);
 			}
 		}
-		
+
 		TupleQueryResultWriterFactory factory = ProtocolUtil.getAcceptableService(request, response,
 				TupleQueryResultWriterRegistry.getInstance());
 

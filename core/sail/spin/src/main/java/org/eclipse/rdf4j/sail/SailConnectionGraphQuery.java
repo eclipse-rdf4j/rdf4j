@@ -51,9 +51,10 @@ public class SailConnectionGraphQuery extends SailConnectionQuery implements Gra
 
 		try {
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter;
-			
+
 			SailConnection sailCon = getSailConnection();
-			bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
+			bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(),
+					getIncludeInferred());
 
 			// Filters out all partial and invalid matches
 			bindingsIter = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter) {
@@ -68,7 +69,7 @@ public class SailConnectionGraphQuery extends SailConnectionQuery implements Gra
 							&& (context == null || context instanceof Resource);
 				}
 			};
-			
+
 			bindingsIter = enforceMaxQueryTime(bindingsIter);
 
 			// Convert the BindingSet objects to actual RDF statements

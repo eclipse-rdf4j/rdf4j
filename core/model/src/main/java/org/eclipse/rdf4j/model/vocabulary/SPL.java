@@ -27,8 +27,7 @@ public final class SPL {
 	public static final String PREFIX = "spl";
 
 	/**
-	 * http://spinrdf.org/spl#Argument Provides metadata about an argument of a
-	 * SPIN Function or Template.
+	 * http://spinrdf.org/spl#Argument Provides metadata about an argument of a SPIN Function or Template.
 	 */
 	public static final IRI ARGUMENT_TEMPLATE;
 

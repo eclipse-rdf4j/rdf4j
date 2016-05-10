@@ -18,9 +18,9 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
 
 /**
- * An implementation of the RDFWriter interface that writes RDF documents in N3
- * format. Note: the current implementation simply wraps a {@link TurtleWriter}
- * and writes documents in Turtle format, which is a subset of N3.
+ * An implementation of the RDFWriter interface that writes RDF documents in N3 format. Note: the current
+ * implementation simply wraps a {@link TurtleWriter} and writes documents in Turtle format, which is a subset
+ * of N3.
  */
 public class N3Writer extends AbstractRDFWriter implements RDFWriter {
 

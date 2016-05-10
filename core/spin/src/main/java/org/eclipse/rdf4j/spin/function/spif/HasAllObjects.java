@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.Statements;
 import org.eclipse.rdf4j.spin.function.AbstractSpinFunction;
 
-
 public class HasAllObjects extends AbstractSpinFunction implements Function {
 
 	public HasAllObjects() {
@@ -34,20 +33,23 @@ public class HasAllObjects extends AbstractSpinFunction implements Function {
 	{
 		QueryPreparer qp = getCurrentQueryPreparer();
 		if (args.length != 3) {
-			throw new ValueExprEvaluationException(String.format("%s requires 3 argument, got %d", getURI(), args.length));
+			throw new ValueExprEvaluationException(
+					String.format("%s requires 3 argument, got %d", getURI(), args.length));
 		}
-		Resource subj = (Resource) args[0];
-		IRI pred = (IRI) args[1];
-		Resource list = (Resource) args[2];
+		Resource subj = (Resource)args[0];
+		IRI pred = (IRI)args[1];
+		Resource list = (Resource)args[2];
 		try {
-			Iteration<? extends Value, QueryEvaluationException> iter = Statements.list(list, qp.getTripleSource());
+			Iteration<? extends Value, QueryEvaluationException> iter = Statements.list(list,
+					qp.getTripleSource());
 			while (iter.hasNext()) {
 				Value obj = iter.next();
 				if (Statements.single(subj, pred, obj, qp.getTripleSource()) == null) {
 					return BooleanLiteralImpl.FALSE;
 				}
 			}
-		} catch (QueryEvaluationException e) {
+		}
+		catch (QueryEvaluationException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 		return BooleanLiteralImpl.TRUE;

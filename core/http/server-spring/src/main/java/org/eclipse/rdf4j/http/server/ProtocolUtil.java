@@ -32,8 +32,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Utilities to help with the transition between HTTP requests/responses and
- * values expected by the protocol.
+ * Utilities to help with the transition between HTTP requests/responses and values expected by the protocol.
  * 
  * @author Herko ter Horst
  * @author Arjohn Kampman
@@ -48,8 +47,8 @@ public class ProtocolUtil {
 			return Protocol.decodeValue(paramValue, vf);
 		}
 		catch (IllegalArgumentException e) {
-			throw new ClientHTTPException(SC_BAD_REQUEST, "Invalid value for parameter '" + paramName + "': "
-					+ paramValue);
+			throw new ClientHTTPException(SC_BAD_REQUEST,
+					"Invalid value for parameter '" + paramName + "': " + paramValue);
 		}
 	}
 
@@ -61,8 +60,8 @@ public class ProtocolUtil {
 			return Protocol.decodeResource(paramValue, vf);
 		}
 		catch (IllegalArgumentException e) {
-			throw new ClientHTTPException(SC_BAD_REQUEST, "Invalid value for parameter '" + paramName + "': "
-					+ paramValue);
+			throw new ClientHTTPException(SC_BAD_REQUEST,
+					"Invalid value for parameter '" + paramName + "': " + paramValue);
 		}
 	}
 
@@ -74,8 +73,8 @@ public class ProtocolUtil {
 			return Protocol.decodeURI(paramValue, vf);
 		}
 		catch (IllegalArgumentException e) {
-			throw new ClientHTTPException(SC_BAD_REQUEST, "Invalid value for parameter '" + paramName + "': "
-					+ paramValue);
+			throw new ClientHTTPException(SC_BAD_REQUEST,
+					"Invalid value for parameter '" + paramName + "': " + paramValue);
 		}
 	}
 
@@ -91,8 +90,8 @@ public class ProtocolUtil {
 			return Protocol.decodeURI("<" + paramValue + ">", vf);
 		}
 		catch (IllegalArgumentException e) {
-			throw new ClientHTTPException(SC_BAD_REQUEST, "Invalid value for parameter '"
-					+ Protocol.GRAPH_PARAM_NAME + "': " + paramValue);
+			throw new ClientHTTPException(SC_BAD_REQUEST,
+					"Invalid value for parameter '" + Protocol.GRAPH_PARAM_NAME + "': " + paramValue);
 		}
 	}
 
@@ -104,12 +103,13 @@ public class ProtocolUtil {
 			return Protocol.decodeContexts(paramValues, vf);
 		}
 		catch (IllegalArgumentException e) {
-			throw new ClientHTTPException(SC_BAD_REQUEST, "Invalid value for parameter '" + paramName + "': "
-					+ e.getMessage());
+			throw new ClientHTTPException(SC_BAD_REQUEST,
+					"Invalid value for parameter '" + paramName + "': " + e.getMessage());
 		}
 	}
 
-	public static boolean parseBooleanParam(HttpServletRequest request, String paramName, boolean defaultValue)
+	public static boolean parseBooleanParam(HttpServletRequest request, String paramName,
+			boolean defaultValue)
 	{
 		String paramValue = request.getParameter(paramName);
 		if (paramValue == null) {

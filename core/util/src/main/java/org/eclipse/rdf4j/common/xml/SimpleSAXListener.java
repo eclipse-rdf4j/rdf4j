@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
- 
+
 package org.eclipse.rdf4j.common.xml;
 
 import java.util.Map;
@@ -30,17 +30,17 @@ public interface SimpleSAXListener {
 		throws SAXException;
 
 	/**
-	 * Reports a start tag to the listener. The method call reports
-	 * the tag's name, the attributes that were found in the start tag
-	 * and any text that was found after the start tag.
+	 * Reports a start tag to the listener. The method call reports the tag's name, the attributes that were
+	 * found in the start tag and any text that was found after the start tag.
 	 *
-	 * @param tagName The tag name.
-	 * @param atts A map containing key-value-pairs representing the
-	 * attributes that were found in the start tag.
-	 * @param text The text immediately following the start tag, or an
-	 * empty string if the start tag was followed by a nested start
-	 * tag or if no text (other than whitespace) was found between
-	 * start- and end tag.
+	 * @param tagName
+	 *        The tag name.
+	 * @param atts
+	 *        A map containing key-value-pairs representing the attributes that were found in the start tag.
+	 * @param text
+	 *        The text immediately following the start tag, or an empty string if the start tag was followed
+	 *        by a nested start tag or if no text (other than whitespace) was found between start- and end
+	 *        tag.
 	 */
 	public void startTag(String tagName, Map<String, String> atts, String text)
 		throws SAXException;
@@ -48,7 +48,8 @@ public interface SimpleSAXListener {
 	/**
 	 * Reports an end tag to the listener.
 	 *
-	 * @param tagName The tag name.
+	 * @param tagName
+	 *        The tag name.
 	 */
 	public void endTag(String tagName)
 		throws SAXException;

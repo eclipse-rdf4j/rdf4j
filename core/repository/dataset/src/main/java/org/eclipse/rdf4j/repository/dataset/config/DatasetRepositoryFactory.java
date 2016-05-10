@@ -14,8 +14,7 @@ import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 
 /**
- * A {@link RepositoryFactory} that creates {@link DatasetRepository}s based on
- * RDF configuration data.
+ * A {@link RepositoryFactory} that creates {@link DatasetRepository}s based on RDF configuration data.
  * 
  * @author Arjohn Kampman
  */

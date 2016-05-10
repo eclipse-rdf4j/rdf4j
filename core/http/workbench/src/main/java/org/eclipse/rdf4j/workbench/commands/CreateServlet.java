@@ -55,8 +55,7 @@ public class CreateServlet extends TransformationServlet {
 	}
 
 	/**
-	 * POST requests to this servlet come from the various specific create-* form
-	 * submissions.
+	 * POST requests to this servlet come from the various specific create-* form submissions.
 	 */
 	@Override
 	protected void doPost(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
@@ -71,8 +70,7 @@ public class CreateServlet extends TransformationServlet {
 	}
 
 	/**
-	 * GET requests to this servlet come from the Workbench side bar or from
-	 * create.xsl form submissions.
+	 * GET requests to this servlet come from the Workbench side bar or from create.xsl form submissions.
 	 * 
 	 * @throws RepositoryException
 	 * @throws QueryResultHandlerException
@@ -118,7 +116,8 @@ public class CreateServlet extends TransformationServlet {
 					Boolean.parseBoolean(req.getParameter("distinct")));
 		}
 		else {
-			newID = updateRepositoryConfig(getConfigTemplate(type).render(req.getSingleParameterMap())).getID();
+			newID = updateRepositoryConfig(
+					getConfigTemplate(type).render(req.getSingleParameterMap())).getID();
 		}
 		return newID;
 	}
@@ -134,7 +133,8 @@ public class CreateServlet extends TransformationServlet {
 
 		Resource res = Models.subject(
 				graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY)).orElseThrow(
-						() -> new RepositoryException("could not find instance of Repository class in config"));
+						() -> new RepositoryException(
+								"could not find instance of Repository class in config"));
 		final RepositoryConfig repConfig = RepositoryConfig.create(graph, res);
 		repConfig.validate();
 		RepositoryConfigUtil.updateRepositoryConfigs(systemRepo, repConfig);

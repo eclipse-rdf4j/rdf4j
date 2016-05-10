@@ -34,9 +34,10 @@ public class Cast extends BinaryFunction {
 		if (!(arg2 instanceof IRI)) {
 			throw new ValueExprEvaluationException("Second argument must be a datatype");
 		}
-		Literal value = (Literal) arg1;
-		IRI targetDatatype = (IRI) arg2;
+		Literal value = (Literal)arg1;
+		IRI targetDatatype = (IRI)arg2;
 		Function func = FunctionRegistry.getInstance().get(targetDatatype.stringValue()).orElse(null);
-		return (func != null) ? func.evaluate(valueFactory, value) : valueFactory.createLiteral(value.getLabel(), targetDatatype);
+		return (func != null) ? func.evaluate(valueFactory, value)
+				: valueFactory.createLiteral(value.getLabel(), targetDatatype);
 	}
 }

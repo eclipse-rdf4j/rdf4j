@@ -20,9 +20,8 @@ import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * Update specific to the HTTP protocol. Methods in this class may throw the
- * specific RepositoryException subclass UnautorizedException, the semantics of
- * which is defined by the HTTP protocol.
+ * Update specific to the HTTP protocol. Methods in this class may throw the specific RepositoryException
+ * subclass UnautorizedException, the semantics of which is defined by the HTTP protocol.
  * 
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @author Jeen Broekstra
@@ -72,8 +71,8 @@ public class HTTPUpdate extends AbstractHTTPUpdate {
 			SparqlSession client = getHttpClient();
 			try {
 				httpCon.flushTransactionState(Action.UPDATE);
-				client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset, includeInferred,
-						getMaxExecutionTime(), getBindingsArray());
+				client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset,
+						includeInferred, getMaxExecutionTime(), getBindingsArray());
 			}
 			catch (UnauthorizedException e) {
 				throw new HTTPUpdateExecutionException(e.getMessage(), e);

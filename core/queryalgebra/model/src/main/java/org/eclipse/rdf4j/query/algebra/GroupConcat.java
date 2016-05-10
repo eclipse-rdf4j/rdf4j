@@ -15,7 +15,7 @@ package org.eclipse.rdf4j.query.algebra;
 public class GroupConcat extends AbstractAggregateOperator {
 
 	private ValueExpr separator;
-	
+
 	public GroupConcat(ValueExpr arg) {
 		super(arg);
 	}
@@ -23,7 +23,7 @@ public class GroupConcat extends AbstractAggregateOperator {
 	public GroupConcat(ValueExpr arg, boolean distinct) {
 		super(arg, distinct);
 	}
-	
+
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{
@@ -44,11 +44,11 @@ public class GroupConcat extends AbstractAggregateOperator {
 	public GroupConcat clone() {
 		return (GroupConcat)super.clone();
 	}
-	
+
 	public ValueExpr getSeparator() {
 		return separator;
 	}
-	
+
 	public void setSeparator(ValueExpr separator) {
 		this.separator = separator;
 	}

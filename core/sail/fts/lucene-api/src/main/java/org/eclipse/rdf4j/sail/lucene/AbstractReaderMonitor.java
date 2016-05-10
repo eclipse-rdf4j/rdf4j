@@ -10,9 +10,9 @@ package org.eclipse.rdf4j.sail.lucene;
 import java.io.IOException;
 
 /**
- * ReaderMonitor holds IndexReader and IndexSearcher. When ReaderMonitor is
- * closed it do not close IndexReader and IndexSearcher as long as someone reads
- * from them. Variable readingCount remember how many times it was read.
+ * ReaderMonitor holds IndexReader and IndexSearcher. When ReaderMonitor is closed it do not close IndexReader
+ * and IndexSearcher as long as someone reads from them. Variable readingCount remember how many times it was
+ * read.
  * 
  * @author Tomasz Trela, DFKI Gmbh
  */
@@ -57,7 +57,7 @@ public abstract class AbstractReaderMonitor {
 			close();// close Lucene index remove them self from Lucene index
 			synchronized (index.oldmonitors) {
 				index.oldmonitors.remove(this); // if its not in the list, then this
-															// is a no-operation
+												// is a no-operation
 			}
 		}
 	}
@@ -65,8 +65,7 @@ public abstract class AbstractReaderMonitor {
 	/**
 	 * This method is called in LecenIndex invalidateReaders or on commit
 	 * 
-	 * @return <code>true</code> if the close succeeded, <code>false</code>
-	 *         otherwise.
+	 * @return <code>true</code> if the close succeeded, <code>false</code> otherwise.
 	 * @throws IOException
 	 */
 	public boolean closeWhenPossible()
@@ -82,8 +81,7 @@ public abstract class AbstractReaderMonitor {
 	public void close()
 		throws IOException
 	{
-		if(!closed)
-		{
+		if (!closed) {
 			handleClose();
 		}
 		closed = true;

@@ -25,8 +25,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilderTreeConstants;
 import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 
 /**
- * Processes 'wildcard' projections, making them explicit by adding the
- * appropriate variable nodes to them.
+ * Processes 'wildcard' projections, making them explicit by adding the appropriate variable nodes to them.
  * 
  * @author arjohn
  * @author Jeen Broekstra

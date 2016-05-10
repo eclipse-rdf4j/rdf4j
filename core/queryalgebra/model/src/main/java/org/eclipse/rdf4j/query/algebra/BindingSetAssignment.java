@@ -17,8 +17,9 @@ import org.eclipse.rdf4j.query.BindingSet;
 public class BindingSetAssignment extends AbstractQueryModelNode implements TupleExpr {
 
 	private Set<String> bindingNames;
+
 	private Iterable<BindingSet> bindingSets;
-	
+
 	@Override
 	public Set<String> getBindingNames() {
 		return getAssuredBindingNames();
@@ -26,7 +27,7 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		if(bindingNames == null) {
+		if (bindingNames == null) {
 			bindingNames = findBindingNames();
 		}
 		return bindingNames;
@@ -35,7 +36,7 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	private Set<String> findBindingNames() {
 		Set<String> result = new HashSet<String>();
 		if (bindingSets != null) {
-			for (BindingSet set: bindingSets) {
+			for (BindingSet set : bindingSets) {
 				result.addAll(set.getBindingNames());
 			}
 		}
@@ -65,14 +66,16 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	}
 
 	/**
-	 * @param bindingNames The bindingNames to set if known.
+	 * @param bindingNames
+	 *        The bindingNames to set if known.
 	 */
 	public void setBindingNames(Set<String> bindingNames) {
 		this.bindingNames = bindingNames;
 	}
 
 	/**
-	 * @param bindingSets The bindingSets to set.
+	 * @param bindingSets
+	 *        The bindingSets to set.
 	 */
 	public void setBindingSets(Iterable<BindingSet> bindingSets) {
 		this.bindingSets = bindingSets;
@@ -88,9 +91,9 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	@Override
 	public String getSignature() {
 		String signature = super.getSignature();
-		
+
 		signature += " (" + this.getBindingSets().toString() + ")";
-		
+
 		return signature;
 	}
 }

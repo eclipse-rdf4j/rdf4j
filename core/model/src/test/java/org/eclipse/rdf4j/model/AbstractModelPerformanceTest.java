@@ -25,7 +25,7 @@ import org.junit.Test;
 public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 
 	private static final int COUNT = 150;
-	
+
 	/**
 	 * @throws java.lang.Exception
 	 */
@@ -67,8 +67,7 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.Model#getNamespace(java.lang.String)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#getNamespace(java.lang.String)}.
 	 */
 	@Ignore("TODO: Implement me!")
 	@Test
@@ -77,8 +76,7 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.Model#setNamespace(java.lang.String, java.lang.String)}
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#setNamespace(java.lang.String, java.lang.String)}
 	 * .
 	 */
 	@Ignore("TODO: Implement me!")
@@ -88,8 +86,7 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.Model#setNamespace(org.eclipse.rdf4j.model.Namespace)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#setNamespace(org.eclipse.rdf4j.model.Namespace)}.
 	 */
 	@Ignore("TODO: Implement me!")
 	@Test
@@ -98,8 +95,7 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.Model#removeNamespace(java.lang.String)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#removeNamespace(java.lang.String)}.
 	 */
 	@Ignore("TODO: Implement me!")
 	@Test
@@ -119,8 +115,7 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.Model#clear(org.eclipse.rdf4j.model.Resource[])}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#clear(org.eclipse.rdf4j.model.Resource[])}.
 	 */
 	@Ignore("TODO: Implement me!")
 	@Test
@@ -460,8 +455,7 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link java.util.Collection#removeIf(java.util.function.Predicate)}.
+	 * Test method for {@link java.util.Collection#removeIf(java.util.function.Predicate)}.
 	 */
 	@Ignore("TODO: Implement me!")
 	@Test

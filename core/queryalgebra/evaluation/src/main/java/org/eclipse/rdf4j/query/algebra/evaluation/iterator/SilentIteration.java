@@ -18,25 +18,27 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Andreas Schwarte
  */
 public class SilentIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
-	
+
 	protected CloseableIteration<BindingSet, QueryEvaluationException> iter;
-	
+
 	public SilentIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter) {
 		super();
 		this.iter = iter;
 	}
-	
-	
+
 	@Override
-	protected BindingSet getNextElement() throws QueryEvaluationException {
-		
+	protected BindingSet getNextElement()
+		throws QueryEvaluationException
+	{
+
 		try {
 			if (iter.hasNext())
 				return iter.next();
-		} catch (Exception e) {
+		}
+		catch (Exception e) {
 			// suppress
 		}
-		
+
 		return null;
 	}
 

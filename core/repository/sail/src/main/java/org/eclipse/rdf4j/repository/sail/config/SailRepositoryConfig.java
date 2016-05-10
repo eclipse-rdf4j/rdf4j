@@ -81,11 +81,13 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 		throws RepositoryConfigException
 	{
 		try {
-			Optional<Resource> sailImplNode = Models.objectResource(model.filter(repImplNode, SAILIMPL, null));
+			Optional<Resource> sailImplNode = Models.objectResource(
+					model.filter(repImplNode, SAILIMPL, null));
 			if (sailImplNode.isPresent()) {
 				Models.objectLiteral(model.filter(sailImplNode.get(), SAILTYPE, null)).ifPresent(typeLit -> {
 					SailFactory factory = SailRegistry.getInstance().get(typeLit.getLabel()).orElseThrow(
-							() -> new RepositoryConfigException("Unsupported Sail type: " + typeLit.getLabel()));
+							() -> new RepositoryConfigException(
+									"Unsupported Sail type: " + typeLit.getLabel()));
 
 					sailImplConfig = factory.getConfig();
 					sailImplConfig.parse(model, sailImplNode.get());

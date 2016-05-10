@@ -21,7 +21,9 @@ import com.spatial4j.core.context.SpatialContext;
 
 public class ElasticsearchDocumentScore extends ElasticsearchDocumentResult implements DocumentScore {
 
-	public ElasticsearchDocumentScore(SearchHit hit, Function<? super String,? extends SpatialContext> geoContextMapper) {
+	public ElasticsearchDocumentScore(SearchHit hit,
+			Function<? super String, ? extends SpatialContext> geoContextMapper)
+	{
 		super(hit, geoContextMapper);
 	}
 
@@ -41,12 +43,14 @@ public class ElasticsearchDocumentScore extends ElasticsearchDocumentResult impl
 		if (highlightField == null) {
 			return null;
 		}
-		return Iterables.transform(Arrays.asList(highlightField.getFragments()), new Function<Text, String>() {
+		return Iterables.transform(Arrays.asList(highlightField.getFragments()),
+				new Function<Text, String>()
+		{
 
-			@Override
-			public String apply(Text fragment) {
-				return SearchFields.getSnippet(fragment.string());
-			}
-		});
+					@Override
+					public String apply(Text fragment) {
+						return SearchFields.getSnippet(fragment.string());
+					}
+				});
 	}
 }

@@ -17,7 +17,7 @@ public class Load extends AbstractQueryModelNode implements UpdateExpr {
 	private ValueConstant graph;
 
 	private boolean silent;
-	
+
 	public Load(ValueConstant source) {
 		setSource(source);
 	}
@@ -57,22 +57,20 @@ public class Load extends AbstractQueryModelNode implements UpdateExpr {
 
 	@Override
 	public boolean equals(Object other) {
-		if(other instanceof Load) {
+		if (other instanceof Load) {
 			Load o = (Load)other;
-			return silent == o.silent
-					&& nullEquals(source, o.source)
-					&& nullEquals(graph, o.graph);
+			return silent == o.silent && nullEquals(source, o.source) && nullEquals(graph, o.graph);
 		}
 		return false;
 	}
 
 	@Override
 	public int hashCode() {
-		int result = silent ? 1 :0;
-		if(source != null) {
+		int result = silent ? 1 : 0;
+		if (source != null) {
 			result ^= source.hashCode();
 		}
-		if(graph != null) {
+		if (graph != null) {
 			result ^= graph.hashCode();
 		}
 		return result;
@@ -119,7 +117,8 @@ public class Load extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * @param silent The silent to set.
+	 * @param silent
+	 *        The silent to set.
 	 */
 	public void setSilent(boolean silent) {
 		this.silent = silent;

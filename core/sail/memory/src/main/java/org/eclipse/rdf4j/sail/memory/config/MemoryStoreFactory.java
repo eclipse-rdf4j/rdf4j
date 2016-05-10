@@ -14,8 +14,7 @@ import org.eclipse.rdf4j.sail.config.SailImplConfig;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
- * A {@link SailFactory} that creates {@link MemoryStore}s based on RDF
- * configuration data.
+ * A {@link SailFactory} that creates {@link MemoryStore}s based on RDF configuration data.
  * 
  * @author Arjohn Kampman
  */
@@ -53,7 +52,7 @@ public class MemoryStoreFactory implements SailFactory {
 
 			memoryStore.setPersist(memConfig.getPersist());
 			memoryStore.setSyncDelay(memConfig.getSyncDelay());
-			
+
 			if (memConfig.getIterationCacheSyncThreshold() > 0) {
 				memoryStore.setIterationCacheSyncThreshold(memConfig.getIterationCacheSyncThreshold());
 			}

@@ -16,8 +16,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 
 /**
- * A TupleQueryResultHandler that can be used to create a TupleQueryResult
- * object.
+ * A TupleQueryResultHandler that can be used to create a TupleQueryResult object.
  */
 public class TupleQueryResultBuilder extends AbstractTupleQueryResultHandler {
 

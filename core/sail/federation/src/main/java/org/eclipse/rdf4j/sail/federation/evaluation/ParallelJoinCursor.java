@@ -15,13 +15,13 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 
 /**
- * Iterate the left side and evaluate the right side in separate thread, only
- * iterate the right side in the controlling thread.
+ * Iterate the left side and evaluate the right side in separate thread, only iterate the right side in the
+ * controlling thread.
  * 
  * @author James Leigh
  */
-public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEvaluationException> implements
-		Runnable
+public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEvaluationException>
+		implements Runnable
 {
 
 	/*-----------*

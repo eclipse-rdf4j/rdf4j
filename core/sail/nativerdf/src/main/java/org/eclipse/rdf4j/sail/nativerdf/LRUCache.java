@@ -11,8 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Utility subclass of {@link LinkedHashMap} the makes it a fixed-size LRU
- * cache.
+ * Utility subclass of {@link LinkedHashMap} the makes it a fixed-size LRU cache.
  * 
  * @author Arjohn Kampman
  */

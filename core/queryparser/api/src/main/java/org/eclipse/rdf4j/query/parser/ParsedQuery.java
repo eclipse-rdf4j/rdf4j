@@ -27,22 +27,22 @@ public abstract class ParsedQuery extends ParsedOperation {
 	 * The dataset that was specified in the operation, if any.
 	 */
 	private Dataset dataset;
-	
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
 	/**
-	 * Creates a new query object. To complete this query, a tuple expression
-	 * needs to be supplied to it using {@link #setTupleExpr(TupleExpr)}.
+	 * Creates a new query object. To complete this query, a tuple expression needs to be supplied to it using
+	 * {@link #setTupleExpr(TupleExpr)}.
 	 */
 	public ParsedQuery() {
 		super();
 	}
 
 	/**
-	 * Creates a new query object. To complete this query, a tuple expression
-	 * needs to be supplied to it using {@link #setTupleExpr(TupleExpr)}.
+	 * Creates a new query object. To complete this query, a tuple expression needs to be supplied to it using
+	 * {@link #setTupleExpr(TupleExpr)}.
 	 */
 	public ParsedQuery(String sourceString) {
 		super(sourceString);
@@ -101,7 +101,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 	public void setDataset(Dataset dataset) {
 		this.dataset = dataset;
 	}
-	
+
 	/**
 	 * Gets the tuple expression underlying this operation.
 	 */
@@ -125,6 +125,6 @@ public abstract class ParsedQuery extends ParsedOperation {
 		else {
 			return getTupleExpr().toString();
 		}
- 	}
+	}
 
 }

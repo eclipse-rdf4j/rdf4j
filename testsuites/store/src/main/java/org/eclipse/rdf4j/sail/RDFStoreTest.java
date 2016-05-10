@@ -52,10 +52,9 @@ import org.junit.Test;
 import org.junit.rules.Timeout;
 
 /**
- * A JUnit test for testing Sail implementations that store RDF data. This is
- * purely a test for data storage and retrieval which assumes that no
- * inferencing or whatsoever is performed. This is an abstract class that should
- * be extended for specific Sail implementations.
+ * A JUnit test for testing Sail implementations that store RDF data. This is purely a test for data storage
+ * and retrieval which assumes that no inferencing or whatsoever is performed. This is an abstract class that
+ * should be extended for specific Sail implementations.
  */
 public abstract class RDFStoreTest {
 
@@ -129,8 +128,8 @@ public abstract class RDFStoreTest {
 	 *---------*/
 
 	/**
-	 * Gets an instance of the Sail that should be tested. The returned
-	 * repository should already have been initialized.
+	 * Gets an instance of the Sail that should be tested. The returned repository should already have been
+	 * initialized.
 	 * 
 	 * @return an initialized Sail.
 	 * @throws SailException
@@ -392,7 +391,8 @@ public abstract class RDFStoreTest {
 		con.addStatement(picasso2, paints, guernica);
 		con.commit();
 
-		assertEquals("createURI(Sring) and createURI(String, String) should create equal URIs", 1, con.size());
+		assertEquals("createURI(Sring) and createURI(String, String) should create equal URIs", 1,
+				con.size());
 	}
 
 	@Test
@@ -406,7 +406,8 @@ public abstract class RDFStoreTest {
 		con.addStatement(picasso2, paints, guernica);
 		con.commit();
 
-		assertEquals("createURI(Sring) and createURI(String, String) should create equal URIs", 1, con.size());
+		assertEquals("createURI(Sring) and createURI(String, String) should create equal URIs", 1,
+				con.size());
 	}
 
 	@Test
@@ -736,8 +737,8 @@ public abstract class RDFStoreTest {
 
 					// wait a bit to allow other thread to add stuff as well.
 					Thread.sleep(500L);
-					CloseableIteration<? extends Statement, SailException> result = sharedCon.getStatements(null,
-							null, null, true);
+					CloseableIteration<? extends Statement, SailException> result = sharedCon.getStatements(
+							null, null, null, true);
 
 					assertTrue(result.hasNext());
 					int numberOfStatements = 0;
@@ -748,7 +749,8 @@ public abstract class RDFStoreTest {
 						assertTrue(st.getPredicate().equals(RDF.TYPE));
 						assertTrue(st.getObject().equals(RDFS.CLASS) || st.getObject().equals(painter));
 					}
-					assertTrue("we should have retrieved statements from both threads", numberOfStatements == 2);
+					assertTrue("we should have retrieved statements from both threads",
+							numberOfStatements == 2);
 
 				}
 				catch (SailException e) {
@@ -1100,7 +1102,7 @@ public abstract class RDFStoreTest {
 	private int verifyQueryResult(
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> resultIter,
 			int expectedBindingCount)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		int resultCount = 0;
 

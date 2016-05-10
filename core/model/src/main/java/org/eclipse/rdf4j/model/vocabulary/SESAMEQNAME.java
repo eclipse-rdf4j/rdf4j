@@ -21,8 +21,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 public class SESAMEQNAME {
 
 	/**
-	 * The Sesame QName Schema namespace (
-	 * <tt>http://www.openrdf.org/schema/qname#</tt>).
+	 * The Sesame QName Schema namespace ( <tt>http://www.openrdf.org/schema/qname#</tt>).
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/schema/qname#";
 
@@ -32,8 +31,7 @@ public class SESAMEQNAME {
 	public static final String PREFIX = "q";
 
 	/**
-	 * An immutable {@link Namespace} constant that represents the Sesame QName
-	 * namespace.
+	 * An immutable {@link Namespace} constant that represents the Sesame QName namespace.
 	 */
 	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
 

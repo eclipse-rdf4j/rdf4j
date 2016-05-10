@@ -9,42 +9,43 @@
 /* JavaCCOptions:MULTI=true,NODE_USES_PARSER=false,VISITOR=true,TRACK_TOKENS=false,NODE_PREFIX=AST,NODE_EXTENDS=,NODE_FACTORY=,SUPPORT_CLASS_VISIBILITY_PUBLIC=true */
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
-public
-class ASTModify extends ASTUpdate {
-  public ASTModify(int id) {
-    super(id);
-  }
+public class ASTModify extends ASTUpdate {
 
-  public ASTModify(SyntaxTreeBuilder p, int id) {
-    super(p, id);
-  }
+	public ASTModify(int id) {
+		super(id);
+	}
 
+	public ASTModify(SyntaxTreeBuilder p, int id) {
+		super(p, id);
+	}
 
-  /** Accept the visitor. **/
-  public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
-    return visitor.visit(this, data);
-  }
-  
-  public ASTInsertClause getInsertClause() {
-	  return jjtGetChild(ASTInsertClause.class);
-  }
-  
-  public ASTDeleteClause getDeleteClause() {
-	  return jjtGetChild(ASTDeleteClause.class);
-  }
-  
-  public ASTDatasetClause getWithClause() {
-	  if (jjtGetChild(0) instanceof ASTDatasetClause) {
-		  return (ASTDatasetClause)jjtGetChild(0);
-	  }
-	  else {
-		  return null;
-	  }
-  }
-  
-  public ASTGraphPatternGroup getWhereClause() {
-	  return jjtGetChild(ASTGraphPatternGroup.class);
-  }
-  
+	/** Accept the visitor. **/
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
+		throws VisitorException
+	{
+		return visitor.visit(this, data);
+	}
+
+	public ASTInsertClause getInsertClause() {
+		return jjtGetChild(ASTInsertClause.class);
+	}
+
+	public ASTDeleteClause getDeleteClause() {
+		return jjtGetChild(ASTDeleteClause.class);
+	}
+
+	public ASTDatasetClause getWithClause() {
+		if (jjtGetChild(0) instanceof ASTDatasetClause) {
+			return (ASTDatasetClause)jjtGetChild(0);
+		}
+		else {
+			return null;
+		}
+	}
+
+	public ASTGraphPatternGroup getWhereClause() {
+		return jjtGetChild(ASTGraphPatternGroup.class);
+	}
+
 }
 /* JavaCC - OriginalChecksum=9460d42e4f84afaf785d4073d7125899 (do not edit this line) */

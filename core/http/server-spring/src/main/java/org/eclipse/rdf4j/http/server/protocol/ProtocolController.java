@@ -20,9 +20,7 @@ import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
- * Handles requests for protocol information.
- * 
- * Currently returns the protocol version as plain text.
+ * Handles requests for protocol information. Currently returns the protocol version as plain text.
  * 
  * @author Herko ter Horst
  */

@@ -119,7 +119,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			RDFHandler handler, Resource... contexts)
-				throws RepositoryException, RDFHandlerException
+		throws RepositoryException, RDFHandlerException
 	{
 		try {
 			GraphQuery query = prepareGraphQuery(SPARQL, EVERYTHING, "");
@@ -143,12 +143,12 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			return new RepositoryResult<Resource>(
 					new ExceptionConvertingIteration<Resource, RepositoryException>(
 							new ConvertingIteration<BindingSet, Resource, QueryEvaluationException>(result)
-			{
+					{
 
 								@Override
 								protected Resource convert(BindingSet bindings)
 									throws QueryEvaluationException
-				{
+					{
 									return (Resource)bindings.getValue("_");
 								}
 							}) {
@@ -184,7 +184,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	{
 		try {
 			BooleanQuery query;
-			if(isQuadMode()) {
+			if (isQuadMode()) {
 				query = prepareBooleanQuery(SPARQL, SOMETHING_WITH_GRAPH);
 			}
 			else {
@@ -219,7 +219,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts)
-				throws RepositoryException
+		throws RepositoryException
 	{
 		try {
 			if (isQuadMode()) {
@@ -230,7 +230,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 				return new RepositoryResult<Statement>(
 						new ExceptionConvertingIteration<Statement, RepositoryException>(
 								toStatementIteration(qRes, subj, pred, obj))
-				{
+						{
 
 							@Override
 							protected RepositoryException convert(Exception e) {
@@ -246,7 +246,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 					return new RepositoryResult<Statement>(cursor);
 				}
 				else {
-					return new RepositoryResult<Statement>(new EmptyIteration<Statement, RepositoryException>());
+					return new RepositoryResult<Statement>(
+							new EmptyIteration<Statement, RepositoryException>());
 				}
 			}
 			GraphQuery query = prepareGraphQuery(SPARQL, EVERYTHING, "");
@@ -272,7 +273,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts)
-				throws RepositoryException
+		throws RepositoryException
 	{
 		try {
 			BooleanQuery query = prepareBooleanQuery(SPARQL, SOMETHING, "");
@@ -970,22 +971,17 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	}
 
 	/**
-	 * Converts a {@link TupleQueryResult} resulting from the
-	 * {@link #EVERYTHING_WITH_GRAPH} to a statement by using the respective
-	 * values from the {@link BindingSet} or (if provided) the ones from the
-	 * arguments.
+	 * Converts a {@link TupleQueryResult} resulting from the {@link #EVERYTHING_WITH_GRAPH} to a statement by
+	 * using the respective values from the {@link BindingSet} or (if provided) the ones from the arguments.
 	 * 
 	 * @param iter
 	 *        the {@link TupleQueryResult}
 	 * @param subj
-	 *        the subject {@link Resource} used as input or <code>null</code> if
-	 *        wildcard was used
+	 *        the subject {@link Resource} used as input or <code>null</code> if wildcard was used
 	 * @param pred
-	 *        the predicate {@link IRI} used as input or <code>null</code> if
-	 *        wildcard was used
+	 *        the predicate {@link IRI} used as input or <code>null</code> if wildcard was used
 	 * @param obj
-	 *        the object {@link Value} used as input or <code>null</code> if
-	 *        wildcard was used
+	 *        the object {@link Value} used as input or <code>null</code> if wildcard was used
 	 * @return the converted iteration
 	 */
 	protected Iteration<Statement, QueryEvaluationException> toStatementIteration(TupleQueryResult iter,

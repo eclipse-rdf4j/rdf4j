@@ -32,6 +32,5 @@ public abstract class ASTOperation extends SimpleNode {
 	public List<ASTDatasetClause> getDatasetClauseList() {
 		return jjtGetChildren(ASTDatasetClause.class);
 	}
-	
-	
+
 }

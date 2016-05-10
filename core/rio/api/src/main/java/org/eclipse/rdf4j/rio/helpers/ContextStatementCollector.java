@@ -44,20 +44,20 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 	 *--------------*/
 
 	/**
-	 * Creates a new StatementCollector that uses a new ArrayList to store the
-	 * reported statements and a new LinkedHashMap to store the reported
-	 * namespaces.
+	 * Creates a new StatementCollector that uses a new ArrayList to store the reported statements and a new
+	 * LinkedHashMap to store the reported namespaces.
 	 */
 	public ContextStatementCollector(ValueFactory vf, Resource... contexts) {
 		this(new ArrayList<Statement>(), vf, contexts);
 	}
 
 	/**
-	 * Creates a new StatementCollector that stores reported statements in the
-	 * supplied collection and that uses a new LinkedHashMap to store the
-	 * reported namespaces.
+	 * Creates a new StatementCollector that stores reported statements in the supplied collection and that
+	 * uses a new LinkedHashMap to store the reported namespaces.
 	 */
-	public ContextStatementCollector(Collection<Statement> statements, ValueFactory vf, Resource... contexts) {
+	public ContextStatementCollector(Collection<Statement> statements, ValueFactory vf,
+			Resource... contexts)
+	{
 		OpenRDFUtil.verifyContextNotNull(contexts);
 		if (statements instanceof Model) {
 			this.namespaces = Namespaces.wrap(((Model)statements).getNamespaces());
@@ -71,8 +71,8 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 	}
 
 	/**
-	 * Creates a new StatementCollector that stores reported statements and
-	 * namespaces in the supplied containers.
+	 * Creates a new StatementCollector that stores reported statements and namespaces in the supplied
+	 * containers.
 	 */
 	public ContextStatementCollector(Collection<Statement> statements, Map<String, String> namespaces,
 			ValueFactory vf, Resource... contexts)
@@ -125,7 +125,8 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 		}
 		else {
 			for (Resource nextContext : contexts) {
-				statements.add(vf.createStatement(st.getSubject(), st.getPredicate(), st.getObject(), nextContext));
+				statements.add(
+						vf.createStatement(st.getSubject(), st.getPredicate(), st.getObject(), nextContext));
 			}
 		}
 	}

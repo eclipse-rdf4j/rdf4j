@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.common.iteration;
 import java.lang.ref.WeakReference;
 import java.util.TimerTask;
 
-
 /**
  * TimerTask that keeps a weak reference to the supplied iteration and when activated, interrupts it.
  * 
@@ -19,16 +18,16 @@ import java.util.TimerTask;
 class InterruptTask<E, X extends Exception> extends TimerTask {
 
 	private WeakReference<TimeLimitIteration<E, X>> iterationRef;
-	
+
 	public InterruptTask(TimeLimitIteration<E, X> iteration) {
 		this.iterationRef = new WeakReference<TimeLimitIteration<E, X>>(iteration);
 	}
-	
+
 	@Override
 	public void run() {
-			TimeLimitIteration<E, X> iteration = iterationRef.get();
-			if (iteration != null) {
-				iteration.interrupt();
-			}
+		TimeLimitIteration<E, X> iteration = iterationRef.get();
+		if (iteration != null) {
+			iteration.interrupt();
+		}
 	}
 }

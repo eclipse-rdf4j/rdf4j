@@ -77,10 +77,9 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 
 /**
- * RepositoryConnection that communicates with a server using the HTTP protocol.
- * Methods in this class may throw the specific RepositoryException subclasses
- * UnautorizedException and NotAllowedException, the semantics of which are
- * defined by the HTTP protocol.
+ * RepositoryConnection that communicates with a server using the HTTP protocol. Methods in this class may
+ * throw the specific RepositoryException subclasses UnautorizedException and NotAllowedException, the
+ * semantics of which are defined by the HTTP protocol.
  * 
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @see org.eclipse.rdf4j.http.protocol.NotAllowedException
@@ -93,7 +92,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	 * Variables *
 	 *-----------*/
 
-	private List<TransactionOperation> txn = Collections.synchronizedList(new ArrayList<TransactionOperation>());
+	private List<TransactionOperation> txn = Collections.synchronizedList(
+			new ArrayList<TransactionOperation>());
 
 	private final SesameSession client;
 
@@ -104,8 +104,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	private Model toRemove;
 
 	/**
-	 * Maximum size (in number of statements) allowed for statement buffers
-	 * before they are forcibly flushed. TODO: make this setting configurable.
+	 * Maximum size (in number of statements) allowed for statement buffers before they are forcibly flushed.
+	 * TODO: make this setting configurable.
 	 */
 	private static final long MAX_STATEMENT_BUFFER_SIZE = 200000;
 
@@ -177,9 +177,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	}
 
 	/**
-	 * Prepares a {@Link Query} for evaluation on this repository. Note
-	 * that the preferred way of preparing queries is to use the more specific
-	 * {@link #prepareTupleQuery(QueryLanguage, String, String)},
+	 * Prepares a {@Link Query} for evaluation on this repository. Note that the preferred way of preparing
+	 * queries is to use the more specific {@link #prepareTupleQuery(QueryLanguage, String, String)},
 	 * {@link #prepareBooleanQuery(QueryLanguage, String, String)}, or
 	 * {@link #prepareGraphQuery(QueryLanguage, String, String)} methods instead.
 	 * 
@@ -431,7 +430,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 				mimeType = mimeType.substring(0, semiColonIdx);
 			}
 			dataFormat = Rio.getParserFormatForMIMEType(mimeType).orElse(
-					Rio.getParserFormatForFileName(url.getPath()).orElseThrow(Rio.unsupportedFormat(mimeType)));
+					Rio.getParserFormatForFileName(url.getPath()).orElseThrow(
+							Rio.unsupportedFormat(mimeType)));
 		}
 
 		try {
@@ -536,11 +536,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		throws RepositoryException
 	{
 		if (!isActive()) {
-			logger.debug("adding statement directly: {} {} {} {}", new Object[] {
-					subject,
-					predicate,
-					object,
-					contexts });
+			logger.debug("adding statement directly: {} {} {} {}",
+					new Object[] { subject, predicate, object, contexts });
 			// operation is not part of a transaction - just send directly
 			OpenRDFUtil.verifyContextNotNull(contexts);
 			final Model m = new LinkedHashModel();
@@ -548,41 +545,20 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			addModel(m);
 		}
 		else {
-			logger.debug("adding statement in txn: {} {} {} {}", new Object[] {
-					subject,
-					predicate,
-					object,
-					contexts });
+			logger.debug("adding statement in txn: {} {} {} {}",
+					new Object[] { subject, predicate, object, contexts });
 			super.add(subject, predicate, object, contexts);
 		}
 	}
 
 	/*
-	@Override
-	public void remove(Resource subject, URI predicate, Value object, Resource... contexts)
-		throws RepositoryException
-	{
-		if (!isActive()) {
-			// operation is not part of a transaction - just send directly
-			OpenRDFUtil.verifyContextNotNull(contexts);
-			if (subject == null) {
-				subject = SESAME.WILDCARD;
-			}
-			if (predicate == null) {
-				predicate = SESAME.WILDCARD;
-			}
-			if (object == null) {
-				object = SESAME.WILDCARD;
-			}
-			final Model m = new LinkedHashModel();
-			m.add(subject, predicate, object, contexts);
-			removeModel(m);
-		}
-		else {
-			super.remove(subject, predicate, object, contexts);
-		}
-	}
-	*/
+	 * @Override public void remove(Resource subject, URI predicate, Value object, Resource... contexts)
+	 * throws RepositoryException { if (!isActive()) { // operation is not part of a transaction - just send
+	 * directly OpenRDFUtil.verifyContextNotNull(contexts); if (subject == null) { subject = SESAME.WILDCARD;
+	 * } if (predicate == null) { predicate = SESAME.WILDCARD; } if (object == null) { object =
+	 * SESAME.WILDCARD; } final Model m = new LinkedHashModel(); m.add(subject, predicate, object, contexts);
+	 * removeModel(m); } else { super.remove(subject, predicate, object, contexts); } }
+	 */
 
 	@Override
 	protected void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
@@ -875,8 +851,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	 * Creates a RepositoryResult for the supplied element set.
 	 */
 	protected <E> RepositoryResult<E> createRepositoryResult(Iterable<? extends E> elements) {
-		return new RepositoryResult<E>(new CloseableIteratorIteration<E, RepositoryException>(
-				elements.iterator()));
+		return new RepositoryResult<E>(
+				new CloseableIteratorIteration<E, RepositoryException>(elements.iterator()));
 	}
 
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
@@ -886,8 +862,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	}
 
 	/**
-	 * Verifies that the connection is open, throws a {@link StoreException} if
-	 * it isn't.
+	 * Verifies that the connection is open, throws a {@link StoreException} if it isn't.
 	 */
 	protected void verifyIsOpen()
 		throws RepositoryException
@@ -898,8 +873,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	}
 
 	/**
-	 * Verifies that the connection has an active transaction, throws a
-	 * {@link StoreException} if it hasn't.
+	 * Verifies that the connection has an active transaction, throws a {@link StoreException} if it hasn't.
 	 */
 	protected void verifyTxnActive()
 		throws RepositoryException
@@ -910,8 +884,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	}
 
 	/**
-	 * Verifies that the connection does not have an active transaction, throws a
-	 * {@link RepositoryException} if it has.
+	 * Verifies that the connection does not have an active transaction, throws a {@link RepositoryException}
+	 * if it has.
 	 */
 	protected void verifyNotTxnActive(String msg)
 		throws RepositoryException

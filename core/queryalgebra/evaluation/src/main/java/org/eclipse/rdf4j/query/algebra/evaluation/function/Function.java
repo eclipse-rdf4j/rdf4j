@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
  * @author Arjohn Kampman
  */
 public interface Function {
-	
+
 	public String getURI();
 
 	public Value evaluate(ValueFactory valueFactory, Value... args)

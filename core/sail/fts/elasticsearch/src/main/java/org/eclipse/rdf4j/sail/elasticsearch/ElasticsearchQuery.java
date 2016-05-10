@@ -27,8 +27,11 @@ import com.google.common.collect.Iterables;
  */
 @Deprecated
 public class ElasticsearchQuery implements SearchQuery {
+
 	private final SearchRequestBuilder request;
+
 	private final QueryBuilder qb;
+
 	private ElasticsearchIndex index;
 
 	public ElasticsearchQuery(SearchRequestBuilder request, QueryBuilder qb, ElasticsearchIndex index) {
@@ -39,16 +42,17 @@ public class ElasticsearchQuery implements SearchQuery {
 
 	@Override
 	public Iterable<? extends DocumentScore> query(Resource resource)
-			throws IOException {
+		throws IOException
+	{
 		SearchHits hits;
-		if(resource != null) {
+		if (resource != null) {
 			hits = index.search(resource, request, qb);
 		}
 		else {
 			hits = index.search(request, qb);
 		}
-		return Iterables.transform(hits, new Function<SearchHit,DocumentScore>()
-		{
+		return Iterables.transform(hits, new Function<SearchHit, DocumentScore>() {
+
 			@Override
 			public DocumentScore apply(SearchHit hit) {
 				return new ElasticsearchDocumentScore(hit, null);

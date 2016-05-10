@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+
 /**
  * @author jeen
  */
@@ -51,12 +52,11 @@ public class TupleExprBuilderTest {
 		throws Exception
 	{
 	}
-	
-	
-	@Test 
+
+	@Test
 	public void testAskQuerySolutionModifiers() {
 		String query = "ASK WHERE { ?foo ?bar ?baz . } ORDER BY ?foo LIMIT 1";
-		
+
 		try {
 			TupleExprBuilder builder = new TupleExprBuilder(ValueFactoryImpl.getInstance());
 			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
@@ -67,13 +67,12 @@ public class TupleExprBuilderTest {
 			e.printStackTrace();
 			fail("should parse ask query with solution modifiers");
 		}
-		
-		
+
 	}
 
 	/**
-	 * Verifies that a missing close brace does not cause an endless loop. Timeout is set to avoid
-	 * test itself endlessly looping. See SES-2389.
+	 * Verifies that a missing close brace does not cause an endless loop. Timeout is set to avoid test itself
+	 * endlessly looping. See SES-2389.
 	 */
 	@Test(timeout = 1000)
 	public void testMissingCloseBrace() {
@@ -86,7 +85,7 @@ public class TupleExprBuilderTest {
 			// fall through, expected
 		}
 	}
-	
+
 	@Test
 	public void testServiceGraphPatternStringDetection1()
 		throws TokenMgrError, ParseException, VisitorException

@@ -127,13 +127,15 @@ public class HttpServerUtilTest {
 	@Test
 	public void testSelectPreferredMIMEType5() {
 
-		ServletRequestStub testRequest = new ServletRequestStub("application/*", "application/sparql-results+json");
+		ServletRequestStub testRequest = new ServletRequestStub("application/*",
+				"application/sparql-results+json");
 
 		String preferredType = HttpServerUtil.selectPreferredMIMEType(tupleQueryMimeTypes.iterator(),
 				testRequest);
 
 		assertEquals("application/sparql-results+json", preferredType);
 	}
+
 	class ServletRequestStub implements javax.servlet.http.HttpServletRequest {
 
 		private Enumeration<String> testHeaders;

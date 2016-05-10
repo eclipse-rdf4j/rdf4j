@@ -66,8 +66,7 @@ public class If extends AbstractQueryModelNode implements ValueExpr {
 	 * Sets the condition argument of this unary value operator.
 	 * 
 	 * @param condition
-	 *        The (new) condition argument for this operator, must not be
-	 *        <tt>null</tt>.
+	 *        The (new) condition argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setCondition(ValueExpr condition) {
 		assert condition != null : "arg must not be null";
@@ -125,7 +124,8 @@ public class If extends AbstractQueryModelNode implements ValueExpr {
 				return equal;
 			}
 
-			equal = (alternative == null) ? o.getAlternative() == null : alternative.equals(o.getAlternative());
+			equal = (alternative == null) ? o.getAlternative() == null
+					: alternative.equals(o.getAlternative());
 
 			return equal;
 		}

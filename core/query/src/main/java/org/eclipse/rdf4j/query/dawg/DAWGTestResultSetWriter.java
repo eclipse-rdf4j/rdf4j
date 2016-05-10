@@ -35,9 +35,8 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 
 /**
- * A {@link TupleQueryResultHandler} that converts query results to an RDF graph
- * using the Data Access Working Group Test Result Set RDF Vocabulary
- * (http://www.w3.org/2001/sw/DataAccess/tests/result-set#).
+ * A {@link TupleQueryResultHandler} that converts query results to an RDF graph using the Data Access Working
+ * Group Test Result Set RDF Vocabulary (http://www.w3.org/2001/sw/DataAccess/tests/result-set#).
  */
 public class DAWGTestResultSetWriter implements TupleQueryResultHandler {
 

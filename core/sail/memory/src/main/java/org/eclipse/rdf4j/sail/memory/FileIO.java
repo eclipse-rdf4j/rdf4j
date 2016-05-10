@@ -216,7 +216,8 @@ class FileIO {
 				writeString(ns.getPrefix(), dataOut);
 				writeString(ns.getName(), dataOut);
 			}
-		} finally {
+		}
+		finally {
 			iter.close();
 		}
 	}
@@ -239,7 +240,8 @@ class FileIO {
 		throws IOException, SailException
 	{
 		// write explicit only statements
-		writeStatement(explicit.getStatements(null, null, null), EXPL_TRIPLE_MARKER, EXPL_QUAD_MARKER, dataOut);
+		writeStatement(explicit.getStatements(null, null, null), EXPL_TRIPLE_MARKER, EXPL_QUAD_MARKER,
+				dataOut);
 		// write inferred only statements
 		writeStatement(inferred.getStatements(null, null, null), INF_TRIPLE_MARKER, INF_QUAD_MARKER, dataOut);
 	}
@@ -285,7 +287,8 @@ class FileIO {
 
 		if (isExplicit) {
 			explicit.approve(memSubj, memPred, memObj, memContext);
-		} else {
+		}
+		else {
 			inferred.approve(memSubj, memPred, memObj, memContext);
 		}
 	}
@@ -375,8 +378,8 @@ class FileIO {
 	}
 
 	/**
-	 * Reads a string from the version 1 format, i.e. in Java's
-	 * {@link DataInput#modified-utf-8 Modified UTF-8}.
+	 * Reads a string from the version 1 format, i.e. in Java's {@link DataInput#modified-utf-8 Modified
+	 * UTF-8}.
 	 */
 	private String readStringV1(DataInputStream dataIn)
 		throws IOException
@@ -385,9 +388,8 @@ class FileIO {
 	}
 
 	/**
-	 * Reads a string from the version 2 format. Strings are encoded as UTF-8 and
-	 * are preceeded by a 32-bit integer (high byte first) specifying the length
-	 * of the encoded string.
+	 * Reads a string from the version 2 format. Strings are encoded as UTF-8 and are preceeded by a 32-bit
+	 * integer (high byte first) specifying the length of the encoded string.
 	 */
 	private String readStringV2(DataInputStream dataIn)
 		throws IOException

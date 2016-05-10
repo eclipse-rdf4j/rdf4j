@@ -8,9 +8,8 @@
 package org.eclipse.rdf4j.rio;
 
 /**
- * A RuntimeException indicating that a specific RDF format is not supported. A typical cause
- * of this exception is that the class library for the specified RDF format is not present
- * in the classpath.
+ * A RuntimeException indicating that a specific RDF format is not supported. A typical cause of this
+ * exception is that the class library for the specified RDF format is not present in the classpath.
  * 
  * @author jeen
  */

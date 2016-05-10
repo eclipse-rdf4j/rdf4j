@@ -161,31 +161,11 @@ public class BTreeTest {
 		btree.clear();
 	}
 
-	/* Test for SES-527
-		public void testRootNodeSplit()
-			throws Exception
-		{
-			// Fill the root node
-			for (int i = 0; i < 15; i++) {
-				btree.insert(TEST_VALUES.get(i));
-			}
-
-			// Fire up an iterator
-			RecordIterator iter = btree.iterateAll();
-			iter.next();
-
-			// Force the root node to split
-			btree.insert(TEST_VALUES.get(15));
-
-			// Verify that the iterator returns all 15 elements
-			int count = 0;
-			while (iter.next() != null) {
-				count++;
-			}
-
-			iter.close();
-			
-			assertEquals(15, count);
-		}
-	*/
+	/*
+	 * Test for SES-527 public void testRootNodeSplit() throws Exception { // Fill the root node for (int i =
+	 * 0; i < 15; i++) { btree.insert(TEST_VALUES.get(i)); } // Fire up an iterator RecordIterator iter =
+	 * btree.iterateAll(); iter.next(); // Force the root node to split btree.insert(TEST_VALUES.get(15)); //
+	 * Verify that the iterator returns all 15 elements int count = 0; while (iter.next() != null) { count++;
+	 * } iter.close(); assertEquals(15, count); }
+	 */
 }

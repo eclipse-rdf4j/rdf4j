@@ -34,7 +34,11 @@ public class SPARQLBuilderTest {
 				{ "StatementPattern", "SELECT * WHERE {?s ?p ?o}", "", "" },
 				{ "Join", "SELECT * WHERE {?s ?p ?o; <urn:test:pred> ?obj}", "", "" },
 				{ "Distinct", "SELECT DISTINCT ?s WHERE {?s ?p ?o; <urn:test:pred> ?obj}", "", "" },
-				{ "Optional", "SELECT * WHERE {?s ?p ?o . OPTIONAL { ?s <urn:test:pred> ?obj}}", "", "" },
+				{
+						"Optional",
+						"SELECT * WHERE {?s ?p ?o . OPTIONAL { ?s <urn:test:pred> ?obj}}",
+						"",
+						"" },
 				{
 						"Filter",
 						"SELECT ?s WHERE {?s ?p ?o; <urn:test:pred> ?obj FILTER (str(?obj) = \"urn:test:obj\")}",
@@ -81,7 +85,7 @@ public class SPARQLBuilderTest {
 	public void test()
 		throws RDF4JException
 	{ // NOPMD
-		// Thrown exceptions are the only failure path.
+													// Thrown exceptions are the only failure path.
 		TupleQuery tupleQuery = con.prepareTupleQuery(SPARQL, pattern);
 		if (!(prefix.isEmpty() || namespace.isEmpty())) {
 			tupleQuery.setBinding(prefix, valueFactory.createIRI(namespace));

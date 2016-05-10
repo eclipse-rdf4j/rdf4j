@@ -31,69 +31,55 @@ public abstract class AbstractDatatypeHandlerTest {
 	public ExpectedException thrown = ExpectedException.none();
 
 	/**
-	 * Generates a new instance of the {@link DatatypeHandler} implementation in
-	 * question and returns it.
+	 * Generates a new instance of the {@link DatatypeHandler} implementation in question and returns it.
 	 * 
-	 * @return A new instance of the {@link DatatypeHandler} implementation being
-	 *         tested.
+	 * @return A new instance of the {@link DatatypeHandler} implementation being tested.
 	 */
 	protected abstract DatatypeHandler getNewDatatypeHandler();
 
 	/**
-	 * @return A URI that must return true from
-	 *         {@link DatatypeHandler#isRecognizedDatatype(IRI)} and not throw an
-	 *         exception if used with a valid value when calling
+	 * @return A URI that must return true from {@link DatatypeHandler#isRecognizedDatatype(IRI)} and not
+	 *         throw an exception if used with a valid value when calling
 	 *         {@link DatatypeHandler#verifyDatatype(String, IRI)} and
-	 *         {@link DatatypeHandler#normalizeDatatype(String, IRI, ValueFactory)}
-	 *         .
+	 *         {@link DatatypeHandler#normalizeDatatype(String, IRI, ValueFactory)} .
 	 */
 	protected abstract IRI getRecognisedDatatypeUri();
 
 	/**
-	 * @return A URI that must return false from
-	 *         {@link DatatypeHandler#isRecognizedDatatype(IRI)} and throw an
-	 *         exception if used with
-	 *         {@link DatatypeHandler#verifyDatatype(String, IRI)} and
-	 *         {@link DatatypeHandler#normalizeDatatype(String, IRI, ValueFactory)}
-	 *         .
+	 * @return A URI that must return false from {@link DatatypeHandler#isRecognizedDatatype(IRI)} and throw
+	 *         an exception if used with {@link DatatypeHandler#verifyDatatype(String, IRI)} and
+	 *         {@link DatatypeHandler#normalizeDatatype(String, IRI, ValueFactory)} .
 	 */
 	protected abstract IRI getUnrecognisedDatatypeUri();
 
 	/**
-	 * @return A string value that does match the recognised datatype URI, and
-	 *         will succeed when used with both
-	 *         {@link DatatypeHandler#verifyDatatype(String, IRI)} and
-	 *         {@link DatatypeHandler#normalizeDatatype(String, IRI, ValueFactory)}
-	 *         .
+	 * @return A string value that does match the recognised datatype URI, and will succeed when used with
+	 *         both {@link DatatypeHandler#verifyDatatype(String, IRI)} and
+	 *         {@link DatatypeHandler#normalizeDatatype(String, IRI, ValueFactory)} .
 	 */
 	protected abstract String getValueMatchingRecognisedDatatypeUri();
 
 	/**
-	 * @return A string value that does not match the recognised datatype URI,
-	 *         and will fail when used with both
-	 *         {@link DatatypeHandler#verifyDatatype(String, IRI)} and
-	 *         {@link DatatypeHandler#normalizeDatatype(String, IRI, ValueFactory)}
-	 *         .
+	 * @return A string value that does not match the recognised datatype URI, and will fail when used with
+	 *         both {@link DatatypeHandler#verifyDatatype(String, IRI)} and
+	 *         {@link DatatypeHandler#normalizeDatatype(String, IRI, ValueFactory)} .
 	 */
 	protected abstract String getValueNotMatchingRecognisedDatatypeUri();
 
 	/**
-	 * @return An instance of {@link Literal} that is equal to the expected
-	 *         output from a successful call to
-	 *         {@link DatatypeHandler#normalizeDatatype(String, IRI, org.eclipse.rdf4j.model.ValueFactory)}
-	 *         ;
+	 * @return An instance of {@link Literal} that is equal to the expected output from a successful call to
+	 *         {@link DatatypeHandler#normalizeDatatype(String, IRI, org.eclipse.rdf4j.model.ValueFactory)} ;
 	 */
 	protected abstract Literal getNormalisedLiteralForRecognisedDatatypeAndValue();
 
 	/**
-	 * @return An instance of {@link ValueFactory} that can be used to produce a
-	 *         normalised literal.
+	 * @return An instance of {@link ValueFactory} that can be used to produce a normalised literal.
 	 */
 	protected abstract ValueFactory getValueFactory();
 
 	/**
-	 * @return The key that is expected to be returned for
-	 *         {@link DatatypeHandler#getKey()} to identify the service.
+	 * @return The key that is expected to be returned for {@link DatatypeHandler#getKey()} to identify the
+	 *         service.
 	 */
 	protected abstract String getExpectedKey();
 
@@ -119,8 +105,7 @@ public abstract class AbstractDatatypeHandlerTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.rio.DatatypeHandler#isRecognizedDatatype(org.eclipse.rdf4j.model.IRI)}
-	 * .
+	 * {@link org.eclipse.rdf4j.rio.DatatypeHandler#isRecognizedDatatype(org.eclipse.rdf4j.model.IRI)} .
 	 */
 	@Test
 	public void testIsRecognizedDatatypeNull()
@@ -132,8 +117,7 @@ public abstract class AbstractDatatypeHandlerTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.rio.DatatypeHandler#isRecognizedDatatype(org.eclipse.rdf4j.model.IRI)}
-	 * .
+	 * {@link org.eclipse.rdf4j.rio.DatatypeHandler#isRecognizedDatatype(org.eclipse.rdf4j.model.IRI)} .
 	 */
 	@Test
 	public void testIsRecognizedDatatypeTrue()
@@ -144,8 +128,7 @@ public abstract class AbstractDatatypeHandlerTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.rio.DatatypeHandler#isRecognizedDatatype(org.eclipse.rdf4j.model.IRI)}
-	 * .
+	 * {@link org.eclipse.rdf4j.rio.DatatypeHandler#isRecognizedDatatype(org.eclipse.rdf4j.model.IRI)} .
 	 */
 	@Test
 	public void testIsRecognizedDatatypeFalse()
@@ -268,7 +251,8 @@ public abstract class AbstractDatatypeHandlerTest {
 		throws Exception
 	{
 		thrown.expect(LiteralUtilException.class);
-		testHandler.normalizeDatatype(getValueMatchingRecognisedDatatypeUri(), getUnrecognisedDatatypeUri(), vf);
+		testHandler.normalizeDatatype(getValueMatchingRecognisedDatatypeUri(), getUnrecognisedDatatypeUri(),
+				vf);
 	}
 
 	/**

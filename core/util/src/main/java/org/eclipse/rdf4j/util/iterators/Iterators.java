@@ -17,8 +17,8 @@ import java.util.Iterator;
 import java.util.List;
 
 /**
- * This class consists exclusively of static methods that operate on or return
- * iterators. It is the Iterator-equivalent of {@link Collections}.
+ * This class consists exclusively of static methods that operate on or return iterators. It is the
+ * Iterator-equivalent of {@link Collections}.
  */
 public class Iterators {
 
@@ -27,8 +27,7 @@ public class Iterators {
 	 * 
 	 * @param iter
 	 *        the iterator to get the elements from
-	 * @return a List containing all elements obtained from the specified
-	 *         iterator.
+	 * @return a List containing all elements obtained from the specified iterator.
 	 */
 	public static <E> List<E> asList(Iterator<? extends E> iter) {
 		List<E> result = new ArrayList<E>();
@@ -54,16 +53,14 @@ public class Iterators {
 	}
 
 	/**
-	 * Converts an iterator to a string by concatenating all of the string
-	 * representations of objects in the iterator, divided by a separator.
+	 * Converts an iterator to a string by concatenating all of the string representations of objects in the
+	 * iterator, divided by a separator.
 	 * 
 	 * @param iter
-	 *        An iterator over arbitrary objects that are expected to implement
-	 *        {@link Object#toString()}.
+	 *        An iterator over arbitrary objects that are expected to implement {@link Object#toString()}.
 	 * @param separator
 	 *        The separator to insert between the object strings.
-	 * @return A String representation of the objects provided by the supplied
-	 *         iterator.
+	 * @return A String representation of the objects provided by the supplied iterator.
 	 */
 	public static String toString(Iterator<?> iter, String separator) {
 		StringBuilder sb = new StringBuilder();
@@ -72,12 +69,11 @@ public class Iterators {
 	}
 
 	/**
-	 * Converts an iterator to a string by concatenating all of the string
-	 * representations of objects in the iterator, divided by a separator.
+	 * Converts an iterator to a string by concatenating all of the string representations of objects in the
+	 * iterator, divided by a separator.
 	 * 
 	 * @param iter
-	 *        An iterator over arbitrary objects that are expected to implement
-	 *        {@link Object#toString()}.
+	 *        An iterator over arbitrary objects that are expected to implement {@link Object#toString()}.
 	 * @param separator
 	 *        The separator to insert between the object strings.
 	 * @param sb
@@ -94,34 +90,34 @@ public class Iterators {
 	}
 
 	/**
-	 * Closes the given iterator if it implements {@link java.io.Closeable}
-	 * else do nothing.
-	 * @param iter The iterator to close.
-	 * @throws IOException If an underlying I/O error occurs.
+	 * Closes the given iterator if it implements {@link java.io.Closeable} else do nothing.
+	 * 
+	 * @param iter
+	 *        The iterator to close.
+	 * @throws IOException
+	 *         If an underlying I/O error occurs.
 	 */
-	public static void close(Iterator<?> iter) throws IOException
+	public static void close(Iterator<?> iter)
+		throws IOException
 	{
-		if(iter instanceof Closeable)
-		{
+		if (iter instanceof Closeable) {
 			((Closeable)iter).close();
 		}
 	}
 
 	/**
-	 * Closes the given iterator, swallowing any IOExceptions, if it implements {@link java.io.Closeable}
-	 * else do nothing.
-	 * @param iter The iterator to close.
+	 * Closes the given iterator, swallowing any IOExceptions, if it implements {@link java.io.Closeable} else
+	 * do nothing.
+	 * 
+	 * @param iter
+	 *        The iterator to close.
 	 */
-	public static void closeSilently(Iterator<?> iter)
-	{
-		if(iter instanceof Closeable)
-		{
-			try
-			{
+	public static void closeSilently(Iterator<?> iter) {
+		if (iter instanceof Closeable) {
+			try {
 				((Closeable)iter).close();
 			}
-			catch(IOException ioe)
-			{
+			catch (IOException ioe) {
 				// ignore
 			}
 		}

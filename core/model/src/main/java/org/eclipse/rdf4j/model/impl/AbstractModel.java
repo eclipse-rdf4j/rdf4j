@@ -555,8 +555,8 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 	}
 
 	/**
-	 * Called by aggregate sets when a term has been removed from a term
-	 * iterator. Exactly one of the last four terms will be non-empty.
+	 * Called by aggregate sets when a term has been removed from a term iterator. Exactly one of the last
+	 * four terms will be non-empty.
 	 * 
 	 * @param iter
 	 *        The iterator used to navigate the live set (never null)
@@ -573,8 +573,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			Resource... contexts);
 
 	/**
-	 * Cleans up any resources used by this iterator. After this call the given
-	 * iterator should not be used.
+	 * Cleans up any resources used by this iterator. After this call the given iterator should not be used.
 	 * 
 	 * @param iter
 	 *        Iterator to clean up

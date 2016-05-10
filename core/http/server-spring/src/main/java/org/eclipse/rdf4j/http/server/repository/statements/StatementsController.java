@@ -141,7 +141,7 @@ public class StatementsController extends AbstractController {
 
 	private ModelAndView getSparqlUpdateResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response)
-				throws ServerHTTPException, ClientHTTPException, HTTPException
+		throws ServerHTTPException, ClientHTTPException, HTTPException
 	{
 		ProtocolUtil.logRequestParameters(request);
 
@@ -322,7 +322,7 @@ public class StatementsController extends AbstractController {
 	 */
 	private ModelAndView getExportStatementsResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response)
-				throws ClientHTTPException
+		throws ClientHTTPException
 	{
 		ProtocolUtil.logRequestParameters(request);
 
@@ -353,7 +353,7 @@ public class StatementsController extends AbstractController {
 	 */
 	private ModelAndView getTransactionResultResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response)
-				throws IOException, ClientHTTPException, ServerHTTPException, HTTPException
+		throws IOException, ClientHTTPException, ServerHTTPException, HTTPException
 	{
 		InputStream in = request.getInputStream();
 		try {
@@ -404,14 +404,15 @@ public class StatementsController extends AbstractController {
 	 */
 	private ModelAndView getAddDataResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response, boolean replaceCurrent)
-				throws IOException, ServerHTTPException, ClientHTTPException, HTTPException
+		throws IOException, ServerHTTPException, ClientHTTPException, HTTPException
 	{
 		ProtocolUtil.logRequestParameters(request);
 
 		String mimeType = HttpServerUtil.getMIMEType(request.getContentType());
 
 		RDFFormat rdfFormat = Rio.getParserFormatForMIMEType(mimeType).orElseThrow(
-				() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type: " + mimeType));
+				() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,
+						"Unsupported MIME type: " + mimeType));
 
 		ValueFactory vf = repository.getValueFactory();
 
@@ -476,7 +477,7 @@ public class StatementsController extends AbstractController {
 	 */
 	private ModelAndView getDeleteDataResult(Repository repository, HttpServletRequest request,
 			HttpServletResponse response)
-				throws ServerHTTPException, ClientHTTPException, HTTPException
+		throws ServerHTTPException, ClientHTTPException, HTTPException
 	{
 		ProtocolUtil.logRequestParameters(request);
 

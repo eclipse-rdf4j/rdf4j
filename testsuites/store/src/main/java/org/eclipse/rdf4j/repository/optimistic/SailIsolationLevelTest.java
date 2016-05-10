@@ -279,8 +279,7 @@ public class SailIsolationLevelTest {
 	}
 
 	/**
-	 * Any statement read in a transaction must remain present until the
-	 * transaction is over
+	 * Any statement read in a transaction must remain present until the transaction is over
 	 */
 	private void repeatableRead(final IsolationLevels level)
 		throws Exception
@@ -363,8 +362,7 @@ public class SailIsolationLevelTest {
 	}
 
 	/**
-	 * Query results must not include statements added after the first result is
-	 * read
+	 * Query results must not include statements added after the first result is read
 	 */
 	private void snapshotRead(IsolationLevel level)
 		throws RepositoryException
@@ -411,8 +409,7 @@ public class SailIsolationLevelTest {
 	}
 
 	/**
-	 * Reader observes the complete state of the store and ensure that does not
-	 * change
+	 * Reader observes the complete state of the store and ensure that does not change
 	 */
 	private void snapshot(final IsolationLevels level)
 		throws Exception
@@ -538,7 +535,8 @@ public class SailIsolationLevelTest {
 	}
 
 	protected Thread incrementBy(final CountDownLatch start, final CountDownLatch observed,
-			final IsolationLevels level, final ValueFactory vf, final IRI subj, final IRI pred, final int by)
+			final IsolationLevels level, final ValueFactory vf, final IRI subj, final IRI pred,
+			final int by)
 	{
 		return new Thread(new Runnable() {
 
@@ -628,8 +626,8 @@ public class SailIsolationLevelTest {
 		throws RepositoryException
 	{
 		LiteralImpl lit = new LiteralImpl(Integer.toString(i), XMLSchema.INTEGER);
-		connection.add(new URIImpl("http://test#s" + i), new URIImpl("http://test#p"), lit, new URIImpl(
-				"http://test#context_" + i));
+		connection.add(new URIImpl("http://test#s" + i), new URIImpl("http://test#p"), lit,
+				new URIImpl("http://test#context_" + i));
 	}
 
 	protected synchronized void fail(String message, Throwable t) {

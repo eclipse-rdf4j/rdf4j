@@ -34,7 +34,7 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 	private static final String PACKAGES_JUL_KEY = "packages.jul";
 
 	private File baseDir;
-	
+
 	private File confDir;
 
 	private File loggingDir;
@@ -42,18 +42,20 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 	private boolean debugLoggingEnabled;
 
 	private Set<String> packages;
-	
+
 	private AppConfiguration config;
 
 	protected AbstractLogConfiguration()
 		throws IOException
-	{		
+	{
 		debugLoggingEnabled = false;
 		packages = new LinkedHashSet<String>();
 		initBase();
 	}
-	
-	public void setBaseDir(File baseDir) throws IOException {
+
+	public void setBaseDir(File baseDir)
+		throws IOException
+	{
 		this.baseDir = baseDir;
 		confDir = new File(baseDir, DIR);
 		loggingDir = new File(baseDir, LOGGING_DIR);
@@ -61,7 +63,7 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 			throw new IOException("Unable to create logging directory " + loggingDir.getAbsolutePath());
 		}
 	}
-	
+
 	public File getBaseDir() {
 		return this.baseDir;
 	}
@@ -116,7 +118,7 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 	protected Set<String> getPackages() {
 		return Collections.unmodifiableSet(packages);
 	}
-	
+
 	public AppConfiguration getAppConfiguration() {
 		return this.config;
 	}

@@ -64,8 +64,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 	}
 
 	/**
-	 * Applies generally applicable optimizations to the supplied query: variable
-	 * assignments are inlined.
+	 * Applies generally applicable optimizations to the supplied query: variable assignments are inlined.
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
@@ -231,9 +230,12 @@ public class ConstantOptimizer implements QueryOptimizer {
 			List<ValueExpr> args = functionCall.getArgs();
 
 			if (args.size() == 0) {
-				/* SPARQL has two types of zero-arg function. One are proper 'constant' functions like NOW() which generate a single value
-				 *  for the entire query and which can be safely optimized to a constant. Other functions, like RAND(), UUID() and STRUUID(), 
-				 *  are a special case: they are expected to yield a new value on every call, and can therefore not be replaced by a constant.
+				/*
+				 * SPARQL has two types of zero-arg function. One are proper 'constant' functions like NOW()
+				 * which generate a single value for the entire query and which can be safely optimized to a
+				 * constant. Other functions, like RAND(), UUID() and STRUUID(), are a special case: they are
+				 * expected to yield a new value on every call, and can therefore not be replaced by a
+				 * constant.
 				 */
 				if (!isConstantZeroArgFunction(functionCall)) {
 					return;
@@ -264,9 +266,9 @@ public class ConstantOptimizer implements QueryOptimizer {
 		}
 
 		/**
-		 * Determines if the provided zero-arg function is a function that should
-		 * return a constant value for the entire query execution (e.g NOW()), or
-		 * if it should generate a new value for every call (e.g. RAND()).
+		 * Determines if the provided zero-arg function is a function that should return a constant value for
+		 * the entire query execution (e.g NOW()), or if it should generate a new value for every call (e.g.
+		 * RAND()).
 		 * 
 		 * @param functionCall
 		 *        a zero-arg function call.

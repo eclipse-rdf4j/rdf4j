@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.sail.memory.model;
 import org.eclipse.rdf4j.model.impl.ContextStatement;
 
 /**
- * A MemStatement is a Statement which contains context information and a flag
- * indicating whether the statement is explicit or inferred.
+ * A MemStatement is a Statement which contains context information and a flag indicating whether the
+ * statement is explicit or inferred.
  */
 public class MemStatement extends ContextStatement {
 
@@ -26,8 +26,7 @@ public class MemStatement extends ContextStatement {
 	 *-----------*/
 
 	/**
-	 * Flag indicating whether or not this statement has been added explicitly or
-	 * that it has been inferred.
+	 * Flag indicating whether or not this statement has been added explicitly or that it has been inferred.
 	 */
 	private volatile boolean explicit;
 
@@ -37,8 +36,7 @@ public class MemStatement extends ContextStatement {
 	private volatile int sinceSnapshot;
 
 	/**
-	 * Identifies the snapshot in which this statement was revoked, defaults to
-	 * {@link Integer#MAX_VALUE}.
+	 * Identifies the snapshot in which this statement was revoked, defaults to {@link Integer#MAX_VALUE}.
 	 */
 	private volatile int tillSnapshot = Integer.MAX_VALUE;
 
@@ -47,8 +45,8 @@ public class MemStatement extends ContextStatement {
 	 *--------------*/
 
 	/**
-	 * Creates a new MemStatement with the supplied subject, predicate, object
-	 * and context and marks it as 'explicit'.
+	 * Creates a new MemStatement with the supplied subject, predicate, object and context and marks it as
+	 * 'explicit'.
 	 */
 	public MemStatement(MemResource subject, MemIRI predicate, MemValue object, MemResource context,
 			int sinceSnapshot)
@@ -57,9 +55,8 @@ public class MemStatement extends ContextStatement {
 	}
 
 	/**
-	 * Creates a new MemStatement with the supplied subject, predicate, object
-	 * and context. The value of the <tt>explicit</tt> parameter determines if
-	 * this statement is marked as 'explicit' or not.
+	 * Creates a new MemStatement with the supplied subject, predicate, object and context. The value of the
+	 * <tt>explicit</tt> parameter determines if this statement is marked as 'explicit' or not.
 	 */
 	public MemStatement(MemResource subject, MemIRI predicate, MemValue object, MemResource context,
 			boolean explicit, int sinceSnapshot)
@@ -122,9 +119,8 @@ public class MemStatement extends ContextStatement {
 	}
 
 	/**
-	 * Lets this statement add itself to the appropriate statement lists of its
-	 * subject, predicate, object and context. The transaction status will be set
-	 * to {@link TxnStatus#NEW}.
+	 * Lets this statement add itself to the appropriate statement lists of its subject, predicate, object and
+	 * context. The transaction status will be set to {@link TxnStatus#NEW}.
 	 */
 	public void addToComponentLists() {
 		getSubject().addSubjectStatement(this);
@@ -137,9 +133,8 @@ public class MemStatement extends ContextStatement {
 	}
 
 	/**
-	 * Lets this statement remove itself from the appropriate statement lists of
-	 * its subject, predicate, object and context. The transaction status will be
-	 * set to <tt>null</tt>.
+	 * Lets this statement remove itself from the appropriate statement lists of its subject, predicate,
+	 * object and context. The transaction status will be set to <tt>null</tt>.
 	 */
 	public void removeFromComponentLists() {
 		getSubject().removeSubjectStatement(this);

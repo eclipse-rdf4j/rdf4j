@@ -15,9 +15,9 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 
 /**
- * A simple default implementation of the {@link Statement} interface for
- * statements that don't have an associated context. For statements that do have
- * an associated context, {@link ContextStatement} can be used.
+ * A simple default implementation of the {@link Statement} interface for statements that don't have an
+ * associated context. For statements that do have an associated context, {@link ContextStatement} can be
+ * used.
  * 
  * @see {@link SimpleValueFactory}
  */
@@ -51,11 +51,9 @@ public class SimpleStatement implements Statement {
 	/**
 	 * Creates a new Statement with the supplied subject, predicate and object. *
 	 * <p>
-	 * Note that creating SimpleStatement objects directly via this constructor
-	 * is not the recommended approach. Instead, use a
-	 * {@link org.eclipse.rdf4j.model.ValueFactory ValueFactory} (obtained from your
-	 * repository or by using {@link SimpleValueFactory#getInstance()}) to create
-	 * new Statement objects.
+	 * Note that creating SimpleStatement objects directly via this constructor is not the recommended
+	 * approach. Instead, use a {@link org.eclipse.rdf4j.model.ValueFactory ValueFactory} (obtained from your
+	 * repository or by using {@link SimpleValueFactory#getInstance()}) to create new Statement objects.
 	 * 
 	 * @param subject
 	 *        The statement's subject, must not be <tt>null</tt>.
@@ -105,14 +103,14 @@ public class SimpleStatement implements Statement {
 		if (other instanceof Statement) {
 			Statement that = (Statement)other;
 
-			/* We check  object equality first since it's most likely to be different.
-			 *
-			 * In general the number of different predicates and contexts in sets of
-			 * statements are the smallest (and therefore most likely to be identical), so 
-			 * these are checked last.
+			/*
+			 * We check object equality first since it's most likely to be different. In general the number of
+			 * different predicates and contexts in sets of statements are the smallest (and therefore most
+			 * likely to be identical), so these are checked last.
 			 */
 			return object.equals(that.getObject()) && subject.equals(that.getSubject())
-					&& predicate.equals(that.getPredicate()) && Objects.equals(getContext(), that.getContext());
+					&& predicate.equals(that.getPredicate())
+					&& Objects.equals(getContext(), that.getContext());
 		}
 
 		return false;
@@ -125,8 +123,7 @@ public class SimpleStatement implements Statement {
 	}
 
 	/**
-	 * Gives a String-representation of this Statement that can be used for
-	 * debugging.
+	 * Gives a String-representation of this Statement that can be used for debugging.
 	 */
 	@Override
 	public String toString() {

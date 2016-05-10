@@ -45,13 +45,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Abstract class implementing most 'convenience' methods in the
- * {@link RepositoryConnection} interface by transforming parameters and mapping
- * the methods to the basic (abstractly declared) methods.
+ * Abstract class implementing most 'convenience' methods in the {@link RepositoryConnection} interface by
+ * transforming parameters and mapping the methods to the basic (abstractly declared) methods.
  * <p>
- * Open connections are automatically closed when being garbage collected. A
- * warning message will be logged when the system property
- * <tt>org.eclipse.rdf4j.repository.debug</tt> has been set to a non-<tt>null</tt>
+ * Open connections are automatically closed when being garbage collected. A warning message will be logged
+ * when the system property <tt>org.eclipse.rdf4j.repository.debug</tt> has been set to a non-<tt>null</tt>
  * value.
  * 
  * @author Jeen Broekstra
@@ -340,8 +338,8 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	/**
 	 * Starts a new transaction if one is not already active.
 	 * 
-	 * @return <code>true</code> if a new transaction was started,
-	 *         <code>false</code> if a transaction was already active.
+	 * @return <code>true</code> if a new transaction was started, <code>false</code> if a transaction was
+	 *         already active.
 	 * @throws RepositoryException
 	 */
 	protected final boolean startLocalTransaction()
@@ -355,8 +353,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	/**
-	 * Invokes {@link #commit()} if supplied boolean condition is
-	 * <code>true</code>.
+	 * Invokes {@link #commit()} if supplied boolean condition is <code>true</code>.
 	 * 
 	 * @param condition
 	 *        a boolean condition.
@@ -371,8 +368,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	/**
-	 * Invokes {@link #rollback()} if supplied boolean condition is
-	 * <code>true</code>.
+	 * Invokes {@link #rollback()} if supplied boolean condition is <code>true</code>.
 	 * 
 	 * @param condition
 	 *        a boolean condition.

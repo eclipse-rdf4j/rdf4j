@@ -20,30 +20,26 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUnparsedQuadDataBlock;
 import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 
 /**
- * Resolves relative URIs in a query model using either an external base URI or
- * using the base URI specified in the query model itself. The former takes
- * precedence over the latter.
+ * Resolves relative URIs in a query model using either an external base URI or using the base URI specified
+ * in the query model itself. The former takes precedence over the latter.
  * 
  * @author Arjohn Kampman
  */
 public class BaseDeclProcessor {
 
 	/**
-	 * Resolves relative URIs in the supplied query model using either the
-	 * specified <tt>externalBaseURI</tt> or, if this parameter is <tt>null</tt>,
-	 * the base URI specified in the query model itself.
+	 * Resolves relative URIs in the supplied query model using either the specified <tt>externalBaseURI</tt>
+	 * or, if this parameter is <tt>null</tt>, the base URI specified in the query model itself.
 	 * 
 	 * @param qc
 	 *        The query model to resolve relative URIs in.
 	 * @param externalBaseURI
-	 *        The external base URI to use for resolving relative URIs, or
-	 *        <tt>null</tt> if the base URI that is specified in the query model
-	 *        should be used.
+	 *        The external base URI to use for resolving relative URIs, or <tt>null</tt> if the base URI that
+	 *        is specified in the query model should be used.
 	 * @throws IllegalArgumentException
 	 *         If an external base URI is specified that is not an absolute URI.
 	 * @throws MalformedQueryException
-	 *         If the base URI specified in the query model is not an absolute
-	 *         URI.
+	 *         If the base URI specified in the query model is not an absolute URI.
 	 */
 	public static void process(ASTOperationContainer qc, String externalBaseURI)
 		throws MalformedQueryException
@@ -64,7 +60,8 @@ public class BaseDeclProcessor {
 			parsedBaseURI = new ParsedURI(externalBaseURI);
 
 			if (!parsedBaseURI.isAbsolute()) {
-				throw new IllegalArgumentException("Supplied base URI is not an absolute IRI: " + externalBaseURI);
+				throw new IllegalArgumentException(
+						"Supplied base URI is not an absolute IRI: " + externalBaseURI);
 			}
 		}
 		else {

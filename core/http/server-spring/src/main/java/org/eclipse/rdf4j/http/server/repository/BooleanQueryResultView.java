@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterFactory;
 
 /**
- * View used to render boolean query results. Renders results in a format
- * specified using a parameter or Accept header.
+ * View used to render boolean query results. Renders results in a format specified using a parameter or
+ * Accept header.
  * 
  * @author Arjohn Kampman
  */
@@ -46,7 +46,8 @@ public class BooleanQueryResultView extends QueryResultView {
 	protected void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
 		throws IOException
 	{
-		BooleanQueryResultWriterFactory brWriterFactory = (BooleanQueryResultWriterFactory)model.get(FACTORY_KEY);
+		BooleanQueryResultWriterFactory brWriterFactory = (BooleanQueryResultWriterFactory)model.get(
+				FACTORY_KEY);
 		BooleanQueryResultFormat brFormat = brWriterFactory.getBooleanQueryResultFormat();
 
 		response.setStatus(SC_OK);

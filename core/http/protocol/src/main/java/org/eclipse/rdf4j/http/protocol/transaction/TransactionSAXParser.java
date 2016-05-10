@@ -33,8 +33,7 @@ import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.xml.sax.SAXException;
 
 /**
- * Parses an RDF transaction document into a collection of
- * {@link TransactionOperation} objects.
+ * Parses an RDF transaction document into a collection of {@link TransactionOperation} objects.
  * 
  * @author Arjohn Kampman
  * @author Leo Sauermann
@@ -131,7 +130,8 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 			currentSPARQLUpdate = new SPARQLUpdateOperation();
 
 			String baseURI = atts.get(TransactionXMLConstants.BASE_URI_ATT);
-			boolean includeInferred = Boolean.parseBoolean(atts.get(TransactionXMLConstants.INCLUDE_INFERRED_ATT));
+			boolean includeInferred = Boolean.parseBoolean(
+					atts.get(TransactionXMLConstants.INCLUDE_INFERRED_ATT));
 
 			currentSPARQLUpdate.setIncludeInferred(includeInferred);
 			currentSPARQLUpdate.setBaseURI(baseURI);
@@ -160,7 +160,8 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 				|| TransactionXMLConstants.BINDING_LITERAL.equals(tagName))
 		{
 			if (bindings == null) {
-				throw new SAXException("unexpected start of SPARQL Update operation binding (without <bindings>)");
+				throw new SAXException(
+						"unexpected start of SPARQL Update operation binding (without <bindings>)");
 			}
 
 			String value = text;

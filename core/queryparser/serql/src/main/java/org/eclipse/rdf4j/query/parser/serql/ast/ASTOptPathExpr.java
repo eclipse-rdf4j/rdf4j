@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.serql.ast;
 
-
 public class ASTOptPathExpr extends ASTPathExpr {
 
 	public ASTOptPathExpr(int id) {
@@ -39,8 +38,7 @@ public class ASTOptPathExpr extends ASTPathExpr {
 	/**
 	 * Returns the where clause on the optional path expression, if present.
 	 * 
-	 * @return The where clause, or <tt>null</tt> if no where clause was
-	 *         specified.
+	 * @return The where clause, or <tt>null</tt> if no where clause was specified.
 	 */
 	public ASTWhere getWhereClause() {
 		Node lastChildNode = children.get(children.size() - 1);

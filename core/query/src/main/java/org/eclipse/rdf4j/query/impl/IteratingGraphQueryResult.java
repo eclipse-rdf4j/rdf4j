@@ -38,7 +38,8 @@ public class IteratingGraphQueryResult extends IterationWrapper<Statement, Query
 	 * Constructors *
 	 *--------------*/
 
-	public IteratingGraphQueryResult(Map<String, String> namespaces, Iterable<? extends Statement> statements)
+	public IteratingGraphQueryResult(Map<String, String> namespaces,
+			Iterable<? extends Statement> statements)
 	{
 		this(namespaces, statements.iterator());
 	}

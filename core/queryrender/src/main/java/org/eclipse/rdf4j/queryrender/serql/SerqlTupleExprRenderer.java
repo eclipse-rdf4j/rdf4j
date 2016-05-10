@@ -113,15 +113,17 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 							aFirst = false;
 						}
 
-						aQuery.append(mExtensions.containsKey(aElem.getSourceName()) ? mValueExprRenderer.render(mExtensions.get(aElem.getSourceName()))
+						aQuery.append(mExtensions.containsKey(aElem.getSourceName())
+								? mValueExprRenderer.render(mExtensions.get(aElem.getSourceName()))
 								: aElem.getSourceName());
 
 						if (!aElem.getSourceName().equals(aElem.getTargetName())
-								|| (mExtensions.containsKey(aElem.getTargetName()) && !mExtensions.containsKey(aElem.getSourceName())))
+								|| (mExtensions.containsKey(aElem.getTargetName())
+										&& !mExtensions.containsKey(aElem.getSourceName())))
 						{
-							aQuery.append(" as ").append(
-									mExtensions.containsKey(aElem.getTargetName()) ? mValueExprRenderer.render(mExtensions.get(aElem.getTargetName()))
-											: aElem.getTargetName());
+							aQuery.append(" as ").append(mExtensions.containsKey(aElem.getTargetName())
+									? mValueExprRenderer.render(mExtensions.get(aElem.getTargetName()))
+									: aElem.getTargetName());
 						}
 					}
 				}
@@ -193,8 +195,8 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * Renders the tuple expression as a query string. It creates a new
-	 * SerqlTupleExprRenderer rather than reusing this one.
+	 * Renders the tuple expression as a query string. It creates a new SerqlTupleExprRenderer rather than
+	 * reusing this one.
 	 * 
 	 * @param theExpr
 	 *        the expr to render

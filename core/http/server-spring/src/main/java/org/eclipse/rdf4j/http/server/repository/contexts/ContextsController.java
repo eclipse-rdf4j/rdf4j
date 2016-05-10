@@ -59,11 +59,10 @@ public class ContextsController extends AbstractController {
 			List<String> columnNames = Arrays.asList("contextID");
 			List<BindingSet> contexts = new ArrayList<BindingSet>();
 			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-			synchronized(repositoryCon)
-			{
+			synchronized (repositoryCon) {
 				try {
 					CloseableIteration<? extends Resource, RepositoryException> contextIter = repositoryCon.getContextIDs();
-	
+
 					try {
 						while (contextIter.hasNext()) {
 							BindingSet bindingSet = new ListBindingSet(columnNames, contextIter.next());

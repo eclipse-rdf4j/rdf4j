@@ -72,17 +72,18 @@ public class SimpleNode implements Node {
 			}
 		}
 	}
-	
+
 	/**
 	 * Replaces this node with the supplied one in the AST.
 	 *
-	 * @param newNode The replacement node.
+	 * @param newNode
+	 *        The replacement node.
 	 */
 	public void jjtReplaceWith(Node newNode) {
 		if (parent != null) {
 			parent.jjtReplaceChild(this, newNode);
 		}
-		
+
 		for (Node childNode : children) {
 			childNode.jjtSetParent(newNode);
 		}
@@ -99,9 +100,9 @@ public class SimpleNode implements Node {
 	/**
 	 * Gets the (first) child of this node that is of the specific type.
 	 *
-	 * @param type The type of the child node that should be returned.
-	 * @return The (first) child node of the specified type, or <tt>null</tt>
-	 * if no such child node was found.
+	 * @param type
+	 *        The type of the child node that should be returned.
+	 * @return The (first) child node of the specified type, or <tt>null</tt> if no such child node was found.
 	 */
 	public <T extends Node> T jjtGetChild(Class<T> type) {
 		for (Node n : children) {
@@ -112,10 +113,10 @@ public class SimpleNode implements Node {
 
 		return null;
 	}
-	
+
 	public <T extends Node> List<T> jjtGetChildren(Class<T> type) {
 		List<T> result = new ArrayList<T>(children.size());
-		
+
 		for (Node n : children) {
 			if (type.isInstance(n)) {
 				result.add((T)n);
@@ -149,15 +150,13 @@ public class SimpleNode implements Node {
 	}
 
 	/*
-	 * You can override these two methods in subclasses of SimpleNode to
-	 * customize the way the node appears when the tree is dumped. If your output
-	 * uses more than one line you should override toString(String), otherwise
-	 * overriding toString() is probably all you need to do.
+	 * You can override these two methods in subclasses of SimpleNode to customize the way the node appears
+	 * when the tree is dumped. If your output uses more than one line you should override toString(String),
+	 * otherwise overriding toString() is probably all you need to do.
 	 */
 
 	@Override
-	public String toString()
-	{
+	public String toString() {
 		return SyntaxTreeBuilderTreeConstants.jjtNodeName[id];
 	}
 
@@ -166,8 +165,8 @@ public class SimpleNode implements Node {
 	}
 
 	/**
-	 * Writes a tree-like representation of this node and all of its subnodes
-	 * (recursively) to the supplied Appendable.
+	 * Writes a tree-like representation of this node and all of its subnodes (recursively) to the supplied
+	 * Appendable.
 	 */
 	public void dump(String prefix, Appendable out)
 		throws IOException
@@ -183,8 +182,8 @@ public class SimpleNode implements Node {
 	}
 
 	/**
-	 * Writes a tree-like representation of this node and all of its subnodes
-	 * (recursively) and returns it as a string.
+	 * Writes a tree-like representation of this node and all of its subnodes (recursively) and returns it as
+	 * a string.
 	 */
 	public String dump(String prefix) {
 		StringWriter out = new StringWriter(256);

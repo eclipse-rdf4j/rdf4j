@@ -38,14 +38,14 @@ public class OrderComparatorTest {
 
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr,
 				String serviceUri, CloseableIteration<BindingSet, QueryEvaluationException> bindings)
-					throws QueryEvaluationException
+			throws QueryEvaluationException
 		{
 			throw new UnsupportedOperationException();
 		}
 
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr,
 				BindingSet bindings)
-					throws QueryEvaluationException
+			throws QueryEvaluationException
 		{
 			throw new UnsupportedOperationException();
 		}
@@ -183,8 +183,8 @@ public class OrderComparatorTest {
 		assertTrue(sud.compare(a, b) != 0);
 		assertTrue(sud.compare(a, b) != sud.compare(b, a));
 	}
-	
-	@Test 
+
+	@Test
 	public void testEqualBindingNamesUnequalValues() {
 		OrderComparator sud = new OrderComparator(strategy, order, new ValueComparator());
 		QueryBindingSet a = new QueryBindingSet();

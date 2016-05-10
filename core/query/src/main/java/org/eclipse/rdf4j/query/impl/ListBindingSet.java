@@ -33,10 +33,9 @@ public class ListBindingSet extends AbstractBindingSet {
 
 	/**
 	 * Creates a new List-based BindingSet containing the supplied bindings.
-	 * <em>The supplied list of binding names is assumed to be constant</em>;
-	 * care should be taken that the contents of this list doesn't change after
-	 * supplying it to this solution. The number of supplied values must be equal
-	 * to the number of the binding names.
+	 * <em>The supplied list of binding names is assumed to be constant</em>; care should be taken that the
+	 * contents of this list doesn't change after supplying it to this solution. The number of supplied values
+	 * must be equal to the number of the binding names.
 	 * 
 	 * @param names
 	 *        The binding names.
@@ -49,10 +48,9 @@ public class ListBindingSet extends AbstractBindingSet {
 
 	/**
 	 * Creates a new List-based BindingSet containing the supplied bindings.
-	 * <em>The supplied lists are assumed to be constant</em>; care should be
-	 * taken that the contents of these lists don't change after supplying them
-	 * to this solution. The number of supplied values must be equal to the
-	 * number of the binding names.
+	 * <em>The supplied lists are assumed to be constant</em>; care should be taken that the contents of these
+	 * lists don't change after supplying them to this solution. The number of supplied values must be equal
+	 * to the number of the binding names.
 	 * 
 	 * @param bindingNames
 	 *        The binding names.

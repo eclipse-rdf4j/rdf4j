@@ -86,7 +86,6 @@ public class ContextAwareRepository extends RepositoryWrapper {
 		return ql;
 	}
 
-	
 	/**
 	 * @return Returns the default baseURI.
 	 */
@@ -152,9 +151,9 @@ public class ContextAwareRepository extends RepositoryWrapper {
 		this.ql = ql;
 	}
 
-	
 	/**
-	 * @param baseURI The default baseURI to set.
+	 * @param baseURI
+	 *        The default baseURI to set.
 	 */
 	public void setBaseURI(String baseURI) {
 		this.baseURI = baseURI;

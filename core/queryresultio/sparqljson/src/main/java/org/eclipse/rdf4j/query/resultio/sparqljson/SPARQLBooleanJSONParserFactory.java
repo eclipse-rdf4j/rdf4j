@@ -13,8 +13,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParserFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory;
 
 /**
- * A {@link TupleQueryResultParserFactory} for parsers of SPARQL-1.1 JSON
- * Boolean Query Results.
+ * A {@link TupleQueryResultParserFactory} for parsers of SPARQL-1.1 JSON Boolean Query Results.
  * 
  * @author Peter Ansell
  */

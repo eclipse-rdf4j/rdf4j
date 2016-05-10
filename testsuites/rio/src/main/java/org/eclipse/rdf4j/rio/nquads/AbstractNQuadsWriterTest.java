@@ -75,14 +75,10 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 		URL ciaScheme = this.getClass().getResource("/cia-factbook/CIA-onto-enhanced.rdf");
 		URL ciaFacts = this.getClass().getResource("/cia-factbook/CIA-facts-enhanced.rdf");
 
-		con1.add(
-				ciaScheme,
-				ciaScheme.toExternalForm(),
+		con1.add(ciaScheme, ciaScheme.toExternalForm(),
 				Rio.getParserFormatForFileName(ciaScheme.toExternalForm()).orElseThrow(
 						Rio.unsupportedFormat(ciaScheme.toExternalForm())));
-		con1.add(
-				ciaFacts,
-				ciaFacts.toExternalForm(),
+		con1.add(ciaFacts, ciaFacts.toExternalForm(),
 				Rio.getParserFormatForFileName(ciaFacts.toExternalForm()).orElseThrow(
 						Rio.unsupportedFormat(ciaFacts.toExternalForm())));
 
@@ -110,7 +106,8 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 	{
 		StatementCollector statementCollector = new StatementCollector();
 		parser.setRDFHandler(statementCollector);
-		parser.parse(this.getClass().getResourceAsStream("/testcases/nquads/test2.nq"), "http://test.base.uri");
+		parser.parse(this.getClass().getResourceAsStream("/testcases/nquads/test2.nq"),
+				"http://test.base.uri");
 
 		Assert.assertEquals(400, statementCollector.getStatements().size());
 
@@ -185,7 +182,8 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 		String content = baos.toString();
 		String[] lines = content.split("\n");
 		Assert.assertEquals("Unexpected number of lines.", 1, lines.length);
-		Assert.assertTrue(lines[0].startsWith("<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\" _:"));
+		Assert.assertTrue(lines[0].startsWith(
+				"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\" _:"));
 	}
 
 	@Test
@@ -206,6 +204,7 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 		String content = baos.toString();
 		String[] lines = content.split("\n");
 		Assert.assertEquals("Unexpected number of lines.", 1, lines.length);
-		Assert.assertTrue(lines[0].startsWith("<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\"^^<http://www.w3.org/2001/XMLSchema#string> _:"));
+		Assert.assertTrue(lines[0].startsWith(
+				"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\"^^<http://www.w3.org/2001/XMLSchema#string> _:"));
 	}
 }

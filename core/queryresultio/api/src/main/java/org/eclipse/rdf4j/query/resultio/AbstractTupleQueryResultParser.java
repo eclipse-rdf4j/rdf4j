@@ -17,24 +17,23 @@ import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 
 /**
- * Base class for {@link TupleQueryResultParser}s offering common functionality
- * for query result parsers.
+ * Base class for {@link TupleQueryResultParser}s offering common functionality for query result parsers.
  */
-public abstract class AbstractTupleQueryResultParser extends AbstractQueryResultParser implements
-		TupleQueryResultParser
+public abstract class AbstractTupleQueryResultParser extends AbstractQueryResultParser
+		implements TupleQueryResultParser
 {
 
 	/**
-	 * Creates a new parser base that, by default, will use an instance of
-	 * {@link SimpleValueFactory} to create Value objects.
+	 * Creates a new parser base that, by default, will use an instance of {@link SimpleValueFactory} to
+	 * create Value objects.
 	 */
 	public AbstractTupleQueryResultParser() {
 		super();
 	}
 
 	/**
-	 * Creates a new parser base that will use the supplied {@link ValueFactory}
-	 * to create {@link Value} objects.
+	 * Creates a new parser base that will use the supplied {@link ValueFactory} to create {@link Value}
+	 * objects.
 	 */
 	public AbstractTupleQueryResultParser(ValueFactory valueFactory) {
 		super(valueFactory);

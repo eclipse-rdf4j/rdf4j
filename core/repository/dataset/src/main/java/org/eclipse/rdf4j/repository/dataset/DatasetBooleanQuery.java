@@ -12,7 +12,6 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.sail.SailBooleanQuery;
 
 /**
- * 
  * @author Arjohn Kampman
  */
 class DatasetBooleanQuery extends DatasetQuery implements BooleanQuery {

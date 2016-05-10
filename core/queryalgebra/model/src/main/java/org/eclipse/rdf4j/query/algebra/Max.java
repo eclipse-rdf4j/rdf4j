@@ -15,7 +15,7 @@ public class Max extends AbstractAggregateOperator {
 	public Max(ValueExpr arg) {
 		super(arg);
 	}
-	
+
 	public Max(ValueExpr arg, boolean distinct) {
 		super(arg, distinct);
 	}

@@ -10,12 +10,12 @@ package org.eclipse.rdf4j.query.algebra;
 /**
  * @author David Huynh
  */
-public class Min extends  AbstractAggregateOperator {
+public class Min extends AbstractAggregateOperator {
 
 	public Min(ValueExpr arg) {
 		super(arg);
 	}
-	
+
 	public Min(ValueExpr arg, boolean distinct) {
 		super(arg, distinct);
 	}

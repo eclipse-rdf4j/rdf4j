@@ -14,18 +14,15 @@ import com.spatial4j.core.context.SpatialContext;
 import com.spatial4j.core.context.SpatialContextFactory;
 
 /**
- * This class is responsible for creating the
- * {@link com.spatial4j.core.context.SpatialContext}, {@link SpatialAlegbra} and
- * {@link WktWriter} that will be used. It will first try to load a subclass of
- * itself called
- * "org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer"
- * . This is not provided, and is primarily intended as a way to inject JTS
- * support. If this fails then the following fall-backs are used:
+ * This class is responsible for creating the {@link com.spatial4j.core.context.SpatialContext},
+ * {@link SpatialAlegbra} and {@link WktWriter} that will be used. It will first try to load a subclass of
+ * itself called "org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer" .
+ * This is not provided, and is primarily intended as a way to inject JTS support. If this fails then the
+ * following fall-backs are used:
  * <ul>
- * <li>a SpatialContext created by passing system properties with the prefix
- * "spatialSupport." to {@link com.spatial4j.core.context.SpatialContextFactory}
- * . The prefix is stripped from the system property name to form the
- * SpatialContextFactory argument name.</li>
+ * <li>a SpatialContext created by passing system properties with the prefix "spatialSupport." to
+ * {@link com.spatial4j.core.context.SpatialContextFactory} . The prefix is stripped from the system property
+ * name to form the SpatialContextFactory argument name.</li>
  * <li>a SpatialAlgebra that does not support any operation.</li>
  * <li>a WktWriter that only supports points</li>.
  * </ul>
@@ -42,8 +39,8 @@ abstract class SpatialSupport {
 		SpatialSupport support;
 		try {
 			Class<?> cls = Class.forName(
-					"org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer", true,
-					Thread.currentThread().getContextClassLoader());
+					"org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer",
+					true, Thread.currentThread().getContextClassLoader());
 			support = (SpatialSupport)cls.newInstance();
 		}
 		catch (Exception e) {
@@ -84,7 +81,8 @@ abstract class SpatialSupport {
 					args.put(key.substring(SYSTEM_PROPERTY_PREFIX.length()), System.getProperty(key));
 				}
 			}
-			return SpatialContextFactory.makeSpatialContext(args, Thread.currentThread().getContextClassLoader());
+			return SpatialContextFactory.makeSpatialContext(args,
+					Thread.currentThread().getContextClassLoader());
 		}
 
 		@Override

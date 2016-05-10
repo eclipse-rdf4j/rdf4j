@@ -61,7 +61,7 @@ public class NotifyingTest {
 			Object proxy = Proxy.newProxyInstance(cl, classes, handler);
 			return (RepositoryConnection)proxy;
 		}
-		
+
 		@Override
 		public ValueFactory getValueFactory() {
 			return SimpleValueFactory.getInstance();
@@ -142,7 +142,7 @@ public class NotifyingTest {
 
 			protected void removeWithoutCommit(Resource subject, IRI predicate, Value object,
 					Resource... contexts)
-						throws RepositoryException
+				throws RepositoryException
 			{
 			}
 		};

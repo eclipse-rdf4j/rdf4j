@@ -14,7 +14,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 
  * @author Arjohn Kampman
  */
 public abstract class TimeLimitIteration<E, X extends Exception> extends IterationWrapper<E, X> {
@@ -24,7 +23,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	private final InterruptTask<E, X> interruptTask;
-	
+
 	private volatile boolean isInterrupted = false;
 
 	public TimeLimitIteration(Iteration<? extends E, ? extends X> iter, long timeLimit) {

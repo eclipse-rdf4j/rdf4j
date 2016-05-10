@@ -62,8 +62,8 @@ public class LocalRepositoryManagerTest {
 
 		// Create configurations for the SAIL stack, and the repository
 		// implementation.
-		manager.addRepositoryConfig(new RepositoryConfig(TEST_REPO, new SailRepositoryConfig(
-				new MemoryStoreConfig(true))));
+		manager.addRepositoryConfig(
+				new RepositoryConfig(TEST_REPO, new SailRepositoryConfig(new MemoryStoreConfig(true))));
 
 		// Create configuration for proxy repository to previous repository.
 		manager.addRepositoryConfig(new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(TEST_REPO)));
@@ -82,8 +82,7 @@ public class LocalRepositoryManagerTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.repository.manager.LocalRepositoryManager#getRepository(java.lang.String)}
-	 * .
+	 * {@link org.eclipse.rdf4j.repository.manager.LocalRepositoryManager#getRepository(java.lang.String)} .
 	 * 
 	 * @throws RepositoryException
 	 *         if a problem occurs accessing the repository

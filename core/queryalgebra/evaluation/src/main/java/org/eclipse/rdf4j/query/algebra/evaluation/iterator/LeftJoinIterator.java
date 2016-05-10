@@ -31,9 +31,8 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	private final LeftJoin join;
 
 	/**
-	 * The set of binding names that are "in scope" for the filter. The filter
-	 * must not include bindings that are (only) included because of the
-	 * depth-first evaluation strategy in the evaluation of the constraint.
+	 * The set of binding names that are "in scope" for the filter. The filter must not include bindings that
+	 * are (only) included because of the depth-first evaluation strategy in the evaluation of the constraint.
 	 */
 	private final Set<String> scopeBindingNames;
 

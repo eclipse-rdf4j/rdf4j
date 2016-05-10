@@ -86,7 +86,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service,
 			final Set<String> projectionVars, BindingSet bindings, String baseUri)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		final CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(service,
 				new SingletonIteration<BindingSet, QueryEvaluationException>(bindings), baseUri);
@@ -135,7 +135,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 	@Override
 	public final CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
 			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		if (!bindings.hasNext()) {
 			return new EmptyIteration<BindingSet, QueryEvaluationException>();

@@ -25,7 +25,7 @@ public class ASTNode extends SimpleNode {
 	{
 		return visitor.visit(this, data);
 	}
-	
+
 	public List<ASTNodeElem> getNodeElemList() {
 		return new CastingList<ASTNodeElem>(children);
 	}

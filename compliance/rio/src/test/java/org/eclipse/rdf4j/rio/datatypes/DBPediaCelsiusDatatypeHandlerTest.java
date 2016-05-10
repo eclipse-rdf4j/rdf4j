@@ -19,8 +19,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 /**
- * Test for {@link DBPediaDatatypeHandler} with
- * http://dbpedia.org/datatype/degreeCelsius .
+ * Test for {@link DBPediaDatatypeHandler} with http://dbpedia.org/datatype/degreeCelsius .
  * 
  * @author Peter Ansell
  */

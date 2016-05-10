@@ -17,8 +17,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
 
 /**
- * Base class for {@link RDFWriter}s offering common functionality for RDF
- * writers.
+ * Base class for {@link RDFWriter}s offering common functionality for RDF writers.
  * 
  * @author Peter Ansell
  */
@@ -59,7 +58,8 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 	}
 
 	/*
-	 * Default implementation. Implementing classes must override this to specify that they support given settings.
+	 * Default implementation. Implementing classes must override this to specify that they support given
+	 * settings.
 	 */
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {

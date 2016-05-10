@@ -16,7 +16,8 @@ import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
  */
 public final class LIST {
 
-	private LIST() {}
+	private LIST() {
+	}
 
 	/**
 	 * http://jena.hpl.hp.com/ARQ/list
@@ -26,7 +27,9 @@ public final class LIST {
 	public static final String PREFIX = "list";
 
 	public static final URI MEMBER;
+
 	public static final URI INDEX;
+
 	public static final URI LENGTH;
 
 	static {

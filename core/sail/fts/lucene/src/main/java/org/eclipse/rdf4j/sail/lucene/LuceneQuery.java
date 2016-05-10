@@ -27,10 +27,12 @@ import com.google.common.collect.Iterables;
  * To be removed, no longer used.
  */
 @Deprecated
-public class LuceneQuery implements SearchQuery
-{
+public class LuceneQuery implements SearchQuery {
+
 	private final Query query;
+
 	private final LuceneIndex index;
+
 	private Highlighter highlighter;
 
 	@Deprecated
@@ -41,16 +43,18 @@ public class LuceneQuery implements SearchQuery
 
 	@Override
 	@Deprecated
-	public Iterable<? extends DocumentScore> query(Resource resource) throws IOException {
+	public Iterable<? extends DocumentScore> query(Resource resource)
+		throws IOException
+	{
 		TopDocs docs;
-		if(resource != null) {
+		if (resource != null) {
 			docs = index.search(resource, query);
 		}
 		else {
 			docs = index.search(query);
 		}
-		return Iterables.transform(Arrays.asList(docs.scoreDocs), new Function<ScoreDoc,DocumentScore>()
-		{
+		return Iterables.transform(Arrays.asList(docs.scoreDocs), new Function<ScoreDoc, DocumentScore>() {
+
 			@Override
 			public DocumentScore apply(ScoreDoc doc) {
 				return new LuceneDocumentScore(doc, highlighter, index);
@@ -61,7 +65,8 @@ public class LuceneQuery implements SearchQuery
 	@Override
 	@Deprecated
 	public void highlight(URI property) {
-		Formatter formatter = new SimpleHTMLFormatter(SearchFields.HIGHLIGHTER_PRE_TAG, SearchFields.HIGHLIGHTER_POST_TAG);
+		Formatter formatter = new SimpleHTMLFormatter(SearchFields.HIGHLIGHTER_PRE_TAG,
+				SearchFields.HIGHLIGHTER_POST_TAG);
 		highlighter = new Highlighter(formatter, new QueryScorer(query));
 	}
 }

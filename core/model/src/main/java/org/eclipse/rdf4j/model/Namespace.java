@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.model;
 import java.io.Serializable;
 
 /**
- * A namespace, consisting of a namespace name and a prefix that has been
- * assigned to it.
+ * A namespace, consisting of a namespace name and a prefix that has been assigned to it.
  */
 public interface Namespace extends Serializable, Comparable<Namespace> {
 
@@ -23,11 +22,10 @@ public interface Namespace extends Serializable, Comparable<Namespace> {
 	public String getName();
 
 	/**
-	 * Gets the prefix of the current namespace. The default namespace is
-	 * represented by an empty prefix string.
+	 * Gets the prefix of the current namespace. The default namespace is represented by an empty prefix
+	 * string.
 	 * 
-	 * @return prefix of namespace, or an empty string in case of the default
-	 *         namespace.
+	 * @return prefix of namespace, or an empty string in case of the default namespace.
 	 */
 	public String getPrefix();
 }

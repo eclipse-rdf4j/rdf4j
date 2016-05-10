@@ -42,14 +42,14 @@ public class TupleAndGraphQueryEvaluator {
 	private final ConsoleParameters parameters;
 
 	private static final ParserConfig nonVerifyingParserConfig;
-	
+
 	static {
 		nonVerifyingParserConfig = new ParserConfig();
 		nonVerifyingParserConfig.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, false);
 		nonVerifyingParserConfig.set(BasicParserSettings.VERIFY_LANGUAGE_TAGS, false);
 		nonVerifyingParserConfig.set(BasicParserSettings.VERIFY_RELATIVE_URIS, false);
 	}
-	
+
 	TupleAndGraphQueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
 		this.consoleIO = consoleIO;
 		this.state = state;

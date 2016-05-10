@@ -26,9 +26,8 @@ public interface LanguageTagCodes {
 	public static final int LT_DEFAULT = 0x0100;
 
 	/**
-	 * A tag with non-standard extra subtags. Set for language tags with
-	 * additional subtags over their IANA registration, or a third subtag for
-	 * unregistered tags of the form ISO639Code-ISO3166Code.
+	 * A tag with non-standard extra subtags. Set for language tags with additional subtags over their IANA
+	 * registration, or a third subtag for unregistered tags of the form ISO639Code-ISO3166Code.
 	 */
 	public static final int LT_EXTRA = 0x0080;
 
@@ -38,8 +37,7 @@ public interface LanguageTagCodes {
 	public static final int LT_IANA = 0x1024;
 
 	/**
-	 * An illegal tag. Some rule of RFC3066 failed, or the tag is not in IANA, or
-	 * ISO639 or ISO3166.
+	 * An illegal tag. Some rule of RFC3066 failed, or the tag is not in IANA, or ISO639 or ISO3166.
 	 */
 	public static final int LT_ILLEGAL = 0x8000;
 
@@ -54,14 +52,12 @@ public interface LanguageTagCodes {
 	public static final int LT_ISO639 = 0x0001;
 
 	/**
-	 * A special ISO639-2 local use language tag. A three letter code
-	 * 'q[a-t][a-z]'.
+	 * A special ISO639-2 local use language tag. A three letter code 'q[a-t][a-z]'.
 	 */
 	public static final int LT_LOCAL_USE = 0x0800;
 
 	/**
-	 * The special ISO639-2 language tag <CODE>mul</CODE>. This indicates
-	 * multiple languages.
+	 * The special ISO639-2 language tag <CODE>mul</CODE>. This indicates multiple languages.
 	 */
 	public static final int LT_MULTIPLE = 0x0400;
 

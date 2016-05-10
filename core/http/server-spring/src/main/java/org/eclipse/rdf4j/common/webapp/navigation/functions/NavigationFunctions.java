@@ -15,18 +15,18 @@ import org.eclipse.rdf4j.common.webapp.navigation.NavigationNode;
  * @author Herko ter Horst
  */
 public class NavigationFunctions {
+
 	/**
 	 * Is the specified potential parent indeed a parent of the specified node.
 	 * 
 	 * @param potentialParent
-	 *            the potential parent
+	 *        the potential parent
 	 * @param node
-	 *            the node
-	 * @return true if the potential parent is part of the hierarchical string
-	 *         of parents for the specified node
+	 *        the node
+	 * @return true if the potential parent is part of the hierarchical string of parents for the specified
+	 *         node
 	 */
-	public static boolean isParent(NavigationNode potentialParent,
-			NavigationNode node) {
+	public static boolean isParent(NavigationNode potentialParent, NavigationNode node) {
 		return potentialParent.isParent(node);
 	}
 }

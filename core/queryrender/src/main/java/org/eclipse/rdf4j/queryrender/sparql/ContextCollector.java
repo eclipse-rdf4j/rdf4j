@@ -23,10 +23,9 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * <p>
- * Visitor implementation for the sesame query algebra which walks the tree and
- * figures out the context for nodes in the algebra. The context for a node is
- * set on the highest node in the tree. That is, everything below it shares the
- * same context.
+ * Visitor implementation for the sesame query algebra which walks the tree and figures out the context for
+ * nodes in the algebra. The context for a node is set on the highest node in the tree. That is, everything
+ * below it shares the same context.
  * </p>
  * 
  * @author Blazej Bulka
@@ -34,11 +33,10 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 
 	/**
-	 * Maps TupleExpr to contexts. This map contains only top-level expression
-	 * elements that share the given context (i.e., all elements below share the
-	 * same context) -- this is because of where contexts are being introduced
-	 * into a SPARQL query -- all elements sharing the same contexts are grouped
-	 * together with a "GRAPH <ctx> { ... }" clause.
+	 * Maps TupleExpr to contexts. This map contains only top-level expression elements that share the given
+	 * context (i.e., all elements below share the same context) -- this is because of where contexts are
+	 * being introduced into a SPARQL query -- all elements sharing the same contexts are grouped together
+	 * with a "GRAPH <ctx> { ... }" clause.
 	 */
 	private Map<TupleExpr, Var> mContexts = new HashMap<TupleExpr, Var>();
 

@@ -21,6 +21,7 @@ import org.junit.Test;
  * @author James Leigh
  */
 public class ParsedURITest {
+
 	@Test
 	public void absoluteHttpUriIsDescribedCorrectly() {
 		ParsedURI uri = new ParsedURI("http://example.test/");
@@ -86,7 +87,8 @@ public class ParsedURITest {
 	public void testRoundTripQueryString()
 		throws Exception
 	{
-		assertRoundTrip("http://localhost:8080/callimachus/pipelines/render-html.xpl?result&template=http%3A%2F%2Flocalhost%3A8080%2Fcallimachus%2Fconcept-view.xhtml%3Ftemplate%26realm%3Dhttp%3A%2F%2Flocalhost%3A8080%2F&this=http%3A%2F%2Flocalhost%3A8080%2Fsun&query=view");
+		assertRoundTrip(
+				"http://localhost:8080/callimachus/pipelines/render-html.xpl?result&template=http%3A%2F%2Flocalhost%3A8080%2Fcallimachus%2Fconcept-view.xhtml%3Ftemplate%26realm%3Dhttp%3A%2F%2Flocalhost%3A8080%2F&this=http%3A%2F%2Flocalhost%3A8080%2Fsun&query=view");
 	}
 
 	private void assertRoundTrip(String uri)
@@ -256,7 +258,8 @@ public class ParsedURITest {
 	public void testParentDirectoryDir()
 		throws URISyntaxException
 	{
-		assertResolves("../file?qs#frag", "http://example.com/dir/dir/", "http://example.com/dir/file?qs#frag");
+		assertResolves("../file?qs#frag", "http://example.com/dir/dir/",
+				"http://example.com/dir/file?qs#frag");
 	}
 
 	@Test

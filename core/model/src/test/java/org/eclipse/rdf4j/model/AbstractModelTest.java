@@ -61,11 +61,9 @@ public abstract class AbstractModelTest {
 	protected abstract Model getNewModel();
 
 	/**
-	 * Helper method that asserts that the returned model is empty before
-	 * returning.
+	 * Helper method that asserts that the returned model is empty before returning.
 	 * 
-	 * @return An empty instance of the {@link Model} implementation being
-	 *         tested.
+	 * @return An empty instance of the {@link Model} implementation being tested.
 	 */
 	protected Model getNewEmptyModel() {
 		Model model = getNewModel();
@@ -240,7 +238,7 @@ public abstract class AbstractModelTest {
 		assertEquals(3, model.size());
 		return model;
 	}
-	
+
 	/**
 	 * @throws java.lang.Exception
 	 */
@@ -269,8 +267,7 @@ public abstract class AbstractModelTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.Model#filter(Resource, IRI, Value, Resource...)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#filter(Resource, IRI, Value, Resource...)}.
 	 */
 	@Test
 	public final void testFilterSingleLiteral() {
@@ -282,9 +279,7 @@ public abstract class AbstractModelTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.Model#contains(Resource, IRI, Value, Resource...)}
-	 * .
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#contains(Resource, IRI, Value, Resource...)} .
 	 */
 	@Test
 	public final void testContainsSingleLiteral() {

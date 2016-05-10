@@ -32,22 +32,18 @@ import org.eclipse.rdf4j.model.util.LexicalValueComparator;
 import org.eclipse.rdf4j.model.util.PatternIterator;
 
 /**
- * A Red-Black tree based {@link Model} implementation. The model is sorted
- * according to the lexical ordering of terms.
+ * A Red-Black tree based {@link Model} implementation. The model is sorted according to the lexical ordering
+ * of terms.
  * <p>
- * This implementation provides guaranteed log(n) time cost for filtered access
- * by any number of terms. If an index is not yet available for a set of
- * positions, it is created at runtime using a {@link TreeSet}.
+ * This implementation provides guaranteed log(n) time cost for filtered access by any number of terms. If an
+ * index is not yet available for a set of positions, it is created at runtime using a {@link TreeSet}.
  * <p>
- * <b>Note that this implementation is not synchronized.</b> If multiple threads
- * access a model concurrently, and at least one of the threads modifies the
- * model, it must be synchronized externally. This is typically accomplished by
- * synchronizing on some object that naturally encapsulates the model. If no
- * such object exists, the set should be "wrapped" using the
- * Collections.synchronizedSet method. This is best done at creation time, to
- * prevent accidental unsynchronized access to the LinkedHashModel instance
- * (though the synchronization guarantee is only when accessing via the Set
- * interface methods):
+ * <b>Note that this implementation is not synchronized.</b> If multiple threads access a model concurrently,
+ * and at least one of the threads modifies the model, it must be synchronized externally. This is typically
+ * accomplished by synchronizing on some object that naturally encapsulates the model. If no such object
+ * exists, the set should be "wrapped" using the Collections.synchronizedSet method. This is best done at
+ * creation time, to prevent accidental unsynchronized access to the LinkedHashModel instance (though the
+ * synchronization guarantee is only when accessing via the Set interface methods):
  * </p>
  * 
  * @author James Leigh
@@ -339,8 +335,8 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 
 				@Override
 				public Iterator<Statement> iterator() {
-					return new PatternIterator<Statement>(matchPattern(subj, pred, obj, null), subj, pred, obj,
-							contexts);
+					return new PatternIterator<Statement>(matchPattern(subj, pred, obj, null), subj, pred,
+							obj, contexts);
 				}
 
 				@Override

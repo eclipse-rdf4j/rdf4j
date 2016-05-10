@@ -30,8 +30,8 @@ import org.eclipse.rdf4j.rio.RDFParser;
  * 
  * @author James Leigh
  */
-public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEvaluationException> implements
-		GraphQueryResult, Runnable, RDFHandler
+public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEvaluationException>
+		implements GraphQueryResult, Runnable, RDFHandler
 {
 
 	private volatile boolean closed;

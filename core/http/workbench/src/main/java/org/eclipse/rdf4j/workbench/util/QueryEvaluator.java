@@ -63,15 +63,14 @@ public final class QueryEvaluator {
 	 *        connection to repository
 	 * @param queryText
 	 *        the query text, having been pulled using
-	 *        {@link org.eclipse.rdf4j.workbench.commands.QueryServlet} from one of
-	 *        three request parameters: "query", "queryhash" or "saved"
+	 *        {@link org.eclipse.rdf4j.workbench.commands.QueryServlet} from one of three request parameters:
+	 *        "query", "queryhash" or "saved"
 	 * @param req
 	 *        the request object
 	 * @param cookies
 	 *        used to deal with browser cookies
 	 * @throws BadRequestException
-	 *         if there's a problem getting request parameters or issuing the
-	 *         repository query
+	 *         if there's a problem getting request parameters or issuing the repository query
 	 * @throws RDF4JException
 	 *         if there's a problem preparing the query
 	 */
@@ -111,15 +110,14 @@ public final class QueryEvaluator {
 	}
 
 	/***
-	 * Evaluate a tuple query, and create an XML results document. This method
-	 * completes writing of the response. !paged means use all results.
+	 * Evaluate a tuple query, and create an XML results document. This method completes writing of the
+	 * response. !paged means use all results.
 	 * 
 	 * @param builder
-	 *        response builder helper for generating the XML response to the
-	 *        client, which <em>must not</em> have had start() called on it
+	 *        response builder helper for generating the XML response to the client, which <em>must not</em>
+	 *        have had start() called on it
 	 * @param xslPath
-	 *        needed to begin writing response body after writing result count
-	 *        cookie
+	 *        needed to begin writing response body after writing result count cookie
 	 * @param req
 	 *        needed to write result count cookie
 	 * @param resp
@@ -176,12 +174,12 @@ public final class QueryEvaluator {
 	}
 
 	/***
-	 * Evaluate a tuple query, and create an XML results document. It is still
-	 * necessary to call end() on the builder after calling this method.
+	 * Evaluate a tuple query, and create an XML results document. It is still necessary to call end() on the
+	 * builder after calling this method.
 	 * 
 	 * @param builder
-	 *        response builder helper for generating the XML response to the
-	 *        client, which <em>must</em> have had start() called on it
+	 *        response builder helper for generating the XML response to the client, which <em>must</em> have
+	 *        had start() called on it
 	 * @param query
 	 *        the query to be evaluated
 	 * @throws QueryResultHandlerException
@@ -209,11 +207,10 @@ public final class QueryEvaluator {
 	 * Evaluate a graph query, and create an XML results document.
 	 * 
 	 * @param builder
-	 *        response builder helper for generating the XML response to the
-	 *        client, which <em>must not</em> have had start() called on it
+	 *        response builder helper for generating the XML response to the client, which <em>must not</em>
+	 *        have had start() called on it
 	 * @param xslPath
-	 *        needed to begin writing response body after writing result count
-	 *        cookie
+	 *        needed to begin writing response body after writing result count cookie
 	 * @param req
 	 *        needed to write result count cookie
 	 * @param resp
@@ -274,17 +271,17 @@ public final class QueryEvaluator {
 		throws RDF4JException, BadRequestException
 	{
 		if (query instanceof TupleQuery) {
-			this.evaluateTupleQuery(builder, xslPath, req, resp, cookies, (TupleQuery)query, writeCookie, paged,
-					offset, limit);
+			this.evaluateTupleQuery(builder, xslPath, req, resp, cookies, (TupleQuery)query, writeCookie,
+					paged, offset, limit);
 		}
 		else {
-			final RDFFormat format = req.isParameterPresent(ACCEPT) ? Rio.getWriterFormatForMIMEType(
-					req.getParameter(ACCEPT)).orElse(null) : null;
+			final RDFFormat format = req.isParameterPresent(ACCEPT)
+					? Rio.getWriterFormatForMIMEType(req.getParameter(ACCEPT)).orElse(null) : null;
 			if (query instanceof GraphQuery) {
 				GraphQuery graphQuery = (GraphQuery)query;
 				if (null == format) {
-					this.evaluateGraphQuery(builder, xslPath, req, resp, cookies, graphQuery, writeCookie, paged,
-							offset, limit);
+					this.evaluateGraphQuery(builder, xslPath, req, resp, cookies, graphQuery, writeCookie,
+							paged, offset, limit);
 				}
 				else {
 					this.evaluateGraphQuery(Rio.createWriter(format, out), graphQuery);

@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.spin.function.spif.ConvertSpinRDFToString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 /**
  * QueryOptimizer that adds support for SPIN functions.
  */
@@ -45,7 +44,9 @@ public class SpinFunctionInterpreter implements QueryOptimizer {
 	private final FunctionRegistry functionRegistry;
 
 	static void registerSpinParsingFunctions(SpinParser parser, FunctionRegistry functionRegistry) {
-		if (!(functionRegistry.get(FN.CONCAT.toString()).get() instanceof org.eclipse.rdf4j.spin.function.Concat)) {
+		if (!(functionRegistry.get(
+				FN.CONCAT.toString()).get() instanceof org.eclipse.rdf4j.spin.function.Concat))
+		{
 			functionRegistry.add(new org.eclipse.rdf4j.spin.function.Concat());
 		}
 		if (!functionRegistry.has(SPIN.EVAL_FUNCTION.toString())) {
@@ -54,15 +55,17 @@ public class SpinFunctionInterpreter implements QueryOptimizer {
 		if (!functionRegistry.has(SPIN.ASK_FUNCTION.toString())) {
 			functionRegistry.add(new AskFunction(parser));
 		}
-		if(!functionRegistry.has(SPIF.CONVERT_SPIN_RDF_TO_STRING_FUNCTION.toString())) {
+		if (!functionRegistry.has(SPIF.CONVERT_SPIN_RDF_TO_STRING_FUNCTION.toString())) {
 			functionRegistry.add(new ConvertSpinRDFToString(parser));
 		}
-		if(!functionRegistry.has(SPIF.CAN_INVOKE_FUNCTION.toString())) {
+		if (!functionRegistry.has(SPIF.CAN_INVOKE_FUNCTION.toString())) {
 			functionRegistry.add(new CanInvoke(parser));
 		}
 	}
 
-	public SpinFunctionInterpreter(SpinParser parser, TripleSource tripleSource, FunctionRegistry functionRegistry) {
+	public SpinFunctionInterpreter(SpinParser parser, TripleSource tripleSource,
+			FunctionRegistry functionRegistry)
+	{
 		this.parser = parser;
 		this.tripleSource = tripleSource;
 		this.functionRegistry = functionRegistry;

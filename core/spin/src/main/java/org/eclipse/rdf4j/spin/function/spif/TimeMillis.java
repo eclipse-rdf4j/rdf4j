@@ -28,6 +28,7 @@ public class TimeMillis extends UnaryFunction {
 		if (!(arg instanceof Literal)) {
 			throw new ValueExprEvaluationException("Argument must be a literal");
 		}
-		return valueFactory.createLiteral(((Literal)arg).calendarValue().toGregorianCalendar().getTimeInMillis());
+		return valueFactory.createLiteral(
+				((Literal)arg).calendarValue().toGregorianCalendar().getTimeInMillis());
 	}
 }

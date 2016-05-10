@@ -27,11 +27,12 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 
 /**
- * Iteration that implements a simplified version of Symmetric Concise Bounded
- * Description (omitting reified statements).
+ * Iteration that implements a simplified version of Symmetric Concise Bounded Description (omitting reified
+ * statements).
  * 
  * @author Jeen Broekstra
- * @see <a href="http://www.w3.org/Submission/CBD/#alternatives">Concise Bounded Description - alternatives</a> 
+ * @see <a href="http://www.w3.org/Submission/CBD/#alternatives">Concise Bounded Description -
+ *      alternatives</a>
  */
 public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
@@ -77,8 +78,9 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private BindingSet parentBindings;
 
-	
-	private void resetCurrentDescribeExprIter() throws QueryEvaluationException {
+	private void resetCurrentDescribeExprIter()
+		throws QueryEvaluationException
+	{
 		while (currentDescribeExprIter == null) {
 			if (currentBindings == null && startValue == null) {
 				if (sourceIter.hasNext()) {
@@ -127,7 +129,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			}
 		} // end while
 	}
-	
+
 	@Override
 	protected BindingSet getNextElement()
 		throws QueryEvaluationException
@@ -136,7 +138,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		if (currentDescribeExprIter == null) {
 			return null;
 		}
-		
+
 		while (!currentDescribeExprIter.hasNext() && !nodeQueue.isEmpty()) {
 			// process next node in queue
 			BNode nextNode = nodeQueue.poll();
@@ -157,7 +159,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 				// initialize next in value expression queue.
 				currentDescribeExprIter.close();
 				currentDescribeExprIter = null;
-				
+
 				if (currentMode == Mode.OUTGOING_LINKS) {
 					currentMode = Mode.INCOMING_LINKS;
 				}
@@ -167,7 +169,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 					currentMode = Mode.OUTGOING_LINKS;
 					startValue = null;
 				}
-				
+
 				resetCurrentDescribeExprIter();
 				if (currentDescribeExprIter == null) {
 					return null;

@@ -38,6 +38,7 @@ import org.hamcrest.CoreMatchers;
 import org.hamcrest.Matchers;
 import org.junit.Before;
 import org.junit.Test;
+
 /**
  * @author jeen
  */
@@ -46,7 +47,7 @@ public class TestTurtleParser {
 	private TurtleParser parser;
 
 	private ValueFactory vf = SimpleValueFactory.getInstance();
-	
+
 	private final ParseErrorCollector errorCollector = new ParseErrorCollector();
 
 	private final StatementCollector statementCollector = new StatementCollector();
@@ -235,7 +236,6 @@ public class TestTurtleParser {
 			fail("parse error on correct data: " + e.getMessage());
 		}
 	}
-
 
 	@Test
 	public void rdfXmlLoadedFromInsideAJarResolvesRelativeUris()

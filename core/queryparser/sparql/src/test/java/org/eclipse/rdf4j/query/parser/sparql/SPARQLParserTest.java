@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+
 /**
  * @author jeen
  */
@@ -113,7 +114,7 @@ public class SPARQLParserTest {
 		assertTrue(te instanceof Slice);
 		assertNull(te.getParentNode());
 	}
-	
+
 	@Test
 	public void testParsedTupleQueryRootNode()
 		throws Exception
@@ -128,7 +129,7 @@ public class SPARQLParserTest {
 		assertTrue(te instanceof Projection);
 		assertNull(te.getParentNode());
 	}
-	
+
 	@Test
 	public void testParsedGraphQueryRootNode()
 		throws Exception

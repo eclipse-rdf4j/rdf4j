@@ -124,8 +124,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 				}
 				else if (startVarFixed && endVarFixed && currentLength == 2) {
 					v1 = getVarValue(startVar, startVarFixed, nextElement);
-					v2 = nextElement.getValue(JOINVAR_PREFIX + (currentLength - 1) + "-"
-							+ pathExpression.hashCode());
+					v2 = nextElement.getValue(
+							JOINVAR_PREFIX + (currentLength - 1) + "-" + pathExpression.hashCode());
 				}
 				else {
 					v1 = getVarValue(startVar, startVarFixed, nextElement);
@@ -265,7 +265,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 			TupleExpr pathExprClone = pathExpression.clone();
 
 			if (startVarFixed && endVarFixed) {
-				Var replacement = createAnonVar(JOINVAR_PREFIX + currentLength + "-" + pathExpression.hashCode());
+				Var replacement = createAnonVar(
+						JOINVAR_PREFIX + currentLength + "-" + pathExpression.hashCode());
 
 				VarReplacer replacer = new VarReplacer(endVar, replacement, 0, false);
 				pathExprClone.visit(replacer);
@@ -283,8 +284,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 				if (startVarFixed && endVarFixed) {
 
-					Var startReplacement = createAnonVar(JOINVAR_PREFIX + currentLength + "-"
-							+ pathExpression.hashCode());
+					Var startReplacement = createAnonVar(
+							JOINVAR_PREFIX + currentLength + "-" + pathExpression.hashCode());
 					Var endReplacement = createAnonVar("END_" + JOINVAR_PREFIX + pathExpression.hashCode());
 					startReplacement.setAnonymous(false);
 					endReplacement.setAnonymous(false);
@@ -310,8 +311,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 						v = currentVp.getStartValue();
 					}
 
-					Var replacement = createAnonVar(JOINVAR_PREFIX + currentLength + "-"
-							+ pathExpression.hashCode());
+					Var replacement = createAnonVar(
+							JOINVAR_PREFIX + currentLength + "-" + pathExpression.hashCode());
 					replacement.setValue(v);
 
 					VarReplacer replacer = new VarReplacer(toBeReplaced, replacement, 0, false);
@@ -421,9 +422,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 		@Override
 		public void meet(Var var) {
-			if (toBeReplaced.equals(var)
-					|| (toBeReplaced.isAnonymous() && var.isAnonymous() && (toBeReplaced.hasValue() && toBeReplaced.getValue().equals(
-							var.getValue()))))
+			if (toBeReplaced.equals(var) || (toBeReplaced.isAnonymous() && var.isAnonymous()
+					&& (toBeReplaced.hasValue() && toBeReplaced.getValue().equals(var.getValue()))))
 			{
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacement);

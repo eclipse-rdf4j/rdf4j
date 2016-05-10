@@ -37,7 +37,8 @@ public class SPARQLRepositoryFactory implements RepositoryFactory {
 		if (config instanceof SPARQLRepositoryConfig) {
 			SPARQLRepositoryConfig httpConfig = (SPARQLRepositoryConfig)config;
 			if (httpConfig.getUpdateEndpointUrl() != null) {
-				result = new SPARQLRepository(httpConfig.getQueryEndpointUrl(), httpConfig.getUpdateEndpointUrl());
+				result = new SPARQLRepository(httpConfig.getQueryEndpointUrl(),
+						httpConfig.getUpdateEndpointUrl());
 			}
 			else {
 				result = new SPARQLRepository(httpConfig.getQueryEndpointUrl());

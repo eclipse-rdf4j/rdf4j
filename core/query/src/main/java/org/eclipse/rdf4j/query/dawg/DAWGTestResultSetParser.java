@@ -99,7 +99,8 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 					reportSolution((Resource)solutionNode, bindingNames);
 				}
 				else {
-					throw new RDFHandlerException("Value for " + SOLUTION + " is not a resource: " + solutionNode);
+					throw new RDFHandlerException(
+							"Value for " + SOLUTION + " is not a resource: " + solutionNode);
 				}
 			}
 
@@ -127,7 +128,8 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 				bindingNames.add(((Literal)varName).getLabel());
 			}
 			else {
-				throw new RDFHandlerException("Value for " + RESULTVARIABLE + " is not a literal: " + varName);
+				throw new RDFHandlerException(
+						"Value for " + RESULTVARIABLE + " is not a literal: " + varName);
 			}
 		}
 

@@ -25,9 +25,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * An abstract Sail implementation that takes care of common sail tasks,
- * including proper closing of active connections and a grace period for active
- * connections during shutdown of the store.
+ * An abstract Sail implementation that takes care of common sail tasks, including proper closing of active
+ * connections and a grace period for active connections during shutdown of the store.
  * 
  * @author Herko ter Horst
  * @author jeen
@@ -45,16 +44,14 @@ public abstract class AbstractSail implements Sail {
 	protected final static long DEFAULT_CONNECTION_TIMEOUT = 20000L;
 
 	/**
-	 * default transaction isolation level, set to
-	 * {@link IsolationLevels#READ_COMMITTED }.
+	 * default transaction isolation level, set to {@link IsolationLevels#READ_COMMITTED }.
 	 */
 	private IsolationLevel defaultIsolationLevel = IsolationLevels.READ_COMMITTED;
 
 	/**
-	 * list of supported isolation levels. By default set to include
-	 * {@link IsolationLevels#READ_UNCOMMITTED} and
-	 * {@link IsolationLevels#SERIALIZABLE}. Specific store implementations are
-	 * expected to alter this list according to their specific capabilities.
+	 * list of supported isolation levels. By default set to include {@link IsolationLevels#READ_UNCOMMITTED}
+	 * and {@link IsolationLevels#SERIALIZABLE}. Specific store implementations are expected to alter this
+	 * list according to their specific capabilities.
 	 */
 	private List<IsolationLevel> supportedIsolationLevels = new ArrayList<IsolationLevel>();
 
@@ -92,9 +89,8 @@ public abstract class AbstractSail implements Sail {
 	private volatile File dataDir;
 
 	/**
-	 * Flag indicating whether the Sail has been initialized. Sails are
-	 * initialized from {@link #initialize() initialization} until
-	 * {@link #shutDown() shutdown}.
+	 * Flag indicating whether the Sail has been initialized. Sails are initialized from {@link #initialize()
+	 * initialization} until {@link #shutDown() shutdown}.
 	 */
 	private volatile boolean initialized = false;
 
@@ -108,17 +104,15 @@ public abstract class AbstractSail implements Sail {
 	protected final ReentrantReadWriteLock initializationLock = new ReentrantReadWriteLock();
 
 	/**
-	 * Connection timeout on shutdown (in ms). Defaults to
-	 * {@link #DEFAULT_CONNECTION_TIMEOUT}.
+	 * Connection timeout on shutdown (in ms). Defaults to {@link #DEFAULT_CONNECTION_TIMEOUT}.
 	 */
 	protected volatile long connectionTimeOut = DEFAULT_CONNECTION_TIMEOUT;
 
 	private long iterationCacheSyncThreshold = DEFAULT_ITERATION_SYNC_THRESHOLD;
 
 	/**
-	 * Map used to track active connections and where these were acquired. The
-	 * Throwable value may be null in case debugging was disable at the time the
-	 * connection was acquired.
+	 * Map used to track active connections and where these were acquired. The Throwable value may be null in
+	 * case debugging was disable at the time the connection was acquired.
 	 */
 	private final Map<SailConnection, Throwable> activeConnections = new IdentityHashMap<SailConnection, Throwable>();
 
@@ -161,11 +155,10 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	/**
-	 * Checks whether the Sail has been initialized. Sails are initialized from
-	 * {@link #initialize() initialization} until {@link #shutDown() shutdown}.
+	 * Checks whether the Sail has been initialized. Sails are initialized from {@link #initialize()
+	 * initialization} until {@link #shutDown() shutdown}.
 	 * 
-	 * @return <tt>true</tt> if the Sail has been initialized, <tt>false</tt>
-	 *         otherwise.
+	 * @return <tt>true</tt> if the Sail has been initialized, <tt>false</tt> otherwise.
 	 */
 	protected boolean isInitialized() {
 		return initialized;
@@ -192,8 +185,8 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	/**
-	 * Do store-specific operations to initialize the store. The default
-	 * implementation of this method does nothing.
+	 * Do store-specific operations to initialize the store. The default implementation of this method does
+	 * nothing.
 	 */
 	protected void initializeInternal()
 		throws SailException
@@ -306,8 +299,8 @@ public abstract class AbstractSail implements Sail {
 		throws SailException;
 
 	/**
-	 * Signals to the store that the supplied connection has been closed; called
-	 * by {@link AbstractSailConnection#close()}.
+	 * Signals to the store that the supplied connection has been closed; called by
+	 * {@link AbstractSailConnection#close()}.
 	 * 
 	 * @param connection
 	 *        The connection that has been closed.
@@ -330,8 +323,7 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	/**
-	 * Appends the provided {@link IsolationLevels} to the SAIL's list of
-	 * supported isolation levels.
+	 * Appends the provided {@link IsolationLevels} to the SAIL's list of supported isolation levels.
 	 * 
 	 * @param level
 	 *        a supported IsolationLevel.
@@ -341,8 +333,8 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	/**
-	 * Removes all occurrences of the provided {@link IsolationLevels} in the
-	 * list of supported Isolation levels.
+	 * Removes all occurrences of the provided {@link IsolationLevels} in the list of supported Isolation
+	 * levels.
 	 * 
 	 * @param level
 	 *        the isolation level to remove.
@@ -353,8 +345,8 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	/**
-	 * Sets the list of supported {@link IsolationLevels}s for this SAIL. The
-	 * list is expected to be ordered in increasing complexity.
+	 * Sets the list of supported {@link IsolationLevels}s for this SAIL. The list is expected to be ordered
+	 * in increasing complexity.
 	 * 
 	 * @param supportedIsolationLevels
 	 *        a list of supported isolation levels.
@@ -364,8 +356,8 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	/**
-	 * Sets the list of supported {@link IsolationLevels}s for this SAIL. The
-	 * list is expected to be ordered in increasing complexity.
+	 * Sets the list of supported {@link IsolationLevels}s for this SAIL. The list is expected to be ordered
+	 * in increasing complexity.
 	 * 
 	 * @param supportedIsolationLevels
 	 *        a list of supported isolation levels.
@@ -385,8 +377,7 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	/**
-	 * Sets the default {@link IsolationLevel} on which transactions in this Sail
-	 * operate.
+	 * Sets the default {@link IsolationLevel} on which transactions in this Sail operate.
 	 * 
 	 * @param defaultIsolationLevel
 	 *        The defaultIsolationLevel to set.
@@ -399,8 +390,7 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	/**
-	 * Retrieves the currently configured threshold for syncing query evaluation
-	 * iteration caches to disk.
+	 * Retrieves the currently configured threshold for syncing query evaluation iteration caches to disk.
 	 * 
 	 * @return Returns the iterationCacheSyncThreshold.
 	 */

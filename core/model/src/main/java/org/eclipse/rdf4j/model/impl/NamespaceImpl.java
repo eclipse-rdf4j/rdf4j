@@ -12,7 +12,7 @@ package org.eclipse.rdf4j.model.impl;
  */
 @Deprecated
 public class NamespaceImpl extends SimpleNamespace {
-	
+
 	/**
 	 * @deprecated since 4.0. Use {@link SimpleNamespace} instead.
 	 */

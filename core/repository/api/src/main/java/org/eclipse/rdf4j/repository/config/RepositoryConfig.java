@@ -96,9 +96,8 @@ public class RepositoryConfig {
 	}
 
 	/**
-	 * Validates this configuration. A {@link RepositoryConfigException} is
-	 * thrown when the configuration is invalid. The exception should contain an
-	 * error message that indicates why the configuration is invalid.
+	 * Validates this configuration. A {@link RepositoryConfigException} is thrown when the configuration is
+	 * invalid. The exception should contain an error message that indicates why the configuration is invalid.
 	 * 
 	 * @throws RepositoryConfigException
 	 *         If the configuration is invalid.
@@ -152,15 +151,13 @@ public class RepositoryConfig {
 	}
 
 	/**
-	 * Creates a new {@link RepositoryConfig} object and initializes it by
-	 * supplying the {@code model} and {@code repositoryNode} to its
-	 * {@link #parse(Graph, Resource) parse} method.
+	 * Creates a new {@link RepositoryConfig} object and initializes it by supplying the {@code model} and
+	 * {@code repositoryNode} to its {@link #parse(Graph, Resource) parse} method.
 	 * 
 	 * @param model
 	 *        the {@link Model} to read initialization data from.
 	 * @param repositoryNode
-	 *        the subject {@link Resource} that identifies the
-	 *        {@link RepositoryConfig} in the supplied Model.
+	 *        the subject {@link Resource} that identifies the {@link RepositoryConfig} in the supplied Model.
 	 */
 	public static RepositoryConfig create(Model model, Resource repositoryNode)
 		throws RepositoryConfigException

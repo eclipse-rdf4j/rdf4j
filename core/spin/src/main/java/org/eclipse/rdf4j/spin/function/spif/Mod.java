@@ -35,8 +35,8 @@ public class Mod extends BinaryFunction {
 		if (!(arg1 instanceof Literal) || !(arg2 instanceof Literal)) {
 			throw new ValueExprEvaluationException("Both arguments must be numeric literals");
 		}
-		Literal leftLit = (Literal) arg1;
-		Literal rightLit = (Literal) arg2;
+		Literal leftLit = (Literal)arg1;
+		Literal rightLit = (Literal)arg2;
 		IRI leftDatatype = leftLit.getDatatype();
 		IRI rightDatatype = rightLit.getDatatype();
 
@@ -47,7 +47,6 @@ public class Mod extends BinaryFunction {
 		if (!XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
 			throw new ValueExprEvaluationException("Not a number: " + rightLit);
 		}
-
 
 		// Determine most specific datatype that the arguments have in common,
 		// choosing from xsd:integer, xsd:decimal, xsd:float and xsd:double as

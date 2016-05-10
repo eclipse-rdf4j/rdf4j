@@ -9,14 +9,14 @@ package org.eclipse.rdf4j.util;
 
 import java.util.UUID;
 
-
 /**
- * Interface for any object that has a UUID.
- * The UUID must be constant for the lifetime of the object.
+ * Interface for any object that has a UUID. The UUID must be constant for the lifetime of the object.
  */
 public interface UUIDable {
+
 	/**
 	 * Returns the UUID of this object.
+	 * 
 	 * @return a non-null UUID.
 	 */
 	UUID getUUID();

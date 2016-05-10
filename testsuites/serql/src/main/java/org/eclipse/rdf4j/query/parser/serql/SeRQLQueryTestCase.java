@@ -327,7 +327,8 @@ public abstract class SeRQLQueryTestCase extends TestCase {
 				logger.error("test-029 SKIPPED in {}", SeRQLQueryTestCase.class.getName());
 				continue;
 			}
-			suite.addTest(factory.createTest(testName, inputFile, graphNames, queryFile, resultFile, entailment));
+			suite.addTest(
+					factory.createTest(testName, inputFile, graphNames, queryFile, resultFile, entailment));
 		}
 
 		tests.close();

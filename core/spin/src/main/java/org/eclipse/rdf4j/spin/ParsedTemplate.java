@@ -10,6 +10,8 @@ package org.eclipse.rdf4j.spin;
 import org.eclipse.rdf4j.query.BindingSet;
 
 public interface ParsedTemplate {
+
 	Template getTemplate();
+
 	BindingSet getBindings();
 }

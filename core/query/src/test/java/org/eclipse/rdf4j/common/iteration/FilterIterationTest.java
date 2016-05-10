@@ -12,8 +12,7 @@ import java.util.Collections;
 public class FilterIterationTest extends CloseableIterationTest {
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration()
-	{
+	protected CloseableIteration<String, Exception> createTestIteration() {
 		return new FilterIteration<String, Exception>(createStringList1Iteration()) {
 
 			@Override
@@ -27,8 +26,7 @@ public class FilterIterationTest extends CloseableIterationTest {
 	}
 
 	@Override
-	protected int getTestIterationSize()
-	{
+	protected int getTestIterationSize() {
 		return Collections.frequency(stringList1, "3");
 	}
 }

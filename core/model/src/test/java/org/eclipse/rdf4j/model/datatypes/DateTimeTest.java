@@ -219,7 +219,8 @@ public class DateTimeTest extends TestCase {
 		protected void runTest() {
 			String normalized = XMLDatatypeUtil.normalizeDateTime(input);
 			if (!expected.equals(normalized)) {
-				String errMsg = "normalizing " + input + " should produce " + expected + " but was " + normalized;
+				String errMsg = "normalizing " + input + " should produce " + expected + " but was "
+						+ normalized;
 				logError(errMsg);
 				fail(errMsg);
 			}
@@ -264,8 +265,8 @@ public class DateTimeTest extends TestCase {
 		protected void runTest() {
 			int result = XMLDatatypeUtil.compareDateTime(dateString1, dateString2);
 			if (result >= 0) {
-				String errMsg = dateString1 + " should be smaller than " + dateString2 + " but is not (result="
-						+ result + ")";
+				String errMsg = dateString1 + " should be smaller than " + dateString2
+						+ " but is not (result=" + result + ")";
 				logError(errMsg);
 				fail(errMsg);
 			}

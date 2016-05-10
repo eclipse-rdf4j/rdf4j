@@ -19,14 +19,17 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.model.SailModel;
 
 /**
- *
  * @author Mark
  */
 public class SailModelTest extends ModelTest {
+
 	private Sail sail;
+
 	private SailConnection conn;
 
-	public static Test suite() throws Exception {
+	public static Test suite()
+		throws Exception
+	{
 		return ModelTest.suite(SailModelTest.class);
 	}
 
@@ -42,19 +45,22 @@ public class SailModelTest extends ModelTest {
 			conn = sail.getConnection();
 			conn.begin();
 			return new SailModel(conn, false);
-		} catch (SailException e) {
+		}
+		catch (SailException e) {
 			throw new ModelException(e);
 		}
 	}
 
 	@Override
-    protected void tearDown() throws Exception {
-		if(conn != null) {
+	protected void tearDown()
+		throws Exception
+	{
+		if (conn != null) {
 			conn.commit();
 			conn.close();
 			conn = null;
 		}
-		if(sail != null) {
+		if (sail != null) {
 			sail.shutDown();
 			sail = null;
 		}

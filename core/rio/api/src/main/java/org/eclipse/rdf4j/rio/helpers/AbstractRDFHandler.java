@@ -12,9 +12,7 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 
 /**
- * Base class for {@link RDFHandler}s with dummy implementations of all
- * methods.
- * 
+ * Base class for {@link RDFHandler}s with dummy implementations of all methods.
  */
 public abstract class AbstractRDFHandler implements RDFHandler {
 

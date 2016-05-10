@@ -13,18 +13,16 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
 /**
- * An inferencer may infer the same statement from two different statements.
- * This leads to that single inferred statement undergoing inferencing
- * multiple times, and all the statements inferred from it too, etc.
- * This is mainly due to the use of SailConnectionListeners which don't
- * distinguish between adding a new statement and one that already exists.
- * Adding this inferencer to a Sail stack prevents this problem
- * and gives a significant performance increase.
+ * An inferencer may infer the same statement from two different statements. This leads to that single
+ * inferred statement undergoing inferencing multiple times, and all the statements inferred from it too, etc.
+ * This is mainly due to the use of SailConnectionListeners which don't distinguish between adding a new
+ * statement and one that already exists. Adding this inferencer to a Sail stack prevents this problem and
+ * gives a significant performance increase.
  */
 public class DedupingInferencer extends NotifyingSailWrapper {
 
-	public DedupingInferencer()
-	{}
+	public DedupingInferencer() {
+	}
 
 	public DedupingInferencer(NotifyingSail baseSail) {
 		super(baseSail);

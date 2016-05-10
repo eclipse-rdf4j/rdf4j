@@ -15,18 +15,18 @@ import org.eclipse.rdf4j.http.client.SesameClientImpl;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
- * The {@link FederatedServiceResolverImpl} is used to manage a set of
- * {@link FederatedService} instances, which are used to evaluate SERVICE
- * expressions for particular service Urls.
+ * The {@link FederatedServiceResolverImpl} is used to manage a set of {@link FederatedService} instances,
+ * which are used to evaluate SERVICE expressions for particular service Urls.
  * <p>
- * Lookup can be done via the serviceUrl using the method
- * {@link #getService(String)}. If there is no service for the specified url, a
- * {@link SPARQLFederatedService} is created and registered for future use.
+ * Lookup can be done via the serviceUrl using the method {@link #getService(String)}. If there is no service
+ * for the specified url, a {@link SPARQLFederatedService} is created and registered for future use.
  * 
  * @author Andreas Schwarte
  * @author James Leigh
  */
-public class FederatedServiceResolverImpl extends AbstractFederatedServiceResolver implements FederatedServiceResolver, HttpClientDependent, SesameClientDependent {
+public class FederatedServiceResolverImpl extends AbstractFederatedServiceResolver
+		implements FederatedServiceResolver, HttpClientDependent, SesameClientDependent
+{
 
 	public FederatedServiceResolverImpl() {
 		super();
@@ -59,10 +59,11 @@ public class FederatedServiceResolverImpl extends AbstractFederatedServiceResolv
 		}
 		dependentClient.setHttpClient(httpClient);
 	}
-	
+
 	@Override
 	protected FederatedService createService(String serviceUrl)
-			throws QueryEvaluationException {
+		throws QueryEvaluationException
+	{
 		return new SPARQLFederatedService(serviceUrl, getSesameClient());
 	}
 

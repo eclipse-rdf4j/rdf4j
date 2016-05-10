@@ -11,8 +11,8 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * Combines two sources to act as a single {@link SailSource}. This is useful to
- * provide a combined view of both explicit and inferred statements.
+ * Combines two sources to act as a single {@link SailSource}. This is useful to provide a combined view of
+ * both explicit and inferred statements.
  * 
  * @author James Leigh
  */
@@ -31,8 +31,10 @@ class UnionSailSource implements SailSource {
 	/**
 	 * An {@link SailSource} that combines two other {@link SailSource}es.
 	 * 
-	 * @param primary delegates all calls to the given {@link SailSource}.
-	 * @param additional delegate all call except {@link #sink(IsolationLevel)}.
+	 * @param primary
+	 *        delegates all calls to the given {@link SailSource}.
+	 * @param additional
+	 *        delegate all call except {@link #sink(IsolationLevel)}.
 	 */
 	public UnionSailSource(SailSource primary, SailSource additional) {
 		super();

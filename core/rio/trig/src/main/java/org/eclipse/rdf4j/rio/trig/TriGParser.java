@@ -22,15 +22,11 @@ import org.eclipse.rdf4j.rio.turtle.TurtleParser;
 import org.eclipse.rdf4j.rio.turtle.TurtleUtil;
 
 /**
- * RDF parser for <a
- * href="http://www.wiwiss.fu-berlin.de/suhl/bizer/TriG/Spec/">TriG</a> files.
- * This parser is not thread-safe, therefore its public methods are
- * synchronized.
+ * RDF parser for <a href="http://www.wiwiss.fu-berlin.de/suhl/bizer/TriG/Spec/">TriG</a> files. This parser
+ * is not thread-safe, therefore its public methods are synchronized.
  * <p>
- * This implementation is based on the 2005/06/06 version of the TriG
- * specification, but implemented as an extension of the <a
- * href="http://www.dajobe.org/2004/01/turtle/">Turtle</a> specification of
- * 2006/01/02.
+ * This implementation is based on the 2005/06/06 version of the TriG specification, but implemented as an
+ * extension of the <a href="http://www.dajobe.org/2004/01/turtle/">Turtle</a> specification of 2006/01/02.
  * 
  * @see TurtleParser
  * @author Arjohn Kampman
@@ -48,16 +44,14 @@ public class TriGParser extends TurtleParser {
 	 *--------------*/
 
 	/**
-	 * Creates a new TriGParser that will use a {@link SimpleValueFactory} to
-	 * create RDF model objects.
+	 * Creates a new TriGParser that will use a {@link SimpleValueFactory} to create RDF model objects.
 	 */
 	public TriGParser() {
 		super();
 	}
 
 	/**
-	 * Creates a new TriGParser that will use the supplied ValueFactory to create
-	 * RDF model objects.
+	 * Creates a new TriGParser that will use the supplied ValueFactory to create RDF model objects.
 	 * 
 	 * @param valueFactory
 	 *        A ValueFactory.
@@ -195,7 +189,7 @@ public class TriGParser extends TurtleParser {
 		}
 		else {
 			setContext(null);
-			
+
 			// Did not turn out to be a graph, so assign it to subject instead and
 			// parse from here to triples
 			if (foundContextOrSubject) {
@@ -261,15 +255,15 @@ public class TriGParser extends TurtleParser {
 		throws RDFParseException, RDFHandlerException
 	{
 		Statement st = createStatement(subj, pred, obj, getContext());
-		if(rdfHandler != null) {
+		if (rdfHandler != null) {
 			rdfHandler.handleStatement(st);
 		}
 	}
-	
+
 	protected void setContext(Resource context) {
 		this.context = context;
 	}
-	
+
 	protected Resource getContext() {
 		return context;
 	}

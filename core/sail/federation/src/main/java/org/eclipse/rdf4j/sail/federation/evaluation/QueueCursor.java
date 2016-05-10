@@ -19,9 +19,8 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
- * Makes working with a queue easier by adding the methods {@link #done()} and
- * {@link #toss(Exception)} and automatically converting the exception into a
- * QueryEvaluationException with an appropriate stack trace.
+ * Makes working with a queue easier by adding the methods {@link #done()} and {@link #toss(Exception)} and
+ * automatically converting the exception into a QueryEvaluationException with an appropriate stack trace.
  * 
  * @author James Leigh
  */
@@ -36,8 +35,7 @@ public class QueueCursor<E> extends LookAheadIteration<E, QueryEvaluationExcepti
 	private volatile Queue<Throwable> exceptions = new LinkedList<Throwable>();
 
 	/**
-	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and
-	 * default access policy.
+	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and default access policy.
 	 * 
 	 * @param capacity
 	 *        the capacity of this queue
@@ -47,15 +45,13 @@ public class QueueCursor<E> extends LookAheadIteration<E, QueryEvaluationExcepti
 	}
 
 	/**
-	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and the
-	 * specified access policy.
+	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and the specified access policy.
 	 * 
 	 * @param capacity
 	 *        the capacity of this queue
 	 * @param fair
-	 *        if <tt>true</tt> then queue accesses for threads blocked on
-	 *        insertion or removal, are processed in FIFO order; if
-	 *        <tt>false</tt> the access order is unspecified.
+	 *        if <tt>true</tt> then queue accesses for threads blocked on insertion or removal, are processed
+	 *        in FIFO order; if <tt>false</tt> the access order is unspecified.
 	 */
 	public QueueCursor(int capacity, boolean fair) {
 		super();
@@ -63,9 +59,8 @@ public class QueueCursor<E> extends LookAheadIteration<E, QueryEvaluationExcepti
 	}
 
 	/**
-	 * The next time {@link #next()} is called this exception will be thrown. If
-	 * it is not a QueryEvaluationException or RuntimeException it will be
-	 * wrapped in a QueryEvaluationException.
+	 * The next time {@link #next()} is called this exception will be thrown. If it is not a
+	 * QueryEvaluationException or RuntimeException it will be wrapped in a QueryEvaluationException.
 	 */
 	public void toss(Exception exception) {
 		synchronized (exceptions) {
@@ -85,8 +80,7 @@ public class QueueCursor<E> extends LookAheadIteration<E, QueryEvaluationExcepti
 	}
 
 	/**
-	 * Indicates the method {@link #put(Object)} will not be called in the queue
-	 * anymore.
+	 * Indicates the method {@link #put(Object)} will not be called in the queue anymore.
 	 */
 	public void done() {
 		done = true;

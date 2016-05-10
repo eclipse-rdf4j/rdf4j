@@ -8,9 +8,8 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * The DATATYPE function, as defined in <a
- * href="http://www.w3.org/TR/rdf-sparql-query/#func-datatype">SPARQL Query
- * Language for RDF</a>.
+ * The DATATYPE function, as defined in <a href="http://www.w3.org/TR/rdf-sparql-query/#func-datatype">SPARQL
+ * Query Language for RDF</a>.
  * 
  * @author Arjohn Kampman
  */

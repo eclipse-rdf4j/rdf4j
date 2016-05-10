@@ -37,8 +37,7 @@ public class ASTDatasetClause extends SimpleNode {
 	}
 
 	@Override
-	public String toString()
-	{
+	public String toString() {
 		return super.toString() + " (named=" + named + ")";
 	}
 }

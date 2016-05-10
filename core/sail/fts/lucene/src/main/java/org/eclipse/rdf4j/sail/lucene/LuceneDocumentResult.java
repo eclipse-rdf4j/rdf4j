@@ -12,10 +12,8 @@ import java.util.Set;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.search.ScoreDoc;
 
-
 /**
- * @deprecated since 4.1.0. Use the LuceneSail in package
- *             {@code org.openrdf.sail.lucene} instead.
+ * @deprecated since 4.1.0. Use the LuceneSail in package {@code org.openrdf.sail.lucene} instead.
  */
 @Deprecated
 public class LuceneDocumentResult implements DocumentResult {

@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
- 
+
 package org.eclipse.rdf4j.common.xml;
 
 import java.util.Map;
@@ -13,8 +13,7 @@ import java.util.Map;
 import org.xml.sax.SAXException;
 
 /**
- * An implementation of <tt>SimpleSAXListener</tt> providing dummy
- * implementations for all its methods.
+ * An implementation of <tt>SimpleSAXListener</tt> providing dummy implementations for all its methods.
  */
 public class SimpleSAXAdapter implements SimpleSAXListener {
 

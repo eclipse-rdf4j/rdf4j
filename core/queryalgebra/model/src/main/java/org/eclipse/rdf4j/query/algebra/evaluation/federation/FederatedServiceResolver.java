@@ -10,12 +10,10 @@ package org.eclipse.rdf4j.query.algebra.evaluation.federation;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
- * The {@link FederatedServiceResolver} is used to manage a set of
- * {@link FederatedService} instances, which are used to evaluate SERVICE
- * expressions for particular service Urls.
+ * The {@link FederatedServiceResolver} is used to manage a set of {@link FederatedService} instances, which
+ * are used to evaluate SERVICE expressions for particular service Urls.
  * <p>
- * Lookup can be done via the serviceUrl using the method
- * {@link #getService(String)}.
+ * Lookup can be done via the serviceUrl using the method {@link #getService(String)}.
  * 
  * @author Andreas Schwarte
  * @author James Leigh
@@ -23,9 +21,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 public interface FederatedServiceResolver {
 
 	/**
-	 * Retrieve the {@link FederatedService} registered for serviceUrl. If there
-	 * is no service registered for serviceUrl, a new
-	 * {@link SPARQLFederatedService} is created and registered.
+	 * Retrieve the {@link FederatedService} registered for serviceUrl. If there is no service registered for
+	 * serviceUrl, a new {@link SPARQLFederatedService} is created and registered.
 	 * 
 	 * @param serviceUrl
 	 *        locator for the federation service

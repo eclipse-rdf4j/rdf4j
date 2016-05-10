@@ -30,30 +30,53 @@ import org.junit.Before;
 import org.junit.Test;
 
 public class LinearTest {
+
 	private Repository repo;
+
 	private RepositoryConnection a;
+
 	private RepositoryConnection b;
+
 	private IsolationLevel level = IsolationLevels.READ_COMMITTED;
+
 	private String NS = "http://rdf.example.org/";
+
 	private ValueFactory lf;
+
 	private IRI PAINTER;
+
 	private IRI PAINTS;
+
 	private IRI PAINTING;
+
 	private IRI YEAR;
+
 	private IRI PERIOD;
+
 	private IRI PICASSO;
+
 	private IRI REMBRANDT;
+
 	private IRI GUERNICA;
+
 	private IRI JACQUELINE;
+
 	private IRI NIGHTWATCH;
+
 	private IRI ARTEMISIA;
+
 	private IRI DANAE;
+
 	private IRI JACOB;
+
 	private IRI ANATOMY;
+
 	private IRI BELSHAZZAR;
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp()
+		throws Exception
+	{
 		repo = OptimisticIsolationTest.getEmptyInitializedRepository(LinearTest.class);
 		lf = repo.getValueFactory();
 		ValueFactory uf = repo.getValueFactory();
@@ -77,14 +100,18 @@ public class LinearTest {
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown()
+		throws Exception
+	{
 		a.close();
 		b.close();
 		repo.shutDown();
 	}
 
 	@Test
-	public void test_independentPattern() throws Exception {
+	public void test_independentPattern()
+		throws Exception
+	{
 		a.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		assertEquals(1, size(a, PICASSO, RDF.TYPE, PAINTER, false));
@@ -98,7 +125,9 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_safePattern() throws Exception {
+	public void test_safePattern()
+		throws Exception
+	{
 		a.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		assertEquals(1, size(a, null, RDF.TYPE, PAINTER, false));
@@ -109,7 +138,9 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_afterPattern() throws Exception {
+	public void test_afterPattern()
+		throws Exception
+	{
 		a.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		assertEquals(1, size(a, null, RDF.TYPE, PAINTER, false));
@@ -121,7 +152,9 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_afterInsertDataPattern() throws Exception {
+	public void test_afterInsertDataPattern()
+		throws Exception
+	{
 		a.begin(level);
 		a.prepareUpdate(QueryLanguage.SPARQL, "INSERT DATA { <picasso> a <Painter> }", NS).execute();
 		assertEquals(1, size(a, null, RDF.TYPE, PAINTER, false));
@@ -133,7 +166,9 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_changedPattern() throws Exception {
+	public void test_changedPattern()
+		throws Exception
+	{
 		a.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		a.commit();
@@ -144,7 +179,9 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_safeQuery() throws Exception {
+	public void test_safeQuery()
+		throws Exception
+	{
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -155,10 +192,10 @@ public class LinearTest {
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		a.commit();
 		b.begin(level);
-		List<Value> result = eval("painting", b, "SELECT ?painting "
-				+ "WHERE { [a <Painter>] <paints> ?painting }");
+		List<Value> result = eval("painting", b,
+				"SELECT ?painting " + "WHERE { [a <Painter>] <paints> ?painting }");
 		for (Value painting : result) {
-			b.add((Resource) painting, RDF.TYPE, PAINTING);
+			b.add((Resource)painting, RDF.TYPE, PAINTING);
 		}
 		b.commit();
 		assertEquals(9, size(a, null, null, null, false));
@@ -166,7 +203,9 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_safeInsert() throws Exception {
+	public void test_safeInsert()
+		throws Exception
+	{
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -177,15 +216,18 @@ public class LinearTest {
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		a.commit();
 		b.begin(level);
-		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting a <Painting> }\n"
-				+ "WHERE { [a <Painter>] <paints> ?painting }", NS).execute();
+		b.prepareUpdate(QueryLanguage.SPARQL,
+				"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting }",
+				NS).execute();
 		b.commit();
 		assertEquals(9, size(a, null, null, null, false));
 		assertEquals(9, size(b, null, null, null, false));
 	}
 
 	@Test
-	public void test_safeOptionalQuery() throws Exception {
+	public void test_safeOptionalQuery()
+		throws Exception
+	{
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -196,12 +238,11 @@ public class LinearTest {
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		a.commit();
 		b.begin(level);
-		List<Value> result = eval("painting", b, "SELECT ?painting "
-				+ "WHERE { ?painter a <Painter> "
+		List<Value> result = eval("painting", b, "SELECT ?painting " + "WHERE { ?painter a <Painter> "
 				+ "OPTIONAL { ?painter <paints> ?painting } }");
 		for (Value painting : result) {
 			if (painting != null) {
-				b.add((Resource) painting, RDF.TYPE, PAINTING);
+				b.add((Resource)painting, RDF.TYPE, PAINTING);
 			}
 		}
 		b.commit();
@@ -210,7 +251,9 @@ public class LinearTest {
 	}
 
 	@Test
-	public void test_safeOptionalInsert() throws Exception {
+	public void test_safeOptionalInsert()
+		throws Exception
+	{
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -222,15 +265,17 @@ public class LinearTest {
 		a.commit();
 		b.begin(level);
 		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting a <Painting> }\n"
-				+ "WHERE { ?painter a <Painter> "
-				+ "OPTIONAL { ?painter <paints> ?painting } }", NS).execute();
+				+ "WHERE { ?painter a <Painter> " + "OPTIONAL { ?painter <paints> ?painting } }",
+				NS).execute();
 		b.commit();
 		assertEquals(9, size(a, null, null, null, false));
 		assertEquals(9, size(b, null, null, null, false));
 	}
 
 	@Test
-	public void test_safeFilterQuery() throws Exception {
+	public void test_safeFilterQuery()
+		throws Exception
+	{
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -241,18 +286,20 @@ public class LinearTest {
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		a.commit();
 		b.begin(level);
-		List<Value> result = eval("painting", b, "SELECT ?painting "
-				+ "WHERE { ?painter a <Painter>; <paints> ?painting "
-				+ "FILTER  regex(str(?painter), \"rem\", \"i\") }");
+		List<Value> result = eval("painting", b,
+				"SELECT ?painting " + "WHERE { ?painter a <Painter>; <paints> ?painting "
+						+ "FILTER  regex(str(?painter), \"rem\", \"i\") }");
 		for (Value painting : result) {
-			b.add((Resource) painting, RDF.TYPE, PAINTING);
+			b.add((Resource)painting, RDF.TYPE, PAINTING);
 		}
 		b.commit();
 		assertEquals(10, size(a, null, null, null, false));
 	}
 
 	@Test
-	public void test_safeFilterInsert() throws Exception {
+	public void test_safeFilterInsert()
+		throws Exception
+	{
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -263,15 +310,18 @@ public class LinearTest {
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		a.commit();
 		b.begin(level);
-		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting a <Painting> }\n"
-				+ "WHERE { ?painter a <Painter>; <paints> ?painting "
-				+ "FILTER  regex(str(?painter), \"rem\", \"i\") }", NS).execute();
+		b.prepareUpdate(QueryLanguage.SPARQL,
+				"INSERT { ?painting a <Painting> }\n" + "WHERE { ?painter a <Painter>; <paints> ?painting "
+						+ "FILTER  regex(str(?painter), \"rem\", \"i\") }",
+				NS).execute();
 		b.commit();
 		assertEquals(10, size(a, null, null, null, false));
 	}
 
 	@Test
-	public void test_safeRangeQuery() throws Exception {
+	public void test_safeRangeQuery()
+		throws Exception
+	{
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, ARTEMISIA);
 		a.add(REMBRANDT, PAINTS, DANAE);
@@ -288,18 +338,20 @@ public class LinearTest {
 		a.add(NIGHTWATCH, YEAR, lf.createLiteral(1642));
 		a.commit();
 		b.begin(level);
-		List<Value> result = eval("painting", b, "SELECT ?painting "
-				+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
-				+ "FILTER  (1631 <= ?year && ?year <= 1635) }");
+		List<Value> result = eval("painting", b,
+				"SELECT ?painting " + "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
+						+ "FILTER  (1631 <= ?year && ?year <= 1635) }");
 		for (Value painting : result) {
-			b.add((Resource) painting, PERIOD, lf.createLiteral("First Amsterdam period"));
+			b.add((Resource)painting, PERIOD, lf.createLiteral("First Amsterdam period"));
 		}
 		b.commit();
 		assertEquals(17, size(a, null, null, null, false));
 	}
 
 	@Test
-	public void test_safeRangeInsert() throws Exception {
+	public void test_safeRangeInsert()
+		throws Exception
+	{
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, ARTEMISIA);
 		a.add(REMBRANDT, PAINTS, DANAE);
@@ -316,20 +368,25 @@ public class LinearTest {
 		a.add(NIGHTWATCH, YEAR, lf.createLiteral(1642));
 		a.commit();
 		b.begin(level);
-		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting <period> \"First Amsterdam period\" }\n"
-				+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
-				+ "FILTER  (1631 <= ?year && ?year <= 1635) }", NS).execute();
+		b.prepareUpdate(QueryLanguage.SPARQL,
+				"INSERT { ?painting <period> \"First Amsterdam period\" }\n"
+						+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
+						+ "FILTER  (1631 <= ?year && ?year <= 1635) }",
+				NS).execute();
 		b.commit();
 		assertEquals(17, size(a, null, null, null, false));
 	}
 
-	private int size(RepositoryConnection con, Resource subj, IRI pred,
-			Value obj, boolean inf, Resource... ctx) throws Exception {
+	private int size(RepositoryConnection con, Resource subj, IRI pred, Value obj, boolean inf,
+			Resource... ctx)
+		throws Exception
+	{
 		return QueryResults.asList(con.getStatements(subj, pred, obj, inf, ctx)).size();
 	}
 
 	private List<Value> eval(String var, RepositoryConnection con, String qry)
-			throws Exception {
+		throws Exception
+	{
 		TupleQueryResult result;
 		result = con.prepareTupleQuery(QueryLanguage.SPARQL, qry, NS).evaluate();
 		try {
@@ -338,7 +395,8 @@ public class LinearTest {
 				list.add(result.next().getValue(var));
 			}
 			return list;
-		} finally {
+		}
+		finally {
 			result.close();
 		}
 	}

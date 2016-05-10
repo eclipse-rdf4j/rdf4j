@@ -12,9 +12,8 @@ import java.util.Iterator;
 import org.eclipse.rdf4j.model.Value;
 
 /**
- * Abstract base class for {@link BindingSet} implementations, providing a.o.
- * consistent implementations of {@link BindingSet#equals(Object)} and
- * {@link BindingSet#hashCode()}.
+ * Abstract base class for {@link BindingSet} implementations, providing a.o. consistent implementations of
+ * {@link BindingSet#equals(Object)} and {@link BindingSet#hashCode()}.
  *
  * @author Jeen Broekstra
  */
@@ -33,7 +32,7 @@ public abstract class AbstractBindingSet implements BindingSet {
 		}
 
 		BindingSet that = (BindingSet)other;
-		
+
 		if (this.size() != that.size()) {
 			return false;
 		}

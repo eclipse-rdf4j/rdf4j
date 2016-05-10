@@ -16,6 +16,5 @@ public class NQuadsWriterTest extends AbstractNQuadsWriterTest {
 	public NQuadsWriterTest() {
 		super(new NQuadsWriterFactory(), new NQuadsParserFactory());
 	}
-	
 
 }

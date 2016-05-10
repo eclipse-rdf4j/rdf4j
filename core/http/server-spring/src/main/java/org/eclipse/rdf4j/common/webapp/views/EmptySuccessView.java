@@ -17,19 +17,19 @@ import javax.servlet.http.HttpServletResponse;
 import org.springframework.web.servlet.View;
 
 /**
- * 
  * @author Herko ter Horst
  */
 public class EmptySuccessView implements View {
 
 	private static final EmptySuccessView INSTANCE = new EmptySuccessView();
-	
+
 	public static EmptySuccessView getInstance() {
 		return INSTANCE;
 	}
-	
-	private EmptySuccessView() {}
-	
+
+	private EmptySuccessView() {
+	}
+
 	public String getContentType() {
 		return null;
 	}

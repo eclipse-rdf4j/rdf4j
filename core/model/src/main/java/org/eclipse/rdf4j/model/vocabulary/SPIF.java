@@ -16,7 +16,8 @@ import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
  */
 public final class SPIF {
 
-	private SPIF() {}
+	private SPIF() {
+	}
 
 	/**
 	 * http://spinrdf.org/spif
@@ -26,36 +27,65 @@ public final class SPIF {
 	public static final String PREFIX = "spif";
 
 	public static final IRI MOD_FUNCTION;
+
 	public static final IRI PARSE_DATE_FUNCTION;
+
 	public static final IRI DATE_FORMAT_FUNCTION;
+
 	public static final IRI DECIMAL_FORMAT_FUNCTION;
+
 	public static final IRI TRIM_FUNCTION;
+
 	public static final IRI CURRENT_TIME_MILLIS_FUNCTION;
+
 	public static final IRI TIME_MILLIS_FUNCTION;
+
 	public static final IRI GENERATE_UUID_FUNCTION;
+
 	public static final IRI RANDOM_FUNCTION;
+
 	public static final IRI CAST_FUNCTION;
+
 	public static final IRI INDEX_OF_FUNCTION;
+
 	public static final IRI LAST_INDEX_OF_FUNCTION;
+
 	public static final IRI ENCODE_URL_FUNCTION;
+
 	public static final IRI DECODE_URL_FUNCTION;
+
 	public static final IRI BUILD_STRING_FUNCTION;
+
 	public static final IRI BUILD_URI_FUNCTION;
+
 	public static final IRI CONVERT_SPIN_RDF_TO_STRING_FUNCTION;
+
 	public static final IRI REPLACE_ALL_FUNCTION;
+
 	public static final IRI NAME_FUNCTION;
+
 	public static final IRI UN_CAMEL_CASE_FUNCTION;
+
 	public static final IRI IS_VALID_URI_FUNCTION;
+
 	public static final IRI HAS_ALL_OBJECTS_FUNCTION;
+
 	public static final IRI INVOKE_FUNCTION;
+
 	public static final IRI CAN_INVOKE_FUNCTION;
+
 	public static final IRI UPPER_CASE_FUNCTION;
+
 	public static final IRI LOWER_CASE_FUNCTION;
+
 	public static final IRI TITLE_CASE_FUNCTION;
+
 	public static final IRI LOWER_TITLE_CASE_FUNCTION;
 
 	public static final IRI FOR_EACH_PROPERTY;
+
 	public static final IRI FOR_PROPERTY;
+
 	public static final IRI SPLIT_PROPERTY;
 
 	static {

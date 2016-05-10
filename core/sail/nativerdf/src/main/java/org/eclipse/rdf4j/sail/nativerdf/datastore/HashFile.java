@@ -32,9 +32,8 @@ public class HashFile {
 	private static final int ITEM_SIZE = 8;
 
 	/**
-	 * Magic number "Native Hash File" to detect whether the file is actually a
-	 * hash file. The first three bytes of the file should be equal to this magic
-	 * number.
+	 * Magic number "Native Hash File" to detect whether the file is actually a hash file. The first three
+	 * bytes of the file should be equal to this magic number.
 	 */
 	private static final byte[] MAGIC_NUMBER = new byte[] { 'n', 'h', 'f' };
 
@@ -44,10 +43,9 @@ public class HashFile {
 	private static final byte FILE_FORMAT_VERSION = 1;
 
 	/**
-	 * The size of the file header in bytes. The file header contains the
-	 * following data: magic number (3 bytes) file format version (1 byte),
-	 * number of buckets (4 bytes), bucket size (4 bytes) and number of stored
-	 * items (4 bytes).
+	 * The size of the file header in bytes. The file header contains the following data: magic number (3
+	 * bytes) file format version (1 byte), number of buckets (4 bytes), bucket size (4 bytes) and number of
+	 * stored items (4 bytes).
 	 */
 	private static final long HEADER_LENGTH = 16;
 
@@ -79,8 +77,8 @@ public class HashFile {
 	private final int recordSize;
 
 	/**
-	 * A read/write lock that is used to prevent structural changes to the hash
-	 * file while readers are active in order to prevent concurrency issues.
+	 * A read/write lock that is used to prevent structural changes to the hash file while readers are active
+	 * in order to prevent concurrency issues.
 	 */
 	private final ReentrantReadWriteLock structureLock = new ReentrantReadWriteLock();
 
@@ -139,7 +137,8 @@ public class HashFile {
 					throw new IOException("Unable to read hash file; it uses a newer file format");
 				}
 				else if (version != FILE_FORMAT_VERSION) {
-					throw new IOException("Unable to read hash file; invalid file format version: " + version);
+					throw new IOException(
+							"Unable to read hash file; invalid file format version: " + version);
 				}
 
 				recordSize = ITEM_SIZE * bucketSize + 4;
@@ -164,8 +163,7 @@ public class HashFile {
 	}
 
 	/**
-	 * Gets an iterator that iterates over the IDs with hash codes that match the
-	 * specified hash code.
+	 * Gets an iterator that iterates over the IDs with hash codes that match the specified hash code.
 	 */
 	public IDIterator getIDIterator(int hash)
 		throws IOException
@@ -376,8 +374,7 @@ public class HashFile {
 	}
 
 	/**
-	 * Double the number of buckets in the hash file and rehashes the stored
-	 * items.
+	 * Double the number of buckets in the hash file and rehashes the stored items.
 	 */
 	private void increaseHashTable()
 		throws IOException
@@ -537,8 +534,8 @@ public class HashFile {
 		}
 
 		/**
-		 * Returns the next ID that has been mapped to the specified hash code, or
-		 * <tt>-1</tt> if no more IDs were found.
+		 * Returns the next ID that has been mapped to the specified hash code, or <tt>-1</tt> if no more IDs
+		 * were found.
 		 */
 		public int next()
 			throws IOException

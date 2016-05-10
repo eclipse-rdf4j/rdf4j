@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class TimeLimitRDFHandler extends RDFHandlerWrapper {
+
 	private static final Timer timer = new Timer("TimeLimitRDFHandler", true);
 
 	private final Logger logger = LoggerFactory.getLogger(getClass());
@@ -44,13 +45,17 @@ public class TimeLimitRDFHandler extends RDFHandlerWrapper {
 	}
 
 	@Override
-	public void startRDF() throws RDFHandlerException {
+	public void startRDF()
+		throws RDFHandlerException
+	{
 		checkInterrupted();
 		super.startRDF();
 	}
 
 	@Override
-	public void endRDF() throws RDFHandlerException {
+	public void endRDF()
+		throws RDFHandlerException
+	{
 		checkInterrupted();
 		if (ended.compareAndSet(false, true)) {
 			super.endRDF();
@@ -58,31 +63,40 @@ public class TimeLimitRDFHandler extends RDFHandlerWrapper {
 	}
 
 	@Override
-	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
+	public void handleNamespace(String prefix, String uri)
+		throws RDFHandlerException
+	{
 		checkInterrupted();
 		super.handleNamespace(prefix, uri);
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
+	public void handleStatement(Statement st)
+		throws RDFHandlerException
+	{
 		checkInterrupted();
 		super.handleStatement(st);
 	}
 
 	@Override
-	public void handleComment(String comment) throws RDFHandlerException {
+	public void handleComment(String comment)
+		throws RDFHandlerException
+	{
 		checkInterrupted();
 		super.handleComment(comment);
 	}
 
-	private void checkInterrupted() throws RDFHandlerException {
+	private void checkInterrupted()
+		throws RDFHandlerException
+	{
 		if (isInterrupted) {
 			throw new RDFHandlerException("RDFHandler took too long");
 		}
 	}
+
 	private void interrupt() {
 		isInterrupted = true;
-		if(!isEnded()) {
+		if (!isEnded()) {
 			try {
 				// we call endRDF() in case impls have resources to close
 				endRDF();
@@ -94,6 +108,7 @@ public class TimeLimitRDFHandler extends RDFHandlerWrapper {
 	}
 
 	private static class InterruptTask extends TimerTask {
+
 		private WeakReference<TimeLimitRDFHandler> handlerRef;
 
 		InterruptTask(TimeLimitRDFHandler handler) {

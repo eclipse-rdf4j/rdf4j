@@ -8,9 +8,8 @@
 package org.eclipse.rdf4j.query;
 
 /**
- * A RuntimeException indicating that a specific query language is not supported. A typical cause
- * of this exception is that the class library for the specified query language is not present
- * in the classpath.
+ * A RuntimeException indicating that a specific query language is not supported. A typical cause of this
+ * exception is that the class library for the specified query language is not present in the classpath.
  */
 public class UnsupportedQueryLanguageException extends RuntimeException {
 

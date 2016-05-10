@@ -142,7 +142,8 @@ public abstract class GraphQueryResultTest {
 	public void testDescribeMultiple()
 		throws Exception
 	{
-		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, multipleDescribeQuery).evaluate();
+		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL,
+				multipleDescribeQuery).evaluate();
 		assertTrue("Query result should not be empty", result.hasNext());
 
 		Model model = QueryResults.asModel(result);
@@ -165,7 +166,8 @@ public abstract class GraphQueryResultTest {
 	public void testConstructSingle()
 		throws Exception
 	{
-		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, singleConstructQuery).evaluate();
+		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL,
+				singleConstructQuery).evaluate();
 		assertTrue("Query result should not be empty", result.hasNext());
 
 		Model model = QueryResults.asModel(result);
@@ -177,7 +179,8 @@ public abstract class GraphQueryResultTest {
 	public void testConstructMultiple()
 		throws Exception
 	{
-		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL, multipleConstructQuery).evaluate();
+		GraphQueryResult result = con.prepareGraphQuery(QueryLanguage.SPARQL,
+				multipleConstructQuery).evaluate();
 		assertTrue("Query result should not be empty", result.hasNext());
 
 		Model model = QueryResults.asModel(result);

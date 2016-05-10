@@ -32,12 +32,14 @@ public class DocumentUtil {
 	 * Create a Document representing the XML file at the specified location.
 	 * 
 	 * @param location
-	 *            the location of an XML document
+	 *        the location of an XML document
 	 * @return a Document representing the XML file
 	 * @throws IOException
-	 *             when there was a problem retrieving or parsing the document.
+	 *         when there was a problem retrieving or parsing the document.
 	 */
-	public static Document getDocument(URL location) throws IOException {
+	public static Document getDocument(URL location)
+		throws IOException
+	{
 		return getDocument(location, false, false, null);
 	}
 
@@ -45,19 +47,18 @@ public class DocumentUtil {
 	 * Create a Document representing the XML file at the specified location.
 	 * 
 	 * @param location
-	 *            the location of an XML document
+	 *        the location of an XML document
 	 * @param validating
-	 *            whether the XML parser used in the construction of the
-	 *            document should validate the XML
+	 *        whether the XML parser used in the construction of the document should validate the XML
 	 * @param namespaceAware
-	 *            whether the XML parser used in the construction of the
-	 *            document should be aware of namespaces
+	 *        whether the XML parser used in the construction of the document should be aware of namespaces
 	 * @return a Document representing the XML file
 	 * @throws IOException
-	 *             when there was a problem retrieving or parsing the document.
+	 *         when there was a problem retrieving or parsing the document.
 	 */
-	public static Document getDocument(URL location, boolean validating,
-			boolean namespaceAware) throws IOException {
+	public static Document getDocument(URL location, boolean validating, boolean namespaceAware)
+		throws IOException
+	{
 		return getDocument(location, validating, namespaceAware, null);
 	}
 
@@ -65,20 +66,23 @@ public class DocumentUtil {
 	 * Create a Document representing the XML file at the specified location.
 	 * 
 	 * @param location
-	 *            the location of an XML document
+	 *        the location of an XML document
 	 * @param schema
-	 *            a Schama instance to validate against
+	 *        a Schama instance to validate against
 	 * @return a Document representing the XML file
 	 * @throws IOException
-	 *             when there was a problem retrieving or parsing the document.
+	 *         when there was a problem retrieving or parsing the document.
 	 */
 	public static Document getDocument(URL location, Schema schema)
-			throws IOException {
+		throws IOException
+	{
 		return getDocument(location, false, true, schema);
 	}
 
-	private static Document getDocument(URL location, boolean validating,
-			boolean namespaceAware, Schema schema) throws IOException {
+	private static Document getDocument(URL location, boolean validating, boolean namespaceAware,
+			Schema schema)
+		throws IOException
+	{
 		Document result = null;
 
 		DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
@@ -88,19 +92,22 @@ public class DocumentUtil {
 
 		InputStream in = null;
 		try {
-			in = new BufferedInputStream(location.openConnection()
-					.getInputStream());
+			in = new BufferedInputStream(location.openConnection().getInputStream());
 			DocumentBuilder builder = factory.newDocumentBuilder();
 			result = builder.parse(in);
-		} catch (SAXParseException e) {
-			String message = "Parsing error" + ", line " + e.getLineNumber()
-					+ ", uri " + e.getSystemId() + ", " + e.getMessage();
+		}
+		catch (SAXParseException e) {
+			String message = "Parsing error" + ", line " + e.getLineNumber() + ", uri " + e.getSystemId()
+					+ ", " + e.getMessage();
 			throw toIOE(message, e);
-		} catch (SAXException e) {
+		}
+		catch (SAXException e) {
 			throw toIOE(e);
-		} catch (ParserConfigurationException e) {
+		}
+		catch (ParserConfigurationException e) {
 			throw toIOE(e);
-		} finally {
+		}
+		finally {
 			if (in != null) {
 				in.close();
 			}

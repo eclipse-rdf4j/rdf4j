@@ -12,9 +12,8 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * A wrapper for an input stream to avoid allowing libraries to close input
- * streams unexpectedly using the {@link #close()} method. Instead, they must be
- * closed by the creator using {@link #doClose()}.
+ * A wrapper for an input stream to avoid allowing libraries to close input streams unexpectedly using the
+ * {@link #close()} method. Instead, they must be closed by the creator using {@link #doClose()}.
  * 
  * @author Peter Ansell
  */

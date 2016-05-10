@@ -27,8 +27,8 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
- * JUnit test for the Turtle parser that uses the tests that are available <a
- * href="http://www.w3.org/2013/TurtleTests/">online</a>.
+ * JUnit test for the Turtle parser that uses the tests that are available
+ * <a href="http://www.w3.org/2013/TurtleTests/">online</a>.
  */
 public abstract class TurtleParserTestCase {
 
@@ -57,14 +57,12 @@ public abstract class TurtleParserTestCase {
 	private static String NTRIPLES_TEST_FILE = "/testcases/ntriples/test.nt";
 
 	/**
-	 * Base directory for N-Triples compatibility tests that are part of the
-	 * Turtle test-suite.
+	 * Base directory for N-Triples compatibility tests that are part of the Turtle test-suite.
 	 */
 	private static String TURTLE_NTRIPLES_FILE_BASE_PATH = "/testcases/turtle/tests-nt/";
 
 	/**
-	 * Manifest for N-Triples compatibility tests that are part of the Turtle
-	 * test-suite.
+	 * Manifest for N-Triples compatibility tests that are part of the Turtle test-suite.
 	 */
 	private static String TURTLE_NTRIPLES_MANIFEST_URL = "/testcases/turtle/tests-nt/manifest.ttl";
 
@@ -120,7 +118,8 @@ public abstract class TurtleParserTestCase {
 		positiveQuery.append("     ?test mf:action ?inputURL . ");
 		positiveQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveQuery.toString()).evaluate();
+		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL,
+				positiveQuery.toString()).evaluate();
 
 		// Add all positive parser tests to the test suite
 		while (queryResult.hasNext()) {
@@ -156,14 +155,16 @@ public abstract class TurtleParserTestCase {
 		negativeQuery.append("     ?test mf:action ?inputURL . ");
 		negativeQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeQuery.toString()).evaluate();
+		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL,
+				negativeQuery.toString()).evaluate();
 
 		// Add all negative parser tests to the test suite
 		while (queryResult.hasNext()) {
 			BindingSet bindingSet = queryResult.next();
 			IRI nextTestUri = (IRI)bindingSet.getValue("test");
 			String nextTestName = ((Literal)bindingSet.getValue("testName")).getLabel();
-			String nextTestFile = removeBase(((IRI)bindingSet.getValue("inputURL")).toString(), manifestBaseUrl);
+			String nextTestFile = removeBase(((IRI)bindingSet.getValue("inputURL")).toString(),
+					manifestBaseUrl);
 			String nextInputURL = fileBasePath + nextTestFile;
 
 			String nextBaseUrl = testBaseUrl + nextTestFile;
@@ -181,7 +182,8 @@ public abstract class TurtleParserTestCase {
 		throws Exception
 	{
 		StringBuilder positiveEvalQuery = new StringBuilder();
-		positiveEvalQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
+		positiveEvalQuery.append(
+				" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		positiveEvalQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
 		positiveEvalQuery.append(" PREFIX rdft: <http://www.w3.org/ns/rdftest#>\n");
 		positiveEvalQuery.append(" SELECT ?test ?testName ?inputURL ?outputURL \n");
@@ -192,26 +194,28 @@ public abstract class TurtleParserTestCase {
 		positiveEvalQuery.append("     ?test mf:result ?outputURL . ");
 		positiveEvalQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveEvalQuery.toString()).evaluate();
+		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL,
+				positiveEvalQuery.toString()).evaluate();
 
 		// Add all positive eval tests to the test suite
 		while (queryResult.hasNext()) {
 			BindingSet bindingSet = queryResult.next();
 			IRI nextTestUri = (IRI)bindingSet.getValue("test");
 			String nextTestName = ((Literal)bindingSet.getValue("testName")).getLabel();
-			String nextTestFile = removeBase(((IRI)bindingSet.getValue("inputURL")).toString(), manifestBaseUrl);
+			String nextTestFile = removeBase(((IRI)bindingSet.getValue("inputURL")).toString(),
+					manifestBaseUrl);
 			String nextInputURL = fileBasePath + nextTestFile;
 			String nextOutputURL = fileBasePath
 					+ removeBase(((IRI)bindingSet.getValue("outputURL")).toString(), manifestBaseUrl);
 
 			String nextBaseUrl = testBaseUrl + nextTestFile;
 
-//			if (nextTestName.contains("CARRIAGE_RETURN")) {
-//				// FIXME: Sesame seems not to preserve the CARRIAGE_RETURN character
-//				// right now
-//				System.err.println("Ignoring Turtle Positive Parser Eval Test: " + nextInputURL);
-//				continue;
-//			}
+			//			if (nextTestName.contains("CARRIAGE_RETURN")) {
+			//				// FIXME: Sesame seems not to preserve the CARRIAGE_RETURN character
+			//				// right now
+			//				System.err.println("Ignoring Turtle Positive Parser Eval Test: " + nextInputURL);
+			//				continue;
+			//			}
 
 			suite.addTest(new PositiveParserTest(nextTestUri, nextTestName, nextInputURL, nextOutputURL,
 					nextBaseUrl, createTurtleParser(), createNTriplesParser()));
@@ -225,7 +229,8 @@ public abstract class TurtleParserTestCase {
 		throws Exception
 	{
 		StringBuilder negativeEvalQuery = new StringBuilder();
-		negativeEvalQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
+		negativeEvalQuery.append(
+				" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		negativeEvalQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
 		negativeEvalQuery.append(" PREFIX rdft: <http://www.w3.org/ns/rdftest#>\n");
 		negativeEvalQuery.append(" SELECT ?test ?testName ?inputURL ?outputURL \n");
@@ -235,14 +240,16 @@ public abstract class TurtleParserTestCase {
 		negativeEvalQuery.append("     ?test mf:action ?inputURL . ");
 		negativeEvalQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeEvalQuery.toString()).evaluate();
+		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL,
+				negativeEvalQuery.toString()).evaluate();
 
 		// Add all negative eval tests to the test suite
 		while (queryResult.hasNext()) {
 			BindingSet bindingSet = queryResult.next();
 			IRI nextTestUri = (IRI)bindingSet.getValue("test");
 			String nextTestName = ((Literal)bindingSet.getValue("testName")).getLabel();
-			String nextTestFile = removeBase(((IRI)bindingSet.getValue("inputURL")).toString(), manifestBaseUrl);
+			String nextTestFile = removeBase(((IRI)bindingSet.getValue("inputURL")).toString(),
+					manifestBaseUrl);
 			String nextInputURL = fileBasePath + nextTestFile;
 
 			String nextBaseUrl = testBaseUrl + nextTestFile;
@@ -269,14 +276,16 @@ public abstract class TurtleParserTestCase {
 		positiveQuery.append("     ?test mf:action ?inputURL . ");
 		positiveQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveQuery.toString()).evaluate();
+		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL,
+				positiveQuery.toString()).evaluate();
 
 		// Add all positive parser tests to the test suite
 		while (queryResult.hasNext()) {
 			BindingSet bindingSet = queryResult.next();
 			IRI nextTestUri = (IRI)bindingSet.getValue("test");
 			String nextTestName = ((Literal)bindingSet.getValue("testName")).getLabel();
-			String nextTestFile = removeBase(((IRI)bindingSet.getValue("inputURL")).toString(), manifestBaseUrl);
+			String nextTestFile = removeBase(((IRI)bindingSet.getValue("inputURL")).toString(),
+					manifestBaseUrl);
 			String nextInputURL = fileBasePath + nextTestFile;
 
 			String nextBaseUrl = testBaseUrl + nextTestFile;
@@ -304,14 +313,16 @@ public abstract class TurtleParserTestCase {
 		negativeQuery.append("     ?test mf:action ?inputURL . ");
 		negativeQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeQuery.toString()).evaluate();
+		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL,
+				negativeQuery.toString()).evaluate();
 
 		// Add all negative parser tests to the test suite
 		while (queryResult.hasNext()) {
 			BindingSet bindingSet = queryResult.next();
 			IRI nextTestUri = (IRI)bindingSet.getValue("test");
 			String nextTestName = ((Literal)bindingSet.getValue("testName")).getLabel();
-			String nextTestFile = removeBase(((IRI)bindingSet.getValue("inputURL")).toString(), manifestBaseUrl);
+			String nextTestFile = removeBase(((IRI)bindingSet.getValue("inputURL")).toString(),
+					manifestBaseUrl);
 			String nextInputURL = fileBasePath + nextTestFile;
 
 			String nextBaseUrl = testBaseUrl + nextTestFile;
@@ -325,14 +336,14 @@ public abstract class TurtleParserTestCase {
 	}
 
 	/**
-	 * @return An implementation of a Turtle parser to test compliance with the
-	 *         Turtle Test Suite Turtle tests.
+	 * @return An implementation of a Turtle parser to test compliance with the Turtle Test Suite Turtle
+	 *         tests.
 	 */
 	protected abstract RDFParser createTurtleParser();
 
 	/**
-	 * @return An implementation of an N-Triples parser to test compliance with
-	 *         the Turtle Test Suite N-Triples tests.
+	 * @return An implementation of an N-Triples parser to test compliance with the Turtle Test Suite
+	 *         N-Triples tests.
 	 */
 	protected abstract RDFParser createNTriplesParser();
 

@@ -44,8 +44,8 @@ public class Federate implements Command {
 	 * Executes a 'federate' command for the Sesame Console.
 	 * 
 	 * @param parameters
-	 *        the expectations for the tokens in this array are fully documented
-	 *        in {@link PrintHelp#FEDERATE}.
+	 *        the expectations for the tokens in this array are fully documented in {@link PrintHelp#FEDERATE}
+	 *        .
 	 */
 	@Override
 	public void execute(String... parameters)

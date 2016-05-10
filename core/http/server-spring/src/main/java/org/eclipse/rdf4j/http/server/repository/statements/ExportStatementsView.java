@@ -32,8 +32,8 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.springframework.web.servlet.View;
 
 /**
- * View used to export statements. Renders the statements as RDF using a
- * serialization specified using a parameter or Accept header.
+ * View used to export statements. Renders the statements as RDF using a serialization specified using a
+ * parameter or Accept header.
  * 
  * @author Herko ter Horst
  */

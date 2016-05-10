@@ -128,8 +128,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	}
 
 	/**
-	 * Render the TupleExpr as a query or query fragment depending on what kind
-	 * of TupleExpr it is
+	 * Render the TupleExpr as a query or query fragment depending on what kind of TupleExpr it is
 	 * 
 	 * @param theExpr
 	 *        the expression to render
@@ -153,9 +152,8 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 		throws Exception;
 
 	/**
-	 * Turn a ProjectionElemList for a construct query projection (three elements
-	 * aliased as 'subject', 'predicate' and 'object' in that order) into a
-	 * StatementPattern.
+	 * Turn a ProjectionElemList for a construct query projection (three elements aliased as 'subject',
+	 * 'predicate' and 'object' in that order) into a StatementPattern.
 	 * 
 	 * @param theList
 	 *        the elem list to render
@@ -170,13 +168,19 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 		ProjectionElem aPred = theList.getElements().get(1);
 		ProjectionElem aObj = theList.getElements().get(2);
 
-		return new StatementPattern(mExtensions.containsKey(aSubj.getSourceName()) ? new Var(
-				scrubVarName(aSubj.getSourceName()), asValue(mExtensions.get(aSubj.getSourceName()))) : new Var(
-				scrubVarName(aSubj.getSourceName())), mExtensions.containsKey(aPred.getSourceName()) ? new Var(
-				scrubVarName(aPred.getSourceName()), asValue(mExtensions.get(aPred.getSourceName()))) : new Var(
-				scrubVarName(aPred.getSourceName())), mExtensions.containsKey(aObj.getSourceName()) ? new Var(
-				scrubVarName(aObj.getSourceName()), asValue(mExtensions.get(aObj.getSourceName()))) : new Var(
-				scrubVarName(aObj.getSourceName())));
+		return new StatementPattern(
+				mExtensions.containsKey(aSubj.getSourceName())
+						? new Var(scrubVarName(aSubj.getSourceName()),
+								asValue(mExtensions.get(aSubj.getSourceName())))
+						: new Var(scrubVarName(aSubj.getSourceName())),
+				mExtensions.containsKey(aPred.getSourceName())
+						? new Var(scrubVarName(aPred.getSourceName()),
+								asValue(mExtensions.get(aPred.getSourceName())))
+						: new Var(scrubVarName(aPred.getSourceName())),
+				mExtensions.containsKey(aObj.getSourceName())
+						? new Var(scrubVarName(aObj.getSourceName()),
+								asValue(mExtensions.get(aObj.getSourceName())))
+						: new Var(scrubVarName(aObj.getSourceName())));
 	}
 
 	/**
@@ -220,8 +224,8 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	}
 
 	/**
-	 * Returns whether or not the results of scanning the query model indicates
-	 * that this represents a select query
+	 * Returns whether or not the results of scanning the query model indicates that this represents a select
+	 * query
 	 * 
 	 * @return true if its a select query, false if its a construct query
 	 */
@@ -239,13 +243,11 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	}
 
 	/**
-	 * Return whether or not this projection looks like an spo binding for a
-	 * construct query
+	 * Return whether or not this projection looks like an spo binding for a construct query
 	 * 
 	 * @param theList
 	 *        the projection element list to inspect
-	 * @return true if it has the format of a spo construct projection element,
-	 *         false otherwise
+	 * @return true if it has the format of a spo construct projection element, false otherwise
 	 */
 	public static boolean isSPOElemList(ProjectionElemList theList) {
 		return theList.getElements().size() == 3

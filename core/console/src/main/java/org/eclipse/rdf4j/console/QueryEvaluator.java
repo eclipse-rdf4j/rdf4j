@@ -61,7 +61,8 @@ public class QueryEvaluator {
 	}
 
 	public void executeQuery(final String command, final String operation) {
-		final List<String> sparqlQueryStart = Arrays.asList(new String[]{ "select", "construct", "describe", "ask", "prefix", "base"});
+		final List<String> sparqlQueryStart = Arrays.asList(
+				new String[] { "select", "construct", "describe", "ask", "prefix", "base" });
 		if (sparqlQueryStart.contains(operation)) {
 			evaluateQuery(QueryLanguage.SPARQL, command);
 		}
@@ -79,7 +80,8 @@ public class QueryEvaluator {
 	private void evaluateQuery(final QueryLanguage queryLn, String queryText) {
 		try {
 			if (queryText.trim().isEmpty()) {
-				consoleIO.writeln("enter multi-line " + queryLn.getName() + " query (terminate with line containing single '.')");
+				consoleIO.writeln("enter multi-line " + queryLn.getName()
+						+ " query (terminate with line containing single '.')");
 				queryText = consoleIO.readMultiLineInput();
 			}
 			final String queryString = addQueryPrefixes(queryLn, queryText);
@@ -116,7 +118,8 @@ public class QueryEvaluator {
 
 	private void evaluateQuery(final QueryLanguage queryLn, final String queryString,
 			final ParsedOperation query)
-		throws MalformedQueryException, QueryEvaluationException, RepositoryException, UpdateExecutionException
+		throws MalformedQueryException, QueryEvaluationException, RepositoryException,
+		UpdateExecutionException
 	{
 		if (query instanceof ParsedTupleQuery) {
 			tg_eval.evaluateTupleQuery(queryLn, queryString);
@@ -140,10 +143,9 @@ public class QueryEvaluator {
 		result.append(queryString);
 		final String lowerCaseQuery = queryString.toLowerCase(Locale.ENGLISH);
 		Repository repository = state.getRepository();
-		if (repository != null
-				&& parameters.isQueryPrefix()
-				&& ((SERQL.equals(queryLn) && lowerCaseQuery.indexOf("using namespace ") == -1) || SPARQL.equals(queryLn)
-						&& !lowerCaseQuery.startsWith("prefix")))
+		if (repository != null && parameters.isQueryPrefix()
+				&& ((SERQL.equals(queryLn) && lowerCaseQuery.indexOf("using namespace ") == -1)
+						|| SPARQL.equals(queryLn) && !lowerCaseQuery.startsWith("prefix")))
 		{
 			// FIXME this is a bit of a sloppy hack, a better way would be to
 			// explicitly provide the query parser with name space mappings in

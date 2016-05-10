@@ -92,7 +92,7 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 
 		ASTUnparsedQuadDataBlock dataBlock = node.jjtGetChild(ASTUnparsedQuadDataBlock.class);
 		return new DeleteData(dataBlock.getDataBlock());
-	
+
 	}
 
 	@Override
@@ -251,7 +251,8 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 
 		ASTGraphOrDefault destinationNode = (ASTGraphOrDefault)node.jjtGetChild(1);
 		if (destinationNode.jjtGetNumChildren() > 0) {
-			ValueConstant destinationGraph = (ValueConstant)destinationNode.jjtGetChild(0).jjtAccept(this, data);
+			ValueConstant destinationGraph = (ValueConstant)destinationNode.jjtGetChild(0).jjtAccept(this,
+					data);
 			copy.setDestinationGraph(destinationGraph);
 		}
 		return copy;
@@ -272,7 +273,8 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 
 		ASTGraphOrDefault destinationNode = (ASTGraphOrDefault)node.jjtGetChild(1);
 		if (destinationNode.jjtGetNumChildren() > 0) {
-			ValueConstant destinationGraph = (ValueConstant)destinationNode.jjtGetChild(0).jjtAccept(this, data);
+			ValueConstant destinationGraph = (ValueConstant)destinationNode.jjtGetChild(0).jjtAccept(this,
+					data);
 			move.setDestinationGraph(destinationGraph);
 		}
 		return move;
@@ -293,7 +295,8 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 
 		ASTGraphOrDefault destinationNode = (ASTGraphOrDefault)node.jjtGetChild(1);
 		if (destinationNode.jjtGetNumChildren() > 0) {
-			ValueConstant destinationGraph = (ValueConstant)destinationNode.jjtGetChild(0).jjtAccept(this, data);
+			ValueConstant destinationGraph = (ValueConstant)destinationNode.jjtGetChild(0).jjtAccept(this,
+					data);
 			add.setDestinationGraph(destinationGraph);
 		}
 		return add;

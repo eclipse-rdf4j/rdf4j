@@ -28,15 +28,13 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 	}
 
 	/**
-	 * @return The {@link TupleQueryResultFormat} that this test is running
-	 *         against.
+	 * @return The {@link TupleQueryResultFormat} that this test is running against.
 	 */
 	protected abstract TupleQueryResultFormat getTupleFormat();
 
 	/**
-	 * @return The {@link BooleanQueryResultFormat} that may be parsed by the
-	 *         same parser as the one for {@link #getTupleFormat()}, or null if
-	 *         this functionality is not supported.
+	 * @return The {@link BooleanQueryResultFormat} that may be parsed by the same parser as the one for
+	 *         {@link #getTupleFormat()}, or null if this functionality is not supported.
 	 */
 	protected abstract BooleanQueryResultFormat getMatchingBooleanFormatOrNull();
 
@@ -73,7 +71,8 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 	public final void testNoHandlerWithResults()
 		throws Exception
 	{
-		doTupleNoHandler(getTupleFormat(), createTupleMultipleBindingSets(), createTupleMultipleBindingSets());
+		doTupleNoHandler(getTupleFormat(), createTupleMultipleBindingSets(),
+				createTupleMultipleBindingSets());
 	}
 
 	@Test
@@ -199,15 +198,16 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 	public final void testNoResultsAndStylesheet()
 		throws Exception
 	{
-		doTupleStylesheet(getTupleFormat(), createTupleNoBindingSets(), createTupleNoBindingSets(), "test.xsl");
+		doTupleStylesheet(getTupleFormat(), createTupleNoBindingSets(), createTupleNoBindingSets(),
+				"test.xsl");
 	}
 
 	@Test
 	public final void testMultipleResultsAndStylesheet()
 		throws Exception
 	{
-		doTupleStylesheet(getTupleFormat(), createTupleMultipleBindingSets(), createTupleMultipleBindingSets(),
-				"test.xsl");
+		doTupleStylesheet(getTupleFormat(), createTupleMultipleBindingSets(),
+				createTupleMultipleBindingSets(), "test.xsl");
 	}
 
 	@Test
@@ -230,7 +230,8 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 		throws Exception
 	{
 		doTupleMissingStartQueryResult(getTupleFormat(), createTupleNoBindingSets(),
-				createTupleNoBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl");
+				createTupleNoBindingSets(), Arrays.asList("info", "alternate", "other", "another"),
+				"test.xsl");
 	}
 
 	@Test

@@ -22,16 +22,15 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 
 /**
- * An {@link RDFHandlerWrapper} that buffers statements internally and passes
- * them to underlying handlers grouped by context, then subject, then predicate.
+ * An {@link RDFHandlerWrapper} that buffers statements internally and passes them to underlying handlers
+ * grouped by context, then subject, then predicate.
  * 
  * @author Jeen Broekstra
  */
 public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 
 	/**
-	 * Default buffer size. Buffer size is expressed in number of RDF statements.
-	 * The default is set to 1024.
+	 * Default buffer size. Buffer size is expressed in number of RDF statements. The default is set to 1024.
 	 */
 	public static final int DEFAULT_BUFFER_SIZE = 1024;
 
@@ -44,8 +43,7 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 	private final Object bufferLock = new Object();
 
 	/**
-	 * Creates a new BufferedGroupedWriter that wraps the supplied handlers,
-	 * using the default buffer size.
+	 * Creates a new BufferedGroupedWriter that wraps the supplied handlers, using the default buffer size.
 	 * 
 	 * @param handlers
 	 *        one or more wrapped RDFHandlers
@@ -55,8 +53,7 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 	}
 
 	/**
-	 * Creates a new BufferedGroupedWriter that wraps the supplied handlers,
-	 * using the supplied buffer size.
+	 * Creates a new BufferedGroupedWriter that wraps the supplied handlers, using the supplied buffer size.
 	 * 
 	 * @param bufferSize
 	 *        size of the buffer expressed in number of RDF statements
@@ -97,7 +94,8 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 				Set<IRI> processedPredicates = new HashSet<IRI>();
 
 				// give rdf:type preference over other predicates.
-				Iterator<Statement> typeStatements = bufferedStatements.match(subject, RDF.TYPE, null, context);
+				Iterator<Statement> typeStatements = bufferedStatements.match(subject, RDF.TYPE, null,
+						context);
 				while (typeStatements.hasNext()) {
 					Statement typeStatement = typeStatements.next();
 					super.handleStatement(typeStatement);
@@ -107,12 +105,14 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 
 				// retrieve other statement from this context with the same
 				// subject, and output them grouped by predicate
-				Iterator<Statement> subjectStatements = bufferedStatements.match(subject, null, null, context);
+				Iterator<Statement> subjectStatements = bufferedStatements.match(subject, null, null,
+						context);
 				while (subjectStatements.hasNext()) {
 					Statement subjectStatement = subjectStatements.next();
 					IRI predicate = subjectStatement.getPredicate();
 					if (!processedPredicates.contains(predicate)) {
-						Iterator<Statement> toWrite = bufferedStatements.match(subject, predicate, null, context);
+						Iterator<Statement> toWrite = bufferedStatements.match(subject, predicate, null,
+								context);
 						while (toWrite.hasNext()) {
 							Statement toWriteSt = toWrite.next();
 							super.handleStatement(toWriteSt);

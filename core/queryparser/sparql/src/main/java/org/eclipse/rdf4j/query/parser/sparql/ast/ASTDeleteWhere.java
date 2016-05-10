@@ -9,20 +9,21 @@
 /* JavaCCOptions:MULTI=true,NODE_USES_PARSER=false,VISITOR=true,TRACK_TOKENS=false,NODE_PREFIX=AST,NODE_EXTENDS=,NODE_FACTORY=,SUPPORT_CLASS_VISIBILITY_PUBLIC=true */
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
-public
-class ASTDeleteWhere extends ASTUpdate {
-  public ASTDeleteWhere(int id) {
-    super(id);
-  }
+public class ASTDeleteWhere extends ASTUpdate {
 
-  public ASTDeleteWhere(SyntaxTreeBuilder p, int id) {
-    super(p, id);
-  }
+	public ASTDeleteWhere(int id) {
+		super(id);
+	}
 
+	public ASTDeleteWhere(SyntaxTreeBuilder p, int id) {
+		super(p, id);
+	}
 
-  /** Accept the visitor. **/
-  public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
-    return visitor.visit(this, data);
-  }
+	/** Accept the visitor. **/
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
+		throws VisitorException
+	{
+		return visitor.visit(this, data);
+	}
 }
 /* JavaCC - OriginalChecksum=e0adab3e44711dcfa28e21aec53136c7 (do not edit this line) */

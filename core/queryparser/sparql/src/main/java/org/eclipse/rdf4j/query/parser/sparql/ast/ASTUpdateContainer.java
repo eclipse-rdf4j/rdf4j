@@ -9,7 +9,6 @@
 /* JavaCCOptions:MULTI=true,NODE_USES_PARSER=false,VISITOR=true,TRACK_TOKENS=false,NODE_PREFIX=AST,NODE_EXTENDS=,NODE_FACTORY=,SUPPORT_CLASS_VISIBILITY_PUBLIC=true */
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
-
 public class ASTUpdateContainer extends ASTOperationContainer {
 
 	private String sourceString;
@@ -31,7 +30,8 @@ public class ASTUpdateContainer extends ASTOperationContainer {
 
 	@Override
 	public void setSourceString(String source) {
-		throw new RuntimeException("should use setSourceString on parent node of type ASTUpdateSequence instead");
+		throw new RuntimeException(
+				"should use setSourceString on parent node of type ASTUpdateSequence instead");
 	}
 
 	@Override

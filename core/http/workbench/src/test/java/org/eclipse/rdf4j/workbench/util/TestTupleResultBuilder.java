@@ -27,8 +27,8 @@ public class TestTupleResultBuilder {
 	public final void testSES1780regression()
 		throws Exception
 	{
-		TupleResultBuilder builder = new TupleResultBuilder(new SPARQLResultsJSONWriter(
-				new ByteArrayOutputStream()), SimpleValueFactory.getInstance());
+		TupleResultBuilder builder = new TupleResultBuilder(
+				new SPARQLResultsJSONWriter(new ByteArrayOutputStream()), SimpleValueFactory.getInstance());
 		builder.start("test");
 		builder.namedResult("test", new URL("http://www.foo.org/bar#"));
 		builder.end();
@@ -38,8 +38,8 @@ public class TestTupleResultBuilder {
 	public final void testSES1726regression()
 		throws Exception
 	{
-		TupleResultBuilder builder = new TupleResultBuilder(new SPARQLResultsJSONWriter(
-				new ByteArrayOutputStream()), SimpleValueFactory.getInstance());
+		TupleResultBuilder builder = new TupleResultBuilder(
+				new SPARQLResultsJSONWriter(new ByteArrayOutputStream()), SimpleValueFactory.getInstance());
 		try {
 			builder.namedResult("test", new URL("http://www.foo.org/bar#"));
 			fail("Did not receive expected exception for calling namedResult before start");
@@ -53,8 +53,8 @@ public class TestTupleResultBuilder {
 	public final void testSES1846Normal()
 		throws Exception
 	{
-		TupleResultBuilder builder = new TupleResultBuilder(new SPARQLBooleanXMLWriter(
-				new ByteArrayOutputStream()), SimpleValueFactory.getInstance());
+		TupleResultBuilder builder = new TupleResultBuilder(
+				new SPARQLBooleanXMLWriter(new ByteArrayOutputStream()), SimpleValueFactory.getInstance());
 		builder.startBoolean();
 		builder.bool(true);
 		builder.endBoolean();
@@ -64,8 +64,8 @@ public class TestTupleResultBuilder {
 	public final void testSES1846regression()
 		throws Exception
 	{
-		TupleResultBuilder builder = new TupleResultBuilder(new SPARQLBooleanXMLWriter(
-				new ByteArrayOutputStream()), SimpleValueFactory.getInstance());
+		TupleResultBuilder builder = new TupleResultBuilder(
+				new SPARQLBooleanXMLWriter(new ByteArrayOutputStream()), SimpleValueFactory.getInstance());
 		try {
 			builder.start();
 			builder.bool(true);

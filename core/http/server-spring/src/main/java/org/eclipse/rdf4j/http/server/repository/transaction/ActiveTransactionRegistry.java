@@ -24,9 +24,8 @@ import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 
 /**
- * Registry keeping track of active transactions identified by a {@link UUID}
- * and the {@link RepositoryConnection} that corresponds to the given
- * transaction.
+ * Registry keeping track of active transactions identified by a {@link UUID} and the
+ * {@link RepositoryConnection} that corresponds to the given transaction.
  * 
  * @author Jeen Broekstra
  */
@@ -40,8 +39,8 @@ public enum ActiveTransactionRegistry {
 	private final Logger logger = LoggerFactory.getLogger(ActiveTransactionRegistry.class);
 
 	/**
-	 * Configurable system property {@code sesame.server.txn.registry.timeout}
-	 * for specifying the transaction cache timeout (in seconds).
+	 * Configurable system property {@code sesame.server.txn.registry.timeout} for specifying the transaction
+	 * cache timeout (in seconds).
 	 */
 	public static final String CACHE_TIMEOUT_PROPERTY = "sesame.server.txn.registry.timeout";
 
@@ -127,11 +126,9 @@ public enum ActiveTransactionRegistry {
 	 * @param transactionId
 	 *        the transaction id
 	 * @param conn
-	 *        the {@link RepositoryConnection} to use for handling the
-	 *        transaction.
+	 *        the {@link RepositoryConnection} to use for handling the transaction.
 	 * @throws RepositoryException
-	 *         if a transaction is already registered with the given transaction
-	 *         id.
+	 *         if a transaction is already registered with the given transaction id.
 	 */
 	public void register(UUID transactionId, RepositoryConnection conn)
 		throws RepositoryException
@@ -176,9 +173,8 @@ public enum ActiveTransactionRegistry {
 	}
 
 	/**
-	 * Obtain the {@link RepositoryConnection} associated with the given
-	 * transaction. This method will block if another thread currently has access
-	 * to the connection.
+	 * Obtain the {@link RepositoryConnection} associated with the given transaction. This method will block
+	 * if another thread currently has access to the connection.
 	 * 
 	 * @param transactionId
 	 *        a transaction ID
@@ -186,8 +182,7 @@ public enum ActiveTransactionRegistry {
 	 * @throws RepositoryException
 	 *         if no transaction with the given id is registered.
 	 * @throws InterruptedException
-	 *         if the thread is interrupted while acquiring a lock on the
-	 *         transaction.
+	 *         if the thread is interrupted while acquiring a lock on the transaction.
 	 */
 	public RepositoryConnection getTransactionConnection(UUID transactionId)
 		throws RepositoryException, InterruptedException
@@ -207,15 +202,15 @@ public enum ActiveTransactionRegistry {
 		/* Another thread might have deregistered the transaction while we were acquiring the lock */
 		final CacheEntry entry = activeConnections.getIfPresent(transactionId);
 		if (entry == null) {
-			throw new RepositoryException("transaction with id " + transactionId + " is no longer registered!");
+			throw new RepositoryException(
+					"transaction with id " + transactionId + " is no longer registered!");
 		}
 		return entry.getConnection();
 	}
 
 	/**
-	 * Unlocks the {@link RepositoryConnection} associated with the given
-	 * transaction for use by other threads. If the transaction is no longer
-	 * registered, this will method will exit silently.
+	 * Unlocks the {@link RepositoryConnection} associated with the given transaction for use by other
+	 * threads. If the transaction is no longer registered, this will method will exit silently.
 	 * 
 	 * @param transactionId
 	 *        a transaction identifier.

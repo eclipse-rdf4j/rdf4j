@@ -46,7 +46,9 @@ public abstract class CustomGraphQueryInferencerTest {
 
 		private final int initialCount, countAfterRemove, subjCount, predCount, objCount;
 
-		public Expectation(int initialCount, int countAfterRemove, int subjCount, int predCount, int objCount) {
+		public Expectation(int initialCount, int countAfterRemove, int subjCount, int predCount,
+				int objCount)
+		{
 			this.initialCount = initialCount;
 			this.countAfterRemove = countAfterRemove;
 			this.subjCount = subjCount;
@@ -134,7 +136,8 @@ public abstract class CustomGraphQueryInferencerTest {
 		sail.shutDown();
 	}
 
-	public CustomGraphQueryInferencerTest(String resourceFolder, Expectation testData, QueryLanguage language)
+	public CustomGraphQueryInferencerTest(String resourceFolder, Expectation testData,
+			QueryLanguage language)
 	{
 		this.resourceFolder = resourceFolder;
 		this.testData = testData;
@@ -157,8 +160,7 @@ public abstract class CustomGraphQueryInferencerTest {
 	}
 
 	/**
-	 * Gets an instance of the Sail that should be tested. The returned
-	 * repository must not be initialized.
+	 * Gets an instance of the Sail that should be tested. The returned repository must not be initialized.
 	 * 
 	 * @return an uninitialized NotifyingSail.
 	 */

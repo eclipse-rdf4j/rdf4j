@@ -40,8 +40,7 @@ public class ASTQName extends ASTValue {
 	}
 
 	@Override
-	public String toString()
-	{
+	public String toString() {
 		return super.toString() + " (" + value + ")";
 	}
 }

@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.query.resultio;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 
 /**
- * The interface of objects that writer query results in a specific query result
- * format.
+ * The interface of objects that writer query results in a specific query result format.
  */
 public interface TupleQueryResultWriter extends TupleQueryResultHandler, QueryResultWriter {
 

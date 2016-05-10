@@ -17,11 +17,11 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 	private TupleExpr insertExpr;
 
 	private TupleExpr whereExpr;
-	
+
 	public Modify(TupleExpr deleteExpr, TupleExpr insertExpr) {
 		this(deleteExpr, insertExpr, null);
 	}
-	
+
 	public Modify(TupleExpr deleteExpr, TupleExpr insertExpr, TupleExpr whereExpr) {
 		setDeleteExpr(deleteExpr);
 		setInsertExpr(insertExpr);
@@ -66,10 +66,9 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 
 	@Override
 	public boolean equals(Object other) {
-		if(other instanceof Modify) {
+		if (other instanceof Modify) {
 			Modify o = (Modify)other;
-			return nullEquals(deleteExpr, o.deleteExpr)
-					&& nullEquals(insertExpr, o.insertExpr)
+			return nullEquals(deleteExpr, o.deleteExpr) && nullEquals(insertExpr, o.insertExpr)
 					&& nullEquals(whereExpr, o.whereExpr);
 		}
 		return false;
@@ -78,13 +77,13 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 	@Override
 	public int hashCode() {
 		int result = 0;
-		if(deleteExpr != null) {
+		if (deleteExpr != null) {
 			result ^= deleteExpr.hashCode();
 		}
-		if(insertExpr != null) {
+		if (insertExpr != null) {
 			result ^= insertExpr.hashCode();
 		}
-		if(whereExpr != null) {
+		if (whereExpr != null) {
 			result ^= whereExpr.hashCode();
 		}
 		return result;
@@ -130,7 +129,8 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * @param whereExpr The whereExpr to set.
+	 * @param whereExpr
+	 *        The whereExpr to set.
 	 */
 	public void setWhereExpr(TupleExpr whereExpr) {
 		this.whereExpr = whereExpr;

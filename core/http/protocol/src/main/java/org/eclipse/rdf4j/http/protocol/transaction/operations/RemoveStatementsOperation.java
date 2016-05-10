@@ -16,8 +16,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * Operation to remove statements matching specific pattern of subject,
- * predicate and object.
+ * Operation to remove statements matching specific pattern of subject, predicate and object.
  * 
  * @author Arjohn Kampman
  * @author Leo Sauermann
@@ -47,8 +46,7 @@ public class RemoveStatementsOperation extends StatementOperation implements Ser
 	}
 
 	@Override
-	public boolean equals(Object other)
-	{
+	public boolean equals(Object other) {
 		if (other instanceof RemoveStatementsOperation) {
 			return super.equals(other);
 		}

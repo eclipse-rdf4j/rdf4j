@@ -19,9 +19,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
- * The SPARQL built-in {@link Function} SUBSTR, as defined in <a
- * href="http://www.w3.org/TR/sparql11-query/#func-substr">SPARQL Query Language
- * for RDF</a>.
+ * The SPARQL built-in {@link Function} SUBSTR, as defined in
+ * <a href="http://www.w3.org/TR/sparql11-query/#func-substr">SPARQL Query Language for RDF</a>.
  * 
  * @author Jeen Broekstra
  */
@@ -35,7 +34,8 @@ public class Substring implements Function {
 		throws ValueExprEvaluationException
 	{
 		if (args.length < 2 || args.length > 3) {
-			throw new ValueExprEvaluationException("Incorrect number of arguments for SUBSTR: " + args.length);
+			throw new ValueExprEvaluationException(
+					"Incorrect number of arguments for SUBSTR: " + args.length);
 		}
 
 		Value argValue = args[0];
@@ -49,8 +49,7 @@ public class Substring implements Function {
 			Literal literal = (Literal)argValue;
 
 			// substr function accepts string literals only.
-			if (QueryEvaluationUtil.isStringLiteral(literal))
-			{
+			if (QueryEvaluationUtil.isStringLiteral(literal)) {
 				String lexicalValue = literal.getLabel();
 
 				// determine start index.
@@ -66,13 +65,13 @@ public class Substring implements Function {
 						}
 					}
 					catch (NumberFormatException e) {
-						throw new ValueExprEvaluationException("illegal start index value (expected int value): "
-								+ startIndexValue);
+						throw new ValueExprEvaluationException(
+								"illegal start index value (expected int value): " + startIndexValue);
 					}
 				}
 				else if (startIndexValue != null) {
-					throw new ValueExprEvaluationException("illegal start index value (expected literal value): "
-							+ startIndexValue);
+					throw new ValueExprEvaluationException(
+							"illegal start index value (expected literal value): " + startIndexValue);
 				}
 
 				// optionally convert supplied length expression to an end index for
@@ -84,13 +83,13 @@ public class Substring implements Function {
 						endIndex = startIndex + length;
 					}
 					catch (NumberFormatException e) {
-						throw new ValueExprEvaluationException("illegal length value (expected int value): "
-								+ lengthValue);
+						throw new ValueExprEvaluationException(
+								"illegal length value (expected int value): " + lengthValue);
 					}
 				}
 				else if (lengthValue != null) {
-					throw new ValueExprEvaluationException("illegal length value (expected literal value): "
-							+ lengthValue);
+					throw new ValueExprEvaluationException(
+							"illegal length value (expected literal value): " + lengthValue);
 				}
 
 				try {
@@ -112,12 +111,13 @@ public class Substring implements Function {
 				}
 			}
 			else {
-				throw new ValueExprEvaluationException("unexpected input value for function substring: "
-						+ argValue);
+				throw new ValueExprEvaluationException(
+						"unexpected input value for function substring: " + argValue);
 			}
 		}
 		else {
-			throw new ValueExprEvaluationException("unexpected input value for function substring: " + argValue);
+			throw new ValueExprEvaluationException(
+					"unexpected input value for function substring: " + argValue);
 		}
 	}
 

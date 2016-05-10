@@ -25,8 +25,7 @@ import org.eclipse.rdf4j.rio.LanguageHandler;
 public class RFC3066LanguageHandler implements LanguageHandler {
 
 	/**
-	 * Language tag is RFC3066-conformant if it matches this regex:
-	 * [a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*
+	 * Language tag is RFC3066-conformant if it matches this regex: [a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*
 	 */
 	protected final Pattern matcher = Pattern.compile("[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*");
 

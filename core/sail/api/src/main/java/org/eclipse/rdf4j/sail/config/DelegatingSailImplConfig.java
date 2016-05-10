@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.config;
 
-
 /**
  * @author Arjohn Kampman
  */

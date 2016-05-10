@@ -22,8 +22,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 /**
  * Parser for SPARQL-1.1 JSON Results Format documents
  * 
- * @see <a href="http://www.w3.org/TR/sparql11-results-json/">SPARQL 1.1 Query
- *      Results JSON Format</a>
+ * @see <a href="http://www.w3.org/TR/sparql11-results-json/">SPARQL 1.1 Query Results JSON Format</a>
  * @author Peter Ansell
  */
 public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements TupleQueryResultParser {

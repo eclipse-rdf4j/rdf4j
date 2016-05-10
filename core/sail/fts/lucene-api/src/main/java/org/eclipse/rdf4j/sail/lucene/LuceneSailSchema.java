@@ -12,8 +12,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
- * LuceneSailSchema defines predicates that can be used for expressing a Lucene
- * query in a RDF query.
+ * LuceneSailSchema defines predicates that can be used for expressing a Lucene query in a RDF query.
  */
 public class LuceneSailSchema {
 
@@ -33,7 +32,7 @@ public class LuceneSailSchema {
 
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance(); // compatible with beta4:
-																		// creating a new factory
+																	// creating a new factory
 		LUCENE_QUERY = factory.createIRI(NAMESPACE + "LuceneQuery");
 		SCORE = factory.createIRI(NAMESPACE + "score");
 		QUERY = factory.createIRI(NAMESPACE + "query");

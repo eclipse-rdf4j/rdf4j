@@ -21,10 +21,9 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 
 /**
- * Parser for reading tuple query results formatted as SPARQL Results Documents.
- * See <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results
- * XML Format</a> for the definition of this format. The parser assumes that the
- * XML is wellformed.
+ * Parser for reading tuple query results formatted as SPARQL Results Documents. See
+ * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML Format</a> for the definition of
+ * this format. The parser assumes that the XML is wellformed.
  */
 public class SPARQLResultsXMLParser extends AbstractSPARQLXMLParser implements TupleQueryResultParser {
 
@@ -33,16 +32,16 @@ public class SPARQLResultsXMLParser extends AbstractSPARQLXMLParser implements T
 	 *-------------*/
 
 	/**
-	 * Creates a new parser for the SPARQL Query Results XML Format that will use
-	 * an instance of {@link SimpleValueFactory} to create Value objects.
+	 * Creates a new parser for the SPARQL Query Results XML Format that will use an instance of
+	 * {@link SimpleValueFactory} to create Value objects.
 	 */
 	public SPARQLResultsXMLParser() {
 		super();
 	}
 
 	/**
-	 * Creates a new parser for the SPARQL Query Results XML Format that will use
-	 * the supplied ValueFactory to create Value objects.
+	 * Creates a new parser for the SPARQL Query Results XML Format that will use the supplied ValueFactory to
+	 * create Value objects.
 	 */
 	public SPARQLResultsXMLParser(ValueFactory valueFactory) {
 		super(valueFactory);

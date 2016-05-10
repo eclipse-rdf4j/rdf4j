@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.rio;
 import java.io.Serializable;
 
 /**
- * A container object for easy setting and passing of {@link RDFWriter}
- * configuration options.
+ * A container object for easy setting and passing of {@link RDFWriter} configuration options.
  * 
  * @author Jeen Broekstra
  * @author Peter Ansell
@@ -28,13 +27,13 @@ public class WriterConfig extends RioConfig implements Serializable {
 	public WriterConfig() {
 		super();
 	}
-	
+
 	@Override
 	public WriterConfig useDefaults() {
 		super.useDefaults();
 		return this;
 	}
-	
+
 	@Override
 	public <T extends Object> WriterConfig set(RioSetting<T> setting, T value) {
 		super.set(setting, value);

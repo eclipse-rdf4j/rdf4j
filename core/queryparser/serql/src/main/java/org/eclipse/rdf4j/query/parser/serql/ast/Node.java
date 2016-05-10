@@ -15,8 +15,8 @@ package org.eclipse.rdf4j.query.parser.serql.ast;
 public interface Node {
 
 	/**
-	 * This method is called after the node has been made the current node. It
-	 * indicates that child nodes can now be added to it.
+	 * This method is called after the node has been made the current node. It indicates that child nodes can
+	 * now be added to it.
 	 */
 	public void jjtOpen();
 
@@ -33,8 +33,7 @@ public interface Node {
 	public Node jjtGetParent();
 
 	/**
-	 * This method tells the node to add its argument to the node's list of
-	 * children.
+	 * This method tells the node to add its argument to the node's list of children.
 	 */
 	public void jjtAddChild(Node n, int i);
 
@@ -54,8 +53,7 @@ public interface Node {
 	public void jjtReplaceChild(Node oldNode, Node newNode);
 
 	/**
-	 * This method returns a child node. The children are numbered from zero,
-	 * left to right.
+	 * This method returns a child node. The children are numbered from zero, left to right.
 	 */
 	public Node jjtGetChild(int i);
 

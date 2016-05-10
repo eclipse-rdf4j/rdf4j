@@ -46,8 +46,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	}
 
 	/**
-	 * Applies generally applicable optimizations: path expressions are sorted
-	 * from more to less specific.
+	 * Applies generally applicable optimizations: path expressions are sorted from more to less specific.
 	 * 
 	 * @param tupleExpr
 	 */
@@ -118,8 +117,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 					// order all other join arguments based on available statistics
 					while (!joinArgs.isEmpty()) {
-						TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap,
-								boundVars);
+						TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap,
+								varFreqMap, boundVars);
 
 						joinArgs.remove(tupleExpr);
 						orderedJoinArgs.add(tupleExpr);
@@ -211,11 +210,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		/**
-		 * Determines an optimal ordering of subselect join arguments, based on
-		 * variable bindings. An ordering is considered optimal if for each
-		 * consecutive element it holds that first of all its shared variables
-		 * with all previous elements is maximized, and second, the union of all
-		 * its variables with all previous elements is maximized.
+		 * Determines an optimal ordering of subselect join arguments, based on variable bindings. An ordering
+		 * is considered optimal if for each consecutive element it holds that first of all its shared
+		 * variables with all previous elements is maximized, and second, the union of all its variables with
+		 * all previous elements is maximized.
 		 * <p>
 		 * Example: reordering
 		 * 
@@ -355,10 +353,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		/**
-		 * Selects from a list of tuple expressions the next tuple expression that
-		 * should be evaluated. This method selects the tuple expression with
-		 * highest number of bound variables, preferring variables that have been
-		 * bound in other tuple expressions over variables with a fixed value.
+		 * Selects from a list of tuple expressions the next tuple expression that should be evaluated. This
+		 * method selects the tuple expression with highest number of bound variables, preferring variables
+		 * that have been bound in other tuple expressions over variables with a fixed value.
 		 */
 		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions,
 				Map<TupleExpr, Double> cardinalityMap, Map<TupleExpr, List<Var>> varsMap,
@@ -370,8 +367,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				double lowestCardinality = Double.POSITIVE_INFINITY;
 				for (TupleExpr tupleExpr : expressions) {
 					// Calculate a score for this tuple expression
-					double cardinality = getTupleExprCardinality(tupleExpr, cardinalityMap, varsMap, varFreqMap,
-							boundVars);
+					double cardinality = getTupleExprCardinality(tupleExpr, cardinalityMap, varsMap,
+							varFreqMap, boundVars);
 
 					if (cardinality < lowestCardinality || result == null) {
 						// More specific path expression found

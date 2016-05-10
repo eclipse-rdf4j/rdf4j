@@ -82,8 +82,7 @@ public class CookieHandler {
 	}
 
 	/**
-	 * Add a 'total_result_count' cookie. Used by both QueryServlet and
-	 * ExploreServlet.
+	 * Add a 'total_result_count' cookie. Used by both QueryServlet and ExploreServlet.
 	 * 
 	 * @param req
 	 *        the request object
@@ -91,14 +90,11 @@ public class CookieHandler {
 	 *        the response object
 	 * @value the value to give the cookie
 	 */
-	public void addTotalResultCountCookie(WorkbenchRequest req, HttpServletResponse resp,
-			int value)
-	{
+	public void addTotalResultCountCookie(WorkbenchRequest req, HttpServletResponse resp, int value) {
 		addCookie(req, resp, "total_result_count", String.valueOf(value));
 	}
-	
-	public void addCookie(WorkbenchRequest req, HttpServletResponse resp,
-			String name, String value){
+
+	public void addCookie(WorkbenchRequest req, HttpServletResponse resp, String name, String value) {
 		final Cookie cookie = new Cookie(name, value);
 		if (null == req.getContextPath()) {
 			cookie.setPath("/");

@@ -18,8 +18,8 @@ import java.util.Arrays;
 public class GZipUtil {
 
 	/**
-	 * GZIP header magic number bytes, like found in a gzipped files, which are
-	 * encoded in Intel format (i&#x2e;e&#x2e; little indian).
+	 * GZIP header magic number bytes, like found in a gzipped files, which are encoded in Intel format
+	 * (i&#x2e;e&#x2e; little indian).
 	 */
 	private final static byte MAGIC_NUMBER[] = { (byte)0x1f, (byte)0x8b };
 

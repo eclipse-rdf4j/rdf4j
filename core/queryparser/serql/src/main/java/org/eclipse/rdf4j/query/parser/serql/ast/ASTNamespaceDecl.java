@@ -39,8 +39,7 @@ public class ASTNamespaceDecl extends SimpleNode {
 	}
 
 	@Override
-	public String toString()
-	{
+	public String toString() {
 		return super.toString() + " (\"" + prefix + "\")";
 	}
 }

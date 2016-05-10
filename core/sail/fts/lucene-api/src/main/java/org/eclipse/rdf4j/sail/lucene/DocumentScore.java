@@ -7,9 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene;
 
-public interface DocumentScore extends DocumentResult
-{
+public interface DocumentScore extends DocumentResult {
+
 	float getScore();
+
 	boolean isHighlighted();
+
 	Iterable<String> getSnippets(String field);
 }

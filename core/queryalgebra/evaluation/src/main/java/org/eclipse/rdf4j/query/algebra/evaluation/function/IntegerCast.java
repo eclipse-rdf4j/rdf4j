@@ -19,8 +19,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
- * A {@link Function} that tries to cast its argument to an <tt>xsd:integer</tt>
- * .
+ * A {@link Function} that tries to cast its argument to an <tt>xsd:integer</tt> .
  * 
  * @author Arjohn Kampman
  */
@@ -57,7 +56,9 @@ public class IntegerCast implements Function {
 					// separately, see
 					// http://www.w3.org/TR/xpath-functions/#casting-from-primitive-to-primitive
 					BigInteger integerValue = null;
-					if (XMLSchema.DECIMAL.equals(datatype) || XMLDatatypeUtil.isFloatingPointDatatype(datatype)) {
+					if (XMLSchema.DECIMAL.equals(datatype)
+							|| XMLDatatypeUtil.isFloatingPointDatatype(datatype))
+					{
 						integerValue = literal.decimalValue().toBigInteger();
 					}
 					else {
@@ -72,7 +73,8 @@ public class IntegerCast implements Function {
 				}
 				else if (datatype.equals(XMLSchema.BOOLEAN)) {
 					try {
-						return valueFactory.createLiteral(literal.booleanValue() ? "1" : "0", XMLSchema.INTEGER);
+						return valueFactory.createLiteral(literal.booleanValue() ? "1" : "0",
+								XMLSchema.INTEGER);
 					}
 					catch (IllegalArgumentException e) {
 						throw new ValueExprEvaluationException(e.getMessage(), e);

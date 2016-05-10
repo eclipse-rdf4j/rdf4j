@@ -17,10 +17,9 @@ import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 
 /**
- * Parser for reading boolean query results formatted as SPARQL Results
- * Documents. See <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query
- * Results XML Format</a> for the definition of this format. The parser assumes
- * that the XML is wellformed.
+ * Parser for reading boolean query results formatted as SPARQL Results Documents. See
+ * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML Format</a> for the definition of
+ * this format. The parser assumes that the XML is wellformed.
  */
 public class SPARQLBooleanXMLParser extends AbstractSPARQLXMLParser implements BooleanQueryResultParser {
 

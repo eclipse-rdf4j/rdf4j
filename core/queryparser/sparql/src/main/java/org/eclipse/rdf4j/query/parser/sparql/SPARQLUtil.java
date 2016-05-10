@@ -17,8 +17,7 @@ import org.eclipse.rdf4j.common.text.StringUtil;
 public class SPARQLUtil {
 
 	/**
-	 * Encodes the supplied string for inclusion as a 'normal' string in a SPARQL
-	 * query.
+	 * Encodes the supplied string for inclusion as a 'normal' string in a SPARQL query.
 	 */
 	public static String encodeString(String s) {
 		s = StringUtil.gsub("\\", "\\\\", s);
@@ -33,15 +32,13 @@ public class SPARQLUtil {
 	}
 
 	/**
-	 * Decodes an encoded SPARQL string. Any \-escape sequences are substituted
-	 * with their decoded value.
+	 * Decodes an encoded SPARQL string. Any \-escape sequences are substituted with their decoded value.
 	 * 
 	 * @param s
 	 *        An encoded SPARQL string.
 	 * @return The unencoded string.
 	 * @exception IllegalArgumentException
-	 *            If the supplied string is not a correctly encoded SPARQL
-	 *            string.
+	 *            If the supplied string is not a correctly encoded SPARQL string.
 	 */
 	public static String decodeString(String s) {
 		int backSlashIdx = s.indexOf('\\');

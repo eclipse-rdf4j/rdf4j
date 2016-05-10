@@ -50,8 +50,7 @@ public class AddStatementOperation extends StatementOperation implements Seriali
 	}
 
 	@Override
-	public boolean equals(Object other)
-	{
+	public boolean equals(Object other) {
 		if (other instanceof AddStatementOperation) {
 			return super.equals(other);
 		}

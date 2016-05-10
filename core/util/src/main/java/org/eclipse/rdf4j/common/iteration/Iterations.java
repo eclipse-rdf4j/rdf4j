@@ -18,8 +18,8 @@ import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 /**
- * This class consists exclusively of static methods that operate on or return
- * Iterations. It is the Iteration-equivalent of <tt>java.util.Collections</tt>.
+ * This class consists exclusively of static methods that operate on or return Iterations. It is the
+ * Iteration-equivalent of <tt>java.util.Collections</tt>.
  */
 public class Iterations {
 
@@ -28,8 +28,7 @@ public class Iterations {
 	 * 
 	 * @param iter
 	 *        the Iteration to get the elements from
-	 * @return a List containing all elements obtained from the specified
-	 *         Iteration.
+	 * @return a List containing all elements obtained from the specified Iteration.
 	 */
 	public static <E, X extends Exception> List<E> asList(Iteration<? extends E, X> iter)
 		throws X
@@ -44,8 +43,7 @@ public class Iterations {
 	 * 
 	 * @param iter
 	 *        the Iteration to get the elements from
-	 * @return a Set containing all elements obtained from the specified
-	 *         Iteration.
+	 * @return a Set containing all elements obtained from the specified Iteration.
 	 */
 	public static <E, X extends Exception> Set<E> asSet(Iteration<? extends E, X> iter)
 		throws X
@@ -56,14 +54,12 @@ public class Iterations {
 	}
 
 	/**
-	 * Adds all elements from the supplied Iteration to the specified collection.
-	 * If the supplied Iteration is an instance of {@link CloseableIteration} it
-	 * is automatically closed after consumption.
+	 * Adds all elements from the supplied Iteration to the specified collection. If the supplied Iteration is
+	 * an instance of {@link CloseableIteration} it is automatically closed after consumption.
 	 * 
 	 * @param iter
-	 *        An Iteration containing elements to add to the container. If the
-	 *        Iteration is an instance of {@link CloseableIteration} it is
-	 *        automatically closed after consumption.
+	 *        An Iteration containing elements to add to the container. If the Iteration is an instance of
+	 *        {@link CloseableIteration} it is automatically closed after consumption.
 	 * @param collection
 	 *        The collection to add the elements to.
 	 * @return The <tt>collection</tt> object that was supplied to this method.
@@ -85,16 +81,15 @@ public class Iterations {
 	}
 
 	/**
-	 * Get a sequential {@link Stream} with the supplied {@link Iteration} as its
-	 * source. If the source iteration is a {@link CloseableIteration}, it will
-	 * be automatically closed by the stream when done. Any checked exceptions
-	 * thrown at any point during stream processing will be propagated wrapped in
-	 * a {@link RuntimeException}.
+	 * Get a sequential {@link Stream} with the supplied {@link Iteration} as its source. If the source
+	 * iteration is a {@link CloseableIteration}, it will be automatically closed by the stream when done. Any
+	 * checked exceptions thrown at any point during stream processing will be propagated wrapped in a
+	 * {@link RuntimeException}.
 	 * 
 	 * @param iteration
 	 *        a source {@link Iteration} for the stream.
-	 * @return a sequential {@link Stream} object which can be used to process
-	 *         the data from the source iteration.
+	 * @return a sequential {@link Stream} object which can be used to process the data from the source
+	 *         iteration.
 	 */
 	public static <T> Stream<T> stream(Iteration<T, ? extends Exception> iteration) {
 		Spliterator<T> spliterator = new IterationSpliterator<T>(iteration);
@@ -113,8 +108,8 @@ public class Iterations {
 	}
 
 	/**
-	 * Closes the supplied Iteration if it is an instance of
-	 * {@link CloseableIteration}, otherwise the request is ignored.
+	 * Closes the supplied Iteration if it is an instance of {@link CloseableIteration}, otherwise the request
+	 * is ignored.
 	 * 
 	 * @param iter
 	 *        The Iteration that should be closed.
@@ -128,16 +123,14 @@ public class Iterations {
 	}
 
 	/**
-	 * Converts an Iteration to a string by concatenating all of the string
-	 * representations of objects in the Iteration, divided by a separator.
+	 * Converts an Iteration to a string by concatenating all of the string representations of objects in the
+	 * Iteration, divided by a separator.
 	 * 
 	 * @param iter
-	 *        An Iteration over arbitrary objects that are expected to implement
-	 *        {@link Object#toString()}.
+	 *        An Iteration over arbitrary objects that are expected to implement {@link Object#toString()}.
 	 * @param separator
 	 *        The separator to insert between the object strings.
-	 * @return A String representation of the objects provided by the supplied
-	 *         Iteration.
+	 * @return A String representation of the objects provided by the supplied Iteration.
 	 */
 	public static <X extends Exception> String toString(Iteration<?, X> iter, String separator)
 		throws X
@@ -148,18 +141,18 @@ public class Iterations {
 	}
 
 	/**
-	 * Converts an Iteration to a string by concatenating all of the string
-	 * representations of objects in the Iteration, divided by a separator.
+	 * Converts an Iteration to a string by concatenating all of the string representations of objects in the
+	 * Iteration, divided by a separator.
 	 * 
 	 * @param iter
-	 *        An Iteration over arbitrary objects that are expected to implement
-	 *        {@link Object#toString()}.
+	 *        An Iteration over arbitrary objects that are expected to implement {@link Object#toString()}.
 	 * @param separator
 	 *        The separator to insert between the object strings.
 	 * @param sb
 	 *        A StringBuilder to append the Iteration string to.
 	 */
-	public static <X extends Exception> void toString(Iteration<?, X> iter, String separator, StringBuilder sb)
+	public static <X extends Exception> void toString(Iteration<?, X> iter, String separator,
+			StringBuilder sb)
 		throws X
 	{
 		while (iter.hasNext()) {

@@ -15,9 +15,8 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 
 /**
- * A QueryModelVisitor that collects StatementPattern's from a query model.
- * StatementPatterns thet are part of filters/constraints are not included in
- * the result.
+ * A QueryModelVisitor that collects StatementPattern's from a query model. StatementPatterns thet are part of
+ * filters/constraints are not included in the result.
  */
 public class StatementPatternCollector extends AbstractQueryModelVisitor<RuntimeException> {
 
@@ -34,15 +33,13 @@ public class StatementPatternCollector extends AbstractQueryModelVisitor<Runtime
 	}
 
 	@Override
-	public void meet(Filter node)
-	{
+	public void meet(Filter node) {
 		// Skip boolean constraints
 		node.getArg().visit(this);
 	}
 
 	@Override
-	public void meet(StatementPattern node)
-	{
+	public void meet(StatementPattern node) {
 		stPatterns.add(node);
 	}
 }

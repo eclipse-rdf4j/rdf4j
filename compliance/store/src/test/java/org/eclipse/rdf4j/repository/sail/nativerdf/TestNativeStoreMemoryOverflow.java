@@ -32,13 +32,12 @@ import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
 /**
- *
  * @author James Leigh
  */
 @RunWith(Parameterized.class)
 public class TestNativeStoreMemoryOverflow {
 
-	@Parameters(name="{0}")
+	@Parameters(name = "{0}")
 	public static final IsolationLevel[] parameters() {
 		return IsolationLevels.values();
 	}
@@ -110,49 +109,53 @@ public class TestNativeStoreMemoryOverflow {
 		testCon.add(new DynamicIteration(size, predicate, object, vf), context1);
 		testCon.add(new DynamicIteration(size, predicate, object, vf), context2);
 
-		assertEquals(size, Iterations.asList(testCon.getStatements(null, null, null, false, context1)).size());
-		assertEquals(size, Iterations.asList(testCon.getStatements(null, null, null, false, context2)).size());
+		assertEquals(size,
+				Iterations.asList(testCon.getStatements(null, null, null, false, context1)).size());
+		assertEquals(size,
+				Iterations.asList(testCon.getStatements(null, null, null, false, context2)).size());
 		testCon.commit();
 
-		assertEquals(size, Iterations.asList(testCon.getStatements(null, null, null, false, context1)).size());
-		assertEquals(size, Iterations.asList(testCon.getStatements(null, null, null, false, context2)).size());
+		assertEquals(size,
+				Iterations.asList(testCon.getStatements(null, null, null, false, context1)).size());
+		assertEquals(size,
+				Iterations.asList(testCon.getStatements(null, null, null, false, context2)).size());
 
 		testCon.close();
 	}
 
 	private static final class DynamicIteration implements Iteration<Statement, RuntimeException> {
-	
+
 		private final int size;
 
 		private final URI predicate;
-	
+
 		private final URI object;
-	
+
 		private final ValueFactory vf;
-	
+
 		private int i;
-	
+
 		private DynamicIteration(int size, URI predicate, URI object, ValueFactory vf) {
 			this.size = size;
 			this.predicate = predicate;
 			this.object = object;
 			this.vf = vf;
 		}
-	
+
 		@Override
 		public boolean hasNext()
 			throws RuntimeException
 		{
 			return i < size;
 		}
-	
+
 		@Override
 		public Statement next()
 			throws RuntimeException
 		{
 			return vf.createStatement(vf.createURI("http://my.subject" + i++), predicate, object);
 		}
-	
+
 		@Override
 		public void remove()
 			throws RuntimeException

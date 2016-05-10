@@ -24,8 +24,8 @@ public interface TupleQueryResultParser extends QueryResultParser {
 	TupleQueryResultFormat getTupleQueryResultFormat();
 
 	/**
-	 * Sets the TupleQueryResultHandler that will handle the parsed query result
-	 * data.
+	 * Sets the TupleQueryResultHandler that will handle the parsed query result data.
+	 * 
 	 * @deprecated Use {@link #setQueryResultHandler(org.eclipse.rdf4j.query.QueryResultHandler)} instead.
 	 */
 	@Deprecated
@@ -41,8 +41,7 @@ public interface TupleQueryResultParser extends QueryResultParser {
 	 * @throws QueryResultParseException
 	 *         If the parser has encountered an unrecoverable parse error.
 	 * @throws TupleQueryResultHandlerException
-	 *         If the configured query result handler has encountered an
-	 *         unrecoverable error.
+	 *         If the configured query result handler has encountered an unrecoverable error.
 	 * @deprecated Use {@link #parseQueryResult(InputStream)} instead.
 	 */
 	@Deprecated

@@ -17,21 +17,17 @@ import org.eclipse.rdf4j.rio.RioSetting;
 public class TriXParserSettings {
 
 	/**
-	 * Boolean setting for parser to determine whether missing datatypes in TriX
-	 * are ignored.
+	 * Boolean setting for parser to determine whether missing datatypes in TriX are ignored.
 	 * <p>
 	 * Defaults to true.
-	 * 
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_TRIX_MISSING_DATATYPE = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.ignoretrixmissingdatatype", "Ignore TriX missing datatype", Boolean.TRUE);
 
 	/**
-	 * Boolean setting for parser to determine whether invalid statements are
-	 * ignored in TriX.
+	 * Boolean setting for parser to determine whether invalid statements are ignored in TriX.
 	 * <p>
 	 * Defaults to true.
-	 * 
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_TRIX_INVALID_STATEMENT = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.ignoretrixmissingdatatype", "Ignore TriX missing datatype", Boolean.TRUE);

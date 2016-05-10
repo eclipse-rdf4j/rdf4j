@@ -62,10 +62,9 @@ public class Move extends AbstractQueryModelNode implements UpdateExpr {
 
 	@Override
 	public boolean equals(Object other) {
-		if(other instanceof Move) {
+		if (other instanceof Move) {
 			Move o = (Move)other;
-			return silent == o.silent
-					&& nullEquals(sourceGraph, o.sourceGraph)
+			return silent == o.silent && nullEquals(sourceGraph, o.sourceGraph)
 					&& nullEquals(destinationGraph, o.destinationGraph);
 		}
 		return false;
@@ -73,11 +72,11 @@ public class Move extends AbstractQueryModelNode implements UpdateExpr {
 
 	@Override
 	public int hashCode() {
-		int result = silent ? 1 :0;
-		if(sourceGraph != null) {
+		int result = silent ? 1 : 0;
+		if (sourceGraph != null) {
 			result ^= sourceGraph.hashCode();
 		}
-		if(destinationGraph != null) {
+		if (destinationGraph != null) {
 			result ^= destinationGraph.hashCode();
 		}
 		return result;
@@ -102,8 +101,7 @@ public class Move extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * The named graph from which to copy. If null, the default graph should be
-	 * used.
+	 * The named graph from which to copy. If null, the default graph should be used.
 	 * 
 	 * @return Returns the graph.
 	 */
@@ -136,8 +134,7 @@ public class Move extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * The named graph to which to copy. If null, the default graph should be
-	 * used.
+	 * The named graph to which to copy. If null, the default graph should be used.
 	 * 
 	 * @return Returns the destinationGraph.
 	 */

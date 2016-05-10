@@ -18,16 +18,13 @@ import javax.servlet.http.HttpServletRequest;
 public class HttpServerUtil {
 
 	/**
-	 * Extracts the MIME type from the specified content type string. This method
-	 * parses the content type string and returns just the MIME type, ignoring
-	 * any parameters that are included.
+	 * Extracts the MIME type from the specified content type string. This method parses the content type
+	 * string and returns just the MIME type, ignoring any parameters that are included.
 	 * 
 	 * @param contentType
-	 *        A content type string, e.g. <tt>application/xml; charset=utf-8</tt>
-	 *        .
-	 * @return The MIME type part of the specified content type string, or
-	 *         <tt>null</tt> if the specified content type string was
-	 *         <tt>null</tt>.
+	 *        A content type string, e.g. <tt>application/xml; charset=utf-8</tt> .
+	 * @return The MIME type part of the specified content type string, or <tt>null</tt> if the specified
+	 *         content type string was <tt>null</tt>.
 	 */
 	public static String getMIMEType(String contentType) {
 		if (contentType == null) {
@@ -38,17 +35,15 @@ public class HttpServerUtil {
 	}
 
 	/**
-	 * Selects from a set of MIME types, the MIME type that has the highest
-	 * quality score when matched with the Accept headers in the supplied
-	 * request.
+	 * Selects from a set of MIME types, the MIME type that has the highest quality score when matched with
+	 * the Accept headers in the supplied request.
 	 * 
 	 * @param mimeTypes
 	 *        The set of available MIME types.
 	 * @param request
 	 *        The request to match the MIME types against.
-	 * @return The MIME type that best matches the types that the client finds
-	 *         acceptable, or <tt>null</tt> in case no acceptable MIME type could
-	 *         be found.
+	 * @return The MIME type that best matches the types that the client finds acceptable, or <tt>null</tt> in
+	 *         case no acceptable MIME type could be found.
 	 */
 	public static String selectPreferredMIMEType(Iterator<String> mimeTypes, HttpServletRequest request) {
 		List<HeaderElement> acceptElements = getHeaderElements(request, "Accept");
@@ -109,15 +104,15 @@ public class HttpServerUtil {
 	}
 
 	/**
-	 * Checks if the first supplied MIME type is more specific than the second
-	 * supplied MIME type.
+	 * Checks if the first supplied MIME type is more specific than the second supplied MIME type.
 	 * 
 	 * @param leftMimeTypeElem
 	 * @param rightMimeTypeElem
-	 * @return true iff leftMimeTypeElem is a more specific MIME type spec than
-	 *         rightMimeTypeElem, false otherwise.
+	 * @return true iff leftMimeTypeElem is a more specific MIME type spec than rightMimeTypeElem, false
+	 *         otherwise.
 	 */
-	private static boolean isMoreSpecificType(HeaderElement leftMimeTypeElem, HeaderElement rightMimeTypeElem)
+	private static boolean isMoreSpecificType(HeaderElement leftMimeTypeElem,
+			HeaderElement rightMimeTypeElem)
 	{
 
 		String[] leftMimeType = splitMIMEType(leftMimeTypeElem.getValue());
@@ -187,8 +182,8 @@ public class HttpServerUtil {
 	}
 
 	/**
-	 * Splits the supplied string into sub parts using the specified splitChar as
-	 * a separator, ignoring occurrences of this character inside quoted strings.
+	 * Splits the supplied string into sub parts using the specified splitChar as a separator, ignoring
+	 * occurrences of this character inside quoted strings.
 	 * 
 	 * @param s
 	 *        The header string to split into sub parts.
@@ -222,17 +217,16 @@ public class HttpServerUtil {
 	}
 
 	/**
-	 * Tries to match the specified MIME type spec against the list of Accept
-	 * header elements, returning the applicable header element if available.
+	 * Tries to match the specified MIME type spec against the list of Accept header elements, returning the
+	 * applicable header element if available.
 	 * 
 	 * @param mimeTypeSpec
 	 *        The MIME type to determine the quality for, e.g. "text/plain" or
 	 *        "application/xml; charset=utf-8".
 	 * @param acceptElements
 	 *        A List of {@link HeaderElement} objects.
-	 * @return The Accept header element that matches the MIME type spec most
-	 *         closely, or <tt>null</tt> if no such header element could be
-	 *         found.
+	 * @return The Accept header element that matches the MIME type spec most closely, or <tt>null</tt> if no
+	 *         such header element could be found.
 	 */
 	public static HeaderElement matchAcceptHeader(String mimeTypeSpec, List<HeaderElement> acceptElements) {
 		HeaderElement mimeTypeElem = HeaderElement.parse(mimeTypeSpec);
@@ -271,17 +265,13 @@ public class HttpServerUtil {
 	}
 
 	/**
-	 * Generalizes a MIME type element. The following steps are taken for
-	 * generalization:
+	 * Generalizes a MIME type element. The following steps are taken for generalization:
 	 * <ul>
-	 * <li>If the MIME type element has one or more parameters, the last
-	 * parameter is removed.
-	 * <li>Otherwise, if the MIME type element's subtype is not equal to '*' then
-	 * it is set to this value.
-	 * <li>Otherwise, if the MIME type element's type is not equal to '*' then it
-	 * is set to this value.
-	 * <li>Otherwise, the MIME type is equal to "*&slash;*" and cannot be
-	 * generalized any further; <tt>null</tt> is returned.
+	 * <li>If the MIME type element has one or more parameters, the last parameter is removed.
+	 * <li>Otherwise, if the MIME type element's subtype is not equal to '*' then it is set to this value.
+	 * <li>Otherwise, if the MIME type element's type is not equal to '*' then it is set to this value.
+	 * <li>Otherwise, the MIME type is equal to "*&slash;*" and cannot be generalized any further;
+	 * <tt>null</tt> is returned.
 	 * </ul>
 	 * <p>
 	 * Example generalizations:
@@ -311,8 +301,7 @@ public class HttpServerUtil {
 	 * 
 	 * @param mimeTypeElem
 	 *        The MIME type element that should be generalized.
-	 * @return The generalized MIME type element, or <tt>null</tt> if it could
-	 *         not be generalized any further.
+	 * @return The generalized MIME type element, or <tt>null</tt> if it could not be generalized any further.
 	 */
 	private static HeaderElement generalizeMIMEType(HeaderElement mimeTypeElem) {
 		int parameterCount = mimeTypeElem.getParameterCount();

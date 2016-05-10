@@ -51,7 +51,7 @@ public class ElasticsearchIndexTest {
 	private static final String DATA_DIR = "target/test-data";
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
-	
+
 	public static final IRI CONTEXT_1 = vf.createIRI("urn:context1");
 
 	public static final IRI CONTEXT_2 = vf.createIRI("urn:context2");
@@ -87,20 +87,15 @@ public class ElasticsearchIndexTest {
 
 	Statement statement23 = vf.createStatement(subject2, predicate2, object5);
 
-	Statement statementContext111 = vf.createStatement(subject, predicate1, object1,
-			CONTEXT_1);
+	Statement statementContext111 = vf.createStatement(subject, predicate1, object1, CONTEXT_1);
 
-	Statement statementContext121 = vf.createStatement(subject, predicate2, object2,
-			CONTEXT_1);
+	Statement statementContext121 = vf.createStatement(subject, predicate2, object2, CONTEXT_1);
 
-	Statement statementContext211 = vf.createStatement(subject2, predicate1, object3,
-			CONTEXT_1);
+	Statement statementContext211 = vf.createStatement(subject2, predicate1, object3, CONTEXT_1);
 
-	Statement statementContext222 = vf.createStatement(subject2, predicate2, object4,
-			CONTEXT_2);
+	Statement statementContext222 = vf.createStatement(subject2, predicate2, object4, CONTEXT_2);
 
-	Statement statementContext232 = vf.createStatement(subject2, predicate2, object5,
-			CONTEXT_2);
+	Statement statementContext232 = vf.createStatement(subject2, predicate2, object5, CONTEXT_2);
 
 	Node node;
 
@@ -141,16 +136,19 @@ public class ElasticsearchIndexTest {
 		index.commit();
 
 		// check that it arrived properly
-		long count = client.prepareCount(index.getIndexName()).setTypes(index.getTypes()).execute().actionGet().getCount();
+		long count = client.prepareCount(index.getIndexName()).setTypes(
+				index.getTypes()).execute().actionGet().getCount();
 		assertEquals(1, count);
 
 		SearchHits hits = client.prepareSearch(index.getIndexName()).setTypes(index.getTypes()).setQuery(
-				QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString())).execute().actionGet().getHits();
+				QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME,
+						subject.toString())).execute().actionGet().getHits();
 		Iterator<SearchHit> docs = hits.iterator();
 		assertTrue(docs.hasNext());
 
 		SearchHit doc = docs.next();
-		Map<String, Object> fields = client.prepareGet(doc.getIndex(), doc.getType(), doc.getId()).execute().actionGet().getSource();
+		Map<String, Object> fields = client.prepareGet(doc.getIndex(), doc.getType(),
+				doc.getId()).execute().actionGet().getSource();
 		assertEquals(subject.toString(), fields.get(SearchFields.URI_FIELD_NAME));
 		assertEquals(object1.getLabel(), fields.get(predicate1.toString()));
 
@@ -163,16 +161,19 @@ public class ElasticsearchIndexTest {
 
 		// See if everything remains consistent. We must create a new IndexReader
 		// in order to be able to see the updates
-		count = client.prepareCount(index.getIndexName()).setTypes(index.getTypes()).execute().actionGet().getCount();
+		count = client.prepareCount(index.getIndexName()).setTypes(
+				index.getTypes()).execute().actionGet().getCount();
 		assertEquals(1, count); // #docs should *not* have increased
 
 		hits = client.prepareSearch(index.getIndexName()).setTypes(index.getTypes()).setQuery(
-				QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString())).execute().actionGet().getHits();
+				QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME,
+						subject.toString())).execute().actionGet().getHits();
 		docs = hits.iterator();
 		assertTrue(docs.hasNext());
 
 		doc = docs.next();
-		fields = client.prepareGet(doc.getIndex(), doc.getType(), doc.getId()).execute().actionGet().getSource();
+		fields = client.prepareGet(doc.getIndex(), doc.getType(),
+				doc.getId()).execute().actionGet().getSource();
 		assertEquals(subject.toString(), fields.get(SearchFields.URI_FIELD_NAME));
 		assertEquals(object1.getLabel(), fields.get(predicate1.toString()));
 		assertEquals(object2.getLabel(), fields.get(predicate2.toString()));
@@ -195,16 +196,19 @@ public class ElasticsearchIndexTest {
 
 		// check that that statement is actually removed and that the other still
 		// exists
-		count = client.prepareCount(index.getIndexName()).setTypes(index.getTypes()).execute().actionGet().getCount();
+		count = client.prepareCount(index.getIndexName()).setTypes(
+				index.getTypes()).execute().actionGet().getCount();
 		assertEquals(1, count);
 
 		hits = client.prepareSearch(index.getIndexName()).setTypes(index.getTypes()).setQuery(
-				QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString())).execute().actionGet().getHits();
+				QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME,
+						subject.toString())).execute().actionGet().getHits();
 		docs = hits.iterator();
 		assertTrue(docs.hasNext());
 
 		doc = docs.next();
-		fields = client.prepareGet(doc.getIndex(), doc.getType(), doc.getId()).execute().actionGet().getSource();
+		fields = client.prepareGet(doc.getIndex(), doc.getType(),
+				doc.getId()).execute().actionGet().getSource();
 		assertEquals(subject.toString(), fields.get(SearchFields.URI_FIELD_NAME));
 		assertNull(fields.get(predicate1.toString()));
 		assertEquals(object2.getLabel(), fields.get(predicate2.toString()));
@@ -218,7 +222,8 @@ public class ElasticsearchIndexTest {
 
 		// check that there are no documents left (i.e. the last Document was
 		// removed completely, rather than its remaining triple removed)
-		count = client.prepareCount(index.getIndexName()).setTypes(index.getTypes()).execute().actionGet().getCount();
+		count = client.prepareCount(index.getIndexName()).setTypes(
+				index.getTypes()).execute().actionGet().getCount();
 		assertEquals(0, count);
 	}
 
@@ -238,7 +243,8 @@ public class ElasticsearchIndexTest {
 		index.commit();
 
 		// check that it arrived properly
-		long count = client.prepareCount(index.getIndexName()).setTypes(index.getTypes()).execute().actionGet().getCount();
+		long count = client.prepareCount(index.getIndexName()).setTypes(
+				index.getTypes()).execute().actionGet().getCount();
 		assertEquals(2, count);
 
 		// check the documents
@@ -286,8 +292,8 @@ public class ElasticsearchIndexTest {
 	}
 
 	/**
-	 * Contexts can only be tested in combination with a sail, as the triples
-	 * have to be retrieved from the sail
+	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the
+	 * sail
 	 *
 	 * @throws Exception
 	 */
@@ -344,8 +350,8 @@ public class ElasticsearchIndexTest {
 	}
 
 	/**
-	 * Contexts can only be tested in combination with a sail, as the triples
-	 * have to be retrieved from the sail
+	 * Contexts can only be tested in combination with a sail, as the triples have to be retrieved from the
+	 * sail
 	 *
 	 * @throws Exception
 	 */
@@ -462,22 +468,14 @@ public class ElasticsearchIndexTest {
 
 	}
 
-	/*private void assertTexts(Set<String> texts, Document document) {
-		Set<String> toFind = new HashSet<String>(texts);
-		Set<String> found = new HashSet<String>();
-		for(Field field : document.getFields(LuceneIndex.TEXT_FIELD_NAME)) {
-			// is the field value expected and not yet been found?
-			if(toFind.remove(field.stringValue())) {
-				// add it to the found set
-				// (it was already remove from the toFind list in the if clause)
-				found.add(field.stringValue());
-			} else {
-				assertEquals("Was the text value '" + field.stringValue() + "' expected to exist?", false, true);
-			}
-		}
-
-		for(String notFound : toFind) {
-			assertEquals("Was the expected text value '" + notFound + "' found?", true, false);
-		}
-	}*/
+	/*
+	 * private void assertTexts(Set<String> texts, Document document) { Set<String> toFind = new
+	 * HashSet<String>(texts); Set<String> found = new HashSet<String>(); for(Field field :
+	 * document.getFields(LuceneIndex.TEXT_FIELD_NAME)) { // is the field value expected and not yet been
+	 * found? if(toFind.remove(field.stringValue())) { // add it to the found set // (it was already remove
+	 * from the toFind list in the if clause) found.add(field.stringValue()); } else { assertEquals(
+	 * "Was the text value '" + field.stringValue() + "' expected to exist?", false, true); } } for(String
+	 * notFound : toFind) { assertEquals("Was the expected text value '" + notFound + "' found?", true,
+	 * false); } }
+	 */
 }

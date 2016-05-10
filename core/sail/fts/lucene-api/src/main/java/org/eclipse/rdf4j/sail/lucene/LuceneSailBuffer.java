@@ -18,9 +18,8 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 
 /**
- * A buffer collecting all transaction operations (triples that need to be
- * added, removed, clear operations) so that they can be executed at once during
- * commit.
+ * A buffer collecting all transaction operations (triples that need to be added, removed, clear operations)
+ * so that they can be executed at once during commit.
  * 
  * @author sauermann
  * @author andriy.nikolov
@@ -67,8 +66,9 @@ public class LuceneSailBuffer {
 				Statement other = (Statement)obj;
 
 				return this.delegate.equals(other)
-						&& ((this.getContext() == null && other.getContext() == null) || (this.getContext() != null
-								&& other.getContext() != null && this.getContext().equals(other.getContext())));
+						&& ((this.getContext() == null && other.getContext() == null)
+								|| (this.getContext() != null && other.getContext() != null
+										&& this.getContext().equals(other.getContext())));
 			}
 			return false;
 		}
@@ -187,7 +187,6 @@ public class LuceneSailBuffer {
 
 	/**
 	 * Iterator over the operations
-	 * 
 	 */
 	public synchronized Iterator<Operation> operationsIterator() {
 		return operations.iterator();
@@ -195,7 +194,6 @@ public class LuceneSailBuffer {
 
 	/**
 	 * the list of operations. You must not change it
-	 * 
 	 */
 	public synchronized List<Operation> operations() {
 		return operations;

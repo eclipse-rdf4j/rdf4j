@@ -38,9 +38,8 @@ public class ParsedUpdate extends ParsedOperation {
 	 *--------------*/
 
 	/**
-	 * Creates a new update sequence. To complete this update sequence, one or
-	 * more update expressions need to be supplied to it using
-	 * {@link #addUpdateExpr(UpdateExpr)}.
+	 * Creates a new update sequence. To complete this update sequence, one or more update expressions need to
+	 * be supplied to it using {@link #addUpdateExpr(UpdateExpr)}.
 	 */
 	public ParsedUpdate() {
 		super();
@@ -56,13 +55,12 @@ public class ParsedUpdate extends ParsedOperation {
 	}
 
 	/**
-	 * Creates a new update sequence. To complete this update sequence, one or
-	 * update expressions need to be supplied to it using
-	 * {@link #addUpdateExpr(UpdateExpr)}.
+	 * Creates a new update sequence. To complete this update sequence, one or update expressions need to be
+	 * supplied to it using {@link #addUpdateExpr(UpdateExpr)}.
 	 * 
 	 * @param namespaces
-	 *        A mapping of namespace prefixes to namespace names representing the
-	 *        namespaces that are used in the update.
+	 *        A mapping of namespace prefixes to namespace names representing the namespaces that are used in
+	 *        the update.
 	 */
 	public ParsedUpdate(Map<String, String> namespaces) {
 		super();

@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.query;
 import org.eclipse.rdf4j.RDF4JException;
 
 /**
- * The super class of exceptions originating from {@link QueryResultHandler}
- * implementations.
+ * The super class of exceptions originating from {@link QueryResultHandler} implementations.
  * 
  * @author Peter Ansell
  */

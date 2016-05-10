@@ -34,13 +34,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A QueryInterpreter creates a set of QuerySpecs based on Lucene-related
- * StatementPatterns that it finds in a TupleExpr.
+ * A QueryInterpreter creates a set of QuerySpecs based on Lucene-related StatementPatterns that it finds in a
+ * TupleExpr.
  * <p>
- * QuerySpecs will only be created when the set of StatementPatterns is complete
- * (i.e. contains at least a matches and a query statement connected properly)
- * and correct (query pattern has a literal object, matches a resource subject,
- * etc.).
+ * QuerySpecs will only be created when the set of StatementPatterns is complete (i.e. contains at least a
+ * matches and a query statement connected properly) and correct (query pattern has a literal object, matches
+ * a resource subject, etc.).
  */
 public class QuerySpecBuilder implements SearchQueryInterpreter {
 
@@ -59,22 +58,22 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 	}
 
 	/**
-	 * Returns a set of QuerySpecs embodying all necessary information to perform
-	 * the Lucene query embedded in a TupleExpr.
-	 * To be removed, prefer {@link process(TupleExpr tupleExpr, BindingSet bindings, Collection<SearchQueryEvaluator> result)}.
+	 * Returns a set of QuerySpecs embodying all necessary information to perform the Lucene query embedded in
+	 * a TupleExpr. To be removed, prefer {@link process(TupleExpr tupleExpr, BindingSet bindings, Collection
+	 * <SearchQueryEvaluator> result)}.
 	 */
 	@Deprecated
 	public Set<QuerySpec> process(TupleExpr tupleExpr, BindingSet bindings)
 		throws SailException
 	{
 		HashSet<QuerySpec> result = new HashSet<QuerySpec>();
-		process(tupleExpr, bindings, (Collection<SearchQueryEvaluator>) (Collection<?>) result);
+		process(tupleExpr, bindings, (Collection<SearchQueryEvaluator>)(Collection<?>)result);
 		return result;
 	}
 
 	/**
-	 * Appends a set of QuerySpecs embodying all necessary information to perform
-	 * the Lucene query embedded in a TupleExpr.
+	 * Appends a set of QuerySpecs embodying all necessary information to perform the Lucene query embedded in
+	 * a TupleExpr.
 	 */
 	@Override
 	public void process(TupleExpr tupleExpr, BindingSet bindings, Collection<SearchQueryEvaluator> result)
@@ -189,7 +188,8 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 		throws SailException
 	{
 		if (incompleteQueryFails) {
-			throw exception instanceof SailException ? (SailException)exception : new SailException(exception);
+			throw exception instanceof SailException ? (SailException)exception
+					: new SailException(exception);
 		}
 		else {
 			logger.warn(exception.getMessage(), exception);
@@ -208,11 +208,10 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 	}
 
 	/**
-	 * Returns the StatementPattern, if any, from the specified Collection that
-	 * has the specified subject var. If multiple StatementPatterns exist with
-	 * this subject var, an IllegalArgumentException is thrown. It also removes
-	 * the patter from the arraylist, to be able to check if some patterns are
-	 * added without a MATCHES property.
+	 * Returns the StatementPattern, if any, from the specified Collection that has the specified subject var.
+	 * If multiple StatementPatterns exist with this subject var, an IllegalArgumentException is thrown. It
+	 * also removes the patter from the arraylist, to be able to check if some patterns are added without a
+	 * MATCHES property.
 	 */
 	private StatementPattern getPattern(Var subjectVar, ArrayList<StatementPattern> patterns)
 		throws IllegalArgumentException
@@ -225,8 +224,8 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 					result = pattern;
 				}
 				else {
-					throw new IllegalArgumentException("multiple StatementPatterns with the same subject: "
-							+ result + ", " + pattern);
+					throw new IllegalArgumentException(
+							"multiple StatementPatterns with the same subject: " + result + ", " + pattern);
 				}
 			}
 		}
@@ -251,8 +250,8 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 		public ArrayList<StatementPattern> snippetPatterns = new ArrayList<StatementPattern>();
 
 		/**
-		 * Method implementing the visitor pattern that gathers all statements
-		 * using a predicate from the LuceneSail's namespace.
+		 * Method implementing the visitor pattern that gathers all statements using a predicate from the
+		 * LuceneSail's namespace.
 		 */
 		@Override
 		public void meet(StatementPattern node) {

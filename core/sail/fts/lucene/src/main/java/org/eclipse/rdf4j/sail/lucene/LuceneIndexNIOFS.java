@@ -16,11 +16,9 @@ import org.apache.lucene.store.NIOFSDirectory;
 import org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement;
 
 /**
- * LuceneIndex which uses a NIOFSDirectory instead of MMapDirectory to avoid the
- * JVM crash (see <a href=
- * "http://stackoverflow.com/questions/8224843/jvm-crashes-on-lucene-datainput-readvint"
- * >http://stackoverflow.com/questions/8224843/jvm-crashes-on-lucene-datainput-
- * readvint</a>).
+ * LuceneIndex which uses a NIOFSDirectory instead of MMapDirectory to avoid the JVM crash (see
+ * <a href= "http://stackoverflow.com/questions/8224843/jvm-crashes-on-lucene-datainput-readvint" >http://
+ * stackoverflow.com/questions/8224843/jvm-crashes-on-lucene-datainput- readvint</a>).
  * 
  * @author andriy.nikolov
  */

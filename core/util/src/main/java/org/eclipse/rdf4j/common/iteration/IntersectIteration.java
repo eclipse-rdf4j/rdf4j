@@ -12,13 +12,11 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * An Iteration that returns the intersection of the results of two Iterations.
- * Optionally, the Iteration can be configured to filter duplicates from the
- * returned elements.
+ * An Iteration that returns the intersection of the results of two Iterations. Optionally, the Iteration can
+ * be configured to filter duplicates from the returned elements.
  * <p>
- * Note that duplicates can also be filtered by wrapping this Iteration in a
- * {@link DistinctIteration}, but that has a bit more overhead as it adds a
- * second hash table lookup.
+ * Note that duplicates can also be filtered by wrapping this Iteration in a {@link DistinctIteration}, but
+ * that has a bit more overhead as it adds a second hash table lookup.
  */
 public class IntersectIteration<E, X extends Exception> extends FilterIteration<E, X> {
 
@@ -39,9 +37,8 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 *--------------*/
 
 	/**
-	 * Creates a new IntersectIteration that returns the intersection of the
-	 * results of two Iterations. By default, duplicates are <em>not</em>
-	 * filtered from the results.
+	 * Creates a new IntersectIteration that returns the intersection of the results of two Iterations. By
+	 * default, duplicates are <em>not</em> filtered from the results.
 	 * 
 	 * @param arg1
 	 *        An Iteration containing the first set of elements.
@@ -55,16 +52,14 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	}
 
 	/**
-	 * Creates a new IntersectIteration that returns the intersection of the
-	 * results of two Iterations.
+	 * Creates a new IntersectIteration that returns the intersection of the results of two Iterations.
 	 * 
 	 * @param arg1
 	 *        An Iteration containing the first set of elements.
 	 * @param arg2
 	 *        An Iteration containing the second set of elements.
 	 * @param distinct
-	 *        Flag indicating whether duplicate elements should be filtered from
-	 *        the result.
+	 *        Flag indicating whether duplicate elements should be filtered from the result.
 	 */
 	public IntersectIteration(Iteration<? extends E, ? extends X> arg1,
 			Iteration<? extends E, ? extends X> arg2, boolean distinct)
@@ -83,8 +78,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 *--------------*/
 
 	/**
-	 * Returns <tt>true</tt> if the object is in the set of elements of the
-	 * second argument.
+	 * Returns <tt>true</tt> if the object is in the set of elements of the second argument.
 	 */
 	protected boolean accept(E object)
 		throws X
@@ -135,7 +129,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 		super.handleClose();
 		Iterations.closeCloseable(arg2);
 	}
-	
+
 	protected long clearIncludeSet() {
 		long size = includeSet.size();
 		includeSet.clear();

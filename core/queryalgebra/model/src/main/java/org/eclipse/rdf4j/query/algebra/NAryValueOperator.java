@@ -50,11 +50,11 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 	public void setArguments(List<ValueExpr> args) {
 		this.args = args;
 	}
-	
+
 	public List<ValueExpr> getArguments() {
 		return this.args;
 	}
-	
+
 	public void addArgument(ValueExpr arg) {
 		if (args == null) {
 			args = new ArrayList<ValueExpr>();
@@ -62,22 +62,22 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 		args.add(arg);
 		arg.setParentNode(this);
 	}
-	
+
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 		throws X
 	{
-		for(ValueExpr arg: args) {
+		for (ValueExpr arg : args) {
 			arg.visit(visitor);
 		}
 	}
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
-		
+
 		boolean replaced = false;
-		
-		for (int i =0 ; i < args.size(); i++ ) {
+
+		for (int i = 0; i < args.size(); i++) {
 			ValueExpr arg = args.get(i);
 			if (arg == current) {
 				args.remove(i);
@@ -85,7 +85,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 				replaced = true;
 			}
 		}
-		
+
 		if (!replaced) {
 			super.replaceChildNode(current, replacement);
 		}
@@ -95,7 +95,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 	public boolean equals(Object other) {
 		if (other instanceof NAryValueOperator) {
 			NAryValueOperator o = (NAryValueOperator)other;
-			
+
 			return getArguments().equals(o.getArguments());
 		}
 
@@ -110,13 +110,13 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 	@Override
 	public NAryValueOperator clone() {
 		NAryValueOperator clone = (NAryValueOperator)super.clone();
-		
+
 		clone.setArguments(new ArrayList<ValueExpr>());
-		
-		for(ValueExpr arg: getArguments()) {
+
+		for (ValueExpr arg : getArguments()) {
 			clone.addArgument(arg.clone());
 		}
-		
+
 		return clone;
 	}
 }

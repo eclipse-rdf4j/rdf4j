@@ -13,15 +13,22 @@ import java.io.Serializable;
  * Class to store SPIN constraint violation RDF statements.
  */
 public class ConstraintViolation implements Serializable {
+
 	private static final long serialVersionUID = 3699022598761641221L;
 
 	private final String message;
+
 	private final String root;
+
 	private final String path;
+
 	private final String value;
+
 	private final ConstraintViolationLevel level;
 
-	public ConstraintViolation(String message, String root, String path, String value, ConstraintViolationLevel level) {
+	public ConstraintViolation(String message, String root, String path, String value,
+			ConstraintViolationLevel level)
+	{
 		this.message = message;
 		this.root = root;
 		this.path = path;

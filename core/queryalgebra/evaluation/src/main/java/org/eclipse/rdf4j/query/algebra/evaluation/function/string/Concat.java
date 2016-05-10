@@ -17,9 +17,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * The SPARQL built-in {@link Function} CONCAT, as defined in <a
- * href="http://www.w3.org/TR/sparql11-query/#func-concat">SPARQL Query Language
- * for RDF</a>
+ * The SPARQL built-in {@link Function} CONCAT, as defined in
+ * <a href="http://www.w3.org/TR/sparql11-query/#func-concat">SPARQL Query Language for RDF</a>
  * 
  * @author Jeen Broekstra
  */
@@ -75,7 +74,8 @@ public class Concat implements Function {
 				concatBuilder.append(lit.getLabel());
 			}
 			else {
-				throw new ValueExprEvaluationException("unexpected argument type for concat operator: " + arg);
+				throw new ValueExprEvaluationException(
+						"unexpected argument type for concat operator: " + arg);
 			}
 		}
 

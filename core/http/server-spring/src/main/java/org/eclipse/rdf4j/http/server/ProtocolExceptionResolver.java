@@ -20,8 +20,7 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
 import org.springframework.web.servlet.ModelAndView;
 
 /**
- * Simple resolver for Exceptions: returns the correct response code and message
- * to the client.
+ * Simple resolver for Exceptions: returns the correct response code and message to the client.
  * 
  * @author Herko ter Horst
  */

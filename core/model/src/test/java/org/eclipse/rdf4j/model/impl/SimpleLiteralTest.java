@@ -62,8 +62,7 @@ public class SimpleLiteralTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#SimpleLiteral(java.lang.String)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#SimpleLiteral(java.lang.String)}.
 	 */
 	@Test
 	public final void testStringNull()
@@ -74,8 +73,7 @@ public class SimpleLiteralTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#SimpleLiteral(java.lang.String)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#SimpleLiteral(java.lang.String)}.
 	 */
 	@Test
 	public final void testStringEmpty()
@@ -88,8 +86,7 @@ public class SimpleLiteralTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#SimpleLiteral(java.lang.String)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#SimpleLiteral(java.lang.String)}.
 	 */
 	@Test
 	public final void testStringLong()
@@ -108,8 +105,7 @@ public class SimpleLiteralTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#SimpleLiteral(java.lang.String, java.lang.String)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#SimpleLiteral(java.lang.String, java.lang.String)} .
 	 */
 	@Test
 	public final void testStringStringNullNull()
@@ -117,15 +113,14 @@ public class SimpleLiteralTest {
 	{
 		String label = null;
 		String language = null;
-		
+
 		thrown.expect(NullPointerException.class);
 		new SimpleLiteral(label, language);
 	}
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#SimpleLiteral(java.lang.String, java.lang.String)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#SimpleLiteral(java.lang.String, java.lang.String)} .
 	 */
 	@Test
 	public final void testStringStringEmptyNull()
@@ -133,15 +128,14 @@ public class SimpleLiteralTest {
 	{
 		String label = "";
 		String language = null;
-		
+
 		thrown.expect(NullPointerException.class);
 		new SimpleLiteral(label, language);
 	}
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#SimpleLiteral(java.lang.String, java.lang.String)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#SimpleLiteral(java.lang.String, java.lang.String)} .
 	 */
 	@Test
 	public final void testStringStringNullEmpty()
@@ -149,7 +143,7 @@ public class SimpleLiteralTest {
 	{
 		String label = null;
 		String language = "";
-		
+
 		thrown.expect(NullPointerException.class);
 		new SimpleLiteral(label, language);
 	}
@@ -165,7 +159,7 @@ public class SimpleLiteralTest {
 	{
 		String label = null;
 		IRI datatype = null;
-		
+
 		thrown.expect(NullPointerException.class);
 		new SimpleLiteral(label, datatype);
 	}
@@ -181,7 +175,7 @@ public class SimpleLiteralTest {
 	{
 		String label = null;
 		IRI datatype = XMLSchema.STRING;
-		
+
 		thrown.expect(NullPointerException.class);
 		new SimpleLiteral(label, datatype);
 	}
@@ -197,7 +191,7 @@ public class SimpleLiteralTest {
 	{
 		String label = null;
 		IRI datatype = RDF.LANGSTRING;
-		
+
 		thrown.expect(NullPointerException.class);
 		new SimpleLiteral(label, datatype);
 	}
@@ -213,7 +207,7 @@ public class SimpleLiteralTest {
 	{
 		String label = "";
 		IRI datatype = null;
-		
+
 		Literal test = new SimpleLiteral(label, datatype);
 		assertEquals("", test.getLabel());
 		assertFalse(test.getLanguage().isPresent());
@@ -231,14 +225,13 @@ public class SimpleLiteralTest {
 	{
 		String label = "";
 		IRI datatype = RDF.LANGSTRING;
-		
+
 		thrown.expect(IllegalArgumentException.class);
 		new SimpleLiteral(label, datatype);
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#setLabel(java.lang.String)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#setLabel(java.lang.String)}.
 	 */
 	@Ignore("TODO: Implement me!")
 	@Test
@@ -260,8 +253,7 @@ public class SimpleLiteralTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#setLanguage(java.lang.String)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#setLanguage(java.lang.String)}.
 	 */
 	@Ignore("TODO: Implement me!")
 	@Test
@@ -284,8 +276,7 @@ public class SimpleLiteralTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#setDatatype(org.eclipse.rdf4j.model.IRI)}
-	 * .
+	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#setDatatype(org.eclipse.rdf4j.model.IRI)} .
 	 */
 	@Ignore("TODO: Implement me!")
 	@Test
@@ -307,8 +298,7 @@ public class SimpleLiteralTest {
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#equals(java.lang.Object)}.
+	 * Test method for {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#equals(java.lang.Object)}.
 	 */
 	@Ignore("TODO: Implement me!")
 	@Test
@@ -440,8 +430,7 @@ public class SimpleLiteralTest {
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#calendarValue()}
-	 * .
+	 * Test method for {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#calendarValue()} .
 	 */
 	@Ignore("TODO: Implement me!")
 	@Test

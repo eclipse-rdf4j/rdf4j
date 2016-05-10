@@ -8,12 +8,13 @@
 package org.eclipse.rdf4j.repository;
 
 /**
- * Indicates that the current write operation did not succeed because the SAIL
- * cannot be written to, it can only be read from.
+ * Indicates that the current write operation did not succeed because the SAIL cannot be written to, it can
+ * only be read from.
  * 
  * @author James Leigh
  */
 public class RepositoryReadOnlyException extends RepositoryException {
+
 	private static final long serialVersionUID = 750575278848692139L;
 
 	public RepositoryReadOnlyException() {

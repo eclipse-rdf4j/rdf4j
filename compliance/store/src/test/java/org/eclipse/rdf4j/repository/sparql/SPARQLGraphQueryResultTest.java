@@ -15,13 +15,10 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 
-
 /**
- *
  * @author Jeen Broekstra
  */
 public class SPARQLGraphQueryResultTest extends GraphQueryResultTest {
-
 
 	private static HTTPMemServer server;
 
@@ -46,7 +43,7 @@ public class SPARQLGraphQueryResultTest extends GraphQueryResultTest {
 		server.stop();
 		server = null;
 	}
-	
+
 	@Override
 	protected Repository newRepository()
 		throws Exception

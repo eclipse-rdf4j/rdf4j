@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
-
 /**
  * @author jeen
  */
@@ -16,11 +15,11 @@ public class Create extends AbstractQueryModelNode implements UpdateExpr {
 	private ValueConstant graph;
 
 	private boolean silent;
-	
+
 	public Create() {
 		super();
 	}
-	
+
 	public Create(ValueConstant graph) {
 		super();
 		setGraph(graph);
@@ -55,18 +54,17 @@ public class Create extends AbstractQueryModelNode implements UpdateExpr {
 
 	@Override
 	public boolean equals(Object other) {
-		if(other instanceof Create) {
+		if (other instanceof Create) {
 			Create o = (Create)other;
-			return silent == o.silent
-					&& nullEquals(graph, o.graph);
+			return silent == o.silent && nullEquals(graph, o.graph);
 		}
 		return false;
 	}
 
 	@Override
 	public int hashCode() {
-		int result = silent ? 1 :0;
-		if(graph != null) {
+		int result = silent ? 1 : 0;
+		if (graph != null) {
 			result ^= graph.hashCode();
 		}
 		return result;
@@ -98,7 +96,8 @@ public class Create extends AbstractQueryModelNode implements UpdateExpr {
 	}
 
 	/**
-	 * @param silent The silent to set.
+	 * @param silent
+	 *        The silent to set.
 	 */
 	public void setSilent(boolean silent) {
 		this.silent = silent;

@@ -9,14 +9,12 @@ package org.eclipse.rdf4j.rio;
 
 public enum FailureMode {
 	/**
-	 * Helper constant to indicate that test failures for negative tests are
-	 * being ignored.
+	 * Helper constant to indicate that test failures for negative tests are being ignored.
 	 */
 	IGNORE_FAILURE(true),
 
 	/**
-	 * Helper constant to indicate that test failures for negative tests are
-	 * being recognised.
+	 * Helper constant to indicate that test failures for negative tests are being recognised.
 	 */
 	DO_NOT_IGNORE_FAILURE(false);
 
@@ -25,7 +23,7 @@ public enum FailureMode {
 	FailureMode(boolean ignoreFailure) {
 		this.ignoreFailure = ignoreFailure;
 	}
-	
+
 	public boolean ignoreFailure() {
 		return ignoreFailure;
 	}

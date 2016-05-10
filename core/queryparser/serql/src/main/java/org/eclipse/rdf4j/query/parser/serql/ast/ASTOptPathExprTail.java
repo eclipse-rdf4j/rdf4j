@@ -38,8 +38,7 @@ public class ASTOptPathExprTail extends ASTPathExprTail {
 	}
 
 	/**
-	 * Gets the where-clause that constrains the results of the optional path
-	 * expression tail, if any.
+	 * Gets the where-clause that constrains the results of the optional path expression tail, if any.
 	 * 
 	 * @return The where-clause, or <tt>null</tt> if not available.
 	 */

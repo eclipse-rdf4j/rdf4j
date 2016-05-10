@@ -13,13 +13,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 
+public class KnownTupleFunctionParser implements TupleFunctionParser {
 
-public class KnownTupleFunctionParser implements TupleFunctionParser
-{
 	private final TupleFunctionRegistry functionRegistry;
 
-	public KnownTupleFunctionParser(TupleFunctionRegistry functionRegistry)
-	{
+	public KnownTupleFunctionParser(TupleFunctionRegistry functionRegistry) {
 		this.functionRegistry = functionRegistry;
 	}
 

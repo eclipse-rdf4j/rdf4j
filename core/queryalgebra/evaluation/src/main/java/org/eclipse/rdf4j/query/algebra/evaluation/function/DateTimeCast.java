@@ -20,8 +20,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
- * A {@link Function} that tries to cast its argument to an
- * <tt>xsd:dateTime</tt>.
+ * A {@link Function} that tries to cast its argument to an <tt>xsd:dateTime</tt>.
  * 
  * @author Arjohn Kampman
  */
@@ -35,8 +34,8 @@ public class DateTimeCast implements Function {
 		throws ValueExprEvaluationException
 	{
 		if (args.length != 1) {
-			throw new ValueExprEvaluationException("xsd:dateTime cast requires exactly 1 argument, got "
-					+ args.length);
+			throw new ValueExprEvaluationException(
+					"xsd:dateTime cast requires exactly 1 argument, got " + args.length);
 		}
 
 		if (args[0] instanceof Literal) {
@@ -68,7 +67,8 @@ public class DateTimeCast implements Function {
 						int day = calValue.getDay();
 						int timezoneOffset = calValue.getTimezone();
 
-						if (DatatypeConstants.FIELD_UNDEFINED != year && DatatypeConstants.FIELD_UNDEFINED != month
+						if (DatatypeConstants.FIELD_UNDEFINED != year
+								&& DatatypeConstants.FIELD_UNDEFINED != month
 								&& DatatypeConstants.FIELD_UNDEFINED != day)
 						{
 							StringBuilder dtBuilder = new StringBuilder();
@@ -104,7 +104,7 @@ public class DateTimeCast implements Function {
 								}
 								dtBuilder.append(minutes);
 							}
-							
+
 							return valueFactory.createLiteral(dtBuilder.toString(), XMLSchema.DATETIME);
 						}
 						else {

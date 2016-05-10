@@ -98,15 +98,14 @@ public class EarlReport {
 		con.add(projectNode, DOAP.HOMEPAGE, vf.createIRI("http://www.openrdf.org/#sesame"));
 		con.add(projectNode, DOAP.LICENSE,
 				vf.createIRI("https://bitbucket.org/openrdf/sesame/src/master/core/LICENSE.txt"));
-		con.add(
-				projectNode,
-				DOAP.DESCRIPTION,
-				vf.createLiteral("Sesame is an extensible Java framework for storing, querying and inferencing for RDF."));
+		con.add(projectNode, DOAP.DESCRIPTION, vf.createLiteral(
+				"Sesame is an extensible Java framework for storing, querying and inferencing for RDF."));
 		// Release date of Sesame-1.0
 		con.add(projectNode, DOAP.CREATED, vf.createLiteral("2004-03-25", XMLSchema.DATE));
 		con.add(projectNode, DOAP.PROGRAMMING_LANGUAGE, vf.createLiteral("Java"));
 		con.add(projectNode, DOAP.IMPLEMENTS, specURI);
-		con.add(projectNode, DOAP.DOWNLOAD_PAGE, vf.createIRI("http://sourceforge.net/projects/sesame/files/"));
+		con.add(projectNode, DOAP.DOWNLOAD_PAGE,
+				vf.createIRI("http://sourceforge.net/projects/sesame/files/"));
 		con.add(projectNode, DOAP.MAILING_LIST,
 				vf.createIRI("http://lists.sourceforge.net/lists/listinfo/sesame-general"));
 		con.add(projectNode, DOAP.BUG_DATABASE, vf.createIRI("https://openrdf.atlassian.net/browse/SES"));

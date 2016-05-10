@@ -13,8 +13,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Constants for FOAF primitives and for the FOAF namespace.<br>
- * Resources here are defined according to the FOAF specs on <a href="http://xmlns.com/foaf/spec/">http://xmlns.com/foaf/spec/</a>, 
- * version 0.99, 14 January 2014
+ * Resources here are defined according to the FOAF specs on
+ * <a href="http://xmlns.com/foaf/spec/">http://xmlns.com/foaf/spec/</a>, version 0.99, 14 January 2014
  */
 public class FOAF {
 
@@ -30,90 +30,163 @@ public class FOAF {
 
 	// ----- Classes ------
 	public final static IRI AGENT;
+
 	public final static IRI DOCUMENT;
+
 	public final static IRI GROUP;
+
 	public final static IRI IMAGE;
+
 	public final static IRI LABEL_PROPERTY;
+
 	public final static IRI ONLINE_ACCOUNT;
+
 	public final static IRI ONLINE_CHAT_ACCOUNT;
+
 	public final static IRI ONLINE_ECOMMERCE_ACCOUNT;
+
 	public final static IRI ONLINE_GAMING_ACCOUNT;
+
 	public final static IRI ORGANIZATION;
+
 	public final static IRI PERSON;
+
 	public final static IRI PERSONAL_PROFILE_DOCUMENT;
+
 	public final static IRI PROJECT;
 
 	// ----- Properties ------
 	public final static IRI ACCOUNT;
+
 	public final static IRI ACCOUNT_NAME;
+
 	public final static IRI ACCOUNT_SERVICE_HOMEPAGE;
+
 	public final static IRI AGE;
+
 	public final static IRI AIM_CHAT_ID;
+
 	public final static IRI BASED_NEAR;
+
 	public final static IRI BIRTHDAY;
+
 	public final static IRI CURRENT_PROJECT;
+
 	public final static IRI DEPICTION;
+
 	public final static IRI DEPICTS;
+
 	public final static IRI DNA_CHECKSUM;
+
 	public final static IRI FAMILY_NAME;
+
 	/** @deprecated Use FAMILY_NAME instead for new statements */
 	@Deprecated
 	public final static IRI FAMILYNAME;
+
 	public final static IRI FIRST_NAME;
+
 	public final static IRI FOCUS;
+
 	public final static IRI FUNDED_BY;
+
 	public final static IRI GEEKCODE;
+
 	public final static IRI GENDER;
+
 	public final static IRI GIVEN_NAME;
+
 	/** @deprecated Use GIVEN_NAME instead for new statements */
 	@Deprecated
 	public final static IRI GIVENNAME;
+
 	public final static IRI HOLDS_ACCOUNT;
+
 	public final static IRI HOMEPAGE;
+
 	public final static IRI ICQ_CHAT_ID;
+
 	public final static IRI IMG;
+
 	public final static IRI INTEREST;
+
 	public final static IRI IS_PRIMARY_TOPIC_OF;
+
 	public final static IRI JABBER_ID;
+
 	public final static IRI KNOWS;
+
 	public final static IRI LAST_NAME;
+
 	public final static IRI LOGO;
+
 	public final static IRI MADE;
+
 	public final static IRI MAKER;
+
 	public static final IRI MBOX;
+
 	public static final IRI MBOX_SHA1SUM;
+
 	public static final IRI MEMBER;
+
 	public static final IRI MEMBERSHIP_CLASS;
+
 	public static final IRI MSN_CHAT_ID;
+
 	public static final IRI MYERS_BRIGGS;
+
 	public final static IRI NAME;
+
 	public final static IRI NICK;
+
 	public final static IRI OPENID;
+
 	public final static IRI PAGE;
+
 	public final static IRI PAST_PROJECT;
+
 	public final static IRI PHONE;
+
 	public final static IRI PLAN;
+
 	public final static IRI PRIMARY_TOPIC;
+
 	public final static IRI PUBLICATIONS;
+
 	public final static IRI SCHOOL_HOMEPAGE;
+
 	public final static IRI SHA1;
+
 	public final static IRI SKYPE_ID;
+
 	public final static IRI STATUS;
+
 	public final static IRI SURNAME;
+
 	public final static IRI THEME;
+
 	public final static IRI THUMBNAIL;
+
 	public final static IRI TIPJAR;
+
 	public final static IRI TITLE;
+
 	public final static IRI TOPIC;
+
 	public final static IRI TOPIC_INTEREST;
+
 	public final static IRI WEBLOG;
+
 	public final static IRI WORK_INFO_HOMEPAGE;
+
 	public final static IRI WORKPLACE_HOMEPAGE;
+
 	public final static IRI YAHOO_CHAT_ID;
 
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
-		
+
 		// ----- Classes ------
 		AGENT = factory.createIRI(FOAF.NAMESPACE, "Agent");
 		DOCUMENT = factory.createIRI(FOAF.NAMESPACE, "Document");

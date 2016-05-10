@@ -14,7 +14,6 @@ import java.util.EventListener;
  * Listener interface for Repository state changes.
  * 
  * @author James Leigh
- * 
  */
 public interface RepositoryListener extends EventListener {
 

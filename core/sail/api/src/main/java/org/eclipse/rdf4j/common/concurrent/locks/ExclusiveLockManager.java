@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.common.concurrent.locks;
 
-
 /**
  * A lock manager for exclusive locks.
  * 
@@ -49,8 +48,8 @@ public class ExclusiveLockManager {
 	 */
 
 	/**
-	 * Gets the exclusive lock, if available. This method will return
-	 * <tt>null</tt> if the exclusive lock is not immediately available.
+	 * Gets the exclusive lock, if available. This method will return <tt>null</tt> if the exclusive lock is
+	 * not immediately available.
 	 */
 	public Lock tryExclusiveLock() {
 		if (lock.isActiveLock()) {
@@ -60,14 +59,14 @@ public class ExclusiveLockManager {
 			if (lock.isActiveLock()) {
 				return null;
 			}
-	
+
 			return createLock();
 		}
 	}
 
 	/**
-	 * Gets the exclusive lock. This method blocks when the exclusive lock is
-	 * currently in use until it is released.
+	 * Gets the exclusive lock. This method blocks when the exclusive lock is currently in use until it is
+	 * released.
 	 */
 	public synchronized Lock getExclusiveLock()
 		throws InterruptedException

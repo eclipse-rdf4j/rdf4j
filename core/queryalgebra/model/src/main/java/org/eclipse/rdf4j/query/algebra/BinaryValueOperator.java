@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * An abstract superclass for binary value operators which, by definition, has
- * two arguments.
+ * An abstract superclass for binary value operators which, by definition, has two arguments.
  */
 public abstract class BinaryValueOperator extends AbstractQueryModelNode implements ValueExpr {
 
@@ -64,8 +63,7 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 	 * Sets the left argument of this binary value operator.
 	 * 
 	 * @param leftArg
-	 *        The (new) left argument for this operator, must not be
-	 *        <tt>null</tt>.
+	 *        The (new) left argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setLeftArg(ValueExpr leftArg) {
 		assert leftArg != null : "leftArg must not be null";
@@ -86,8 +84,7 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 	 * Sets the right argument of this binary value operator.
 	 * 
 	 * @param rightArg
-	 *        The (new) right argument for this operator, must not be
-	 *        <tt>null</tt>.
+	 *        The (new) right argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setRightArg(ValueExpr rightArg) {
 		assert rightArg != null : "rightArg must not be null";

@@ -14,14 +14,12 @@ public class EmptyIterationTest extends CloseableIterationTest {
 	}
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration()
-	{
+	protected CloseableIteration<String, Exception> createTestIteration() {
 		return createEmptyIteration();
 	}
 
 	@Override
-	protected int getTestIterationSize()
-	{
+	protected int getTestIterationSize() {
 		return 0;
 	}
 }

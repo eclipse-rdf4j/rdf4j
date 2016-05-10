@@ -57,20 +57,20 @@ public class ASTSelect extends SimpleNode {
 	public boolean isSubSelect() {
 		return ((ASTSelectQuery)parent).isSubSelect();
 	}
-	
+
 	public void setWildcard(boolean wildcard) {
 		this.wildcard = wildcard;
 	}
-	
+
 	public List<ASTProjectionElem> getProjectionElemList() {
 		return this.jjtGetChildren(ASTProjectionElem.class);
 		//return new CastingList<ASTProjectionElem>(children);
 	}
-	
+
 	@Override
 	public String toString() {
 		String result = super.toString();
-		
+
 		if (distinct || reduced || wildcard) {
 			result += " (";
 			if (distinct) {
@@ -84,7 +84,7 @@ public class ASTSelect extends SimpleNode {
 			}
 			result += " )";
 		}
-		
+
 		return result;
 	}
 }

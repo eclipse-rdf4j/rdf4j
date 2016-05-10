@@ -27,8 +27,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 
 /**
- * An {@link EvaluationStrategy} that adds support for {@link TupleFunction}s to
- * an existing EvaluationStrategy.
+ * An {@link EvaluationStrategy} that adds support for {@link TupleFunction}s to an existing
+ * EvaluationStrategy.
  */
 public class TupleFunctionEvaluationStrategy implements EvaluationStrategy {
 
@@ -60,7 +60,7 @@ public class TupleFunctionEvaluationStrategy implements EvaluationStrategy {
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr, String serviceUri,
 			CloseableIteration<BindingSet, QueryEvaluationException> bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		return delegate.evaluate(expr, serviceUri, bindings);
 	}
@@ -68,7 +68,7 @@ public class TupleFunctionEvaluationStrategy implements EvaluationStrategy {
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		if (expr instanceof TupleFunctionCall) {
 			return evaluate((TupleFunctionCall)expr, bindings);
@@ -80,7 +80,7 @@ public class TupleFunctionEvaluationStrategy implements EvaluationStrategy {
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleFunctionCall expr,
 			BindingSet bindings)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		TupleFunction func = tupleFuncRegistry.get(expr.getURI()).orElseThrow(
 				() -> new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'"));
@@ -112,7 +112,7 @@ public class TupleFunctionEvaluationStrategy implements EvaluationStrategy {
 	public static CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleFunction func,
 			final List<Var> resultVars, final BindingSet bindings, ValueFactory valueFactory,
 			Value... argValues)
-				throws QueryEvaluationException
+		throws QueryEvaluationException
 	{
 		final CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> iter = func.evaluate(
 				valueFactory, argValues);

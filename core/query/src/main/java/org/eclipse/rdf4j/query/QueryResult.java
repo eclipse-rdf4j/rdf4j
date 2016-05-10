@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.query;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 
 /**
- * Super type of all query result types (TupleQueryResult, GraphQueryResult,
- * etc.).
+ * Super type of all query result types (TupleQueryResult, GraphQueryResult, etc.).
  * 
  * @author Jeen Broekstra
  * @author Arjohn Kampman

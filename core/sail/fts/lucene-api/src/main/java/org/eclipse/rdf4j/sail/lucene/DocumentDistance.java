@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene;
 
-public interface DocumentDistance extends DocumentResult
-{
+public interface DocumentDistance extends DocumentResult {
+
 	double getDistance();
 }

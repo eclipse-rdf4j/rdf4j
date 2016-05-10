@@ -16,9 +16,8 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 
 /**
- * A tuple expression that matches a path of length zero against an RDF graph.
- * They can can be targeted at one of three context scopes: all contexts, null
- * context only, or named contexts only.
+ * A tuple expression that matches a path of length zero against an RDF graph. They can can be targeted at one
+ * of three context scopes: all contexts, null context only, or named contexts only.
  */
 public class ZeroLengthPath extends AbstractQueryModelNode implements TupleExpr {
 
@@ -42,32 +41,32 @@ public class ZeroLengthPath extends AbstractQueryModelNode implements TupleExpr 
 	}
 
 	/**
-	 * Creates a zero-length path that matches a subject-, predicate- and object
-	 * variable against statements from all contexts.
+	 * Creates a zero-length path that matches a subject-, predicate- and object variable against statements
+	 * from all contexts.
 	 */
 	public ZeroLengthPath(Var subject, Var object) {
 		this(Scope.DEFAULT_CONTEXTS, subject, object);
 	}
 
 	/**
-	 * Creates a zero-length path that matches a subject-, predicate- and object
-	 * variable against statements from the specified context scope.
+	 * Creates a zero-length path that matches a subject-, predicate- and object variable against statements
+	 * from the specified context scope.
 	 */
 	public ZeroLengthPath(Scope scope, Var subject, Var object) {
 		this(scope, subject, object, null);
 	}
 
 	/**
-	 * Creates a zero-length path that matches a subject-, predicate-, object-
-	 * and context variable against statements from all contexts.
+	 * Creates a zero-length path that matches a subject-, predicate-, object- and context variable against
+	 * statements from all contexts.
 	 */
 	public ZeroLengthPath(Var subject, Var object, Var context) {
 		this(Scope.DEFAULT_CONTEXTS, subject, object, context);
 	}
 
 	/**
-	 * Creates a zero-length path that matches a subject-, predicate-, object-
-	 * and context variable against statements from the specified context scope.
+	 * Creates a zero-length path that matches a subject-, predicate-, object- and context variable against
+	 * statements from the specified context scope.
 	 */
 	public ZeroLengthPath(Scope scope, Var subjVar, Var objVar, Var conVar) {
 		setScope(scope);
@@ -226,9 +225,8 @@ public class ZeroLengthPath extends AbstractQueryModelNode implements TupleExpr 
 	public boolean equals(Object other) {
 		if (other instanceof ZeroLengthPath) {
 			ZeroLengthPath o = (ZeroLengthPath)other;
-			return subjectVar.equals(o.getSubjectVar()) 
-					&& objectVar.equals(o.getObjectVar()) && nullEquals(contextVar, o.getContextVar())
-					&& scope.equals(o.getScope());
+			return subjectVar.equals(o.getSubjectVar()) && objectVar.equals(o.getObjectVar())
+					&& nullEquals(contextVar, o.getContextVar()) && scope.equals(o.getScope());
 		}
 		return false;
 	}

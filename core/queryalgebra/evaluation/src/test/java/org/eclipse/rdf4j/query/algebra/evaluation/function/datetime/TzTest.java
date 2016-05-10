@@ -52,7 +52,8 @@ public class TzTest {
 	public void testEvaluate1() {
 		try {
 
-			Literal result = tz.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815-05:00", XMLSchema.DATETIME));
+			Literal result = tz.evaluate(f,
+					f.createLiteral("2011-01-10T14:45:13.815-05:00", XMLSchema.DATETIME));
 
 			assertNotNull(result);
 			assertEquals(XMLSchema.STRING, result.getDatatype());

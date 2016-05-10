@@ -20,11 +20,17 @@ import org.eclipse.rdf4j.rio.helpers.RDFHandlerBase;
 public class ConstraintViolationRDFHandler extends RDFHandlerBase {
 
 	private boolean hasStatements;
+
 	private String label;
+
 	private String root;
+
 	private String path;
+
 	private String value;
+
 	private ConstraintViolationLevel level;
+
 	private ConstraintViolation violation;
 
 	public ConstraintViolation getConstraintViolation() {
@@ -68,8 +74,8 @@ public class ConstraintViolationRDFHandler extends RDFHandlerBase {
 		}
 		else if (SPIN.VIOLATION_LEVEL_PROPERTY.equals(pred)) {
 			Value levelValue = st.getObject();
-			if(levelValue instanceof URI) {
-				level = ConstraintViolationLevel.valueOf((URI) levelValue);
+			if (levelValue instanceof URI) {
+				level = ConstraintViolationLevel.valueOf((URI)levelValue);
 			}
 			if (level == null) {
 				throw new RDFHandlerException("Invalid value " + levelValue + " for "
@@ -82,7 +88,7 @@ public class ConstraintViolationRDFHandler extends RDFHandlerBase {
 	public void endRDF()
 		throws RDFHandlerException
 	{
-		if(hasStatements) {
+		if (hasStatements) {
 			violation = new ConstraintViolation(label, root, path, value, level);
 		}
 	}

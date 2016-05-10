@@ -10,11 +10,9 @@ package org.eclipse.rdf4j.model;
 import java.io.Serializable;
 
 /**
- * An RDF statement, with optional associated context. A statement can have an
- * associated context in specific cases, for example when fetched from a
- * repository. The context field does not influence statement equality; a
- * statement is equal to another statement if the subjects, predicates and
- * objects are equal.
+ * An RDF statement, with optional associated context. A statement can have an associated context in specific
+ * cases, for example when fetched from a repository. The context field does not influence statement equality;
+ * a statement is equal to another statement if the subjects, predicates and objects are equal.
  */
 public interface Statement extends Serializable {
 
@@ -42,8 +40,7 @@ public interface Statement extends Serializable {
 	/**
 	 * Gets the context of this statement.
 	 * 
-	 * @return The statement's context, or <tt>null</tt> in case of the null
-	 *         context or if not applicable.
+	 * @return The statement's context, or <tt>null</tt> in case of the null context or if not applicable.
 	 */
 	public Resource getContext();
 
@@ -52,14 +49,13 @@ public interface Statement extends Serializable {
 	 * 
 	 * @param other
 	 *        The object to compare this statement to.
-	 * @return <tt>true</tt> if the other object is an instance of
-	 *         {@link Statement} and if their subjects, predicates, objects and
-	 *         contexts are equal.
+	 * @return <tt>true</tt> if the other object is an instance of {@link Statement} and if their subjects,
+	 *         predicates, objects and contexts are equal.
 	 */
 	public boolean equals(Object other);
 
 	/**
-	 * The hash code of a statement. 
+	 * The hash code of a statement.
 	 * 
 	 * @return A hash code for the statement.
 	 */

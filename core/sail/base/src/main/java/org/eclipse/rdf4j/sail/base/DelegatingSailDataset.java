@@ -16,8 +16,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * A wrapper around an {@link SailDataset} to specialize the behaviour of an
- * {@link SailDataset}.
+ * A wrapper around an {@link SailDataset} to specialize the behaviour of an {@link SailDataset}.
  * 
  * @author James Leigh
  */

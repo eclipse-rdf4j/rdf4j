@@ -25,7 +25,9 @@ public class DecodeURL implements Function {
 	}
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+	public Value evaluate(ValueFactory valueFactory, Value... args)
+		throws ValueExprEvaluationException
+	{
 		if (args.length < 1 || args.length > 2) {
 			throw new ValueExprEvaluationException("Incorrect number of arguments");
 		}
@@ -35,8 +37,8 @@ public class DecodeURL implements Function {
 		if (args.length == 2 && !(args[1] instanceof Literal)) {
 			throw new ValueExprEvaluationException("Second argument must be a string");
 		}
-		Literal s = (Literal) args[0];
-		String encoding = (args.length == 2) ? ((Literal) args[1]).getLabel() : "UTF-8";
+		Literal s = (Literal)args[0];
+		String encoding = (args.length == 2) ? ((Literal)args[1]).getLabel() : "UTF-8";
 		try {
 			return valueFactory.createLiteral(URLDecoder.decode(s.getLabel(), encoding));
 		}

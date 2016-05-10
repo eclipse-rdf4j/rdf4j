@@ -22,8 +22,7 @@ public class TransactionReader {
 	 * parse the transaction from the serialization
 	 * 
 	 * @throws SAXException
-	 *         If the SimpleSAXParser was unable to create an XMLReader or if the
-	 *         XML is faulty.
+	 *         If the SimpleSAXParser was unable to create an XMLReader or if the XML is faulty.
 	 * @throws IOException
 	 *         If IO problems during parsing.
 	 */
@@ -32,7 +31,7 @@ public class TransactionReader {
 	{
 		SimpleSAXParser saxParser = new SimpleSAXParser();
 		saxParser.setPreserveWhitespace(true);
-		
+
 		TransactionSAXParser handler = new TransactionSAXParser();
 		saxParser.setListener(handler);
 		saxParser.parse(in);
@@ -43,8 +42,7 @@ public class TransactionReader {
 	 * parse the transaction from the serialization
 	 * 
 	 * @throws SAXException
-	 *         If the SimpleSAXParser was unable to create an XMLReader or if the
-	 *         XML is faulty.
+	 *         If the SimpleSAXParser was unable to create an XMLReader or if the XML is faulty.
 	 * @throws IOException
 	 *         If IO problems during parsing.
 	 */

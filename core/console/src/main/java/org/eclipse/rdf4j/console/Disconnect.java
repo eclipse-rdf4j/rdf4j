@@ -9,18 +9,18 @@ package org.eclipse.rdf4j.console;
 
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
-
 /**
- *
  * @author Dale Visser
  */
 public class Disconnect {
-	
+
 	private final ConsoleIO consoleIO;
+
 	private final ConsoleState appInfo;
+
 	private final Close close;
 
-	Disconnect(ConsoleIO consoleIO, ConsoleState appInfo, Close close){
+	Disconnect(ConsoleIO consoleIO, ConsoleState appInfo, Close close) {
 		this.consoleIO = consoleIO;
 		this.appInfo = appInfo;
 		this.close = close;

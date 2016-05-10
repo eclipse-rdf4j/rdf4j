@@ -23,8 +23,7 @@ public interface RDFWriterFactory {
 	public RDFFormat getRDFFormat();
 
 	/**
-	 * Returns an RDFWriter instance that will write to the supplied output
-	 * stream.
+	 * Returns an RDFWriter instance that will write to the supplied output stream.
 	 * 
 	 * @param out
 	 *        The OutputStream to write the RDF to.
@@ -32,14 +31,12 @@ public interface RDFWriterFactory {
 	public RDFWriter getWriter(OutputStream out);
 
 	/**
-	 * Returns an RDFWriter instance that will write to the supplied writer.
-	 * (Optional operation)
+	 * Returns an RDFWriter instance that will write to the supplied writer. (Optional operation)
 	 * 
 	 * @param writer
 	 *        The Writer to write the RDF to.
 	 * @throws UnsupportedOperationException
-	 *         if the RDFWriter the specific format does not support writing to a
-	 *         {@link java.io.Writer}
+	 *         if the RDFWriter the specific format does not support writing to a {@link java.io.Writer}
 	 */
 	public RDFWriter getWriter(Writer writer);
 }

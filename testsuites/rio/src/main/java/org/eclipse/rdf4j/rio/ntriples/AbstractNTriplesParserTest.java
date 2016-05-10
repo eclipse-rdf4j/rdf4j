@@ -38,8 +38,8 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 /**
- * JUnit test for the N-Triples parser that uses the tests that are available <a
- * href="http://www.w3.org/2013/N-TriplesTests/">online</a>.
+ * JUnit test for the N-Triples parser that uses the tests that are available
+ * <a href="http://www.w3.org/2013/N-TriplesTests/">online</a>.
  */
 public abstract class AbstractNTriplesParserTest {
 
@@ -100,7 +100,8 @@ public abstract class AbstractNTriplesParserTest {
 		positiveQuery.append("     ?test mf:action ?inputURL . ");
 		positiveQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveQuery.toString()).evaluate();
+		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL,
+				positiveQuery.toString()).evaluate();
 
 		// Add all positive parser tests to the test suite
 		while (queryResult.hasNext()) {
@@ -136,7 +137,8 @@ public abstract class AbstractNTriplesParserTest {
 		negativeQuery.append("     ?test mf:action ?inputURL . ");
 		negativeQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeQuery.toString()).evaluate();
+		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL,
+				negativeQuery.toString()).evaluate();
 
 		// Add all negative parser tests to the test suite
 		while (queryResult.hasNext()) {

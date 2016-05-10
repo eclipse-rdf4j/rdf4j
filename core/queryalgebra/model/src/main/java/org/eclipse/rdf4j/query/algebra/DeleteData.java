@@ -31,7 +31,7 @@ public class DeleteData extends AbstractQueryModelNode implements UpdateExpr {
 
 	@Override
 	public boolean equals(Object other) {
-		if(other instanceof DeleteData) {
+		if (other instanceof DeleteData) {
 			DeleteData o = (DeleteData)other;
 			return dataBlock.equals(o.dataBlock);
 		}

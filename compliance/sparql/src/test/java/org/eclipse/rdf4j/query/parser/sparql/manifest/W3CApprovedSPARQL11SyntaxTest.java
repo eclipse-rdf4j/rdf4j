@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql.manifest;
 
-
 import junit.framework.Test;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -23,15 +22,17 @@ public class W3CApprovedSPARQL11SyntaxTest extends SPARQL11SyntaxTest {
 	{
 		return SPARQL11SyntaxTest.suite(new Factory() {
 
-			public SPARQL11SyntaxTest createSPARQLSyntaxTest(String testURI, String testName, String testAction,
-					boolean positiveTest)
+			public SPARQL11SyntaxTest createSPARQLSyntaxTest(String testURI, String testName,
+					String testAction, boolean positiveTest)
 			{
 				return new W3CApprovedSPARQL11SyntaxTest(testURI, testName, testAction, positiveTest);
 			}
 		}, false);
 	}
 
-	public W3CApprovedSPARQL11SyntaxTest(String testURI, String name, String queryFileURL, boolean positiveTest) {
+	public W3CApprovedSPARQL11SyntaxTest(String testURI, String name, String queryFileURL,
+			boolean positiveTest)
+	{
 		super(testURI, name, queryFileURL, positiveTest);
 	}
 
@@ -40,7 +41,7 @@ public class W3CApprovedSPARQL11SyntaxTest extends SPARQL11SyntaxTest {
 	{
 		return QueryParserUtil.parseOperation(QueryLanguage.SPARQL, operation, fileURL);
 	}
-	
+
 	@Override
 	protected void runTest()
 		throws Exception

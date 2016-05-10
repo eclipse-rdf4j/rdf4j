@@ -24,25 +24,24 @@ import org.xml.sax.XMLReader;
 import org.xml.sax.helpers.DefaultHandler;
 
 /**
- * An XML parser that generates "simple" SAX-like events from a limited subset
- * of XML documents. The SimpleSAXParser can parse simple XML documents; it
- * doesn't support processing instructions or elements that contain both
- * sub-element and character data; character data is only supported in the
- * "leaves" of the XML element tree.
- *
+ * An XML parser that generates "simple" SAX-like events from a limited subset of XML documents. The
+ * SimpleSAXParser can parse simple XML documents; it doesn't support processing instructions or elements that
+ * contain both sub-element and character data; character data is only supported in the "leaves" of the XML
+ * element tree.
  * <h3>Example:</h3>
  * <p>
  * Parsing the following XML:
+ * 
  * <pre>
  * &lt;?xml version='1.0' encoding='UTF-8'?&gt;
  * &lt;xml-doc&gt;
  *   &lt;foo a="1" b="2&amp;amp;3"/&gt;
  *   &lt;bar&gt;Hello World!&lt;/bar&gt;
  * &lt;/xml-doc&gt;
- *</pre>
+ * </pre>
  * <p>
- * will result in the following method calls to the
- * <tt>SimpleSAXListener</tt>:
+ * will result in the following method calls to the <tt>SimpleSAXListener</tt>:
+ * 
  * <pre>
  * startDocument()
  * startTag("xml-doc", emptyMap, "")
@@ -74,8 +73,7 @@ public class SimpleSAXParser {
 	private SimpleSAXListener listener;
 
 	/**
-	 * Flag indicating whether leading and trailing whitespace in text elements
-	 * should be preserved.
+	 * Flag indicating whether leading and trailing whitespace in text elements should be preserved.
 	 */
 	private boolean preserveWhitespace = false;
 
@@ -84,14 +82,12 @@ public class SimpleSAXParser {
 	 *--------------*/
 
 	/**
-	 * Creates a new SimpleSAXParser that will use the supplied
-	 * <tt>XMLReader</tt> for parsing the XML. One must set a
-	 * <tt>SimpleSAXListener</tt> on this object before calling one of the
-	 * <tt>parse()</tt> methods.
+	 * Creates a new SimpleSAXParser that will use the supplied <tt>XMLReader</tt> for parsing the XML. One
+	 * must set a <tt>SimpleSAXListener</tt> on this object before calling one of the <tt>parse()</tt>
+	 * methods.
 	 * 
 	 * @param xmlReader
 	 *        The XMLReader to use for parsing.
-	 * 
 	 * @see #setListener
 	 */
 	public SimpleSAXParser(XMLReader xmlReader) {
@@ -100,14 +96,12 @@ public class SimpleSAXParser {
 	}
 
 	/**
-	 * Creates a new SimpleSAXParser that will try to create a new
-	 * <tt>XMLReader</tt> using <tt>info.aduna.xml.XMLReaderFactory</tt> for
-	 * parsing the XML. One must set a <tt>SimpleSAXListener</tt> on this
-	 * object before calling one of the <tt>parse()</tt> methods.
+	 * Creates a new SimpleSAXParser that will try to create a new <tt>XMLReader</tt> using
+	 * <tt>info.aduna.xml.XMLReaderFactory</tt> for parsing the XML. One must set a <tt>SimpleSAXListener</tt>
+	 * on this object before calling one of the <tt>parse()</tt> methods.
 	 * 
 	 * @throws SAXException
 	 *         If the SimpleSAXParser was unable to create an XMLReader.
-	 * 
 	 * @see #setListener
 	 * @see org.xml.sax.XMLReader
 	 * @see org.eclipse.rdf4j.common.xml.XMLReaderFactory
@@ -123,8 +117,8 @@ public class SimpleSAXParser {
 	 *---------*/
 
 	/**
-	 * Sets the (new) listener that should receive any events from this parser.
-	 * This listener will replace any previously set listener.
+	 * Sets the (new) listener that should receive any events from this parser. This listener will replace any
+	 * previously set listener.
 	 * 
 	 * @param listener
 	 *        The (new) listener for events from this parser.
@@ -143,16 +137,16 @@ public class SimpleSAXParser {
 	}
 
 	/**
-	 * Sets whether leading and trailing whitespace characters in text elements
-	 * should be preserved. Such whitespace characters are discarded by default.
+	 * Sets whether leading and trailing whitespace characters in text elements should be preserved. Such
+	 * whitespace characters are discarded by default.
 	 */
 	public void setPreserveWhitespace(boolean preserveWhitespace) {
 		this.preserveWhitespace = preserveWhitespace;
 	}
 
 	/**
-	 * Checks whether leading and trailing whitespace characters in text elements
-	 * are preserved. Defaults to <tt>false</tt>.
+	 * Checks whether leading and trailing whitespace characters in text elements are preserved. Defaults to
+	 * <tt>false</tt>.
 	 */
 	public boolean isPreserveWhitespace() {
 		return preserveWhitespace;

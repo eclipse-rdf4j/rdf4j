@@ -61,8 +61,7 @@ public class SetNamespaceOperation implements TransactionOperation, Serializable
 	}
 
 	@Override
-	public boolean equals(Object other)
-	{
+	public boolean equals(Object other) {
 		if (other instanceof SetNamespaceOperation) {
 			SetNamespaceOperation o = (SetNamespaceOperation)other;
 			return ObjectUtil.nullEquals(getPrefix(), o.getPrefix())
@@ -73,8 +72,7 @@ public class SetNamespaceOperation implements TransactionOperation, Serializable
 	}
 
 	@Override
-	public int hashCode()
-	{
+	public int hashCode() {
 		int hashCode = ObjectUtil.nullHashCode(getPrefix());
 		hashCode = 31 * hashCode + ObjectUtil.nullHashCode(getName());
 		return hashCode;

@@ -13,14 +13,13 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 
 /**
- * Defines constants for the LuceneSail schema which is used by
- * {@link LuceneSailFactory}s to initialize {@link LuceneSail}s.
+ * Defines constants for the LuceneSail schema which is used by {@link LuceneSailFactory}s to initialize
+ * {@link LuceneSail}s.
  */
 public class LuceneSailConfigSchema {
 
 	/**
-	 * The LuceneSail schema namespace (
-	 * <tt>http://www.openrdf.org/config/sail/lucene#</tt>).
+	 * The LuceneSail schema namespace ( <tt>http://www.openrdf.org/config/sail/lucene#</tt>).
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail/lucene#";
 

@@ -30,7 +30,7 @@ public class TestDateTimeCast {
 	private DateTimeCast dtCast;
 
 	private ValueFactory f = SimpleValueFactory.getInstance();
-	
+
 	/**
 	 * @throws java.lang.Exception
 	 */
@@ -49,8 +49,8 @@ public class TestDateTimeCast {
 		throws Exception
 	{
 	}
-	
-	@Test 
+
+	@Test
 	public void testCastPlainLiteral() {
 		Literal plainLit = f.createLiteral("1999-09-09T00:00:01");
 		try {
@@ -62,8 +62,8 @@ public class TestDateTimeCast {
 			fail(e.getMessage());
 		}
 	}
-	
-	@Test 
+
+	@Test
 	public void testCastDateLiteral() {
 		Literal dateLit = f.createLiteral("1999-09-09", XMLSchema.DATE);
 		try {
@@ -76,8 +76,8 @@ public class TestDateTimeCast {
 			fail(e.getMessage());
 		}
 	}
-	
-	@Test 
+
+	@Test
 	public void testCastDateTimeLiteral() {
 		String lexVal = "2000-01-01T00:00:00";
 		Literal dtLit = f.createLiteral(XMLDatatypeUtil.parseCalendar(lexVal));

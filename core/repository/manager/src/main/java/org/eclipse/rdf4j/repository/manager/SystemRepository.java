@@ -24,9 +24,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * FIXME: do not extend NotifyingRepositoryWrapper, because SystemRepository
- * shouldn't expose RepositoryWrapper behaviour, just implement
- * NotifyingRepository.
+ * FIXME: do not extend NotifyingRepositoryWrapper, because SystemRepository shouldn't expose
+ * RepositoryWrapper behaviour, just implement NotifyingRepository.
  * 
  * @author Herko ter Horst
  * @author Arjohn Kampman
@@ -40,8 +39,7 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	/**
-	 * The repository identifier for the system repository that contains the
-	 * configuration data.
+	 * The repository identifier for the system repository that contains the configuration data.
 	 */
 	public static final String ID = "SYSTEM";
 
@@ -94,8 +92,7 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 	}
 
 	@Override
-	public void setDelegate(Repository delegate)
-	{
+	public void setDelegate(Repository delegate) {
 		throw new UnsupportedOperationException("Setting delegate on system repository not allowed");
 	}
 }

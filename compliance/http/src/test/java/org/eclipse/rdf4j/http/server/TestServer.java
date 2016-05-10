@@ -81,8 +81,8 @@ public class TestServer {
 	public void stop()
 		throws Exception
 	{
-		Repository systemRepo = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL,
-				SystemRepository.ID));
+		Repository systemRepo = new HTTPRepository(
+				Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
 		RepositoryConnection con = systemRepo.getConnection();
 		try {
 			con.clear();
@@ -98,8 +98,8 @@ public class TestServer {
 	private void createTestRepositories()
 		throws RepositoryException, RepositoryConfigException
 	{
-		Repository systemRep = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL,
-				SystemRepository.ID));
+		Repository systemRep = new HTTPRepository(
+				Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
 
 		// create a (non-inferencing) memory store
 		MemoryStoreConfig memStoreConfig = new MemoryStoreConfig();

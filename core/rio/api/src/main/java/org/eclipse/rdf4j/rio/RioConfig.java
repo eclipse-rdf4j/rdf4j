@@ -40,13 +40,11 @@ public class RioConfig implements Serializable {
 	}
 
 	/**
-	 * Return the value for a given {@link RioSetting} or the default value if it
-	 * has not been set.
+	 * Return the value for a given {@link RioSetting} or the default value if it has not been set.
 	 * 
 	 * @param setting
 	 *        The {@link RioSetting} to fetch a value for.
-	 * @return The value for the parser setting, or the default value if it is
-	 *         not set.
+	 * @return The value for the parser setting, or the default value if it is not set.
 	 */
 	@SuppressWarnings("unchecked")
 	public <T extends Object> T get(RioSetting<T> setting) {
@@ -60,16 +58,15 @@ public class RioConfig implements Serializable {
 	}
 
 	/**
-	 * Sets a {@link RioSetting} to have a new value. If the value is null, the
-	 * parser setting is removed and the default will be used instead.
+	 * Sets a {@link RioSetting} to have a new value. If the value is null, the parser setting is removed and
+	 * the default will be used instead.
 	 * 
 	 * @param setting
 	 *        The setting to set a new value for.
 	 * @param value
-	 *        The value for the parser setting, or null to reset the parser
-	 *        setting to use the default value.
-	 * @return Either a copy of this config, if it is immutable, or this object,
-	 *         to allow chaining of method calls.
+	 *        The value for the parser setting, or null to reset the parser setting to use the default value.
+	 * @return Either a copy of this config, if it is immutable, or this object, to allow chaining of method
+	 *         calls.
 	 */
 	@SuppressWarnings("unchecked")
 	public <T extends Object> RioConfig set(RioSetting<T> setting, T value) {
@@ -89,7 +86,7 @@ public class RioConfig implements Serializable {
 				// setting.getKey());
 			}
 		}
-		
+
 		return this;
 	}
 
@@ -98,8 +95,7 @@ public class RioConfig implements Serializable {
 	 * 
 	 * @param setting
 	 *        The setting to check for.
-	 * @return True if the parser setting has been explicitly set, or false
-	 *         otherwise.
+	 * @return True if the parser setting has been explicitly set, or false otherwise.
 	 */
 	public <T extends Object> boolean isSet(RioSetting<T> setting) {
 		return settings.containsKey(setting);
@@ -108,12 +104,12 @@ public class RioConfig implements Serializable {
 	/**
 	 * Resets all settings back to their default values.
 	 * 
-	 * @return Either a copy of this config, if it is immutable, or this object,
-	 *         to allow chaining of method calls.
+	 * @return Either a copy of this config, if it is immutable, or this object, to allow chaining of method
+	 *         calls.
 	 */
 	public RioConfig useDefaults() {
 		settings.clear();
-		
+
 		return this;
 	}
 }

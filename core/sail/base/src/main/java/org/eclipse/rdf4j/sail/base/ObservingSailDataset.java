@@ -16,10 +16,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * A {@link IsolationLevels#SERIALIZABLE} {@link SailDataset} that tracks the
- * observed statement patterns to an
- * {@link SailSink#observe(Resource, IRI, Value, Resource...)} to check
- * consistency.
+ * A {@link IsolationLevels#SERIALIZABLE} {@link SailDataset} that tracks the observed statement patterns to
+ * an {@link SailSink#observe(Resource, IRI, Value, Resource...)} to check consistency.
  * 
  * @author James Leigh
  */
@@ -31,15 +29,13 @@ class ObservingSailDataset extends DelegatingSailDataset {
 	private final SailSink observer;
 
 	/**
-	 * Creates a {@link IsolationLevels#SERIALIZABLE} {@link SailDataset} that
-	 * tracks consistency.
+	 * Creates a {@link IsolationLevels#SERIALIZABLE} {@link SailDataset} that tracks consistency.
 	 * 
 	 * @param delegate
-	 *        to be {@link SailDataset#close()} when this {@link SailDataset} is
-	 *        closed.
+	 *        to be {@link SailDataset#close()} when this {@link SailDataset} is closed.
 	 * @param observer
-	 *        to be {@link SailSink#flush()} and {@link SailSink#close()} when this
-	 *        {@link SailDataset} is closed.
+	 *        to be {@link SailSink#flush()} and {@link SailSink#close()} when this {@link SailDataset} is
+	 *        closed.
 	 */
 	public ObservingSailDataset(SailDataset delegate, SailSink observer) {
 		super(delegate);

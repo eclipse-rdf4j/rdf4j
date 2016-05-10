@@ -27,7 +27,7 @@ public class CodePointSequence implements Iterable<Integer> {
 	public Iterator<Integer> iterator() {
 		return new CodePointIterator(charSequence);
 	}
-	
+
 	public int length() {
 		return charSequence.codePointCount(0, charSequence.length());
 	}

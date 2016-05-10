@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.query.parser;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
- * A query formulated in the OpenRDF query algebra that produces a boolean value
- * as its result.
+ * A query formulated in the OpenRDF query algebra that produces a boolean value as its result.
  * 
  * @author Arjohn Kampman
  */
@@ -22,8 +21,8 @@ public class ParsedBooleanQuery extends ParsedQuery {
 	 *--------------*/
 
 	/**
-	 * Creates a new boolean query. To complete this query, a tuple expression
-	 * needs to be supplied to it using {@link #setTupleExpr(TupleExpr)}.
+	 * Creates a new boolean query. To complete this query, a tuple expression needs to be supplied to it
+	 * using {@link #setTupleExpr(TupleExpr)}.
 	 */
 	public ParsedBooleanQuery() {
 		super();
@@ -33,19 +32,17 @@ public class ParsedBooleanQuery extends ParsedQuery {
 	 * Creates a new boolean query for the supplied tuple expression.
 	 * 
 	 * @param tupleExpr
-	 *        A tuple expression representing the query, formulated in OpenRDF
-	 *        Query Algebra objects.
+	 *        A tuple expression representing the query, formulated in OpenRDF Query Algebra objects.
 	 */
 	public ParsedBooleanQuery(TupleExpr tupleExpr) {
 		super(tupleExpr);
 	}
-	
+
 	/**
 	 * Creates a new boolean query for the supplied tuple expression.
 	 * 
 	 * @param tupleExpr
-	 *        A tuple expression representing the query, formulated in OpenRDF
-	 *        Query Algebra objects.
+	 *        A tuple expression representing the query, formulated in OpenRDF Query Algebra objects.
 	 */
 	public ParsedBooleanQuery(String sourceString, TupleExpr tupleExpr) {
 		super(sourceString, tupleExpr);

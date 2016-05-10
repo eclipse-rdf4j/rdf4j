@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.spin.SpinParser;
 
-
 public class ConstructTupleFunction extends AbstractSpinFunction implements TupleFunction {
 
 	private SpinParser parser;
@@ -49,18 +48,19 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 	}
 
 	@Override
-	public CloseableIteration<? extends List<? extends Value>,QueryEvaluationException> evaluate(ValueFactory valueFactory, Value... args)
+	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
+			ValueFactory valueFactory, Value... args)
 		throws QueryEvaluationException
 	{
 		QueryPreparer qp = getCurrentQueryPreparer();
-		if(args.length == 0 || !(args[0] instanceof Resource)) {
+		if (args.length == 0 || !(args[0] instanceof Resource)) {
 			throw new QueryEvaluationException("First argument must be a resource");
 		}
-		if((args.length % 2) == 0) {
+		if ((args.length % 2) == 0) {
 			throw new QueryEvaluationException("Old number of arguments required");
 		}
 		try {
-			ParsedGraphQuery graphQuery = parser.parseConstructQuery((Resource) args[0], qp.getTripleSource());
+			ParsedGraphQuery graphQuery = parser.parseConstructQuery((Resource)args[0], qp.getTripleSource());
 			GraphQuery queryOp = qp.prepare(graphQuery);
 			addBindings(queryOp, args);
 			final GraphQueryResult queryResult = queryOp.evaluate();
@@ -74,9 +74,8 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 		}
 	}
 
-
-	static class GraphQueryResultIteration implements
-			CloseableIteration<List<Value>, QueryEvaluationException>
+	static class GraphQueryResultIteration
+			implements CloseableIteration<List<Value>, QueryEvaluationException>
 	{
 
 		private final GraphQueryResult queryResult;
@@ -98,7 +97,7 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 		{
 			Statement stmt = queryResult.next();
 			Resource ctx = stmt.getContext();
-			if(ctx != null) {
+			if (ctx != null) {
 				return Arrays.asList(stmt.getSubject(), stmt.getPredicate(), stmt.getObject(), ctx);
 			}
 			else {

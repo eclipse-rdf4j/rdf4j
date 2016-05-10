@@ -17,11 +17,11 @@ public class Sum extends AbstractAggregateOperator {
 	public Sum(ValueExpr arg) {
 		super(arg);
 	}
-	
+
 	public Sum(ValueExpr arg, boolean distinct) {
 		super(arg, distinct);
 	}
-	
+
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

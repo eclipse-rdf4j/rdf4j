@@ -15,11 +15,12 @@ import com.spatial4j.core.shape.Shape;
 
 /**
  * This class will try to load a subclass of itself called
- * "org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchSpatialSupportInitializer".
- * This is not provided, and is primarily intended as a way to inject JTS
- * support. If this fails a fall-back is used that doesn't support any shapes.
+ * "org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchSpatialSupportInitializer". This is not provided, and is
+ * primarily intended as a way to inject JTS support. If this fails a fall-back is used that doesn't support
+ * any shapes.
  */
 abstract class ElasticsearchSpatialSupport {
+
 	private static final ElasticsearchSpatialSupport support;
 
 	static {
@@ -41,9 +42,11 @@ abstract class ElasticsearchSpatialSupport {
 	}
 
 	protected abstract ShapeBuilder toShapeBuilder(Shape s);
-	protected abstract Map<String,Object> toGeoJSON(Shape s);
+
+	protected abstract Map<String, Object> toGeoJSON(Shape s);
 
 	private static final class DefaultElasticsearchSpatialSupport extends ElasticsearchSpatialSupport {
+
 		@Override
 		protected ShapeBuilder toShapeBuilder(Shape s) {
 			throw new UnsupportedOperationException(
@@ -52,7 +55,7 @@ abstract class ElasticsearchSpatialSupport {
 		}
 
 		@Override
-		protected Map<String,Object> toGeoJSON(Shape s) {
+		protected Map<String, Object> toGeoJSON(Shape s) {
 			throw new UnsupportedOperationException(
 					"This shape is not supported due to licensing issues. Feel free to provide your own implementation by using something like JTS: "
 							+ s.getClass().getName());

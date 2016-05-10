@@ -83,7 +83,8 @@ public class SailModel extends AbstractModel {
 	public Optional<Namespace> getNamespace(String prefix) {
 		try {
 			String name = conn.getNamespace(prefix);
-			return (name != null) ? Optional.of(new SimpleNamespace(prefix, name)) : Optional.ofNullable(null);
+			return (name != null) ? Optional.of(new SimpleNamespace(prefix, name))
+					: Optional.ofNullable(null);
 		}
 		catch (SailException e) {
 			throw new ModelException(e);
@@ -212,8 +213,7 @@ public class SailModel extends AbstractModel {
 	}
 
 	/**
-	 * The returned Iterator implements Closeable. If it is not exhausted then it
-	 * should be explicitly closed.
+	 * The returned Iterator implements Closeable. If it is not exhausted then it should be explicitly closed.
 	 */
 	@Override
 	public Iterator<Statement> iterator() {
@@ -225,7 +225,8 @@ public class SailModel extends AbstractModel {
 			Iteration<? extends Statement, ?> iter = conn.getStatements(subj, pred, obj, includeInferred,
 					contexts);
 			return new CloseableIterationIterator<Statement>(
-					new ExceptionConvertingIteration<Statement, ModelException>(iter) {
+					new ExceptionConvertingIteration<Statement, ModelException>(iter)
+			{
 
 						private Statement last;
 

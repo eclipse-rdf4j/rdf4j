@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.query.parser;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 
 /**
- * An RDF query parser translate query strings in some query language to OpenRDF
- * query models.
+ * An RDF query parser translate query strings in some query language to OpenRDF query models.
  */
 public interface QueryParser {
 

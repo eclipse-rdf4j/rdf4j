@@ -10,13 +10,12 @@ package org.eclipse.rdf4j.query.resultio;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 
 /**
- * A registry that keeps track of the available
- * {@link TupleQueryResultParserFactory}s.
+ * A registry that keeps track of the available {@link TupleQueryResultParserFactory}s.
  * 
  * @author Arjohn Kampman
  */
-public class TupleQueryResultParserRegistry extends
-		FileFormatServiceRegistry<QueryResultFormat, TupleQueryResultParserFactory>
+public class TupleQueryResultParserRegistry
+		extends FileFormatServiceRegistry<QueryResultFormat, TupleQueryResultParserFactory>
 {
 
 	/**

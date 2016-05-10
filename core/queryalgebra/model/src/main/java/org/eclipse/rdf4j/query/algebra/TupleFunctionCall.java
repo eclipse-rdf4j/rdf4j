@@ -13,8 +13,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * A call to a TupleFunction.
- * This is an optional extension to the query model.
+ * A call to a TupleFunction. This is an optional extension to the query model.
  */
 public class TupleFunctionCall extends QueryModelNodeBase implements TupleExpr {
 
@@ -94,8 +93,8 @@ public class TupleFunctionCall extends QueryModelNodeBase implements TupleExpr {
 	@Override
 	public Set<String> getAssuredBindingNames() {
 		// NB: preserve resultBindings order
-		Set<String> bindingNames = new LinkedHashSet<String>(2*resultVars.size());
-		for(Var var : resultVars) {
+		Set<String> bindingNames = new LinkedHashSet<String>(2 * resultVars.size());
+		for (Var var : resultVars) {
 			bindingNames.add(var.getName());
 		}
 		return bindingNames;
@@ -112,11 +111,11 @@ public class TupleFunctionCall extends QueryModelNodeBase implements TupleExpr {
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 		throws X
 	{
-		for(ValueExpr arg : args) {
+		for (ValueExpr arg : args) {
 			arg.visit(visitor);
 		}
 
-		for(Var var : resultVars) {
+		for (Var var : resultVars) {
 			var.visit(visitor);
 		}
 

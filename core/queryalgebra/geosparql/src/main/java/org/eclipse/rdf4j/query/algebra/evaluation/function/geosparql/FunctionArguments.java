@@ -50,8 +50,8 @@ class FunctionArguments {
 			return context.readShapeFromWkt(wktLiteral.getLabel());
 		}
 		catch (ParseException e) {
-			throw new ValueExprEvaluationException("Invalid argument for " + func.getURI() + ": " + wktLiteral,
-					e);
+			throw new ValueExprEvaluationException(
+					"Invalid argument for " + func.getURI() + ": " + wktLiteral, e);
 		}
 	}
 
@@ -60,8 +60,8 @@ class FunctionArguments {
 	{
 		Shape p = FunctionArguments.getShape(func, v, geoContext);
 		if (!(p instanceof Point)) {
-			throw new ValueExprEvaluationException("Invalid argument for " + func.getURI() + " (not a point): "
-					+ v);
+			throw new ValueExprEvaluationException(
+					"Invalid argument for " + func.getURI() + " (not a point): " + v);
 		}
 		return (Point)p;
 	}
@@ -74,8 +74,8 @@ class FunctionArguments {
 		}
 		Literal lit = (Literal)v;
 		if (!expectedDatatype.equals(lit.getDatatype())) {
-			throw new ValueExprEvaluationException("Invalid datatype " + lit.getDatatype() + " for "
-					+ func.getURI() + ": " + v);
+			throw new ValueExprEvaluationException(
+					"Invalid datatype " + lit.getDatatype() + " for " + func.getURI() + ": " + v);
 		}
 		return lit;
 	}
@@ -88,8 +88,8 @@ class FunctionArguments {
 		}
 		URI unitUri = (URI)v;
 		if (!unitUri.getNamespace().equals(GEOF.UOM_NAMESPACE)) {
-			throw new ValueExprEvaluationException("Invalid unit of measurement URI for " + func.getURI() + ": "
-					+ v);
+			throw new ValueExprEvaluationException(
+					"Invalid unit of measurement URI for " + func.getURI() + ": " + v);
 		}
 		return unitUri;
 	}

@@ -32,14 +32,13 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 public class Literals {
 
 	/**
-	 * Gets the label of the supplied literal. The fallback value is returned in
-	 * case the supplied literal is <tt>null</tt>.
+	 * Gets the label of the supplied literal. The fallback value is returned in case the supplied literal is
+	 * <tt>null</tt>.
 	 * 
 	 * @param l
 	 *        The literal to get the label for.
 	 * @param fallback
-	 *        The value to fall back to in case the supplied literal is
-	 *        <tt>null</tt>.
+	 *        The value to fall back to in case the supplied literal is <tt>null</tt>.
 	 * @return Either the literal's label, or the fallback value.
 	 */
 	public static String getLabel(Literal l, String fallback) {
@@ -47,24 +46,21 @@ public class Literals {
 	}
 
 	/**
-	 * Returns the result of {@link #getLabel(Literal, String)
-	 * getLabel((Literal)v, fallback} in case the supplied value is a literal,
-	 * returns the fallback value otherwise.
+	 * Returns the result of {@link #getLabel(Literal, String) getLabel((Literal)v, fallback} in case the
+	 * supplied value is a literal, returns the fallback value otherwise.
 	 */
 	public static String getLabel(Value v, String fallback) {
 		return v instanceof Literal ? getLabel((Literal)v, fallback) : fallback;
 	}
 
 	/**
-	 * Gets the byte value of the supplied literal. The fallback value is
-	 * returned in case {@link Literal#byteValue()} throws a
-	 * {@link NumberFormatException}.
+	 * Gets the byte value of the supplied literal. The fallback value is returned in case
+	 * {@link Literal#byteValue()} throws a {@link NumberFormatException}.
 	 * 
 	 * @param l
 	 *        The literal to get the byte value for.
 	 * @param fallback
-	 *        The value to fall back to in case no byte value could gotten from
-	 *        the literal.
+	 *        The value to fall back to in case no byte value could gotten from the literal.
 	 * @return Either the literal's byte value, or the fallback value.
 	 */
 	public static byte getByteValue(Literal l, byte fallback) {
@@ -77,9 +73,8 @@ public class Literals {
 	}
 
 	/**
-	 * Returns the result of {@link #getByteValue(Literal, byte)
-	 * getByteValue((Literal)value, fallback)} in case the supplied value is a
-	 * literal, returns the fallback value otherwise.
+	 * Returns the result of {@link #getByteValue(Literal, byte) getByteValue((Literal)value, fallback)} in
+	 * case the supplied value is a literal, returns the fallback value otherwise.
 	 */
 	public static byte getByteValue(Value v, byte fallback) {
 		if (v instanceof Literal) {
@@ -91,15 +86,13 @@ public class Literals {
 	}
 
 	/**
-	 * Gets the short value of the supplied literal. The fallback value is
-	 * returned in case {@link Literal#shortValue()} throws a
-	 * {@link NumberFormatException}.
+	 * Gets the short value of the supplied literal. The fallback value is returned in case
+	 * {@link Literal#shortValue()} throws a {@link NumberFormatException}.
 	 * 
 	 * @param l
 	 *        The literal to get the short value for.
 	 * @param fallback
-	 *        The value to fall back to in case no short value could gotten from
-	 *        the literal.
+	 *        The value to fall back to in case no short value could gotten from the literal.
 	 * @return Either the literal's short value, or the fallback value.
 	 */
 	public static short getShortValue(Literal l, short fallback) {
@@ -112,9 +105,8 @@ public class Literals {
 	}
 
 	/**
-	 * Returns the result of {@link #getShortValue(Literal, short)
-	 * getShortValue((Literal)value, fallback)} in case the supplied value is a
-	 * literal, returns the fallback value otherwise.
+	 * Returns the result of {@link #getShortValue(Literal, short) getShortValue((Literal)value, fallback)} in
+	 * case the supplied value is a literal, returns the fallback value otherwise.
 	 */
 	public static short getShortValue(Value v, short fallback) {
 		if (v instanceof Literal) {
@@ -126,14 +118,13 @@ public class Literals {
 	}
 
 	/**
-	 * Gets the int value of the supplied literal. The fallback value is returned
-	 * in case {@link Literal#intValue()} throws a {@link NumberFormatException}.
+	 * Gets the int value of the supplied literal. The fallback value is returned in case
+	 * {@link Literal#intValue()} throws a {@link NumberFormatException}.
 	 * 
 	 * @param l
 	 *        The literal to get the int value for.
 	 * @param fallback
-	 *        The value to fall back to in case no int value could gotten from
-	 *        the literal.
+	 *        The value to fall back to in case no int value could gotten from the literal.
 	 * @return Either the literal's int value, or the fallback value.
 	 */
 	public static int getIntValue(Literal l, int fallback) {
@@ -146,9 +137,8 @@ public class Literals {
 	}
 
 	/**
-	 * Returns the result of {@link #getIntValue(Literal, int)
-	 * getIntValue((Literal)value, fallback)} in case the supplied value is a
-	 * literal, returns the fallback value otherwise.
+	 * Returns the result of {@link #getIntValue(Literal, int) getIntValue((Literal)value, fallback)} in case
+	 * the supplied value is a literal, returns the fallback value otherwise.
 	 */
 	public static int getIntValue(Value v, int fallback) {
 		if (v instanceof Literal) {
@@ -160,15 +150,13 @@ public class Literals {
 	}
 
 	/**
-	 * Gets the long value of the supplied literal. The fallback value is
-	 * returned in case {@link Literal#longValue()} throws a
-	 * {@link NumberFormatException}.
+	 * Gets the long value of the supplied literal. The fallback value is returned in case
+	 * {@link Literal#longValue()} throws a {@link NumberFormatException}.
 	 * 
 	 * @param l
 	 *        The literal to get the long value for.
 	 * @param fallback
-	 *        The value to fall back to in case no long value could gotten from
-	 *        the literal.
+	 *        The value to fall back to in case no long value could gotten from the literal.
 	 * @return Either the literal's long value, or the fallback value.
 	 */
 	public static long getLongValue(Literal l, long fallback) {
@@ -181,9 +169,8 @@ public class Literals {
 	}
 
 	/**
-	 * Returns the result of {@link #getLongValue(Literal, long)
-	 * getLongValue((Literal)value, fallback)} in case the supplied value is a
-	 * literal, returns the fallback value otherwise.
+	 * Returns the result of {@link #getLongValue(Literal, long) getLongValue((Literal)value, fallback)} in
+	 * case the supplied value is a literal, returns the fallback value otherwise.
 	 */
 	public static long getLongValue(Value v, long fallback) {
 		if (v instanceof Literal) {
@@ -195,15 +182,13 @@ public class Literals {
 	}
 
 	/**
-	 * Gets the integer value of the supplied literal. The fallback value is
-	 * returned in case {@link Literal#integerValue()} throws a
-	 * {@link NumberFormatException}.
+	 * Gets the integer value of the supplied literal. The fallback value is returned in case
+	 * {@link Literal#integerValue()} throws a {@link NumberFormatException}.
 	 * 
 	 * @param l
 	 *        The literal to get the integer value for.
 	 * @param fallback
-	 *        The value to fall back to in case no integer value could gotten
-	 *        from the literal.
+	 *        The value to fall back to in case no integer value could gotten from the literal.
 	 * @return Either the literal's integer value, or the fallback value.
 	 */
 	public static BigInteger getIntegerValue(Literal l, BigInteger fallback) {
@@ -216,9 +201,8 @@ public class Literals {
 	}
 
 	/**
-	 * Returns the result of {@link #getIntegerValue(Literal, BigInteger)
-	 * getIntegerValue((Literal)value, fallback)} in case the supplied value is a
-	 * literal, returns the fallback value otherwise.
+	 * Returns the result of {@link #getIntegerValue(Literal, BigInteger) getIntegerValue((Literal)value,
+	 * fallback)} in case the supplied value is a literal, returns the fallback value otherwise.
 	 */
 	public static BigInteger getIntegerValue(Value v, BigInteger fallback) {
 		if (v instanceof Literal) {
@@ -230,15 +214,13 @@ public class Literals {
 	}
 
 	/**
-	 * Gets the decimal value of the supplied literal. The fallback value is
-	 * returned in case {@link Literal#decimalValue()} throws a
-	 * {@link NumberFormatException}.
+	 * Gets the decimal value of the supplied literal. The fallback value is returned in case
+	 * {@link Literal#decimalValue()} throws a {@link NumberFormatException}.
 	 * 
 	 * @param l
 	 *        The literal to get the decimal value for.
 	 * @param fallback
-	 *        The value to fall back to in case no decimal value could gotten
-	 *        from the literal.
+	 *        The value to fall back to in case no decimal value could gotten from the literal.
 	 * @return Either the literal's decimal value, or the fallback value.
 	 */
 	public static BigDecimal getDecimalValue(Literal l, BigDecimal fallback) {
@@ -251,9 +233,8 @@ public class Literals {
 	}
 
 	/**
-	 * Returns the result of {@link #getDecimalValue(Literal, BigDecimal)
-	 * getDecimalValue((Literal)value, fallback)} in case the supplied value is a
-	 * literal, returns the fallback value otherwise.
+	 * Returns the result of {@link #getDecimalValue(Literal, BigDecimal) getDecimalValue((Literal)value,
+	 * fallback)} in case the supplied value is a literal, returns the fallback value otherwise.
 	 */
 	public static BigDecimal getDecimalValue(Value v, BigDecimal fallback) {
 		if (v instanceof Literal) {
@@ -265,15 +246,13 @@ public class Literals {
 	}
 
 	/**
-	 * Gets the float value of the supplied literal. The fallback value is
-	 * returned in case {@link Literal#floatValue()} throws a
-	 * {@link NumberFormatException}.
+	 * Gets the float value of the supplied literal. The fallback value is returned in case
+	 * {@link Literal#floatValue()} throws a {@link NumberFormatException}.
 	 * 
 	 * @param l
 	 *        The literal to get the float value for.
 	 * @param fallback
-	 *        The value to fall back to in case no float value could gotten from
-	 *        the literal.
+	 *        The value to fall back to in case no float value could gotten from the literal.
 	 * @return Either the literal's float value, or the fallback value.
 	 */
 	public static float getFloatValue(Literal l, float fallback) {
@@ -286,9 +265,8 @@ public class Literals {
 	}
 
 	/**
-	 * Returns the result of {@link #getFloatValue(Literal, float)
-	 * getFloatValue((Literal)value, fallback)} in case the supplied value is a
-	 * literal, returns the fallback value otherwise.
+	 * Returns the result of {@link #getFloatValue(Literal, float) getFloatValue((Literal)value, fallback)} in
+	 * case the supplied value is a literal, returns the fallback value otherwise.
 	 */
 	public static float getFloatValue(Value v, float fallback) {
 		if (v instanceof Literal) {
@@ -300,15 +278,13 @@ public class Literals {
 	}
 
 	/**
-	 * Gets the double value of the supplied literal. The fallback value is
-	 * returned in case {@link Literal#doubleValue()} throws a
-	 * {@link NumberFormatException}.
+	 * Gets the double value of the supplied literal. The fallback value is returned in case
+	 * {@link Literal#doubleValue()} throws a {@link NumberFormatException}.
 	 * 
 	 * @param l
 	 *        The literal to get the double value for.
 	 * @param fallback
-	 *        The value to fall back to in case no double value could gotten from
-	 *        the literal.
+	 *        The value to fall back to in case no double value could gotten from the literal.
 	 * @return Either the literal's double value, or the fallback value.
 	 */
 	public static double getDoubleValue(Literal l, double fallback) {
@@ -321,9 +297,8 @@ public class Literals {
 	}
 
 	/**
-	 * Returns the result of {@link #getDoubleValue(Literal, double)
-	 * getDoubleValue((Literal)value, fallback)} in case the supplied value is a
-	 * literal, returns the fallback value otherwise.
+	 * Returns the result of {@link #getDoubleValue(Literal, double) getDoubleValue((Literal)value, fallback)}
+	 * in case the supplied value is a literal, returns the fallback value otherwise.
 	 */
 	public static double getDoubleValue(Value v, double fallback) {
 		if (v instanceof Literal) {
@@ -335,15 +310,13 @@ public class Literals {
 	}
 
 	/**
-	 * Gets the boolean value of the supplied literal. The fallback value is
-	 * returned in case {@link Literal#booleanValue()} throws a
-	 * {@link NumberFormatException}.
+	 * Gets the boolean value of the supplied literal. The fallback value is returned in case
+	 * {@link Literal#booleanValue()} throws a {@link NumberFormatException}.
 	 * 
 	 * @param l
 	 *        The literal to get the boolean value for.
 	 * @param fallback
-	 *        The value to fall back to in case no boolean value could gotten
-	 *        from the literal.
+	 *        The value to fall back to in case no boolean value could gotten from the literal.
 	 * @return Either the literal's boolean value, or the fallback value.
 	 */
 	public static boolean getBooleanValue(Literal l, boolean fallback) {
@@ -356,9 +329,8 @@ public class Literals {
 	}
 
 	/**
-	 * Returns the result of {@link #getBooleanValue(Literal, boolean)
-	 * getBooleanValue((Literal)value, fallback)} in case the supplied value is a
-	 * literal, returns the fallback value otherwise.
+	 * Returns the result of {@link #getBooleanValue(Literal, boolean) getBooleanValue((Literal)value,
+	 * fallback)} in case the supplied value is a literal, returns the fallback value otherwise.
 	 */
 	public static boolean getBooleanValue(Value v, boolean fallback) {
 		if (v instanceof Literal) {
@@ -370,15 +342,13 @@ public class Literals {
 	}
 
 	/**
-	 * Gets the calendar value of the supplied literal. The fallback value is
-	 * returned in case {@link Literal#calendarValue()} throws a
-	 * {@link NumberFormatException}.
+	 * Gets the calendar value of the supplied literal. The fallback value is returned in case
+	 * {@link Literal#calendarValue()} throws a {@link NumberFormatException}.
 	 * 
 	 * @param l
 	 *        The literal to get the calendar value for.
 	 * @param fallback
-	 *        The value to fall back to in case no calendar value could gotten
-	 *        from the literal.
+	 *        The value to fall back to in case no calendar value could gotten from the literal.
 	 * @return Either the literal's calendar value, or the fallback value.
 	 */
 	public static XMLGregorianCalendar getCalendarValue(Literal l, XMLGregorianCalendar fallback) {
@@ -391,10 +361,9 @@ public class Literals {
 	}
 
 	/**
-	 * Returns the result of
-	 * {@link #getCalendarValue(Literal, XMLGregorianCalendar)
-	 * getCalendarValue((Literal)value, fallback)} in case the supplied value is
-	 * a literal, returns the fallback value otherwise.
+	 * Returns the result of {@link #getCalendarValue(Literal, XMLGregorianCalendar)
+	 * getCalendarValue((Literal)value, fallback)} in case the supplied value is a literal, returns the
+	 * fallback value otherwise.
 	 */
 	public static XMLGregorianCalendar getCalendarValue(Value v, XMLGregorianCalendar fallback) {
 		if (v instanceof Literal) {
@@ -406,21 +375,18 @@ public class Literals {
 	}
 
 	/**
-	 * Determine the Locale from a literal's language tag, as specified by RFC
-	 * 3166. Note that RFC 3166 isn't fully covered by the current (JSE 6)
-	 * implementation of java.util.Locale. Therefore, this method will only
-	 * return a specific locale for language tags that comply with the Locale
-	 * API, i.e. those that contain an ISO639 language, an optional ISO3166
-	 * country and an optional variant. In all other cases (i.e. if an error
-	 * occurs or the language tag represents an IANA-registred language tag), the
-	 * fallback value will be returned.
+	 * Determine the Locale from a literal's language tag, as specified by RFC 3166. Note that RFC 3166 isn't
+	 * fully covered by the current (JSE 6) implementation of java.util.Locale. Therefore, this method will
+	 * only return a specific locale for language tags that comply with the Locale API, i.e. those that
+	 * contain an ISO639 language, an optional ISO3166 country and an optional variant. In all other cases
+	 * (i.e. if an error occurs or the language tag represents an IANA-registred language tag), the fallback
+	 * value will be returned.
 	 * 
 	 * @param l
 	 *        the literal
 	 * @param fallback
 	 *        a fallback value for the locale
-	 * @return the Locale, or the fallback if a suitable Locale could not be
-	 *         constructed for the language tag.
+	 * @return the Locale, or the fallback if a suitable Locale could not be constructed for the language tag.
 	 * @see <a href="http://www.ietf.org/rfc/rfc3066.txt">RFC 3066</a>
 	 */
 	public static Locale getLocale(Literal l, Locale fallback) {
@@ -441,14 +407,11 @@ public class Literals {
 	}
 
 	/**
-	 * Creates a typed {@link Literal} out of the supplied object, mapping the
-	 * runtime type of the object to the appropriate XML Schema type. If no
-	 * mapping is available, the method returns a literal with the string
-	 * representation of the supplied object as the value, and
-	 * {@link XMLSchema#STRING} as the datatype. Recognized types are
-	 * {@link Boolean}, {@link Byte}, {@link Double}, {@link Float},
-	 * {@link Integer}, {@link Long}, {@link Short}, {@link XMLGregorianCalendar }
-	 * , and {@link Date}.
+	 * Creates a typed {@link Literal} out of the supplied object, mapping the runtime type of the object to
+	 * the appropriate XML Schema type. If no mapping is available, the method returns a literal with the
+	 * string representation of the supplied object as the value, and {@link XMLSchema#STRING} as the
+	 * datatype. Recognized types are {@link Boolean}, {@link Byte}, {@link Double}, {@link Float},
+	 * {@link Integer}, {@link Long}, {@link Short}, {@link XMLGregorianCalendar } , and {@link Date}.
 	 * 
 	 * @param valueFactory
 	 * @param object
@@ -468,12 +431,11 @@ public class Literals {
 	}
 
 	/**
-	 * Creates a typed {@link Literal} out of the supplied object, mapping the
-	 * runtime type of the object to the appropriate XML Schema type. If no
-	 * mapping is available, the method throws a {@link LiteralUtilException}.
-	 * Recognized types are {@link Boolean}, {@link Byte}, {@link Double},
-	 * {@link Float}, {@link Integer}, {@link Long}, {@link Short},
-	 * {@link XMLGregorianCalendar } , and {@link Date}.
+	 * Creates a typed {@link Literal} out of the supplied object, mapping the runtime type of the object to
+	 * the appropriate XML Schema type. If no mapping is available, the method throws a
+	 * {@link LiteralUtilException}. Recognized types are {@link Boolean}, {@link Byte}, {@link Double},
+	 * {@link Float}, {@link Integer}, {@link Long}, {@link Short}, {@link XMLGregorianCalendar } , and
+	 * {@link Date}.
 	 * 
 	 * @param valueFactory
 	 * @param object
@@ -491,24 +453,20 @@ public class Literals {
 	}
 
 	/**
-	 * Creates a typed {@link Literal} out of the supplied object, mapping the
-	 * runtime type of the object to the appropriate XML Schema type. If no
-	 * mapping is available, the method throws an exception if the boolean
-	 * parameter is true, or if it is false it returns a literal with the string
-	 * representation of the supplied object as the value, and
-	 * {@link XMLSchema#STRING} as the datatype. Recognized types are
-	 * {@link Boolean}, {@link Byte}, {@link Double}, {@link Float},
-	 * {@link Integer}, {@link Long}, {@link Short}, {@link XMLGregorianCalendar }
-	 * , and {@link Date}.
+	 * Creates a typed {@link Literal} out of the supplied object, mapping the runtime type of the object to
+	 * the appropriate XML Schema type. If no mapping is available, the method throws an exception if the
+	 * boolean parameter is true, or if it is false it returns a literal with the string representation of the
+	 * supplied object as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are
+	 * {@link Boolean}, {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long},
+	 * {@link Short}, {@link XMLGregorianCalendar } , and {@link Date}.
 	 * 
 	 * @param valueFactory
 	 *        The {@link ValueFactory} to use when creating the result.
 	 * @param object
 	 *        an object to be converted to a typed literal.
 	 * @param throwExceptionOnFailure
-	 *        If true throws a {@link LiteralUtilException} when the object is
-	 *        not recognised. If false it returns a string typed literal based on
-	 *        the objects toString method.
+	 *        If true throws a {@link LiteralUtilException} when the object is not recognised. If false it
+	 *        returns a string typed literal based on the objects toString method.
 	 * @return a typed literal representation of the supplied object.
 	 * @throws LiteralUtilException
 	 *         If the literal could not be created.
@@ -562,16 +520,14 @@ public class Literals {
 	}
 
 	/**
-	 * Helper method for determining whether a literal could be created from an
-	 * object using a {@link ValueFactory}.
+	 * Helper method for determining whether a literal could be created from an object using a
+	 * {@link ValueFactory}.
 	 * 
 	 * @param object
-	 *        an object to check for the possibility of being converted to a
-	 *        typed literal.
-	 * @return True if a literal could be created from the given object, based
-	 *         solely on its type and the methods available on the
-	 *         {@link ValueFactory} interface and false otherwise. Returns false
-	 *         if the object is null.
+	 *        an object to check for the possibility of being converted to a typed literal.
+	 * @return True if a literal could be created from the given object, based solely on its type and the
+	 *         methods available on the {@link ValueFactory} interface and false otherwise. Returns false if
+	 *         the object is null.
 	 */
 	public static boolean canCreateLiteral(Object object) {
 		if (object == null) {
@@ -593,13 +549,11 @@ public class Literals {
 	}
 
 	/**
-	 * Helper method to determine whether a literal is a language literal, and
-	 * not a typed literal.
+	 * Helper method to determine whether a literal is a language literal, and not a typed literal.
 	 * 
 	 * @param literal
 	 *        The literal to check
-	 * @return True if the literal has a language tag attached to it and false
-	 *         otherwise.
+	 * @return True if the literal has a language tag attached to it and false otherwise.
 	 */
 	public static boolean isLanguageLiteral(Literal literal) {
 		return Objects.requireNonNull(literal, "Literal cannot be null").getLanguage().isPresent();

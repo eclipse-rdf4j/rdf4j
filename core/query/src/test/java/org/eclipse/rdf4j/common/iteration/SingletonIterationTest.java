@@ -10,14 +10,12 @@ package org.eclipse.rdf4j.common.iteration;
 public class SingletonIterationTest extends CloseableIterationTest {
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration()
-	{
+	protected CloseableIteration<String, Exception> createTestIteration() {
 		return new SingletonIteration<String, Exception>("3");
 	}
 
 	@Override
-	protected int getTestIterationSize()
-	{
+	protected int getTestIterationSize() {
 		return 1;
 	}
 }

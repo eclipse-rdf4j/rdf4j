@@ -12,7 +12,6 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
-
 /**
  * Test SPARQL 1.1 Update functionality on an in-memory store.
  * 

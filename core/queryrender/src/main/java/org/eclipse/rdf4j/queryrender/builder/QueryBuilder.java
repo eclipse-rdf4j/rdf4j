@@ -13,8 +13,8 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 
 /**
  * <p>
- * Interface for a QueryBuilder which provides a simple fluent API for
- * constructing Sesame query object programmatically.
+ * Interface for a QueryBuilder which provides a simple fluent API for constructing Sesame query object
+ * programmatically.
  * </p>
  * 
  * @author Michael Grove
@@ -108,21 +108,27 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 
 	/**
 	 * Specify ORDER BY clause with ASC modifier by default
-	 * @param theNames the names of the variables to apply the ordering
+	 * 
+	 * @param theNames
+	 *        the names of the variables to apply the ordering
 	 * @return this query builder
 	 */
 	public QueryBuilder<T> orderBy(String... theNames);
 
 	/**
 	 * Specify ORDER BY clause with ASC modifier
-	 * @param theNames the names of the variables to apply the ordering
+	 * 
+	 * @param theNames
+	 *        the names of the variables to apply the ordering
 	 * @return this query builder
 	 */
 	public QueryBuilder<T> orderByAsc(String... theNames);
 
 	/**
 	 * Specify ORDER BY clause with DESC modifier
-	 * @param theNames the names of the variables to apply the ordering
+	 * 
+	 * @param theNames
+	 *        the names of the variables to apply the ordering
 	 * @return this query builder
 	 */
 	public QueryBuilder<T> orderByDesc(String... theNames);

@@ -31,8 +31,7 @@ public interface RioSetting<T extends Object> extends Serializable {
 	String getDescription();
 
 	/**
-	 * Returns the default value for this parser setting if it is not set by a
-	 * user.
+	 * Returns the default value for this parser setting if it is not set by a user.
 	 * 
 	 * @return The default value for this parser setting.
 	 */

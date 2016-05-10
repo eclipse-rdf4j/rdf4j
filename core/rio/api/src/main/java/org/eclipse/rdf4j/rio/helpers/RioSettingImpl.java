@@ -37,8 +37,7 @@ public final class RioSettingImpl<T> implements RioSetting<T> {
 	private final T defaultValue;
 
 	/**
-	 * Create a new setting object that will be used to reference the given
-	 * setting.
+	 * Create a new setting object that will be used to reference the given setting.
 	 * 
 	 * @param key
 	 *        A unique key to use for this setting.

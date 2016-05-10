@@ -22,9 +22,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.junit.Test;
 
 /**
- *
  * @author james
- *
  */
 public class ValueComparatorTest {
 
@@ -119,8 +117,7 @@ public class ValueComparatorTest {
 	}
 
 	/**
-	 * Tests whether xsd:int's are properly sorted in a list with mixed value
-	 * types.
+	 * Tests whether xsd:int's are properly sorted in a list with mixed value types.
 	 */
 	@Test
 	public void testOrder1()
@@ -137,8 +134,7 @@ public class ValueComparatorTest {
 	}
 
 	/**
-	 * Tests whether various numerics are properly sorted in a list with mixed
-	 * value types.
+	 * Tests whether various numerics are properly sorted in a list with mixed value types.
 	 */
 	@Test
 	public void testOrder2()
@@ -165,9 +161,8 @@ public class ValueComparatorTest {
 	}
 
 	/**
-	 * Tests whether numerics of different types are properly sorted. The list
-	 * also contains a datatype that would be sorted between the numerics if the
-	 * datatypes were to be sorted alphabetically.
+	 * Tests whether numerics of different types are properly sorted. The list also contains a datatype that
+	 * would be sorted between the numerics if the datatypes were to be sorted alphabetically.
 	 */
 	@Test
 	public void testOrder3()

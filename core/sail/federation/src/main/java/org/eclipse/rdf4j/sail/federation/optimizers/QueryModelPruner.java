@@ -27,16 +27,15 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.sail.federation.algebra.NaryJoin;
 
 /**
- * A query optimizer that prunes query model trees by removing superfluous parts
- * and/or by reducing complex parts with simpler parts.
+ * A query optimizer that prunes query model trees by removing superfluous parts and/or by reducing complex
+ * parts with simpler parts.
  * 
  * @author Arjohn Kampman
  */
 public class QueryModelPruner implements QueryOptimizer {
 
 	/**
-	 * Applies generally applicable optimizations: path expressions are sorted
-	 * from more to less specific.
+	 * Applies generally applicable optimizations: path expressions are sorted from more to less specific.
 	 */
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(new TreeSanitizer());
@@ -108,7 +107,8 @@ public class QueryModelPruner implements QueryOptimizer {
 			else if (condition instanceof ValueConstant) {
 				boolean conditionValue;
 				try {
-					conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(((ValueConstant)condition).getValue());
+					conditionValue = QueryEvaluationUtil.getEffectiveBooleanValue(
+							((ValueConstant)condition).getValue());
 				}
 				catch (ValueExprEvaluationException e) {
 					conditionValue = false;

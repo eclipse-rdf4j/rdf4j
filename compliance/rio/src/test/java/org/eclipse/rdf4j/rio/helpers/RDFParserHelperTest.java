@@ -151,9 +151,8 @@ public class RDFParserHelperTest {
 	 * {@link org.eclipse.rdf4j.rio.helpers.RDFParserHelper#createLiteral(java.lang.String, java.lang.String, org.eclipse.rdf4j.model.URI, org.eclipse.rdf4j.rio.ParserConfig, org.eclipse.rdf4j.rio.ParseErrorListener, org.eclipse.rdf4j.model.ValueFactory)}
 	 * .
 	 * <p>
-	 * SES-1803 : Temporary decision to ensure RDF-1.0 backwards compatibility
-	 * for Literals created by this method in cases where {@link RDF#LANGSTRING}
-	 * is given and there is a language.
+	 * SES-1803 : Temporary decision to ensure RDF-1.0 backwards compatibility for Literals created by this
+	 * method in cases where {@link RDF#LANGSTRING} is given and there is a language.
 	 */
 	@Test
 	public final void testCreateLiteralLabelAndLanguageWithRDFLangString()
@@ -172,9 +171,8 @@ public class RDFParserHelperTest {
 	 * {@link org.eclipse.rdf4j.rio.helpers.RDFParserHelper#createLiteral(java.lang.String, java.lang.String, org.eclipse.rdf4j.model.URI, org.eclipse.rdf4j.rio.ParserConfig, org.eclipse.rdf4j.rio.ParseErrorListener, org.eclipse.rdf4j.model.ValueFactory)}
 	 * .
 	 * <p>
-	 * SES-1803 : Temporary decision to ensure RDF-1.0 backwards compatibility
-	 * for Literals created by this method in cases where {@link RDF#LANGSTRING}
-	 * is given and there is NO given language.
+	 * SES-1803 : Temporary decision to ensure RDF-1.0 backwards compatibility for Literals created by this
+	 * method in cases where {@link RDF#LANGSTRING} is given and there is NO given language.
 	 * <p>
 	 * SES-2203 : This was inconsistent, so has been changed to verify failure.
 	 */
@@ -183,8 +181,8 @@ public class RDFParserHelperTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		RDFParserHelper.createLiteral(LABEL_TESTA, null, RDF.LANGSTRING, parserConfig,
-				errListener, valueFactory);
+		RDFParserHelper.createLiteral(LABEL_TESTA, null, RDF.LANGSTRING, parserConfig, errListener,
+				valueFactory);
 	}
 
 	@Test
@@ -261,8 +259,8 @@ public class RDFParserHelperTest {
 		parserConfig.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
 		assertTrue(parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES));
 		parserConfig.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
-		RDFParserHelper.reportError(TEST_MESSAGE_FOR_FAILURE, 1, 1, BasicParserSettings.VERIFY_DATATYPE_VALUES,
-				parserConfig, errListener);
+		RDFParserHelper.reportError(TEST_MESSAGE_FOR_FAILURE, 1, 1,
+				BasicParserSettings.VERIFY_DATATYPE_VALUES, parserConfig, errListener);
 		assertErrorListener(0, 1, 0);
 	}
 
@@ -353,8 +351,7 @@ public class RDFParserHelperTest {
 	}
 
 	/**
-	 * Private method for verifying the number of errors that were logged to the
-	 * {@link ParseErrorListener}.
+	 * Private method for verifying the number of errors that were logged to the {@link ParseErrorListener}.
 	 * 
 	 * @param fatalErrors
 	 *        Expected number of fatal errors logged by error listener.

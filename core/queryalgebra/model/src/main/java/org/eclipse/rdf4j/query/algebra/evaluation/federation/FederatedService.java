@@ -15,8 +15,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
 
 /**
- * FederatedService to allow for customized evaluation of SERVICE expression. By
- * default {@link SPARQLFederatedService} is used.
+ * FederatedService to allow for customized evaluation of SERVICE expression. By default
+ * {@link SPARQLFederatedService} is used.
  * 
  * @author Andreas Schwarte
  * @author James Leigh
@@ -34,8 +34,7 @@ public interface FederatedService {
 	 * </pre>
 	 * 
 	 * @param service
-	 *        the reference to the service node, contains additional meta
-	 *        information (vars, prefixes)
+	 *        the reference to the service node, contains additional meta information (vars, prefixes)
 	 * @param bindings
 	 *        the bindings serving as additional constraints
 	 * @param baseUri
@@ -51,8 +50,7 @@ public interface FederatedService {
 	 * Evaluate the provided SPARQL query at this federated service.
 	 * </p>
 	 * <p>
-	 * <b>Important:</b> The original bindings need to be inserted into the
-	 * result.
+	 * <b>Important:</b> The original bindings need to be inserted into the result.
 	 * </p>
 	 * 
 	 * <pre>
@@ -60,11 +58,9 @@ public interface FederatedService {
 	 * </pre>
 	 * 
 	 * @param service
-	 *        the reference to the service node, contains additional meta
-	 *        information (vars, prefixes)
+	 *        the reference to the service node, contains additional meta information (vars, prefixes)
 	 * @param projectionVars
-	 *        The variables with unknown value that should be projected from this
-	 *        evaluation
+	 *        The variables with unknown value that should be projected from this evaluation
 	 * @param bindings
 	 *        the bindings serving as additional constraints
 	 * @param baseUri
@@ -77,8 +73,7 @@ public interface FederatedService {
 		throws QueryEvaluationException;
 
 	/**
-	 * Evaluate the provided SPARQL query at this federated service,
-	 * possibilities for vectored evaluation.
+	 * Evaluate the provided SPARQL query at this federated service, possibilities for vectored evaluation.
 	 * <p>
 	 * <b>Contracts:</b>
 	 * <ul>
@@ -90,15 +85,13 @@ public interface FederatedService {
 	 * </p>
 	 * 
 	 * @param service
-	 *        the reference to the service node, contains information to
-	 *        construct the query
+	 *        the reference to the service node, contains information to construct the query
 	 * @param bindings
-	 *        the bindings serving as additional constraints (for vectored
-	 *        evaluation)
+	 *        the bindings serving as additional constraints (for vectored evaluation)
 	 * @param baseUri
 	 *        the baseUri
-	 * @return the result of evaluating the query using bindings as constraints,
-	 *         the original bindings need to be inserted into the results!
+	 * @return the result of evaluating the query using bindings as constraints, the original bindings need to
+	 *         be inserted into the results!
 	 * @throws QueryEvaluationException
 	 *         If there was an exception generated while evaluating the query.
 	 */
@@ -115,8 +108,7 @@ public interface FederatedService {
 	 * Method to perform any initializations, invoked after construction.
 	 * 
 	 * @throws QueryEvaluationException
-	 *         If there was an exception generated while initializing the
-	 *         service.
+	 *         If there was an exception generated while initializing the service.
 	 */
 	public void initialize()
 		throws QueryEvaluationException;
@@ -125,8 +117,7 @@ public interface FederatedService {
 	 * Method to perform any shutDown code, invoked at unregistering.
 	 * 
 	 * @throws QueryEvaluationException
-	 *         If there was an exception generated while shutting down the
-	 *         service.
+	 *         If there was an exception generated while shutting down the service.
 	 */
 	public void shutdown()
 		throws QueryEvaluationException;

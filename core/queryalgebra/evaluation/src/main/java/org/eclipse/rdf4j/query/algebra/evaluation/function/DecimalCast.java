@@ -33,8 +33,8 @@ public class DecimalCast implements Function {
 		throws ValueExprEvaluationException
 	{
 		if (args.length != 1) {
-			throw new ValueExprEvaluationException("xsd:decimal cast requires exactly 1 argument, got "
-					+ args.length);
+			throw new ValueExprEvaluationException(
+					"xsd:decimal cast requires exactly 1 argument, got " + args.length);
 		}
 
 		if (args[0] instanceof Literal) {
@@ -64,7 +64,8 @@ public class DecimalCast implements Function {
 				}
 				else if (datatype.equals(XMLSchema.BOOLEAN)) {
 					try {
-						return valueFactory.createLiteral(literal.booleanValue() ? "1.0" : "0.0", XMLSchema.DECIMAL);
+						return valueFactory.createLiteral(literal.booleanValue() ? "1.0" : "0.0",
+								XMLSchema.DECIMAL);
 					}
 					catch (IllegalArgumentException e) {
 						throw new ValueExprEvaluationException(e.getMessage(), e);

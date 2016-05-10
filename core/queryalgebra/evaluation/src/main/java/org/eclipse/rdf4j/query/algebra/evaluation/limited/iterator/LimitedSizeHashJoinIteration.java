@@ -20,29 +20,27 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BindingSetHashKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 
-
 /**
- *
  * @author MJAHale
  */
 public class LimitedSizeHashJoinIteration extends HashJoinIteration {
+
 	private static final String SIZE_LIMIT_REACHED = "Size limited reached inside bottom up join operator, max size is:";
+
 	private AtomicLong used;
 
 	private long maxSize;
 
-	public LimitedSizeHashJoinIteration(EvaluationStrategy limitedSizeEvaluationStrategy,
-			Join join, BindingSet bindings, AtomicLong used, long maxSize)
-			throws QueryEvaluationException
+	public LimitedSizeHashJoinIteration(EvaluationStrategy limitedSizeEvaluationStrategy, Join join,
+			BindingSet bindings, AtomicLong used, long maxSize)
+		throws QueryEvaluationException
 	{
 		super(limitedSizeEvaluationStrategy, join, bindings);
 		this.used = used;
 		this.maxSize = maxSize;
 	}
 
-
-	protected <E> E nextFromCache(Iterator<E> iter)
-	{
+	protected <E> E nextFromCache(Iterator<E> iter) {
 		E v = iter.next();
 		used.decrementAndGet();
 		iter.remove();
@@ -53,7 +51,7 @@ public class LimitedSizeHashJoinIteration extends HashJoinIteration {
 		throws QueryEvaluationException
 	{
 		if (col.add(value) && used.incrementAndGet() > maxSize) {
-			throw new QueryEvaluationException(SIZE_LIMIT_REACHED+maxSize);
+			throw new QueryEvaluationException(SIZE_LIMIT_REACHED + maxSize);
 		}
 	}
 
@@ -65,19 +63,18 @@ public class LimitedSizeHashJoinIteration extends HashJoinIteration {
 		}
 	}
 
-	protected void putHashTableEntry(Map<BindingSetHashKey, List<BindingSet>> hashTable, BindingSetHashKey hashKey,
-			List<BindingSet> hashValue)
+	protected void putHashTableEntry(Map<BindingSetHashKey, List<BindingSet>> hashTable,
+			BindingSetHashKey hashKey, List<BindingSet> hashValue)
 		throws QueryEvaluationException
 	{
 		List<BindingSet> put = hashTable.put(hashKey, hashValue);
 		if (put == null && used.incrementAndGet() > maxSize) {
-			throw new QueryEvaluationException(SIZE_LIMIT_REACHED+maxSize);
+			throw new QueryEvaluationException(SIZE_LIMIT_REACHED + maxSize);
 		}
 	}
 
 	@Override
-	protected void disposeHashTable(Map<BindingSetHashKey, List<BindingSet>> map)
-	{
+	protected void disposeHashTable(Map<BindingSetHashKey, List<BindingSet>> map) {
 		long htvSize = map.size();
 		map.clear();
 		used.addAndGet(-htvSize);

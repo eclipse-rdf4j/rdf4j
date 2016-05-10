@@ -89,9 +89,8 @@ import com.spatial4j.core.shape.Point;
 import com.spatial4j.core.shape.Shape;
 
 /**
- * A LuceneIndex is a one-stop-shop abstraction of a Lucene index. It takes care
- * of proper synchronization of IndexReaders, IndexWriters and IndexSearchers in
- * a way that is suitable for a LuceneSail.
+ * A LuceneIndex is a one-stop-shop abstraction of a Lucene index. It takes care of proper synchronization of
+ * IndexReaders, IndexWriters and IndexSearchers in a way that is suitable for a LuceneSail.
  * 
  * @see LuceneSail
  */
@@ -119,8 +118,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	private Analyzer queryAnalyzer;
 
 	/**
-	 * The IndexWriter that can be used to alter the index' contents. Created
-	 * lazily.
+	 * The IndexWriter that can be used to alter the index' contents. Created lazily.
 	 */
 	private IndexWriter indexWriter;
 
@@ -138,11 +136,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * Creates a new LuceneIndex.
 	 * 
 	 * @param directory
-	 *        The Directory in which an index can be found and/or in which index
-	 *        files are written.
+	 *        The Directory in which an index can be found and/or in which index files are written.
 	 * @param analyzer
-	 *        The Analyzer that will be used for tokenizing strings to index and
-	 *        queries.
+	 *        The Analyzer that will be used for tokenizing strings to index and queries.
 	 * @throws IOException
 	 *         When the Directory could not be unlocked.
 	 */
@@ -277,8 +273,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	/**
-	 * Current monitor holds instance of IndexReader and IndexSearcher It is used
-	 * to keep track of readers
+	 * Current monitor holds instance of IndexReader and IndexSearcher It is used to keep track of readers
 	 */
 	@Override
 	public ReaderMonitor getCurrentMonitor() {
@@ -404,8 +399,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	/**
-	 * Returns a Document representing the specified document ID (combination of
-	 * resource and context), or null when no such Document exists yet.
+	 * Returns a Document representing the specified document ID (combination of resource and context), or
+	 * null when no such Document exists yet.
 	 */
 	private Document getDocument(Term idTerm)
 		throws IOException
@@ -446,10 +441,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	/**
-	 * Returns a list of Documents representing the specified Resource (empty
-	 * when no such Document exists yet). Each document represent a set of
-	 * statements with the specified Resource as a subject, which are stored in a
-	 * specific context
+	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists
+	 * yet). Each document represent a set of statements with the specified Resource as a subject, which are
+	 * stored in a specific context
 	 */
 	private List<Document> getDocuments(Term uriTerm)
 		throws IOException
@@ -481,8 +475,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	/**
-	 * Returns a Document representing the specified Resource & Context
-	 * combination, or null when no such Document exists yet.
+	 * Returns a Document representing the specified Resource & Context combination, or null when no such
+	 * Document exists yet.
 	 */
 	public Document getDocument(Resource subject, Resource context)
 		throws IOException
@@ -495,10 +489,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	/**
-	 * Returns a list of Documents representing the specified Resource (empty
-	 * when no such Document exists yet). Each document represent a set of
-	 * statements with the specified Resource as a subject, which are stored in a
-	 * specific context
+	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists
+	 * yet). Each document represent a set of statements with the specified Resource as a subject, which are
+	 * stored in a specific context
 	 */
 	public List<Document> getDocuments(Resource subject)
 		throws IOException
@@ -554,9 +547,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	/**
-	 * invalidate readers, free them if possible (readers that are still open by
-	 * a {@link LuceneQueryConnection} will not be closed. Synchronized on
-	 * oldmonitors because it manipulates them
+	 * invalidate readers, free them if possible (readers that are still open by a
+	 * {@link LuceneQueryConnection} will not be closed. Synchronized on oldmonitors because it manipulates
+	 * them
 	 * 
 	 * @throws IOException
 	 */
@@ -619,7 +612,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 				logger.info("Total documents in the index: " + reader.numDocs()
 						+ ", number of deletable documents in the index: " + reader.numDeletedDocs()
 						+ ", valid documents: " + count + ", total fields in all documents: " + totalFields
-						+ ", average number of fields per document: " + ((double)totalFields) / reader.numDocs());
+						+ ", average number of fields per document: "
+						+ ((double)totalFields) / reader.numDocs());
 				logger.info("Distinct ids in the index: " + ids.size());
 
 			}
@@ -644,10 +638,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	/**
-	 * Commits any changes done to the LuceneIndex since the last commit. The
-	 * semantics is synchronous to SailConnection.commit(), i.e. the LuceneIndex
-	 * should be committed/rollbacked whenever the LuceneSailConnection is
-	 * committed/rollbacked.
+	 * Commits any changes done to the LuceneIndex since the last commit. The semantics is synchronous to
+	 * SailConnection.commit(), i.e. the LuceneIndex should be committed/rollbacked whenever the
+	 * LuceneSailConnection is committed/rollbacked.
 	 */
 	@Override
 	public void commit()
@@ -703,7 +696,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	@Override
 	protected Iterable<? extends DocumentScore> query(Resource subject, String query, URI propertyURI,
 			boolean highlight)
-				throws MalformedQueryException, IOException
+		throws MalformedQueryException, IOException
 	{
 		Query q;
 		try {
@@ -742,7 +735,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	@Override
 	protected Iterable<? extends DocumentDistance> geoQuery(final URI geoProperty, Point p, final URI units,
 			double distance, String distanceVar, Var contextVar)
-				throws MalformedQueryException, IOException
+		throws MalformedQueryException, IOException
 	{
 		double degs = GeoUnits.toDegrees(distance, units);
 		final String geoField = SearchFields.getPropertyField(geoProperty);
@@ -779,7 +772,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	@Override
 	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, URI geoProperty,
 			Shape shape, Var contextVar)
-				throws MalformedQueryException, IOException
+		throws MalformedQueryException, IOException
 	{
 		SpatialOperation op = toSpatialOp(relation);
 		if (op == null) {
@@ -925,8 +918,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * @param contexts
 	 * @param sail
-	 *        - the underlying native sail where to read the missing triples from
-	 *        after deletion
+	 *        - the underlying native sail where to read the missing triples from after deletion
 	 * @throws SailException
 	 */
 	@Override

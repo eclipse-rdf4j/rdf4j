@@ -30,8 +30,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 
 /**
- * Optimizes a query model by pushing {@link Filter}s as far down in the model
- * tree as possible.
+ * Optimizes a query model by pushing {@link Filter}s as far down in the model tree as possible.
  * 
  * @author Arjohn Kampman
  */
@@ -83,7 +82,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		protected void meetNode(QueryModelNode node) {
 			// By default, do not traverse
 			assert node instanceof TupleExpr;
-			relocate(filter, (TupleExpr) node);
+			relocate(filter, (TupleExpr)node);
 		}
 
 		@Override
@@ -127,10 +126,10 @@ public class FilterOptimizer implements QueryOptimizer {
 		public void meet(Difference node) {
 			Filter clone = new Filter();
 			clone.setCondition(filter.getCondition().clone());
-		
+
 			relocate(filter, node.getLeftArg());
 			relocate(clone, node.getRightArg());
-		
+
 			FilterRelocator.relocate(filter);
 			FilterRelocator.relocate(clone);
 		}
@@ -139,10 +138,10 @@ public class FilterOptimizer implements QueryOptimizer {
 		public void meet(Intersection node) {
 			Filter clone = new Filter();
 			clone.setCondition(filter.getCondition().clone());
-		
+
 			relocate(filter, node.getLeftArg());
 			relocate(clone, node.getRightArg());
-		
+
 			FilterRelocator.relocate(filter);
 			FilterRelocator.relocate(clone);
 		}

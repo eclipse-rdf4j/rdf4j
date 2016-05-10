@@ -12,7 +12,7 @@ package org.eclipse.rdf4j.query.parser.sparql.ast;
 public class ASTQueryContainer extends ASTOperationContainer {
 
 	private String sourceString;
-	
+
 	public ASTQueryContainer(int id) {
 		super(id);
 	}
@@ -27,7 +27,7 @@ public class ASTQueryContainer extends ASTOperationContainer {
 	{
 		return visitor.visit(this, data);
 	}
-	
+
 	public boolean containsQuery() {
 		return (getQuery() != null);
 	}
@@ -39,7 +39,7 @@ public class ASTQueryContainer extends ASTOperationContainer {
 	@Override
 	public void setSourceString(String source) {
 		sourceString = source;
-		
+
 	}
 
 	@Override

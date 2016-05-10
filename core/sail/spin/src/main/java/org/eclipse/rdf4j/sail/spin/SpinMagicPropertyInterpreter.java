@@ -203,7 +203,8 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 						prefixDecls.put(SP.PREFIX, SP.NAMESPACE);
 						prefixDecls.put(SPIN.PREFIX, SPIN.NAMESPACE);
 						prefixDecls.put(SPL.PREFIX, SPL.NAMESPACE);
-						magicPropertyNode = new Service(serviceRef, funcCall, exprString, prefixDecls, null, false);
+						magicPropertyNode = new Service(serviceRef, funcCall, exprString, prefixDecls, null,
+								false);
 					}
 					else {
 						magicPropertyNode = funcCall;

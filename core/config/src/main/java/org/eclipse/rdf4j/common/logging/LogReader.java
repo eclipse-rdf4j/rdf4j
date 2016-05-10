@@ -47,8 +47,7 @@ public interface LogReader extends Iterator<LogRecord> {
 	public Appender<?> getAppender();
 
 	/**
-	 * Max. number of records returned by this log reader. Zero value (default)
-	 * indicates no limit.
+	 * Max. number of records returned by this log reader. Zero value (default) indicates no limit.
 	 * 
 	 * @param limit
 	 *        max. number of records returned by this log reader.
@@ -58,8 +57,7 @@ public interface LogReader extends Iterator<LogRecord> {
 	/**
 	 * Max. number of records returned by this log reader.
 	 * 
-	 * @return max. number of records returned by this log reader or zero value
-	 *         if no limit has been set.
+	 * @return max. number of records returned by this log reader or zero value if no limit has been set.
 	 */
 	public int getLimit();
 
@@ -86,8 +84,7 @@ public interface LogReader extends Iterator<LogRecord> {
 	public int getOffset();
 
 	/**
-	 * Test if this LogReader implementation supports level-based records
-	 * filtering.
+	 * Test if this LogReader implementation supports level-based records filtering.
 	 * 
 	 * @return true if level filtering is supported.
 	 */
@@ -101,14 +98,12 @@ public interface LogReader extends Iterator<LogRecord> {
 	/**
 	 * Level of the log records returned by this log reader.
 	 * 
-	 * @return Level of the log records returned by this log reader or 'null' if
-	 *         no level filter has been set.
+	 * @return Level of the log records returned by this log reader or 'null' if no level filter has been set.
 	 */
 	public LogLevel getLevel();
 
 	/**
-	 * Test if this LogReader implementation supports thread-based records
-	 * filtering.
+	 * Test if this LogReader implementation supports thread-based records filtering.
 	 * 
 	 * @return true if thread filtering is supported.
 	 */
@@ -122,8 +117,8 @@ public interface LogReader extends Iterator<LogRecord> {
 	/**
 	 * Thread name of the log records returned by this log reader.
 	 * 
-	 * @return thread name of the log records returned by this log reader or
-	 *         'null' if no thread filter has been set.
+	 * @return thread name of the log records returned by this log reader or 'null' if no thread filter has
+	 *         been set.
 	 */
 	public String getThread();
 
@@ -135,8 +130,7 @@ public interface LogReader extends Iterator<LogRecord> {
 	public List<String> getThreadNames();
 
 	/**
-	 * Test if this LogReader implementation supports date-based records
-	 * filtering.
+	 * Test if this LogReader implementation supports date-based records filtering.
 	 * 
 	 * @return true if date filtering is supported
 	 */
@@ -150,8 +144,7 @@ public interface LogReader extends Iterator<LogRecord> {
 	/**
 	 * Start (earliest) date of the log records returned by this log reader.
 	 * 
-	 * @return Start date of the log records or 'null' if no start date has been
-	 *         set
+	 * @return Start date of the log records or 'null' if no start date has been set
 	 */
 	public Date getStartDate();
 

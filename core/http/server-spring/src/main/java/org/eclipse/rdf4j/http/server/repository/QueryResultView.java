@@ -44,19 +44,16 @@ public abstract class QueryResultView implements View {
 	public static final String FACTORY_KEY = "factory";
 
 	/**
-	 * Key by which a filename hint is stored in the model. The filename hint may
-	 * be used to present the client with a suggestion for a filename to use for
-	 * storing the result.
+	 * Key by which a filename hint is stored in the model. The filename hint may be used to present the
+	 * client with a suggestion for a filename to use for storing the result.
 	 */
 	public static final String FILENAME_HINT_KEY = "filenameHint";
 
 	/**
-	 * Key by which the id of the current transaction is stored in the model. If
-	 * this is present, the QueryResultView will take care to release the
-	 * connection back to the
-	 * {@link org.eclipse.rdf4j.http.server.repository.transaction.ActiveTransactionRegistry}
-	 * after processing the query result.
-	 * 
+	 * Key by which the id of the current transaction is stored in the model. If this is present, the
+	 * QueryResultView will take care to release the connection back to the
+	 * {@link org.eclipse.rdf4j.http.server.repository.transaction.ActiveTransactionRegistry} after processing
+	 * the query result.
 	 */
 	public static final String TRANSACTION_ID_KEY = "transactionID";
 
@@ -66,7 +63,7 @@ public abstract class QueryResultView implements View {
 	public final void render(Map model, HttpServletRequest request, HttpServletResponse response)
 		throws IOException
 	{
-		UUID txnId = null; 
+		UUID txnId = null;
 		try {
 			txnId = (UUID)model.get(TRANSACTION_ID_KEY);
 			renderInternal(model, request, response);
@@ -79,7 +76,8 @@ public abstract class QueryResultView implements View {
 	}
 
 	@SuppressWarnings("rawtypes")
-	protected abstract void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
+	protected abstract void renderInternal(Map model, HttpServletRequest request,
+			HttpServletResponse response)
 		throws IOException;
 
 	protected void setContentType(HttpServletResponse response, FileFormat fileFormat)

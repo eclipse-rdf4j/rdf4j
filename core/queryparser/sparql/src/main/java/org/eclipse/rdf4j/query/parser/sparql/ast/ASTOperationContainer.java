@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.query.parser.sparql.ast;
 import java.util.List;
 
 /**
- * Abstract supertype of {@link ASTQueryContainer} and
- * {@link ASTUpdateContainer}
+ * Abstract supertype of {@link ASTQueryContainer} and {@link ASTUpdateContainer}
  * 
  * @author Jeen Broekstra
  */
@@ -39,9 +38,9 @@ public abstract class ASTOperationContainer extends SimpleNode {
 	public List<ASTPrefixDecl> getPrefixDeclList() {
 		return super.jjtGetChildren(ASTPrefixDecl.class);
 	}
-	
+
 	public abstract void setSourceString(String source);
-	
+
 	public abstract String getSourceString();
 
 }

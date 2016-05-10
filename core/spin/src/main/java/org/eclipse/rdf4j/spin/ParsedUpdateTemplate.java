@@ -15,7 +15,9 @@ import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 
 public class ParsedUpdateTemplate extends ParsedUpdate implements ParsedTemplate {
+
 	private final Template template;
+
 	private final BindingSet args;
 
 	public ParsedUpdateTemplate(Template template, BindingSet args) {
@@ -24,10 +26,10 @@ public class ParsedUpdateTemplate extends ParsedUpdate implements ParsedTemplate
 
 	private ParsedUpdateTemplate(Template template, ParsedUpdate update, BindingSet args) {
 		super(update.getSourceString(), update.getNamespaces());
-		for(UpdateExpr updateExpr : update.getUpdateExprs()) {
+		for (UpdateExpr updateExpr : update.getUpdateExprs()) {
 			addUpdateExpr(updateExpr);
 		}
-		for(Map.Entry<UpdateExpr,Dataset> entry : update.getDatasetMapping().entrySet()) {
+		for (Map.Entry<UpdateExpr, Dataset> entry : update.getDatasetMapping().entrySet()) {
 			map(entry.getKey(), entry.getValue());
 		}
 		this.template = template;

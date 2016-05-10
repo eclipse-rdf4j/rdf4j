@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
 public class LimitedSizePathIterator extends PathIteration {
 
 	private final AtomicLong used;
+
 	private final long maxSize;
 
 	/**
@@ -42,7 +43,8 @@ public class LimitedSizePathIterator extends PathIteration {
 			AtomicLong used, long maxSize)
 		throws QueryEvaluationException
 	{
-		super(evaluationStrategyImpl, scope, startVar, pathExpression, endVar, contextVar, minLength, bindings);
+		super(evaluationStrategyImpl, scope, startVar, pathExpression, endVar, contextVar, minLength,
+				bindings);
 		this.used = used;
 		this.maxSize = maxSize;
 	}
@@ -51,7 +53,7 @@ public class LimitedSizePathIterator extends PathIteration {
 	protected boolean add(Set<ValuePair> valueSet, ValuePair vp)
 		throws QueryEvaluationException
 	{
-		return LimitedSizeIteratorUtil.<ValuePair>add(vp, valueSet, used, maxSize);
+		return LimitedSizeIteratorUtil.<ValuePair> add(vp, valueSet, used, maxSize);
 	}
 
 }

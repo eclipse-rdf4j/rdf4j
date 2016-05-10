@@ -15,8 +15,12 @@ import org.eclipse.rdf4j.query.parser.serql.SeRQLParser;
 import org.eclipse.rdf4j.query.parser.serql.SeRQLParserTestCase;
 
 public class SeRQLParserTest extends SeRQLParserTestCase {
-	public static Test suite() throws Exception {
+
+	public static Test suite()
+		throws Exception
+	{
 		return SeRQLParserTestCase.suite(new Factory() {
+
 			public Test createTest(String name, String queryFile, Value result) {
 				return new SeRQLParserTest(name, queryFile, result);
 			}

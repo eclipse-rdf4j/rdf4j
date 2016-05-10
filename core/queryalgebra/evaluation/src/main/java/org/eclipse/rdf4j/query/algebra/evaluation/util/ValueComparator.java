@@ -20,10 +20,8 @@ import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 /**
- * A comparator that compares values according the SPARQL value ordering as
- * specified in <A
- * href="http://www.w3.org/TR/rdf-sparql-query/#modOrderBy">SPARQL Query
- * Language for RDF</a>.
+ * A comparator that compares values according the SPARQL value ordering as specified in
+ * <A href="http://www.w3.org/TR/rdf-sparql-query/#modOrderBy">SPARQL Query Language for RDF</a>.
  * 
  * @author james
  * @author Arjohn Kampman
@@ -94,7 +92,8 @@ public class ValueComparator implements Comparator<Value> {
 					return -1;
 				}
 				else {
-					boolean isEquivalent = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.EQ);
+					boolean isEquivalent = QueryEvaluationUtil.compareLiterals(leftLit, rightLit,
+							CompareOp.EQ);
 					if (isEquivalent) {
 						return 0;
 					}
@@ -156,11 +155,10 @@ public class ValueComparator implements Comparator<Value> {
 	}
 
 	/**
-	 * Compares two literal datatypes and indicates if one should be ordered
-	 * after the other. This algorithm ensures that compatible ordered datatypes
-	 * (numeric and date/time) are grouped together so that
-	 * {@link QueryEvaluationUtil#compareLiterals(Literal, Literal, CompareOp)}
-	 * is used in consecutive ordering steps.
+	 * Compares two literal datatypes and indicates if one should be ordered after the other. This algorithm
+	 * ensures that compatible ordered datatypes (numeric and date/time) are grouped together so that
+	 * {@link QueryEvaluationUtil#compareLiterals(Literal, Literal, CompareOp)} is used in consecutive
+	 * ordering steps.
 	 */
 	private int compareDatatypes(IRI leftDatatype, IRI rightDatatype) {
 		if (XMLDatatypeUtil.isNumericDatatype(leftDatatype)) {

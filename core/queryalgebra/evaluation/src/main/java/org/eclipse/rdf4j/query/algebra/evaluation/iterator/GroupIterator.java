@@ -80,9 +80,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private final DB db;
 
 	/**
-	 * Number of items cached before internal collections are synced to disk. If
-	 * set to 0, no disk-syncing is done and all internal caching is kept in
-	 * memory.
+	 * Number of items cached before internal collections are synced to disk. If set to 0, no disk-syncing is
+	 * done and all internal caching is kept in memory.
 	 */
 	private final long iterationCacheSyncThreshold;
 

@@ -16,9 +16,8 @@ import java.util.NoSuchElementException;
 import org.eclipse.rdf4j.common.io.NioFile;
 
 /**
- * Class supplying access to a data file. A data file stores data sequentially.
- * Each entry starts with the entry's length (4 bytes), followed by the data
- * itself. File offsets are used to identify entries.
+ * Class supplying access to a data file. A data file stores data sequentially. Each entry starts with the
+ * entry's length (4 bytes), followed by the data itself. File offsets are used to identify entries.
  * 
  * @author Arjohn Kampman
  */
@@ -29,9 +28,8 @@ public class DataFile {
 	 *-----------*/
 
 	/**
-	 * Magic number "Native Data File" to detect whether the file is actually a
-	 * data file. The first three bytes of the file should be equal to this magic
-	 * number.
+	 * Magic number "Native Data File" to detect whether the file is actually a data file. The first three
+	 * bytes of the file should be equal to this magic number.
 	 */
 	private static final byte[] MAGIC_NUMBER = new byte[] { 'n', 'd', 'f' };
 
@@ -90,7 +88,8 @@ public class DataFile {
 					throw new IOException("Unable to read data file; it uses a newer file format");
 				}
 				else if (version != FILE_FORMAT_VERSION) {
-					throw new IOException("Unable to read data file; invalid file format version: " + version);
+					throw new IOException(
+							"Unable to read data file; invalid file format version: " + version);
 				}
 			}
 		}
@@ -109,8 +108,7 @@ public class DataFile {
 	}
 
 	/**
-	 * Stores the specified data and returns the byte-offset at which it has been
-	 * stored.
+	 * Stores the specified data and returns the byte-offset at which it has been stored.
 	 * 
 	 * @param data
 	 *        The data to store, must not be <tt>null</tt>.

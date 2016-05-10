@@ -37,7 +37,7 @@ public class HTTPSparqlDatasetTest extends SparqlDatasetTest {
 	{
 		server.stop();
 	}
-	
+
 	protected Repository newRepository() {
 		return new HTTPRepository(HTTPMemServer.REPOSITORY_URL);
 	}

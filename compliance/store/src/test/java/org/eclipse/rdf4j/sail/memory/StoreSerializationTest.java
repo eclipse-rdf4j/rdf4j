@@ -93,7 +93,7 @@ public class StoreSerializationTest extends TestCase {
 		iter.close();
 
 		con.close();
-		store.shutDown();		
+		store.shutDown();
 	}
 
 	public void testSerialization()
@@ -115,8 +115,8 @@ public class StoreSerializationTest extends TestCase {
 				"SELECT X, P, Y FROM {X} P {Y}", null);
 		TupleExpr tupleExpr = query.getTupleExpr();
 
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter = con.evaluate(tupleExpr, null,
-				EmptyBindingSet.getInstance(), false);
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter = con.evaluate(tupleExpr,
+				null, EmptyBindingSet.getInstance(), false);
 
 		BindingSet bindingSet = iter.next();
 
@@ -150,7 +150,7 @@ public class StoreSerializationTest extends TestCase {
 		con.addStatement(bar, RDF.TYPE, foo);
 		con.commit();
 		con.close();
-		
+
 		store.shutDown();
 	}
 
@@ -190,6 +190,6 @@ public class StoreSerializationTest extends TestCase {
 		iter.close();
 
 		con.close();
-		store.shutDown();		
+		store.shutDown();
 	}
 }

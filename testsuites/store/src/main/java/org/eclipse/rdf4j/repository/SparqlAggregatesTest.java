@@ -37,16 +37,16 @@ public abstract class SparqlAggregatesTest {
 			+ " WHERE { ?x foaf:name  ?name; foaf:mbox  ?mbox } GROUP BY ?name";
 
 	public String concatOptionalMbox = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
-		+ "SELECT ?name (group_concat(?mbox) AS ?mbox)\n"
-		+ " WHERE { ?x foaf:name  ?name OPTIONAL { ?x foaf:mbox  ?mbox } } GROUP BY ?name";
+			+ "SELECT ?name (group_concat(?mbox) AS ?mbox)\n"
+			+ " WHERE { ?x foaf:name  ?name OPTIONAL { ?x foaf:mbox  ?mbox } } GROUP BY ?name";
 
 	public String countMbox = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
 			+ "SELECT ?name (count(?mbox) AS ?mbox)\n"
 			+ " WHERE { ?x foaf:name  ?name; foaf:mbox  ?mbox } GROUP BY ?name";
 
 	public String countOptionalMbox = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
-		+ "SELECT ?name (count(?mb) AS ?mbox)\n"
-		+ " WHERE { ?x foaf:name  ?name OPTIONAL { ?x foaf:mbox  ?mb } } GROUP BY ?name";
+			+ "SELECT ?name (count(?mb) AS ?mbox)\n"
+			+ " WHERE { ?x foaf:name  ?name OPTIONAL { ?x foaf:mbox  ?mb } } GROUP BY ?name";
 
 	private Repository repository;
 

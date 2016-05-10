@@ -199,8 +199,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 		new SpinFunctionInterpreter(parser, tripleSource, functionRegistry).optimize(tupleExpr, dataset,
 				bindings);
-		new SpinMagicPropertyInterpreter(parser, tripleSource, tupleFunctionRegistry, serviceResolver).optimize(
-				tupleExpr, dataset, bindings);
+		new SpinMagicPropertyInterpreter(parser, tripleSource, tupleFunctionRegistry,
+				serviceResolver).optimize(tupleExpr, dataset, bindings);
 
 		logger.trace("SPIN query model:\n{}", tupleExpr);
 
@@ -411,9 +411,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	}
 
 	/**
-	 * update spin:rules modify existing (non-inferred) statements directly.
-	 * spin:constructors should be run after spin:rules for each subject of an
-	 * RDF.TYPE statement.
+	 * update spin:rules modify existing (non-inferred) statements directly. spin:constructors should be run
+	 * after spin:rules for each subject of an RDF.TYPE statement.
 	 */
 	private int applyRulesInternal(Iterable<? extends Resource> resources)
 		throws RDF4JException

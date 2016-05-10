@@ -18,7 +18,9 @@ import java.util.Set;
  * Class to cache SearchDocument.hasProperty() calls.
  */
 class PropertyCache {
+
 	private final SearchDocument doc;
+
 	private Map<String, Set<String>> cachedProperties;
 
 	PropertyCache(SearchDocument doc) {
@@ -28,17 +30,17 @@ class PropertyCache {
 	boolean hasProperty(String name, String value) {
 		boolean found;
 		Set<String> cachedValues = getCachedValues(name);
-		if(cachedValues != null) {
+		if (cachedValues != null) {
 			found = cachedValues.contains(value);
 		}
 		else {
 			found = false;
 			List<String> docValues = doc.getProperty(name);
-			if(docValues != null) {
+			if (docValues != null) {
 				cachedValues = new HashSet<String>(docValues.size());
-				for(String docValue : docValues) {
+				for (String docValue : docValues) {
 					cachedValues.add(docValue);
-					if(docValue.equals(value)) {
+					if (docValue.equals(value)) {
 						found = true;
 						// don't break - cache all docValues
 					}
@@ -57,8 +59,8 @@ class PropertyCache {
 	}
 
 	private void setCachedValues(String name, Set<String> values) {
-		if(cachedProperties == null) {
-			cachedProperties = new HashMap<String,Set<String>>();
+		if (cachedProperties == null) {
+			cachedProperties = new HashMap<String, Set<String>>();
 		}
 		cachedProperties.put(name, values);
 	}

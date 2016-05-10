@@ -23,9 +23,9 @@ import org.eclipse.rdf4j.query.parser.serql.ast.SyntaxTreeBuilderTreeConstants;
 import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 
 /**
- * Processes projections. 'Wildcard' projections are made explicit by adding
- * projection elements with the appropriate variable nodes to them. Explicit
- * projections are checked to see if they don't contain any unbound variables.
+ * Processes projections. 'Wildcard' projections are made explicit by adding projection elements with the
+ * appropriate variable nodes to them. Explicit projections are checked to see if they don't contain any
+ * unbound variables.
  * 
  * @author Arjohn Kampman
  */
@@ -99,9 +99,8 @@ class ProjectionProcessor extends AbstractASTVisitor {
 	 *-------------------------------*/
 
 	/**
-	 * Collects variable names for 'wildcard' projections. An instance of this
-	 * class should be supplied to a {@link ASTSelectQuery} node. When done, the
-	 * collected variable names can be acquired by calling
+	 * Collects variable names for 'wildcard' projections. An instance of this class should be supplied to a
+	 * {@link ASTSelectQuery} node. When done, the collected variable names can be acquired by calling
 	 * {@link #getVariableNames}.
 	 */
 	private static class VariableCollector extends AbstractASTVisitor {

@@ -26,14 +26,18 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
 
 public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
+
 	/**
-	 * We potentially have to fit all resources in this set
-	 * so let's start of with a reasonably big size.
+	 * We potentially have to fit all resources in this set so let's start of with a reasonably big size.
 	 */
 	private static final int INITIAL_CAPACITY = 10000;
+
 	private static final String ANON_SUBJECT_VAR = "zero-length-internal-start";
+
 	private static final String ANON_PREDICATE_VAR = "zero-length-internal-pred";
+
 	private static final String ANON_OBJECT_VAR = "zero-length-internal-end";
+
 	private static final String ANON_SEQUENCE_VAR = "zero-length-internal-seq";
 
 	private QueryBindingSet result;
@@ -56,8 +60,8 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	private final EvaluationStrategy evaluationStrategy;
 
-	public ZeroLengthPathIteration(SimpleEvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar,
-			Value subj, Value obj, Var contextVar, BindingSet bindings)
+	public ZeroLengthPathIteration(SimpleEvaluationStrategy evaluationStrategyImpl, Var subjectVar,
+			Var objVar, Value subj, Value obj, Var contextVar, BindingSet bindings)
 	{
 		this.evaluationStrategy = evaluationStrategyImpl;
 		result = new QueryBindingSet(bindings);
@@ -83,7 +87,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 				bs1.addBinding(ANON_SEQUENCE_VAR, ValueFactoryImpl.getInstance().createLiteral("subject"));
 				QueryBindingSet bs2 = new QueryBindingSet(1);
 				bs2.addBinding(ANON_SEQUENCE_VAR, ValueFactoryImpl.getInstance().createLiteral("object"));
-				List<BindingSet> seqList = Arrays.<BindingSet>asList(bs1, bs2);
+				List<BindingSet> seqList = Arrays.<BindingSet> asList(bs1, bs2);
 				iter = new CrossProductIteration(createIteration(), seqList);
 			}
 
@@ -163,8 +167,8 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 			subjects.setScope(Scope.NAMED_CONTEXTS);
 			subjects.setContextVar(contextVar);
 		}
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluationStrategy.evaluate(
-				subjects, bindings);
+		CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluationStrategy.evaluate(subjects,
+				bindings);
 
 		return iter;
 	}

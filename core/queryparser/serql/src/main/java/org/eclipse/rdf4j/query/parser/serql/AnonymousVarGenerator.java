@@ -16,8 +16,8 @@ import org.eclipse.rdf4j.query.parser.serql.ast.SyntaxTreeBuilderTreeConstants;
 import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 
 /**
- * Inserts anonymous variables into the abstract syntax tree at places where
- * such variables are already implicitly present.
+ * Inserts anonymous variables into the abstract syntax tree at places where such variables are already
+ * implicitly present.
  */
 public class AnonymousVarGenerator extends AbstractASTVisitor {
 
@@ -53,7 +53,7 @@ public class AnonymousVarGenerator extends AbstractASTVisitor {
 			nodeElem.jjtSetParent(node);
 			node.jjtAppendChild(nodeElem);
 		}
-		
+
 		if (node.getID() == null) {
 			node.setID(createAnonymousVar());
 		}
@@ -63,14 +63,14 @@ public class AnonymousVarGenerator extends AbstractASTVisitor {
 
 	private ASTNodeElem createNodeElem() {
 		ASTNodeElem nodeElem = new ASTNodeElem(SyntaxTreeBuilderTreeConstants.JJTNODEELEM);
-		
+
 		ASTVar var = createAnonymousVar();
 		var.jjtSetParent(nodeElem);
 		nodeElem.jjtAppendChild(var);
-		
+
 		return nodeElem;
 	}
-	
+
 	private ASTVar createAnonymousVar() {
 		ASTVar var = new ASTVar(SyntaxTreeBuilderTreeConstants.JJTVAR);
 		var.setName("-anon-" + anonymousVarNo++);

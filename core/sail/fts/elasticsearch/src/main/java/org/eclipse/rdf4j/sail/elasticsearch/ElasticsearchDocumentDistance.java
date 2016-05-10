@@ -30,7 +30,8 @@ public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult i
 
 	private final DistanceUnit unit;
 
-	public ElasticsearchDocumentDistance(SearchHit hit, Function<? super String,? extends SpatialContext> geoContextMapper, String geoPointField,
+	public ElasticsearchDocumentDistance(SearchHit hit,
+			Function<? super String, ? extends SpatialContext> geoContextMapper, String geoPointField,
 			URI units, FixedSourceDistance srcDistance, DistanceUnit unit)
 	{
 		super(hit, geoContextMapper);

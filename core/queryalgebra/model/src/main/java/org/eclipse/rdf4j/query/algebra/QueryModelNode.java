@@ -15,15 +15,14 @@ import java.io.Serializable;
 public interface QueryModelNode extends Cloneable, Serializable {
 
 	/**
-	 * Visits this node. The node reports itself to the visitor with the proper
-	 * runtime type.
+	 * Visits this node. The node reports itself to the visitor with the proper runtime type.
 	 */
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X;
 
 	/**
-	 * Visits the children of this node. The node calls
-	 * {@link #visit(QueryModelVisitor)} on all of its child nodes.
+	 * Visits the children of this node. The node calls {@link #visit(QueryModelVisitor)} on all of its child
+	 * nodes.
 	 */
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 		throws X;
@@ -70,8 +69,8 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	public void replaceWith(QueryModelNode replacement);
 
 	/**
-	 * Returns <tt>true</tt> if this query model node and its children are
-	 * recursively equal to <tt>o</tt> and its children.
+	 * Returns <tt>true</tt> if this query model node and its children are recursively equal to <tt>o</tt> and
+	 * its children.
 	 */
 	public boolean equals(Object o);
 
@@ -81,17 +80,16 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	public String toString();
 
 	/**
-	 * Returns the signature of this query model node. Signatures normally
-	 * include the node's name and any parameters, but not parent or child nodes.
-	 * This method is used by {@link #toString()}.
+	 * Returns the signature of this query model node. Signatures normally include the node's name and any
+	 * parameters, but not parent or child nodes. This method is used by {@link #toString()}.
 	 * 
 	 * @return The node's signature, e.g. <tt>SLICE (offset=10, limit=10)</tt>.
 	 */
 	public String getSignature();
 
 	/**
-	 * Returns a (deep) clone of this query model node. This method recursively
-	 * clones the entire node tree, starting from this nodes.
+	 * Returns a (deep) clone of this query model node. This method recursively clones the entire node tree,
+	 * starting from this nodes.
 	 * 
 	 * @return A deep clone of this query model node.
 	 */

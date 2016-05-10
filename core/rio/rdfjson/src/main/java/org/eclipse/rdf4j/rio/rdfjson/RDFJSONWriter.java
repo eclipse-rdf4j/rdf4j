@@ -132,15 +132,13 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	/**
-	 * Helper method to reduce complexity of the JSON serialisation algorithm Any
-	 * null contexts will only be serialised to JSON if there are also non-null
-	 * contexts in the contexts array
+	 * Helper method to reduce complexity of the JSON serialisation algorithm Any null contexts will only be
+	 * serialised to JSON if there are also non-null contexts in the contexts array
 	 * 
 	 * @param object
 	 *        The RDF value to serialise
 	 * @param contexts
-	 *        The set of contexts that are relevant to this object, including
-	 *        null contexts as they are found.
+	 *        The set of contexts that are relevant to this object, including null contexts as they are found.
 	 * @param jg
 	 *        the {@link JsonGenerator} to write to.
 	 * @throws IOException
@@ -194,8 +192,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	/**
-	 * Returns the correct syntax for a Resource, depending on whether it is a
-	 * URI or a Blank Node (ie, BNode)
+	 * Returns the correct syntax for a Resource, depending on whether it is a URI or a Blank Node (ie, BNode)
 	 * 
 	 * @param uriOrBnode
 	 *        The resource to serialise to a string
@@ -219,8 +216,8 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 			Lf2SpacesIndenter indenter = Lf2SpacesIndenter.instance.withLinefeed("\n");
 			// By default Jackson does not pretty print, so enable this unless
 			// PRETTY_PRINT setting is disabled
-			DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(indenter).withObjectIndenter(
-					indenter);
+			DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(
+					indenter).withObjectIndenter(indenter);
 			jg.setPrettyPrinter(pp);
 		}
 		jg.writeStartObject();
@@ -232,7 +229,8 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 					// contexts are optional, so this may return empty in some
 					// scenarios depending on the interpretation of the way contexts
 					// work
-					final Set<Resource> contexts = graph.filter(nextSubject, nextPredicate, nextObject).contexts();
+					final Set<Resource> contexts = graph.filter(nextSubject, nextPredicate,
+							nextObject).contexts();
 
 					RDFJSONWriter.writeObject(nextObject, contexts, jg);
 				}

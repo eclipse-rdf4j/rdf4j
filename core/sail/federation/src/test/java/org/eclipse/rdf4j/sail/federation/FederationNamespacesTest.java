@@ -30,8 +30,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.Test;
 
 /**
- * Tests for correct behavior when members define matching or conflicting
- * prefix/namespace maps.
+ * Tests for correct behavior when members define matching or conflicting prefix/namespace maps.
  *
  * @author Dale Visser
  */

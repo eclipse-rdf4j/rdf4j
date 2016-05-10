@@ -13,8 +13,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 
 /**
- * Defines constants for the NativeStore schema which is used by
- * {@link NativeStoreFactory}s to initialize {@link NativeStore}s.
+ * Defines constants for the NativeStore schema which is used by {@link NativeStoreFactory}s to initialize
+ * {@link NativeStore}s.
  * 
  * @author Arjohn Kampman
  */

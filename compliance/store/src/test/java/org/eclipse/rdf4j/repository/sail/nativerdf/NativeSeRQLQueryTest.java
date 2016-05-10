@@ -29,7 +29,8 @@ public class NativeSeRQLQueryTest extends SeRQLQueryTestCase {
 			public Test createTest(String name, String dataFile, List<String> graphNames, String queryFile,
 					String resultFile, String entailment)
 			{
-				return new NativeSeRQLQueryTest(name, dataFile, graphNames, queryFile, resultFile, entailment);
+				return new NativeSeRQLQueryTest(name, dataFile, graphNames, queryFile, resultFile,
+						entailment);
 			}
 		});
 	}

@@ -99,8 +99,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 	}
 
 	/**
-	 * The N-Quads parser must be able to parse the N-Triples test file without
-	 * error.
+	 * The N-Quads parser must be able to parse the N-Triples test file without error.
 	 */
 	public void testNTriplesFile()
 		throws Exception
@@ -143,8 +142,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 	}
 
 	/**
-	 * Tests the behaviour with non-whitespace characters after a period
-	 * character without a context.
+	 * Tests the behaviour with non-whitespace characters after a period character without a context.
 	 * 
 	 * @throws RDFHandlerException
 	 * @throws IOException
@@ -168,8 +166,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 	}
 
 	/**
-	 * Tests the behaviour with non-whitespace characters after a period
-	 * character without a context.
+	 * Tests the behaviour with non-whitespace characters after a period character without a context.
 	 * 
 	 * @throws RDFHandlerException
 	 * @throws IOException
@@ -312,9 +309,10 @@ public abstract class AbstractNQuadsParserUnitTest {
 	public void testParseBasicLiteralDatatype()
 		throws RDFHandlerException, IOException, RDFParseException
 	{
-		final ByteArrayInputStream bais = new ByteArrayInputStream(("<http://www.v/dat/4b2-21> "
-				+ "<http://www.w3.org/20/ica#dtend> " + "\"2010\"^^<http://www.w3.org/2001/XMLSchema#integer> "
-				+ "<http://sin.siteserv.org/def/>.").getBytes());
+		final ByteArrayInputStream bais = new ByteArrayInputStream(
+				("<http://www.v/dat/4b2-21> " + "<http://www.w3.org/20/ica#dtend> "
+						+ "\"2010\"^^<http://www.w3.org/2001/XMLSchema#integer> "
+						+ "<http://sin.siteserv.org/def/>.").getBytes());
 		final TestRDFHandler rdfHandler = new TestRDFHandler();
 		parser.setRDFHandler(rdfHandler);
 		parser.parse(bais, "http://test.base.uri");
@@ -330,9 +328,8 @@ public abstract class AbstractNQuadsParserUnitTest {
 	}
 
 	/**
-	 * Tests N-Quads parsing with literal and datatype using a prefix, which is
-	 * illegal in NQuads, but legal in N3/Turtle that may otherwise look like
-	 * NQuads
+	 * Tests N-Quads parsing with literal and datatype using a prefix, which is illegal in NQuads, but legal
+	 * in N3/Turtle that may otherwise look like NQuads
 	 */
 	@Test
 	public void testParseBasicLiteralDatatypePrefix()
@@ -603,9 +600,9 @@ public abstract class AbstractNQuadsParserUnitTest {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
 				("<http://s0> <http://p0> <http://o0> <http://g0> .\n"
 						+ "<http://sX>                                     .\n" + // Line
-		// with
-		// error.
-		"<http://s1> <http://p1> <http://o1> <http://g1> .\n").getBytes());
+						// with
+						// error.
+						"<http://s1> <http://p1> <http://o1> <http://g1> .\n").getBytes());
 
 		parser.getParserConfig().set(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES, false);
 
@@ -626,9 +623,9 @@ public abstract class AbstractNQuadsParserUnitTest {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
 				("<http://s0> <http://p0> <http://o0> <http://g0> .\n"
 						+ "<http://sX>                                     .\n" + // Line
-		// with
-		// error.
-		"<http://s1> <http://p1> <http://o1> <http://g1> .\n").getBytes());
+						// with
+						// error.
+						"<http://s1> <http://p1> <http://o1> <http://g1> .\n").getBytes());
 		final TestRDFHandler rdfHandler = new TestRDFHandler();
 		parser.setRDFHandler(rdfHandler);
 

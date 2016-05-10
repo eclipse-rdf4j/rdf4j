@@ -10,6 +10,8 @@ package org.eclipse.rdf4j.sail.lucene;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 
 public interface SearchQueryEvaluator {
+
 	QueryModelNode getParentQueryModelNode();
+
 	void updateQueryModelNodes(boolean hasResult);
 }

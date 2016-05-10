@@ -31,9 +31,8 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 	private final EvaluationStrategy strategy;
 
 	/**
-	 * The set of binding names that are "in scope" for the filter. The filter
-	 * must not include bindings that are (only) included because of the
-	 * depth-first evaluation strategy in the evaluation of the constraint.
+	 * The set of binding names that are "in scope" for the filter. The filter must not include bindings that
+	 * are (only) included because of the depth-first evaluation strategy in the evaluation of the constraint.
 	 */
 	private final Set<String> scopeBindingNames;
 
@@ -49,7 +48,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		this.filter = filter;
 		this.strategy = strategy;
 		this.scopeBindingNames = filter.getBindingNames();
-		
+
 	}
 
 	/*---------*
@@ -60,7 +59,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		if (node instanceof SubQueryValueOperator) {
 			return true;
 		}
-		
+
 		QueryModelNode parent = node.getParentNode();
 		if (parent == null) {
 			return false;
@@ -69,7 +68,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 			return isPartOfSubQuery(parent);
 		}
 	}
-	
+
 	@Override
 	protected boolean accept(BindingSet bindings)
 		throws QueryEvaluationException
@@ -77,7 +76,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		try {
 			// Limit the bindings to the ones that are in scope for this filter
 			QueryBindingSet scopeBindings = new QueryBindingSet(bindings);
-			
+
 			// FIXME J1 scopeBindingNames should include bindings from superquery if the filter
 			// is part of a subquery. This is a workaround: we should fix the settings of scopeBindingNames, 
 			// rather than skipping the limiting of bindings.

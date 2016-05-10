@@ -19,9 +19,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
- * The SPARQL built-in {@link Function} STRAFTER, as defined in <a
- * href="http://www.w3.org/TR/sparql11-query/#func-substr">SPARQL Query Language
- * for RDF</a>.
+ * The SPARQL built-in {@link Function} STRAFTER, as defined in
+ * <a href="http://www.w3.org/TR/sparql11-query/#func-substr">SPARQL Query Language for RDF</a>.
  * 
  * @author Jeen Broekstra
  */
@@ -35,7 +34,8 @@ public class StrAfter implements Function {
 		throws ValueExprEvaluationException
 	{
 		if (args.length != 2) {
-			throw new ValueExprEvaluationException("Incorrect number of arguments for STRAFTER: " + args.length);
+			throw new ValueExprEvaluationException(
+					"Incorrect number of arguments for STRAFTER: " + args.length);
 		}
 
 		Value leftArg = args[0];
@@ -44,9 +44,8 @@ public class StrAfter implements Function {
 		if (leftArg instanceof Literal && rightArg instanceof Literal) {
 			Literal leftLit = (Literal)leftArg;
 			Literal rightLit = (Literal)rightArg;
-			
-			if (QueryEvaluationUtil.compatibleArguments(leftLit, rightLit))
-			{
+
+			if (QueryEvaluationUtil.compatibleArguments(leftLit, rightLit)) {
 				String lexicalValue = leftLit.getLabel();
 				String substring = rightLit.getLabel();
 
@@ -65,7 +64,7 @@ public class StrAfter implements Function {
 					leftLanguage = Optional.empty();
 					leftDt = null;
 				}
-				
+
 				if (leftLanguage.isPresent()) {
 					return valueFactory.createLiteral(substringAfter, leftLanguage.get());
 				}
@@ -77,11 +76,13 @@ public class StrAfter implements Function {
 				}
 			}
 			else {
-				throw new ValueExprEvaluationException("incompatible operands for STRAFTER: " + leftArg + ", " + rightArg);
+				throw new ValueExprEvaluationException(
+						"incompatible operands for STRAFTER: " + leftArg + ", " + rightArg);
 			}
 		}
 		else {
-			throw new ValueExprEvaluationException("incompatible operands for STRAFTER: " + leftArg + ", " + rightArg);
+			throw new ValueExprEvaluationException(
+					"incompatible operands for STRAFTER: " + leftArg + ", " + rightArg);
 		}
 	}
 }

@@ -12,8 +12,8 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 public interface RepositoryManagerListener {
 
 	public void initialized(RepositoryManager manager);
-	
+
 	public void refreshed(RepositoryManager manager);
-	
+
 	public void shutDown(RepositoryManager manager);
 }

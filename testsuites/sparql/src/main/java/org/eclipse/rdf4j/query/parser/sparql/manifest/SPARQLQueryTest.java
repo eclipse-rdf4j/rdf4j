@@ -69,8 +69,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A SPARQL query test suite, created by reading in a W3C working-group style
- * manifest.
+ * A SPARQL query test suite, created by reading in a W3C working-group style manifest.
  * 
  * @author Jeen Broekstra
  */
@@ -250,7 +249,8 @@ public abstract class SPARQLQueryTest extends TestCase {
 		}
 	}
 
-	protected final void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult)
+	protected final void compareTupleQueryResults(TupleQueryResult queryResult,
+			TupleQueryResult expectedResult)
 		throws Exception
 	{
 		// Create MutableTupleQueryResult to be able to re-iterate over the
@@ -287,19 +287,14 @@ public abstract class SPARQLQueryTest extends TestCase {
 			expectedResultTable.beforeFirst();
 
 			/*
-			 * StringBuilder message = new StringBuilder(128);
-			 * message.append("\n============ "); message.append(getName());
-			 * message.append(" =======================\n");
-			 * message.append("Expected result: \n"); while
-			 * (expectedResultTable.hasNext()) {
+			 * StringBuilder message = new StringBuilder(128); message.append("\n============ ");
+			 * message.append(getName()); message.append(" =======================\n"); message.append(
+			 * "Expected result: \n"); while (expectedResultTable.hasNext()) {
 			 * message.append(expectedResultTable.next()); message.append("\n"); }
-			 * message.append("============="); StringUtil.appendN('=',
-			 * getName().length(), message);
-			 * message.append("========================\n"); message.append("Query
-			 * result: \n"); while (queryResultTable.hasNext()) {
-			 * message.append(queryResultTable.next()); message.append("\n"); }
-			 * message.append("============="); StringUtil.appendN('=',
-			 * getName().length(), message);
+			 * message.append("============="); StringUtil.appendN('=', getName().length(), message);
+			 * message.append("========================\n"); message.append("Query result: \n"); while
+			 * (queryResultTable.hasNext()) { message.append(queryResultTable.next()); message.append("\n"); }
+			 * message.append("============="); StringUtil.appendN('=', getName().length(), message);
 			 * message.append("========================\n");
 			 */
 
@@ -377,27 +372,14 @@ public abstract class SPARQLQueryTest extends TestCase {
 			logger.error(message.toString());
 			fail(message.toString());
 		}
-		/* debugging only: print out result when test succeeds 
-		else {
-			queryResultTable.beforeFirst();
-
-			List<BindingSet> queryBindings = Iterations.asList(queryResultTable);
-			StringBuilder message = new StringBuilder(128);
-
-			message.append("\n============ ");
-			message.append(getName());
-			message.append(" =======================\n");
-
-			message.append(" =======================\n");
-			message.append("query result: \n");
-			for (BindingSet bs: queryBindings) {
-				message.append(bs);
-				message.append("\n");
-			}
-			
-			System.out.print(message.toString());
-		}
-		*/
+		/*
+		 * debugging only: print out result when test succeeds else { queryResultTable.beforeFirst();
+		 * List<BindingSet> queryBindings = Iterations.asList(queryResultTable); StringBuilder message = new
+		 * StringBuilder(128); message.append("\n============ "); message.append(getName()); message.append(
+		 * " =======================\n"); message.append(" =======================\n"); message.append(
+		 * "query result: \n"); for (BindingSet bs: queryBindings) { message.append(bs); message.append("\n");
+		 * } System.out.print(message.toString()); }
+		 */
 	}
 
 	protected final void printBindingSet(BindingSet bs, StringBuilder appendable) {
@@ -419,25 +401,19 @@ public abstract class SPARQLQueryTest extends TestCase {
 		if (!Models.isomorphic(expectedResult, queryResult)) {
 			// Don't use RepositoryUtil.difference, it reports incorrect diffs
 			/*
-			 * Collection<? extends Statement> unexpectedStatements =
-			 * RepositoryUtil.difference(queryResult, expectedResult); Collection<?
-			 * extends Statement> missingStatements =
-			 * RepositoryUtil.difference(expectedResult, queryResult);
-			 * StringBuilder message = new StringBuilder(128);
-			 * message.append("\n=======Diff: "); message.append(getName());
-			 * message.append("========================\n"); if
-			 * (!unexpectedStatements.isEmpty()) { message.append("Unexpected
-			 * statements in result: \n"); for (Statement st :
-			 * unexpectedStatements) { message.append(st.toString());
-			 * message.append("\n"); } message.append("============="); for (int i =
-			 * 0; i < getName().length(); i++) { message.append("="); }
-			 * message.append("========================\n"); } if
-			 * (!missingStatements.isEmpty()) { message.append("Statements missing
-			 * in result: \n"); for (Statement st : missingStatements) {
-			 * message.append(st.toString()); message.append("\n"); }
-			 * message.append("============="); for (int i = 0; i <
-			 * getName().length(); i++) { message.append("="); }
-			 * message.append("========================\n"); }
+			 * Collection<? extends Statement> unexpectedStatements = RepositoryUtil.difference(queryResult,
+			 * expectedResult); Collection<? extends Statement> missingStatements =
+			 * RepositoryUtil.difference(expectedResult, queryResult); StringBuilder message = new
+			 * StringBuilder(128); message.append("\n=======Diff: "); message.append(getName());
+			 * message.append("========================\n"); if (!unexpectedStatements.isEmpty()) {
+			 * message.append("Unexpected statements in result: \n"); for (Statement st :
+			 * unexpectedStatements) { message.append(st.toString()); message.append("\n"); }
+			 * message.append("============="); for (int i = 0; i < getName().length(); i++) {
+			 * message.append("="); } message.append("========================\n"); } if
+			 * (!missingStatements.isEmpty()) { message.append("Statements missing in result: \n"); for
+			 * (Statement st : missingStatements) { message.append(st.toString()); message.append("\n"); }
+			 * message.append("============="); for (int i = 0; i < getName().length(); i++) {
+			 * message.append("="); } message.append("========================\n"); }
 			 */
 			StringBuilder message = new StringBuilder(128);
 			message.append("\n============ ");
@@ -492,7 +468,8 @@ public abstract class SPARQLQueryTest extends TestCase {
 
 		try {
 			con.begin();
-			RDFFormat rdfFormat = Rio.getParserFormatForFileName(graphURI.toString()).orElse(RDFFormat.TURTLE);
+			RDFFormat rdfFormat = Rio.getParserFormatForFileName(graphURI.toString()).orElse(
+					RDFFormat.TURTLE);
 			RDFParser rdfParser = Rio.createParser(rdfFormat, dataRep.getValueFactory());
 			rdfParser.setVerifyData(false);
 			rdfParser.setDatatypeHandling(DatatypeHandling.IGNORE);
@@ -643,7 +620,8 @@ public abstract class SPARQLQueryTest extends TestCase {
 		// Extract test case information from the manifest file. Note that we only
 		// select those test cases that are mentioned in the list.
 		StringBuilder query = new StringBuilder(512);
-		query.append(" SELECT DISTINCT testURI, testName, resultFile, action, queryFile, defaultGraph, ordered ");
+		query.append(
+				" SELECT DISTINCT testURI, testName, resultFile, action, queryFile, defaultGraph, ordered ");
 		query.append(" FROM {} rdf:first {testURI} ");
 		if (approvedOnly) {
 			query.append("                          dawgt:approval {dawgt:Approved}; ");
@@ -737,13 +715,10 @@ public abstract class SPARQLQueryTest extends TestCase {
 			// difference is the semantics of arbitrary-length
 			// paths
 			/*
-			if (!laxCardinality) {
-				// property-path tests always with lax cardinality because Sesame filters out duplicates by design
-				if (testURI.stringValue().contains("property-path")) {
-					laxCardinality = true;
-				}
-			}
-			*/
+			 * if (!laxCardinality) { // property-path tests always with lax cardinality because Sesame
+			 * filters out duplicates by design if (testURI.stringValue().contains("property-path")) {
+			 * laxCardinality = true; } }
+			 */
 
 			// Two SPARQL distinctness tests fail in RDF-1.1 if the only difference
 			// is in the number of results

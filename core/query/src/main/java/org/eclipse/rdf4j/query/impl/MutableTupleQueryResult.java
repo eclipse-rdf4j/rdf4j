@@ -22,9 +22,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 
 /**
- * An implementation of the {@link TupleQueryResult} interface that stores the
- * complete query result in memory. The query results in a
- * MutableTupleQueryResult can be iterated over multiple times and can also be
+ * An implementation of the {@link TupleQueryResult} interface that stores the complete query result in
+ * memory. The query results in a MutableTupleQueryResult can be iterated over multiple times and can also be
  * iterated over in reverse order.
  * 
  * @author Arjohn Kampman
@@ -40,15 +39,13 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 	private List<BindingSet> bindingSets = new ArrayList<BindingSet>();
 
 	/**
-	 * The index of the next element that will be returned by a call to
-	 * {@link #next()}.
+	 * The index of the next element that will be returned by a call to {@link #next()}.
 	 */
 	private int currentIndex = 0;
 
 	/**
-	 * The index of the last element that was returned by a call to
-	 * {@link #next()} or {@link #previous()}. Equal to -1 if there is no such
-	 * element.
+	 * The index of the last element that was returned by a call to {@link #next()} or {@link #previous()}.
+	 * Equal to -1 if there is no such element.
 	 */
 	private int lastReturned = -1;
 
@@ -64,9 +61,8 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 
 	/**
 	 * Creates a query result table with the supplied binding names.
-	 * <em>The supplied list of binding names is assumed to be constant</em>;
-	 * care should be taken that the contents of this list doesn't change after
-	 * supplying it to this solution.
+	 * <em>The supplied list of binding names is assumed to be constant</em>; care should be taken that the
+	 * contents of this list doesn't change after supplying it to this solution.
 	 * 
 	 * @param bindingNames
 	 *        The binding names, in order of projection.
@@ -151,31 +147,27 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 	}
 
 	/**
-	 * Moves the cursor to the start of the query result, just before the first
-	 * binding set. After calling this method, the result can be iterated over
-	 * from scratch.
+	 * Moves the cursor to the start of the query result, just before the first binding set. After calling
+	 * this method, the result can be iterated over from scratch.
 	 */
 	public void beforeFirst() {
 		currentIndex = 0;
 	}
 
 	/**
-	 * Moves the cursor to the end of the query result, just after the last
-	 * binding set.
+	 * Moves the cursor to the end of the query result, just after the last binding set.
 	 */
 	public void afterLast() {
 		currentIndex = bindingSets.size() + 1;
 	}
 
 	/**
-	 * Inserts the specified binding set into the list. The binding set is
-	 * inserted immediately before the next element that would be returned by
-	 * {@link #next()}, if any, and after the next element that would be
-	 * returned by {@link #previous}, if any. (If the table contains no binding
-	 * sets, the new element becomes the sole element on the table.) The new
-	 * element is inserted before the implicit cursor: a subsequent call to
-	 * <tt>next()</tt> would be unaffected, and a subsequent call to
-	 * <tt>previous()</tt> would return the new binding set.
+	 * Inserts the specified binding set into the list. The binding set is inserted immediately before the
+	 * next element that would be returned by {@link #next()}, if any, and after the next element that would
+	 * be returned by {@link #previous}, if any. (If the table contains no binding sets, the new element
+	 * becomes the sole element on the table.) The new element is inserted before the implicit cursor: a
+	 * subsequent call to <tt>next()</tt> would be unaffected, and a subsequent call to <tt>previous()</tt>
+	 * would return the new binding set.
 	 * 
 	 * @param bindingSet
 	 *        The binding set to insert.

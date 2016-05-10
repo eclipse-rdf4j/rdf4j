@@ -39,15 +39,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Abstract tests to confirm consistent behaviour for the datatype and language
- * handling settings.
+ * Abstract tests to confirm consistent behaviour for the datatype and language handling settings.
  * 
  * @author Peter Ansell
  */
 public abstract class AbstractParserHandlingTest {
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
-	
+
 	/**
 	 * Base URI for test parsing.
 	 */
@@ -72,8 +71,7 @@ public abstract class AbstractParserHandlingTest {
 	/**
 	 * Test URI used for testing known datatype support.
 	 * <p>
-	 * This may be anything, but it must match with the given
-	 * {@link DatatypeHandler}.
+	 * This may be anything, but it must match with the given {@link DatatypeHandler}.
 	 */
 	private static final IRI KNOWN_DATATYPE_URI = XMLSchema.INTEGER;
 
@@ -106,13 +104,11 @@ public abstract class AbstractParserHandlingTest {
 	private Model testStatements;
 
 	/**
-	 * Returns an {@link InputStream} containing the given RDF statements in a
-	 * format that is recognised by the RDFParser returned by
-	 * {@link #getParser()}.
+	 * Returns an {@link InputStream} containing the given RDF statements in a format that is recognised by
+	 * the RDFParser returned by {@link #getParser()}.
 	 * 
 	 * @param unknownDatatypeStatements
-	 *        A {@link Model} containing statements which all contain unknown
-	 *        datatypes.
+	 *        A {@link Model} containing statements which all contain unknown datatypes.
 	 * @return An InputStream based on the given parameters.
 	 */
 	protected abstract InputStream getUnknownDatatypeStream(Model unknownDatatypeStatements)
@@ -162,8 +158,7 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an unknown datatype with the default settings will both
-	 * generate no message and not fail.
+	 * Tests whether an unknown datatype with the default settings will both generate no message and not fail.
 	 */
 	@Test
 	public final void testUnknownDatatypeNoMessageNoFailCase1()
@@ -179,9 +174,8 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an unknown datatype with the default settings (using
-	 * {@link ParserConfig#useDefaults()}) will both generate no message and not
-	 * fail.
+	 * Tests whether an unknown datatype with the default settings (using {@link ParserConfig#useDefaults()})
+	 * will both generate no message and not fail.
 	 */
 	@Test
 	public final void testUnknownDatatypeNoMessageNoFailCase2()
@@ -199,8 +193,7 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an unknown datatype with the correct settings will both
-	 * generate no message and not fail.
+	 * Tests whether an unknown datatype with the correct settings will both generate no message and not fail.
 	 */
 	@Test
 	public final void testUnknownDatatypeNoMessageNoFailCase3()
@@ -218,9 +211,8 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an unknown datatype with the correct settings will both
-	 * generate no message and not fail when addNonFatalError is called with the
-	 * given setting.
+	 * Tests whether an unknown datatype with the correct settings will both generate no message and not fail
+	 * when addNonFatalError is called with the given setting.
 	 */
 	@Test
 	public final void testUnknownDatatypeNoMessageNoFailCase4()
@@ -239,9 +231,8 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an unknown datatype with the correct settings will both
-	 * generate no message and not fail when setNonFatalError is called with an
-	 * empty set to reset the fatal errors
+	 * Tests whether an unknown datatype with the correct settings will both generate no message and not fail
+	 * when setNonFatalError is called with an empty set to reset the fatal errors
 	 */
 	@Test
 	public final void testUnknownDatatypeNoMessageNoFailCase5()
@@ -343,8 +334,7 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an known datatype with the default settings will both
-	 * generate no message and not fail.
+	 * Tests whether an known datatype with the default settings will both generate no message and not fail.
 	 */
 	@Test
 	public final void testKnownDatatypeNoMessageNoFailCase1()
@@ -360,9 +350,8 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an known datatype with the default settings (using
-	 * {@link ParserConfig#useDefaults()}) will both generate no message and not
-	 * fail.
+	 * Tests whether an known datatype with the default settings (using {@link ParserConfig#useDefaults()})
+	 * will both generate no message and not fail.
 	 */
 	@Test
 	public final void testKnownDatatypeNoMessageNoFailCase2()
@@ -380,8 +369,7 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an known datatype with the correct settings will both
-	 * generate no message and not fail.
+	 * Tests whether an known datatype with the correct settings will both generate no message and not fail.
 	 */
 	@Test
 	public final void testKnownDatatypeNoMessageNoFailCase3()
@@ -399,9 +387,8 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an known datatype with the correct settings will both
-	 * generate no message and not fail when addNonFatalError is called with the
-	 * given setting.
+	 * Tests whether an known datatype with the correct settings will both generate no message and not fail
+	 * when addNonFatalError is called with the given setting.
 	 */
 	@Test
 	public final void testKnownDatatypeNoMessageNoFailCase4()
@@ -420,9 +407,8 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an known datatype with the correct settings will both
-	 * generate no message and not fail when setNonFatalError is called with an
-	 * empty set to reset the fatal errors
+	 * Tests whether an known datatype with the correct settings will both generate no message and not fail
+	 * when setNonFatalError is called with an empty set to reset the fatal errors
 	 */
 	@Test
 	public final void testKnownDatatypeNoMessageNoFailCase5()
@@ -500,8 +486,7 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an known datatype with the message which generates a failure
-	 * if the datatype is unknown.
+	 * Tests whether an known datatype with the message which generates a failure if the datatype is unknown.
 	 */
 	@Test
 	public final void testKnownDatatypeWithMessageWhereUnknownWouldFailCase1()
@@ -519,8 +504,7 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an unknown language with the default settings will both
-	 * generate no message and not fail.
+	 * Tests whether an unknown language with the default settings will both generate no message and not fail.
 	 */
 	@Test
 	public final void testUnknownLanguageNoMessageNoFailCase1()
@@ -536,9 +520,8 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an unknown language with the default settings (using
-	 * {@link ParserConfig#useDefaults()}) will both generate no message and not
-	 * fail.
+	 * Tests whether an unknown language with the default settings (using {@link ParserConfig#useDefaults()})
+	 * will both generate no message and not fail.
 	 */
 	@Test
 	public final void testUnknownLanguageNoMessageNoFailCase2()
@@ -556,8 +539,7 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an unknown language with the correct settings will both
-	 * generate no message and not fail.
+	 * Tests whether an unknown language with the correct settings will both generate no message and not fail.
 	 */
 	@Test
 	public final void testUnknownLanguageNoMessageNoFailCase3()
@@ -575,9 +557,8 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an unknown language with the correct settings will both
-	 * generate no message and not fail when addNonFatalError is called with the
-	 * given setting.
+	 * Tests whether an unknown language with the correct settings will both generate no message and not fail
+	 * when addNonFatalError is called with the given setting.
 	 */
 	@Test
 	public final void testUnknownLanguageNoMessageNoFailCase4()
@@ -596,9 +577,8 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an unknown language with the correct settings will both
-	 * generate no message and not fail when setNonFatalError is called with an
-	 * empty set to reset the fatal errors
+	 * Tests whether an unknown language with the correct settings will both generate no message and not fail
+	 * when setNonFatalError is called with an empty set to reset the fatal errors
 	 */
 	@Test
 	public final void testUnknownLanguageNoMessageNoFailCase5()
@@ -700,8 +680,7 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an known language with the default settings will both
-	 * generate no message and not fail.
+	 * Tests whether an known language with the default settings will both generate no message and not fail.
 	 */
 	@Test
 	public final void testKnownLanguageNoMessageNoFailCase1()
@@ -717,9 +696,8 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an known language with the default settings (using
-	 * {@link ParserConfig#useDefaults()}) will both generate no message and not
-	 * fail.
+	 * Tests whether an known language with the default settings (using {@link ParserConfig#useDefaults()})
+	 * will both generate no message and not fail.
 	 */
 	@Test
 	public final void testKnownLanguageNoMessageNoFailCase2()
@@ -737,8 +715,7 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an known language with the correct settings will both
-	 * generate no message and not fail.
+	 * Tests whether an known language with the correct settings will both generate no message and not fail.
 	 */
 	@Test
 	public final void testKnownLanguageNoMessageNoFailCase3()
@@ -756,9 +733,8 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an known language with the correct settings will both
-	 * generate no message and not fail when addNonFatalError is called with the
-	 * given setting.
+	 * Tests whether an known language with the correct settings will both generate no message and not fail
+	 * when addNonFatalError is called with the given setting.
 	 */
 	@Test
 	public final void testKnownLanguageNoMessageNoFailCase4()
@@ -777,9 +753,8 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an known language with the correct settings will both
-	 * generate no message and not fail when setNonFatalError is called with an
-	 * empty set to reset the fatal errors
+	 * Tests whether an known language with the correct settings will both generate no message and not fail
+	 * when setNonFatalError is called with an empty set to reset the fatal errors
 	 */
 	@Test
 	public final void testKnownLanguageNoMessageNoFailCase5()
@@ -857,8 +832,7 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	/**
-	 * Tests whether an known language with the message which generates a failure
-	 * if the language is unknown.
+	 * Tests whether an known language with the message which generates a failure if the language is unknown.
 	 */
 	@Test
 	public final void testKnownLanguageWithMessageWhereUnknownWouldFailCase1()
@@ -876,7 +850,7 @@ public abstract class AbstractParserHandlingTest {
 	}
 
 	private void assertModel(Model expectedModel) {
-		if(logger.isTraceEnabled()) {
+		if (logger.isTraceEnabled()) {
 			logger.trace("Expected: {}", expectedModel);
 			logger.trace("Actual: {}", testStatements);
 		}

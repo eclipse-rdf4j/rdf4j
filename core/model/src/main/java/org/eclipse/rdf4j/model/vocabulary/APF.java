@@ -16,7 +16,8 @@ import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
  */
 public final class APF {
 
-	private APF() {}
+	private APF() {
+	}
 
 	/**
 	 * http://jena.hpl.hp.com/ARQ/property
@@ -26,6 +27,7 @@ public final class APF {
 	public static final String PREFIX = "apf";
 
 	public static final URI STR_SPLIT;
+
 	public static final URI CONCAT;
 
 	static {

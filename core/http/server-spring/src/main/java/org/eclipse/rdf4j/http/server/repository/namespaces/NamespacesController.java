@@ -112,7 +112,8 @@ public class NamespacesController extends AbstractController {
 					throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 				}
 			}
-			model.put(QueryResultView.QUERY_RESULT_KEY, new IteratingTupleQueryResult(columnNames, namespaces));
+			model.put(QueryResultView.QUERY_RESULT_KEY,
+					new IteratingTupleQueryResult(columnNames, namespaces));
 		}
 
 		TupleQueryResultWriterFactory factory = ProtocolUtil.getAcceptableService(request, response,

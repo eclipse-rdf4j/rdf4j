@@ -46,8 +46,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 	}
 
 	/**
-	 * Applies generally applicable optimizations: path expressions are sorted
-	 * from more to less specific.
+	 * Applies generally applicable optimizations: path expressions are sorted from more to less specific.
 	 * 
 	 * @throws StoreException
 	 */
@@ -181,10 +180,9 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 		}
 
 		/**
-		 * Selects from a list of tuple expressions the next tuple expression that
-		 * should be evaluated. This method selects the tuple expression with
-		 * highest number of bound variables, preferring variables that have been
-		 * bound in other tuple expressions over variables with a fixed value.
+		 * Selects from a list of tuple expressions the next tuple expression that should be evaluated. This
+		 * method selects the tuple expression with highest number of bound variables, preferring variables
+		 * that have been bound in other tuple expressions over variables with a fixed value.
 		 */
 		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions,
 				Map<TupleExpr, Double> cardinalityMap, Map<TupleExpr, List<Var>> varsMap,

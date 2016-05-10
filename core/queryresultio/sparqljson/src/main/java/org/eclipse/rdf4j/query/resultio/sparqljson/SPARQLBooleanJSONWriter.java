@@ -15,9 +15,8 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
 
 /**
- * A BooleanQueryResultWriter that writes query results in the <a
- * href="http://www.w3.org/TR/rdf-sparql-json-res/">SPARQL Query Results JSON
- * Format</a>.
+ * A BooleanQueryResultWriter that writes query results in the
+ * <a href="http://www.w3.org/TR/rdf-sparql-json-res/">SPARQL Query Results JSON Format</a>.
  */
 public class SPARQLBooleanJSONWriter extends AbstractSPARQLJSONWriter implements BooleanQueryResultWriter {
 

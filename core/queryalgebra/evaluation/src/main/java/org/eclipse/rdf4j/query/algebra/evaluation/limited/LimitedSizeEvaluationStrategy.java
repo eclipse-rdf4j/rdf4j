@@ -67,8 +67,8 @@ public class LimitedSizeEvaluationStrategy extends SimpleEvaluationStrategy {
 	 * @param dataset
 	 * @param maxCollectionsSize
 	 */
-	public LimitedSizeEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-			int maxCollectionsSize, FederatedServiceResolver serviceManager)
+	public LimitedSizeEvaluationStrategy(TripleSource tripleSource, Dataset dataset, int maxCollectionsSize,
+			FederatedServiceResolver serviceManager)
 	{
 		super(tripleSource, dataset, serviceManager);
 		this.maxSize = maxCollectionsSize;
@@ -172,8 +172,10 @@ public class LimitedSizeEvaluationStrategy extends SimpleEvaluationStrategy {
 		final Var contextVar = alp.getContextVar();
 		final long minLength = alp.getMinLength();
 
-		return new LimitedSizePathIterator(this, scope, subjectVar, pathExpression, objVar, contextVar, minLength, bindings, used, maxSize);
+		return new LimitedSizePathIterator(this, scope, subjectVar, pathExpression, objVar, contextVar,
+				minLength, bindings, used, maxSize);
 	}
+
 	@Override
 	protected ZeroLengthPathIteration getZeroLengthPathIterator(BindingSet bindings, Var subjectVar,
 			Var objVar, Var contextVar, Value subj, Value obj)
@@ -181,15 +183,16 @@ public class LimitedSizeEvaluationStrategy extends SimpleEvaluationStrategy {
 		return new LimitedSizeZeroLengthPathIteration(this, subjectVar, objVar, subj, obj, contextVar,
 				bindings, used, maxSize);
 	}
-	
+
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Order node, BindingSet bindings)
-			throws QueryEvaluationException
-		{
-			ValueComparator vcmp = new ValueComparator();
-			OrderComparator cmp = new OrderComparator(this, node, vcmp);
-			boolean reduced = isReducedOrDistinct(node);
-			long limit = getLimit(node);
-			return new LimitedSizeOrderIteration(evaluate(node.getArg(), bindings), cmp, limit, reduced, used, maxSize);
-		}
+		throws QueryEvaluationException
+	{
+		ValueComparator vcmp = new ValueComparator();
+		OrderComparator cmp = new OrderComparator(this, node, vcmp);
+		boolean reduced = isReducedOrDistinct(node);
+		long limit = getLimit(node);
+		return new LimitedSizeOrderIteration(evaluate(node.getArg(), bindings), cmp, limit, reduced, used,
+				maxSize);
+	}
 }

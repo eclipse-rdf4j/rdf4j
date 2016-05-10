@@ -17,8 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * PlatformFactory creates a Platform instance corresponding with the current
- * platform.
+ * PlatformFactory creates a Platform instance corresponding with the current platform.
  */
 public class PlatformFactory {
 
@@ -58,9 +57,8 @@ public class PlatformFactory {
 	}
 
 	/**
-	 * Tries to determine the platform we're running on based on Java system
-	 * properties and/or environment variables. See
-	 * http://lopica.sourceforge.net/os.html for an overview.
+	 * Tries to determine the platform we're running on based on Java system properties and/or environment
+	 * variables. See http://lopica.sourceforge.net/os.html for an overview.
 	 */
 	private Platform createPlatform() {
 		Platform platform;
@@ -94,13 +92,15 @@ public class PlatformFactory {
 						platform = new PosixPlatform();
 					}
 				}
-				else if (osName.contains("mac os x") || osName.contains("macos") || osName.contains("darwin") ||
-						System.getProperty("mrj.version") != null) {
+				else if (osName.contains("mac os x") || osName.contains("macos") || osName.contains("darwin")
+						|| System.getProperty("mrj.version") != null)
+				{
 					logger.debug("Detected Mac OS X platform");
 					platform = new MacOSXPlatform();
 				}
 				else {
-					logger.warn("Unrecognized operating system: '{}', falling back to default platform", osName);
+					logger.warn("Unrecognized operating system: '{}', falling back to default platform",
+							osName);
 					platform = new DefaultPlatform();
 				}
 			}

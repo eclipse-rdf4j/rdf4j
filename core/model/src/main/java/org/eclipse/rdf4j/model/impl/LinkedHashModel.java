@@ -31,22 +31,17 @@ import org.eclipse.rdf4j.model.util.PatternIterator;
 /**
  * Hash table based implementation of the <tt>{@link Model}</tt> interface.
  * <p>
- * This implementation provides constant-time performance for filters using a
- * single term, assuming the hash function disperses the elements properly among
- * the buckets. Each term is indexed using a {@link HashMap}. When multiple
- * terms are provided in a filter the index, of the term that reduces the
- * possible {@link Statement}s the most, is used and a sequential scan is used
- * to filter additional terms.
+ * This implementation provides constant-time performance for filters using a single term, assuming the hash
+ * function disperses the elements properly among the buckets. Each term is indexed using a {@link HashMap}.
+ * When multiple terms are provided in a filter the index, of the term that reduces the possible
+ * {@link Statement}s the most, is used and a sequential scan is used to filter additional terms.
  * <p>
- * <b>Note that this implementation is not synchronized.</b> If multiple threads
- * access a model concurrently, and at least one of the threads modifies the
- * model, it must be synchronized externally. This is typically accomplished by
- * synchronizing on some object that naturally encapsulates the model. If no
- * such object exists, the set should be "wrapped" using the
- * Collections.synchronizedSet method. This is best done at creation time, to
- * prevent accidental unsynchronized access to the LinkedHashModel instance
- * (though the synchronization guarantee is only when accessing via the Set
- * interface methods):
+ * <b>Note that this implementation is not synchronized.</b> If multiple threads access a model concurrently,
+ * and at least one of the threads modifies the model, it must be synchronized externally. This is typically
+ * accomplished by synchronizing on some object that naturally encapsulates the model. If no such object
+ * exists, the set should be "wrapped" using the Collections.synchronizedSet method. This is best done at
+ * creation time, to prevent accidental unsynchronized access to the LinkedHashModel instance (though the
+ * synchronization guarantee is only when accessing via the Set interface methods):
  * </p>
  * 
  * <pre>

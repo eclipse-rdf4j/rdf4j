@@ -146,20 +146,20 @@ public class QuerySpecBuilderTest {
 	{
 		// default works
 		String queryString = "SELECT sub1, score1, snippet1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<"
-				+ TYPE + "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; " + "<" + SCORE
-				+ "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
+				+ TYPE + "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; " + "<"
+				+ SCORE + "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
 		checkQuery(queryString);
 
 		// minimal works
-		queryString = "SELECT sub1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<" + TYPE + "> {<" + LUCENE_QUERY
-				+ ">}; " + "<" + QUERY + "> {\"my Lucene query\"} ";
+		queryString = "SELECT sub1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<" + TYPE + "> {<"
+				+ LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"} ";
 		checkQuery(queryString);
 
 		// matches missing
 		queryString = "SELECT sub1, score1, snippet1 FROM "
 				// + "{sub1} <" + MATCHES + "> {} "
-				+ "<" + TYPE + "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; " + "<"
-				+ SCORE + "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
+				+ "<" + TYPE + "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; "
+				+ "<" + SCORE + "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
 		try {
 			checkQuery(queryString);
 			fail("invalid query ignored");
@@ -170,7 +170,7 @@ public class QuerySpecBuilderTest {
 
 		// type missing
 		queryString = "SELECT sub1, score1, snippet1 FROM " + "{sub1} <" + MATCHES + "> {} "
-				// +"<" + TYPE + "> {<" + LUCENE_QUERY + ">}; "
+		// +"<" + TYPE + "> {<" + LUCENE_QUERY + ">}; "
 				+ "<" + QUERY + "> {\"my Lucene query\"}; " + "<" + SCORE + "> {score1}; " + "<" + SNIPPET
 				+ "> {snippet1}";
 		try {
@@ -196,8 +196,8 @@ public class QuerySpecBuilderTest {
 	}
 
 	/**
-	 * Checks if the querystring contains exactly one lucene query throws
-	 * exceptions if not or if the query is incomplete
+	 * Checks if the querystring contains exactly one lucene query throws exceptions if not or if the query is
+	 * incomplete
 	 *
 	 * @param queryString
 	 */

@@ -20,13 +20,12 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 
 /**
- * An extension of ConnectionWrapper that implements the
- * {@link InferencerConnection} interface.
+ * An extension of ConnectionWrapper that implements the {@link InferencerConnection} interface.
  * 
  * @author Arjohn Kampman
  */
-public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper implements
-		InferencerConnection
+public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper
+		implements InferencerConnection
 {
 
 	/*--------------*
@@ -34,8 +33,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	 *--------------*/
 
 	/**
-	 * Creates a new InferencerConnectionWrapper object that wraps the supplied
-	 * transaction.
+	 * Creates a new InferencerConnectionWrapper object that wraps the supplied transaction.
 	 */
 	public InferencerConnectionWrapper(InferencerConnection con) {
 		super(con);
@@ -87,8 +85,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	}
 
 	/**
-	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped
-	 * connection.
+	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped connection.
 	 */
 	@Override
 	public void prepare()
@@ -99,8 +96,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	}
 
 	/**
-	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped
-	 * connection.
+	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped connection.
 	 */
 	@Override
 	public void commit()
@@ -111,8 +107,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	}
 
 	/**
-	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped
-	 * connection.
+	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped connection.
 	 */
 	@Override
 	public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
@@ -124,8 +119,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	}
 
 	/**
-	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped
-	 * connection.
+	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped connection.
 	 */
 	@Override
 	public CloseableIteration<? extends Resource, SailException> getContextIDs()
@@ -136,8 +130,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	}
 
 	/**
-	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped
-	 * connection.
+	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped connection.
 	 */
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
@@ -149,8 +142,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	}
 
 	/**
-	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped
-	 * connection.
+	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped connection.
 	 */
 	@Override
 	public long size(Resource... contexts)

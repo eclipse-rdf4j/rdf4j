@@ -31,9 +31,8 @@ public class MapBindingSet extends AbstractBindingSet {
 	}
 
 	/**
-	 * Creates a new Map-based BindingSet with the specified initial capacity.
-	 * Bindings can be added to this binding set using the {@link #addBinding}
-	 * methods.
+	 * Creates a new Map-based BindingSet with the specified initial capacity. Bindings can be added to this
+	 * binding set using the {@link #addBinding} methods.
 	 * 
 	 * @param capacity
 	 *        The initial capacity of the created BindingSet object.

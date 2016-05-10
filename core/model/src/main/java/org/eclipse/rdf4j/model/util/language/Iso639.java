@@ -20,9 +20,8 @@ import java.util.Map;
  * Language codes from ISO639-1 and ISO639-2.
  * <p>
  * An encapsulation of the registry of ISO639-1 and ISO639-2 codes as found at
- * <a href="http://lcweb.loc.gov/standards/iso639-2/englangn.html">
- * http://lcweb.loc.gov/standards/iso639-2/englangn.html</a> on the 24th July
- * 2001, and dated 12th October 2000.
+ * <a href="http://lcweb.loc.gov/standards/iso639-2/englangn.html"> http://lcweb.loc.gov/standards/iso639-2/
+ * englangn.html</a> on the 24th July 2001, and dated 12th October 2000.
  * 
  * @author jjc
  */
@@ -57,7 +56,9 @@ public class Iso639 implements LanguageTagCodes {
 	static public Iso639 find(String lang) {
 		Iso639 rslt = (Iso639)all.get(lang);
 		if (rslt == null) {
-			if (lang != null && lang.compareTo("qaa") >= 0 && lang.compareTo("qtz") <= 0 && lang.length() == 3) {
+			if (lang != null && lang.compareTo("qaa") >= 0 && lang.compareTo("qtz") <= 0
+					&& lang.length() == 3)
+			{
 				return new Iso639("Reserved for local use", null, lang, lang, LT_LOCAL_USE);
 			}
 		}
@@ -65,8 +66,7 @@ public class Iso639 implements LanguageTagCodes {
 	}
 
 	/**
-	 * The bitwise OR of all applicable values from {@link LanguageTagCodes}.
-	 * The possibilities are:
+	 * The bitwise OR of all applicable values from {@link LanguageTagCodes}. The possibilities are:
 	 * <ul>
 	 * <li><CODE>LT_ISO639</CODE></li>
 	 * <li><CODE>LT_ISO639|LT_MULTIPLE</CODE> i.e. <CODE>mul</CODE></li>

@@ -47,7 +47,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A disk based {@link SailStore} implementation that keeps committed statements in a {@link TripleStore}.
- *  
+ * 
  * @author James Leigh
  */
 class NativeSailStore implements SailStore {
@@ -71,8 +71,8 @@ class NativeSailStore implements SailStore {
 	public NativeSailStore(File dataDir, String tripleIndexes)
 		throws IOException, SailException
 	{
-		this(dataDir, tripleIndexes, false, ValueStore.VALUE_CACHE_SIZE,
-				ValueStore.VALUE_ID_CACHE_SIZE, ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE);
+		this(dataDir, tripleIndexes, false, ValueStore.VALUE_CACHE_SIZE, ValueStore.VALUE_ID_CACHE_SIZE,
+				ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE);
 	}
 
 	/**
@@ -161,22 +161,19 @@ class NativeSailStore implements SailStore {
 	 * Creates a statement iterator based on the supplied pattern.
 	 * 
 	 * @param subj
-	 *        The subject of the pattern, or <tt>null</tt> to indicate a
-	 *        wildcard.
+	 *        The subject of the pattern, or <tt>null</tt> to indicate a wildcard.
 	 * @param pred
-	 *        The predicate of the pattern, or <tt>null</tt> to indicate a
-	 *        wildcard.
+	 *        The predicate of the pattern, or <tt>null</tt> to indicate a wildcard.
 	 * @param obj
 	 *        The object of the pattern, or <tt>null</tt> to indicate a wildcard.
 	 * @param contexts
-	 *        The context(s) of the pattern. Note that this parameter is a vararg
-	 *        and as such is optional. If no contexts are supplied the method
-	 *        operates on the entire repository.
-	 * @return A StatementIterator that can be used to iterate over the
-	 *         statements that match the specified pattern.
+	 *        The context(s) of the pattern. Note that this parameter is a vararg and as such is optional. If
+	 *        no contexts are supplied the method operates on the entire repository.
+	 * @return A StatementIterator that can be used to iterate over the statements that match the specified
+	 *         pattern.
 	 */
-	CloseableIteration<? extends Statement, SailException> createStatementIterator(Resource subj, URI pred, Value obj,
-			boolean explicit, Resource... contexts)
+	CloseableIteration<? extends Statement, SailException> createStatementIterator(Resource subj, URI pred,
+			Value obj, boolean explicit, Resource... contexts)
 		throws IOException
 	{
 		int subjID = NativeValue.UNKNOWN_ID;
@@ -226,7 +223,8 @@ class NativeSailStore implements SailStore {
 				contextIDList.size());
 
 		for (int contextID : contextIDList) {
-			RecordIterator btreeIter = tripleStore.getTriples(subjID, predID, objID, contextID, explicit, false);
+			RecordIterator btreeIter = tripleStore.getTriples(subjID, predID, objID, contextID, explicit,
+					false);
 
 			perContextIterList.add(new NativeStatementIterator(btreeIter, valueStore));
 		}
@@ -311,8 +309,7 @@ class NativeSailStore implements SailStore {
 		private boolean explicit;
 
 		/**
-		 * The exclusive transaction lock held by this connection during
-		 * transactions.
+		 * The exclusive transaction lock held by this connection during transactions.
 		 */
 		private volatile boolean txnLockAcquired;
 
@@ -434,7 +431,8 @@ class NativeSailStore implements SailStore {
 			}
 		}
 
-		private boolean addStatement(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
+		private boolean addStatement(Resource subj, IRI pred, Value obj, boolean explicit,
+				Resource... contexts)
 			throws SailException
 		{
 			acquireExclusiveTransactionLock();
@@ -473,7 +471,8 @@ class NativeSailStore implements SailStore {
 			return result;
 		}
 
-		private int removeStatements(Resource subj, URI pred, Value obj, boolean explicit, Resource... contexts)
+		private int removeStatements(Resource subj, URI pred, Value obj, boolean explicit,
+				Resource... contexts)
 			throws SailException
 		{
 			acquireExclusiveTransactionLock();

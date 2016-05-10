@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.workbench.util;
 import java.util.regex.Pattern;
 
 /**
- * Helper class for substituting in variables to query templates for the purpose
- * of saving and retrieving user queries to a repository local to the workbench.
+ * Helper class for substituting in variables to query templates for the purpose of saving and retrieving user
+ * queries to a repository local to the workbench.
  * 
  * @author Dale Visser
  */

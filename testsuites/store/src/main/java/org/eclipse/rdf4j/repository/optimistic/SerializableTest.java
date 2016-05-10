@@ -34,30 +34,53 @@ import org.junit.Before;
 import org.junit.Test;
 
 public class SerializableTest {
+
 	private Repository repo;
+
 	private RepositoryConnection a;
+
 	private RepositoryConnection b;
+
 	private IsolationLevel level = IsolationLevels.SERIALIZABLE;
+
 	private String NS = "http://rdf.example.org/";
+
 	private ValueFactory lf;
+
 	private IRI PAINTER;
+
 	private IRI PAINTS;
+
 	private IRI PAINTING;
+
 	private IRI YEAR;
+
 	private IRI PERIOD;
+
 	private IRI PICASSO;
+
 	private IRI REMBRANDT;
+
 	private IRI GUERNICA;
+
 	private IRI JACQUELINE;
+
 	private IRI NIGHTWATCH;
+
 	private IRI ARTEMISIA;
+
 	private IRI DANAE;
+
 	private IRI JACOB;
+
 	private IRI ANATOMY;
+
 	private IRI BELSHAZZAR;
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp()
+		throws Exception
+	{
 		repo = OptimisticIsolationTest.getEmptyInitializedRepository(SerializableTest.class);
 		lf = repo.getValueFactory();
 		ValueFactory uf = repo.getValueFactory();
@@ -81,14 +104,18 @@ public class SerializableTest {
 	}
 
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown()
+		throws Exception
+	{
 		a.close();
 		b.close();
 		repo.shutDown();
 	}
 
 	@Test
-	public void test_independentPattern() throws Exception {
+	public void test_independentPattern()
+		throws Exception
+	{
 		a.begin(level);
 		b.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
@@ -102,7 +129,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_safePattern() throws Exception {
+	public void test_safePattern()
+		throws Exception
+	{
 		a.begin(level);
 		b.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
@@ -113,7 +142,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_afterPattern() throws Exception {
+	public void test_afterPattern()
+		throws Exception
+	{
 		a.begin(level);
 		b.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
@@ -125,7 +156,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_afterInsertDataPattern() throws Exception {
+	public void test_afterInsertDataPattern()
+		throws Exception
+	{
 		a.begin(level);
 		b.begin(level);
 		a.prepareUpdate(QueryLanguage.SPARQL, "INSERT DATA { <picasso> a <Painter> }", NS).execute();
@@ -137,7 +170,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_conflictPattern() throws Exception {
+	public void test_conflictPattern()
+		throws Exception
+	{
 		a.begin(level);
 		b.begin(level);
 		a.add(PICASSO, RDF.TYPE, PAINTER);
@@ -147,14 +182,17 @@ public class SerializableTest {
 		try {
 			b.commit();
 			fail();
-		} catch (RepositoryException e) {
+		}
+		catch (RepositoryException e) {
 			e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 		}
 	}
 
 	@Test
-	public void test_safeQuery() throws Exception {
+	public void test_safeQuery()
+		throws Exception
+	{
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -164,11 +202,11 @@ public class SerializableTest {
 		// PICASSO is *not* a known PAINTER
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
-		List<Value> result = eval("painting", b, "SELECT ?painting "
-				+ "WHERE { [a <Painter>] <paints> ?painting }");
+		List<Value> result = eval("painting", b,
+				"SELECT ?painting " + "WHERE { [a <Painter>] <paints> ?painting }");
 		assertEquals(3, result.size());
 		for (Value painting : result) {
-			b.add((Resource) painting, RDF.TYPE, PAINTING);
+			b.add((Resource)painting, RDF.TYPE, PAINTING);
 		}
 		a.commit();
 		b.commit();
@@ -177,7 +215,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_safeInsert() throws Exception {
+	public void test_safeInsert()
+		throws Exception
+	{
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -187,8 +227,9 @@ public class SerializableTest {
 		// PICASSO is *not* a known PAINTER
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
-		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting a <Painting> }\n"
-				+ "WHERE { [a <Painter>] <paints> ?painting }", NS).execute();
+		b.prepareUpdate(QueryLanguage.SPARQL,
+				"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting }",
+				NS).execute();
 		a.commit();
 		b.commit();
 		assertEquals(9, size(a, null, null, null, false));
@@ -196,7 +237,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_conflictQuery() throws Exception {
+	public void test_conflictQuery()
+		throws Exception
+	{
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -207,16 +250,17 @@ public class SerializableTest {
 		// PICASSO *is* a known PAINTER
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
-		List<Value> result = eval("painting", b, "SELECT ?painting "
-				+ "WHERE { [a <Painter>] <paints> ?painting }");
+		List<Value> result = eval("painting", b,
+				"SELECT ?painting " + "WHERE { [a <Painter>] <paints> ?painting }");
 		for (Value painting : result) {
-			b.add((Resource) painting, RDF.TYPE, PAINTING);
+			b.add((Resource)painting, RDF.TYPE, PAINTING);
 		}
 		a.commit();
 		try {
 			b.commit();
 			fail();
-		} catch (RepositoryException e) {
+		}
+		catch (RepositoryException e) {
 			e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 		}
@@ -224,7 +268,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_conflictInsert() throws Exception {
+	public void test_conflictInsert()
+		throws Exception
+	{
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -235,14 +281,16 @@ public class SerializableTest {
 		// PICASSO *is* a known PAINTER
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
-		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting a <Painting> }\n"
-				+ "WHERE { [a <Painter>] <paints> ?painting }", NS).execute();
+		b.prepareUpdate(QueryLanguage.SPARQL,
+				"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting }",
+				NS).execute();
 		a.commit();
 		try {
 			size(b, null, PAINTS, null, false);
 			b.commit();
 			fail();
-		} catch (RepositoryException e) {
+		}
+		catch (RepositoryException e) {
 			e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 		}
@@ -250,7 +298,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_safeOptionalQuery() throws Exception {
+	public void test_safeOptionalQuery()
+		throws Exception
+	{
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -260,12 +310,11 @@ public class SerializableTest {
 		// PICASSO is *not* a known PAINTER
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
-		List<Value> result = eval("painting", b, "SELECT ?painting "
-				+ "WHERE { ?painter a <Painter> "
+		List<Value> result = eval("painting", b, "SELECT ?painting " + "WHERE { ?painter a <Painter> "
 				+ "OPTIONAL { ?painter <paints> ?painting } }");
 		for (Value painting : result) {
 			if (painting != null) {
-				b.add((Resource) painting, RDF.TYPE, PAINTING);
+				b.add((Resource)painting, RDF.TYPE, PAINTING);
 			}
 		}
 		a.commit();
@@ -275,7 +324,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_safeOptionalInsert() throws Exception {
+	public void test_safeOptionalInsert()
+		throws Exception
+	{
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -286,8 +337,8 @@ public class SerializableTest {
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting a <Painting> }\n"
-				+ "WHERE { ?painter a <Painter> "
-				+ "OPTIONAL { ?painter <paints> ?painting } }", NS).execute();
+				+ "WHERE { ?painter a <Painter> " + "OPTIONAL { ?painter <paints> ?painting } }",
+				NS).execute();
 		a.commit();
 		b.commit();
 		assertEquals(9, size(a, null, null, null, false));
@@ -295,7 +346,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_conflictOptionalQuery() throws Exception {
+	public void test_conflictOptionalQuery()
+		throws Exception
+	{
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -306,19 +359,19 @@ public class SerializableTest {
 		// PICASSO *is* a known PAINTER
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
-		List<Value> result = eval("painting", b, "SELECT ?painting "
-				+ "WHERE { ?painter a <Painter> "
+		List<Value> result = eval("painting", b, "SELECT ?painting " + "WHERE { ?painter a <Painter> "
 				+ "OPTIONAL { ?painter <paints> ?painting } }");
 		for (Value painting : result) {
 			if (painting != null) {
-				b.add((Resource) painting, RDF.TYPE, PAINTING);
+				b.add((Resource)painting, RDF.TYPE, PAINTING);
 			}
 		}
 		a.commit();
 		try {
 			b.commit();
 			fail();
-		} catch (RepositoryException e) {
+		}
+		catch (RepositoryException e) {
 			e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 		}
@@ -326,7 +379,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_conflictOptionalInsert() throws Exception {
+	public void test_conflictOptionalInsert()
+		throws Exception
+	{
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
@@ -338,14 +393,15 @@ public class SerializableTest {
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting a <Painting> }\n"
-				+ "WHERE { ?painter a <Painter> "
-				+ "OPTIONAL { ?painter <paints> ?painting } }", NS).execute();
+				+ "WHERE { ?painter a <Painter> " + "OPTIONAL { ?painter <paints> ?painting } }",
+				NS).execute();
 		a.commit();
 		try {
 			size(b, null, PAINTS, null, false);
 			b.commit();
 			fail();
-		} catch (RepositoryException e) {
+		}
+		catch (RepositoryException e) {
 			e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 		}
@@ -353,7 +409,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_safeFilterQuery() throws Exception {
+	public void test_safeFilterQuery()
+		throws Exception
+	{
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -363,17 +421,18 @@ public class SerializableTest {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
-		List<Value> result = eval("painting", b, "SELECT ?painting "
-				+ "WHERE { ?painter a <Painter>; <paints> ?painting "
-				+ "FILTER  regex(str(?painter), \"rem\", \"i\") }");
+		List<Value> result = eval("painting", b,
+				"SELECT ?painting " + "WHERE { ?painter a <Painter>; <paints> ?painting "
+						+ "FILTER  regex(str(?painter), \"rem\", \"i\") }");
 		for (Value painting : result) {
-			b.add((Resource) painting, RDF.TYPE, PAINTING);
+			b.add((Resource)painting, RDF.TYPE, PAINTING);
 		}
 		a.commit();
 		try {
 			b.commit();
 			assertEquals(10, size(a, null, null, null, false));
-		} catch (RepositoryException e) {
+		}
+		catch (RepositoryException e) {
 			e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 			assertEquals(7, size(a, null, null, null, false));
@@ -381,7 +440,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_safeFilterInsert() throws Exception {
+	public void test_safeFilterInsert()
+		throws Exception
+	{
 		b.add(REMBRANDT, RDF.TYPE, PAINTER);
 		b.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		b.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -391,14 +452,16 @@ public class SerializableTest {
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
-		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting a <Painting> }\n"
-				+ "WHERE { ?painter a <Painter>; <paints> ?painting "
-				+ "FILTER  regex(str(?painter), \"rem\", \"i\") }", NS).execute();
+		b.prepareUpdate(QueryLanguage.SPARQL,
+				"INSERT { ?painting a <Painting> }\n" + "WHERE { ?painter a <Painter>; <paints> ?painting "
+						+ "FILTER  regex(str(?painter), \"rem\", \"i\") }",
+				NS).execute();
 		a.commit();
 		try {
 			b.commit();
 			assertEquals(10, size(a, null, null, null, false));
-		} catch (RepositoryException e) {
+		}
+		catch (RepositoryException e) {
 			e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 			assertEquals(7, size(a, null, null, null, false));
@@ -406,7 +469,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_conflictOptionalFilterQuery() throws Exception {
+	public void test_conflictOptionalFilterQuery()
+		throws Exception
+	{
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
@@ -418,19 +483,20 @@ public class SerializableTest {
 		b.begin(level);
 		a.add(GUERNICA, RDF.TYPE, PAINTING);
 		a.add(JACQUELINE, RDF.TYPE, PAINTING);
-		List<Value> result = eval("painting", b, "SELECT ?painting "
-				+ "WHERE { [a <Painter>] <paints> ?painting "
-				+ "OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }");
+		List<Value> result = eval("painting", b,
+				"SELECT ?painting " + "WHERE { [a <Painter>] <paints> ?painting "
+						+ "OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }");
 		for (Value painting : result) {
 			if (painting != null) {
-				b.add((Resource) painting, RDF.TYPE, PAINTING);
+				b.add((Resource)painting, RDF.TYPE, PAINTING);
 			}
 		}
 		a.commit();
 		try {
 			b.commit();
 			fail();
-		} catch (RepositoryException e) {
+		}
+		catch (RepositoryException e) {
 			e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 		}
@@ -438,7 +504,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_conflictOptionalFilterInsert() throws Exception {
+	public void test_conflictOptionalFilterInsert()
+		throws Exception
+	{
 		a.add(PICASSO, RDF.TYPE, PAINTER);
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
@@ -450,15 +518,17 @@ public class SerializableTest {
 		b.begin(level);
 		a.add(GUERNICA, RDF.TYPE, PAINTING);
 		a.add(JACQUELINE, RDF.TYPE, PAINTING);
-		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting a <Painting> }\n"
-				+ "WHERE { [a <Painter>] <paints> ?painting "
-				+ "OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }", NS).execute();
+		b.prepareUpdate(QueryLanguage.SPARQL,
+				"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting "
+						+ "OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }",
+				NS).execute();
 		a.commit();
 		try {
 			size(b, null, RDF.TYPE, PAINTING, false);
 			b.commit();
 			fail();
-		} catch (RepositoryException e) {
+		}
+		catch (RepositoryException e) {
 			e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 		}
@@ -466,7 +536,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_safeRangeQuery() throws Exception {
+	public void test_safeRangeQuery()
+		throws Exception
+	{
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, ARTEMISIA);
 		a.add(REMBRANDT, PAINTS, DANAE);
@@ -480,11 +552,11 @@ public class SerializableTest {
 		a.add(ANATOMY, YEAR, lf.createLiteral(1632));
 		a.begin(level);
 		b.begin(level);
-		List<Value> result = eval("painting", b, "SELECT ?painting "
-				+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
-				+ "FILTER  (1631 <= ?year && ?year <= 1635) }");
+		List<Value> result = eval("painting", b,
+				"SELECT ?painting " + "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
+						+ "FILTER  (1631 <= ?year && ?year <= 1635) }");
 		for (Value painting : result) {
-			b.add((Resource) painting, PERIOD, lf.createLiteral("First Amsterdam period"));
+			b.add((Resource)painting, PERIOD, lf.createLiteral("First Amsterdam period"));
 		}
 		a.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		a.add(NIGHTWATCH, YEAR, lf.createLiteral(1642));
@@ -492,7 +564,8 @@ public class SerializableTest {
 		try {
 			b.commit();
 			assertEquals(17, size(a, null, null, null, false));
-		} catch (RepositoryException e) {
+		}
+		catch (RepositoryException e) {
 			e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 			assertEquals(13, size(a, null, null, null, false));
@@ -500,7 +573,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_safeRangeInsert() throws Exception {
+	public void test_safeRangeInsert()
+		throws Exception
+	{
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, ARTEMISIA);
 		a.add(REMBRANDT, PAINTS, DANAE);
@@ -514,16 +589,19 @@ public class SerializableTest {
 		a.add(ANATOMY, YEAR, lf.createLiteral(1632));
 		a.begin(level);
 		b.begin(level);
-		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting <period> \"First Amsterdam period\" }\n"
-				+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
-				+ "FILTER  (1631 <= ?year && ?year <= 1635) }", NS).execute();
+		b.prepareUpdate(QueryLanguage.SPARQL,
+				"INSERT { ?painting <period> \"First Amsterdam period\" }\n"
+						+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
+						+ "FILTER  (1631 <= ?year && ?year <= 1635) }",
+				NS).execute();
 		a.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		a.add(NIGHTWATCH, YEAR, lf.createLiteral(1642));
 		a.commit();
 		try {
 			b.commit();
 			assertEquals(17, size(a, null, null, null, false));
-		} catch (RepositoryException e) {
+		}
+		catch (RepositoryException e) {
 			e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 			assertEquals(13, size(a, null, null, null, false));
@@ -531,7 +609,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_conflictRangeQuery() throws Exception {
+	public void test_conflictRangeQuery()
+		throws Exception
+	{
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		a.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -545,11 +625,11 @@ public class SerializableTest {
 		a.add(ANATOMY, YEAR, lf.createLiteral(1632));
 		a.begin(level);
 		b.begin(level);
-		List<Value> result = eval("painting", b, "SELECT ?painting "
-				+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
-				+ "FILTER  (1631 <= ?year && ?year <= 1635) }");
+		List<Value> result = eval("painting", b,
+				"SELECT ?painting " + "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
+						+ "FILTER  (1631 <= ?year && ?year <= 1635) }");
 		for (Value painting : result) {
-			b.add((Resource) painting, PERIOD, lf.createLiteral("First Amsterdam period"));
+			b.add((Resource)painting, PERIOD, lf.createLiteral("First Amsterdam period"));
 		}
 		a.add(REMBRANDT, PAINTS, BELSHAZZAR);
 		a.add(BELSHAZZAR, YEAR, lf.createLiteral(1635));
@@ -557,7 +637,8 @@ public class SerializableTest {
 		try {
 			b.commit();
 			fail();
-		} catch (RepositoryException e) {
+		}
+		catch (RepositoryException e) {
 			e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 		}
@@ -565,7 +646,9 @@ public class SerializableTest {
 	}
 
 	@Test
-	public void test_conflictRangeInsert() throws Exception {
+	public void test_conflictRangeInsert()
+		throws Exception
+	{
 		a.add(REMBRANDT, RDF.TYPE, PAINTER);
 		a.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		a.add(REMBRANDT, PAINTS, ARTEMISIA);
@@ -579,9 +662,11 @@ public class SerializableTest {
 		a.add(ANATOMY, YEAR, lf.createLiteral(1632));
 		a.begin(level);
 		b.begin(level);
-		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting <period> \"First Amsterdam period\" }\n"
-				+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
-				+ "FILTER  (1631 <= ?year && ?year <= 1635) }", NS).execute();
+		b.prepareUpdate(QueryLanguage.SPARQL,
+				"INSERT { ?painting <period> \"First Amsterdam period\" }\n"
+						+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
+						+ "FILTER  (1631 <= ?year && ?year <= 1635) }",
+				NS).execute();
 		a.add(REMBRANDT, PAINTS, BELSHAZZAR);
 		a.add(BELSHAZZAR, YEAR, lf.createLiteral(1635));
 		a.commit();
@@ -589,20 +674,24 @@ public class SerializableTest {
 			size(b, REMBRANDT, PAINTS, null, false);
 			b.commit();
 			fail();
-		} catch (RepositoryException e) {
+		}
+		catch (RepositoryException e) {
 			e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 		}
 		assertEquals(13, size(a, null, null, null, false));
 	}
 
-	private int size(RepositoryConnection con, Resource subj, IRI pred,
-			Value obj, boolean inf, Resource... ctx) throws Exception {
+	private int size(RepositoryConnection con, Resource subj, IRI pred, Value obj, boolean inf,
+			Resource... ctx)
+		throws Exception
+	{
 		return QueryResults.asList(con.getStatements(subj, pred, obj, inf, ctx)).size();
 	}
 
 	private List<Value> eval(String var, RepositoryConnection con, String qry)
-			throws Exception {
+		throws Exception
+	{
 		TupleQueryResult result;
 		result = con.prepareTupleQuery(QueryLanguage.SPARQL, qry, NS).evaluate();
 		try {
@@ -611,7 +700,8 @@ public class SerializableTest {
 				list.add(result.next().getValue(var));
 			}
 			return list;
-		} finally {
+		}
+		finally {
 			result.close();
 		}
 	}

@@ -15,23 +15,21 @@ import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * An {@link Iteration} that holds on to a {@link SailClosable} until the
- * Iteration is closed. Upon closing, the underlying Iteration is closed before
- * the lock is released. This iterator closes itself as soon as all elements
- * have been read.
+ * An {@link Iteration} that holds on to a {@link SailClosable} until the Iteration is closed. Upon closing,
+ * the underlying Iteration is closed before the lock is released. This iterator closes itself as soon as all
+ * elements have been read.
  * 
  * @author James Leigh
  */
 abstract class SailClosingIteration<T, X extends Exception> extends IterationWrapper<T, X> {
 
 	/**
-	 * Creates a new {@link Iteration} that automatically closes the given
-	 * {@link SailClosable}s.
+	 * Creates a new {@link Iteration} that automatically closes the given {@link SailClosable}s.
+	 * 
 	 * @param iter
 	 *        The underlying Iteration, must not be <tt>null</tt>.
 	 * @param closes
-	 *        The {@link SailClosable}s to {@link SailClosable#close()} when the
-	 *        itererator is closed.
+	 *        The {@link SailClosable}s to {@link SailClosable#close()} when the itererator is closed.
 	 * @return a {@link CloseableIteration} that closes the given {@link SailClosable}
 	 */
 	public static <E> SailClosingIteration<E, SailException> makeClosable(
@@ -61,14 +59,12 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	 *--------------*/
 
 	/**
-	 * Creates a new {@link Iteration} that automatically closes the given
-	 * {@link SailClosable}s.
+	 * Creates a new {@link Iteration} that automatically closes the given {@link SailClosable}s.
 	 * 
 	 * @param iter
 	 *        The underlying Iteration, must not be <tt>null</tt>.
 	 * @param closes
-	 *        The {@link SailClosable}s to {@link SailClosable#close()} when the
-	 *        itererator is closed.
+	 *        The {@link SailClosable}s to {@link SailClosable#close()} when the itererator is closed.
 	 */
 	public SailClosingIteration(CloseableIteration<? extends T, X> iter, SailClosable... closes) {
 		super(iter);

@@ -14,9 +14,8 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * A tuple expression that matches a statement pattern against an RDF graph.
- * Statement patterns can be targeted at one of three context scopes: all
- * contexts, null context only, or named contexts only.
+ * A tuple expression that matches a statement pattern against an RDF graph. Statement patterns can be
+ * targeted at one of three context scopes: all contexts, null context only, or named contexts only.
  */
 public class StatementPattern extends AbstractQueryModelNode implements TupleExpr {
 
@@ -29,14 +28,12 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	 */
 	public enum Scope {
 		/**
-		 * Scope for patterns that should be matched against statements from the
-		 * default contexts.
+		 * Scope for patterns that should be matched against statements from the default contexts.
 		 */
 		DEFAULT_CONTEXTS,
 
 		/**
-		 * Scope for patterns that should be matched against statements from named
-		 * contexts only.
+		 * Scope for patterns that should be matched against statements from named contexts only.
 		 */
 		NAMED_CONTEXTS
 	}
@@ -63,32 +60,32 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	}
 
 	/**
-	 * Creates a statement pattern that matches a subject-, predicate- and object
-	 * variable against statements from all contexts.
+	 * Creates a statement pattern that matches a subject-, predicate- and object variable against statements
+	 * from all contexts.
 	 */
 	public StatementPattern(Var subject, Var predicate, Var object) {
 		this(Scope.DEFAULT_CONTEXTS, subject, predicate, object);
 	}
 
 	/**
-	 * Creates a statement pattern that matches a subject-, predicate- and object
-	 * variable against statements from the specified context scope.
+	 * Creates a statement pattern that matches a subject-, predicate- and object variable against statements
+	 * from the specified context scope.
 	 */
 	public StatementPattern(Scope scope, Var subject, Var predicate, Var object) {
 		this(scope, subject, predicate, object, null);
 	}
 
 	/**
-	 * Creates a statement pattern that matches a subject-, predicate-, object-
-	 * and context variable against statements from all contexts.
+	 * Creates a statement pattern that matches a subject-, predicate-, object- and context variable against
+	 * statements from all contexts.
 	 */
 	public StatementPattern(Var subject, Var predicate, Var object, Var context) {
 		this(Scope.DEFAULT_CONTEXTS, subject, predicate, object, context);
 	}
 
 	/**
-	 * Creates a statement pattern that matches a subject-, predicate-, object-
-	 * and context variable against statements from the specified context scope.
+	 * Creates a statement pattern that matches a subject-, predicate-, object- and context variable against
+	 * statements from the specified context scope.
 	 */
 	public StatementPattern(Scope scope, Var subjVar, Var predVar, Var objVar, Var conVar) {
 		setScope(scope);

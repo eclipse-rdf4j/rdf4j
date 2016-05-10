@@ -27,15 +27,18 @@ import org.eclipse.rdf4j.spin.Argument;
 
 import com.google.common.base.Joiner;
 
-
 public class SpinxFunction implements TransientFunction {
+
 	private final String uri;
 
 	private final List<Argument> arguments = new ArrayList<Argument>(4);
 
 	private ScriptEngine scriptEngine;
+
 	private CompiledScript compiledScript;
+
 	private String script;
+
 	private URI returnType;
 
 	public SpinxFunction(String uri) {
@@ -76,7 +79,7 @@ public class SpinxFunction implements TransientFunction {
 
 	@Override
 	public String toString() {
-		return uri+"("+ Joiner.on(", ").join(arguments)+")";
+		return uri + "(" + Joiner.on(", ").join(arguments) + ")";
 	}
 
 	@Override
@@ -89,16 +92,16 @@ public class SpinxFunction implements TransientFunction {
 		throws ValueExprEvaluationException
 	{
 		Bindings bindings = scriptEngine.createBindings();
-		for(int i=0; i<args.length; i++) {
+		for (int i = 0; i < args.length; i++) {
 			Argument argument = arguments.get(i);
 			Value arg = args[i];
 			Object jsArg;
 			if (arg instanceof Literal) {
-				Literal argLiteral = (Literal) arg;
-				if(XMLSchema.INTEGER.equals(argLiteral.getDatatype())) {
+				Literal argLiteral = (Literal)arg;
+				if (XMLSchema.INTEGER.equals(argLiteral.getDatatype())) {
 					jsArg = argLiteral.intValue();
 				}
-				else if(XMLSchema.DECIMAL.equals(argLiteral.getDatatype())) {
+				else if (XMLSchema.DECIMAL.equals(argLiteral.getDatatype())) {
 					jsArg = argLiteral.doubleValue();
 				}
 				else {
@@ -113,10 +116,10 @@ public class SpinxFunction implements TransientFunction {
 
 		Object result;
 		try {
-			if(compiledScript == null && scriptEngine instanceof Compilable) {
+			if (compiledScript == null && scriptEngine instanceof Compilable) {
 				compiledScript = ((Compilable)scriptEngine).compile(script);
 			}
-			if(compiledScript != null) {
+			if (compiledScript != null) {
 				result = compiledScript.eval(bindings);
 			}
 			else {
@@ -128,7 +131,8 @@ public class SpinxFunction implements TransientFunction {
 		}
 
 		ValueFactory vf = ValueFactoryImpl.getInstance();
-		return (returnType != null) ? vf.createLiteral(result.toString(), returnType) : vf.createURI(result.toString());
+		return (returnType != null) ? vf.createLiteral(result.toString(), returnType)
+				: vf.createURI(result.toString());
 	}
 
 }

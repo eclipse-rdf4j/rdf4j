@@ -28,15 +28,13 @@ public abstract class AbstractQueryResultIOBooleanTest extends AbstractQueryResu
 	}
 
 	/**
-	 * @return The {@link BooleanQueryResultFormat} that this test is running
-	 *         against.
+	 * @return The {@link BooleanQueryResultFormat} that this test is running against.
 	 */
 	protected abstract BooleanQueryResultFormat getBooleanFormat();
 
 	/**
-	 * @return The {@link TupleQueryResultFormat} that may be parsed by the same
-	 *         parser as the one for {@link #getBooleanFormat()}, or null if this
-	 *         functionality is not supported.
+	 * @return The {@link TupleQueryResultFormat} that may be parsed by the same parser as the one for
+	 *         {@link #getBooleanFormat()}, or null if this functionality is not supported.
 	 */
 	protected abstract TupleQueryResultFormat getMatchingTupleFormatOrNull();
 
@@ -136,21 +134,24 @@ public abstract class AbstractQueryResultIOBooleanTest extends AbstractQueryResu
 	public final void testBooleanParseNoHandlerOnTupleResultsNoResults()
 		throws Exception
 	{
-		doBooleanParseNoHandlerOnTupleResults(getBooleanFormat(), createTupleNoBindingSets(), getMatchingTupleFormatOrNull());
+		doBooleanParseNoHandlerOnTupleResults(getBooleanFormat(), createTupleNoBindingSets(),
+				getMatchingTupleFormatOrNull());
 	}
-	
+
 	@Test
 	public final void testBooleanParseNoHandlerOnTupleResultsSingleVarMultipleBindingSets()
 		throws Exception
 	{
-		doBooleanParseNoHandlerOnTupleResults(getBooleanFormat(), createTupleSingleVarMultipleBindingSets(), getMatchingTupleFormatOrNull());
+		doBooleanParseNoHandlerOnTupleResults(getBooleanFormat(), createTupleSingleVarMultipleBindingSets(),
+				getMatchingTupleFormatOrNull());
 	}
-	
+
 	@Test
 	public final void testBooleanParseNoHandlerOnTupleResultsMultipleBindingsMultipleBindingSets()
 		throws Exception
 	{
-		doBooleanParseNoHandlerOnTupleResults(getBooleanFormat(), createTupleMultipleBindingSets(), getMatchingTupleFormatOrNull());
+		doBooleanParseNoHandlerOnTupleResults(getBooleanFormat(), createTupleMultipleBindingSets(),
+				getMatchingTupleFormatOrNull());
 	}
-	
+
 }

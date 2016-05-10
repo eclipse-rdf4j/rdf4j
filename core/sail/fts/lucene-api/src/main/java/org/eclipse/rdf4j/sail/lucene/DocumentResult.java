@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.sail.lucene;
 /**
  * A document result or hit from a search query.
  */
-public interface DocumentResult
-{
+public interface DocumentResult {
+
 	/**
 	 * Returns null if the document no longer exists.
 	 */

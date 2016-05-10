@@ -64,7 +64,7 @@ public class LimitedSizeOrderIteration extends OrderIterator {
 	{
 		final Integer i = map.get(next);
 		final int oldCount = i == null ? 0 : i;
-		
+
 		final Integer put = super.put(map, next, count);
 
 		if (oldCount < count) {
@@ -76,7 +76,7 @@ public class LimitedSizeOrderIteration extends OrderIterator {
 		else if (oldCount > count) {
 			used.decrementAndGet();
 		}
-		
+
 		return put;
 	}
 

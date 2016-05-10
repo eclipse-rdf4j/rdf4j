@@ -79,7 +79,8 @@ public abstract class RDFJSONParserTestCase {
 		positiveQuery.append("     ?test mf:action ?inputURL . ");
 		positiveQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveQuery.toString()).evaluate();
+		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL,
+				positiveQuery.toString()).evaluate();
 
 		// Add all positive parser tests to the test suite
 		while (queryResult.hasNext()) {
@@ -123,7 +124,8 @@ public abstract class RDFJSONParserTestCase {
 		queryResult.close();
 
 		StringBuilder positiveEvalQuery = new StringBuilder();
-		positiveEvalQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
+		positiveEvalQuery.append(
+				" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		positiveEvalQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
 		positiveEvalQuery.append(" PREFIX rdft: <http://www.w3.org/ns/rdftest#>\n");
 		positiveEvalQuery.append(" SELECT ?test ?testName ?inputURL ?outputURL \n");

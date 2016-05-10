@@ -38,9 +38,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A forward-chaining inferencer that infers the direct-type hierarchy relations
- * {@link SESAME#DIRECTSUBCLASSOF sesame:directSubClassOf},
- * {@link SESAME#DIRECTSUBPROPERTYOF sesame:directSubPropertyOf} and
- * {@link SESAME#DIRECTTYPE sesame:directType}.
+ * {@link SESAME#DIRECTSUBCLASSOF sesame:directSubClassOf}, {@link SESAME#DIRECTSUBPROPERTYOF
+ * sesame:directSubPropertyOf} and {@link SESAME#DIRECTTYPE sesame:directType}.
  * <p>
  * The semantics of this inferencer are defined as follows:
  * 
@@ -95,18 +94,14 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 			DIRECT_TYPE_MATCHER = QueryParserUtil.parseGraphQuery(QueryLanguage.SERQL,
 					"CONSTRUCT * FROM {X} sesame:directSubPropertyOf {Y}", null);
 
-			DIRECT_SUBCLASSOF_QUERY = QueryParserUtil.parseGraphQuery(
-					QueryLanguage.SERQL,
-					"CONSTRUCT {X} sesame:directSubClassOf {Y} "
-							+ "FROM {X} rdfs:subClassOf {Y} "
+			DIRECT_SUBCLASSOF_QUERY = QueryParserUtil.parseGraphQuery(QueryLanguage.SERQL,
+					"CONSTRUCT {X} sesame:directSubClassOf {Y} " + "FROM {X} rdfs:subClassOf {Y} "
 							+ "WHERE X != Y AND "
 							+ "NOT EXISTS (SELECT Z FROM {X} rdfs:subClassOf {Z} rdfs:subClassOf {Y} WHERE X != Z AND Z != Y)",
 					null);
 
-			DIRECT_SUBPROPERTYOF_QUERY = QueryParserUtil.parseGraphQuery(
-					QueryLanguage.SERQL,
-					"CONSTRUCT {X} sesame:directSubPropertyOf {Y} "
-							+ "FROM {X} rdfs:subPropertyOf {Y} "
+			DIRECT_SUBPROPERTYOF_QUERY = QueryParserUtil.parseGraphQuery(QueryLanguage.SERQL,
+					"CONSTRUCT {X} sesame:directSubPropertyOf {Y} " + "FROM {X} rdfs:subPropertyOf {Y} "
 							+ "WHERE X != Y AND "
 							+ "NOT EXISTS (SELECT Z FROM {X} rdfs:subPropertyOf {Z} rdfs:subPropertyOf {Y} WHERE X != Z AND Z != Y)",
 					null);
@@ -171,8 +166,8 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 	 * Inner class DirectTypeHierarchyInferencerConnection *
 	 *-----------------------------------------------------*/
 
-	private class DirectTypeHierarchyInferencerConnection extends InferencerConnectionWrapper implements
-			SailConnectionListener
+	private class DirectTypeHierarchyInferencerConnection extends InferencerConnectionWrapper
+			implements SailConnectionListener
 	{
 
 		/**

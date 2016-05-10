@@ -20,7 +20,10 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.spin.SpinSail;
 
 public class GenerateFullAxioms {
-	public static void main(String[] args) throws Exception {
+
+	public static void main(String[] args)
+		throws Exception
+	{
 		MemoryStore baseSail = new MemoryStore();
 		DedupingInferencer deduper = new DedupingInferencer(baseSail);
 		ForwardChainingRDFSInferencer rdfsInferencer = new ForwardChainingRDFSInferencer(deduper);

@@ -33,8 +33,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 /**
  * TupleQueryResultWriter for the SPARQL CSV (Comma-Separated Values) format.
  * 
- * @see <a href="http://www.w3.org/TR/sparql11-results-csv-tsv/#csv">SPARQL 1.1
- *      Query Results CSV Format</a>
+ * @see <a href="http://www.w3.org/TR/sparql11-results-csv-tsv/#csv">SPARQL 1.1 Query Results CSV Format</a>
  * @author Jeen Broekstra
  */
 public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter {

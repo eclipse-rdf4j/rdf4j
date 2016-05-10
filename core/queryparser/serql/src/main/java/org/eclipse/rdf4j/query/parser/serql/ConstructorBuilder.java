@@ -147,9 +147,8 @@ class ConstructorBuilder {
 	}
 
 	/**
-	 * Gets the set of variables that are relevant for the constructor. This
-	 * method accumulates all subject, predicate and object variables from the
-	 * supplied statement patterns, but ignores any context variables.
+	 * Gets the set of variables that are relevant for the constructor. This method accumulates all subject,
+	 * predicate and object variables from the supplied statement patterns, but ignores any context variables.
 	 */
 	private Set<Var> getConstructVars(Collection<StatementPattern> statementPatterns) {
 		Set<Var> vars = new LinkedHashSet<Var>(statementPatterns.size() * 2);

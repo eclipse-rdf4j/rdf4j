@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.sail.lucene.config;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
 
 /**
- * @deprecated since 4.1.0. Use the LuceneSail in package
- *             {@code org.openrdf.sail.lucene} instead.
+ * @deprecated since 4.1.0. Use the LuceneSail in package {@code org.openrdf.sail.lucene} instead.
  */
 @Deprecated
 public class LuceneSailConfig extends AbstractLuceneSailConfig {

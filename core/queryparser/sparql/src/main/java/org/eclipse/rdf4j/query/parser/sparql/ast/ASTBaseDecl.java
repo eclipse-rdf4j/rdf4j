@@ -37,8 +37,7 @@ public class ASTBaseDecl extends SimpleNode {
 	}
 
 	@Override
-	public String toString()
-	{
+	public String toString() {
 		return super.toString() + " (" + iri + ")";
 	}
 }

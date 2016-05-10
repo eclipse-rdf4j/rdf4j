@@ -48,8 +48,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A SPARQL 1.1 syntax test, created by reading in a W3C working-group style
- * manifest.
+ * A SPARQL 1.1 syntax test, created by reading in a W3C working-group style manifest.
  * 
  * @author Jeen Broekstra
  */
@@ -82,7 +81,8 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 		sb.append("                 mf:name ?Name ;");
 		sb.append("                 mf:action ?Action ;");
 		sb.append("                 dawgt:approval dawgt:Approved . ");
-		sb.append("        FILTER(?Type IN (mf:PositiveSyntaxTest11, mf:NegativeSyntaxTest11, mf:PositiveUpdateSyntaxTest11, mf:NegativeUpdateSyntaxTest11)) ");
+		sb.append(
+				"        FILTER(?Type IN (mf:PositiveSyntaxTest11, mf:NegativeSyntaxTest11, mf:PositiveUpdateSyntaxTest11, mf:NegativeUpdateSyntaxTest11)) ");
 		sb.append(" } ");
 		TESTCASE_QUERY = sb.toString();
 	}
@@ -137,7 +137,8 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 							NotifyingSailConnection conn = store.getConnection();
 							try {
 								conn.begin();
-								SailUpdateExecutor exec = new SailUpdateExecutor(conn, store.getValueFactory(), null);
+								SailUpdateExecutor exec = new SailUpdateExecutor(conn,
+										store.getValueFactory(), null);
 								exec.executeUpdate(updateExpr, null, null, true, -1);
 								conn.rollback();
 								fail("Negative test case should have failed to parse");
@@ -267,7 +268,8 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 		logger.info("Searching for sub-manifests");
 		List<String> subManifestList = new ArrayList<String>();
 
-		TupleQueryResult subManifests = con.prepareTupleQuery(QueryLanguage.SPARQL, SUBMANIFEST_QUERY).evaluate();
+		TupleQueryResult subManifests = con.prepareTupleQuery(QueryLanguage.SPARQL,
+				SUBMANIFEST_QUERY).evaluate();
 		while (subManifests.hasNext()) {
 			BindingSet bindings = subManifests.next();
 			subManifestList.add(bindings.getValue("subManifest").toString());
@@ -295,8 +297,10 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 				String testAction = bindingSet.getValue("Action").toString();
 
 				String type = bindingSet.getValue("Type").toString();
-				boolean positiveTest = type.equals("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11")
-						|| type.equals("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest11");
+				boolean positiveTest = type.equals(
+						"http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11")
+						|| type.equals(
+								"http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest11");
 
 				subSuite.addTest(factory.createSPARQLSyntaxTest(testURI, testName, testAction, positiveTest));
 			}

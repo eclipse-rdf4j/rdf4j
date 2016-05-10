@@ -14,8 +14,7 @@
 package org.eclipse.rdf4j.model.util.language;
 
 /**
- * A LanguageTag did not conform to RFC3066. This exception is for the syntactic
- * rules of RFC3066 section 2.1.
+ * A LanguageTag did not conform to RFC3066. This exception is for the syntactic rules of RFC3066 section 2.1.
  * 
  * @author jjc
  */
@@ -27,8 +26,7 @@ public class LanguageTagSyntaxException extends java.lang.Exception {
 	private static final long serialVersionUID = 5425207434895448094L;
 
 	/**
-	 * Constructs an <code>LanguageTagSyntaxException</code> with the specified
-	 * detail message.
+	 * Constructs an <code>LanguageTagSyntaxException</code> with the specified detail message.
 	 * 
 	 * @param msg
 	 *        the detail message.

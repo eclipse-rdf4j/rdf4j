@@ -68,8 +68,8 @@ import org.springframework.web.servlet.View;
 import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
- * Handles queries and admin (delete) operations on a repository and renders the
- * results in a format suitable to the type of operation.
+ * Handles queries and admin (delete) operations on a repository and renders the results in a format suitable
+ * to the type of operation.
  * 
  * @author Herko ter Horst
  */
@@ -97,23 +97,28 @@ public class RepositoryController extends AbstractController {
 	{
 		String reqMethod = request.getMethod();
 		String queryStr = request.getParameter(QUERY_PARAM_NAME);
-		
+
 		if (METHOD_POST.equals(reqMethod)) {
 			String mimeType = HttpServerUtil.getMIMEType(request.getContentType());
-			
-			if (!(Protocol.FORM_MIME_TYPE.equals(mimeType) || Protocol.SPARQL_QUERY_MIME_TYPE.equals(mimeType))) {
-				throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type: " + mimeType);
+
+			if (!(Protocol.FORM_MIME_TYPE.equals(mimeType)
+					|| Protocol.SPARQL_QUERY_MIME_TYPE.equals(mimeType)))
+			{
+				throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,
+						"Unsupported MIME type: " + mimeType);
 			}
-			
+
 			if (Protocol.SPARQL_QUERY_MIME_TYPE.equals(mimeType)) {
 				// The query should be the entire body
 				try {
 					queryStr = IOUtils.toString(request.getReader());
 				}
 				catch (IOException e) {
-					throw new HTTPException(HttpStatus.SC_BAD_REQUEST, "Error reading request message body", e);
+					throw new HTTPException(HttpStatus.SC_BAD_REQUEST, "Error reading request message body",
+							e);
 				}
-				if (queryStr.isEmpty()) queryStr = null;
+				if (queryStr.isEmpty())
+					queryStr = null;
 			}
 		}
 		else if (METHOD_DELETE.equals(reqMethod)) {
@@ -210,8 +215,8 @@ public class RepositoryController extends AbstractController {
 						view = BooleanQueryResultView.getInstance();
 					}
 					else {
-						throw new ClientHTTPException(SC_BAD_REQUEST, "Unsupported query type: "
-								+ query.getClass().getName());
+						throw new ClientHTTPException(SC_BAD_REQUEST,
+								"Unsupported query type: " + query.getClass().getName());
 					}
 				}
 				catch (QueryInterruptedException e) {
@@ -296,8 +301,8 @@ public class RepositoryController extends AbstractController {
 						dataset.addDefaultGraph(uri);
 					}
 					catch (IllegalArgumentException e) {
-						throw new ClientHTTPException(SC_BAD_REQUEST, "Illegal URI for default graph: "
-								+ defaultGraphURI);
+						throw new ClientHTTPException(SC_BAD_REQUEST,
+								"Illegal URI for default graph: " + defaultGraphURI);
 					}
 				}
 			}
@@ -309,8 +314,8 @@ public class RepositoryController extends AbstractController {
 						dataset.addNamedGraph(uri);
 					}
 					catch (IllegalArgumentException e) {
-						throw new ClientHTTPException(SC_BAD_REQUEST, "Illegal URI for named graph: "
-								+ namedGraphURI);
+						throw new ClientHTTPException(SC_BAD_REQUEST,
+								"Illegal URI for named graph: " + namedGraphURI);
 					}
 				}
 			}
@@ -336,7 +341,8 @@ public class RepositoryController extends AbstractController {
 			while (parameterNames.hasMoreElements()) {
 				String parameterName = parameterNames.nextElement();
 
-				if (parameterName.startsWith(BINDING_PREFIX) && parameterName.length() > BINDING_PREFIX.length())
+				if (parameterName.startsWith(BINDING_PREFIX)
+						&& parameterName.length() > BINDING_PREFIX.length())
 				{
 					String bindingName = parameterName.substring(BINDING_PREFIX.length());
 					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,

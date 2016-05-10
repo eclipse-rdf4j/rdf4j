@@ -8,13 +8,12 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * A BNode generator, which generates a new BNode each time it needs to supply a
- * value.
+ * A BNode generator, which generates a new BNode each time it needs to supply a value.
  */
 public class BNodeGenerator extends AbstractQueryModelNode implements ValueExpr {
 
 	private ValueExpr nodeIdExpr = null;
-	
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -22,6 +21,7 @@ public class BNodeGenerator extends AbstractQueryModelNode implements ValueExpr 
 	public BNodeGenerator() {
 		super();
 	}
+
 	public BNodeGenerator(ValueExpr nodeIdExpr) {
 		super();
 		setNodeIdExpr(nodeIdExpr);
@@ -33,11 +33,11 @@ public class BNodeGenerator extends AbstractQueryModelNode implements ValueExpr 
 	public ValueExpr getNodeIdExpr() {
 		return nodeIdExpr;
 	}
-	
+
 	public void setNodeIdExpr(ValueExpr nodeIdExpr) {
 		this.nodeIdExpr = nodeIdExpr;
 	}
-	
+
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

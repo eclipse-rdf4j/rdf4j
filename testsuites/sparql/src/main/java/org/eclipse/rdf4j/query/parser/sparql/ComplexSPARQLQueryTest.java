@@ -60,9 +60,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A set of compliance tests on SPARQL query functionality which can not be
- * easily executed using the {@link SPARQL11ManifestTest} format. This includes
- * tests on queries with non-deterministic output (e.g. GROUP_CONCAT).
+ * A set of compliance tests on SPARQL query functionality which can not be easily executed using the
+ * {@link SPARQL11ManifestTest} format. This includes tests on queries with non-deterministic output (e.g.
+ * GROUP_CONCAT).
  * 
  * @author Jeen Broekstra
  */
@@ -218,7 +218,7 @@ public abstract class ComplexSPARQLQueryTest {
 		ub.append(" <urn:s11> <urn:p> \"11\" .  \n");
 		ub.append(" <urn:s12> <urn:p> \"12\" .  \n");
 		ub.append("} \n");
-		
+
 		conn.prepareUpdate(QueryLanguage.SPARQL, ub.toString()).execute();
 
 		StringBuilder qb = new StringBuilder();

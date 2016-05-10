@@ -16,7 +16,9 @@ import junit.framework.Test;
 
 public class TreeModelTest extends ModelTest {
 
-	public static Test suite() throws Exception {
+	public static Test suite()
+		throws Exception
+	{
 		return ModelTest.suite(TreeModelTest.class);
 	}
 

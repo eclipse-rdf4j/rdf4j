@@ -45,8 +45,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 
 /**
- * An implementation of the {@link RepositoryConnection} interface that wraps a
- * {@link SailConnection}.
+ * An implementation of the {@link RepositoryConnection} interface that wraps a {@link SailConnection}.
  * 
  * @author Jeen Broekstra
  * @author Arjohn Kampman
@@ -69,9 +68,8 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	 *--------------*/
 
 	/**
-	 * Creates a new repository connection that will wrap the supplied
-	 * SailConnection. SailRepositoryConnection objects are created by
-	 * {@link SailRepository#getConnection}.
+	 * Creates a new repository connection that will wrap the supplied SailConnection.
+	 * SailRepositoryConnection objects are created by {@link SailRepository#getConnection}.
 	 */
 	protected SailRepositoryConnection(SailRepository repository, SailConnection sailConnection) {
 		super(repository);
@@ -292,8 +290,8 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		try {
-			return createRepositoryResult(sailConnection.getStatements(subj, pred, obj, includeInferred,
-					contexts));
+			return createRepositoryResult(
+					sailConnection.getStatements(subj, pred, obj, includeInferred, contexts));
 		}
 		catch (SailException e) {
 			throw new RepositoryException("Unable to get statements from Sail", e);
@@ -480,8 +478,8 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	/**
-	 * Wraps a CloseableIteration coming from a Sail in a RepositoryResult
-	 * object, applying the required conversions
+	 * Wraps a CloseableIteration coming from a Sail in a RepositoryResult object, applying the required
+	 * conversions
 	 */
 	protected <E> RepositoryResult<E> createRepositoryResult(
 			CloseableIteration<? extends E, SailException> sailIter)

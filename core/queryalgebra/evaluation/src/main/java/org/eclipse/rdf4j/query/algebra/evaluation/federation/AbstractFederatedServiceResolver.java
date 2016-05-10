@@ -14,8 +14,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * Base class for {@link FederatedServiceResolver} which takes care for
- * lifecycle management of produced {@link FederatedService}s.
+ * Base class for {@link FederatedServiceResolver} which takes care for lifecycle management of produced
+ * {@link FederatedService}s.
  * <p>
  * Specific implementation can implement {@link #createService(String)}.
  * 
@@ -29,8 +29,7 @@ public abstract class AbstractFederatedServiceResolver implements FederatedServi
 	protected Map<String, FederatedService> endpointToService = new HashMap<String, FederatedService>();
 
 	/**
-	 * Register the specified service to evaluate SERVICE expressions for the
-	 * given url.
+	 * Register the specified service to evaluate SERVICE expressions for the given url.
 	 * 
 	 * @param serviceUrl
 	 * @param service
@@ -62,9 +61,8 @@ public abstract class AbstractFederatedServiceResolver implements FederatedServi
 	}
 
 	/**
-	 * Retrieve the {@link FederatedService} registered for serviceUrl. If there
-	 * is no service registered for serviceUrl, a new {@link FederatedService}
-	 * is created and registered.
+	 * Retrieve the {@link FederatedService} registered for serviceUrl. If there is no service registered for
+	 * serviceUrl, a new {@link FederatedService} is created and registered.
 	 * 
 	 * @param serviceUrl
 	 *        locator for the federation service
@@ -90,13 +88,11 @@ public abstract class AbstractFederatedServiceResolver implements FederatedServi
 	}
 
 	/**
-	 * Verify if a registered {@link FederatedService} exists for the given
-	 * serviceUrul.
+	 * Verify if a registered {@link FederatedService} exists for the given serviceUrul.
 	 * 
 	 * @param serviceUrl
 	 *        locator for the federation service.
-	 * @return {@code true} iff the FederatedService has been registered,
-	 *         {@code false} otherwise.
+	 * @return {@code true} iff the FederatedService has been registered, {@code false} otherwise.
 	 */
 	public boolean hasService(String serviceUrl) {
 		synchronized (endpointToService) {
@@ -105,9 +101,8 @@ public abstract class AbstractFederatedServiceResolver implements FederatedServi
 	}
 
 	/**
-	 * Create a new {@link FederatedService} for the given serviceUrl. This
-	 * method is invoked, if no {@link FederatedService} has been created yet
-	 * for the serviceUrl.
+	 * Create a new {@link FederatedService} for the given serviceUrl. This method is invoked, if no
+	 * {@link FederatedService} has been created yet for the serviceUrl.
 	 * 
 	 * @param serviceUrl
 	 *        the service IRI

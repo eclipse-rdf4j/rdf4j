@@ -49,8 +49,7 @@ public class ASTNumericLiteral extends ASTRDFValue {
 	}
 
 	@Override
-	public String toString()
-	{
+	public String toString() {
 		return super.toString() + " (value=" + value + ", datatype=" + datatype + ")";
 	}
 }

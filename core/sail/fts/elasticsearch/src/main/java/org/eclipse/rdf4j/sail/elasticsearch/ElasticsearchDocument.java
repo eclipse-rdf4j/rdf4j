@@ -37,7 +37,7 @@ public class ElasticsearchDocument implements SearchDocument {
 
 	private final Map<String, Object> fields;
 
-	private final Function<? super String,? extends SpatialContext> geoContextMapper;
+	private final Function<? super String, ? extends SpatialContext> geoContextMapper;
 
 	/**
 	 * To be removed, no longer used.
@@ -47,12 +47,14 @@ public class ElasticsearchDocument implements SearchDocument {
 		this(hit, null);
 	}
 
-	public ElasticsearchDocument(SearchHit hit, Function<? super String,? extends SpatialContext> geoContextMapper) {
+	public ElasticsearchDocument(SearchHit hit,
+			Function<? super String, ? extends SpatialContext> geoContextMapper)
+	{
 		this(hit.getId(), hit.getType(), hit.getIndex(), hit.getVersion(), hit.getSource(), geoContextMapper);
 	}
 
 	public ElasticsearchDocument(String id, String type, String index, String resourceId, String context,
-			Function<? super String,? extends SpatialContext> geoContextMapper)
+			Function<? super String, ? extends SpatialContext> geoContextMapper)
 	{
 		this(id, type, index, 0L, new HashMap<String, Object>(), geoContextMapper);
 		fields.put(SearchFields.URI_FIELD_NAME, resourceId);
@@ -62,7 +64,7 @@ public class ElasticsearchDocument implements SearchDocument {
 	}
 
 	public ElasticsearchDocument(String id, String type, String index, long version,
-			Map<String, Object> fields, Function<? super String,? extends SpatialContext> geoContextMapper)
+			Map<String, Object> fields, Function<? super String, ? extends SpatialContext> geoContextMapper)
 	{
 		this.id = id;
 		this.type = type;
@@ -137,7 +139,8 @@ public class ElasticsearchDocument implements SearchDocument {
 						GeoHashUtils.encode(p.getY(), p.getX()));
 			}
 			else {
-				fields.put(ElasticsearchIndex.GEOSHAPE_FIELD_PREFIX + name, ElasticsearchSpatialSupport.getSpatialSupport().toGeoJSON(shape));
+				fields.put(ElasticsearchIndex.GEOSHAPE_FIELD_PREFIX + name,
+						ElasticsearchSpatialSupport.getSpatialSupport().toGeoJSON(shape));
 			}
 		}
 		catch (ParseException e) {
