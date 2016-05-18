@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.memory.config;
 import static org.eclipse.rdf4j.sail.memory.config.MemoryStoreSchema.PERSIST;
 import static org.eclipse.rdf4j.sail.memory.config.MemoryStoreSchema.SYNC_DELAY;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
@@ -81,7 +82,9 @@ public class MemoryStoreConfig extends AbstractSailImplConfig {
 
 		try {
 
-			Models.objectLiteral(graph.filter(implNode, PERSIST, null)).ifPresent(persistValue -> {
+			Literal persistValue = Models.objectLiteral(graph.filter(implNode, PERSIST, null));
+
+			if (persistValue != null) {
 				try {
 					setPersist((persistValue).booleanValue());
 				}
@@ -89,9 +92,11 @@ public class MemoryStoreConfig extends AbstractSailImplConfig {
 					throw new SailConfigException(
 							"Boolean value required for " + PERSIST + " property, found " + persistValue);
 				}
-			});
+			}
 
-			Models.objectLiteral(graph.filter(implNode, SYNC_DELAY, null)).ifPresent(syncDelayValue -> {
+			Literal syncDelayValue = Models.objectLiteral(graph.filter(implNode, SYNC_DELAY, null));
+
+			if (syncDelayValue != null) {
 				try {
 					setSyncDelay((syncDelayValue).longValue());
 				}
@@ -99,7 +104,7 @@ public class MemoryStoreConfig extends AbstractSailImplConfig {
 					throw new SailConfigException("Long integer value required for " + SYNC_DELAY
 							+ " property, found " + syncDelayValue);
 				}
-			});
+			}
 		}
 		catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);

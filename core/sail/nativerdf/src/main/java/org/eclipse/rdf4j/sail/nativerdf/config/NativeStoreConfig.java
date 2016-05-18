@@ -14,6 +14,7 @@ import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.TRIPLE_I
 import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.VALUE_CACHE_SIZE;
 import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.VALUE_ID_CACHE_SIZE;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -149,9 +150,15 @@ public class NativeStoreConfig extends AbstractSailImplConfig {
 
 		try {
 
-			Models.objectLiteral(m.filter(implNode, TRIPLE_INDEXES, null)).ifPresent(
-					lit -> setTripleIndexes(lit.getLabel()));
-			Models.objectLiteral(m.filter(implNode, FORCE_SYNC, null)).ifPresent(lit -> {
+			Literal indexes = Models.objectLiteral(m.filter(implNode, TRIPLE_INDEXES, null));
+
+			if (indexes != null) {
+				setTripleIndexes(indexes.getLabel());
+			}
+
+			Literal lit = Models.objectLiteral(m.filter(implNode, FORCE_SYNC, null));
+
+			if (lit != null) {
 				try {
 					setForceSync(lit.booleanValue());
 				}
@@ -159,9 +166,11 @@ public class NativeStoreConfig extends AbstractSailImplConfig {
 					throw new SailConfigException(
 							"Boolean value required for " + FORCE_SYNC + " property, found " + lit);
 				}
-			});
+			}
 
-			Models.objectLiteral(m.filter(implNode, VALUE_CACHE_SIZE, null)).ifPresent(lit -> {
+			lit = Models.objectLiteral(m.filter(implNode, VALUE_CACHE_SIZE, null));
+
+			if (lit != null) {
 				try {
 					setValueCacheSize(lit.intValue());
 				}
@@ -169,9 +178,11 @@ public class NativeStoreConfig extends AbstractSailImplConfig {
 					throw new SailConfigException(
 							"Integer value required for " + VALUE_CACHE_SIZE + " property, found " + lit);
 				}
-			});
+			}
 
-			Models.objectLiteral(m.filter(implNode, VALUE_ID_CACHE_SIZE, null)).ifPresent(lit -> {
+			lit = Models.objectLiteral(m.filter(implNode, VALUE_ID_CACHE_SIZE, null));
+
+			if (lit != null) {
 				try {
 					setValueIDCacheSize(lit.intValue());
 				}
@@ -179,9 +190,11 @@ public class NativeStoreConfig extends AbstractSailImplConfig {
 					throw new SailConfigException(
 							"Integer value required for " + VALUE_ID_CACHE_SIZE + " property, found " + lit);
 				}
-			});
+			}
 
-			Models.objectLiteral(m.filter(implNode, NAMESPACE_CACHE_SIZE, null)).ifPresent(lit -> {
+			lit = Models.objectLiteral(m.filter(implNode, NAMESPACE_CACHE_SIZE, null));
+
+			if (lit != null) {
 				try {
 					setNamespaceCacheSize(lit.intValue());
 				}
@@ -189,9 +202,11 @@ public class NativeStoreConfig extends AbstractSailImplConfig {
 					throw new SailConfigException(
 							"Integer value required for " + NAMESPACE_CACHE_SIZE + " property, found " + lit);
 				}
-			});
+			}
 
-			Models.objectLiteral(m.filter(implNode, NAMESPACE_ID_CACHE_SIZE, null)).ifPresent(lit -> {
+			lit = Models.objectLiteral(m.filter(implNode, NAMESPACE_ID_CACHE_SIZE, null));
+
+			if (lit != null) {
 				try {
 					setNamespaceIDCacheSize(lit.intValue());
 				}
@@ -199,9 +214,11 @@ public class NativeStoreConfig extends AbstractSailImplConfig {
 					throw new SailConfigException("Integer value required for " + NAMESPACE_ID_CACHE_SIZE
 							+ " property, found " + lit);
 				}
-			});
+			}
 		}
-		catch (ModelException e) {
+		catch (
+
+		ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
 	}

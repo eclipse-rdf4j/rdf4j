@@ -20,8 +20,11 @@ public class QueryParserUtil {
 	public static QueryParser createParser(QueryLanguage ql)
 		throws UnsupportedQueryLanguageException
 	{
-		QueryParserFactory factory = QueryParserRegistry.getInstance().get(ql).orElseThrow(
-				() -> new UnsupportedQueryLanguageException("No factory available for query language " + ql));
+		QueryParserFactory factory = QueryParserRegistry.getInstance().get(ql);
+
+		if (factory == null) {
+			throw new UnsupportedQueryLanguageException("No factory available for query language " + ql);
+		}
 		return factory.getParser();
 	}
 

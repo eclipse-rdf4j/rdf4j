@@ -89,8 +89,11 @@ public class SailRepositoryFactory implements RepositoryFactory {
 	private Sail createSail(SailImplConfig config)
 		throws RepositoryConfigException, SailConfigException
 	{
-		SailFactory sailFactory = SailRegistry.getInstance().get(config.getType()).orElseThrow(
-				() -> new RepositoryConfigException("Unsupported Sail type: " + config.getType()));
+		SailFactory sailFactory = SailRegistry.getInstance().get(config.getType());
+
+		if (sailFactory == null) {
+			throw new RepositoryConfigException("Unsupported Sail type: " + config.getType());
+		}
 		return sailFactory.getSail(config);
 	}
 

@@ -276,7 +276,7 @@ public final class QueryEvaluator {
 		}
 		else {
 			final RDFFormat format = req.isParameterPresent(ACCEPT)
-					? Rio.getWriterFormatForMIMEType(req.getParameter(ACCEPT)).orElse(null) : null;
+					? Rio.getWriterFormatForMIMEType(req.getParameter(ACCEPT)) : null;
 			if (query instanceof GraphQuery) {
 				GraphQuery graphQuery = (GraphQuery)query;
 				if (null == format) {

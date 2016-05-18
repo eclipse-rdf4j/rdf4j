@@ -47,16 +47,6 @@ import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.SKOS;
 import org.eclipse.rdf4j.model.vocabulary.SP;
 import org.eclipse.rdf4j.model.vocabulary.SPIN;
-import org.eclipse.rdf4j.rio.ParserConfig;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.RDFHandlerException;
-import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.RDFParserFactory;
-import org.eclipse.rdf4j.rio.RDFWriter;
-import org.eclipse.rdf4j.rio.RDFWriterFactory;
-import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
@@ -357,7 +347,7 @@ public abstract class RDFWriterTest {
 		if (rdfParser.getRDFFormat().supportsNamespaces()) {
 			assertTrue("Expected at least one namespace, found" + model.getNamespaces().size(),
 					model.getNamespaces().size() >= 1);
-			assertEquals(exNs, model.getNamespace("ex").get().getName());
+			assertEquals(exNs, model.getNamespace("ex").getName());
 		}
 
 		// Test for four unique statements for blank nodes in subject position
@@ -650,7 +640,7 @@ public abstract class RDFWriterTest {
 				if (rdfParser.getRDFFormat().supportsNamespaces()) {
 					assertTrue("Expected at least 5 namespaces, found " + parsedModel.getNamespaces().size(),
 							parsedModel.getNamespaces().size() >= 5);
-					assertEquals(exNs, parsedModel.getNamespace("ex").get().getName());
+					assertEquals(exNs, parsedModel.getNamespace("ex").getName());
 				}
 			}
 		}

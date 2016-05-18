@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.workbench.base;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.util.Optional;
 import java.util.regex.Pattern;
 
 import javax.servlet.Servlet;
@@ -142,9 +141,9 @@ public abstract class AbstractServlet implements Servlet {
 			header = req.getHeader(ACCEPT);
 		}
 		if (header != null) {
-			Optional<QueryResultFormat> tupleFormat = QueryResultIO.getParserFormatForMIMEType(header);
-			if (tupleFormat.isPresent()) {
-				return tupleFormat.get();
+			QueryResultFormat tupleFormat = QueryResultIO.getParserFormatForMIMEType(header);
+			if (tupleFormat != null) {
+				return tupleFormat;
 			}
 		}
 
@@ -157,10 +156,9 @@ public abstract class AbstractServlet implements Servlet {
 		String header = req.getHeader(ACCEPT);
 		if (header != null) {
 			// Then try boolean format
-			Optional<QueryResultFormat> booleanFormat = QueryResultIO.getBooleanParserFormatForMIMEType(
-					header);
-			if (booleanFormat.isPresent()) {
-				return booleanFormat.get();
+			QueryResultFormat booleanFormat = QueryResultIO.getBooleanParserFormatForMIMEType(header);
+			if (booleanFormat != null) {
+				return booleanFormat;
 			}
 		}
 

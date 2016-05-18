@@ -114,12 +114,9 @@ public interface SailConnection {
 	 * @deprecated since 4.0. Use {@link #getStatements(Resource, IRI, Value, boolean, Resource...)} instead.
 	 */
 	@Deprecated
-	default CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, URI pred,
+	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, URI pred,
 			Value obj, boolean includeInferred, Resource... contexts)
-		throws SailException
-	{
-		return getStatements(subj, (IRI)pred, obj, includeInferred, contexts);
-	}
+		throws SailException;
 
 	/**
 	 * Determines if the store contains any statements from the specified contexts that have a specific
@@ -147,19 +144,8 @@ public interface SailConnection {
 	 * @throws IllegalStateException
 	 *         If the connection has been closed.
 	 */
-	default boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
-			Resource... contexts)
-		throws SailException
-	{
-		CloseableIteration<? extends Statement, SailException> stIter = getStatements(subj, pred, obj,
-				includeInferred, contexts);
-		try {
-			return stIter.hasNext();
-		}
-		finally {
-			stIter.close();
-		}
-	}
+	boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
+		throws SailException;
 
 	/**
 	 * Returns the number of (explicit) statements in the store, or in specific contexts.
@@ -307,11 +293,8 @@ public interface SailConnection {
 	 * @deprecated since 4.0. Use {@link #addStatement(Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
-	default void addStatement(Resource subj, URI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
-		addStatement(subj, (IRI)pred, obj, contexts);
-	}
+	public void addStatement(Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException;
 
 	/**
 	 * Removes all statements matching the specified subject, predicate and object from the repository. All
@@ -338,11 +321,9 @@ public interface SailConnection {
 	/**
 	 * @deprecated since 4.0. Use {@link #removeStatements(Resource, IRI, Value, Resource...)} instead.
 	 */
-	default void removeStatements(Resource subj, URI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
-		removeStatements(subj, (IRI)pred, obj, contexts);
-	}
+	@Deprecated
+	public void removeStatements(Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException;
 
 	/**
 	 * Signals the start of an update operation. The given <code>op</code> maybe passed to subsequent
@@ -382,11 +363,8 @@ public interface SailConnection {
 	 *             instead.
 	 */
 	@Deprecated
-	default void addStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
-		addStatement(op, subj, (IRI)pred, obj, contexts);
-	}
+	public void addStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException;
 
 	/**
 	 * Removes all statements matching the specified subject, predicate and object from the repository. All
@@ -418,11 +396,8 @@ public interface SailConnection {
 	 *             instead.
 	 */
 	@Deprecated
-	default void removeStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
-		removeStatement(op, subj, (IRI)pred, obj, contexts);
-	}
+	public void removeStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException;
 
 	/**
 	 * Indicates that the given <code>op</code> will not be used in any call again. Implementations should use

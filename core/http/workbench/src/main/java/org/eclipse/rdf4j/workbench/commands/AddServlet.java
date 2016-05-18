@@ -86,14 +86,18 @@ public class AddServlet extends TransformationServlet {
 
 		RDFFormat format = null;
 		if ("autodetect".equals(contentType)) {
-			format = Rio.getParserFormatForFileName(contentFileName).orElseThrow(
-					() -> new BadRequestException(
-							"Could not automatically determine Content-Type for content: "
-									+ contentFileName));
+			format = Rio.getParserFormatForFileName(contentFileName);
+
+			if (format == null) {
+				throw new BadRequestException(
+						"Could not automatically determine Content-Type for content: " + contentFileName);
+			}
 		}
 		else {
-			format = Rio.getParserFormatForMIMEType(contentType).orElseThrow(
-					() -> new BadRequestException("Unknown Content-Type: " + contentType));
+			format = Rio.getParserFormatForMIMEType(contentType);
+			if (format == null) {
+				throw new BadRequestException("Unknown Content-Type: " + contentType);
+			}
 		}
 
 		RepositoryConnection con = repository.getConnection();
@@ -120,12 +124,17 @@ public class AddServlet extends TransformationServlet {
 
 		RDFFormat format = null;
 		if ("autodetect".equals(contentType)) {
-			format = Rio.getParserFormatForFileName(url.getFile()).orElseThrow(() -> new BadRequestException(
-					"Could not automatically determine Content-Type for content: " + url.getFile()));
+			format = Rio.getParserFormatForFileName(url.getFile());
+			if (format == null) {
+				throw new BadRequestException(
+						"Could not automatically determine Content-Type for content: " + url.getFile());
+			}
 		}
 		else {
-			format = Rio.getParserFormatForMIMEType(contentType).orElseThrow(
-					() -> new BadRequestException("Unknown Content-Type: " + contentType));
+			format = Rio.getParserFormatForMIMEType(contentType);
+			if (format == null) {
+				throw new BadRequestException("Unknown Content-Type: " + contentType);
+			}
 		}
 
 		try {

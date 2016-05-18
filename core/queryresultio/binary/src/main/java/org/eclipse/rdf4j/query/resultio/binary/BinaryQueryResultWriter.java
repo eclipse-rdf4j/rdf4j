@@ -288,7 +288,7 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 		writeString(label);
 
 		if (Literals.isLanguageLiteral(literal)) {
-			writeString(literal.getLanguage().get());
+			writeString(literal.getLanguage());
 		}
 		else {
 			writeQName(datatype);

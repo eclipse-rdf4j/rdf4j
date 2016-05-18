@@ -235,8 +235,12 @@ public class LocalRepositoryManager extends RepositoryManager {
 	private Repository createRepositoryStack(RepositoryImplConfig config)
 		throws RepositoryConfigException
 	{
-		RepositoryFactory factory = RepositoryRegistry.getInstance().get(config.getType()).orElseThrow(
-				() -> new RepositoryConfigException("Unsupported repository type: " + config.getType()));
+		RepositoryFactory factory = RepositoryRegistry.getInstance().get(config.getType());
+
+		if (factory == null) {
+			throw new RepositoryConfigException("Unsupported repository type: " + config.getType());
+		}
+
 		Repository repository = factory.getRepository(config);
 		if (repository instanceof RepositoryResolverClient) {
 			((RepositoryResolverClient)repository).setRepositoryResolver(this);

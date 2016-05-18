@@ -17,11 +17,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
-
-import junit.framework.TestCase;
-import junit.framework.TestSuite;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -47,11 +43,9 @@ import org.eclipse.rdf4j.query.dawg.DAWGTestResultSetUtil;
 import org.eclipse.rdf4j.query.impl.MutableTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
-import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParserRegistry;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -60,13 +54,16 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.RDFParser.DatatypeHandling;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import junit.framework.TestCase;
+import junit.framework.TestSuite;
 
 /**
  * A SPARQL query test suite, created by reading in a W3C working-group style manifest.
@@ -468,8 +465,11 @@ public abstract class SPARQLQueryTest extends TestCase {
 
 		try {
 			con.begin();
-			RDFFormat rdfFormat = Rio.getParserFormatForFileName(graphURI.toString()).orElse(
-					RDFFormat.TURTLE);
+			RDFFormat rdfFormat = Rio.getParserFormatForFileName(graphURI.toString());
+
+			if (rdfFormat == null) {
+				rdfFormat = RDFFormat.TURTLE;
+			}
 			RDFParser rdfParser = Rio.createParser(rdfFormat, dataRep.getValueFactory());
 			rdfParser.setVerifyData(false);
 			rdfParser.setDatatypeHandling(DatatypeHandling.IGNORE);
@@ -516,12 +516,12 @@ public abstract class SPARQLQueryTest extends TestCase {
 	protected final TupleQueryResult readExpectedTupleQueryResult()
 		throws Exception
 	{
-		Optional<QueryResultFormat> tqrFormat = QueryResultIO.getParserFormatForFileName(resultFileURL);
+		QueryResultFormat tqrFormat = QueryResultIO.getParserFormatForFileName(resultFileURL);
 
-		if (tqrFormat.isPresent()) {
+		if (tqrFormat != null) {
 			InputStream in = new URL(resultFileURL).openStream();
 			try {
-				TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat.get());
+				TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat);
 				parser.setValueFactory(dataRep.getValueFactory());
 
 				TupleQueryResultBuilder qrBuilder = new TupleQueryResultBuilder();
@@ -543,13 +543,13 @@ public abstract class SPARQLQueryTest extends TestCase {
 	protected final boolean readExpectedBooleanQueryResult()
 		throws Exception
 	{
-		Optional<QueryResultFormat> bqrFormat = BooleanQueryResultParserRegistry.getInstance().getFileFormatForFileName(
+		QueryResultFormat bqrFormat = BooleanQueryResultParserRegistry.getInstance().getFileFormatForFileName(
 				resultFileURL);
 
-		if (bqrFormat.isPresent()) {
+		if (bqrFormat != null) {
 			InputStream in = new URL(resultFileURL).openStream();
 			try {
-				return QueryResultIO.parseBoolean(in, bqrFormat.get());
+				return QueryResultIO.parseBoolean(in, bqrFormat);
 			}
 			finally {
 				in.close();
@@ -564,8 +564,11 @@ public abstract class SPARQLQueryTest extends TestCase {
 	protected final Set<Statement> readExpectedGraphQueryResult()
 		throws Exception
 	{
-		RDFFormat rdfFormat = Rio.getParserFormatForFileName(resultFileURL).orElseThrow(
-				Rio.unsupportedFormat(resultFileURL));
+		RDFFormat rdfFormat = Rio.getParserFormatForFileName(resultFileURL);
+
+		if (rdfFormat == null) {
+			throw Rio.unsupportedFormat(resultFileURL);
+		}
 
 		RDFParser parser = Rio.createParser(rdfFormat);
 		parser.setDatatypeHandling(DatatypeHandling.IGNORE);

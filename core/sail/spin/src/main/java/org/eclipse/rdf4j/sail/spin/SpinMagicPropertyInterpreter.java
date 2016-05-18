@@ -112,7 +112,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 			for (StatementPattern sp : sps) {
 				IRI pred = (IRI)sp.getPredicateVar().getValue();
 				if (pred != null) {
-					TupleFunction func = tupleFunctionRegistry.get(pred.stringValue()).orElse(null);
+					TupleFunction func = tupleFunctionRegistry.get(pred.stringValue());
 					if (func != null) {
 						magicProperties.put(sp, func);
 					}

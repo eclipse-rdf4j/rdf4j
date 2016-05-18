@@ -686,9 +686,12 @@ public class SparqlSession implements HttpClientDependent {
 
 			// if we get here, HTTP code is 200
 			String mimeType = getResponseMIMEType(response);
-			QueryResultFormat format = TupleQueryResultFormat.matchMIMEType(mimeType, tqrFormats).orElseThrow(
-					() -> new RepositoryException(
-							"Server responded with an unsupported file format: " + mimeType));
+			QueryResultFormat format = TupleQueryResultFormat.matchMIMEType(mimeType, tqrFormats);
+
+			if (format == null) {
+				throw new RepositoryException(
+						"Server responded with an unsupported file format: " + mimeType);
+			}
 			TupleQueryResultParser parser = QueryResultIO.createTupleParser(format, getValueFactory());
 			BackgroundTupleResult tRes = new BackgroundTupleResult(parser, response.getEntity().getContent());
 			execute(tRes);
@@ -722,10 +725,12 @@ public class SparqlSession implements HttpClientDependent {
 			// if we get here, HTTP code is 200
 			String mimeType = getResponseMIMEType(response);
 			try {
-				QueryResultFormat format = TupleQueryResultFormat.matchMIMEType(mimeType,
-						tqrFormats).orElseThrow(
-								() -> new RepositoryException(
-										"Server responded with an unsupported file format: " + mimeType));
+				QueryResultFormat format = TupleQueryResultFormat.matchMIMEType(mimeType, tqrFormats);
+
+				if (format == null) {
+					throw new RepositoryException(
+							"Server responded with an unsupported file format: " + mimeType);
+				}
 				TupleQueryResultParser parser = QueryResultIO.createTupleParser(format, getValueFactory());
 				parser.setQueryResultHandler(handler);
 				parser.parseQueryResult(response.getEntity().getContent());
@@ -817,9 +822,12 @@ public class SparqlSession implements HttpClientDependent {
 
 			// if we get here, HTTP code is 200
 			String mimeType = getResponseMIMEType(response);
-			RDFFormat format = RDFFormat.matchMIMEType(mimeType, rdfFormats).orElseThrow(
-					() -> new RepositoryException(
-							"Server responded with an unsupported file format: " + mimeType));
+			RDFFormat format = RDFFormat.matchMIMEType(mimeType, rdfFormats);
+
+			if (format == null) {
+				throw new RepositoryException(
+						"Server responded with an unsupported file format: " + mimeType);
+			}
 			RDFParser parser = Rio.createParser(format, getValueFactory());
 			parser.setParserConfig(getParserConfig());
 			parser.setParseErrorListener(new ParseErrorLogger());
@@ -886,9 +894,12 @@ public class SparqlSession implements HttpClientDependent {
 
 			String mimeType = getResponseMIMEType(response);
 			try {
-				RDFFormat format = RDFFormat.matchMIMEType(mimeType, rdfFormats).orElseThrow(
-						() -> new RepositoryException(
-								"Server responded with an unsupported file format: " + mimeType));
+				RDFFormat format = RDFFormat.matchMIMEType(mimeType, rdfFormats);
+
+				if (format == null) {
+					throw new RepositoryException(
+							"Server responded with an unsupported file format: " + mimeType);
+				}
 				RDFParser parser = Rio.createParser(format, getValueFactory());
 				parser.setParserConfig(getParserConfig());
 				parser.setParseErrorListener(new ParseErrorLogger());
@@ -948,10 +959,12 @@ public class SparqlSession implements HttpClientDependent {
 			// if we get here, HTTP code is 200
 			String mimeType = getResponseMIMEType(response);
 			try {
-				QueryResultFormat format = BooleanQueryResultFormat.matchMIMEType(mimeType,
-						booleanFormats).orElseThrow(
-								() -> new RepositoryException(
-										"Server responded with an unsupported file format: " + mimeType));
+				QueryResultFormat format = BooleanQueryResultFormat.matchMIMEType(mimeType, booleanFormats);
+
+				if (format == null) {
+					throw new RepositoryException(
+							"Server responded with an unsupported file format: " + mimeType);
+				}
 				BooleanQueryResultParser parser = QueryResultIO.createBooleanParser(format);
 				QueryResultCollector results = new QueryResultCollector();
 				parser.setQueryResultHandler(results);

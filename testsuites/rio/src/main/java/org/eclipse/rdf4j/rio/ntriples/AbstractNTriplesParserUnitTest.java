@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -189,7 +188,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 						"<urn:test:subject> <urn:test:predicate> \" \\t \\b \\n \\r \\f \\\" \\' \\\\ \" . "),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals(" \t \b \n \r \f \" \' \\ ", model.objectLiteral().get().getLabel());
+		assertEquals(" \t \b \n \r \f \" \' \\ ", model.objectLiteral().getLabel());
 	}
 
 	@Test
@@ -204,7 +203,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 						"<urn:test:subject> <urn:test:predicate> <urn:test:object> .#endoflinecomment\n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals("urn:test:object", model.objectString());
 	}
 
 	@Test
@@ -219,7 +218,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 						"<urn:test:subject> <urn:test:predicate> <urn:test:object> . #endoflinecomment\n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals("urn:test:object", model.objectString());
 	}
 
 	@Test
@@ -234,7 +233,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 						"<urn:test:subject> <urn:test:predicate> <urn:test:object> .# endoflinecomment\n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals("urn:test:object", model.objectString());
 	}
 
 	@Test
@@ -249,7 +248,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 						"<urn:test:subject> <urn:test:predicate> <urn:test:object> . # endoflinecomment\n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals("urn:test:object", model.objectString());
 	}
 
 	@Test
@@ -319,7 +318,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 				new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> .#\n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals("urn:test:object", model.objectString());
 	}
 
 	@Test
@@ -333,7 +332,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 				new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> . #\n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals("urn:test:object", model.objectString());
 	}
 
 	@Test
@@ -347,7 +346,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 				new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> .# \n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals("urn:test:object", model.objectString());
 	}
 
 	@Test
@@ -361,7 +360,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 				new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> . # \n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals("urn:test:object", model.objectString());
 	}
 
 	@Test

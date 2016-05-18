@@ -15,10 +15,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
-
-import junit.framework.TestCase;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -46,7 +43,6 @@ import org.eclipse.rdf4j.query.impl.MutableTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -56,16 +52,17 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.RDFParser.DatatypeHandling;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import junit.framework.TestCase;
 
 /**
  * Test suite for evaluation of SPARQL queries involving SERVICE clauses. The test suite starts up an embedded
@@ -199,9 +196,12 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 		RepositoryConnection con = rep.getConnection();
 		try {
+			RDFFormat format = Rio.getParserFormatForFileName(datasetFile);
+			if (format == null) {
+				throw Rio.unsupportedFormat(datasetFile);
+			}
 			con.clear();
-			con.add(dataset, "", Rio.getParserFormatForFileName(datasetFile).orElseThrow(
-					Rio.unsupportedFormat(datasetFile)));
+			con.add(dataset, "", format);
 		}
 		finally {
 			dataset.close();
@@ -525,12 +525,12 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	private TupleQueryResult readExpectedTupleQueryResult(String resultFile)
 		throws Exception
 	{
-		Optional<QueryResultFormat> tqrFormat = QueryResultIO.getParserFormatForFileName(resultFile);
+		QueryResultFormat tqrFormat = QueryResultIO.getParserFormatForFileName(resultFile);
 
-		if (tqrFormat.isPresent()) {
+		if (tqrFormat != null) {
 			InputStream in = SPARQLServiceEvaluationTest.class.getResourceAsStream(resultFile);
 			try {
-				TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat.get());
+				TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat);
 				parser.setValueFactory(SimpleValueFactory.getInstance());
 
 				TupleQueryResultBuilder qrBuilder = new TupleQueryResultBuilder();
@@ -559,8 +559,11 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	private Set<Statement> readExpectedGraphQueryResult(String resultFile)
 		throws Exception
 	{
-		RDFFormat rdfFormat = Rio.getParserFormatForFileName(resultFile).orElseThrow(
-				Rio.unsupportedFormat(resultFile));
+		RDFFormat rdfFormat = Rio.getParserFormatForFileName(resultFile);
+
+		if (rdfFormat == null) {
+			throw Rio.unsupportedFormat(resultFile);
+		}
 
 		RDFParser parser = Rio.createParser(rdfFormat);
 		parser.setDatatypeHandling(DatatypeHandling.IGNORE);

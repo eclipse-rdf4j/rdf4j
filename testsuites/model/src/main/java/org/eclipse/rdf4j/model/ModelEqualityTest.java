@@ -12,16 +12,13 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.InputStream;
 import java.net.URL;
-import java.util.Optional;
 import java.util.Set;
 
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.RDFParser.DatatypeHandling;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.Test;
 
@@ -103,10 +100,10 @@ public abstract class ModelEqualityTest {
 
 		Model model = createEmptyModel();
 
-		Optional<RDFFormat> rdfFormat = Rio.getParserFormatForFileName(fileName);
-		assertTrue("Unable to determine RDF format for file: " + fileName, rdfFormat.isPresent());
+		RDFFormat rdfFormat = Rio.getParserFormatForFileName(fileName);
+		assertTrue("Unable to determine RDF format for file: " + fileName, rdfFormat != null);
 
-		RDFParser parser = Rio.createParser(rdfFormat.get());
+		RDFParser parser = Rio.createParser(rdfFormat);
 		parser.setDatatypeHandling(DatatypeHandling.IGNORE);
 		parser.setPreserveBNodeIDs(true);
 		parser.setRDFHandler(new StatementCollector(model));

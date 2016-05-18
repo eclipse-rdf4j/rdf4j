@@ -331,7 +331,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			Literal lit = (Literal)value;
 
 			if (Literals.isLanguageLiteral(lit)) {
-				jg.writeObjectField("xml:lang", lit.getLanguage().orElse(null));
+				jg.writeObjectField("xml:lang", lit.getLanguage());
 			}
 			else {
 				IRI datatype = lit.getDatatype();

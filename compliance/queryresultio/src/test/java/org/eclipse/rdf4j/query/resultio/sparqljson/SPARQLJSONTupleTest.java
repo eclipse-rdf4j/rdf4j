@@ -7,7 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.InputStream;
 
@@ -22,7 +27,6 @@ import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOTupleTest;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
-import org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLResultsJSONParser;
 import org.junit.Test;
 
 /**
@@ -163,18 +167,18 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 
 				Literal name = (Literal)b.getValue("name");
 				assertEquals("Alice", name.stringValue());
-				assertFalse(name.getLanguage().isPresent());
+				assertFalse(name.getLanguage() != null);
 				assertEquals(XMLSchema.STRING, name.getDatatype());
 
 				Literal mbox = (Literal)b.getValue("mbox");
 				assertEquals("", mbox.stringValue());
-				assertFalse(mbox.getLanguage().isPresent());
+				assertFalse(mbox.getLanguage() != null);
 				assertEquals(XMLSchema.STRING, mbox.getDatatype());
 
 				Literal blurb = (Literal)b.getValue("blurb");
 				assertEquals("<p xmlns=\"http://www.w3.org/1999/xhtml\">My name is <b>alice</b></p>",
 						blurb.stringValue());
-				assertFalse(blurb.getLanguage().isPresent());
+				assertFalse(blurb.getLanguage() != null);
 				assertEquals(RDF.XMLLITERAL, blurb.getDatatype());
 			}
 			else if (value.getID().equals("r2")) {
@@ -186,7 +190,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 
 				Literal name = (Literal)b.getValue("name");
 				assertEquals("Bob", name.stringValue());
-				assertEquals("en", name.getLanguage().orElse(null));
+				assertEquals("en", name.getLanguage());
 				assertEquals(RDF.LANGSTRING, name.getDatatype());
 
 				assertEquals("mailto:bob@work.example.org", b.getValue("mbox").stringValue());

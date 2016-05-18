@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.string;
 
-import java.util.Optional;
-
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -93,11 +91,11 @@ public class Substring implements Function {
 				}
 
 				try {
-					Optional<String> language = literal.getLanguage();
+					String language = literal.getLanguage();
 					lexicalValue = lexicalValue.substring(startIndex, endIndex);
 
-					if (language.isPresent()) {
-						return valueFactory.createLiteral(lexicalValue, language.get());
+					if (language != null) {
+						return valueFactory.createLiteral(lexicalValue, language);
 					}
 					else if (XMLSchema.STRING.equals(literal.getDatatype())) {
 						return valueFactory.createLiteral(lexicalValue, XMLSchema.STRING);

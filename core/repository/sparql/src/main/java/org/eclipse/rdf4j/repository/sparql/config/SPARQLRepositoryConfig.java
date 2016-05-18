@@ -96,10 +96,16 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 		super.parse(m, implNode);
 
 		try {
-			Models.objectIRI(m.filter(implNode, QUERY_ENDPOINT, null)).ifPresent(
-					iri -> setQueryEndpointUrl(iri.stringValue()));
-			Models.objectIRI(m.filter(implNode, UPDATE_ENDPOINT, null)).ifPresent(
-					iri -> setUpdateEndpointUrl(iri.stringValue()));
+			IRI iri = Models.objectIRI(m.filter(implNode, QUERY_ENDPOINT, null));
+
+			if (iri != null) {
+				setQueryEndpointUrl(iri.stringValue());
+			}
+			iri = Models.objectIRI(m.filter(implNode, UPDATE_ENDPOINT, null));
+
+			if (iri != null) {
+				setUpdateEndpointUrl(iri.stringValue());
+			}
 		}
 		catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);

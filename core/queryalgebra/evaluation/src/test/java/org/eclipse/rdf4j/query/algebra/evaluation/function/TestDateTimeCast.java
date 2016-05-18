@@ -85,7 +85,7 @@ public class TestDateTimeCast {
 			Literal result = dtCast.evaluate(f, dtLit);
 			assertNotNull(result);
 			assertEquals(XMLSchema.DATETIME, result.getDatatype());
-			assertFalse(result.getLanguage().isPresent());
+			assertFalse(result.getLanguage() != null);
 			assertEquals(lexVal, result.getLabel());
 		}
 		catch (ValueExprEvaluationException e) {
