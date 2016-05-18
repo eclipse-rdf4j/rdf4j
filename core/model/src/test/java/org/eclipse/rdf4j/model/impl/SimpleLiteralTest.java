@@ -81,7 +81,7 @@ public class SimpleLiteralTest {
 	{
 		Literal test = new SimpleLiteral("");
 		assertEquals("", test.getLabel());
-		assertFalse(test.getLanguage().isPresent());
+		assertFalse(test.getLanguage() != null);
 		assertEquals(XMLSchema.STRING, test.getDatatype());
 	}
 
@@ -99,7 +99,7 @@ public class SimpleLiteralTest {
 
 		Literal test = new SimpleLiteral(testBuilder.toString());
 		assertEquals(testBuilder.toString(), test.getLabel());
-		assertFalse(test.getLanguage().isPresent());
+		assertFalse(test.getLanguage() != null);
 		assertEquals(XMLSchema.STRING, test.getDatatype());
 	}
 
@@ -210,7 +210,7 @@ public class SimpleLiteralTest {
 
 		Literal test = new SimpleLiteral(label, datatype);
 		assertEquals("", test.getLabel());
-		assertFalse(test.getLanguage().isPresent());
+		assertFalse(test.getLanguage() != null);
 		assertEquals(XMLSchema.STRING, test.getDatatype());
 	}
 

@@ -16,12 +16,17 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
 
 /**
@@ -33,6 +38,87 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 
 	public Model unmodifiable() {
 		return new UnmodifiableModel(this);
+	}
+
+	public Namespace getNamespace(String prefix) {
+		for (Namespace ns : getNamespaces()) {
+			if (ns.getPrefix().equals(prefix)) {
+				return ns;
+			}
+		}
+		return null;
+	}
+
+	public Namespace setNamespace(String prefix, String name) {
+		Namespace result = getNamespace(prefix);
+		if (result == null || !result.getName().equals(name)) {
+			result = new SimpleNamespace(prefix, name);
+			setNamespace(result);
+		}
+		return result;
+	}
+
+	@Deprecated
+	public boolean add(Resource subj, URI pred, Value obj, Resource... contexts) {
+		return add(subj, (IRI)pred, obj, contexts);
+	}
+
+	@Deprecated
+	public boolean remove(Resource subj, URI pred, Value obj, Resource... contexts) {
+		return remove(subj, (IRI)pred, obj, contexts);
+	}
+
+	@Deprecated
+	public Model filter(Resource subj, URI pred, Value obj, Resource... contexts) {
+		return filter(subj, (IRI)pred, obj, contexts);
+	}
+
+	@Deprecated
+	public Resource subjectResource()
+		throws ModelException
+	{
+		Iterator<Resource> iter = subjects().iterator();
+		try {
+			if (iter.hasNext()) {
+				Resource subj = iter.next();
+				if (iter.hasNext()) {
+					throw new ModelException(subj, iter.next());
+				}
+				return subj;
+			}
+			return null;
+		}
+		finally {
+			closeIterator(iter);
+		}
+	}
+
+	@Override
+	public URI subjectURI()
+		throws ModelException
+	{
+		Resource subj = subjectResource();
+		if (subj == null) {
+			return null;
+		}
+		if (subj instanceof URI) {
+			return (URI)subj;
+		}
+		throw new ModelException(subj);
+	}
+
+	@Override
+	public BNode subjectBNode()
+		throws ModelException
+	{
+		Resource subj = subjectResource();
+		if (subj == null) {
+			return null;
+		}
+		if (subj instanceof BNode) {
+			return (BNode)subj;
+		}
+		throw new ModelException(subj);
 	}
 
 	@Override
@@ -172,6 +258,11 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			return remove(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
 		}
 		return false;
+	}
+
+	@Deprecated
+	public boolean contains(Resource subj, URI pred, Value obj, Resource... contexts) {
+		return contains(subj, (IRI)pred, obj, contexts);
 	}
 
 	@Override
@@ -346,6 +437,79 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 				AbstractModel.this.removeTermIteration(iter, null, null, null, term);
 			}
 		};
+	}
+
+	@Deprecated
+	public Value objectValue()
+		throws ModelException
+	{
+		Iterator<Value> iter = objects().iterator();
+		try {
+			if (iter.hasNext()) {
+				Value obj = iter.next();
+				if (iter.hasNext()) {
+					throw new ModelException(obj, iter.next());
+				}
+				return obj;
+			}
+			return null;
+		}
+		finally {
+			closeIterator(iter);
+		}
+	}
+
+	@Deprecated
+	public Literal objectLiteral()
+		throws ModelException
+	{
+		Value obj = objectValue();
+		if (obj == null) {
+			return null;
+		}
+		if (obj instanceof Literal) {
+			return (Literal)obj;
+		}
+		throw new ModelException(obj);
+	}
+
+	@Deprecated
+	public Resource objectResource()
+		throws ModelException
+	{
+		Value obj = objectValue();
+		if (obj == null) {
+			return null;
+		}
+		if (obj instanceof Resource) {
+			return (Resource)obj;
+		}
+		throw new ModelException(obj);
+	}
+
+	@Deprecated
+	public URI objectURI()
+		throws ModelException
+	{
+		Value obj = objectValue();
+		if (obj == null) {
+			return null;
+		}
+		if (obj instanceof URI) {
+			return (URI)obj;
+		}
+		throw new ModelException(obj);
+	}
+
+	@Deprecated
+	public String objectString()
+		throws ModelException
+	{
+		Value obj = objectValue();
+		if (obj == null) {
+			return null;
+		}
+		return obj.stringValue();
 	}
 
 	private abstract class ValueSet<V extends Value> extends AbstractSet<V> {

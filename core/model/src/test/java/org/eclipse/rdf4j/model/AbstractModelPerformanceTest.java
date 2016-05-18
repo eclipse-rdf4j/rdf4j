@@ -11,8 +11,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import java.util.Optional;
-
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.junit.After;
 import org.junit.Before;
@@ -222,10 +220,10 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 		}
 
 		long start = System.nanoTime();
-		Optional<IRI> objectURI = model.objectIRI();
+		URI objectURI = model.objectURI();
 		System.out.println("testPerfObjectURISingle: " + (System.nanoTime() - start));
-		assertTrue(objectURI.isPresent());
-		assertEquals("urn:test:object:uri:single", objectURI.get().toString());
+		assertTrue(objectURI != null);
+		assertEquals("urn:test:object:uri:single", objectURI.toString());
 	}
 
 	/**
@@ -246,7 +244,7 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 		thrown.expect(ModelException.class);
 		long start = System.nanoTime();
 		try {
-			model.objectIRI();
+			model.objectURI();
 		}
 		finally {
 			System.out.println("testPerfObjectURIMultipleAddedFirst: " + (System.nanoTime() - start));
@@ -271,7 +269,7 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 		thrown.expect(ModelException.class);
 		long start = System.nanoTime();
 		try {
-			model.objectIRI();
+			model.objectURI();
 		}
 		finally {
 			System.out.println("testPerfObjectURIMultipleAddedLast: " + (System.nanoTime() - start));

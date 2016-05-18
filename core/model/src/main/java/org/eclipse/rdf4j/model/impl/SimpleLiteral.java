@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.model.impl;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Objects;
-import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
@@ -123,8 +122,8 @@ public class SimpleLiteral implements Literal {
 		setDatatype(RDF.LANGSTRING);
 	}
 
-	public Optional<String> getLanguage() {
-		return Optional.ofNullable(language);
+	public String getLanguage() {
+		return language;
 	}
 
 	protected void setDatatype(IRI datatype) {
@@ -155,11 +154,11 @@ public class SimpleLiteral implements Literal {
 				return false;
 			}
 
-			if (getLanguage().isPresent() && other.getLanguage().isPresent()) {
-				return getLanguage().get().equalsIgnoreCase(other.getLanguage().get());
+			if (getLanguage() != null && other.getLanguage() != null) {
+				return getLanguage().equalsIgnoreCase(other.getLanguage());
 			}
 			// If only one has a language, then return false
-			else if (getLanguage().isPresent() || other.getLanguage().isPresent()) {
+			else if (getLanguage() != null || other.getLanguage() != null) {
 				return false;
 			}
 

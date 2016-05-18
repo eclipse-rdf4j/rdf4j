@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.model;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
@@ -32,9 +31,9 @@ public interface Literal extends Value {
 	/**
 	 * Gets the language tag for this literal, normalized to lower case.
 	 * 
-	 * @return The language tag for this literal, or {@link Optional#empty()} if it doesn't have one.
+	 * @return The language tag for this literal, or null if it doesn't have one.
 	 */
-	public Optional<String> getLanguage();
+	public String getLanguage();
 
 	/**
 	 * Gets the datatype for this literal.

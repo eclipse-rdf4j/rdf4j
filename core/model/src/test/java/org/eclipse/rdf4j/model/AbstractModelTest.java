@@ -12,7 +12,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -378,8 +377,8 @@ public abstract class AbstractModelTest {
 	@Test
 	public final void testObjectValueEmpty() {
 		Model model = getNewEmptyModel();
-		Optional<Value> value = model.objectValue();
-		assertFalse(value.isPresent());
+		Value value = model.objectValue();
+		assertFalse(value != null);
 	}
 
 	/**
@@ -388,9 +387,9 @@ public abstract class AbstractModelTest {
 	@Test
 	public final void testObjectValueSingleLiteral() {
 		Model model = getNewModelObjectSingleLiteral();
-		Optional<Value> value = model.objectValue();
-		assertTrue(value.isPresent());
-		assertEquals(literal1, value.get());
+		Value value = model.objectValue();
+		assertTrue(value != null);
+		assertEquals(literal1, value);
 	}
 
 	/**
@@ -399,9 +398,9 @@ public abstract class AbstractModelTest {
 	@Test
 	public final void testObjectValueSingleURI() {
 		Model model = getNewModelObjectSingleURI();
-		Optional<Value> value = model.objectValue();
-		assertTrue(value.isPresent());
-		assertEquals(uri2, value.get());
+		Value value = model.objectValue();
+		assertTrue(value != null);
+		assertEquals(uri2, value);
 	}
 
 	/**
@@ -410,9 +409,9 @@ public abstract class AbstractModelTest {
 	@Test
 	public final void testObjectValueSingleBNode() {
 		Model model = getNewModelObjectSingleBNode();
-		Optional<Value> value = model.objectValue();
-		assertTrue(value.isPresent());
-		assertEquals(bnode1, value.get());
+		Value value = model.objectValue();
+		assertTrue(value != null);
+		assertEquals(bnode1, value);
 	}
 
 	/**
@@ -597,8 +596,8 @@ public abstract class AbstractModelTest {
 	@Test
 	public final void testObjectLiteralEmpty() {
 		Model model = getNewEmptyModel();
-		Optional<Literal> value = model.objectLiteral();
-		assertFalse(value.isPresent());
+		Literal value = model.objectLiteral();
+		assertFalse(value != null);
 	}
 
 	/**
@@ -607,9 +606,9 @@ public abstract class AbstractModelTest {
 	@Test
 	public final void testObjectLiteralSingleLiteral() {
 		Model model = getNewModelObjectSingleLiteral();
-		Optional<Literal> value = model.objectLiteral();
-		assertTrue(value.isPresent());
-		assertEquals(literal1, value.get());
+		Literal value = model.objectLiteral();
+		assertTrue(value != null);
+		assertEquals(literal1, value);
 	}
 
 	/**
@@ -816,8 +815,8 @@ public abstract class AbstractModelTest {
 	@Test
 	public final void testObjectResourceEmpty() {
 		Model model = getNewEmptyModel();
-		Optional<Resource> value = model.objectResource();
-		assertFalse(value.isPresent());
+		Resource value = model.objectResource();
+		assertFalse(value != null);
 	}
 
 	/**
@@ -837,9 +836,9 @@ public abstract class AbstractModelTest {
 	@Test
 	public final void testObjectResourceSingleURI() {
 		Model model = getNewModelObjectSingleURI();
-		Optional<Resource> value = model.objectResource();
-		assertTrue(value.isPresent());
-		assertEquals(uri2, value.get());
+		Resource value = model.objectResource();
+		assertTrue(value != null);
+		assertEquals(uri2, value);
 	}
 
 	/**
@@ -848,9 +847,9 @@ public abstract class AbstractModelTest {
 	@Test
 	public final void testObjectResourceSingleBNode() {
 		Model model = getNewModelObjectSingleBNode();
-		Optional<Resource> value = model.objectResource();
-		assertTrue(value.isPresent());
-		assertEquals(bnode1, value.get());
+		Resource value = model.objectResource();
+		assertTrue(value != null);
+		assertEquals(bnode1, value);
 	}
 
 	/**
@@ -1030,222 +1029,222 @@ public abstract class AbstractModelTest {
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURIEmpty() {
 		Model model = getNewEmptyModel();
-		Optional<IRI> value = model.objectIRI();
-		assertFalse(value.isPresent());
+		URI value = model.objectURI();
+		assertFalse(value != null);
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURISingleLiteral() {
 		Model model = getNewModelObjectSingleLiteral();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURISingleURI() {
 		Model model = getNewModelObjectSingleURI();
-		Optional<IRI> value = model.objectIRI();
-		assertTrue(value.isPresent());
-		assertEquals(uri2, value.get());
+		URI value = model.objectURI();
+		assertTrue(value != null);
+		assertEquals(uri2, value);
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURISingleBNode() {
 		Model model = getNewModelObjectSingleBNode();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURIDoubleLiteral() {
 		Model model = getNewModelObjectDoubleLiteral();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURISingleLiteralSingleURI() {
 		Model model = getNewModelObjectSingleLiteralSingleURI();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURISingleLiteralSingleBNode() {
 		Model model = getNewModelObjectSingleLiteralSingleBNode();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURISingleURISingleBNode() {
 		Model model = getNewModelObjectSingleURISingleBNode();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURIDoubleURI() {
 		Model model = getNewModelObjectDoubleURI();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURIDoubleBNode() {
 		Model model = getNewModelObjectDoubleBNode();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURITripleLiteral() {
 		Model model = getNewModelObjectTripleLiteral();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURITripleURI() {
 		Model model = getNewModelObjectTripleURI();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURITripleBNode() {
 		Model model = getNewModelObjectTripleBNode();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURISingleLiteralSingleURISingleBNode() {
 		Model model = getNewModelObjectSingleLiteralSingleURISingleBNode();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURISingleLiteralDoubleBNode() {
 		Model model = getNewModelObjectSingleLiteralDoubleBNode();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURISingleLiteralDoubleURI() {
 		Model model = getNewModelObjectSingleLiteralDoubleURI();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURISingleURIDoubleBNode() {
 		Model model = getNewModelObjectSingleURIDoubleBNode();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURISingleURIDoubleLiteral() {
 		Model model = getNewModelObjectSingleURIDoubleLiteral();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURISingleBNodeDoubleURI() {
 		Model model = getNewModelObjectSingleBNodeDoubleURI();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectIRI()}.
+	 * Test method for {@link org.eclipse.rdf4j.model.Model#objectURI()}.
 	 */
 	@Test
 	public final void testObjectURISingleBNodeDoubleLiteral() {
 		Model model = getNewModelObjectSingleBNodeDoubleLiteral();
 		// We expect an exception during the next method call
 		thrown.expect(ModelException.class);
-		model.objectIRI();
+		model.objectURI();
 	}
 
 	/**
@@ -1254,8 +1253,8 @@ public abstract class AbstractModelTest {
 	@Test
 	public final void testObjectStringEmpty() {
 		Model model = getNewEmptyModel();
-		Optional<String> value = model.objectString();
-		assertFalse(value.isPresent());
+		String value = model.objectString();
+		assertFalse(value != null);
 	}
 
 	/**
@@ -1264,9 +1263,9 @@ public abstract class AbstractModelTest {
 	@Test
 	public final void testObjectStringSingleLiteral() {
 		Model model = getNewModelObjectSingleLiteral();
-		Optional<String> value = model.objectString();
-		assertTrue(value.isPresent());
-		assertEquals(literal1.stringValue(), value.get());
+		String value = model.objectString();
+		assertTrue(value != null);
+		assertEquals(literal1.stringValue(), value);
 	}
 
 	/**
@@ -1275,9 +1274,9 @@ public abstract class AbstractModelTest {
 	@Test
 	public final void testObjectStringSingleURI() {
 		Model model = getNewModelObjectSingleURI();
-		Optional<String> value = model.objectString();
-		assertTrue(value.isPresent());
-		assertEquals(uri2.toString(), value.get());
+		String value = model.objectString();
+		assertTrue(value != null);
+		assertEquals(uri2.toString(), value);
 	}
 
 	/**
@@ -1286,9 +1285,9 @@ public abstract class AbstractModelTest {
 	@Test
 	public final void testObjectStringSingleBNode() {
 		Model model = getNewModelObjectSingleBNode();
-		Optional<String> value = model.objectString();
-		assertTrue(value.isPresent());
-		assertEquals(bnode1.stringValue(), value.get());
+		String value = model.objectString();
+		assertTrue(value != null);
+		assertEquals(bnode1.stringValue(), value);
 	}
 
 	/**

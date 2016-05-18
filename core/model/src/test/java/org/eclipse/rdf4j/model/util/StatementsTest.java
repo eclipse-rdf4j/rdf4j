@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.model.util;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -45,22 +44,4 @@ public class StatementsTest {
 		assertTrue(m.contains(FOAF.AGE, RDF.TYPE, RDF.PROPERTY));
 	}
 
-	@Test
-	public void testInvalidInput() {
-		try {
-			Statements.consume(vf, FOAF.AGE, RDF.TYPE, RDF.PROPERTY,
-					st -> fail("should have resulted in Exception"), null);
-		}
-		catch (IllegalArgumentException e) {
-			// fall through.
-		}
-
-		try {
-			Statements.consume(vf, null, RDF.TYPE, RDF.PROPERTY,
-					st -> fail("should have resulted in Exception"));
-		}
-		catch (NullPointerException e) {
-			// fall through.
-		}
-	}
 }
