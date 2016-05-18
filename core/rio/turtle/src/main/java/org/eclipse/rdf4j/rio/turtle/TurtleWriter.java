@@ -421,7 +421,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		if (Literals.isLanguageLiteral(lit)) {
 			// Append the literal's language
 			writer.write("@");
-			writer.write(lit.getLanguage().get());
+			writer.write(lit.getLanguage());
 		}
 		else if (!XMLSchema.STRING.equals(datatype) || !xsdStringToPlainLiteral()) {
 			// Append the literal's datatype (possibly written as an abbreviated

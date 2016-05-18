@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import java.util.Optional;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -118,20 +116,20 @@ public class RDFParserHelper {
 
 		Literal result = null;
 		String workingLabel = label;
-		Optional<String> workingLang = Optional.ofNullable(lang);
+		String workingLang = lang;
 		IRI workingDatatype = datatype;
 
 		// In RDF-1.1 we must do lang check first as language literals will all
 		// have datatype RDF.LANGSTRING, but only language literals would have a
 		// non-null lang
-		if (workingLang.isPresent() && (workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype))) {
+		if (workingLang != null && (workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype))) {
 			boolean recognisedLanguage = false;
 			for (LanguageHandler nextHandler : parserConfig.get(BasicParserSettings.LANGUAGE_HANDLERS)) {
-				if (nextHandler.isRecognizedLanguage(workingLang.get())) {
+				if (nextHandler.isRecognizedLanguage(workingLang)) {
 					recognisedLanguage = true;
 					if (parserConfig.get(BasicParserSettings.VERIFY_LANGUAGE_TAGS)) {
 						try {
-							if (!nextHandler.verifyLanguage(workingLabel, workingLang.get())) {
+							if (!nextHandler.verifyLanguage(workingLabel, workingLang)) {
 								reportError("'" + lang + "' is not a valid language tag ", lineNo, columnNo,
 										BasicParserSettings.VERIFY_LANGUAGE_TAGS, parserConfig, errListener);
 							}
@@ -147,8 +145,7 @@ public class RDFParserHelper {
 					}
 					if (parserConfig.get(BasicParserSettings.NORMALIZE_LANGUAGE_TAGS)) {
 						try {
-							result = nextHandler.normalizeLanguage(workingLabel, workingLang.get(),
-									valueFactory);
+							result = nextHandler.normalizeLanguage(workingLabel, workingLang, valueFactory);
 							workingLabel = result.getLabel();
 							workingLang = result.getLanguage();
 							workingDatatype = result.getDatatype();
@@ -225,10 +222,10 @@ public class RDFParserHelper {
 		if (result == null) {
 			try {
 				// Backup for unnormalised language literal creation
-				if (workingLang.isPresent()
+				if (workingLang != null
 						&& (workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype)))
 				{
-					result = valueFactory.createLiteral(workingLabel, workingLang.get().intern());
+					result = valueFactory.createLiteral(workingLabel, workingLang.intern());
 				}
 				// Backup for unnormalised datatype literal creation
 				else if (workingDatatype != null) {

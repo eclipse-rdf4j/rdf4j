@@ -54,18 +54,17 @@ class JSONLDInternalRDFParser implements com.github.jsonldjava.core.RDFParser {
 
 			// In RDF-1.1, Language Literals internally have the datatype
 			// rdf:langString
-			if (literal.getLanguage().isPresent() && datatype == null) {
+			if (literal.getLanguage() != null && datatype == null) {
 				datatype = RDF.LANGSTRING.stringValue();
 			}
 
 			// In RDF-1.1, RDF-1.0 Plain Literals are now Typed Literals with
 			// type xsd:String
-			if (!literal.getLanguage().isPresent() && datatype == null) {
+			if (literal.getLanguage() == null && datatype == null) {
 				datatype = XMLSchema.STRING.stringValue();
 			}
 
-			result.addQuad(subject, predicate, value, datatype, literal.getLanguage().orElse(null),
-					graphName);
+			result.addQuad(subject, predicate, value, datatype, literal.getLanguage(), graphName);
 		}
 		else {
 			result.addQuad(subject, predicate, getResourceValue((Resource)object), graphName);

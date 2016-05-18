@@ -67,8 +67,11 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 	public void parse(Model model, Resource resource)
 		throws RepositoryConfigException
 	{
-		Models.objectLiteral(model.filter(resource, REPOSITORYTYPE, null)).ifPresent(
-				typeLit -> setType(typeLit.getLabel()));
+		Literal typeLit = Models.objectLiteral(model.filter(resource, REPOSITORYTYPE, null));
+
+		if (typeLit != null) {
+			setType(typeLit.getLabel());
+		}
 	}
 
 	/**
@@ -92,13 +95,13 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 			// Literal typeLit = GraphUtil.getOptionalObjectLiteral(graph,
 			// implNode, REPOSITORYTYPE);
 
-			final Literal typeLit = Models.objectLiteral(model.filter(resource, REPOSITORYTYPE, null)).orElse(
-					null);
+			final Literal typeLit = Models.objectLiteral(model.filter(resource, REPOSITORYTYPE, null));
 			if (typeLit != null) {
-				RepositoryFactory factory = RepositoryRegistry.getInstance().get(
-						typeLit.getLabel()).orElseThrow(
-								() -> new RepositoryConfigException(
-										"Unsupported repository type: " + typeLit.getLabel()));
+				RepositoryFactory factory = RepositoryRegistry.getInstance().get(typeLit.getLabel());
+
+				if (factory == null) {
+					throw new RepositoryConfigException("Unsupported repository type: " + typeLit.getLabel());
+				}
 
 				RepositoryImplConfig implConfig = factory.getConfig();
 				implConfig.parse(model, resource);

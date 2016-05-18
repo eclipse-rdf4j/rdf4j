@@ -13,6 +13,7 @@ import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSIT
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Graph;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -138,12 +139,21 @@ public class RepositoryConfig {
 	{
 		try {
 
-			Models.objectLiteral(model.filter(repositoryNode, REPOSITORYID, null)).ifPresent(
-					lit -> setID(lit.getLabel()));
-			Models.objectLiteral(model.filter(repositoryNode, RDFS.LABEL, null)).ifPresent(
-					lit -> setTitle(lit.getLabel()));
-			Models.objectResource(model.filter(repositoryNode, REPOSITORYIMPL, null)).ifPresent(
-					res -> setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, res)));
+			Literal repId = Models.objectLiteral(model.filter(repositoryNode, REPOSITORYID, null));
+			if (repId != null) {
+				setID(repId.getLabel());
+			}
+
+			Literal label = Models.objectLiteral(model.filter(repositoryNode, RDFS.LABEL, null));
+
+			if (label != null) {
+				setTitle(label.getLabel());
+			}
+
+			Resource repImpl = Models.objectResource(model.filter(repositoryNode, REPOSITORYIMPL, null));
+			if (repImpl != null) {
+				setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, repImpl));
+			}
 		}
 		catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);

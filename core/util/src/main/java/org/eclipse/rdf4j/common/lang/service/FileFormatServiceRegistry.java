@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.lang.service;
 
-import java.util.Optional;
-
 import org.eclipse.rdf4j.common.lang.FileFormat;
+
+import com.google.common.base.Optional;
 
 /**
  * A special {@link ServiceRegistry} for {@link FileFormat} related services. This FileFormat-specific
@@ -32,7 +32,7 @@ public abstract class FileFormatServiceRegistry<FF extends FileFormat, S> extend
 	 * @return The matching {@link FileFormat}, or {@link Optional#empty()} if no match was found.
 	 * @see #getFileFormatForMIMEType(String, FileFormat)
 	 */
-	public Optional<FF> getFileFormatForMIMEType(String mimeType) {
+	public FF getFileFormatForMIMEType(String mimeType) {
 		return FileFormat.matchMIMEType(mimeType, this.getKeys());
 	}
 
@@ -44,7 +44,7 @@ public abstract class FileFormatServiceRegistry<FF extends FileFormat, S> extend
 	 * @return The matching {@link FileFormat}, or {@link Optional#empty()} if no match was found.
 	 * @see #getFileFormatForFileName(String, FileFormat)
 	 */
-	public Optional<FF> getFileFormatForFileName(String fileName) {
+	public FF getFileFormatForFileName(String fileName) {
 		return FileFormat.matchFileName(fileName, this.getKeys());
 	}
 }

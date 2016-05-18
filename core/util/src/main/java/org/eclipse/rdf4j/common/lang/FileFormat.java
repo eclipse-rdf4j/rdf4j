@@ -14,7 +14,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
+
+import com.google.common.base.Optional;
 
 /**
  * Abstract representation of a file format. File formats are identified by a {@link #getName() name} and can
@@ -324,24 +325,22 @@ public class FileFormat {
 	 * @return A FileFormat object if the MIME type was recognized, or {@link Optional#empty()} otherwise.
 	 * @see #matchMIMEType(String, Iterable, FileFormat)
 	 */
-	public static <FF extends FileFormat> Optional<FF> matchMIMEType(String mimeType,
-			Iterable<FF> fileFormats)
-	{
+	public static <FF extends FileFormat> FF matchMIMEType(String mimeType, Iterable<FF> fileFormats) {
 		// First try to match with the default MIME type
 		for (FF fileFormat : fileFormats) {
 			if (fileFormat.hasDefaultMIMEType(mimeType)) {
-				return Optional.of(fileFormat);
+				return fileFormat;
 			}
 		}
 
 		// Try alternative MIME types too
 		for (FF fileFormat : fileFormats) {
 			if (fileFormat.hasMIMEType(mimeType)) {
-				return Optional.of(fileFormat);
+				return fileFormat;
 			}
 		}
 
-		return Optional.empty();
+		return null;
 	}
 
 	/**
@@ -354,9 +353,7 @@ public class FileFormat {
 	 * @return A FileFormat that matches the file name extension, or {@link Optional#empty()} otherwise.
 	 * @see #matchFileName(String, Iterable, FileFormat)
 	 */
-	public static <FF extends FileFormat> Optional<FF> matchFileName(String fileName,
-			Iterable<FF> fileFormats)
-	{
+	public static <FF extends FileFormat> FF matchFileName(String fileName, Iterable<FF> fileFormats) {
 		// Strip any directory info from the file name
 		int lastPathSepIdx = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'));
 		if (lastPathSepIdx >= 0) {
@@ -370,14 +367,14 @@ public class FileFormat {
 			// First try to match with the default file extension of the formats
 			for (FF fileFormat : fileFormats) {
 				if (fileFormat.hasDefaultFileExtension(ext)) {
-					return Optional.of(fileFormat);
+					return fileFormat;
 				}
 			}
 
 			// Try alternative file extensions too
 			for (FF fileFormat : fileFormats) {
 				if (fileFormat.hasFileExtension(ext)) {
-					return Optional.of(fileFormat);
+					return fileFormat;
 				}
 			}
 
@@ -386,6 +383,6 @@ public class FileFormat {
 			fileName = fileName.substring(0, dotIdx);
 		}
 
-		return Optional.empty();
+		return null;
 	}
 }
