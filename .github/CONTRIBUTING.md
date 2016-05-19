@@ -3,6 +3,15 @@
 So you want to help out making RDF4J better. Great! Here's some things you need
 to know and do before you dive in.
 
+**Table of Contents**  
+
+- [Legal stuff](#legal-stuff)
+- [Developer Workflow: Which Branch?](#developer-workflow-which-branch)
+ - [A note on the 1.0.x release branch and Java 7 compatibility](#a-note-on-the-10x-release-branch-and-java-7-compatibility)
+- [Code formatting](#code-formatting)
+- [Creating your contribution](#creating-your-contribution)
+- [Submitting your changes](#submitting-your-changes)
+	
 ## Legal stuff
 
 RDF4J is a project governed by the [Eclipse Foundation](http://www.eclipse.org/), which has strict [policies and guidelines](https://wiki.eclipse.org/Development_Resources#Policies_and_Guidelines) regarding contributions.
