@@ -727,6 +727,10 @@
 							<rules>
 								<enforceBytecodeVersion>
 									<maxJdkVersion>1.7</maxJdkVersion>
+									<excludes>
+										<!-- system-provided jar that we have no influence over -->
+										<exclude>jdk.tools:jdk.tools:jar:1.6</exclude>
+									</excludes>
 								</enforceBytecodeVersion>
 							</rules>
 							<fail>true</fail>
