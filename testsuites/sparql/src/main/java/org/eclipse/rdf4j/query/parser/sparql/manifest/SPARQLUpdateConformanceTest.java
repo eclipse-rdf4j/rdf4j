@@ -37,7 +37,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.util.Repositories;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.slf4j.Logger;
@@ -131,16 +131,22 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 
 			if (inputDefaultGraph != null) {
 				URL graphURL = new URL(inputDefaultGraph.stringValue());
-				conn.add(graphURL, null, Rio.getParserFormatForFileName(graphURL.toString()).orElseThrow(
-						Rio.unsupportedFormat(graphURL.toString())));
+				RDFFormat format = Rio.getParserFormatForFileName(graphURL.toString());
+
+				if (format == null) {
+					throw Rio.unsupportedFormat(graphURL.toString());
+				}
+				conn.add(graphURL, null, format);
 			}
 
 			for (String ng : inputNamedGraphs.keySet()) {
 				URL graphURL = new URL(inputNamedGraphs.get(ng).stringValue());
-				conn.add(graphURL, null,
-						Rio.getParserFormatForFileName(graphURL.toString()).orElseThrow(
-								Rio.unsupportedFormat(graphURL.toString())),
-						dataRep.getValueFactory().createIRI(ng));
+				RDFFormat format = Rio.getParserFormatForFileName(graphURL.toString());
+
+				if (format == null) {
+					throw Rio.unsupportedFormat(graphURL.toString());
+				}
+				conn.add(graphURL, null, format, dataRep.getValueFactory().createIRI(ng));
 			}
 		}
 
@@ -151,16 +157,23 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 
 			if (resultDefaultGraph != null) {
 				URL graphURL = new URL(resultDefaultGraph.stringValue());
-				conn.add(graphURL, null, Rio.getParserFormatForFileName(graphURL.toString()).orElseThrow(
-						Rio.unsupportedFormat(graphURL.toString())));
+				RDFFormat format = Rio.getParserFormatForFileName(graphURL.toString());
+
+				if (format == null) {
+					throw Rio.unsupportedFormat(graphURL.toString());
+				}
+				conn.add(graphURL, null, format);
 			}
 
 			for (String ng : resultNamedGraphs.keySet()) {
 				URL graphURL = new URL(resultNamedGraphs.get(ng).stringValue());
-				conn.add(graphURL, null,
-						Rio.getParserFormatForFileName(graphURL.toString()).orElseThrow(
-								Rio.unsupportedFormat(graphURL.toString())),
-						dataRep.getValueFactory().createIRI(ng));
+
+				RDFFormat format = Rio.getParserFormatForFileName(graphURL.toString());
+
+				if (format == null) {
+					throw Rio.unsupportedFormat(graphURL.toString());
+				}
+				conn.add(graphURL, null, format, dataRep.getValueFactory().createIRI(ng));
 			}
 		}
 	}
@@ -171,10 +184,12 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 		Repository repo = newRepository();
 		repo.initialize();
 
-		Repositories.consume(repo, con -> {
+		try (RepositoryConnection con = repo.getConnection()) {
+			con.begin();
 			con.clear();
 			con.clearNamespaces();
-		});
+			con.commit();
+		}
 
 		return repo;
 	}

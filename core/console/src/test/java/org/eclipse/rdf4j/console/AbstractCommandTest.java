@@ -18,6 +18,7 @@ import java.net.URL;
 
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -65,15 +66,23 @@ public class AbstractCommandTest {
 				RepositoryConfigSchema.NAMESPACE);
 		configStream.close();
 		Resource repositoryNode = Models.subject(
-				graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY)).orElseThrow(
-						() -> new RepositoryConfigException("could not find subject resource"));
+				graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY));
+
+		if (repositoryNode == null) {
+			throw new RepositoryConfigException("could not find subject resource");
+		}
 		RepositoryConfig repoConfig = RepositoryConfig.create(graph, repositoryNode);
 		repoConfig.validate();
 		RepositoryConfigUtil.updateRepositoryConfigs(systemRepo, repoConfig);
 		if (null != data) { // null if we didn't provide a data file
-			final String repId = Models.objectLiteral(
-					graph.filter(repositoryNode, RepositoryConfigSchema.REPOSITORYID, null)).orElseThrow(
-							() -> new RepositoryConfigException("missing repository id")).stringValue();
+
+			final Literal lit = Models.objectLiteral(
+					graph.filter(repositoryNode, RepositoryConfigSchema.REPOSITORYID, null));
+			if (lit == null) {
+				throw new RepositoryConfigException("could not find subject resource");
+			}
+			final String repId = lit.stringValue();
+
 			RepositoryConnection connection = manager.getRepository(repId).getConnection();
 			try {
 				connection.add(data, null, RDFFormat.TURTLE);

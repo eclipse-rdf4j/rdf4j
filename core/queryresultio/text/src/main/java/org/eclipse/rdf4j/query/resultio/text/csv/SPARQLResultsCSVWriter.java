@@ -14,7 +14,6 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.Charset;
 import java.util.List;
-import java.util.Optional;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -176,7 +175,7 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 	{
 		String label = literal.getLabel();
 		IRI datatype = literal.getDatatype();
-		Optional<String> language = literal.getLanguage();
+		String language = literal.getLanguage();
 
 		boolean quoted = false;
 

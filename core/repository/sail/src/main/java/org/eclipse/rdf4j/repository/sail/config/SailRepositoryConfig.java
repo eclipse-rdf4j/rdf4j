@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.repository.sail.config;
 import static org.eclipse.rdf4j.repository.sail.config.SailRepositorySchema.SAILIMPL;
 import static org.eclipse.rdf4j.sail.config.SailConfigSchema.SAILTYPE;
 
-import java.util.Optional;
-
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.ModelException;
@@ -81,17 +80,20 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 		throws RepositoryConfigException
 	{
 		try {
-			Optional<Resource> sailImplNode = Models.objectResource(
-					model.filter(repImplNode, SAILIMPL, null));
-			if (sailImplNode.isPresent()) {
-				Models.objectLiteral(model.filter(sailImplNode.get(), SAILTYPE, null)).ifPresent(typeLit -> {
-					SailFactory factory = SailRegistry.getInstance().get(typeLit.getLabel()).orElseThrow(
-							() -> new RepositoryConfigException(
-									"Unsupported Sail type: " + typeLit.getLabel()));
+			Resource sailImplNode = Models.objectResource(model.filter(repImplNode, SAILIMPL, null));
+			if (sailImplNode != null) {
+				Literal typeLit = Models.objectLiteral(model.filter(sailImplNode, SAILTYPE, null));
+
+				if (typeLit != null) {
+					SailFactory factory = SailRegistry.getInstance().get(typeLit.getLabel());
+
+					if (factory == null) {
+						throw new RepositoryConfigException("Unsupported Sail type: " + typeLit.getLabel());
+					}
 
 					sailImplConfig = factory.getConfig();
-					sailImplConfig.parse(model, sailImplNode.get());
-				});
+					sailImplConfig.parse(model, sailImplNode);
+				}
 			}
 		}
 		catch (ModelException e) {

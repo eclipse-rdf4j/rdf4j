@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.string;
 
-import java.util.Optional;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -103,11 +102,11 @@ public class Replace implements Function {
 			Pattern p = Pattern.compile(patternString, f);
 			String result = p.matcher(argString).replaceAll(replacementString);
 
-			Optional<String> lang = arg.getLanguage();
+			String lang = arg.getLanguage();
 			IRI dt = arg.getDatatype();
 
-			if (lang.isPresent()) {
-				return valueFactory.createLiteral(result, lang.get());
+			if (lang != null) {
+				return valueFactory.createLiteral(result, lang);
 			}
 			else if (dt != null) {
 				return valueFactory.createLiteral(result, dt);

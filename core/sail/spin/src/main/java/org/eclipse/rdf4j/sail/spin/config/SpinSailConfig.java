@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.spin.config;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.ModelException;
@@ -54,8 +55,11 @@ public class SpinSailConfig extends AbstractDelegatingSailImplConfig {
 		super.parse(m, implNode);
 
 		try {
-			Models.objectLiteral(m.filter(implNode, SpinSailSchema.AXIOM_CLOSURE_NEEDED, null)).ifPresent(
-					lit -> setAxiomClosureNeeded(lit.booleanValue()));
+			Literal lit = Models.objectLiteral(m.filter(implNode, SpinSailSchema.AXIOM_CLOSURE_NEEDED, null));
+
+			if (lit != null) {
+				setAxiomClosureNeeded(lit.booleanValue());
+			}
 		}
 		catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);

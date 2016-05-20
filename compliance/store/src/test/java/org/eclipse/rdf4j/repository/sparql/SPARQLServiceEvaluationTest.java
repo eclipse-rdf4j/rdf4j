@@ -117,8 +117,12 @@ public class SPARQLServiceEvaluationTest {
 
 		RepositoryConnection con = rep.getConnection();
 		try {
-			con.add(dataset, "", Rio.getParserFormatForFileName(datasetFile).orElseThrow(
-					Rio.unsupportedFormat(datasetFile)));
+			RDFFormat format = Rio.getParserFormatForFileName(datasetFile);
+			if (format == null) {
+				throw Rio.unsupportedFormat(datasetFile);
+			}
+
+			con.add(dataset, "", format);
 		}
 		finally {
 			dataset.close();

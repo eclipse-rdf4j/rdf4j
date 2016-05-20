@@ -83,8 +83,11 @@ public abstract class AbstractDelegatingSailImplConfig extends AbstractSailImplC
 		super.parse(m, implNode);
 
 		try {
-			Models.objectResource(m.filter(implNode, DELEGATE, null)).ifPresent(
-					delegate -> setDelegate(SailConfigUtil.parseRepositoryImpl(m, delegate)));
+			Resource delegateRes = Models.objectResource(m.filter(implNode, DELEGATE, null));
+
+			if (delegateRes != null) {
+				setDelegate(SailConfigUtil.parseRepositoryImpl(m, delegateRes));
+			}
 		}
 		catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);

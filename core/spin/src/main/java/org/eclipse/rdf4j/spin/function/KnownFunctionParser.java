@@ -37,7 +37,7 @@ public class KnownFunctionParser implements FunctionParser {
 			if (name == null) {
 				name = funcUri.stringValue();
 			}
-			return functionRegistry.get(name).orElse(null);
+			return functionRegistry.get(name);
 		}
 	}
 }

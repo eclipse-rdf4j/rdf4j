@@ -260,7 +260,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 	private Function getFunction(String name, TripleSource tripleSource, FunctionRegistry functionRegistry)
 		throws OpenRDFException
 	{
-		Function func = functionRegistry.get(name).orElse(null);
+		Function func = functionRegistry.get(name);
 		if (func == null) {
 			IRI funcUri = tripleSource.getValueFactory().createIRI(name);
 			func = parser.parseFunction(funcUri, tripleSource);

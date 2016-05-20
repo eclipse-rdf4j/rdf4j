@@ -7,18 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.util;
 
-import java.util.Optional;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.function.Supplier;
-
 import org.eclipse.rdf4j.query.GraphQuery;
-import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
-import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -32,200 +25,6 @@ import org.eclipse.rdf4j.rio.RDFHandler;
  * @author Peter Ansell
  */
 public final class Repositories {
-
-	/**
-	 * Opens a {@link RepositoryConnection} to the given Repository, sends the connection to the given
-	 * {@link Consumer}, before either rolling back the transaction if it failed, or committing the
-	 * transaction if it was successful.
-	 * 
-	 * @param repository
-	 *        The {@link Repository} to open a connection to.
-	 * @param processFunction
-	 *        A {@link Consumer} that performs an action on the connection.
-	 * @throws RepositoryException
-	 *         If there was an exception dealing with the Repository.
-	 * @throws UnknownTransactionStateException
-	 *         If the transaction state was not properly recognised. (Optional specific exception)
-	 */
-	public static void consume(Repository repository, Consumer<RepositoryConnection> processFunction)
-		throws RepositoryException, UnknownTransactionStateException
-	{
-		get(repository, conn -> {
-			processFunction.accept(conn);
-			return null;
-		});
-	}
-
-	/**
-	 * Opens a {@link RepositoryConnection} to the given Repository, sends the connection to the given
-	 * {@link Consumer}, before either rolling back the transaction if it failed, or committing the
-	 * transaction if it was successful.
-	 * 
-	 * @param repository
-	 *        The {@link Repository} to open a connection to.
-	 * @param processFunction
-	 *        A {@link Consumer} that performs an action on the connection.
-	 * @param exceptionHandler
-	 *        A {@link Consumer} that handles an exception if one was generated.
-	 * @throws RepositoryException
-	 *         If there was an exception dealing with the Repository.
-	 * @throws UnknownTransactionStateException
-	 *         If the transaction state was not properly recognised. (Optional specific exception)
-	 */
-	public static void consume(Repository repository, Consumer<RepositoryConnection> processFunction,
-			Consumer<RepositoryException> exceptionHandler)
-		throws RepositoryException, UnknownTransactionStateException
-	{
-		try {
-			consume(repository, processFunction);
-		}
-		catch (RepositoryException e) {
-			exceptionHandler.accept(e);
-		}
-	}
-
-	/**
-	 * Opens a {@link RepositoryConnection} to the given Repository, sends the connection to the given
-	 * {@link Consumer}, before either rolling back the transaction if it failed, or committing the
-	 * transaction if it was successful.
-	 * 
-	 * @param repository
-	 *        The {@link Repository} to open a connection to.
-	 * @param processFunction
-	 *        A {@link Consumer} that performs an action on the connection.
-	 */
-	public static void consumeSilent(Repository repository, Consumer<RepositoryConnection> processFunction) {
-		consume(repository, processFunction, e -> {
-		});
-	}
-
-	/**
-	 * Opens a {@link RepositoryConnection} to the given Repository, sends the connection to the given
-	 * {@link Function}, before either rolling back the transaction if it failed, or committing the
-	 * transaction if it was successful.
-	 * 
-	 * @param <T>
-	 *        The type of the return value.
-	 * @param repository
-	 *        The {@link Repository} to open a connection to.
-	 * @param processFunction
-	 *        A {@link Function} that performs an action on the connection and returns a result.
-	 * @return The result of applying the function.
-	 * @throws RepositoryException
-	 *         If there was an exception dealing with the Repository.
-	 * @throws UnknownTransactionStateException
-	 *         If the transaction state was not properly recognised. (Optional specific exception)
-	 */
-	public static <T> T get(Repository repository, Function<RepositoryConnection, T> processFunction)
-		throws RepositoryException, UnknownTransactionStateException
-	{
-		RepositoryConnection conn = null;
-
-		try {
-			conn = repository.getConnection();
-			conn.begin();
-			T result = processFunction.apply(conn);
-			conn.commit();
-			return result;
-		}
-		catch (RepositoryException e) {
-			if (conn != null && conn.isActive()) {
-				conn.rollback();
-			}
-			throw e;
-		}
-		finally {
-			if (conn != null && conn.isOpen()) {
-				conn.close();
-			}
-		}
-	}
-
-	/**
-	 * Opens a {@link RepositoryConnection} to the given Repository, sends the connection to the given
-	 * {@link Function}, before either rolling back the transaction if it failed, or committing the
-	 * transaction if it was successful.
-	 * 
-	 * @param <T>
-	 *        The type of the return value.
-	 * @param repository
-	 *        The {@link Repository} to open a connection to.
-	 * @param processFunction
-	 *        A {@link Function} that performs an action on the connection and returns a result.
-	 * @param exceptionHandler
-	 *        A {@link Consumer} that handles an exception if one was generated.
-	 * @return The result of applying the function, or <tt>null</tt> if an exception occurs and the exception
-	 *         handler does not rethrow the exception.
-	 * @throws RepositoryException
-	 *         If there was an exception dealing with the Repository.
-	 * @throws UnknownTransactionStateException
-	 *         If the transaction state was not properly recognised. (Optional specific exception)
-	 */
-	public static <T> T get(Repository repository, Function<RepositoryConnection, T> processFunction,
-			Consumer<RepositoryException> exceptionHandler)
-		throws RepositoryException, UnknownTransactionStateException
-	{
-		try {
-			return get(repository, processFunction);
-		}
-		catch (RepositoryException e) {
-			exceptionHandler.accept(e);
-			return null;
-		}
-	}
-
-	/**
-	 * Opens a {@link RepositoryConnection} to the given Repository, sends the connection to the given
-	 * {@link Function}, before either rolling back the transaction if it failed, or committing the
-	 * transaction if it was successful.
-	 * 
-	 * @param <T>
-	 *        The type of the return value.
-	 * @param repository
-	 *        The {@link Repository} to open a connection to.
-	 * @param processFunction
-	 *        A {@link Function} that performs an action on the connection and returns a result.
-	 * @return The result of applying the function, or <tt>null</tt> if an exception is thrown.
-	 */
-	public static <T> T getSilent(Repository repository, Function<RepositoryConnection, T> processFunction) {
-		return get(repository, processFunction, e -> {
-		});
-	}
-
-	/**
-	 * Performs a SPARQL Select query on the given Repository and passes the results to the given
-	 * {@link Function} with the result from the function returned by the method.
-	 * 
-	 * @param <T>
-	 *        The type of the return value.
-	 * @param repository
-	 *        The {@link Repository} to open a connection to.
-	 * @param query
-	 *        The SPARQL Select query to execute.
-	 * @param processFunction
-	 *        A {@link Function} that performs an action on the results of the query and returns a result.
-	 * @return The result of processing the query results.
-	 * @throws RepositoryException
-	 *         If there was an exception dealing with the Repository.
-	 * @throws UnknownTransactionStateException
-	 *         If the transaction state was not properly recognised. (Optional specific exception)
-	 * @throws MalformedQueryException
-	 *         If the supplied query is malformed
-	 * @throws QueryEvaluationException
-	 *         If there was an error evaluating the query
-	 */
-	public static <T> T tupleQuery(Repository repository, String query,
-			Function<TupleQueryResult, T> processFunction)
-		throws RepositoryException, UnknownTransactionStateException, MalformedQueryException,
-		QueryEvaluationException
-	{
-		return get(repository, conn -> {
-			TupleQuery preparedQuery = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-			try (TupleQueryResult queryResult = preparedQuery.evaluate();) {
-				return processFunction.apply(queryResult);
-			}
-		});
-	}
 
 	/**
 	 * Performs a SPARQL Select query on the given Repository and passes the results to the given
@@ -250,45 +49,10 @@ public final class Repositories {
 		throws RepositoryException, UnknownTransactionStateException, MalformedQueryException,
 		QueryEvaluationException
 	{
-		consume(repository, conn -> {
+		try (RepositoryConnection conn = repository.getConnection()) {
 			TupleQuery preparedQuery = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 			preparedQuery.evaluate(handler);
-		});
-	}
-
-	/**
-	 * Performs a SPARQL Construct or Describe query on the given Repository and passes the results to the
-	 * given {@link Function} with the result from the function returned by the method.
-	 * 
-	 * @param <T>
-	 *        The type of the return value.
-	 * @param repository
-	 *        The {@link Repository} to open a connection to.
-	 * @param query
-	 *        The SPARQL Construct or Describe query to execute.
-	 * @param processFunction
-	 *        A {@link Function} that performs an action on the results of the query and returns a result.
-	 * @return The result of processing the query results.
-	 * @throws RepositoryException
-	 *         If there was an exception dealing with the Repository.
-	 * @throws UnknownTransactionStateException
-	 *         If the transaction state was not properly recognised. (Optional specific exception)
-	 * @throws MalformedQueryException
-	 *         If the supplied query is malformed
-	 * @throws QueryEvaluationException
-	 *         If there was an error evaluating the query
-	 */
-	public static <T> T graphQuery(Repository repository, String query,
-			Function<GraphQueryResult, T> processFunction)
-		throws RepositoryException, UnknownTransactionStateException, MalformedQueryException,
-		QueryEvaluationException
-	{
-		return get(repository, conn -> {
-			GraphQuery preparedQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
-			try (GraphQueryResult queryResult = preparedQuery.evaluate();) {
-				return processFunction.apply(queryResult);
-			}
-		});
+		}
 	}
 
 	/**
@@ -314,22 +78,10 @@ public final class Repositories {
 		throws RepositoryException, UnknownTransactionStateException, MalformedQueryException,
 		QueryEvaluationException
 	{
-		consume(repository, conn -> {
+		try (RepositoryConnection conn = repository.getConnection()) {
 			GraphQuery preparedQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
 			preparedQuery.evaluate(handler);
-		});
-	}
-
-	/**
-	 * Creates a {@link Supplier} of {@link RepositoryException} objects that be passed to
-	 * {@link Optional#orElseThrow(Supplier)} to generate exceptions as necessary.
-	 * 
-	 * @param message
-	 *        The message to be used for the exception
-	 * @return A {@link Supplier} that will create {@link RepositoryException} objects with the given message.
-	 */
-	public static Supplier<RepositoryException> repositoryException(String message) {
-		return () -> new RepositoryException(message);
+		}
 	}
 
 	/**

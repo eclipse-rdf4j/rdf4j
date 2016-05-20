@@ -12,7 +12,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Namespace;
@@ -248,9 +247,9 @@ public class BasicParserSettings {
 			for (String nextHandler : Arrays.asList(DatatypeHandler.XMLSCHEMA, DatatypeHandler.RDFDATATYPES,
 					DatatypeHandler.DBPEDIA, DatatypeHandler.VIRTUOSOGEOMETRY, DatatypeHandler.GEOSPARQL))
 			{
-				Optional<DatatypeHandler> nextdt = registry.get(nextHandler);
-				if (nextdt.isPresent()) {
-					defaultDatatypeHandlers.add(nextdt.get());
+				DatatypeHandler nextdt = registry.get(nextHandler);
+				if (nextdt != null) {
+					defaultDatatypeHandlers.add(nextdt);
 				}
 				else {
 					log.warn("Could not find DatatypeHandler : {}", nextHandler);
@@ -271,9 +270,9 @@ public class BasicParserSettings {
 		try {
 			LanguageHandlerRegistry registry = LanguageHandlerRegistry.getInstance();
 			for (String nextHandler : Arrays.asList(LanguageHandler.RFC3066)) {
-				Optional<LanguageHandler> nextlang = registry.get(nextHandler);
-				if (nextlang.isPresent()) {
-					defaultLanguageHandlers.add(nextlang.get());
+				LanguageHandler nextlang = registry.get(nextHandler);
+				if (nextlang != null) {
+					defaultLanguageHandlers.add(nextlang);
 				}
 				else {
 					log.warn("Could not find LanguageHandler : {}", nextHandler);

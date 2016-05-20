@@ -13,7 +13,6 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
@@ -91,7 +90,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		return memory.getNamespaces();
 	}
 
-	public synchronized Optional<Namespace> getNamespace(String prefix) {
+	public synchronized Namespace getNamespace(String prefix) {
 		return memory.getNamespace(prefix);
 	}
 
@@ -103,7 +102,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		memory.setNamespace(namespace);
 	}
 
-	public synchronized Optional<Namespace> removeNamespace(String prefix) {
+	public synchronized Namespace removeNamespace(String prefix) {
 		return memory.removeNamespace(prefix);
 	}
 

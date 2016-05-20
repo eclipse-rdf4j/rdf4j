@@ -13,7 +13,6 @@ import static javax.servlet.http.HttpServletResponse.SC_NOT_ACCEPTABLE;
 import java.util.Collection;
 import java.util.Enumeration;
 import java.util.LinkedHashSet;
-import java.util.Optional;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -164,10 +163,10 @@ public class ProtocolUtil {
 		}
 
 		if (mimeType != null) {
-			Optional<FF> format = serviceRegistry.getFileFormatForMIMEType(mimeType);
+			FF format = serviceRegistry.getFileFormatForMIMEType(mimeType);
 
-			if (format.isPresent()) {
-				return serviceRegistry.get(format.get()).get();
+			if (format != null) {
+				return serviceRegistry.get(format);
 			}
 		}
 

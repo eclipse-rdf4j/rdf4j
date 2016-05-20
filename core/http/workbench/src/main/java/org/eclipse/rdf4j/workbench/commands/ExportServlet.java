@@ -38,8 +38,10 @@ public class ExportServlet extends TupleServlet {
 	{
 		if (req.isParameterPresent("Accept")) {
 			String accept = req.getParameter("Accept");
-			RDFFormat format = Rio.getWriterFormatForMIMEType(accept).orElseThrow(
-					Rio.unsupportedFormat(accept));
+			RDFFormat format = Rio.getWriterFormatForMIMEType(accept);
+			if (format == null) {
+				throw Rio.unsupportedFormat(accept);
+			}
 			resp.setContentType(accept);
 			String ext = format.getDefaultFileExtension();
 			String attachment = "attachment; filename=export." + ext;
@@ -47,8 +49,11 @@ public class ExportServlet extends TupleServlet {
 			RepositoryConnection con = repository.getConnection();
 			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
 			try {
-				RDFWriterFactory factory = getInstance().get(format).orElseThrow(
-						Rio.unsupportedFormat(format));
+				RDFWriterFactory factory = getInstance().get(format);
+
+				if (factory == null) {
+					throw Rio.unsupportedFormat(format);
+				}
 				if (format.getCharset() != null) {
 					resp.setCharacterEncoding(format.getCharset().name());
 				}

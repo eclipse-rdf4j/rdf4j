@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.model.impl;
 
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -38,7 +37,7 @@ class UnmodifiableModel extends AbstractModel {
 	}
 
 	@Override
-	public Optional<Namespace> getNamespace(String prefix) {
+	public Namespace getNamespace(String prefix) {
 		return model.getNamespace(prefix);
 	}
 
@@ -53,7 +52,7 @@ class UnmodifiableModel extends AbstractModel {
 	}
 
 	@Override
-	public Optional<Namespace> removeNamespace(String prefix) {
+	public Namespace removeNamespace(String prefix) {
 		throw new UnsupportedOperationException();
 	}
 

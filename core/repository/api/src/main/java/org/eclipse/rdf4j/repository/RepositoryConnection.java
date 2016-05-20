@@ -139,13 +139,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         If the connection could not be closed.
 	 */
 	@Override
-	public default void close()
-		throws RepositoryException
-	{
-		if (isOpen() && isActive()) {
-			rollback();
-		}
-	}
+	public void close()
+		throws RepositoryException;
 
 	/**
 	 * Prepares a SPARQL query for evaluation on this repository (optional operation). In case the query
@@ -161,11 +156,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         If the <tt>prepareQuery</tt> method is not supported by this repository.
 	 * @see #prepareQuery(QueryLanguage, String)
 	 */
-	public default Query prepareQuery(String query)
-		throws RepositoryException, MalformedQueryException
-	{
-		return prepareQuery(QueryLanguage.SPARQL, query);
-	}
+	public Query prepareQuery(String query)
+		throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Prepares a query for evaluation on this repository (optional operation). In case the query contains
@@ -222,11 +214,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         If the supplied query is malformed.
 	 * @see #prepareTupleQuery(QueryLanguage, String)
 	 */
-	public default TupleQuery prepareTupleQuery(String query)
-		throws RepositoryException, MalformedQueryException
-	{
-		return prepareTupleQuery(QueryLanguage.SPARQL, query);
-	}
+	public TupleQuery prepareTupleQuery(String query)
+		throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Prepares a query that produces sets of value tuples. In case the query contains relative URIs that need
@@ -283,11 +272,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         If the supplied query is malformed.
 	 * @see #prepareGraphQuery(QueryLanguage, String)
 	 */
-	public default GraphQuery prepareGraphQuery(String query)
-		throws RepositoryException, MalformedQueryException
-	{
-		return prepareGraphQuery(QueryLanguage.SPARQL, query);
-	}
+	public GraphQuery prepareGraphQuery(String query)
+		throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Prepares queries that produce RDF graphs. In case the query contains relative URIs that need to be
@@ -344,11 +330,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         If the supplied SPARQL query is malformed.
 	 * @see #prepareBooleanQuery(QueryLanguage, String)
 	 */
-	public default BooleanQuery prepareBooleanQuery(String query)
-		throws RepositoryException, MalformedQueryException
-	{
-		return prepareBooleanQuery(QueryLanguage.SPARQL, query);
-	}
+	public BooleanQuery prepareBooleanQuery(String query)
+		throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Prepares queries that return <tt>true</tt> or <tt>false</tt>. In case the query contains relative URIs
@@ -403,11 +386,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         If the supplied update operation string is malformed.
 	 * @see #prepareUpdate(QueryLanguage, String)
 	 */
-	public default Update prepareUpdate(String update)
-		throws RepositoryException, MalformedQueryException
-	{
-		return prepareUpdate(QueryLanguage.SPARQL, update);
-	}
+	public Update prepareUpdate(String update)
+		throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Prepares an Update operation. In case the update string contains relative URIs that need to be resolved
@@ -469,12 +449,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         object, a lazy Iterator-like object containing {@link Statement}s and optionally throwing a
 	 *         {@link RepositoryException} when an error when a problem occurs during retrieval.
 	 */
-	public default RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj,
-			Resource... contexts)
-		throws RepositoryException
-	{
-		return getStatements(subj, pred, obj, true, contexts);
-	}
+	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
+		throws RepositoryException;
 
 	/**
 	 * Gets all statements with a specific subject, predicate and/or object from the repository. The result is
@@ -498,12 +474,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @deprecated since 4.0. Use {@link #getStatements(Resource, IRI, Value, boolean, Resource...)} instead.
 	 */
 	@Deprecated
-	public default RepositoryResult<Statement> getStatements(Resource subj, URI pred, Value obj,
+	public RepositoryResult<Statement> getStatements(Resource subj, URI pred, Value obj,
 			boolean includeInferred, Resource... contexts)
-		throws RepositoryException
-	{
-		return getStatements(subj, (IRI)pred, obj, includeInferred, contexts);
-	}
+		throws RepositoryException;
 
 	/**
 	 * Gets all statements with a specific subject, predicate and/or object from the repository. The result is
@@ -571,12 +544,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @deprecated since 4.0. Use {@link #hasStatement(Resource, IRI, Value, boolean, Resource...)} instead.
 	 */
 	@Deprecated
-	public default boolean hasStatement(Resource subj, URI pred, Value obj, boolean includeInferred,
+	public boolean hasStatement(Resource subj, URI pred, Value obj, boolean includeInferred,
 			Resource... contexts)
-		throws RepositoryException
-	{
-		return hasStatement(subj, (IRI)pred, obj, includeInferred, contexts);
-	}
+		throws RepositoryException;
 
 	/**
 	 * Checks whether the repository contains the specified statement, optionally in the specified contexts.
@@ -957,11 +927,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @deprecated since 4.0. Use {@link #add(Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
-	public default void add(Resource subject, URI predicate, Value object, Resource... contexts)
-		throws RepositoryException
-	{
-		this.add(subject, (IRI)predicate, object, contexts);
-	}
+	public void add(Resource subject, URI predicate, Value object, Resource... contexts)
+		throws RepositoryException;
 
 	/**
 	 * Adds the supplied statement to this repository, optionally to one or more named contexts.
@@ -1058,11 +1025,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @deprecated since 4.0. Use {@link #remove(Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
-	public default void remove(Resource subject, URI predicate, Value object, Resource... contexts)
-		throws RepositoryException
-	{
-		this.remove(subject, (IRI)predicate, object, contexts);
-	}
+	public void remove(Resource subject, URI predicate, Value object, Resource... contexts)
+		throws RepositoryException;
 
 	/**
 	 * Removes the supplied statement from the specified contexts in the repository.

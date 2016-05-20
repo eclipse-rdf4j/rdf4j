@@ -31,8 +31,6 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
 import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.eclipse.rdf4j.rio.jsonld.JSONLDParserFactory;
-import org.eclipse.rdf4j.rio.jsonld.JSONLDWriterFactory;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -104,7 +102,7 @@ public class JSONLDWriterTest extends RDFWriterTest {
 		if (rdfParser.getRDFFormat().supportsNamespaces()) {
 			assertTrue("Expected at least one namespace, found " + model.getNamespaces().size(),
 					model.getNamespaces().size() >= 1);
-			assertEquals(exNs, model.getNamespace("ex").get().getName());
+			assertEquals(exNs, model.getNamespace("ex").getName());
 		}
 	}
 }

@@ -463,7 +463,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 
 			// language attribute
 			if (Literals.isLanguageLiteral(objLit)) {
-				writeAttribute("xml:lang", objLit.getLanguage().get());
+				writeAttribute("xml:lang", objLit.getLanguage());
 			}
 			else {
 				if (isXmlLiteral) {

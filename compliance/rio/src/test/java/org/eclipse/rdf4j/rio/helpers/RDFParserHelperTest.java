@@ -7,7 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -23,9 +26,6 @@ import org.eclipse.rdf4j.rio.ParseErrorListener;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
-import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
-import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
-import org.eclipse.rdf4j.rio.helpers.RDFParserHelper;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;
@@ -108,7 +108,7 @@ public class RDFParserHelperTest {
 				valueFactory);
 
 		assertEquals(LABEL_TESTA, literal.getLabel());
-		assertFalse(literal.getLanguage().isPresent());
+		assertFalse(literal.getLanguage() != null);
 		assertEquals(XMLSchema.STRING, literal.getDatatype());
 	}
 
@@ -125,7 +125,7 @@ public class RDFParserHelperTest {
 				valueFactory);
 
 		assertEquals(LABEL_TESTA, literal.getLabel());
-		assertEquals(LANG_EN, literal.getLanguage().orElse(null));
+		assertEquals(LANG_EN, literal.getLanguage());
 		assertEquals(RDF.LANGSTRING, literal.getDatatype());
 	}
 
@@ -142,7 +142,7 @@ public class RDFParserHelperTest {
 				errListener, valueFactory);
 
 		assertEquals(LABEL_TESTA, literal.getLabel());
-		assertFalse(literal.getLanguage().isPresent());
+		assertFalse(literal.getLanguage() != null);
 		assertEquals(XMLSchema.STRING, literal.getDatatype());
 	}
 
@@ -162,7 +162,7 @@ public class RDFParserHelperTest {
 				errListener, valueFactory);
 
 		assertEquals(LABEL_TESTA, literal.getLabel());
-		assertEquals(LANG_EN, literal.getLanguage().orElse(null));
+		assertEquals(LANG_EN, literal.getLanguage());
 		assertEquals(RDF.LANGSTRING, literal.getDatatype());
 	}
 

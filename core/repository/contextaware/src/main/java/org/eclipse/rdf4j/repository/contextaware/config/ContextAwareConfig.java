@@ -231,17 +231,29 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 		super.parse(model, resource);
 
 		try {
-			Models.objectLiteral(model.filter(resource, INCLUDE_INFERRED, null)).ifPresent(
-					lit -> setIncludeInferred(lit.booleanValue()));
+			Literal lit = Models.objectLiteral(model.filter(resource, INCLUDE_INFERRED, null));
 
-			Models.objectLiteral(model.filter(resource, MAX_QUERY_TIME, null)).ifPresent(
-					lit -> setMaxQueryTime(lit.intValue()));
+			if (lit != null) {
+				setIncludeInferred(lit.booleanValue());
+			}
 
-			Models.objectLiteral(model.filter(resource, QUERY_LANGUAGE, null)).ifPresent(
-					lit -> setQueryLanguage(QueryLanguage.valueOf(lit.getLabel())));
+			lit = Models.objectLiteral(model.filter(resource, MAX_QUERY_TIME, null));
 
-			Models.objectIRI(model.filter(resource, QUERY_LANGUAGE, null)).ifPresent(
-					iri -> setBaseURI(iri.stringValue()));
+			if (lit != null) {
+				setMaxQueryTime(lit.intValue());
+			}
+
+			lit = Models.objectLiteral(model.filter(resource, QUERY_LANGUAGE, null));
+
+			if (lit != null) {
+				setQueryLanguage(QueryLanguage.valueOf(lit.getLabel()));
+			}
+
+			IRI iri = Models.objectIRI(model.filter(resource, QUERY_LANGUAGE, null));
+
+			if (iri != null) {
+				setBaseURI(iri.stringValue());
+			}
 
 			Set<Value> objects = model.filter(resource, READ_CONTEXT, null).objects();
 			setReadContexts(objects.toArray(new IRI[objects.size()]));
@@ -255,8 +267,10 @@ public class ContextAwareConfig extends AbstractDelegatingRepositoryImplConfig {
 			objects = model.filter(resource, ARCHIVE_CONTEXT, null).objects();
 			setArchiveContexts(objects.toArray(new IRI[objects.size()]));
 
-			Models.objectIRI(model.filter(resource, INSERT_CONTEXT, null)).ifPresent(
-					iri -> setInsertContext(iri));
+			iri = Models.objectIRI(model.filter(resource, INSERT_CONTEXT, null));
+			if (iri != null) {
+				setInsertContext(iri);
+			}
 		}
 		catch (ArrayStoreException e) {
 			throw new RepositoryConfigException(e);

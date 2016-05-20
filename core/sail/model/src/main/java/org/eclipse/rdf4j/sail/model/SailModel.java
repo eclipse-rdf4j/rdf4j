@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.Iterator;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -80,11 +79,10 @@ public class SailModel extends AbstractModel {
 	}
 
 	@Override
-	public Optional<Namespace> getNamespace(String prefix) {
+	public Namespace getNamespace(String prefix) {
 		try {
 			String name = conn.getNamespace(prefix);
-			return (name != null) ? Optional.of(new SimpleNamespace(prefix, name))
-					: Optional.ofNullable(null);
+			return (name != null) ? new SimpleNamespace(prefix, name) : null;
 		}
 		catch (SailException e) {
 			throw new ModelException(e);
@@ -113,8 +111,8 @@ public class SailModel extends AbstractModel {
 	}
 
 	@Override
-	public Optional<Namespace> removeNamespace(String prefix) {
-		Namespace namespace = getNamespace(prefix).orElse(null);
+	public Namespace removeNamespace(String prefix) {
+		Namespace namespace = getNamespace(prefix);
 		if (namespace != null) {
 			try {
 				conn.removeNamespace(prefix);
@@ -123,7 +121,7 @@ public class SailModel extends AbstractModel {
 				throw new ModelException(e);
 			}
 		}
-		return Optional.ofNullable(namespace);
+		return namespace;
 	}
 
 	@Override

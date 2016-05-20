@@ -2381,9 +2381,12 @@ public abstract class ComplexSPARQLQueryTest {
 		logger.debug("loading dataset {}", dataFile);
 		InputStream dataset = ComplexSPARQLQueryTest.class.getResourceAsStream(dataFile);
 		try {
-			conn.add(dataset, "",
-					Rio.getParserFormatForFileName(dataFile).orElseThrow(Rio.unsupportedFormat(dataFile)),
-					contexts);
+			RDFFormat format = Rio.getParserFormatForFileName(dataFile);
+
+			if (format == null) {
+				throw Rio.unsupportedFormat(dataFile);
+			}
+			conn.add(dataset, "", format, contexts);
 		}
 		finally {
 			dataset.close();

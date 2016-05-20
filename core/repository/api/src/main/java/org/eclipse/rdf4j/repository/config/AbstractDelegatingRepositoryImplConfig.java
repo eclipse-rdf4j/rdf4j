@@ -81,7 +81,10 @@ public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRep
 	{
 		super.parse(model, resource);
 
-		Models.objectResource(model.filter(resource, DELEGATE, null)).ifPresent(
-				delegate -> setDelegate(create(model, delegate)));
+		Resource delegate = Models.objectResource(model.filter(resource, DELEGATE, null));
+
+		if (delegate != null) {
+			setDelegate(create(model, delegate));
+		}
 	}
 }

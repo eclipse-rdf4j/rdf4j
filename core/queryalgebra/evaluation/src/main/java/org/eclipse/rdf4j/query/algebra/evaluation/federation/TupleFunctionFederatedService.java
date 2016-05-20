@@ -147,8 +147,11 @@ public class TupleFunctionFederatedService implements FederatedService {
 		}
 
 		TupleFunctionCall funcCall = (TupleFunctionCall)expr;
-		TupleFunction func = tupleFunctionRegistry.get(funcCall.getURI()).orElseThrow(
-				() -> new QueryEvaluationException("Unknown tuple function '" + funcCall.getURI() + "'"));
+		TupleFunction func = tupleFunctionRegistry.get(funcCall.getURI());
+
+		if (func == null) {
+			throw new QueryEvaluationException("Unknown tuple function '" + funcCall.getURI() + "'");
+		}
 
 		List<ValueExpr> argExprs = funcCall.getArgs();
 

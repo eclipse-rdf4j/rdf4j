@@ -136,7 +136,11 @@ public abstract class SeRQLParserTestCase extends TestCase {
 		RepositoryConnection con = manifestRep.getConnection();
 
 		URL manifestURL = SeRQLParserTestCase.class.getResource(MANIFEST_FILE);
-		RDFFormat format = Rio.getParserFormatForFileName(MANIFEST_FILE).orElse(RDFFormat.TURTLE);
+		RDFFormat format = Rio.getParserFormatForFileName(MANIFEST_FILE);
+
+		if (format == null) {
+			format = RDFFormat.TURTLE;
+		}
 		con.add(manifestURL, base(manifestURL.toExternalForm()), format);
 
 		String query = "SELECT testName, query, result " + "FROM {} mf:name {testName}; "

@@ -14,8 +14,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Reader;
 import java.io.Writer;
-import java.util.Optional;
-import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
@@ -26,6 +24,9 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.rio.helpers.ContextStatementCollector;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
+
+import com.google.common.base.Optional;
+import com.google.common.base.Supplier;
 
 /**
  * Static methods for parsing and writing RDF for all available syntaxes.
@@ -46,7 +47,7 @@ public class Rio {
 	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getParserFormatForMIMEType(String, RDFFormat)
 	 */
-	public static Optional<RDFFormat> getParserFormatForMIMEType(String mimeType) {
+	public static RDFFormat getParserFormatForMIMEType(String mimeType) {
 		return RDFFormat.matchMIMEType(mimeType, RDFParserRegistry.getInstance().getKeys());
 	}
 
@@ -58,7 +59,7 @@ public class Rio {
 	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getParserFormatForFileName(String, RDFFormat)
 	 */
-	public static Optional<RDFFormat> getParserFormatForFileName(String fileName) {
+	public static RDFFormat getParserFormatForFileName(String fileName) {
 		return RDFFormat.matchFileName(fileName, RDFParserRegistry.getInstance().getKeys());
 	}
 
@@ -70,7 +71,7 @@ public class Rio {
 	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getWriterFormatForMIMEType(String, RDFFormat)
 	 */
-	public static Optional<RDFFormat> getWriterFormatForMIMEType(String mimeType) {
+	public static RDFFormat getWriterFormatForMIMEType(String mimeType) {
 		return RDFFormat.matchMIMEType(mimeType, RDFWriterRegistry.getInstance().getKeys());
 	}
 
@@ -82,7 +83,7 @@ public class Rio {
 	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getWriterFormatForFileName(String, RDFFormat)
 	 */
-	public static Optional<RDFFormat> getWriterFormatForFileName(String fileName) {
+	public static RDFFormat getWriterFormatForFileName(String fileName) {
 		return RDFFormat.matchFileName(fileName, RDFWriterRegistry.getInstance().getKeys());
 	}
 
@@ -97,8 +98,11 @@ public class Rio {
 	public static RDFParser createParser(RDFFormat format)
 		throws UnsupportedRDFormatException
 	{
-		RDFParserFactory factory = RDFParserRegistry.getInstance().get(format).orElseThrow(
-				Rio.unsupportedFormat(format));
+		RDFParserFactory factory = RDFParserRegistry.getInstance().get(format);
+
+		if (factory == null) {
+			throw Rio.unsupportedFormat(format);
+		}
 
 		return factory.getParser();
 	}
@@ -131,8 +135,10 @@ public class Rio {
 	public static RDFWriter createWriter(RDFFormat format, OutputStream out)
 		throws UnsupportedRDFormatException
 	{
-		RDFWriterFactory factory = RDFWriterRegistry.getInstance().get(format).orElseThrow(
-				Rio.unsupportedFormat(format));
+		RDFWriterFactory factory = RDFWriterRegistry.getInstance().get(format);
+		if (factory == null) {
+			throw Rio.unsupportedFormat(format);
+		}
 
 		return factory.getWriter(out);
 	}
@@ -148,8 +154,10 @@ public class Rio {
 	public static RDFWriter createWriter(RDFFormat format, Writer writer)
 		throws UnsupportedRDFormatException
 	{
-		RDFWriterFactory factory = RDFWriterRegistry.getInstance().get(format).orElseThrow(
-				Rio.unsupportedFormat(format));
+		RDFWriterFactory factory = RDFWriterRegistry.getInstance().get(format);
+		if (factory == null) {
+			throw Rio.unsupportedFormat(format);
+		}
 
 		return factory.getWriter(writer);
 	}
@@ -550,9 +558,16 @@ public class Rio {
 		try (FileOutputStream outStream = new FileOutputStream(outputFile);
 				FileInputStream inStream = new FileInputStream(inputFile);)
 		{
-			createParser(getParserFormatForFileName(inputFile).orElse(RDFFormat.RDFXML)).setRDFHandler(
-					createWriter(getWriterFormatForFileName(outputFile).orElse(RDFFormat.RDFXML),
-							outStream)).parse(inStream, "file:" + inputFile);
+			RDFFormat inputFormat = getParserFormatForFileName(inputFile);
+			if (inputFormat == null) {
+				inputFormat = RDFFormat.RDFXML;
+			}
+			RDFFormat outputFormat = getWriterFormatForFileName(outputFile);
+			if (outputFormat == null) {
+				outputFormat = RDFFormat.RDFXML;
+			}
+			createParser(inputFormat).setRDFHandler(createWriter(outputFormat, outStream)).parse(inStream,
+					"file:" + inputFile);
 		}
 	}
 
@@ -564,9 +579,8 @@ public class Rio {
 	 *        The format that was not found.
 	 * @return A lambda that can be used to generate an exception if the format is not found.
 	 */
-	public static Supplier<UnsupportedRDFormatException> unsupportedFormat(RDFFormat unsupportedFormat) {
-		return () -> new UnsupportedRDFormatException(
-				"Did not recognise RDF format object " + unsupportedFormat);
+	public static UnsupportedRDFormatException unsupportedFormat(RDFFormat unsupportedFormat) {
+		return new UnsupportedRDFormatException("Did not recognise RDF format object " + unsupportedFormat);
 	}
 
 	/**
@@ -577,8 +591,7 @@ public class Rio {
 	 *        The format that was not found.
 	 * @return A lambda that can be used to generate an exception if the format is not found.
 	 */
-	public static Supplier<UnsupportedRDFormatException> unsupportedFormat(String unsupportedFormat) {
-		return () -> new UnsupportedRDFormatException(
-				"Did not recognise RDF format string " + unsupportedFormat);
+	public static UnsupportedRDFormatException unsupportedFormat(String unsupportedFormat) {
+		return new UnsupportedRDFormatException("Did not recognise RDF format string " + unsupportedFormat);
 	}
 }

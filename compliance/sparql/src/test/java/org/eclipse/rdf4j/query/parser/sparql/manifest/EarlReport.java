@@ -12,11 +12,6 @@ import java.io.FileOutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
-import junit.framework.AssertionFailedError;
-import junit.framework.Test;
-import junit.framework.TestListener;
-import junit.framework.TestResult;
-
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -26,9 +21,6 @@ import org.eclipse.rdf4j.model.vocabulary.DOAP;
 import org.eclipse.rdf4j.model.vocabulary.EARL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11SyntaxTest;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQLQueryTest;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQLUpdateConformanceTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -40,6 +32,11 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import junit.framework.AssertionFailedError;
+import junit.framework.Test;
+import junit.framework.TestListener;
+import junit.framework.TestResult;
 
 /**
  * @author Arjohn Kampman
@@ -105,8 +102,10 @@ public class EarlReport {
 
 		con.commit();
 
-		RDFWriterFactory factory = RDFWriterRegistry.getInstance().get(RDFFormat.TURTLE).orElseThrow(
-				Rio.unsupportedFormat(RDFFormat.TURTLE));
+		RDFWriterFactory factory = RDFWriterRegistry.getInstance().get(RDFFormat.TURTLE);
+		if (factory == null) {
+			throw Rio.unsupportedFormat(RDFFormat.TURTLE);
+		}
 		File outFile = File.createTempFile("sesame-sparql-compliance",
 				"." + RDFFormat.TURTLE.getDefaultFileExtension());
 		FileOutputStream out = new FileOutputStream(outFile);

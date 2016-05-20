@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail.config;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -63,8 +64,12 @@ public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 		super.parse(model, implNode);
 
 		try {
-			Models.objectLiteral(model.filter(implNode, ProxyRepositorySchema.PROXIED_ID, null)).ifPresent(
-					lit -> setProxiedRepositoryID(lit.getLabel()));
+			Literal lit = Models.objectLiteral(
+					model.filter(implNode, ProxyRepositorySchema.PROXIED_ID, null));
+
+			if (lit != null) {
+				setProxiedRepositoryID(lit.getLabel());
+			}
 		}
 		catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);

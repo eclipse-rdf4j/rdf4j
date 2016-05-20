@@ -43,9 +43,7 @@ public interface ValueFactory {
 	 * @deprecated since 4.0. Use {{@link #createIRI(String)} instead.
 	 */
 	@Deprecated
-	public default URI createURI(String uri) {
-		return createIRI(uri);
-	}
+	public URI createURI(String uri);
 
 	/**
 	 * Creates a new IRI from the supplied namespace and local name. Calling this method is funtionally
@@ -74,9 +72,7 @@ public interface ValueFactory {
 	 * @deprecated since 4.0. Use {{@link #createIRI(String, String)} instead.
 	 */
 	@Deprecated
-	public default URI createURI(String namespace, String localName) {
-		return createIRI(namespace, localName);
-	}
+	public URI createURI(String namespace, String localName);
 
 	/**
 	 * Creates a new bNode.
@@ -132,9 +128,7 @@ public interface ValueFactory {
 	 * @deprecated since 4.0. Use {@link #createLiteral(String, IRI)} instead.
 	 */
 	@Deprecated
-	public default Literal createLiteral(String label, URI datatype) {
-		return createLiteral(label, (IRI)datatype);
-	}
+	public Literal createLiteral(String label, URI datatype);
 
 	/**
 	 * Creates a new <tt>xsd:boolean</tt>-typed literal representing the specified value.
@@ -253,9 +247,7 @@ public interface ValueFactory {
 	 * @deprecated since 4.0. Use {@link #createStatement(Resource, IRI, Value)} instead.
 	 */
 	@Deprecated
-	public default Statement createStatement(Resource subject, URI predicate, Value object) {
-		return createStatement(subject, (IRI)predicate, object);
-	}
+	public Statement createStatement(Resource subject, URI predicate, Value object);
 
 	/**
 	 * Creates a new statement with the supplied subject, predicate and object and associated context.
@@ -285,9 +277,6 @@ public interface ValueFactory {
 	 * @deprecated since 4.0. Use {@link #createStatement(Resource, IRI, Value, Resource)} instead.
 	 */
 	@Deprecated
-	public default Statement createStatement(Resource subject, URI predicate, Value object,
-			Resource context)
-	{
-		return createStatement(subject, (IRI)predicate, object, context);
-	}
+	public Statement createStatement(Resource subject, URI predicate, Value object, Resource context);
+
 }

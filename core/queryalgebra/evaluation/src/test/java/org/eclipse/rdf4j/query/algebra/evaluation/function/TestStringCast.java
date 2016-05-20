@@ -82,7 +82,7 @@ public class TestStringCast {
 			Literal result = stringCast.evaluate(f, intLit);
 			assertNotNull(result);
 			assertEquals(XMLSchema.STRING, result.getDatatype());
-			assertFalse(result.getLanguage().isPresent());
+			assertFalse(result.getLanguage() != null);
 			assertEquals("10", result.getLabel());
 		}
 		catch (ValueExprEvaluationException e) {
@@ -98,7 +98,7 @@ public class TestStringCast {
 			Literal result = stringCast.evaluate(f, dtLit);
 			assertNotNull(result);
 			assertEquals(XMLSchema.STRING, result.getDatatype());
-			assertFalse(result.getLanguage().isPresent());
+			assertFalse(result.getLanguage() != null);
 			assertEquals(lexVal, result.getLabel());
 		}
 		catch (ValueExprEvaluationException e) {
@@ -114,7 +114,7 @@ public class TestStringCast {
 			Literal result = stringCast.evaluate(f, dtLit);
 			assertNotNull(result);
 			assertEquals(XMLSchema.STRING, result.getDatatype());
-			assertFalse(result.getLanguage().isPresent());
+			assertFalse(result.getLanguage() != null);
 			assertEquals(lexVal, result.getLabel());
 		}
 		catch (ValueExprEvaluationException e) {

@@ -12,7 +12,6 @@ import static org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig.c
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -138,12 +137,12 @@ public class FederationConfig extends AbstractSailImplConfig {
 			addLocalPropertySpace(space.stringValue());
 		}
 		try {
-			Optional<Literal> bool = Models.objectLiteral(model.filter(implNode, DISTINCT, null));
-			if (bool.isPresent() && bool.get().booleanValue()) {
+			Literal bool = Models.objectLiteral(model.filter(implNode, DISTINCT, null));
+			if (bool != null && bool.booleanValue()) {
 				distinct = true;
 			}
 			bool = Models.objectLiteral(model.filter(implNode, READ_ONLY, null));
-			if (bool.isPresent() && bool.get().booleanValue()) {
+			if (bool != null && bool.booleanValue()) {
 				readOnly = true;
 			}
 		}

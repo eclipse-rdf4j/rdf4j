@@ -75,12 +75,16 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 		URL ciaScheme = this.getClass().getResource("/cia-factbook/CIA-onto-enhanced.rdf");
 		URL ciaFacts = this.getClass().getResource("/cia-factbook/CIA-facts-enhanced.rdf");
 
-		con1.add(ciaScheme, ciaScheme.toExternalForm(),
-				Rio.getParserFormatForFileName(ciaScheme.toExternalForm()).orElseThrow(
-						Rio.unsupportedFormat(ciaScheme.toExternalForm())));
-		con1.add(ciaFacts, ciaFacts.toExternalForm(),
-				Rio.getParserFormatForFileName(ciaFacts.toExternalForm()).orElseThrow(
-						Rio.unsupportedFormat(ciaFacts.toExternalForm())));
+		RDFFormat schemeformat = Rio.getParserFormatForFileName(ciaScheme.toExternalForm());
+		if (schemeformat == null) {
+			throw Rio.unsupportedFormat(ciaScheme.toExternalForm());
+		}
+		RDFFormat factformat = Rio.getParserFormatForFileName(ciaFacts.toExternalForm());
+		if (factformat == null) {
+			throw Rio.unsupportedFormat(ciaFacts.toExternalForm());
+		}
+		con1.add(ciaScheme, ciaScheme.toExternalForm(), schemeformat);
+		con1.add(ciaFacts, ciaFacts.toExternalForm(), factformat);
 
 		StringWriter writer = new StringWriter();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(writer);

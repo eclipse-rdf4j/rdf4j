@@ -157,7 +157,7 @@ public class ReplaceTest {
 		try {
 			Literal result = replaceFunc.evaluate(f, arg, pattern, replacement);
 			assertEquals("---", result.getLabel());
-			assertEquals("ja", result.getLanguage().orElse(null));
+			assertEquals("ja", result.getLanguage());
 		}
 		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());

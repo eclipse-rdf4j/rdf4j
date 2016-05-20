@@ -220,7 +220,7 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 			IRI datatype = literal.getDatatype();
 
 			if (Literals.isLanguageLiteral(literal)) {
-				xmlWriter.setAttribute(LANGUAGE_ATT, literal.getLanguage().get());
+				xmlWriter.setAttribute(LANGUAGE_ATT, literal.getLanguage());
 				xmlWriter.textElement(PLAIN_LITERAL_TAG, literal.getLabel());
 			}
 			else {

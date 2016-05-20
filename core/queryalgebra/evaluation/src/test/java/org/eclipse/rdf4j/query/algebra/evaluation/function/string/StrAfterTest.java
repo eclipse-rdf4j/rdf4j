@@ -91,7 +91,7 @@ public class StrAfterTest {
 			Literal result = strAfterFunc.evaluate(f, leftArg, rightArg);
 
 			assertEquals("ar", result.getLabel());
-			assertEquals("en", result.getLanguage().orElse(null));
+			assertEquals("en", result.getLanguage());
 			assertEquals(RDF.LANGSTRING, result.getDatatype());
 		}
 		catch (ValueExprEvaluationException e) {
@@ -231,7 +231,7 @@ public class StrAfterTest {
 
 			assertEquals("ar", result.getLabel());
 			assertEquals(RDF.LANGSTRING, result.getDatatype());
-			assertEquals("en", result.getLanguage().orElse(null));
+			assertEquals("en", result.getLanguage());
 
 		}
 		catch (ValueExprEvaluationException e) {
@@ -249,7 +249,7 @@ public class StrAfterTest {
 
 			assertEquals("ar", result.getLabel());
 			assertEquals(RDF.LANGSTRING, result.getDatatype());
-			assertEquals("nl", result.getLanguage().orElse(null));
+			assertEquals("nl", result.getLanguage());
 
 		}
 		catch (ValueExprEvaluationException e) {

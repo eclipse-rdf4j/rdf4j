@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.string;
 
-import java.util.Optional;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -46,7 +44,7 @@ public class StrBefore implements Function {
 			Literal rightLit = (Literal)rightArg;
 
 			if (QueryEvaluationUtil.compatibleArguments(leftLit, rightLit)) {
-				Optional<String> leftLanguage = leftLit.getLanguage();
+				String leftLanguage = leftLit.getLanguage();
 				IRI leftDt = leftLit.getDatatype();
 
 				String lexicalValue = leftLit.getLabel();
@@ -60,12 +58,12 @@ public class StrBefore implements Function {
 				}
 				else {
 					// no match, return empty string with no language or datatype
-					leftLanguage = Optional.empty();
+					leftLanguage = null;
 					leftDt = null;
 				}
 
-				if (leftLanguage.isPresent()) {
-					return valueFactory.createLiteral(substringBefore, leftLanguage.get());
+				if (leftLanguage != null) {
+					return valueFactory.createLiteral(substringBefore, leftLanguage);
 				}
 				else if (leftDt != null) {
 					return valueFactory.createLiteral(substringBefore, leftDt);
