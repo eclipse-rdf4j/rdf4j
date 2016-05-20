@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -72,6 +73,11 @@ public class EvaluationStatistics {
 		@Override
 		public void meet(StatementPattern pattern) {
 			cardinality = getCardinality(pattern);
+		}
+		
+		@Override
+		public void meet(Slice slice) {
+			cardinality = 1;
 		}
 
 		protected double getCardinality(StatementPattern pattern) {
