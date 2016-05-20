@@ -59,11 +59,11 @@
 				<configuration>
 					<remoteOBR>NONE</remoteOBR>
 					<instructions>
-						<Bundle-SymbolicName>org.eclipse.rdf4j2</Bundle-SymbolicName>
-						<Export-Package>!*text-base,!*prop-base,org.openrdf.*,info.aduna.*</Export-Package>
+						<Bundle-SymbolicName>org.eclipse.rdf4j</Bundle-SymbolicName>
+						<Export-Package>!*text-base,!*prop-base,org.eclipse.rdf4j.*</Export-Package>
 						<Import-Package>
 							org.slf4j.*,
-							info.aduna.*;version=0,
+							org.eclipse.rdf4j.*;version=0,
 							javax.*;resolution:=optional,
 							org.apache.*;resolution:=optional,
 							org.springframework.*;resolution:=optional,
@@ -75,7 +75,7 @@
 						</Include-Resource>
 						<Embed-Dependency>
 							*;
-							groupId=org.openrdf.*|info.aduna.*;
+							groupId=org.eclipse.rdf4j;
 							scope=compile|runtime;
 							type=!pom;
 							inline=true
