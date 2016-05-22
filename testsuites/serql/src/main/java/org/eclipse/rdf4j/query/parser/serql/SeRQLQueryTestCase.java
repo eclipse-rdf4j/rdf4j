@@ -20,22 +20,16 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
-import junit.framework.Test;
-import junit.framework.TestCase;
-import junit.framework.TestSuite;
-
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.query.parser.serql.SeRQLUtil;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -48,6 +42,10 @@ import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import junit.framework.Test;
+import junit.framework.TestCase;
+import junit.framework.TestSuite;
 
 public abstract class SeRQLQueryTestCase extends TestCase {
 
@@ -112,14 +110,19 @@ public abstract class SeRQLQueryTestCase extends TestCase {
 		RepositoryConnection dataCon = dataRep.getConnection();
 
 		// Add unnamed graph
-		dataCon.add(url(dataFile), base(dataFile),
-				Rio.getParserFormatForFileName(dataFile).orElseThrow(Rio.unsupportedFormat(dataFile)));
+		RDFFormat format = Rio.getParserFormatForFileName(dataFile);
+		if (format == null) {
+			throw Rio.unsupportedFormat(dataFile);
+		}
+		dataCon.add(url(dataFile), base(dataFile), format);
 
 		// add named graphs
 		for (String graphName : graphNames) {
-			dataCon.add(url(graphName), base(graphName),
-					Rio.getParserFormatForFileName(graphName).orElseThrow(Rio.unsupportedFormat(graphName)),
-					dataCon.getValueFactory().createIRI(graphName));
+			format = Rio.getParserFormatForFileName(graphName);
+			if (format == null) {
+				throw Rio.unsupportedFormat(graphName);
+			}
+			dataCon.add(url(graphName), base(graphName), format);
 		}
 
 		// Evaluate the query on the query data
@@ -137,8 +140,11 @@ public abstract class SeRQLQueryTestCase extends TestCase {
 
 		RepositoryConnection erCon = expectedResultRep.getConnection();
 
-		erCon.add(url(resultFile), base(resultFile),
-				Rio.getParserFormatForFileName(resultFile).orElseThrow(Rio.unsupportedFormat(resultFile)));
+		RDFFormat resultFormat = Rio.getParserFormatForFileName(resultFile);
+		if (resultFormat == null) {
+			throw Rio.unsupportedFormat(resultFile);
+		}
+		erCon.add(url(resultFile), base(resultFile), resultFormat);
 
 		Collection<Statement> expectedStatements = Iterations.addAll(
 				erCon.getStatements(null, null, null, false), new ArrayList<Statement>(1));
@@ -289,7 +295,10 @@ public abstract class SeRQLQueryTestCase extends TestCase {
 		RepositoryConnection con = manifestRep.getConnection();
 
 		URL manifestURL = SeRQLQueryTestCase.class.getResource(MANIFEST_FILE);
-		RDFFormat format = Rio.getParserFormatForFileName(MANIFEST_FILE).orElse(RDFFormat.TURTLE);
+		RDFFormat format = Rio.getParserFormatForFileName(MANIFEST_FILE);
+		if (format == null) {
+			format = RDFFormat.TURTLE;
+		}
 		con.add(manifestURL, base(manifestURL.toExternalForm()), format);
 
 		String query = "SELECT testName, entailment, input, query, result " + "FROM {} mf:name {testName};"

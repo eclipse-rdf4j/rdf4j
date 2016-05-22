@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.string;
 
-import java.util.Optional;
-
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -43,10 +41,10 @@ public class LowerCase implements Function {
 			// LowerCase function accepts only string literals.
 			if (QueryEvaluationUtil.isStringLiteral(literal)) {
 				String lexicalValue = literal.getLabel().toLowerCase();
-				Optional<String> language = literal.getLanguage();
+				String language = literal.getLanguage();
 
-				if (language.isPresent()) {
-					return valueFactory.createLiteral(lexicalValue, language.get());
+				if (language != null) {
+					return valueFactory.createLiteral(lexicalValue, language);
 				}
 				else if (XMLSchema.STRING.equals(literal.getDatatype())) {
 					return valueFactory.createLiteral(lexicalValue, XMLSchema.STRING);

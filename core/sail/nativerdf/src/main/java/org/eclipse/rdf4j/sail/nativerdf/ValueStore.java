@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.nativerdf;
 import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.util.Optional;
 
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
@@ -441,7 +440,7 @@ public class ValueStore extends AbstractValueFactory {
 		else if (value instanceof Literal) {
 			Literal lit = (Literal)value;
 			if (Literals.isLanguageLiteral(lit)) {
-				return createLiteral(value.stringValue(), lit.getLanguage().orElse(null));
+				return createLiteral(value.stringValue(), lit.getLanguage());
 			}
 			else {
 				return createLiteral(value.stringValue(), lit.getDatatype());
@@ -533,7 +532,7 @@ public class ValueStore extends AbstractValueFactory {
 		return literal2data(literal.getLabel(), literal.getLanguage(), dt, false);
 	}
 
-	private byte[] literal2data(String label, Optional<String> lang, IRI dt, boolean create)
+	private byte[] literal2data(String label, String lang, IRI dt, boolean create)
 		throws IOException, UnsupportedEncodingException
 	{
 		// Get datatype ID
@@ -554,8 +553,8 @@ public class ValueStore extends AbstractValueFactory {
 		// Get language tag in UTF-8
 		byte[] langData = null;
 		int langDataLength = 0;
-		if (lang.isPresent()) {
-			langData = lang.get().getBytes("UTF-8");
+		if (lang != null) {
+			langData = lang.getBytes("UTF-8");
 			langDataLength = langData.length;
 		}
 
@@ -796,7 +795,7 @@ public class ValueStore extends AbstractValueFactory {
 		}
 
 		if (Literals.isLanguageLiteral(l)) {
-			return new NativeLiteral(revision, l.getLabel(), l.getLanguage().get());
+			return new NativeLiteral(revision, l.getLabel(), l.getLanguage());
 		}
 		else {
 			NativeIRI datatype = getNativeURI(l.getDatatype());

@@ -297,7 +297,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 		Assert.assertTrue(statement.getObject() instanceof Literal);
 		Literal object = (Literal)statement.getObject();
 		Assert.assertEquals("2010-05-02", object.stringValue());
-		Assert.assertEquals("en", object.getLanguage().orElse(null));
+		Assert.assertEquals("en", object.getLanguage());
 		Assert.assertEquals(RDF.LANGSTRING, object.getDatatype());
 		Assert.assertEquals("http://sin.siteserv.org/def/", statement.getContext().stringValue());
 	}
@@ -322,7 +322,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 		Assert.assertTrue(statement.getObject() instanceof Literal);
 		Literal object = (Literal)statement.getObject();
 		Assert.assertEquals("2010", object.stringValue());
-		Assert.assertFalse(object.getLanguage().isPresent());
+		Assert.assertFalse(object.getLanguage() != null);
 		Assert.assertEquals("http://www.w3.org/2001/XMLSchema#integer", object.getDatatype().toString());
 		Assert.assertEquals("http://sin.siteserv.org/def/", statement.getContext().stringValue());
 	}

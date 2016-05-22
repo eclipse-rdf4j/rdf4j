@@ -762,11 +762,11 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 			if (subj instanceof IRI) {
 				parser.reset((IRI)subj);
 				String key = subj.stringValue();
-				Function func = functionRegistry.get(key).orElse(null);
+				Function func = functionRegistry.get(key);
 				if (func instanceof TransientFunction) {
 					functionRegistry.remove(func);
 				}
-				TupleFunction tupleFunc = tupleFunctionRegistry.get(key).orElse(null);
+				TupleFunction tupleFunc = tupleFunctionRegistry.get(key);
 				if (tupleFunc instanceof TransientTupleFunction) {
 					tupleFunctionRegistry.remove(tupleFunc);
 				}

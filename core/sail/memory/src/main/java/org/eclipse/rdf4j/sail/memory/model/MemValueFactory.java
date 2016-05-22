@@ -286,7 +286,7 @@ public class MemValueFactory extends AbstractValueFactory {
 			IRI datatype = literal.getDatatype();
 
 			if (Literals.isLanguageLiteral(literal)) {
-				memLiteral = new MemLiteral(this, label, literal.getLanguage().get());
+				memLiteral = new MemLiteral(this, label, literal.getLanguage());
 			}
 			else {
 				try {

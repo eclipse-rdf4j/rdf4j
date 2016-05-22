@@ -76,6 +76,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
@@ -247,17 +248,21 @@ public class TransactionController extends AbstractController {
 		}
 
 		try {
+			RDFFormat parserFormat = Rio.getParserFormatForMIMEType(request.getContentType());
+
 			switch (action) {
 				case ADD:
-					conn.add(request.getInputStream(), baseURI,
-							Rio.getParserFormatForMIMEType(request.getContentType()).orElseThrow(
-									Rio.unsupportedFormat(request.getContentType())));
+					if (parserFormat == null) {
+						throw Rio.unsupportedFormat(request.getContentType());
+					}
+					conn.add(request.getInputStream(), baseURI, parserFormat);
 					break;
 				case DELETE:
-					RDFParser parser = Rio.createParser(
-							Rio.getParserFormatForMIMEType(request.getContentType()).orElseThrow(
-									Rio.unsupportedFormat(request.getContentType())),
-							conn.getValueFactory());
+					if (parserFormat == null) {
+						throw Rio.unsupportedFormat(request.getContentType());
+					}
+					RDFParser parser = Rio.createParser(parserFormat);
+					parser.setValueFactory(conn.getValueFactory());
 					parser.setRDFHandler(new WildcardRDFRemover(conn));
 					parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 					parser.parse(request.getInputStream(), baseURI);

@@ -11,7 +11,6 @@ import static org.eclipse.rdf4j.sail.inferencer.fc.config.CustomGraphQueryInfere
 import static org.eclipse.rdf4j.sail.inferencer.fc.config.CustomGraphQueryInferencerSchema.QUERY_LANGUAGE;
 import static org.eclipse.rdf4j.sail.inferencer.fc.config.CustomGraphQueryInferencerSchema.RULE_QUERY;
 
-import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -99,29 +98,35 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 
 		try {
 
-			Optional<Literal> language = Models.objectLiteral(m.filter(implNode, QUERY_LANGUAGE, null));
+			Literal language = Models.objectLiteral(m.filter(implNode, QUERY_LANGUAGE, null));
 
-			if (language.isPresent()) {
-				setQueryLanguage(QueryLanguage.valueOf(language.get().stringValue()));
+			if (language != null) {
+				setQueryLanguage(QueryLanguage.valueOf(language.stringValue()));
 				if (null == getQueryLanguage()) {
-					throw new SailConfigException("Valid value required for " + QUERY_LANGUAGE
-							+ " property, found " + language.get());
+					throw new SailConfigException(
+							"Valid value required for " + QUERY_LANGUAGE + " property, found " + language);
 				}
 			}
 			else {
 				setQueryLanguage(QueryLanguage.SPARQL);
 			}
 
-			Optional<Resource> object = Models.objectResource(m.filter(implNode, RULE_QUERY, null));
-			if (object.isPresent()) {
-				Models.objectLiteral(m.filter(object.get(), SP.TEXT_PROPERTY, null)).ifPresent(
-						lit -> setRuleQuery(lit.stringValue()));
+			Resource object = Models.objectResource(m.filter(implNode, RULE_QUERY, null));
+			if (object != null) {
+				Literal tp = Models.objectLiteral(m.filter(object, SP.TEXT_PROPERTY, null));
+
+				if (tp != null) {
+					setRuleQuery(tp.stringValue());
+				}
 			}
 
 			object = Models.objectResource(m.filter(implNode, MATCHER_QUERY, null));
-			if (object.isPresent()) {
-				Models.objectLiteral(m.filter(object.get(), SP.TEXT_PROPERTY, null)).ifPresent(
-						lit -> setMatcherQuery(lit.stringValue()));
+			if (object != null) {
+				Literal tp = Models.objectLiteral(m.filter(object, SP.TEXT_PROPERTY, null));
+
+				if (tp != null) {
+					setMatcherQuery(tp.stringValue());
+				}
 			}
 		}
 		catch (ModelException e) {

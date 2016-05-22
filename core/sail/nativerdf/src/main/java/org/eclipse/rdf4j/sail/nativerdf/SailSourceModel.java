@@ -11,7 +11,6 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.IsolationLevels;
@@ -185,10 +184,10 @@ class SailSourceModel extends AbstractModel {
 		return set;
 	}
 
-	public Optional<Namespace> getNamespace(String prefix) {
+	public Namespace getNamespace(String prefix) {
 		try {
 			String name = dataset().getNamespace(prefix);
-			return Optional.of(new SimpleNamespace(prefix, name));
+			return new SimpleNamespace(prefix, name);
 		}
 		catch (SailException e) {
 			throw new ModelException(e);
@@ -209,8 +208,8 @@ class SailSourceModel extends AbstractModel {
 		setNamespace(namespace.getPrefix(), namespace.getName());
 	}
 
-	public Optional<Namespace> removeNamespace(String prefix) {
-		Optional<Namespace> ret = getNamespace(prefix);
+	public Namespace removeNamespace(String prefix) {
+		Namespace ret = getNamespace(prefix);
 		try {
 			sink().removeNamespace(prefix);
 		}

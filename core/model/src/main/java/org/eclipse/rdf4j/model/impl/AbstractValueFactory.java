@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
@@ -83,6 +84,11 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 * Methods *
 	 *---------*/
 
+	@Deprecated
+	public URI createURI(String uri) {
+		return createIRI(uri);
+	}
+
 	@Override
 	public IRI createIRI(String iri) {
 		return new SimpleIRI(iri);
@@ -93,9 +99,19 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		return createIRI(namespace + localName);
 	}
 
+	@Deprecated
+	public URI createURI(String namespace, String localName) {
+		return createIRI(namespace, localName);
+	}
+
 	@Override
 	public BNode createBNode(String nodeID) {
 		return new SimpleBNode(nodeID);
+	}
+
+	@Deprecated
+	public Literal createLiteral(String label, URI datatype) {
+		return createLiteral(label, (IRI)datatype);
 	}
 
 	@Override
@@ -116,6 +132,16 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public Literal createLiteral(String value, IRI datatype) {
 		return new SimpleLiteral(value, datatype);
+	}
+
+	@Deprecated
+	public Statement createStatement(Resource subject, URI predicate, Value object) {
+		return createStatement(subject, (IRI)predicate, object);
+	}
+
+	@Deprecated
+	public Statement createStatement(Resource subject, URI predicate, Value object, Resource context) {
+		return createStatement(subject, (IRI)predicate, object, context);
 	}
 
 	@Override

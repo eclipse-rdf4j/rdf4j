@@ -13,9 +13,6 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.Spliterator;
-import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 /**
  * This class consists exclusively of static methods that operate on or return Iterations. It is the
@@ -78,33 +75,6 @@ public class Iterations {
 		}
 
 		return collection;
-	}
-
-	/**
-	 * Get a sequential {@link Stream} with the supplied {@link Iteration} as its source. If the source
-	 * iteration is a {@link CloseableIteration}, it will be automatically closed by the stream when done. Any
-	 * checked exceptions thrown at any point during stream processing will be propagated wrapped in a
-	 * {@link RuntimeException}.
-	 * 
-	 * @param iteration
-	 *        a source {@link Iteration} for the stream.
-	 * @return a sequential {@link Stream} object which can be used to process the data from the source
-	 *         iteration.
-	 */
-	public static <T> Stream<T> stream(Iteration<T, ? extends Exception> iteration) {
-		Spliterator<T> spliterator = new IterationSpliterator<T>(iteration);
-
-		return StreamSupport.stream(spliterator, false).onClose(() -> {
-			try {
-				Iterations.closeCloseable(iteration);
-			}
-			catch (RuntimeException e) {
-				throw e;
-			}
-			catch (Exception e) {
-				throw new RuntimeException(e);
-			}
-		});
 	}
 
 	/**

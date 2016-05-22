@@ -181,7 +181,7 @@ public class ModelsTest {
 		model1.add(foo, bar, lit);
 		model1.add(foo, bar, foo);
 
-		Value result = Models.object(model1).orElse(null);
+		Value result = Models.object(model1);
 		assertNotNull(result);
 		assertTrue(result.equals(lit) || result.equals(foo));
 	}
@@ -191,7 +191,7 @@ public class ModelsTest {
 		model1.add(foo, bar, lit);
 		model1.add(foo, bar, foo);
 
-		Value result = Models.objectIRI(model1).orElse(null);
+		Value result = Models.objectIRI(model1);
 		assertNotNull(result);
 		assertEquals(foo, result);
 	}
@@ -201,7 +201,7 @@ public class ModelsTest {
 		model1.add(foo, bar, lit);
 		model1.add(foo, bar, foo);
 
-		Value result = Models.objectLiteral(model1).orElse(null);
+		Value result = Models.objectLiteral(model1);
 		assertNotNull(result);
 		assertEquals(lit, result);
 	}
@@ -210,7 +210,7 @@ public class ModelsTest {
 		model1.add(foo, bar, foo);
 		model1.add(foo, foo, foo);
 
-		IRI result = Models.predicate(model1).orElse(null);
+		IRI result = Models.predicate(model1);
 		assertNotNull(result);
 		assertTrue(result.equals(bar) || result.equals(foo));
 	}
@@ -221,7 +221,7 @@ public class ModelsTest {
 		model1.add(bar, foo, foo);
 		model1.add(baz, foo, foo);
 
-		Resource result = Models.subject(model1).orElse(null);
+		Resource result = Models.subject(model1);
 		assertNotNull(result);
 		assertTrue(result.equals(bar) || result.equals(foo) || result.equals(baz));
 	}
@@ -232,7 +232,7 @@ public class ModelsTest {
 		model1.add(baz, foo, foo);
 		model1.add(bar, foo, foo);
 
-		Resource result = Models.subjectIRI(model1).orElse(null);
+		Resource result = Models.subjectIRI(model1);
 		assertNotNull(result);
 		assertTrue(result.equals(bar) || result.equals(foo));
 	}
@@ -243,7 +243,7 @@ public class ModelsTest {
 		model1.add(baz, foo, foo);
 		model1.add(bar, foo, foo);
 
-		Resource result = Models.subjectBNode(model1).orElse(null);
+		Resource result = Models.subjectBNode(model1);
 		assertNotNull(result);
 		assertTrue(result.equals(baz));
 	}

@@ -17,7 +17,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.NavigableSet;
 import java.util.NoSuchElementException;
-import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -89,13 +88,13 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 	}
 
 	@Override
-	public Optional<Namespace> getNamespace(String prefix) {
+	public Namespace getNamespace(String prefix) {
 		for (Namespace nextNamespace : namespaces) {
 			if (prefix.equals(nextNamespace.getPrefix())) {
-				return Optional.of(nextNamespace);
+				return nextNamespace;
 			}
 		}
-		return Optional.empty();
+		return null;
 	}
 
 	@Override
@@ -118,10 +117,10 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 	}
 
 	@Override
-	public Optional<Namespace> removeNamespace(String prefix) {
-		Optional<Namespace> result = getNamespace(prefix);
-		if (result.isPresent()) {
-			namespaces.remove(result.get());
+	public Namespace removeNamespace(String prefix) {
+		Namespace result = getNamespace(prefix);
+		if (result != null) {
+			namespaces.remove(result);
 		}
 		return result;
 	}
@@ -738,7 +737,7 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 			this.hiInclusive = hiInclusive;
 		}
 
-		public Optional<Namespace> getNamespace(String prefix) {
+		public Namespace getNamespace(String prefix) {
 			return model.getNamespace(prefix);
 		}
 
@@ -754,7 +753,7 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 			model.setNamespace(namespace);
 		}
 
-		public Optional<Namespace> removeNamespace(String prefix) {
+		public Namespace removeNamespace(String prefix) {
 			return model.removeNamespace(prefix);
 		}
 

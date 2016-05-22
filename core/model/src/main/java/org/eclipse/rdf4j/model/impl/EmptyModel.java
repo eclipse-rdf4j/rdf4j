@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.model.impl;
 
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -37,7 +36,7 @@ public class EmptyModel extends AbstractModel {
 	private Set<Statement> emptySet = Collections.emptySet();
 
 	@Override
-	public Optional<Namespace> getNamespace(String prefix) {
+	public Namespace getNamespace(String prefix) {
 		return this.model.getNamespace(prefix);
 	}
 
@@ -57,7 +56,7 @@ public class EmptyModel extends AbstractModel {
 	}
 
 	@Override
-	public Optional<Namespace> removeNamespace(String prefix) {
+	public Namespace removeNamespace(String prefix) {
 		return this.model.removeNamespace(prefix);
 	}
 

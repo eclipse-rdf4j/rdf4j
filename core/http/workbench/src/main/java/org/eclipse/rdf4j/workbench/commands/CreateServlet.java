@@ -131,10 +131,10 @@ public class CreateServlet extends TransformationServlet {
 		rdfParser.setRDFHandler(new StatementCollector(graph));
 		rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);
 
-		Resource res = Models.subject(
-				graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY)).orElseThrow(
-						() -> new RepositoryException(
-								"could not find instance of Repository class in config"));
+		Resource res = Models.subject(graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY));
+		if (res == null) {
+			throw new RepositoryException("could not find instance of Repository class in config");
+		}
 		final RepositoryConfig repConfig = RepositoryConfig.create(graph, res);
 		repConfig.validate();
 		RepositoryConfigUtil.updateRepositoryConfigs(systemRepo, repConfig);

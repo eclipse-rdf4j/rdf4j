@@ -44,9 +44,7 @@ public class SpinFunctionInterpreter implements QueryOptimizer {
 	private final FunctionRegistry functionRegistry;
 
 	static void registerSpinParsingFunctions(SpinParser parser, FunctionRegistry functionRegistry) {
-		if (!(functionRegistry.get(
-				FN.CONCAT.toString()).get() instanceof org.eclipse.rdf4j.spin.function.Concat))
-		{
+		if (!(functionRegistry.get(FN.CONCAT.toString()) instanceof org.eclipse.rdf4j.spin.function.Concat)) {
 			functionRegistry.add(new org.eclipse.rdf4j.spin.function.Concat());
 		}
 		if (!functionRegistry.has(SPIN.EVAL_FUNCTION.toString())) {

@@ -101,8 +101,11 @@ public class Create implements Command {
 					rdfParser.setRDFHandler(new StatementCollector(graph));
 					rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);
 					final Resource repositoryNode = Models.subject(
-							graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY)).orElseThrow(
-									() -> new RepositoryConfigException("missing repository node"));
+							graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY));
+
+					if (repositoryNode == null) {
+						throw new RepositoryConfigException("missing repository node");
+					}
 					final RepositoryConfig repConfig = RepositoryConfig.create(graph, repositoryNode);
 					repConfig.validate();
 					boolean proceed = RepositoryConfigUtil.hasRepositoryConfig(systemRepo, repConfig.getID())

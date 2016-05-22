@@ -14,7 +14,6 @@ import java.io.PrintWriter;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
-import java.util.Optional;
 import java.util.WeakHashMap;
 
 import javax.servlet.ServletConfig;
@@ -328,26 +327,25 @@ public class QueryServlet extends TransformationServlet {
 		String ext = "xml";
 		if (req.isParameterPresent(ACCEPT)) {
 			final String accept = req.getParameter(ACCEPT);
-			final Optional<RDFFormat> format = Rio.getWriterFormatForMIMEType(accept);
-			if (format.isPresent()) {
-				result = format.get().getDefaultMIMEType();
-				ext = format.get().getDefaultFileExtension();
+			final RDFFormat format = Rio.getWriterFormatForMIMEType(accept);
+			if (format != null) {
+				result = format.getDefaultMIMEType();
+				ext = format.getDefaultFileExtension();
 			}
 			else {
-				final Optional<QueryResultFormat> tupleFormat = QueryResultIO.getWriterFormatForMIMEType(
-						accept);
+				final QueryResultFormat tupleFormat = QueryResultIO.getWriterFormatForMIMEType(accept);
 
-				if (tupleFormat.isPresent()) {
-					result = tupleFormat.get().getDefaultMIMEType();
-					ext = tupleFormat.get().getDefaultFileExtension();
+				if (tupleFormat != null) {
+					result = tupleFormat.getDefaultMIMEType();
+					ext = tupleFormat.getDefaultFileExtension();
 				}
 				else {
-					final Optional<QueryResultFormat> booleanFormat = QueryResultIO.getBooleanWriterFormatForMIMEType(
+					final QueryResultFormat booleanFormat = QueryResultIO.getBooleanWriterFormatForMIMEType(
 							accept);
 
-					if (booleanFormat.isPresent()) {
-						result = booleanFormat.get().getDefaultMIMEType();
-						ext = booleanFormat.get().getDefaultFileExtension();
+					if (booleanFormat != null) {
+						result = booleanFormat.getDefaultMIMEType();
+						ext = booleanFormat.getDefaultFileExtension();
 					}
 				}
 			}

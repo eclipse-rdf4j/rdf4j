@@ -11,6 +11,8 @@ import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.PASS
 import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.REPOSITORYURL;
 import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.USERNAME;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -99,14 +101,22 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 		super.parse(model, implNode);
 
 		try {
-			Models.objectIRI(model.filter(implNode, REPOSITORYURL, null)).ifPresent(
-					iri -> setURL(iri.stringValue()));
+			IRI iri = Models.objectIRI(model.filter(implNode, REPOSITORYURL, null));
 
-			Models.objectLiteral(model.filter(implNode, USERNAME, null)).ifPresent(
-					username -> setUsername(username.getLabel()));
+			if (iri != null) {
+				setURL(iri.stringValue());
+			}
 
-			Models.objectLiteral(model.filter(implNode, PASSWORD, null)).ifPresent(
-					password -> setPassword(password.getLabel()));
+			Literal username = Models.objectLiteral(model.filter(implNode, USERNAME, null));
+			if (username != null) {
+				setUsername(username.getLabel());
+			}
+
+			Literal password = Models.objectLiteral(model.filter(implNode, PASSWORD, null));
+
+			if (password != null) {
+				setPassword(password.getLabel());
+			}
 
 		}
 		catch (ModelException e) {

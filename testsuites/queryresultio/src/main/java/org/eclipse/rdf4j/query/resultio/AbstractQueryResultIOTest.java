@@ -21,7 +21,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Random;
 
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -37,17 +36,6 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
-import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
-import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
-import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParser;
-import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
-import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
-import org.eclipse.rdf4j.query.resultio.QueryResultIO;
-import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
-import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -83,7 +71,7 @@ public abstract class AbstractQueryResultIOTest {
 	{
 		String fileName = getFileName();
 
-		Optional<QueryResultFormat> format;
+		QueryResultFormat format;
 
 		if (getFormat() instanceof TupleQueryResultFormat) {
 			format = QueryResultIO.getParserFormatForFileName(fileName);
@@ -92,8 +80,8 @@ public abstract class AbstractQueryResultIOTest {
 			format = QueryResultIO.getBooleanParserFormatForFileName(fileName);
 		}
 
-		assertTrue("Could not find parser for this format.", format.isPresent());
-		assertEquals(getFormat(), format.get());
+		assertTrue("Could not find parser for this format.", format != null);
+		assertEquals(getFormat(), format);
 	}
 
 	protected TupleQueryResult createTupleSingleVarMultipleBindingSets() {

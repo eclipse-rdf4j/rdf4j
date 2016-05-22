@@ -156,7 +156,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 			final Literal l = (Literal)object;
 
 			if (Literals.isLanguageLiteral(l)) {
-				jg.writeObjectField(RDFJSONUtility.LANG, l.getLanguage().orElse(null));
+				jg.writeObjectField(RDFJSONUtility.LANG, l.getLanguage());
 			}
 			else {
 				jg.writeObjectField(RDFJSONUtility.DATATYPE, l.getDatatype().stringValue());

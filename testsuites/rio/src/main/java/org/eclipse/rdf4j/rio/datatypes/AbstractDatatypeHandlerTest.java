@@ -7,7 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.datatypes;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -284,7 +287,7 @@ public abstract class AbstractDatatypeHandlerTest {
 
 		assertNotNull(expectedResult.getDatatype());
 		assertNotNull(expectedResult.getLabel());
-		assertFalse(expectedResult.getLanguage().isPresent());
+		assertFalse(expectedResult.getLanguage() != null);
 
 		assertEquals(expectedResult.getDatatype(), result.getDatatype());
 		assertEquals(expectedResult.getLabel(), result.getLabel());

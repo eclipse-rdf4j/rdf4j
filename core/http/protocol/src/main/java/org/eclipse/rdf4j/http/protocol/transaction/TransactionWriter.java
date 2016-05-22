@@ -186,7 +186,7 @@ public class TransactionWriter {
 						Literal literal = (Literal)binding.getValue();
 						if (Literals.isLanguageLiteral(literal)) {
 							xmlWriter.setAttribute(TransactionXMLConstants.LANGUAGE_ATT,
-									literal.getLanguage().get());
+									literal.getLanguage());
 						}
 						else {
 							xmlWriter.setAttribute(TransactionXMLConstants.DATA_TYPE_ATT,
@@ -328,7 +328,7 @@ public class TransactionWriter {
 	{
 		if (literal != null) {
 			if (Literals.isLanguageLiteral(literal)) {
-				xmlWriter.setAttribute(TransactionXMLConstants.LANG_ATT, literal.getLanguage().get());
+				xmlWriter.setAttribute(TransactionXMLConstants.LANG_ATT, literal.getLanguage());
 			}
 			else {
 				xmlWriter.setAttribute(TransactionXMLConstants.DATATYPE_ATT,

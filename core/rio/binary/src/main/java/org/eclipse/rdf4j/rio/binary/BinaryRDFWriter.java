@@ -300,7 +300,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 		if (Literals.isLanguageLiteral(literal)) {
 			out.writeByte(LANG_LITERAL_VALUE);
 			writeString(label);
-			writeString(literal.getLanguage().get());
+			writeString(literal.getLanguage());
 		}
 		else {
 			out.writeByte(DATATYPE_LITERAL_VALUE);

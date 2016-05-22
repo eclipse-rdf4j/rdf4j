@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.config;
 
-import java.util.Optional;
-
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -21,19 +19,18 @@ public class SailConfigUtil {
 		throws SailConfigException
 	{
 		try {
-			Optional<Literal> typeLit = Models.objectLiteral(
-					m.filter(implNode, SailConfigSchema.SAILTYPE, null));
+			Literal typeLit = Models.objectLiteral(m.filter(implNode, SailConfigSchema.SAILTYPE, null));
 
-			if (typeLit.isPresent()) {
-				Optional<SailFactory> factory = SailRegistry.getInstance().get(typeLit.get().getLabel());
+			if (typeLit != null) {
+				SailFactory factory = SailRegistry.getInstance().get(typeLit.getLabel());
 
-				if (factory.isPresent()) {
-					SailImplConfig implConfig = factory.get().getConfig();
+				if (factory != null) {
+					SailImplConfig implConfig = factory.getConfig();
 					implConfig.parse(m, implNode);
 					return implConfig;
 				}
 				else {
-					throw new SailConfigException("Unsupported Sail type: " + typeLit.get().getLabel());
+					throw new SailConfigException("Unsupported Sail type: " + typeLit.getLabel());
 				}
 			}
 

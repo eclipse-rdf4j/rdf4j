@@ -115,8 +115,14 @@ public class DatasetRepository extends RepositoryWrapper {
 		if (semiColonIdx >= 0) {
 			mimeType = mimeType.substring(0, semiColonIdx);
 		}
-		RDFFormat format = Rio.getParserFormatForMIMEType(mimeType).orElse(
-				Rio.getParserFormatForFileName(url.getPath()).orElseThrow(Rio.unsupportedFormat(mimeType)));
+		RDFFormat format = Rio.getParserFormatForMIMEType(mimeType);
+
+		if (format == null) {
+			format = Rio.getParserFormatForFileName(url.getPath());
+			if (format == null) {
+				throw Rio.unsupportedFormat(mimeType);
+			}
+		}
 
 		InputStream stream = urlCon.getInputStream();
 		try {

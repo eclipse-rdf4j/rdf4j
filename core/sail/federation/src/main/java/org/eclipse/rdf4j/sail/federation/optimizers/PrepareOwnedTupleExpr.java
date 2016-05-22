@@ -460,7 +460,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 		if (Literals.isLanguageLiteral(lit)) {
 			// Append the literal's language
 			builder.append("@");
-			builder.append(lit.getLanguage().get());
+			builder.append(lit.getLanguage());
 		}
 		else {
 			// Append the literal's data type (possibly written as an

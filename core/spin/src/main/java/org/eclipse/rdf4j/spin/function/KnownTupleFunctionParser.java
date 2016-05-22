@@ -25,6 +25,6 @@ public class KnownTupleFunctionParser implements TupleFunctionParser {
 	public TupleFunction parse(IRI funcUri, TripleSource store)
 		throws RDF4JException
 	{
-		return functionRegistry.get(funcUri.stringValue()).orElse(null);
+		return functionRegistry.get(funcUri.stringValue());
 	}
 }

@@ -496,7 +496,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 		throws IOException
 	{
 		if (Literals.isLanguageLiteral(literal)) {
-			xmlWriter.setAttribute(LITERAL_LANG_ATT, literal.getLanguage().get());
+			xmlWriter.setAttribute(LITERAL_LANG_ATT, literal.getLanguage());
 		}
 		// Only enter this section for non-language literals now, as the
 		// rdf:langString datatype is handled implicitly above

@@ -32,7 +32,6 @@ import org.apache.http.impl.client.HttpClients;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -308,8 +307,11 @@ public class ProtocolTest {
 					contentType = contentType.substring(0, charPos);
 				}
 
-				RDFFormat format = Rio.getParserFormatForMIMEType(contentType).orElseThrow(
-						Rio.unsupportedFormat(contentType));
+				RDFFormat format = Rio.getParserFormatForMIMEType(contentType);
+
+				if (format == null) {
+					throw Rio.unsupportedFormat(contentType);
+				}
 				assertNotNull(format);
 			}
 			else {
@@ -568,7 +570,10 @@ public class ProtocolTest {
 		conn.setRequestMethod("PUT");
 		conn.setDoOutput(true);
 
-		RDFFormat dataFormat = Rio.getParserFormatForFileName(file).orElse(RDFFormat.RDFXML);
+		RDFFormat dataFormat = Rio.getParserFormatForFileName(file);
+		if (dataFormat == null) {
+			dataFormat = RDFFormat.RDFXML;
+		}
 		conn.setRequestProperty("Content-Type", dataFormat.getDefaultMIMEType());
 
 		InputStream dataStream = ProtocolTest.class.getResourceAsStream(file);

@@ -42,8 +42,11 @@ public class Verify implements Command {
 		String dataPath = parseDataPath(tokens);
 		try {
 			final URL dataURL = new URL(dataPath);
-			final RDFFormat format = Rio.getParserFormatForFileName(dataPath).orElseThrow(
-					Rio.unsupportedFormat(dataPath));
+			final RDFFormat format = Rio.getParserFormatForFileName(dataPath);
+
+			if (format == null) {
+				throw Rio.unsupportedFormat(dataPath);
+			}
 			consoleIO.writeln("RDF Format is " + format.getName());
 			final RDFParser parser = Rio.createParser(format);
 			final VerificationListener listener = new VerificationListener(consoleIO);

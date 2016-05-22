@@ -18,19 +18,15 @@ import junit.framework.TestCase;
 public class TurtleMimeTypeTest extends TestCase {
 
 	public void testTextTurtle() {
-		assertEquals(RDFFormat.TURTLE, Rio.getParserFormatForMIMEType("text/turtle").orElseThrow(
-				Rio.unsupportedFormat(RDFFormat.TURTLE)));
+		assertEquals(RDFFormat.TURTLE, Rio.getParserFormatForMIMEType("text/turtle"));
 	}
 
 	public void testTextTurtleUtf8() {
-		assertEquals(RDFFormat.TURTLE,
-				Rio.getParserFormatForMIMEType("text/turtle;charset=UTF-8").orElseThrow(
-						Rio.unsupportedFormat(RDFFormat.TURTLE)));
+		assertEquals(RDFFormat.TURTLE, Rio.getParserFormatForMIMEType("text/turtle;charset=UTF-8"));
 	}
 
 	public void testApplicationXTurtle() {
-		assertEquals(RDFFormat.TURTLE, Rio.getParserFormatForMIMEType("application/x-turtle").orElseThrow(
-				Rio.unsupportedFormat(RDFFormat.TURTLE)));
+		assertEquals(RDFFormat.TURTLE, Rio.getParserFormatForMIMEType("application/x-turtle"));
 	}
 
 }

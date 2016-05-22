@@ -10,8 +10,6 @@ package org.eclipse.rdf4j.query.resultio;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Optional;
-import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.GraphQueryResult;
@@ -29,6 +27,8 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 
+import com.google.common.base.Optional;
+
 /**
  * Class offering utility methods related to query results.
  * 
@@ -44,7 +44,7 @@ public class QueryResultIO {
 	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getParserFormatForMIMEType(String, TupleQueryResultFormat)
 	 */
-	public static Optional<QueryResultFormat> getParserFormatForMIMEType(String mimeType) {
+	public static QueryResultFormat getParserFormatForMIMEType(String mimeType) {
 		return TupleQueryResultParserRegistry.getInstance().getFileFormatForMIMEType(mimeType);
 	}
 
@@ -56,7 +56,7 @@ public class QueryResultIO {
 	 * @return An TupleQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getParserFormatForFileName(String, TupleQueryResultFormat)
 	 */
-	public static Optional<QueryResultFormat> getParserFormatForFileName(String fileName) {
+	public static QueryResultFormat getParserFormatForFileName(String fileName) {
 		return TupleQueryResultParserRegistry.getInstance().getFileFormatForFileName(fileName);
 	}
 
@@ -68,7 +68,7 @@ public class QueryResultIO {
 	 * @return An TupleQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getWriterFormatForMIMEType(String, TupleQueryResultFormat)
 	 */
-	public static Optional<QueryResultFormat> getWriterFormatForMIMEType(String mimeType) {
+	public static QueryResultFormat getWriterFormatForMIMEType(String mimeType) {
 		return TupleQueryResultWriterRegistry.getInstance().getFileFormatForMIMEType(mimeType);
 	}
 
@@ -80,7 +80,7 @@ public class QueryResultIO {
 	 * @return An TupleQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getWriterFormatForFileName(String, TupleQueryResultFormat)
 	 */
-	public static Optional<QueryResultFormat> getWriterFormatForFileName(String fileName) {
+	public static QueryResultFormat getWriterFormatForFileName(String fileName) {
 		return TupleQueryResultWriterRegistry.getInstance().getFileFormatForFileName(fileName);
 	}
 
@@ -92,7 +92,7 @@ public class QueryResultIO {
 	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getBooleanParserFormatForMIMEType(String, BooleanQueryResultFormat)
 	 */
-	public static Optional<QueryResultFormat> getBooleanParserFormatForMIMEType(String mimeType) {
+	public static QueryResultFormat getBooleanParserFormatForMIMEType(String mimeType) {
 		return BooleanQueryResultParserRegistry.getInstance().getFileFormatForMIMEType(mimeType);
 	}
 
@@ -104,7 +104,7 @@ public class QueryResultIO {
 	 * @return An BooleanQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getBooleanParserFormatForFileName(String, BooleanQueryResultFormat)
 	 */
-	public static Optional<QueryResultFormat> getBooleanParserFormatForFileName(String fileName) {
+	public static QueryResultFormat getBooleanParserFormatForFileName(String fileName) {
 		return BooleanQueryResultParserRegistry.getInstance().getFileFormatForFileName(fileName);
 	}
 
@@ -116,7 +116,7 @@ public class QueryResultIO {
 	 * @return An BooleanQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getBooleanWriterFormatForMIMEType(String, BooleanQueryResultFormat)
 	 */
-	public static Optional<QueryResultFormat> getBooleanWriterFormatForMIMEType(String mimeType) {
+	public static QueryResultFormat getBooleanWriterFormatForMIMEType(String mimeType) {
 		return BooleanQueryResultWriterRegistry.getInstance().getFileFormatForMIMEType(mimeType);
 	}
 
@@ -128,7 +128,7 @@ public class QueryResultIO {
 	 * @return An BooleanQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 * @see #getBooleanWriterFormatForFileName(String, BooleanQueryResultFormat)
 	 */
-	public static Optional<QueryResultFormat> getBooleanWriterFormatForFileName(String fileName) {
+	public static QueryResultFormat getBooleanWriterFormatForFileName(String fileName) {
 		return BooleanQueryResultWriterRegistry.getInstance().getFileFormatForFileName(fileName);
 	}
 
@@ -143,10 +143,12 @@ public class QueryResultIO {
 	public static TupleQueryResultParser createTupleParser(QueryResultFormat format)
 		throws UnsupportedQueryResultFormatException
 	{
-		TupleQueryResultParserFactory factory = TupleQueryResultParserRegistry.getInstance().get(
-				format).orElseThrow(
-						() -> new UnsupportedQueryResultFormatException(
-								"No parser factory available for tuple query result format " + format));
+		TupleQueryResultParserFactory factory = TupleQueryResultParserRegistry.getInstance().get(format);
+
+		if (factory == null) {
+			throw new UnsupportedQueryResultFormatException(
+					"No parser factory available for tuple query result format " + format);
+		}
 
 		return factory.getParser();
 	}
@@ -180,10 +182,12 @@ public class QueryResultIO {
 	public static TupleQueryResultWriter createTupleWriter(QueryResultFormat format, OutputStream out)
 		throws UnsupportedQueryResultFormatException
 	{
-		TupleQueryResultWriterFactory factory = TupleQueryResultWriterRegistry.getInstance().get(
-				format).orElseThrow(
-						() -> new UnsupportedQueryResultFormatException(
-								"No writer factory available for tuple query result format " + format));
+		TupleQueryResultWriterFactory factory = TupleQueryResultWriterRegistry.getInstance().get(format);
+
+		if (factory == null) {
+			throw new UnsupportedQueryResultFormatException(
+					"No writer factory available for tuple query result format " + format);
+		}
 
 		return factory.getWriter(out);
 	}
@@ -199,10 +203,11 @@ public class QueryResultIO {
 	public static BooleanQueryResultParser createBooleanParser(QueryResultFormat format)
 		throws UnsupportedQueryResultFormatException
 	{
-		BooleanQueryResultParserFactory factory = BooleanQueryResultParserRegistry.getInstance().get(
-				format).orElseThrow(
-						() -> new UnsupportedQueryResultFormatException(
-								"No parser factory available for boolean query result format " + format));
+		BooleanQueryResultParserFactory factory = BooleanQueryResultParserRegistry.getInstance().get(format);
+		if (factory == null) {
+			throw new UnsupportedQueryResultFormatException(
+					"No parser factory available for boolean query result format " + format);
+		}
 
 		return factory.getParser();
 	}
@@ -218,10 +223,12 @@ public class QueryResultIO {
 	public static BooleanQueryResultWriter createBooleanWriter(QueryResultFormat format, OutputStream out)
 		throws UnsupportedQueryResultFormatException
 	{
-		BooleanQueryResultWriterFactory factory = BooleanQueryResultWriterRegistry.getInstance().get(
-				format).orElseThrow(
-						() -> new UnsupportedQueryResultFormatException(
-								"No writer factory available for boolean query result format " + format));
+		BooleanQueryResultWriterFactory factory = BooleanQueryResultWriterRegistry.getInstance().get(format);
+
+		if (factory == null) {
+			throw new UnsupportedQueryResultFormatException(
+					"No writer factory available for boolean query result format " + format);
+		}
 
 		return factory.getWriter(out);
 	}
@@ -237,24 +244,30 @@ public class QueryResultIO {
 	public static QueryResultWriter createWriter(QueryResultFormat format, OutputStream out)
 		throws UnsupportedQueryResultFormatException
 	{
-		Supplier<UnsupportedQueryResultFormatException> exception = () -> new UnsupportedQueryResultFormatException(
+		UnsupportedQueryResultFormatException exception = new UnsupportedQueryResultFormatException(
 				"No writer factory available for query result format " + format);
 
 		if (format instanceof TupleQueryResultFormat) {
 
 			TupleQueryResultWriterFactory factory = TupleQueryResultWriterRegistry.getInstance().get(
-					(TupleQueryResultFormat)format).orElseThrow(exception);
+					(TupleQueryResultFormat)format);
 
+			if (factory == null) {
+				throw exception;
+			}
 			return factory.getWriter(out);
 		}
 		else if (format instanceof BooleanQueryResultFormat) {
 			BooleanQueryResultWriterFactory factory = BooleanQueryResultWriterRegistry.getInstance().get(
-					(BooleanQueryResultFormat)format).orElseThrow(exception);
+					(BooleanQueryResultFormat)format);
 
+			if (factory == null) {
+				throw exception;
+			}
 			return factory.getWriter(out);
 		}
 
-		throw exception.get();
+		throw exception;
 	}
 
 	/**

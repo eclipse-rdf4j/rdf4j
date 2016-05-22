@@ -313,7 +313,7 @@ class FileIO {
 			if (Literals.isLanguageLiteral(lit)) {
 				dataOut.writeByte(LANG_LITERAL_MARKER);
 				writeString(label, dataOut);
-				writeString(lit.getLanguage().get(), dataOut);
+				writeString(lit.getLanguage(), dataOut);
 			}
 			else {
 				dataOut.writeByte(DATATYPE_LITERAL_MARKER);

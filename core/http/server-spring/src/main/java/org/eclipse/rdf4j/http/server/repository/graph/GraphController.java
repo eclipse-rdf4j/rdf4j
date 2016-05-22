@@ -169,9 +169,11 @@ public class GraphController extends AbstractController {
 
 		String mimeType = HttpServerUtil.getMIMEType(request.getContentType());
 
-		RDFFormat rdfFormat = Rio.getParserFormatForMIMEType(mimeType).orElseThrow(
-				() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,
-						"Unsupported MIME type: " + mimeType));
+		RDFFormat rdfFormat = Rio.getParserFormatForMIMEType(mimeType);
+
+		if (rdfFormat == null) {
+			throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type: " + mimeType);
+		}
 
 		ValueFactory vf = repository.getValueFactory();
 		final IRI graph = getGraphName(request, vf);

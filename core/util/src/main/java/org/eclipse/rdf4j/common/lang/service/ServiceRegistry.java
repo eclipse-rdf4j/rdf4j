@@ -11,13 +11,14 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Optional;
 
 /**
  * A registry that stores services by some key. Upon initialization, the registry searches for service
@@ -42,11 +43,11 @@ public abstract class ServiceRegistry<K, S> {
 				if (services.hasNext()) {
 					S service = services.next();
 
-					Optional<S> oldService = add(service);
+					S oldService = add(service);
 
-					if (oldService.isPresent()) {
+					if (oldService != null) {
 						logger.warn("New service {} replaces existing service {}", service.getClass(),
-								oldService.get().getClass());
+								oldService.getClass());
 					}
 
 					logger.debug("Registered service class {}", service.getClass().getName());
@@ -70,8 +71,8 @@ public abstract class ServiceRegistry<K, S> {
 	 * @return The previous service that was registered for the same key, or {@link Optional#empty()} if there
 	 *         was no such service.
 	 */
-	public Optional<S> add(S service) {
-		return Optional.ofNullable(services.put(getKey(service), service));
+	public S add(S service) {
+		return services.put(getKey(service), service);
 	}
 
 	/**
@@ -91,8 +92,8 @@ public abstract class ServiceRegistry<K, S> {
 	 *        The key identifying which service to get.
 	 * @return The service for the specified key, or {@link Optional#empty()} if no such service is avaiable.
 	 */
-	public Optional<S> get(K key) {
-		return Optional.ofNullable(services.get(key));
+	public S get(K key) {
+		return services.get(key);
 	}
 
 	/**

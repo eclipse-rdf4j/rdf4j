@@ -86,7 +86,7 @@ public class QueryStringUtil {
 
 		if (Literals.isLanguageLiteral(lit)) {
 			sb.append('@');
-			sb.append(lit.getLanguage().get());
+			sb.append(lit.getLanguage());
 		}
 		else {
 			sb.append("^^<");

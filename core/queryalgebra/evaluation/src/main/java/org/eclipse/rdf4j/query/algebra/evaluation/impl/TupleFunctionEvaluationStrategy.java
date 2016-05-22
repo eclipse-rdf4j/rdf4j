@@ -82,8 +82,11 @@ public class TupleFunctionEvaluationStrategy implements EvaluationStrategy {
 			BindingSet bindings)
 		throws QueryEvaluationException
 	{
-		TupleFunction func = tupleFuncRegistry.get(expr.getURI()).orElseThrow(
-				() -> new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'"));
+		TupleFunction func = tupleFuncRegistry.get(expr.getURI());
+
+		if (func == null) {
+			throw new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'");
+		}
 
 		List<ValueExpr> args = expr.getArgs();
 

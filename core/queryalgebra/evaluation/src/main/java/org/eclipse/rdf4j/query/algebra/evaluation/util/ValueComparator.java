@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
 import java.util.Comparator;
-import java.util.Optional;
 
 import org.eclipse.rdf4j.common.lang.ObjectUtil;
 import org.eclipse.rdf4j.model.BNode;
@@ -129,18 +128,18 @@ public class ValueComparator implements Comparator<Value> {
 		if (result == 0) {
 			// datatypes are equal or both literals are untyped; sort by language
 			// tags, simple literals come before literals with language tags
-			Optional<String> leftLanguage = leftLit.getLanguage();
-			Optional<String> rightLanguage = rightLit.getLanguage();
+			String leftLanguage = leftLit.getLanguage();
+			String rightLanguage = rightLit.getLanguage();
 
-			if (leftLanguage.isPresent()) {
-				if (rightLanguage.isPresent()) {
-					result = leftLanguage.get().compareTo(rightLanguage.get());
+			if (leftLanguage != null) {
+				if (rightLanguage != null) {
+					result = leftLanguage.compareTo(rightLanguage);
 				}
 				else {
 					result = 1;
 				}
 			}
-			else if (rightLanguage.isPresent()) {
+			else if (rightLanguage != null) {
 				result = -1;
 			}
 		}

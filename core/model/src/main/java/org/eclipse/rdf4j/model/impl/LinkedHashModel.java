@@ -17,7 +17,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -99,13 +98,13 @@ public class LinkedHashModel extends AbstractModel {
 	}
 
 	@Override
-	public Optional<Namespace> getNamespace(String prefix) {
+	public Namespace getNamespace(String prefix) {
 		for (Namespace nextNamespace : namespaces) {
 			if (prefix.equals(nextNamespace.getPrefix())) {
-				return Optional.of(nextNamespace);
+				return nextNamespace;
 			}
 		}
-		return Optional.empty();
+		return null;
 	}
 
 	@Override
@@ -128,10 +127,10 @@ public class LinkedHashModel extends AbstractModel {
 	}
 
 	@Override
-	public Optional<Namespace> removeNamespace(String prefix) {
-		Optional<Namespace> result = getNamespace(prefix);
-		if (result.isPresent()) {
-			namespaces.remove(result.get());
+	public Namespace removeNamespace(String prefix) {
+		Namespace result = getNamespace(prefix);
+		if (result != null) {
+			namespaces.remove(result);
 		}
 		return result;
 	}

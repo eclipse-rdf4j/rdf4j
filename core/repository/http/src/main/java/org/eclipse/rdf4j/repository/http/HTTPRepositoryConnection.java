@@ -25,8 +25,8 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.OpenRDFUtil;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.SesameSession;
@@ -384,8 +384,11 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			baseURI = file.toURI().toString();
 		}
 		if (dataFormat == null) {
-			dataFormat = Rio.getParserFormatForFileName(file.getName()).orElseThrow(
-					Rio.unsupportedFormat(file.getName()));
+			dataFormat = Rio.getParserFormatForFileName(file.getName());
+
+			if (dataFormat == null) {
+				throw Rio.unsupportedFormat(file.getName());
+			}
 		}
 
 		InputStream in = new FileInputStream(file);
@@ -429,9 +432,15 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			if (semiColonIdx >= 0) {
 				mimeType = mimeType.substring(0, semiColonIdx);
 			}
-			dataFormat = Rio.getParserFormatForMIMEType(mimeType).orElse(
-					Rio.getParserFormatForFileName(url.getPath()).orElseThrow(
-							Rio.unsupportedFormat(mimeType)));
+			dataFormat = Rio.getParserFormatForMIMEType(mimeType);
+
+			if (dataFormat == null) {
+				dataFormat = Rio.getParserFormatForFileName(url.getPath());
+
+				if (dataFormat == null) {
+					throw Rio.unsupportedFormat(mimeType);
+				}
+			}
 		}
 
 		try {

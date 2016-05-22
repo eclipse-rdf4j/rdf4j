@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -137,10 +138,22 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		isOpen = false;
 	}
 
+	public Query prepareQuery(String query)
+		throws RepositoryException, MalformedQueryException
+	{
+		return prepareQuery(QueryLanguage.SPARQL, query);
+	}
+
 	public Query prepareQuery(QueryLanguage ql, String query)
 		throws MalformedQueryException, RepositoryException
 	{
 		return prepareQuery(ql, query, null);
+	}
+
+	public TupleQuery prepareTupleQuery(String query)
+		throws RepositoryException, MalformedQueryException
+	{
+		return prepareTupleQuery(QueryLanguage.SPARQL, query);
 	}
 
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query)
@@ -149,10 +162,22 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		return prepareTupleQuery(ql, query, null);
 	}
 
+	public GraphQuery prepareGraphQuery(String query)
+		throws RepositoryException, MalformedQueryException
+	{
+		return prepareGraphQuery(QueryLanguage.SPARQL, query);
+	}
+
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query)
 		throws MalformedQueryException, RepositoryException
 	{
 		return prepareGraphQuery(ql, query, null);
+	}
+
+	public BooleanQuery prepareBooleanQuery(String query)
+		throws RepositoryException, MalformedQueryException
+	{
+		return prepareBooleanQuery(QueryLanguage.SPARQL, query);
 	}
 
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query)
@@ -161,10 +186,38 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		return prepareBooleanQuery(ql, query, null);
 	}
 
+	public Update prepareUpdate(String update)
+		throws RepositoryException, MalformedQueryException
+	{
+		return prepareUpdate(QueryLanguage.SPARQL, update);
+	}
+
 	public Update prepareUpdate(QueryLanguage ql, String update)
 		throws MalformedQueryException, RepositoryException
 	{
 		return prepareUpdate(ql, update, null);
+	}
+
+	@Deprecated
+	public RepositoryResult<Statement> getStatements(Resource subj, URI pred, Value obj,
+			boolean includeInferred, Resource... contexts)
+		throws RepositoryException
+	{
+		return getStatements(subj, (IRI)pred, obj, includeInferred, contexts);
+	}
+
+	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
+		throws RepositoryException
+	{
+		return getStatements(subj, pred, obj, true, contexts);
+	}
+
+	@Deprecated
+	public boolean hasStatement(Resource subj, URI pred, Value obj, boolean includeInferred,
+			Resource... contexts)
+		throws RepositoryException
+	{
+		return hasStatement(subj, (IRI)pred, obj, includeInferred, contexts);
 	}
 
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
@@ -418,6 +471,13 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		}
 	}
 
+	@Deprecated
+	public void add(Resource subject, URI predicate, Value object, Resource... contexts)
+		throws RepositoryException
+	{
+		this.add(subject, (IRI)predicate, object, contexts);
+	}
+
 	public void add(Iterable<? extends Statement> statements, Resource... contexts)
 		throws RepositoryException
 	{
@@ -489,6 +549,13 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		addWithoutCommit(subject, predicate, object, contexts);
 
 		conditionalCommit(localTransaction);
+	}
+
+	@Deprecated
+	public void remove(Resource subject, URI predicate, Value object, Resource... contexts)
+		throws RepositoryException
+	{
+		this.remove(subject, (IRI)predicate, object, contexts);
 	}
 
 	public void remove(Iterable<? extends Statement> statements, Resource... contexts)

@@ -49,7 +49,7 @@ public class Concat implements Function {
 				// not, the operator result should not use a language tag.
 				if (useLanguageTag && Literals.isLanguageLiteral(lit)) {
 					if (languageTag == null) {
-						languageTag = lit.getLanguage().get();
+						languageTag = lit.getLanguage();
 					}
 					else if (!languageTag.equals(lit.getLanguage())) {
 						languageTag = null;

@@ -1224,7 +1224,8 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 		if (argValue instanceof Literal) {
 			Literal literal = (Literal)argValue;
-			return tripleSource.getValueFactory().createLiteral(literal.getLanguage().orElse(""));
+			String langString = literal.getLanguage() != null ? literal.getLanguage() : "";
+			return tripleSource.getValueFactory().createLiteral(langString);
 		}
 
 		throw new ValueExprEvaluationException();
@@ -1242,7 +1243,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 				// literal with datatype
 				return literal.getDatatype();
 			}
-			else if (literal.getLanguage().isPresent()) {
+			else if (literal.getLanguage() != null) {
 				return RDF.LANGSTRING;
 			}
 			else {
@@ -1602,8 +1603,11 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	public Value evaluate(FunctionCall node, BindingSet bindings)
 		throws ValueExprEvaluationException, QueryEvaluationException
 	{
-		Function function = FunctionRegistry.getInstance().get(node.getURI()).orElseThrow(
-				() -> new QueryEvaluationException("Unknown function '" + node.getURI() + "'"));
+		Function function = FunctionRegistry.getInstance().get(node.getURI());
+
+		if (function == null) {
+			throw new QueryEvaluationException("Unknown function '" + node.getURI() + "'");
+		}
 
 		// the NOW function is a special case as it needs to keep a shared
 		// return

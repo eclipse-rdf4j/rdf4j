@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -297,6 +298,14 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
+	@Deprecated
+	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, URI pred,
+			Value obj, boolean includeInferred, Resource... contexts)
+		throws SailException
+	{
+		return getStatements(subj, (IRI)pred, obj, includeInferred, contexts);
+	}
+
 	@Override
 	public final CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts)
@@ -469,11 +478,25 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
+	@Deprecated
+	public void addStatement(Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException
+	{
+		addStatement(subj, (IRI)pred, obj, contexts);
+	}
+
 	@Override
 	public final void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException
 	{
 		addStatement(null, subj, pred, obj, contexts);
+	}
+
+	@Deprecated
+	public void removeStatements(Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException
+	{
+		removeStatements(subj, (IRI)pred, obj, contexts);
 	}
 
 	@Override
@@ -527,6 +550,20 @@ public abstract class AbstractSailConnection implements SailConnection {
 				startUpdate(op);
 			}
 		}
+	}
+
+	@Deprecated
+	public void addStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException
+	{
+		addStatement(op, subj, (IRI)pred, obj, contexts);
+	}
+
+	@Deprecated
+	public void removeStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException
+	{
+		removeStatement(op, subj, (IRI)pred, obj, contexts);
 	}
 
 	/**
@@ -769,6 +806,21 @@ public abstract class AbstractSailConnection implements SailConnection {
 		throws SailException
 	{
 		return new JavaLock(updateLock);
+	}
+
+	@Override
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
+			Resource... contexts)
+		throws SailException
+	{
+		CloseableIteration<? extends Statement, SailException> stIter = getStatements(subj, pred, obj,
+				includeInferred, contexts);
+		try {
+			return stIter.hasNext();
+		}
+		finally {
+			stIter.close();
+		}
 	}
 
 	/**

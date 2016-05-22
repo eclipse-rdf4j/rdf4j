@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.config;
 import static org.eclipse.rdf4j.sail.config.SailConfigSchema.SAILTYPE;
 
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -78,11 +79,18 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 		throws SailConfigException
 	{
 		try {
-			Models.objectLiteral(m.filter(implNode, SAILTYPE, null)).ifPresent(
-					lit -> setType(lit.getLabel()));
-			Models.objectLiteral(
-					m.filter(implNode, SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD, null)).ifPresent(
-							lit -> setIterationCacheSyncThreshold(lit.longValue()));
+			Literal st = Models.objectLiteral(m.filter(implNode, SAILTYPE, null));
+
+			if (st != null) {
+				setType(st.getLabel());
+			}
+
+			Literal cst = Models.objectLiteral(
+					m.filter(implNode, SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD, null));
+
+			if (cst != null) {
+				setIterationCacheSyncThreshold(cst.longValue());
+			}
 		}
 		catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);

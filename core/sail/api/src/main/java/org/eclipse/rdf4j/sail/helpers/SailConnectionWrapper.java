@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -259,5 +260,84 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 		throws UnknownSailTransactionStateException
 	{
 		return wrappedCon.isActive();
+	}
+
+	/*
+	 * (non-Javadoc)
+	 * @see org.eclipse.rdf4j.sail.SailConnection#getStatements(org.eclipse.rdf4j.model.Resource,
+	 * org.eclipse.rdf4j.model.URI, org.eclipse.rdf4j.model.Value, boolean,
+	 * org.eclipse.rdf4j.model.Resource[])
+	 */
+	@Override
+	@Deprecated
+	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, URI pred,
+			Value obj, boolean includeInferred, Resource... contexts)
+		throws SailException
+	{
+		return wrappedCon.getStatements(subj, pred, obj, includeInferred, contexts);
+	}
+
+	/*
+	 * (non-Javadoc)
+	 * @see org.eclipse.rdf4j.sail.SailConnection#hasStatement(org.eclipse.rdf4j.model.Resource,
+	 * org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, boolean,
+	 * org.eclipse.rdf4j.model.Resource[])
+	 */
+	@Override
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
+			Resource... contexts)
+		throws SailException
+	{
+		return wrappedCon.hasStatement(subj, pred, obj, includeInferred, contexts);
+	}
+
+	/*
+	 * (non-Javadoc)
+	 * @see org.eclipse.rdf4j.sail.SailConnection#addStatement(org.eclipse.rdf4j.model.Resource,
+	 * org.eclipse.rdf4j.model.URI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])
+	 */
+	@Override
+	public void addStatement(Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException
+	{
+		wrappedCon.addStatement(subj, pred, obj, contexts);
+	}
+
+	/*
+	 * (non-Javadoc)
+	 * @see org.eclipse.rdf4j.sail.SailConnection#removeStatements(org.eclipse.rdf4j.model.Resource,
+	 * org.eclipse.rdf4j.model.URI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])
+	 */
+	@Override
+	public void removeStatements(Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException
+	{
+		wrappedCon.removeStatements(subj, pred, obj, contexts);
+	}
+
+	/*
+	 * (non-Javadoc)
+	 * @see org.eclipse.rdf4j.sail.SailConnection#addStatement(org.eclipse.rdf4j.sail.UpdateContext,
+	 * org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.URI, org.eclipse.rdf4j.model.Value,
+	 * org.eclipse.rdf4j.model.Resource[])
+	 */
+	@Override
+	public void addStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException
+	{
+		wrappedCon.addStatement(op, subj, pred, obj, contexts);
+	}
+
+	/*
+	 * (non-Javadoc)
+	 * @see org.eclipse.rdf4j.sail.SailConnection#removeStatement(org.eclipse.rdf4j.sail.UpdateContext,
+	 * org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.URI, org.eclipse.rdf4j.model.Value,
+	 * org.eclipse.rdf4j.model.Resource[])
+	 */
+	@Override
+	public void removeStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
+		throws SailException
+	{
+		wrappedCon.removeStatement(op, subj, pred, obj, contexts);
 	}
 }

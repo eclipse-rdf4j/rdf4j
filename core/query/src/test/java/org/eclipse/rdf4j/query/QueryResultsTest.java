@@ -15,7 +15,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -100,38 +99,6 @@ public class QueryResultsTest {
 		assertFalse(gqr.hasNext());
 		assertNotNull(model);
 		assertTrue(model.contains(VF.createStatement(a, p, b)));
-	}
-
-	@Test
-	public void testStreamGraphResult() {
-		List<Statement> aboutA = QueryResults.stream(gqr).filter(s -> s.getSubject().equals(a)).collect(
-				Collectors.toList());
-
-		assertFalse(aboutA.isEmpty());
-
-		for (Statement st : aboutA) {
-			assertTrue(st.getSubject().equals(a));
-		}
-	}
-
-	@Test
-	public void testStreamTupleResult() {
-		BindingSet a = new ListBindingSet(twoBindingNames, foo, lit1);
-		BindingSet b = new ListBindingSet(twoBindingNames, bar, lit2);
-		tqr1.append(a);
-		tqr1.append(b);
-		tqr1.append(a);
-		tqr1.append(b);
-		tqr1.append(b);
-
-		List<BindingSet> list = QueryResults.stream(tqr1).filter(bs -> bs.getValue("a").equals(foo)).collect(
-				Collectors.toList());
-
-		assertNotNull(list);
-		assertFalse(list.isEmpty());
-		for (BindingSet bs : list) {
-			assertTrue(bs.getValue("a").equals(foo));
-		}
 	}
 
 	@Test

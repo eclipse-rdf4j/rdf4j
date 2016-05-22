@@ -35,7 +35,7 @@ public class Invoke extends AbstractSpinFunction implements Function {
 		URI func = (URI)args[0];
 		Value[] funcArgs = new Value[args.length - 1];
 		System.arraycopy(args, 1, funcArgs, 0, funcArgs.length);
-		Function function = FunctionRegistry.getInstance().get(func.stringValue()).orElse(null);
+		Function function = FunctionRegistry.getInstance().get(func.stringValue());
 		return function.evaluate(valueFactory, funcArgs);
 	}
 }

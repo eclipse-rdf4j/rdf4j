@@ -13,9 +13,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
-import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -26,6 +24,8 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.util.iterators.Iterators;
+
+import com.google.common.base.Optional;
 
 /**
  * Utility functions for working with {@link Model}s and other {@link Statement} collections.
@@ -48,10 +48,17 @@ public class Models {
 	 * 
 	 * @param m
 	 *        the model from which to retrieve an object value.
-	 * @return an object value from the given model, or {@link Optional#empty()} if no such value exists.
+	 * @return an object value from the given model, or null if no such value exists.
 	 */
-	public static Optional<Value> object(Model m) {
-		return m.stream().map(st -> st.getObject()).findAny();
+	public static Value object(Model m) {
+		Value result = null;
+		final Set<Value> objects = m.objects();
+		if (objects != null && !objects.isEmpty()) {
+			result = objects.iterator().next();
+		}
+
+		return result;
+
 	}
 
 	/**
@@ -59,7 +66,7 @@ public class Models {
 	 */
 	@Deprecated
 	public static Value anyObject(Model m) {
-		return object(m).orElse(null);
+		return object(m);
 	}
 
 	/**
@@ -68,12 +75,21 @@ public class Models {
 	 * 
 	 * @param m
 	 *        the model from which to retrieve an object Literal value.
-	 * @return an object Literal value from the given model, or {@link Optional#empty()} if no such value
-	 *         exists.
+	 * @return an object Literal value from the given model, or null if no such value exists.
 	 */
-	public static Optional<Literal> objectLiteral(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Literal).map(
-				l -> (Literal)l).findAny();
+	public static Literal objectLiteral(Model m) {
+		Literal result = null;
+		final Set<Value> objects = m.objects();
+		if (objects != null && !objects.isEmpty()) {
+			for (Value v : objects) {
+				if (v instanceof Literal) {
+					result = (Literal)v;
+					break;
+				}
+			}
+		}
+
+		return result;
 	}
 
 	/**
@@ -81,7 +97,7 @@ public class Models {
 	 */
 	@Deprecated
 	public static Literal anyObjectLiteral(Model m) {
-		return objectLiteral(m).orElse(null);
+		return objectLiteral(m);
 	}
 
 	/**
@@ -90,12 +106,22 @@ public class Models {
 	 * 
 	 * @param m
 	 *        the model from which to retrieve an object Resource value.
-	 * @return an {@link Optional} object Resource value from the given model, which will be
-	 *         {@link Optional#empty() empty} if no such value exists.
+	 * @return an object Resource value from the given model, which will be null if no such value exists.
 	 */
-	public static Optional<Resource> objectResource(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Resource).map(
-				r -> (Resource)r).findAny();
+	public static Resource objectResource(Model m) {
+		Resource result = null;
+		final Set<Value> objects = m.objects();
+		if (objects != null && !objects.isEmpty()) {
+			for (Value v : objects) {
+				if (v instanceof Resource) {
+					result = (Resource)v;
+					break;
+				}
+			}
+		}
+
+		return result;
+
 	}
 
 	/**
@@ -103,7 +129,7 @@ public class Models {
 	 */
 	@Deprecated
 	public static Resource anyObjectResource(Model m) {
-		return objectResource(m).orElse(null);
+		return objectResource(m);
 	}
 
 	/**
@@ -112,11 +138,21 @@ public class Models {
 	 * 
 	 * @param m
 	 *        the model from which to retrieve an object IRI value.
-	 * @return an {@link Optional} object IRI value from the given model, which will be
-	 *         {@link Optional#empty() empty} if no such value exists.
+	 * @return an object IRI value from the given model, which will be null if no such value exists.
 	 */
-	public static Optional<IRI> objectIRI(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof IRI).map(r -> (IRI)r).findAny();
+	public static IRI objectIRI(Model m) {
+		IRI result = null;
+		final Set<Value> objects = m.objects();
+		if (objects != null && !objects.isEmpty()) {
+			for (Value v : objects) {
+				if (v instanceof IRI) {
+					result = (IRI)v;
+					break;
+				}
+			}
+		}
+
+		return result;
 	}
 
 	/**
@@ -125,11 +161,14 @@ public class Models {
 	 * 
 	 * @param m
 	 *        the model from which to retrieve an object String value.
-	 * @return an {@link Optional} object String value from the given model, which will be
-	 *         {@link Optional#empty() empty} if no such value exists.
+	 * @return an object String value from the given model, which will be null if no such value exists.
 	 */
-	public static Optional<String> objectString(Model m) {
-		return m.stream().map(st -> st.getObject().stringValue()).findAny();
+	public static String objectString(Model m) {
+		for (Value object : m.objects()) {
+			return object.stringValue();
+		}
+
+		return null;
 	}
 
 	/**
@@ -137,7 +176,7 @@ public class Models {
 	 */
 	@Deprecated
 	public static URI anyObjectURI(Model m) {
-		return objectIRI(m).orElse(null);
+		return objectIRI(m);
 	}
 
 	/**
@@ -146,11 +185,16 @@ public class Models {
 	 * 
 	 * @param m
 	 *        the model from which to retrieve a subject Resource.
-	 * @return an {@link Optional} subject resource from the given model, which will be
-	 *         {@link Optional#empty() empty} if no such value exists.
+	 * @return a subject resource from the given model, which will be null if no such value exists.
 	 */
-	public static Optional<Resource> subject(Model m) {
-		return m.stream().map(st -> st.getSubject()).findAny();
+	public static Resource subject(Model m) {
+		Resource result = null;
+		final Set<Resource> subjects = m.subjects();
+		if (subjects != null && !subjects.isEmpty()) {
+			result = subjects.iterator().next();
+		}
+
+		return result;
 	}
 
 	/**
@@ -158,7 +202,7 @@ public class Models {
 	 */
 	@Deprecated
 	public static Resource anySubject(Model m) {
-		return subject(m).orElse(null);
+		return subject(m);
 	}
 
 	/**
@@ -167,11 +211,21 @@ public class Models {
 	 * 
 	 * @param m
 	 *        the model from which to retrieve a subject IRI value.
-	 * @return an {@link Optional} subject IRI value from the given model, which will be
-	 *         {@link Optional#empty() empty} if no such value exists.
+	 * @return a subject IRI value from the given model, which will be null if no such value exists.
 	 */
-	public static Optional<IRI> subjectIRI(Model m) {
-		return m.stream().map(st -> st.getSubject()).filter(s -> s instanceof IRI).map(s -> (IRI)s).findAny();
+	public static IRI subjectIRI(Model m) {
+		IRI result = null;
+		final Set<Resource> objects = m.subjects();
+		if (objects != null && !objects.isEmpty()) {
+			for (Value v : objects) {
+				if (v instanceof IRI) {
+					result = (IRI)v;
+					break;
+				}
+			}
+		}
+
+		return result;
 	}
 
 	/**
@@ -179,7 +233,7 @@ public class Models {
 	 */
 	@Deprecated
 	public static URI anySubjectURI(Model m) {
-		return subjectIRI(m).orElse(null);
+		return subjectIRI(m);
 	}
 
 	/**
@@ -188,12 +242,21 @@ public class Models {
 	 * 
 	 * @param m
 	 *        the model from which to retrieve a subject BNode value.
-	 * @return an {@link Optional} subject BNode value from the given model, which will be
-	 *         {@link Optional#empty() empty} if no such value exists.
+	 * @return a subject BNode value from the given model, which will be null if no such value exists.
 	 */
-	public static Optional<BNode> subjectBNode(Model m) {
-		return m.stream().map(st -> st.getSubject()).filter(s -> s instanceof BNode).map(
-				s -> (BNode)s).findAny();
+	public static BNode subjectBNode(Model m) {
+		BNode result = null;
+		final Set<Resource> objects = m.subjects();
+		if (objects != null && !objects.isEmpty()) {
+			for (Value v : objects) {
+				if (v instanceof BNode) {
+					result = (BNode)v;
+					break;
+				}
+			}
+		}
+
+		return result;
 	}
 
 	/**
@@ -201,7 +264,7 @@ public class Models {
 	 */
 	@Deprecated
 	public static BNode anySubjectBNode(Model m) {
-		return subjectBNode(m).orElse(null);
+		return subjectBNode(m);
 	}
 
 	/**
@@ -213,8 +276,13 @@ public class Models {
 	 * @return an {@link Optional} predicate value from the given model, which will be {@link Optional#empty()
 	 *         empty} if no such value exists.
 	 */
-	public static Optional<IRI> predicate(Model m) {
-		return m.stream().map(st -> st.getPredicate()).findAny();
+	public static IRI predicate(Model m) {
+		IRI result = null;
+		final Set<IRI> predicates = m.predicates();
+		if (predicates != null && !predicates.isEmpty()) {
+			result = predicates.iterator().next();
+		}
+		return result;
 	}
 
 	/**
@@ -222,7 +290,7 @@ public class Models {
 	 */
 	@Deprecated
 	public static URI anyPredicate(Model m) {
-		return predicate(m).orElse(null);
+		return predicate(m);
 	}
 
 	/**
@@ -545,15 +613,4 @@ public class Models {
 		return set;
 	}
 
-	/**
-	 * Creates a {@link Supplier} of {@link ModelException} objects that be passed to
-	 * {@link Optional#orElseThrow(Supplier)} to generate exceptions as necessary.
-	 * 
-	 * @param message
-	 *        The message to be used for the exception
-	 * @return A {@link Supplier} that will create {@link ModelException} objects with the given message.
-	 */
-	public static Supplier<ModelException> modelException(String message) {
-		return () -> new ModelException(message);
-	}
 }
