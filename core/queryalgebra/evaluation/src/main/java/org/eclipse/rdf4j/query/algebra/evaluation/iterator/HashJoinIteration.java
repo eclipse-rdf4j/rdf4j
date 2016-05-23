@@ -87,6 +87,20 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 		this.leftJoin = leftJoin;
 	}
+	
+	public HashJoinIteration(EvaluationStrategy strategy, CloseableIteration<BindingSet, QueryEvaluationException> leftIter, 
+			Set<String> leftBindingNames, TupleExpr right, BindingSet bindings, boolean leftJoin)
+		throws QueryEvaluationException
+	{
+		this.leftIter = leftIter;
+		rightIter = strategy.evaluate(right, bindings);
+
+		Set<String> joinAttributeNames = leftBindingNames;
+		joinAttributeNames.retainAll(right.getBindingNames());
+		joinAttributes = joinAttributeNames.toArray(new String[joinAttributeNames.size()]);
+
+		this.leftJoin = leftJoin;
+	}
 
 	/*---------*
 	 * Methods *
