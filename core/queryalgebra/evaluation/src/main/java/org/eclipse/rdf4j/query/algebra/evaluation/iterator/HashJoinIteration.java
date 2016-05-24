@@ -78,25 +78,21 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			BindingSet bindings, boolean leftJoin)
 		throws QueryEvaluationException
 	{
-		leftIter = strategy.evaluate(left, bindings);
-		rightIter = strategy.evaluate(right, bindings);
-
-		Set<String> joinAttributeNames = left.getBindingNames();
-		joinAttributeNames.retainAll(right.getBindingNames());
-		joinAttributes = joinAttributeNames.toArray(new String[joinAttributeNames.size()]);
-
-		this.leftJoin = leftJoin;
+		this(strategy, strategy.evaluate(left, bindings), left.getBindingNames(),
+				strategy.evaluate(right, bindings), right.getBindingNames(), leftJoin);	
 	}
 	
-	public HashJoinIteration(EvaluationStrategy strategy, CloseableIteration<BindingSet, QueryEvaluationException> leftIter, 
-			Set<String> leftBindingNames, TupleExpr right, BindingSet bindings, boolean leftJoin)
-		throws QueryEvaluationException
+	public HashJoinIteration(EvaluationStrategy strategy,
+			CloseableIteration<BindingSet, QueryEvaluationException> leftIter, Set<String> leftBindingNames,
+			CloseableIteration<BindingSet, QueryEvaluationException> rightIter, Set<String> rightBindingNames,
+			boolean leftJoin)
+				throws QueryEvaluationException
 	{
 		this.leftIter = leftIter;
-		rightIter = strategy.evaluate(right, bindings);
+		this.rightIter = rightIter;
 
 		Set<String> joinAttributeNames = leftBindingNames;
-		joinAttributeNames.retainAll(right.getBindingNames());
+		joinAttributeNames.retainAll(rightBindingNames);
 		joinAttributes = joinAttributeNames.toArray(new String[joinAttributeNames.size()]);
 
 		this.leftJoin = leftJoin;

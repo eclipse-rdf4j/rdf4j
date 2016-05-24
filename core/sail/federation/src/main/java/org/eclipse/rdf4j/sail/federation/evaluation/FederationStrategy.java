@@ -94,10 +94,12 @@ public class FederationStrategy extends SimpleEvaluationStrategy {
 			if (TupleExprs.containsProjection(rightArg)) {
 				TupleExpr leftArg = join.getArg(i - 1);
 				collectedBindingNames.addAll(leftArg.getBindingNames());
-				result = new HashJoinIteration(this, result, collectedBindingNames, rightArg, bindings, false);
-			} else {
+				result = new HashJoinIteration(this, result, collectedBindingNames,
+						evaluate(rightArg, bindings), rightArg.getBindingNames(), false);
+			}
+			else {
 				result = new ParallelJoinCursor(this, result, join.getArg(i)); // NOPMD
-				executor.execute((Runnable) result);
+				executor.execute((Runnable)result);
 				collectedBindingNames.addAll(rightArg.getBindingNames());
 			}
 		}
