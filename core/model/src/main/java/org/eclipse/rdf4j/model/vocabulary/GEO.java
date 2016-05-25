@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
-import org.eclipse.rdf4j.model.URI;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * @version 1.0
@@ -19,15 +19,15 @@ public class GEO {
 
 	public static final String NAMESPACE = "http://www.opengis.net/ont/geosparql#";
 
-	public static final URI AS_WKT;
+	public static final IRI AS_WKT;
 
-	public static final URI WKT_LITERAL;
+	public static final IRI WKT_LITERAL;
 
 	public static final String DEFAULT_SRID = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
 
 	static {
-		ValueFactory factory = ValueFactoryImpl.getInstance();
-		AS_WKT = factory.createURI(NAMESPACE, "asWKT");
-		WKT_LITERAL = factory.createURI(NAMESPACE, "wktLiteral");
+		ValueFactory factory = SimpleValueFactory.getInstance();
+		AS_WKT = factory.createIRI(NAMESPACE, "asWKT");
+		WKT_LITERAL = factory.createIRI(NAMESPACE, "wktLiteral");
 	}
 }
