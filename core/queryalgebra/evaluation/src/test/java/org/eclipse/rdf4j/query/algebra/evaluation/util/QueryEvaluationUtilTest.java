@@ -53,6 +53,10 @@ public class QueryEvaluationUtilTest {
 
 	private Literal arg2year;
 
+	private Literal arg1dateTime;
+
+	private Literal arg2dateTime;
+
 	@Before
 	public void setUp()
 		throws Exception
@@ -71,6 +75,9 @@ public class QueryEvaluationUtilTest {
 
 		arg1year = f.createLiteral("2007", XMLSchema.GYEAR);
 		arg2year = f.createLiteral("2009", XMLSchema.GYEAR);
+
+		arg1dateTime = f.createLiteral("2007-01-01T20:20:20Z", XMLSchema.DATETIME);
+		arg2dateTime = f.createLiteral("2009-01-01T20:20:20+02:00", XMLSchema.DATETIME);
 
 		arg1int = f.createLiteral(10);
 		arg2int = f.createLiteral(1);
@@ -154,6 +161,19 @@ public class QueryEvaluationUtilTest {
 		assertCompareFalse(arg1int, arg2int, EQ);
 		assertCompareException(arg1int, arg2year, EQ);
 
+		assertCompareException(arg1year, arg2simple, EQ);
+		assertCompareException(arg1year, arg2en, EQ);
+		assertCompareException(arg1year, arg2string, EQ);
+		assertCompareException(arg1year, arg2int, EQ);
+		assertCompareFalse(arg1year, arg2year, EQ);
+		assertCompareFalse(arg1year, arg2dateTime, EQ);
+
+		assertCompareException(arg1dateTime, arg2simple, EQ);
+		assertCompareException(arg1dateTime, arg2en, EQ);
+		assertCompareException(arg1dateTime, arg2string, EQ);
+		assertCompareException(arg1dateTime, arg2int, EQ);
+		assertCompareFalse(arg1dateTime, arg2year, EQ);
+		assertCompareFalse(arg1dateTime, arg2dateTime, EQ);
 	}
 
 	@Test
@@ -195,6 +215,19 @@ public class QueryEvaluationUtilTest {
 		assertCompareTrue(arg1int, arg2int, NE);
 		assertCompareException(arg1int, arg2year, NE);
 
+		assertCompareException(arg1year, arg2simple, NE);
+		assertCompareException(arg1year, arg2en, NE);
+		assertCompareException(arg1year, arg2string, NE);
+		assertCompareException(arg1year, arg2int, NE);
+		assertCompareTrue(arg1year, arg2year, NE);
+		assertCompareFalse(arg1year, arg2dateTime, NE);
+
+		assertCompareException(arg1dateTime, arg2simple, NE);
+		assertCompareException(arg1dateTime, arg2en, NE);
+		assertCompareException(arg1dateTime, arg2string, NE);
+		assertCompareException(arg1dateTime, arg2int, NE);
+		assertCompareFalse(arg1dateTime, arg2year, NE);
+		assertCompareTrue(arg1dateTime, arg2dateTime, NE);
 	}
 
 	/**

@@ -179,6 +179,12 @@ public class QueryEvaluationUtil {
 						commonDatatype = XMLSchema.INTEGER;
 					}
 				}
+				else if (XMLDatatypeUtil.isCalendarDatatype(leftDatatype)
+						&& XMLDatatypeUtil.isCalendarDatatype(rightDatatype))
+				{
+					//We set the most general datatype
+					commonDatatype = XMLSchema.DATETIME;
+				}
 			}
 
 			if (commonDatatype != null) {
