@@ -216,8 +216,16 @@ public class QueryEvaluationUtil {
 						// values
 						// (-1, 0, 1) but INDETERMINATE needs special treatment
 						if (compareResult == DatatypeConstants.INDETERMINATE) {
-							throw new ValueExprEvaluationException(
-									"Indeterminate result for date/time comparison");
+							// If we compare two xsd:dateTime we should use the specific comparison specified in SPARQL 1.1
+							if (leftDatatype.equals(XMLSchema.DATETIME) && rightDatatype.equals(XMLSchema.DATETIME)) {
+								throw new ValueExprEvaluationException(
+										"Indeterminate result for date/time comparison");
+							}
+							else {
+								// We fallback to the regular RDF term compare
+								compareResult = null;
+							}
+
 						}
 					}
 					else if (commonDatatype.equals(XMLSchema.STRING)) {

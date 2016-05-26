@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.EQ;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.NE;
+import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.LT;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -57,6 +58,10 @@ public class QueryEvaluationUtilTest {
 
 	private Literal arg2dateTime;
 
+	private Literal arg1unknown;
+
+	private Literal arg2unknown;
+
 	@Before
 	public void setUp()
 		throws Exception
@@ -76,11 +81,14 @@ public class QueryEvaluationUtilTest {
 		arg1year = f.createLiteral("2007", XMLSchema.GYEAR);
 		arg2year = f.createLiteral("2009", XMLSchema.GYEAR);
 
-		arg1dateTime = f.createLiteral("2007-01-01T20:20:20Z", XMLSchema.DATETIME);
-		arg2dateTime = f.createLiteral("2009-01-01T20:20:20+02:00", XMLSchema.DATETIME);
+		arg1dateTime = f.createLiteral("2009-01-01T20:20:20Z", XMLSchema.DATETIME);
+		arg2dateTime = f.createLiteral("2007-01-01T20:20:20+02:00", XMLSchema.DATETIME);
 
 		arg1int = f.createLiteral(10);
 		arg2int = f.createLiteral(1);
+
+		arg1unknown = f.createLiteral("foo", f.createIRI("http://example.com/datatype"));
+		arg2unknown = f.createLiteral("bar", f.createIRI("http://example.com/datatype"));
 	}
 
 	@Test
@@ -126,12 +134,22 @@ public class QueryEvaluationUtilTest {
 	public void testCompareEQ()
 		throws Exception
 	{
+		assertCompareTrue(arg1simple, arg1simple, EQ);
+		assertCompareTrue(arg1en, arg1en, EQ);
+		assertCompareTrue(arg2cy, arg2cy, EQ);
+		assertCompareTrue(arg1string, arg1string, EQ);
+		assertCompareTrue(arg1int, arg1int, EQ);
+		assertCompareTrue(arg1year, arg1year, EQ);
+		assertCompareTrue(arg1dateTime, arg1dateTime, EQ);
+		assertCompareException(arg1unknown, arg2unknown, EQ);
+
 		assertCompareFalse(arg1simple, arg2simple, EQ);
 		assertCompareFalse(arg1simple, arg2en, EQ);
 		assertCompareFalse(arg1simple, arg2cy, EQ);
 		assertCompareFalse(arg1simple, arg2string, EQ);
 		assertCompareException(arg1simple, arg2int, EQ);
 		assertCompareException(arg1simple, arg2year, EQ);
+		assertCompareException(arg1simple, arg2unknown, EQ);
 
 		assertCompareFalse(arg1en, arg2simple, EQ);
 		assertCompareFalse(arg1en, arg2en, EQ);
@@ -139,6 +157,7 @@ public class QueryEvaluationUtilTest {
 		assertCompareFalse(arg1en, arg2cy, EQ);
 		assertCompareFalse(arg1en, arg2string, EQ);
 		assertCompareFalse(arg1en, arg2int, EQ);
+		assertCompareFalse(arg1en, arg2unknown, EQ);
 
 		assertCompareFalse(arg1cy, arg2simple, EQ);
 		assertCompareFalse(arg1cy, arg2en, EQ);
@@ -146,6 +165,7 @@ public class QueryEvaluationUtilTest {
 		assertCompareFalse(arg1cy, arg2cy, EQ);
 		assertCompareFalse(arg1cy, arg2string, EQ);
 		assertCompareFalse(arg1cy, arg2int, EQ);
+		assertCompareFalse(arg1cy, arg2unknown, EQ);
 
 		assertCompareFalse(arg1string, arg2simple, EQ);
 		assertCompareFalse(arg1string, arg2en, EQ);
@@ -153,6 +173,7 @@ public class QueryEvaluationUtilTest {
 		assertCompareFalse(arg1string, arg2string, EQ);
 		assertCompareException(arg1string, arg2int, EQ);
 		assertCompareException(arg1string, arg2year, EQ);
+		assertCompareException(arg1string, arg2unknown, EQ);
 
 		assertCompareException(arg1int, arg2simple, EQ);
 		assertCompareFalse(arg1int, arg2en, EQ);
@@ -160,32 +181,45 @@ public class QueryEvaluationUtilTest {
 		assertCompareException(arg1int, arg2string, EQ);
 		assertCompareFalse(arg1int, arg2int, EQ);
 		assertCompareException(arg1int, arg2year, EQ);
+		assertCompareException(arg1int, arg2unknown, EQ);
 
 		assertCompareException(arg1year, arg2simple, EQ);
-		assertCompareException(arg1year, arg2en, EQ);
+		assertCompareFalse(arg1year, arg2en, EQ);
 		assertCompareException(arg1year, arg2string, EQ);
 		assertCompareException(arg1year, arg2int, EQ);
 		assertCompareFalse(arg1year, arg2year, EQ);
 		assertCompareFalse(arg1year, arg2dateTime, EQ);
+		assertCompareException(arg1year, arg2unknown, EQ);
 
 		assertCompareException(arg1dateTime, arg2simple, EQ);
-		assertCompareException(arg1dateTime, arg2en, EQ);
+		assertCompareFalse(arg1dateTime, arg2en, EQ);
 		assertCompareException(arg1dateTime, arg2string, EQ);
 		assertCompareException(arg1dateTime, arg2int, EQ);
 		assertCompareFalse(arg1dateTime, arg2year, EQ);
 		assertCompareFalse(arg1dateTime, arg2dateTime, EQ);
+		assertCompareException(arg1dateTime, arg2unknown, EQ);
 	}
 
 	@Test
 	public void testCompareNE()
 		throws Exception
 	{
+		assertCompareFalse(arg1simple, arg1simple, NE);
+		assertCompareFalse(arg1en, arg1en, NE);
+		assertCompareFalse(arg1cy, arg1cy, NE);
+		assertCompareFalse(arg1string, arg1string, NE);
+		assertCompareFalse(arg1int, arg1int, NE);
+		assertCompareFalse(arg1year, arg1year, NE);
+		assertCompareFalse(arg1dateTime, arg1dateTime, NE);
+		assertCompareException(arg1unknown, arg2unknown, NE);
+
 		assertCompareTrue(arg1simple, arg2simple, NE);
 		assertCompareTrue(arg1simple, arg2en, NE);
 		assertCompareTrue(arg1simple, arg2cy, NE);
 		assertCompareTrue(arg1simple, arg2string, NE);
 		assertCompareException(arg1simple, arg2int, NE);
 		assertCompareException(arg1simple, arg2year, NE);
+		assertCompareException(arg1unknown, arg2unknown, NE);
 
 		assertCompareTrue(arg1en, arg2simple, NE);
 		assertCompareTrue(arg1en, arg2en, NE);
@@ -193,6 +227,7 @@ public class QueryEvaluationUtilTest {
 		assertCompareTrue(arg1en, arg2cy, NE);
 		assertCompareTrue(arg1en, arg2string, NE);
 		assertCompareTrue(arg1en, arg2int, NE);
+		assertCompareTrue(arg1en, arg2unknown, NE);
 
 		assertCompareTrue(arg1cy, arg2simple, NE);
 		assertCompareTrue(arg1cy, arg2en, NE);
@@ -200,6 +235,7 @@ public class QueryEvaluationUtilTest {
 		assertCompareTrue(arg1cy, arg2cy, NE);
 		assertCompareTrue(arg1cy, arg2string, NE);
 		assertCompareTrue(arg1cy, arg2int, NE);
+		assertCompareTrue(arg1cy, arg2unknown, NE);
 
 		assertCompareTrue(arg1string, arg2simple, NE);
 		assertCompareTrue(arg1string, arg2en, NE);
@@ -207,6 +243,7 @@ public class QueryEvaluationUtilTest {
 		assertCompareTrue(arg1string, arg2string, NE);
 		assertCompareException(arg1string, arg2int, NE);
 		assertCompareException(arg1string, arg2year, NE);
+		assertCompareException(arg1string, arg2unknown, NE);
 
 		assertCompareException(arg1int, arg2simple, NE);
 		assertCompareTrue(arg1int, arg2en, NE);
@@ -214,20 +251,81 @@ public class QueryEvaluationUtilTest {
 		assertCompareException(arg1int, arg2string, NE);
 		assertCompareTrue(arg1int, arg2int, NE);
 		assertCompareException(arg1int, arg2year, NE);
+		assertCompareException(arg1int, arg2unknown, NE);
 
 		assertCompareException(arg1year, arg2simple, NE);
-		assertCompareException(arg1year, arg2en, NE);
+		assertCompareTrue(arg1year, arg2en, NE);
 		assertCompareException(arg1year, arg2string, NE);
 		assertCompareException(arg1year, arg2int, NE);
 		assertCompareTrue(arg1year, arg2year, NE);
-		assertCompareFalse(arg1year, arg2dateTime, NE);
+		assertCompareTrue(arg1year, arg2dateTime, NE);
+		assertCompareException(arg1year, arg2unknown, NE);
 
 		assertCompareException(arg1dateTime, arg2simple, NE);
-		assertCompareException(arg1dateTime, arg2en, NE);
+		assertCompareTrue(arg1dateTime, arg2en, NE);
 		assertCompareException(arg1dateTime, arg2string, NE);
 		assertCompareException(arg1dateTime, arg2int, NE);
-		assertCompareFalse(arg1dateTime, arg2year, NE);
+		assertCompareTrue(arg1dateTime, arg2year, NE);
 		assertCompareTrue(arg1dateTime, arg2dateTime, NE);
+		assertCompareException(arg1dateTime, arg2unknown, NE);
+	}
+
+	@Test
+	public void testCompareLT()
+			throws Exception
+	{
+		assertCompareFalse(arg1simple, arg1simple, LT);
+		assertCompareException(arg1en, arg1en, LT);
+		assertCompareFalse(arg1string, arg1string, LT);
+		assertCompareFalse(arg1int, arg1int, LT);
+		assertCompareFalse(arg1year, arg1year, LT);
+		assertCompareFalse(arg1dateTime, arg1dateTime, LT);
+		assertCompareException(arg1unknown, arg2unknown, LT);
+
+		assertCompareTrue(arg1simple, arg2simple, LT);
+		assertCompareException(arg1simple, arg2en, LT);
+		assertCompareTrue(arg1simple, arg2string, LT);
+		assertCompareException(arg1simple, arg2int, LT);
+		assertCompareException(arg1simple, arg2year, LT);
+		assertCompareException(arg1unknown, arg2unknown, LT);
+
+		assertCompareException(arg1en, arg2simple, LT);
+		assertCompareException(arg1en, arg2en, LT);
+		assertCompareException(arg1en, arg2string, LT);
+		assertCompareException(arg1en, arg2int, LT);
+		assertCompareException(arg1en, arg2unknown, LT);
+
+		assertCompareTrue(arg1string, arg2simple, LT);
+		assertCompareException(arg1string, arg2en, LT);
+		assertCompareTrue(arg1string, arg2string, LT);
+		assertCompareException(arg1string, arg2int, LT);
+		assertCompareException(arg1string, arg2year, LT);
+		assertCompareException(arg1string, arg2unknown, LT);
+
+		assertCompareException(arg1int, arg2simple, LT);
+		assertCompareException(arg1int, arg2en, LT);
+		assertCompareException(arg1int, arg2string, LT);
+		assertCompareFalse(arg1int, arg2int, LT);
+		assertCompareException(arg1int, arg2year, LT);
+		assertCompareException(arg1int, arg2unknown, LT);
+
+		assertCompareException(arg1year, arg2simple, LT);
+		assertCompareException(arg1year, arg2en, LT);
+		assertCompareException(arg1year, arg2string, LT);
+		assertCompareException(arg1year, arg2int, LT);
+		assertCompareTrue(arg1year, arg2year, LT);
+		assertCompareTrue(arg1year, arg1dateTime, LT);
+		assertCompareException(arg1year, arg2dateTime, LT);
+		assertCompareException(arg1year, arg2unknown, LT);
+
+		assertCompareException(arg1dateTime, arg2simple, LT);
+		assertCompareException(arg1dateTime, arg2en, LT);
+		assertCompareException(arg1dateTime, arg2string, LT);
+		assertCompareException(arg1dateTime, arg2int, LT);
+		assertCompareFalse(arg1dateTime, arg1year, LT);
+		assertCompareException(arg1dateTime, arg2year, LT);
+		assertCompareFalse(arg1dateTime, arg2dateTime, LT);
+		assertCompareException(arg1dateTime, arg2unknown, LT);
 	}
 
 	/**
