@@ -1104,6 +1104,22 @@ public abstract class ComplexSPARQLQueryTest {
 	}
 
 	@Test
+	public void testRegexCaseNonAscii()
+		throws Exception
+	{
+		String query = "ask {filter (regex(\"Валовой\", \"валовой\", \"i\")) }";
+
+		assertTrue("case-insensitive match on Cyrillic should succeed",
+				conn.prepareBooleanQuery(query).evaluate());
+
+		query = "ask {filter (regex(\"Валовой\", \"валовой\")) }";
+
+		assertFalse("case-sensitive match on Cyrillic should fail",
+				conn.prepareBooleanQuery(query).evaluate());
+
+	}
+
+	@Test
 	public void testValuesInOptional()
 		throws Exception
 	{
