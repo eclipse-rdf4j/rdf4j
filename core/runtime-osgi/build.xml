@@ -1,35 +1,35 @@
 <?xml version="1.0" encoding="ISO-8859-1"?>
-<project name="sesame2" basedir=".">
+<project name="rdf4j" basedir=".">
     <target name="create-service-files">
 	<antcall target="concat-service-file">
-	    <param name="service" value="org.openrdf.query.algebra.evaluation.function.Function"/>
+	    <param name="service" value="org.eclipse.rdf4j.query.algebra.evaluation.function.Function"/>
 	</antcall>
 	<antcall target="concat-service-file">
-	    <param name="service" value="org.openrdf.query.parser.QueryParserFactory"/>
+	    <param name="service" value="org.eclipse.rdf4j.query.parser.QueryParserFactory"/>
 	</antcall>
 	<antcall target="concat-service-file">
-	    <param name="service" value="org.openrdf.query.resultio.BooleanQueryResultParserFactory"/>
+	    <param name="service" value="org.eclipse.rdf4j.query.resultio.BooleanQueryResultParserFactory"/>
 	</antcall>
 	<antcall target="concat-service-file">
-	    <param name="service" value="org.openrdf.query.resultio.BooleanQueryResultWriterFactory"/>
+	    <param name="service" value="org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterFactory"/>
 	</antcall>
 	<antcall target="concat-service-file">
-	    <param name="service" value="org.openrdf.query.resultio.TupleQueryResultParserFactory"/>
+	    <param name="service" value="org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory"/>
 	</antcall>
 	<antcall target="concat-service-file">
-	    <param name="service" value="org.openrdf.query.resultio.TupleQueryResultWriterFactory"/>
+	    <param name="service" value="org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory"/>
 	</antcall>
 	<antcall target="concat-service-file">
-	    <param name="service" value="org.openrdf.repository.config.RepositoryFactory"/>
+	    <param name="service" value="org.eclipse.rdf4j.repository.config.RepositoryFactory"/>
 	</antcall>
 	<antcall target="concat-service-file">
-	    <param name="service" value="org.openrdf.rio.RDFParserFactory"/>
+	    <param name="service" value="org.eclipse.rdf4j.rio.RDFParserFactory"/>
 	</antcall>
 	<antcall target="concat-service-file">
-	    <param name="service" value="org.openrdf.rio.RDFWriterFactory"/>
+	    <param name="service" value="org.eclipse.rdf4j.rio.RDFWriterFactory"/>
 	</antcall>
 	<antcall target="concat-service-file">
-	    <param name="service" value="org.openrdf.sail.config.SailFactory"/>
+	    <param name="service" value="org.eclipse.rdf4j.sail.config.SailFactory"/>
 	</antcall>
     </target>
 

@@ -54,6 +54,14 @@
 			<lineEnding>unix</lineEnding>
 			<filtered>true</filtered>
 		</file>
+		<file>
+			<source>../../license.html</source>
+			<outputDirectory/>
+		</file>
+		<file>
+			<source>../../about.html</source>
+			<outputDirectory/>
+		</file>
 	</files>
 
 </assembly>

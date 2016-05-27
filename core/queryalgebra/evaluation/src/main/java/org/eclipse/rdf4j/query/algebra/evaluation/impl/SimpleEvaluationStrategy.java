@@ -1445,6 +1445,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 						break;
 					case 'i':
 						f |= Pattern.CASE_INSENSITIVE;
+						f |= Pattern.UNICODE_CASE;
 						break;
 					case 'x':
 						f |= Pattern.COMMENTS;
