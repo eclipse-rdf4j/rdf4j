@@ -278,54 +278,6 @@ public class ProtocolTest {
 		}
 	}
 
-	/**
-	 * Checks that a suitable RDF content type is returned when accept header not explicitly set.
-	 */
-	@Test
-	public void testContentTypeForGraphQuery3_GET()
-		throws Exception
-	{
-		String query = "DESCRIBE <foo:bar>";
-		String location = TestServer.REPOSITORY_URL;
-		location += "?query=" + URLEncoder.encode(query, "UTF-8");
-
-		URL url = new URL(location);
-
-		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
-
-		conn.connect();
-
-		try {
-			int responseCode = conn.getResponseCode();
-			if (responseCode == HttpURLConnection.HTTP_OK) {
-				String contentType = conn.getHeaderField("Content-Type");
-				assertNotNull(contentType);
-
-				// snip off optional charset declaration
-				int charPos = contentType.indexOf(";");
-				if (charPos > -1) {
-					contentType = contentType.substring(0, charPos);
-				}
-
-				RDFFormat format = Rio.getParserFormatForMIMEType(contentType);
-
-				if (format == null) {
-					throw Rio.unsupportedFormat(contentType);
-				}
-				assertNotNull(format);
-			}
-			else {
-				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
-						+ responseCode + ")";
-				fail(response);
-				throw new RuntimeException(response);
-			}
-		}
-		finally {
-			conn.disconnect();
-		}
-	}
-
 	@Test
 	public void testQueryResponse_HEAD()
 		throws Exception
