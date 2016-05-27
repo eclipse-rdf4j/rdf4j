@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.sail.federation.algebra.NaryJoin;
 import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
 
@@ -84,9 +86,22 @@ public class FederationStrategy extends SimpleEvaluationStrategy {
 	{
 		assert join.getNumberOfArguments() > 0;
 		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluate(join.getArg(0), bindings);
+		Set<String> collectedBindingNames = new HashSet<>();
+		collectedBindingNames.addAll(join.getArg(0).getBindingNames());
 		for (int i = 1, n = join.getNumberOfArguments(); i < n; i++) {
-			result = new ParallelJoinCursor(this, result, join.getArg(i)); // NOPMD
-			executor.execute((Runnable)result);
+
+			TupleExpr rightArg = join.getArg(i);
+			if (TupleExprs.containsProjection(rightArg)) {
+				TupleExpr leftArg = join.getArg(i - 1);
+				collectedBindingNames.addAll(leftArg.getBindingNames());
+				result = new HashJoinIteration(this, result, collectedBindingNames,
+						evaluate(rightArg, bindings), rightArg.getBindingNames(), false);
+			}
+			else {
+				result = new ParallelJoinCursor(this, result, join.getArg(i)); // NOPMD
+				executor.execute((Runnable)result);
+				collectedBindingNames.addAll(rightArg.getBindingNames());
+			}
 		}
 		return result;
 	}
