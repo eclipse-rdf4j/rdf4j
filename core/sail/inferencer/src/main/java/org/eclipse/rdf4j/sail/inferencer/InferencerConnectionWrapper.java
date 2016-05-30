@@ -133,6 +133,17 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper
 	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped connection.
 	 */
 	@Override
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
+			Resource... contexts)
+	{
+		flushUpdates();
+		return super.hasStatement(subj, pred, obj, includeInferred, contexts);
+	}
+
+	/**
+	 * Calls {@link #flushUpdates()} before forwarding the call to the wrapped connection.
+	 */
+	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts)
 		throws SailException

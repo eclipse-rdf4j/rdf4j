@@ -122,7 +122,8 @@ public abstract class SeRQLQueryTestCase extends TestCase {
 			if (format == null) {
 				throw Rio.unsupportedFormat(graphName);
 			}
-			dataCon.add(url(graphName), base(graphName), format);
+			dataCon.add(url(graphName), base(graphName), format,
+					dataCon.getValueFactory().createIRI(graphName));
 		}
 
 		// Evaluate the query on the query data
