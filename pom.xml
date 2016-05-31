@@ -151,6 +151,8 @@
 		<httpcore.version>4.4.4</httpcore.version>
 		<jackson.version>2.6.2</jackson.version>
 		<jsonldjava.version>0.7.0</jsonldjava.version>
+		<!-- default empty value to avoid errors in intregation test execution -->
+		<hudson.rdf4j.proxy.opts/>
 	</properties>
 
 	<dependencyManagement>
