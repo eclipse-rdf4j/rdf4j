@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
-import org.eclipse.rdf4j.model.URI;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * http://jena.hpl.hp.com/ARQ/list#.
@@ -26,16 +26,16 @@ public final class LIST {
 
 	public static final String PREFIX = "list";
 
-	public static final URI MEMBER;
+	public static final IRI MEMBER;
 
-	public static final URI INDEX;
+	public static final IRI INDEX;
 
-	public static final URI LENGTH;
+	public static final IRI LENGTH;
 
 	static {
-		ValueFactory factory = ValueFactoryImpl.getInstance();
-		MEMBER = factory.createURI(NAMESPACE, "member");
-		INDEX = factory.createURI(NAMESPACE, "index");
-		LENGTH = factory.createURI(NAMESPACE, "length");
+		ValueFactory factory = SimpleValueFactory.getInstance();
+		MEMBER = factory.createIRI(NAMESPACE, "member");
+		INDEX = factory.createIRI(NAMESPACE, "index");
+		LENGTH = factory.createIRI(NAMESPACE, "length");
 	}
 }
