@@ -57,6 +57,18 @@
 
 	<profiles>
 		<profile>
+			<id>localBuild</id>
+			<activation>
+				<property>
+					<!-- activate if property 'hudsonBuild' is not set -->
+					<name>!hudsonBuild</name>
+				</property>
+			</activation>
+			<properties>
+				<hudson.rdf4j.proxy.opts/>
+			</properties>
+		</profile>
+		<profile>
 			<id>ossrh</id>
 			<distributionManagement>
 				<snapshotRepository>
@@ -151,8 +163,6 @@
 		<httpcore.version>4.4.4</httpcore.version>
 		<jackson.version>2.6.2</jackson.version>
 		<jsonldjava.version>0.7.0</jsonldjava.version>
-		<!-- default empty value to avoid errors in intregation test execution -->
-		<hudson.rdf4j.proxy.opts/>
 	</properties>
 
 	<dependencyManagement>
