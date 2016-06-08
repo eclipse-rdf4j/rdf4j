@@ -1,6 +1,6 @@
 # How to contribute
 
-So you want to help out making RDF4J better. Great! Here's some things you need
+So you want to help out making RDF4J better. That's great! Here's some things you need
 to know and do before you dive in.
 
 **Table of Contents**  
@@ -96,7 +96,7 @@ start coding. Here's how:
 
 Once you are satisfied your changes are in good shape, you can use GitHub to
 submit a pull request (PR) for your contribution back to the central RDF4J
-repository.
+repository. Again, please make sure you submit your PR against the correct branch (the appropriate release branch if you fixed a bug, or the master branch if you developed a new feature). 
  
 Once you have submitted your PR, do not use your branch for any other
 development (unless asked to do so by the reviewers of your PR). If you do, any
