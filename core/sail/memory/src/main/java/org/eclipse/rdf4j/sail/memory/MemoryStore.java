@@ -15,9 +15,11 @@ import java.util.TimerTask;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailChangedEvent;
 import org.eclipse.rdf4j.sail.SailException;
@@ -105,6 +107,8 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	 */
 	private final Object syncTimerSemaphore = new Object();
 
+	private EvaluationStrategyFactory evalStratFactory;
+
 	/** independent life cycle */
 	private FederatedServiceResolver serviceResolver;
 
@@ -182,6 +186,23 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	 */
 	public long getSyncDelay() {
 		return syncDelay;
+	}
+
+	/**
+	 * @return Returns the {@link EvaluationStrategy}.
+	 */
+	public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
+		if (evalStratFactory == null) {
+			evalStratFactory = new SimpleEvaluationStrategy.Factory(getFederatedServiceResolver());
+		}
+		return evalStratFactory;
+	}
+
+	/**
+	 * Sets the {@link EvaluationStrategy} to use.
+	 */
+	public synchronized void setEvaluationStrategyFactory(EvaluationStrategyFactory factory) {
+		evalStratFactory = factory;
 	}
 
 	/**
