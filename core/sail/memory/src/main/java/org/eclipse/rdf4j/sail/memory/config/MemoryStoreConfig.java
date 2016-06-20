@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.config;
 
+import static org.eclipse.rdf4j.sail.memory.config.MemoryStoreSchema.EVALUATION_STRATEGY_FACTORY;
 import static org.eclipse.rdf4j.sail.memory.config.MemoryStoreSchema.PERSIST;
 import static org.eclipse.rdf4j.sail.memory.config.MemoryStoreSchema.SYNC_DELAY;
 
@@ -16,6 +17,7 @@ import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.config.AbstractSailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 
@@ -27,6 +29,8 @@ public class MemoryStoreConfig extends AbstractSailImplConfig {
 	private boolean persist = false;
 
 	private long syncDelay = 0L;
+
+	private String evalStratFactoryClassName;
 
 	public MemoryStoreConfig() {
 		super(MemoryStoreFactory.SAIL_TYPE);
@@ -58,6 +62,17 @@ public class MemoryStoreConfig extends AbstractSailImplConfig {
 		this.syncDelay = syncDelay;
 	}
 
+	public String getEvaluationStrategyFactoryClassName() {
+		return evalStratFactoryClassName;
+	}
+
+	public void setEvaluationStrategyFactoryClassName(String className) {
+		this.evalStratFactoryClassName = className;
+	}
+
+	public EvaluationStrategyFactory getEvaluationStrategyFactory() throws InstantiationException, IllegalAccessException, ClassNotFoundException {
+		return (EvaluationStrategyFactory)Thread.currentThread().getContextClassLoader().loadClass(evalStratFactoryClassName).newInstance();
+	}
 	@Override
 	public Resource export(Model graph) {
 		Resource implNode = super.export(graph);
@@ -68,6 +83,10 @@ public class MemoryStoreConfig extends AbstractSailImplConfig {
 
 		if (syncDelay != 0) {
 			graph.add(implNode, SYNC_DELAY, SimpleValueFactory.getInstance().createLiteral(syncDelay));
+		}
+
+		if (evalStratFactoryClassName != null) {
+			graph.add(implNode, EVALUATION_STRATEGY_FACTORY, SimpleValueFactory.getInstance().createLiteral(evalStratFactoryClassName));
 		}
 
 		return implNode;
@@ -99,6 +118,10 @@ public class MemoryStoreConfig extends AbstractSailImplConfig {
 					throw new SailConfigException("Long integer value required for " + SYNC_DELAY
 							+ " property, found " + syncDelayValue);
 				}
+			});
+
+			Models.objectLiteral(graph.filter(implNode, EVALUATION_STRATEGY_FACTORY, null)).ifPresent(factoryClassName -> {
+				setEvaluationStrategyFactoryClassName(factoryClassName.stringValue());
 			});
 		}
 		catch (ModelException e) {
