@@ -16,6 +16,7 @@
          sail:sailType "openrdf:MemoryStore" ;
 	 sail:iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
          ms:persist {%Persist|true|false%} ;
-         ms:syncDelay {%Sync delay|0%}
+         ms:syncDelay {%Sync delay|0%} ;
+         ms:evaluationStrategyFactory {%EvaluationStrategyFactory|%}
       ]
    ].
