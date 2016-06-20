@@ -41,7 +41,7 @@ public class MemoryStoreConnection extends SailSourceConnection {
 	 *--------------*/
 
 	protected MemoryStoreConnection(MemoryStore sail) {
-		super(sail, sail.getSailStore(), sail.getFederatedServiceResolver());
+		super(sail, sail.getSailStore(), sail.getEvaluationStrategyFactory(), sail.getFederatedServiceResolver());
 		this.sail = sail;
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
 	}
