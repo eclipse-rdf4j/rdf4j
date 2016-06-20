@@ -71,6 +71,13 @@
 							<input type="text" id="delay" name="Sync delay" size="4"
 								value="0" />
 						</td>
+						<td>
+							<select id="evalStratFactory" name="EvaluationStrategyFactory">
+								<option value="org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy.Factory">
+								Strict evaluation strategy
+								</option>
+							</select>
+						</td>
 						<td></td>
 					</tr>
 					<tr>

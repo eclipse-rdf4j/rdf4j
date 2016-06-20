@@ -29,9 +29,13 @@ public class MemoryStoreSchema {
 	/** <tt>http://www.openrdf.org/config/sail/memory#syncDelay</tt> */
 	public final static IRI SYNC_DELAY;
 
+	/** <tt>http://www.openrdf.org/config/sail/memory#evaluationStrategyFactory</tt> */
+	public final static IRI EVALUATION_STRATEGY_FACTORY;
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 		PERSIST = factory.createIRI(NAMESPACE, "persist");
 		SYNC_DELAY = factory.createIRI(NAMESPACE, "syncDelay");
+		EVALUATION_STRATEGY_FACTORY = factory.createIRI(NAMESPACE, "evaluationStrategyFactory");
 	}
 }
