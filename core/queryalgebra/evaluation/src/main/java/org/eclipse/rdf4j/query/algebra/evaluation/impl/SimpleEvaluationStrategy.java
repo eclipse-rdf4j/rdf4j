@@ -109,13 +109,11 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
@@ -156,7 +154,7 @@ import org.eclipse.rdf4j.util.UUIDable;
  * @author David Huynh
  * @author Andreas Schwarte
  */
-public class SimpleEvaluationStrategy implements EvaluationStrategy, FederatedServiceResolverClient, UUIDable {
+public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	/*-----------*
 	 * Constants *
@@ -166,7 +164,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	protected final Dataset dataset;
 
-	protected FederatedServiceResolver serviceResolver;
+	protected final FederatedServiceResolver serviceResolver;
 
 	// shared return value for successive calls of the NOW() function within the
 	// same query. Will be reset upon each new query being evaluated. See
@@ -210,11 +208,6 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	@Override
 	public UUID getUUID() {
 		return uuid;
-	}
-
-	@Override
-	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
-		serviceResolver = resolver;
 	}
 
 	public FederatedService getService(String serviceUrl)
@@ -1991,22 +1984,4 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return Long.MAX_VALUE;
 	}
 
-
-	public static class Factory implements EvaluationStrategyFactory, FederatedServiceResolverClient {
-		private FederatedServiceResolver serviceResolver;
-
-		public Factory(FederatedServiceResolver resolver) {
-			this.serviceResolver = resolver;
-		}
-
-		@Override
-		public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
-			this.serviceResolver = resolver;
-		}
-
-		@Override
-		public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
-			return new SimpleEvaluationStrategy(tripleSource, dataset, serviceResolver);
-		}
-	}
 }

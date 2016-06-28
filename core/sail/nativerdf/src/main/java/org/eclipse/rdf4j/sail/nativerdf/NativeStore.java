@@ -20,12 +20,9 @@ import org.eclipse.rdf4j.common.io.MavenUtil;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
@@ -74,8 +71,6 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 * Data directory lock.
 	 */
 	private volatile Lock dirLock;
-
-	private EvaluationStrategyFactory evalStratFactory;
 
 	/** independent life cycle */
 	private FederatedServiceResolver serviceResolver;
@@ -171,23 +166,6 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	public void setNamespaceIDCacheSize(int namespaceIDCacheSize) {
 		this.namespaceIDCacheSize = namespaceIDCacheSize;
-	}
-
-	/**
-	 * @return Returns the {@link EvaluationStrategy}.
-	 */
-	public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
-		if (evalStratFactory == null) {
-			evalStratFactory = new SimpleEvaluationStrategy.Factory(getFederatedServiceResolver());
-		}
-		return evalStratFactory;
-	}
-
-	/**
-	 * Sets the {@link EvaluationStrategy} to use.
-	 */
-	public synchronized void setEvaluationStrategyFactory(EvaluationStrategyFactory factory) {
-		evalStratFactory = factory;
 	}
 
 	/**
