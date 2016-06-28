@@ -35,13 +35,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.CompareOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConjunctiveConstraintSplitter;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.IterativeEvaluationOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -141,7 +141,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	 * @param resolver
 	 */
 	protected SailSourceConnection(AbstractSail sail, SailStore store, FederatedServiceResolver resolver) {
-		this(sail, store, new SimpleEvaluationStrategy.Factory(resolver), resolver);
+		this(sail, store, new SimpleEvaluationStrategyFactory(resolver), resolver);
 	}
 
 	protected SailSourceConnection(AbstractSail sail, SailStore store,
