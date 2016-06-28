@@ -109,7 +109,6 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -1991,22 +1990,4 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return Long.MAX_VALUE;
 	}
 
-
-	public static class Factory implements EvaluationStrategyFactory, FederatedServiceResolverClient {
-		private FederatedServiceResolver serviceResolver;
-
-		public Factory(FederatedServiceResolver resolver) {
-			this.serviceResolver = resolver;
-		}
-
-		@Override
-		public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
-			this.serviceResolver = resolver;
-		}
-
-		@Override
-		public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
-			return new SimpleEvaluationStrategy(tripleSource, dataset, serviceResolver);
-		}
-	}
 }

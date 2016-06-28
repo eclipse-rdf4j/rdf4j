@@ -37,6 +37,10 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 	public EvaluationStrategyFactory getEvaluationStrategyFactory()
 		throws SailConfigException
 	{
+		if (evalStratFactoryClassName == null) {
+			return null;
+		}
+
 		try {
 			return (EvaluationStrategyFactory)Thread.currentThread().getContextClassLoader().loadClass(
 					evalStratFactoryClassName).newInstance();
