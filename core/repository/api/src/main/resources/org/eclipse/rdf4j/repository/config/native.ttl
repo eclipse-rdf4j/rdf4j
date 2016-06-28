@@ -6,6 +6,7 @@
 @prefix sr: <http://www.openrdf.org/config/repository/sail#>.
 @prefix sail: <http://www.openrdf.org/config/sail#>.
 @prefix ns: <http://www.openrdf.org/config/sail/native#>.
+@prefix sb: <http://www.openrdf.org/config/sail/base#>.
 
 [] a rep:Repository ;
    rep:repositoryID "{%Repository ID|native%}" ;
@@ -15,6 +16,7 @@
       sr:sailImpl [
          sail:sailType "openrdf:NativeStore" ;
 	 sail:iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
-         ns:tripleIndexes "{%Triple indexes|spoc,posc%}"
+         ns:tripleIndexes "{%Triple indexes|spoc,posc%}" ;
+         sb:evaluationStrategyFactory {%EvaluationStrategyFactory|%}
       ]
    ].

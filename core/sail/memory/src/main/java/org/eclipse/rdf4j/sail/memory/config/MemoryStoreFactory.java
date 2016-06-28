@@ -58,13 +58,7 @@ public class MemoryStoreFactory implements SailFactory {
 				memoryStore.setIterationCacheSyncThreshold(memConfig.getIterationCacheSyncThreshold());
 			}
 
-			EvaluationStrategyFactory evalStratFactory;
-			try {
-				evalStratFactory = memConfig.getEvaluationStrategyFactory();
-			}
-			catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
-				throw new SailConfigException(e);
-			}
+			EvaluationStrategyFactory evalStratFactory = memConfig.getEvaluationStrategyFactory();
 			if (evalStratFactory != null) {
 				memoryStore.setEvaluationStrategyFactory(evalStratFactory);
 			}
