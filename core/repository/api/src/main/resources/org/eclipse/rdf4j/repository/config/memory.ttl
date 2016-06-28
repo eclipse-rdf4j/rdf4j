@@ -6,6 +6,7 @@
 @prefix sr: <http://www.openrdf.org/config/repository/sail#>.
 @prefix sail: <http://www.openrdf.org/config/sail#>.
 @prefix ms: <http://www.openrdf.org/config/sail/memory#>.
+@prefix sb: <http://www.openrdf.org/config/sail/base#>.
 
 [] a rep:Repository ;
    rep:repositoryID "{%Repository ID|memory%}" ;
@@ -17,6 +18,6 @@
 	 sail:iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
          ms:persist {%Persist|true|false%} ;
          ms:syncDelay {%Sync delay|0%} ;
-         ms:evaluationStrategyFactory {%EvaluationStrategyFactory|%}
+         sb:evaluationStrategyFactory {%EvaluationStrategyFactory|%}
       ]
    ].
