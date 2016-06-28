@@ -56,6 +56,13 @@
 							<input type="text" id="indexes" name="Triple indexes" size="16"
 								value="spoc,posc" />
 						</td>
+						<td>
+							<select id="evalStratFactory" name="EvaluationStrategyFactory">
+								<option value="org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy.Factory">
+								Strict evaluation strategy
+								</option>
+							</select>
+						</td>
 						<td></td>
 					</tr>
 					<tr>
