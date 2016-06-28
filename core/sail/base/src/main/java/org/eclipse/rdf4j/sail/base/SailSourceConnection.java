@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -120,11 +119,6 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	private SailSource includeInferredBranch;
 
 	/**
-	 * {@link EvaluationStrategyFactory} to use.
-	 */
-	private final EvaluationStrategyFactory evalStratFactory;
-
-	/**
 	 * Connection specific resolver.
 	 */
 	private FederatedServiceResolver federatedServiceResolver;
@@ -141,17 +135,10 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	 * @param resolver
 	 */
 	protected SailSourceConnection(AbstractSail sail, SailStore store, FederatedServiceResolver resolver) {
-		this(sail, store, new SimpleEvaluationStrategy.Factory(resolver), resolver);
-	}
-
-	protected SailSourceConnection(AbstractSail sail, SailStore store,
-			EvaluationStrategyFactory evalStratFactory, FederatedServiceResolver resolver)
-	{
 		super(sail);
 		this.vf = sail.getValueFactory();
 		this.store = store;
 		this.defaultIsolationLevel = sail.getDefaultIsolationLevel();
-		this.evalStratFactory = evalStratFactory;
 		this.federatedServiceResolver = resolver;
 	}
 
@@ -168,11 +155,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
-		EvaluationStrategy evalStrat = evalStratFactory.createEvaluationStrategy(dataset, tripleSource);
-		if (evalStrat instanceof FederatedServiceResolverClient) {
-			((FederatedServiceResolverClient)evalStrat).setFederatedServiceResolver(federatedServiceResolver);
-		}
-		return evalStrat;
+		return new SimpleEvaluationStrategy(tripleSource, dataset, getFederatedServiceResolver());
 	}
 
 	@Override
