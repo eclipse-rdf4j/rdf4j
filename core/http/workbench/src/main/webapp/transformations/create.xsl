@@ -38,7 +38,7 @@
 								<option value="memory-spin">
 									In Memory Java Store with basic SPIN support
 								</option>
-								<option value="native-spin-rdfs">
+								<option value="memory-spin-rdfs">
 									In Memory Store with RDFS+SPIN support
 								</option>
 								<option value="memory-customrule">
