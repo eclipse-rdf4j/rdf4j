@@ -56,10 +56,16 @@
 							<input type="text" id="indexes" name="Triple indexes" size="16"
 								value="spoc,posc" />
 						</td>
+						<td></td>
+					</tr>
+					<tr>
+						<th>
+							<xsl:value-of select="$repository-evaluation-mode.label" />
+						</th>
 						<td>
 							<select id="evalStratFactory" name="EvaluationStrategyFactory">
-								<option value="org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy.Factory">
-								Strict evaluation strategy
+								<option value="org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategyFactory">
+								Strict
 								</option>
 							</select>
 						</td>
