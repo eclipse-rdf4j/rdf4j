@@ -248,17 +248,7 @@ public class StatementsController extends AbstractController {
 			}
 		}
 
-		final String timeout = request.getParameter(Protocol.TIMEOUT_PARAM_NAME);
-		int maxQueryTime = 0;
-		if (timeout != null) {
-			try {
-				maxQueryTime = Integer.parseInt(timeout);
-			}
-			catch (NumberFormatException e) {
-				throw new ClientHTTPException(SC_BAD_REQUEST, "Invalid timeout value: " + timeout);
-			}
-		}
-
+		final int maxQueryTime = ProtocolUtil.parseTimeoutParam(request);
 		try {
 			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
 			synchronized (repositoryCon) {
