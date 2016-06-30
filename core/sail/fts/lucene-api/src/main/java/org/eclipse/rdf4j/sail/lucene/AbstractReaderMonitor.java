@@ -8,6 +8,8 @@
 package org.eclipse.rdf4j.sail.lucene;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * ReaderMonitor holds IndexReader and IndexSearcher. When ReaderMonitor is closed it do not close IndexReader
@@ -18,28 +20,28 @@ import java.io.IOException;
  */
 public abstract class AbstractReaderMonitor {
 
-	private int readingCount = 0;
+	private final AtomicInteger readingCount = new AtomicInteger(0);
 
 	private boolean doClose = false;
 
 	// Remember index to be able to remove itself from the index list
 	final private AbstractLuceneIndex index;
 
-	private boolean closed = false;
+	private final AtomicBoolean closed = new AtomicBoolean(false);
 
 	protected AbstractReaderMonitor(AbstractLuceneIndex index) {
 		this.index = index;
 	}
 
 	public int getReadingCount() {
-		return readingCount;
+		return readingCount.get();
 	}
 
 	/**
 	 * 
 	 */
 	public void beginReading() {
-		readingCount++;
+		readingCount.incrementAndGet();
 	}
 
 	/**
@@ -50,8 +52,7 @@ public abstract class AbstractReaderMonitor {
 	public void endReading()
 		throws IOException
 	{
-		readingCount--;
-		if (readingCount == 0 && doClose) {
+		if (readingCount.decrementAndGet() == 0 && doClose) {
 			// when endReading is called on CurrentMonitor and it should be closed,
 			// close it
 			close();// close Lucene index remove them self from Lucene index
@@ -72,19 +73,18 @@ public abstract class AbstractReaderMonitor {
 		throws IOException
 	{
 		doClose = true;
-		if (readingCount == 0) {
+		if (readingCount.get() == 0) {
 			close();
 		}
-		return closed;
+		return closed.get();
 	}
 
 	public void close()
 		throws IOException
 	{
-		if (!closed) {
+		if (!closed.getAndSet(true)) {
 			handleClose();
 		}
-		closed = true;
 	}
 
 	/**
