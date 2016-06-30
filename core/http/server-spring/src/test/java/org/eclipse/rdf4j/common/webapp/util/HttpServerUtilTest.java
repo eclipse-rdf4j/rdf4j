@@ -15,15 +15,24 @@ import java.io.UnsupportedEncodingException;
 import java.security.Principal;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.Locale;
 import java.util.Map;
 
+import javax.servlet.AsyncContext;
+import javax.servlet.DispatcherType;
 import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletContext;
+import javax.servlet.ServletException;
 import javax.servlet.ServletInputStream;
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
 import javax.servlet.http.Cookie;
+import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
+import javax.servlet.http.Part;
 
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
@@ -417,6 +426,141 @@ public class HttpServerUtilTest {
 		public boolean isRequestedSessionIdFromUrl() {
 			// TODO Auto-generated method stub
 			return false;
+		}
+
+		/*
+		 * (non-Javadoc)
+		 * @see javax.servlet.ServletRequest#getServletContext()
+		 */
+		@Override
+		public ServletContext getServletContext() {
+			// TODO Auto-generated method stub
+			return null;
+		}
+
+		/*
+		 * (non-Javadoc)
+		 * @see javax.servlet.ServletRequest#startAsync()
+		 */
+		@Override
+		public AsyncContext startAsync()
+			throws IllegalStateException
+		{
+			// TODO Auto-generated method stub
+			return null;
+		}
+
+		/*
+		 * (non-Javadoc)
+		 * @see javax.servlet.ServletRequest#startAsync(javax.servlet.ServletRequest,
+		 * javax.servlet.ServletResponse)
+		 */
+		@Override
+		public AsyncContext startAsync(ServletRequest servletRequest, ServletResponse servletResponse)
+			throws IllegalStateException
+		{
+			// TODO Auto-generated method stub
+			return null;
+		}
+
+		/*
+		 * (non-Javadoc)
+		 * @see javax.servlet.ServletRequest#isAsyncStarted()
+		 */
+		@Override
+		public boolean isAsyncStarted() {
+			// TODO Auto-generated method stub
+			return false;
+		}
+
+		/*
+		 * (non-Javadoc)
+		 * @see javax.servlet.ServletRequest#isAsyncSupported()
+		 */
+		@Override
+		public boolean isAsyncSupported() {
+			// TODO Auto-generated method stub
+			return false;
+		}
+
+		/*
+		 * (non-Javadoc)
+		 * @see javax.servlet.ServletRequest#getAsyncContext()
+		 */
+		@Override
+		public AsyncContext getAsyncContext() {
+			// TODO Auto-generated method stub
+			return null;
+		}
+
+		/*
+		 * (non-Javadoc)
+		 * @see javax.servlet.ServletRequest#getDispatcherType()
+		 */
+		@Override
+		public DispatcherType getDispatcherType() {
+			// TODO Auto-generated method stub
+			return null;
+		}
+
+		/*
+		 * (non-Javadoc)
+		 * @see javax.servlet.http.HttpServletRequest#authenticate(javax.servlet.http.HttpServletResponse)
+		 */
+		@Override
+		public boolean authenticate(HttpServletResponse response)
+			throws IOException, ServletException
+		{
+			// TODO Auto-generated method stub
+			return false;
+		}
+
+		/*
+		 * (non-Javadoc)
+		 * @see javax.servlet.http.HttpServletRequest#login(java.lang.String, java.lang.String)
+		 */
+		@Override
+		public void login(String username, String password)
+			throws ServletException
+		{
+			// TODO Auto-generated method stub
+
+		}
+
+		/*
+		 * (non-Javadoc)
+		 * @see javax.servlet.http.HttpServletRequest#logout()
+		 */
+		@Override
+		public void logout()
+			throws ServletException
+		{
+			// TODO Auto-generated method stub
+
+		}
+
+		/*
+		 * (non-Javadoc)
+		 * @see javax.servlet.http.HttpServletRequest#getParts()
+		 */
+		@Override
+		public Collection<Part> getParts()
+			throws IOException, ServletException
+		{
+			// TODO Auto-generated method stub
+			return null;
+		}
+
+		/*
+		 * (non-Javadoc)
+		 * @see javax.servlet.http.HttpServletRequest#getPart(java.lang.String)
+		 */
+		@Override
+		public Part getPart(String name)
+			throws IOException, ServletException
+		{
+			// TODO Auto-generated method stub
+			return null;
 		}
 
 	}
