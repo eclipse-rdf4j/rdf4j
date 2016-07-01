@@ -16,60 +16,76 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 /**
  * Constants for the W3C Registered Organization Vocabulary.
  *
- * @see <a href="https://www.w3.org/TR/vocab-regorg/">Registered Organization Vocabulary</a>
+ * @see <a href="https://www.w3.org/TR/vocab-regorg/">Registered Organization
+ * Vocabulary</a>
  *
  * @author Bart Hanssens
  */
 public class ROV {
 
-    /**
-     * The ROV namespace: http://www.w3.org/ns/regorg#
-     */
-    public static final String NAMESPACE = "http://www.w3.org/ns/regorg#";
+	/**
+	 * The ROV namespace: http://www.w3.org/ns/regorg#
+	 */
+	public static final String NAMESPACE = "http://www.w3.org/ns/regorg#";
 
-    /**
-     * Recommend prefix for the Registered Organization namespace: "rov"
-     */
-    public static final String PREFIX = "rov";
+	/**
+	 * Recommend prefix for the Registered Organization namespace: "rov"
+	 */
+	public static final String PREFIX = "rov";
 
-    /**
-     * An immutable {@link Namespace} constant that represents the Registered Organization namespace.
-     */
-    public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	/**
+	 * An immutable {@link Namespace} constant that represents the
+	 * Registered Organization namespace.
+	 */
+	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
 
-    // Class
-    /** rov:RegisteredOrganization */
-    public static final IRI REGISTERED_ORGANIZATION;
+	// Class
+	/**
+	 * rov:RegisteredOrganization
+	 */
+	public static final IRI REGISTERED_ORGANIZATION;
 
-    // Properties
-    /** rov:hasRegisteredOrganization */
-    public static final IRI HAS_REGISTERED_ORGANIZATION;
+	// Properties
+	/**
+	 * rov:hasRegisteredOrganization
+	 */
+	public static final IRI HAS_REGISTERED_ORGANIZATION;
 
-    /** rov:legalName */
-    public static final IRI LEGAL_NAME;
+	/**
+	 * rov:legalName
+	 */
+	public static final IRI LEGAL_NAME;
 
-    /** rov:orgActivity */
-    public static final IRI ORG_ACTIVITY;
+	/**
+	 * rov:orgActivity
+	 */
+	public static final IRI ORG_ACTIVITY;
 
-    /** rov:orgStatus */
-    public static final IRI ORG_STATUS;
+	/**
+	 * rov:orgStatus
+	 */
+	public static final IRI ORG_STATUS;
 
-    /** rov:orgType */
-    public static final IRI ORG_TYPE;
+	/**
+	 * rov:orgType
+	 */
+	public static final IRI ORG_TYPE;
 
-    /** rov:registration */
-    public static final IRI REGISTRATION;
+	/**
+	 * rov:registration
+	 */
+	public static final IRI REGISTRATION;
 
-    static {
-        ValueFactory factory = SimpleValueFactory.getInstance();
+	static {
+		ValueFactory factory = SimpleValueFactory.getInstance();
 
-        REGISTERED_ORGANIZATION = factory.createIRI(NAMESPACE, "RegisteredOrganization");
+		REGISTERED_ORGANIZATION = factory.createIRI(NAMESPACE, "RegisteredOrganization");
 
-        HAS_REGISTERED_ORGANIZATION = factory.createIRI(NAMESPACE, "hasRegisteredOrganization");
-        LEGAL_NAME = factory.createIRI(NAMESPACE, "legalName");
-        ORG_ACTIVITY = factory.createIRI(NAMESPACE, "orgActivity");
-        ORG_STATUS = factory.createIRI(NAMESPACE, "orgStatus");
-        ORG_TYPE = factory.createIRI(NAMESPACE, "orgType");
-        REGISTRATION = factory.createIRI(NAMESPACE, "registration");
-    }
+		HAS_REGISTERED_ORGANIZATION = factory.createIRI(NAMESPACE, "hasRegisteredOrganization");
+		LEGAL_NAME = factory.createIRI(NAMESPACE, "legalName");
+		ORG_ACTIVITY = factory.createIRI(NAMESPACE, "orgActivity");
+		ORG_STATUS = factory.createIRI(NAMESPACE, "orgStatus");
+		ORG_TYPE = factory.createIRI(NAMESPACE, "orgType");
+		REGISTRATION = factory.createIRI(NAMESPACE, "registration");
+	}
 }
