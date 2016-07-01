@@ -16,15 +16,19 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 
 /**
- * Useful methods for working with {@link TripleSource}s.
+ * Useful methods for working with {@link TripleSource}s. Contexts are disregarded.
  */
 public final class Statements {
+
+	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	private Statements() {
 	}
@@ -125,6 +129,14 @@ public final class Statements {
 		return (stmt != null) ? stmt.getObject() : null;
 	}
 
+	/**
+	 * Returns the single statement with the given subject, predicate and object or null if none exists.
+	 * Context information is disregarded.
+	 * @param subj null for any.
+	 * @param pred null for any.
+	 * @param obj null for any.
+	 * @throws QueryEvaluationException If there is more than one such statement.
+	 */
 	public static Statement single(Resource subj, IRI pred, Value obj, TripleSource store)
 		throws QueryEvaluationException
 	{
@@ -133,10 +145,13 @@ public final class Statements {
 				pred, obj);
 		try {
 			if (stmts.hasNext()) {
-				stmt = stmts.next();
-				if (stmts.hasNext()) {
-					throw new QueryEvaluationException(
+				stmt = createTripleStatement(stmts.next());
+				while (stmts.hasNext()) {
+					Statement nextStmt = createTripleStatement(stmts.next());
+					if (!nextStmt.equals(stmt)) {
+						throw new QueryEvaluationException(
 							"Multiple statements for pattern: " + subj + " " + pred + " " + obj);
+					}
 				}
 			}
 			else {
@@ -147,6 +162,11 @@ public final class Statements {
 			stmts.close();
 		}
 		return stmt;
+	}
+
+	private static Statement createTripleStatement(Statement stmt) {
+		return vf.createStatement(stmt.getSubject(), stmt.getPredicate(),
+				stmt.getObject());
 	}
 
 	public static CloseableIteration<? extends IRI, QueryEvaluationException> getSubjectURIs(IRI predicate,
