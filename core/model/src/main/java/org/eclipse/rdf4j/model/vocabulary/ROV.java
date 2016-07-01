@@ -16,8 +16,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 /**
  * Constants for the W3C Registered Organization Vocabulary.
  *
- * @see <a href="https://www.w3.org/TR/vocab-regorg/">Registered Organization
- * Vocabulary</a>
+ * @see <a href="https://www.w3.org/TR/vocab-regorg/">Registered Organization Vocabulary</a>
  *
  * @author Bart Hanssens
  */
@@ -34,8 +33,7 @@ public class ROV {
 	public static final String PREFIX = "rov";
 
 	/**
-	 * An immutable {@link Namespace} constant that represents the
-	 * Registered Organization namespace.
+	 * An immutable {@link Namespace} constant that represents the Registered Organization namespace.
 	 */
 	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
 
