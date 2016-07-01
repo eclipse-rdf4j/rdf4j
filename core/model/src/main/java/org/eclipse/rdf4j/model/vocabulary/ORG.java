@@ -28,7 +28,7 @@ public class ORG {
 	public static final String NAMESPACE = "http://www.w3.org/ns/org#";
 
 	/**
-	 * Recommend prefix for the Organization Ontology namespace: "org"
+	 * Recommended prefix for the Organization Ontology namespace: "org"
 	 */
 	public static final String PREFIX = "org";
 

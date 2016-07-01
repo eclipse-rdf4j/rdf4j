@@ -28,7 +28,7 @@ public class DCAT {
 	public static final String NAMESPACE = "http://www.w3.org/ns/dcat#";
 
 	/**
-	 * Recommend prefix for the Data Catalog Vocabulary namespace: "dcat"
+	 * Recommended prefix for the Data Catalog Vocabulary namespace: "dcat"
 	 */
 	public static final String PREFIX = "dcat";
 

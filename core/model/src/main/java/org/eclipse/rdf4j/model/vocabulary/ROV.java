@@ -28,7 +28,7 @@ public class ROV {
 	public static final String NAMESPACE = "http://www.w3.org/ns/regorg#";
 
 	/**
-	 * Recommend prefix for the Registered Organization namespace: "rov"
+	 * Recommended prefix for the Registered Organization namespace: "rov"
 	 */
 	public static final String PREFIX = "rov";
 

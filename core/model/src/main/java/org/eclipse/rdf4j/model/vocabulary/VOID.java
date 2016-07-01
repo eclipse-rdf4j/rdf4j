@@ -28,7 +28,7 @@ public class VOID {
 	public static final String NAMESPACE = "http://rdfs.org/ns/void#";
 
 	/**
-	 * Recommend prefix for the VoID namespace: "void"
+	 * Recommended prefix for the VoID namespace: "void"
 	 */
 	public static final String PREFIX = "void";
 
