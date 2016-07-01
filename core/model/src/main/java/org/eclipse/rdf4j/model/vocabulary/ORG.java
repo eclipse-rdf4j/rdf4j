@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 public class ORG {
 	
 	/**
-	 * The DCAT namespace: http://www.w3.org/ns/org#
+	 * The Organization Ontology namespace: http://www.w3.org/ns/org#
 	 */
 	public static final String NAMESPACE = "http://www.w3.org/ns/org#";
 
