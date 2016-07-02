@@ -395,9 +395,10 @@ class SAXFilter implements ContentHandler {
 					parseLiteralMode = false;
 				}
 				else {
-					String s = charBuf.toString().trim();
+					String s = charBuf.toString();
 
-					if (s.length() > 0) {
+					// ignore whitespace-only nodes
+					if (s.trim().length() > 0) {
 						rdfParser.text(s);
 					}
 				}
