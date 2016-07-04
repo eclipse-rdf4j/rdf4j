@@ -11,7 +11,10 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -39,6 +42,7 @@ import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.federation.evaluation.FederationStrategy;
+import org.eclipse.rdf4j.sail.federation.optimizers.RepositoryBloomFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,6 +59,8 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	private static final Logger LOGGER = LoggerFactory.getLogger(Federation.class);
 
 	private final List<Repository> members = new ArrayList<Repository>();
+
+	private final Map<Repository, RepositoryBloomFilter> bloomFilters = new HashMap<>();
 
 	private final ExecutorService executor = Executors.newCachedThreadPool();
 
@@ -92,6 +98,18 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 
 	public void addMember(Repository member) {
 		members.add(member);
+	}
+
+	List<Repository> getMembers() {
+		return Collections.unmodifiableList(members);
+	}
+
+	public void setBloomFilter(Repository member, RepositoryBloomFilter filter) {
+		bloomFilters.put(member, filter);
+	}
+
+	Map<Repository, RepositoryBloomFilter> getBloomFilters() {
+		return Collections.unmodifiableMap(bloomFilters);
 	}
 
 	/**

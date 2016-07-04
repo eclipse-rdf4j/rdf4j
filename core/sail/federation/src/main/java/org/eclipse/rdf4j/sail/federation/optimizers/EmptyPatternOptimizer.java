@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.sail.federation.optimizers;
 
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -35,9 +37,17 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 
 	private final Collection<? extends RepositoryConnection> members;
 
+	private final Map<RepositoryConnection, RepositoryBloomFilter> bloomFilters;
+
 	public EmptyPatternOptimizer(Collection<? extends RepositoryConnection> members) {
-		super();
+		this(members, Collections.<RepositoryConnection, RepositoryBloomFilter> emptyMap());
+	}
+
+	public EmptyPatternOptimizer(Collection<? extends RepositoryConnection> members,
+			Map<RepositoryConnection, RepositoryBloomFilter> bloomFilters)
+	{
 		this.members = members;
+		this.bloomFilters = bloomFilters;
 	}
 
 	public void optimize(TupleExpr query, Dataset dataset, BindingSet bindings) {
@@ -58,11 +68,19 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 		Value obj = node.getObjectVar().getValue();
 		Resource[] ctx = getContexts(node.getContextVar());
 		for (RepositoryConnection member : members) {
-			if (member.hasStatement(subj, pred, obj, true, ctx)) {
+			if (mayHaveStatement(member, subj, pred, obj, ctx)) {
 				return;
 			}
 		}
 		node.replaceWith(new EmptySet());
+	}
+
+	private boolean mayHaveStatement(RepositoryConnection conn, Resource subj, IRI pred, Value obj,
+			Resource... ctxs)
+	{
+		RepositoryBloomFilter bloomFilter = bloomFilters.get(conn);
+		return (bloomFilter != null) ? bloomFilter.mayHaveStatement(conn, subj, pred, obj, ctxs)
+				: conn.hasStatement(subj, pred, obj, true, ctxs);
 	}
 
 	private Resource[] getContexts(Var var) {

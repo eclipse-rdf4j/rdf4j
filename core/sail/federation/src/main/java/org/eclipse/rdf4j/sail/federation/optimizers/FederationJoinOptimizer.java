@@ -52,6 +52,8 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 
 	private final Collection<? extends RepositoryConnection> members;
 
+	private final Map<RepositoryConnection, RepositoryBloomFilter> bloomFilters;
+
 	private Map<Resource, List<RepositoryConnection>> contextToMemberMap;
 
 	private final PrefixHashSet localSpace;
@@ -63,9 +65,16 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	public FederationJoinOptimizer(Collection<? extends RepositoryConnection> members, boolean distinct,
 			PrefixHashSet localSpace)
 	{
-		super();
+		this(members, distinct, localSpace,
+				Collections.<RepositoryConnection, RepositoryBloomFilter> emptyMap());
+	}
+
+	public FederationJoinOptimizer(Collection<? extends RepositoryConnection> members, boolean distinct,
+			PrefixHashSet localSpace, Map<RepositoryConnection, RepositoryBloomFilter> bloomFilters)
+	{
 		this.members = members;
 		this.localSpace = localSpace;
+		this.bloomFilters = bloomFilters;
 		this.distinct = distinct;
 	}
 
@@ -356,7 +365,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 				// fallback to using hasStatement()
 				// but hopefully we narrowed it down to results
 				for (RepositoryConnection member : results) {
-					if (member.hasStatement(subj, pred, obj, true, ctx)) {
+					if (mayHaveStatement(member, subj, pred, obj, ctx)) {
 						if (result == null) {
 							result = member;
 						}
@@ -368,6 +377,14 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 				}
 			}
 			return result;
+		}
+
+		private boolean mayHaveStatement(RepositoryConnection conn, Resource subj, IRI pred, Value obj,
+				Resource... ctxs)
+		{
+			RepositoryBloomFilter bloomFilter = bloomFilters.get(conn);
+			return (bloomFilter != null) ? bloomFilter.mayHaveStatement(conn, subj, pred, obj, ctxs)
+					: conn.hasStatement(subj, pred, obj, true, ctxs);
 		}
 
 		private void usedBy(RepositoryConnection member) {
