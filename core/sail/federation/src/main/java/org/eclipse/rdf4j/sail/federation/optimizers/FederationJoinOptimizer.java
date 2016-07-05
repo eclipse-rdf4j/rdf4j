@@ -748,7 +748,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	private List<TupleExpr> getUnionArgs(TupleExpr union, List<TupleExpr> list) {
 		if (union instanceof Union) {
 			getUnionArgs(((Union)union).getLeftArg(), list);
-			getUnionArgs(((Union)union).getLeftArg(), list);
+			getUnionArgs(((Union)union).getRightArg(), list);
 		}
 		else {
 			list.add(union);
