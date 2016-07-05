@@ -275,16 +275,7 @@ public class RepositoryController extends AbstractController {
 		// determine if inferred triples should be included in query evaluation
 		boolean includeInferred = ProtocolUtil.parseBooleanParam(request, INCLUDE_INFERRED_PARAM_NAME, true);
 
-		String timeout = request.getParameter(Protocol.TIMEOUT_PARAM_NAME);
-		int maxQueryTime = 0;
-		if (timeout != null) {
-			try {
-				maxQueryTime = Integer.parseInt(timeout);
-			}
-			catch (NumberFormatException e) {
-				throw new ClientHTTPException(SC_BAD_REQUEST, "Invalid timeout value: " + timeout);
-			}
-		}
+		final int maxQueryTime = ProtocolUtil.parseTimeoutParam(request);
 
 		// build a dataset, if specified
 		String[] defaultGraphURIs = request.getParameterValues(DEFAULT_GRAPH_PARAM_NAME);
