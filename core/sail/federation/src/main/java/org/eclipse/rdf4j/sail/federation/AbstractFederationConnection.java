@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -62,6 +63,7 @@ import org.eclipse.rdf4j.sail.federation.optimizers.OwnedTupleExprPruner;
 import org.eclipse.rdf4j.sail.federation.optimizers.PrepareOwnedTupleExpr;
 import org.eclipse.rdf4j.sail.federation.optimizers.QueryModelPruner;
 import org.eclipse.rdf4j.sail.federation.optimizers.QueryMultiJoinOptimizer;
+import org.eclipse.rdf4j.sail.federation.optimizers.RepositoryBloomFilter;
 import org.eclipse.rdf4j.sail.helpers.AbstractSail;
 import org.eclipse.rdf4j.sail.helpers.AbstractSailConnection;
 import org.slf4j.Logger;
@@ -434,10 +436,18 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 		new QueryMultiJoinOptimizer().optimize(query, dataset, bindings);
 		// new FilterOptimizer().optimize(query, dataset, bindings);
 
-		new EmptyPatternOptimizer(members).optimize(query, dataset, bindings);
+		Map<Repository, RepositoryBloomFilter> bloomFilters = federation.getBloomFilters();
+		Map<RepositoryConnection, RepositoryBloomFilter> bloomFiltersByConn = new HashMap<>();
+		List<Repository> repoMembers = federation.getMembers();
+		for(int i=0; i<members.size(); i++) {
+			bloomFiltersByConn.put(members.get(i), bloomFilters.get(repoMembers.get(i)));
+		}
+
+		new EmptyPatternOptimizer(members, bloomFiltersByConn).optimize(query, dataset, bindings);
 		boolean distinct = federation.isDistinct();
 		PrefixHashSet local = federation.getLocalPropertySpace();
-		new FederationJoinOptimizer(members, distinct, local).optimize(query, dataset, bindings);
+		new FederationJoinOptimizer(members, distinct, local, bloomFiltersByConn).optimize(query, dataset,
+				bindings);
 		new OwnedTupleExprPruner().optimize(query, dataset, bindings);
 		new QueryModelPruner().optimize(query, dataset, bindings);
 		new QueryMultiJoinOptimizer().optimize(query, dataset, bindings);
