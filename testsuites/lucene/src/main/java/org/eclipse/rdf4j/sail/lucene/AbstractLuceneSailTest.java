@@ -27,6 +27,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -47,8 +48,6 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.lucene.LuceneSail;
-import org.eclipse.rdf4j.sail.lucene.LuceneSailSchema;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
@@ -1037,6 +1036,35 @@ public abstract class AbstractLuceneSailTest {
 		assertEquals(3, results);
 
 		result.close();
+	}
+
+	@Test
+	public void testMultithreadedAdd()
+		throws InterruptedException
+	{
+		int numThreads = 3;
+		final CountDownLatch startLatch = new CountDownLatch(1);
+		final CountDownLatch endLatch = new CountDownLatch(numThreads);
+		for (int i = 0; i < numThreads; i++) {
+			new Thread(new Runnable() {
+				public void run() {
+					try (RepositoryConnection con = repository.getConnection())
+					{
+						startLatch.await();
+						for (int i = 0; i < 10; i++) {
+							con.add(vf.createIRI("ex:" + i), vf.createIRI("ex:prop" + i % 3),
+									vf.createLiteral(i));
+						}
+					}
+					catch (InterruptedException e) {
+						throw new AssertionError(e);
+					}
+					endLatch.countDown();
+				}
+			}).start();
+		}
+		startLatch.countDown();
+		endLatch.await();
 	}
 
 	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri)
