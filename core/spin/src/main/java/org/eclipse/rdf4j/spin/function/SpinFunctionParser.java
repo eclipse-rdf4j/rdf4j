@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SPIN;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.Statements;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.spin.Argument;
@@ -36,7 +36,7 @@ public class SpinFunctionParser implements FunctionParser {
 	public Function parse(IRI funcUri, TripleSource store)
 		throws RDF4JException
 	{
-		Value body = Statements.singleValue(funcUri, SPIN.BODY_PROPERTY, store);
+		Value body = TripleSources.singleValue(funcUri, SPIN.BODY_PROPERTY, store);
 		if (!(body instanceof Resource)) {
 			return null;
 		}
