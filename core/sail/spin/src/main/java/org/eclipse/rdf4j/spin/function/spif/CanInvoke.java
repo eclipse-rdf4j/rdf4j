@@ -59,7 +59,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.Statements;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.sail.spin.SpinFunctionInterpreter;
 import org.eclipse.rdf4j.sail.spin.SpinInferencing;
 import org.eclipse.rdf4j.sail.spin.SpinMagicPropertyInterpreter;
@@ -229,13 +229,13 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 				}
 			};
 
-			CloseableIteration<? extends Resource, QueryEvaluationException> iter = Statements.getObjectResources(
+			CloseableIteration<? extends Resource, QueryEvaluationException> iter = TripleSources.getObjectResources(
 					func, SPIN.CONSTRAINT_PROPERTY, qpTripleSource);
 			try {
 				while (iter.hasNext()) {
 					Resource constraint = iter.next();
 					Set<IRI> constraintTypes = Iterations.asSet(
-							Statements.getObjectURIs(constraint, RDF.TYPE, qpTripleSource));
+							TripleSources.getObjectURIs(constraint, RDF.TYPE, qpTripleSource));
 					// skip over argument constraints that we have already checked
 					if (!constraintTypes.contains(SPL.ARGUMENT_TEMPLATE)) {
 						ConstraintViolation violation = SpinInferencing.checkConstraint(funcInstance,

@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.Statements;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.spin.SpinParser;
 
 public class SpinTupleFunctionAsFunctionParser implements FunctionParser {
@@ -38,12 +38,12 @@ public class SpinTupleFunctionAsFunctionParser implements FunctionParser {
 	public Function parse(IRI funcUri, TripleSource store)
 		throws RDF4JException
 	{
-		Statement magicPropStmt = Statements.single(funcUri, RDF.TYPE, SPIN.MAGIC_PROPERTY_CLASS, store);
+		Statement magicPropStmt = TripleSources.single(funcUri, RDF.TYPE, SPIN.MAGIC_PROPERTY_CLASS, store);
 		if (magicPropStmt == null) {
 			return null;
 		}
 
-		Value body = Statements.singleValue(funcUri, SPIN.BODY_PROPERTY, store);
+		Value body = TripleSources.singleValue(funcUri, SPIN.BODY_PROPERTY, store);
 		if (!(body instanceof Resource)) {
 			return null;
 		}
