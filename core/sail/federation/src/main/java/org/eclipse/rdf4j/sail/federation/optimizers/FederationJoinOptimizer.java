@@ -41,6 +41,9 @@ import org.eclipse.rdf4j.sail.federation.PrefixHashSet;
 import org.eclipse.rdf4j.sail.federation.algebra.NaryJoin;
 import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
 
+import com.google.common.base.Function;
+import com.google.common.base.Functions;
+
 /**
  * Search for Join, LeftJoin, and Union arguments that can be evaluated in a single member.
  * 
@@ -52,7 +55,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 
 	private final Collection<? extends RepositoryConnection> members;
 
-	private final Map<RepositoryConnection, RepositoryBloomFilter> bloomFilters;
+	private final Function<? super RepositoryConnection, ? extends RepositoryBloomFilter> bloomFilters;
 
 	private Map<Resource, List<RepositoryConnection>> contextToMemberMap;
 
@@ -66,11 +69,12 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 			PrefixHashSet localSpace)
 	{
 		this(members, distinct, localSpace,
-				Collections.<RepositoryConnection, RepositoryBloomFilter> emptyMap());
+				Functions.constant(new AccurateRepositoryBloomFilter(true)));
 	}
 
 	public FederationJoinOptimizer(Collection<? extends RepositoryConnection> members, boolean distinct,
-			PrefixHashSet localSpace, Map<RepositoryConnection, RepositoryBloomFilter> bloomFilters)
+			PrefixHashSet localSpace,
+			Function<? super RepositoryConnection, ? extends RepositoryBloomFilter> bloomFilters)
 	{
 		this.members = members;
 		this.localSpace = localSpace;
@@ -365,7 +369,8 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 				// fallback to using hasStatement()
 				// but hopefully we narrowed it down to results
 				for (RepositoryConnection member : results) {
-					if (mayHaveStatement(member, subj, pred, obj, ctx)) {
+					RepositoryBloomFilter bloomFilter = bloomFilters.apply(member);
+					if (bloomFilter == null || bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
 						if (result == null) {
 							result = member;
 						}
@@ -377,14 +382,6 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 				}
 			}
 			return result;
-		}
-
-		private boolean mayHaveStatement(RepositoryConnection conn, Resource subj, IRI pred, Value obj,
-				Resource... ctxs)
-		{
-			RepositoryBloomFilter bloomFilter = bloomFilters.get(conn);
-			return (bloomFilter != null) ? bloomFilter.mayHaveStatement(conn, subj, pred, obj, ctxs)
-					: conn.hasStatement(subj, pred, obj, true, ctxs);
 		}
 
 		private void usedBy(RepositoryConnection member) {

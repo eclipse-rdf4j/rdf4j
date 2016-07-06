@@ -9,8 +9,6 @@ package org.eclipse.rdf4j.sail.federation.optimizers;
 
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -26,6 +24,9 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
+import com.google.common.base.Function;
+import com.google.common.base.Functions;
+
 /**
  * Remove StatementPatterns that have no statements.
  * 
@@ -37,14 +38,14 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 
 	private final Collection<? extends RepositoryConnection> members;
 
-	private final Map<RepositoryConnection, RepositoryBloomFilter> bloomFilters;
+	private final Function<? super RepositoryConnection, ? extends RepositoryBloomFilter> bloomFilters;
 
 	public EmptyPatternOptimizer(Collection<? extends RepositoryConnection> members) {
-		this(members, Collections.<RepositoryConnection, RepositoryBloomFilter> emptyMap());
+		this(members, Functions.constant(new AccurateRepositoryBloomFilter(true)));
 	}
 
 	public EmptyPatternOptimizer(Collection<? extends RepositoryConnection> members,
-			Map<RepositoryConnection, RepositoryBloomFilter> bloomFilters)
+			Function<? super RepositoryConnection, ? extends RepositoryBloomFilter> bloomFilters)
 	{
 		this.members = members;
 		this.bloomFilters = bloomFilters;
@@ -68,19 +69,12 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 		Value obj = node.getObjectVar().getValue();
 		Resource[] ctx = getContexts(node.getContextVar());
 		for (RepositoryConnection member : members) {
-			if (mayHaveStatement(member, subj, pred, obj, ctx)) {
+			RepositoryBloomFilter bloomFilter = bloomFilters.apply(member);
+			if (bloomFilter == null || bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
 				return;
 			}
 		}
 		node.replaceWith(new EmptySet());
-	}
-
-	private boolean mayHaveStatement(RepositoryConnection conn, Resource subj, IRI pred, Value obj,
-			Resource... ctxs)
-	{
-		RepositoryBloomFilter bloomFilter = bloomFilters.get(conn);
-		return (bloomFilter != null) ? bloomFilter.mayHaveStatement(conn, subj, pred, obj, ctxs)
-				: conn.hasStatement(subj, pred, obj, true, ctxs);
 	}
 
 	private Resource[] getContexts(Var var) {

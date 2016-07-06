@@ -100,7 +100,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 		members.add(member);
 	}
 
-	List<Repository> getMembers() {
+	protected List<Repository> getMembers() {
 		return Collections.unmodifiableList(members);
 	}
 
@@ -108,7 +108,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 		bloomFilters.put(member, filter);
 	}
 
-	Map<Repository, RepositoryBloomFilter> getBloomFilters() {
+	protected Map<Repository, RepositoryBloomFilter> getBloomFilters() {
 		return Collections.unmodifiableMap(bloomFilters);
 	}
 
