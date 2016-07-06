@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryPreparer;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.Statements;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.spin.function.AbstractSpinFunction;
 
 public class HasAllObjects extends AbstractSpinFunction implements Function {
@@ -40,11 +40,11 @@ public class HasAllObjects extends AbstractSpinFunction implements Function {
 		IRI pred = (IRI)args[1];
 		Resource list = (Resource)args[2];
 		try {
-			Iteration<? extends Value, QueryEvaluationException> iter = Statements.list(list,
+			Iteration<? extends Value, QueryEvaluationException> iter = TripleSources.list(list,
 					qp.getTripleSource());
 			while (iter.hasNext()) {
 				Value obj = iter.next();
-				if (Statements.single(subj, pred, obj, qp.getTripleSource()) == null) {
+				if (TripleSources.single(subj, pred, obj, qp.getTripleSource()) == null) {
 					return BooleanLiteralImpl.FALSE;
 				}
 			}

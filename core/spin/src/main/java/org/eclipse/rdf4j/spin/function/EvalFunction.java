@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryPreparer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.Statements;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
@@ -126,7 +126,7 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 	private boolean isQuery(Resource r, TripleSource store)
 		throws RDF4JException
 	{
-		CloseableIteration<? extends URI, ? extends RDF4JException> typeIter = Statements.getObjectURIs(r,
+		CloseableIteration<? extends URI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(r,
 				RDF.TYPE, store);
 		try {
 			while (typeIter.hasNext()) {
