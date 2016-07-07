@@ -17,10 +17,6 @@ import org.apache.lucene.search.highlight.Highlighter;
 import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
 
-/**
- * @deprecated since 4.1.0. Use the LuceneSail in package {@code org.openrdf.sail.lucene} instead.
- */
-@Deprecated
 public class LuceneDocumentScore extends LuceneDocumentResult implements DocumentScore {
 
 	private final Highlighter highlighter;
@@ -29,26 +25,22 @@ public class LuceneDocumentScore extends LuceneDocumentResult implements Documen
 		return all ? null : Collections.singleton(SearchFields.URI_FIELD_NAME);
 	}
 
-	@Deprecated
 	public LuceneDocumentScore(ScoreDoc doc, Highlighter highlighter, LuceneIndex index) {
 		super(doc, index, requiredFields(highlighter != null));
 		this.highlighter = highlighter;
 	}
 
 	@Override
-	@Deprecated
 	public float getScore() {
 		return scoreDoc.score;
 	}
 
 	@Override
-	@Deprecated
 	public boolean isHighlighted() {
 		return (highlighter != null);
 	}
 
 	@Override
-	@Deprecated
 	public Iterable<String> getSnippets(final String field) {
 		List<String> values = getDocument().getProperty(field);
 		if (values == null) {
