@@ -11,6 +11,8 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.StringReader;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
@@ -18,7 +20,6 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
-import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -64,6 +65,20 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 	@Override
 	public void testOrderByQueriesAreInterruptable() {
 		System.err.println("temporarily disabled testOrderByQueriesAreInterruptable() for HTTPRepository");
+	}
+
+	@Test
+	public void testContextInTransactionAdd()
+		throws Exception
+	{
+		StringReader stringReader = new StringReader("<urn:1> <urn:1> <urn:1>.");
+		testCon.begin();
+		IRI CONTEXT = testCon.getValueFactory().createIRI("urn:context");
+		testCon.add(stringReader, "urn:baseUri", RDFFormat.NTRIPLES, CONTEXT);
+		testCon.commit();
+
+		IRI iri = testCon.getValueFactory().createIRI("urn:1");
+		assertTrue(testCon.hasStatement(iri, iri, iri, false, CONTEXT));
 	}
 
 	@Test

@@ -65,7 +65,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.Statements;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
@@ -466,7 +466,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		throws QueryEvaluationException
 	{
 		List<IRI> classes = new LinkedList<IRI>();
-		CloseableIteration<? extends IRI, QueryEvaluationException> classIter = Statements.getObjectURIs(subj,
+		CloseableIteration<? extends IRI, QueryEvaluationException> classIter = TripleSources.getObjectURIs(subj,
 				RDF.TYPE, tripleSource);
 		Iterations.addAll(classIter, classes);
 		return classes;
@@ -477,7 +477,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	{
 		int nofInferred = 0;
 		Set<Resource> constructed = new HashSet<Resource>(classHierarchy.size());
-		CloseableIteration<? extends Resource, QueryEvaluationException> classIter = Statements.getObjectResources(
+		CloseableIteration<? extends Resource, QueryEvaluationException> classIter = TripleSources.getObjectResources(
 				subj, EXECUTED, tripleSource);
 		Iterations.addAll(classIter, constructed);
 
@@ -497,7 +497,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		throws RDF4JException
 	{
 		List<Resource> constructors = new ArrayList<Resource>(2);
-		CloseableIteration<? extends Resource, QueryEvaluationException> constructorIter = Statements.getObjectResources(
+		CloseableIteration<? extends Resource, QueryEvaluationException> constructorIter = TripleSources.getObjectResources(
 				cls, SPIN.CONSTRUCTOR_PROPERTY, tripleSource);
 		Iterations.addAll(constructorIter, constructors);
 		return constructors;
@@ -558,7 +558,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 				ruleProps.size());
 		for (IRI ruleProp : ruleProps) {
 			List<Resource> rules = new ArrayList<Resource>(2);
-			CloseableIteration<? extends Resource, QueryEvaluationException> ruleIter = Statements.getObjectResources(
+			CloseableIteration<? extends Resource, QueryEvaluationException> ruleIter = TripleSources.getObjectResources(
 					cls, ruleProp, tripleSource);
 			Iterations.addAll(ruleIter, rules);
 			if (!rules.isEmpty()) {
@@ -602,7 +602,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		throws QueryEvaluationException
 	{
 		String comment = null;
-		CloseableIteration<? extends Literal, QueryEvaluationException> iter = Statements.getObjectLiterals(
+		CloseableIteration<? extends Literal, QueryEvaluationException> iter = TripleSources.getObjectLiterals(
 				subj, RDFS.COMMENT, tripleSource);
 		try {
 			while (iter.hasNext()) {
@@ -693,7 +693,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		throws QueryEvaluationException
 	{
 		List<Resource> constraints = new ArrayList<Resource>(2);
-		CloseableIteration<? extends Resource, QueryEvaluationException> constraintIter = Statements.getObjectResources(
+		CloseableIteration<? extends Resource, QueryEvaluationException> constraintIter = TripleSources.getObjectResources(
 				cls, SPIN.CONSTRAINT_PROPERTY, tripleSource);
 		Iterations.addAll(constraintIter, constraints);
 		return constraints;

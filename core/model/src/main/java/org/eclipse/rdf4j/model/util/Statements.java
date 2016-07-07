@@ -61,4 +61,24 @@ public class Statements {
 		}
 		return collection;
 	}
+
+	/**
+	 * Checks if the two statements represent the same triple (that is, they have equal subject, predicate,
+	 * and object). Context information is disregarded.
+	 * 
+	 * @param st1
+	 *        the first statement to compare. May not be null.
+	 * @param st2
+	 *        the second statement to compare. May not be null.
+	 * @return {@code true} iff the subject, predicate and object of {@code st1} and {@code st2} are equal,
+	 *         {@code false} otherwise.
+	 * @see Statement#equals(Object)
+	 * @since 2.0
+	 */
+	public static boolean isSameTriple(Statement st1, Statement st2) {
+		Objects.requireNonNull(st1);
+		Objects.requireNonNull(st2);
+		return st1.getPredicate().equals(st2.getPredicate()) && st1.getSubject().equals(st2.getSubject())
+				&& st1.getObject().equals(st2.getObject());
+	}
 }

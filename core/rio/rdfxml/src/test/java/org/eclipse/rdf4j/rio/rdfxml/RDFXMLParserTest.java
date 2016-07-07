@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DC;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.hamcrest.CoreMatchers;
@@ -52,11 +53,11 @@ public class RDFXMLParserTest {
 
 		Collection<Statement> stmts = sc.getStatements();
 
-		assertThat(stmts, Matchers.<Statement> iterableWithSize(2));
+		assertThat(stmts, Matchers.<Statement> iterableWithSize(3));
 
 		Iterator<Statement> iter = stmts.iterator();
 
-		Statement stmt1 = iter.next(), stmt2 = iter.next();
+		Statement stmt1 = iter.next(), stmt2 = iter.next(), stmt3 = iter.next();
 
 		assertEquals(vf.createIRI("http://www.example.com/#"), stmt1.getSubject());
 		assertEquals(vf.createIRI("http://www.example.com/ns/#document-about"), stmt1.getPredicate());
@@ -77,5 +78,8 @@ public class RDFXMLParserTest {
 		assertEquals(res, stmt2.getSubject());
 		assertEquals(DC.TITLE, stmt2.getPredicate());
 		assertEquals(vf.createLiteral("Empty File"), stmt2.getObject());
+
+		assertEquals(RDFS.LABEL, stmt3.getPredicate());
+		assertEquals(vf.createLiteral("  Literal with whitespace  "), stmt3.getObject());
 	}
 }

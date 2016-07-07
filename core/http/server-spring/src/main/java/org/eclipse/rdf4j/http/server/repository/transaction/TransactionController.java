@@ -77,6 +77,8 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.repository.util.RDFInserter;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
@@ -247,6 +249,12 @@ public class TransactionController extends AbstractController {
 			baseURI = "";
 		}
 
+		final Resource[] contexts = ProtocolUtil.parseContextParam(request, CONTEXT_PARAM_NAME,
+				conn.getValueFactory());
+
+		final boolean preserveNodeIds = ProtocolUtil.parseBooleanParam(request,
+				Protocol.PRESERVE_BNODE_ID_PARAM_NAME, false);
+
 		try {
 			RDFFormat parserFormat = Rio.getParserFormatForMIMEType(request.getContentType());
 
@@ -255,7 +263,22 @@ public class TransactionController extends AbstractController {
 					if (parserFormat == null) {
 						throw Rio.unsupportedFormat(request.getContentType());
 					}
-					conn.add(request.getInputStream(), baseURI, parserFormat);
+					if (preserveNodeIds) {
+						// create a reconfigured parser + inserter instead of relying on standard
+						// repositoryconn add method.
+						RDFParser parser = Rio.createParser(parserFormat);
+						parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+						RDFInserter inserter = new RDFInserter(conn);
+						inserter.setPreserveBNodeIDs(true);
+						if (contexts.length > 0) {
+							inserter.enforceContext(contexts);
+						}
+						parser.setRDFHandler(inserter);
+						parser.parse(request.getInputStream(), baseURI);
+					}
+					else {
+						conn.add(request.getInputStream(), baseURI, parserFormat, contexts);
+					}
 					break;
 				case DELETE:
 					if (parserFormat == null) {
@@ -754,8 +777,9 @@ public class TransactionController extends AbstractController {
 			Resource subject = SESAME.WILDCARD.equals(st.getSubject()) ? null : st.getSubject();
 			IRI predicate = SESAME.WILDCARD.equals(st.getPredicate()) ? null : st.getPredicate();
 			Value object = SESAME.WILDCARD.equals(st.getObject()) ? null : st.getObject();
-			Resource context = st.getContext();
+
 			try {
+				Resource context = st.getContext();
 				if (context != null) {
 					conn.remove(subject, predicate, object, st.getContext());
 				}

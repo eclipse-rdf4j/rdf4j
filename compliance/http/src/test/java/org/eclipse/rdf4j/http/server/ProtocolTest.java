@@ -17,18 +17,24 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.io.Charsets;
 import org.apache.http.HttpEntity;
+import org.apache.http.NameValuePair;
+import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.message.BasicNameValuePair;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -192,6 +198,31 @@ public class ProtocolTest {
 		CloseableHttpResponse response = httpclient.execute(post);
 
 		System.out.println("Update Direct Post Status: " + response.getStatusLine());
+		int statusCode = response.getStatusLine().getStatusCode();
+		assertEquals(true, statusCode >= 200 && statusCode < 400);
+	}
+
+	/**
+	 * Checks that the server accepts a formencoded POST with an update and a timeout parameter.
+	 */
+	@Test
+	public void testUpdateForm_POST()
+		throws Exception
+	{
+		String update = "delete where { <monkey:pod> ?p ?o . }";
+		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
+		CloseableHttpClient httpclient = HttpClients.createDefault();
+		HttpPost post = new HttpPost(location);
+		List<NameValuePair> nvps = new ArrayList<NameValuePair>();
+		nvps.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));
+		nvps.add(new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, "1"));
+		UrlEncodedFormEntity entity = new UrlEncodedFormEntity(nvps, Charsets.UTF_8);
+
+		post.setEntity(entity);
+
+		CloseableHttpResponse response = httpclient.execute(post);
+
+		System.out.println("Update Form Post Status: " + response.getStatusLine());
 		int statusCode = response.getStatusLine().getStatusCode();
 		assertEquals(true, statusCode >= 200 && statusCode < 400);
 	}

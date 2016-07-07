@@ -20,9 +20,7 @@ import org.apache.lucene.store.Directory;
  * read.
  * 
  * @author Tomasz Trela, DFKI Gmbh
- * @deprecated since 4.1.0. Use the LuceneSail in package {@code org.openrdf.sail.lucene} instead.
  */
-@Deprecated
 public class ReaderMonitor extends AbstractReaderMonitor {
 
 	/**
@@ -39,7 +37,6 @@ public class ReaderMonitor extends AbstractReaderMonitor {
 	 * @param directory
 	 *        Initializes IndexReader
 	 */
-	@Deprecated
 	public ReaderMonitor(final LuceneIndex index, Directory directory) {
 		super(index);
 		try {

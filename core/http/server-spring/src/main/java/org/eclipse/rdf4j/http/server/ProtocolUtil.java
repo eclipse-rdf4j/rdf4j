@@ -180,6 +180,33 @@ public class ProtocolUtil {
 		}
 	}
 
+	/**
+	 * Reads the {@link Protocol#TIMEOUT_PARAM_NAME} parameter from the request and (if present) parses it
+	 * into an integer value.
+	 * 
+	 * @param request
+	 *        the {@link HttpServletRequest} to read the parameter from
+	 * @return the value of the timeout parameter as an integer (representing the timeout time in seconds), or
+	 *         0 if no timeout parameter is specified in the request.
+	 * @throws ClientHTTPException
+	 *         if the value of the timeout parameter is not a valid integer.
+	 */
+	public static int parseTimeoutParam(HttpServletRequest request)
+		throws ClientHTTPException
+	{
+		final String timeoutParam = request.getParameter(Protocol.TIMEOUT_PARAM_NAME);
+		int maxExecutionTime = 0;
+		if (timeoutParam != null) {
+			try {
+				maxExecutionTime = Integer.parseInt(timeoutParam);
+			}
+			catch (NumberFormatException e) {
+				throw new ClientHTTPException(SC_BAD_REQUEST, "Invalid timeout value: " + timeoutParam);
+			}
+		}
+		return maxExecutionTime;
+	}
+
 	public static void logAcceptableFormats(HttpServletRequest request) {
 		Logger logger = LoggerFactory.getLogger(ProtocolUtil.class);
 		if (logger.isDebugEnabled()) {
