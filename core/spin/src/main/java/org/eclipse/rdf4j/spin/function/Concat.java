@@ -50,7 +50,7 @@ public class Concat implements Function {
 					if (languageTag == null) {
 						languageTag = lit.getLanguage().get();
 					}
-					else if (!languageTag.equals(lit.getLanguage())) {
+					else if (!languageTag.equals(lit.getLanguage().get())) {
 						languageTag = null;
 						useLanguageTag = false;
 					}
