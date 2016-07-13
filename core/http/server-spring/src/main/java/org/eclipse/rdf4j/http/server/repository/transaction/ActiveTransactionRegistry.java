@@ -59,8 +59,8 @@ public enum ActiveTransactionRegistry {
 
 	/**
 	 * The secondary cache does automatic cleanup of its entries based on the configured timeout. If an
-	 * expired entry no longer has an active lock (meaning no operation is currently active on the connection,
-	 * and the transaction is therefore considered "orphaned"), it also discarded from the primary cache.
+	 * expired entry no longer is no longer handed out to an actual server-side operation, it is considered
+	 * "orphaned" and discarded from the primary cache.
 	 */
 	private final Cache<UUID, CacheEntry> secondaryCache;
 
