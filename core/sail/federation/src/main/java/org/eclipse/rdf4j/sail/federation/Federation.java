@@ -36,13 +36,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.filters.RepositoryBloomFilter;
 import org.eclipse.rdf4j.repository.sail.config.RepositoryResolver;
 import org.eclipse.rdf4j.repository.sail.config.RepositoryResolverClient;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.federation.evaluation.FederationStrategy;
-import org.eclipse.rdf4j.sail.federation.optimizers.RepositoryBloomFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

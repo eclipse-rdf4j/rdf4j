@@ -53,24 +53,22 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
+import org.eclipse.rdf4j.repository.filters.AccurateRepositoryBloomFilter;
+import org.eclipse.rdf4j.repository.filters.RepositoryBloomFilter;
 import org.eclipse.rdf4j.repository.sail.config.RepositoryResolver;
 import org.eclipse.rdf4j.repository.sail.config.RepositoryResolverClient;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.federation.optimizers.AccurateRepositoryBloomFilter;
 import org.eclipse.rdf4j.sail.federation.optimizers.EmptyPatternOptimizer;
 import org.eclipse.rdf4j.sail.federation.optimizers.FederationJoinOptimizer;
 import org.eclipse.rdf4j.sail.federation.optimizers.OwnedTupleExprPruner;
 import org.eclipse.rdf4j.sail.federation.optimizers.PrepareOwnedTupleExpr;
 import org.eclipse.rdf4j.sail.federation.optimizers.QueryModelPruner;
 import org.eclipse.rdf4j.sail.federation.optimizers.QueryMultiJoinOptimizer;
-import org.eclipse.rdf4j.sail.federation.optimizers.RepositoryBloomFilter;
 import org.eclipse.rdf4j.sail.helpers.AbstractSail;
 import org.eclipse.rdf4j.sail.helpers.AbstractSailConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.google.common.base.Functions;
 
 /**
  * Unions the results from multiple {@link RepositoryConnection} into one {@link SailConnection}.
@@ -451,8 +449,8 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 			}
 			bloomFiltersByConn.put(members.get(i), bloomFilter);
 		}
-		com.google.common.base.Function<RepositoryConnection, RepositoryBloomFilter> bloomFilterFunction = Functions.forMap(
-				bloomFiltersByConn);
+		java.util.function.Function<RepositoryConnection, RepositoryBloomFilter> bloomFilterFunction = c -> bloomFiltersByConn.get(
+				c);
 
 		new EmptyPatternOptimizer(members, bloomFilterFunction).optimize(query, dataset,
 				bindings);

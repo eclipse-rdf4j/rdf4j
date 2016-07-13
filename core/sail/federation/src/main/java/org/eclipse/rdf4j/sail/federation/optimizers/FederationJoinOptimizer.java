@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -37,12 +38,11 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
+import org.eclipse.rdf4j.repository.filters.AccurateRepositoryBloomFilter;
+import org.eclipse.rdf4j.repository.filters.RepositoryBloomFilter;
 import org.eclipse.rdf4j.sail.federation.PrefixHashSet;
 import org.eclipse.rdf4j.sail.federation.algebra.NaryJoin;
 import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
-
-import com.google.common.base.Function;
-import com.google.common.base.Functions;
 
 /**
  * Search for Join, LeftJoin, and Union arguments that can be evaluated in a single member.
@@ -69,7 +69,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 			PrefixHashSet localSpace)
 	{
 		this(members, distinct, localSpace,
-				Functions.constant(new AccurateRepositoryBloomFilter(true)));
+				c -> new AccurateRepositoryBloomFilter(true));
 	}
 
 	public FederationJoinOptimizer(Collection<? extends RepositoryConnection> members, boolean distinct,

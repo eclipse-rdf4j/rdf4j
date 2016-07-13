@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.federation.optimizers;
 
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.Collection;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -23,9 +24,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-
-import com.google.common.base.Function;
-import com.google.common.base.Functions;
+import org.eclipse.rdf4j.repository.filters.AccurateRepositoryBloomFilter;
+import org.eclipse.rdf4j.repository.filters.RepositoryBloomFilter;
 
 /**
  * Remove StatementPatterns that have no statements.
@@ -41,7 +41,7 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 	private final Function<? super RepositoryConnection, ? extends RepositoryBloomFilter> bloomFilters;
 
 	public EmptyPatternOptimizer(Collection<? extends RepositoryConnection> members) {
-		this(members, Functions.constant(new AccurateRepositoryBloomFilter(true)));
+		this(members, c -> new AccurateRepositoryBloomFilter(true));
 	}
 
 	public EmptyPatternOptimizer(Collection<? extends RepositoryConnection> members,
