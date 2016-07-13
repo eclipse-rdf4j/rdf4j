@@ -59,8 +59,8 @@ public enum ActiveTransactionRegistry {
 
 	/**
 	 * The secondary cache does automatic cleanup of its entries based on the configured timeout. If an
-	 * expired entry no longer is no longer handed out to an actual server-side operation, it is considered
-	 * "orphaned" and discarded from the primary cache.
+	 * expired entry is no longer locked by any thread, it is considered "orphaned" and discarded from the
+	 * primary cache.
 	 */
 	private final Cache<UUID, CacheEntry> secondaryCache;
 
@@ -69,8 +69,6 @@ public enum ActiveTransactionRegistry {
 		private final RepositoryConnection connection;
 
 		private final ReentrantLock lock = new ReentrantLock();
-
-		private boolean handedOut;
 
 		public CacheEntry(RepositoryConnection connection) {
 			this.connection = connection;
@@ -88,23 +86,6 @@ public enum ActiveTransactionRegistry {
 		 */
 		public ReentrantLock getLock() {
 			return lock;
-		}
-
-		/**
-		 * Indicates if the entry is currently handed out to a thread
-		 * 
-		 * @return true iff the entry is handed out to a thread, false otherwise.
-		 */
-		public boolean isHandedOut() {
-			return handedOut;
-		}
-
-		/**
-		 * @param handedOut
-		 *        the handedOut to set
-		 */
-		public void setHandedOut(boolean handedOut) {
-			this.handedOut = handedOut;
 		}
 
 	}
@@ -148,7 +129,7 @@ public enum ActiveTransactionRegistry {
 					final UUID transactionId = notification.getKey();
 					final CacheEntry entry = notification.getValue();
 					synchronized (primaryCache) {
-						if (!entry.isHandedOut()) {
+						if (!entry.getLock().isLocked()) {
 							// no operation active, we can decommission this entry
 							primaryCache.invalidate(transactionId);
 							logger.warn("deregistered expired transaction {}", transactionId);
@@ -247,7 +228,6 @@ public enum ActiveTransactionRegistry {
 					"transaction with id " + transactionId + " is no longer registered!");
 		}
 		bumpSecondaryCache(transactionId, entry);
-		entry.setHandedOut(true);
 
 		return entry.getConnection();
 	}
@@ -267,7 +247,6 @@ public enum ActiveTransactionRegistry {
 			if (txnLock.isHeldByCurrentThread()) {
 				txnLock.unlock();
 			}
-			entry.setHandedOut(false);
 		}
 	}
 
