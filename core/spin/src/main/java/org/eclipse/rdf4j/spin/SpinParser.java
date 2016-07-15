@@ -2139,7 +2139,7 @@ public class SpinParser {
 				if (projElem != null) {
 					ExtensionElem extElem = projElem.getSourceExpression();
 					if (extElem != null && extElem.getExpr() instanceof Var) {
-						projElem.setSourceExpression(null);
+						projElems.remove(varName);
 					}
 				}
 			}
