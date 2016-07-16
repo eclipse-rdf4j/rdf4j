@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.http.server.repository.statements;
 
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
+import static javax.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE;
 import static javax.servlet.http.HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE;
 import static org.eclipse.rdf4j.http.protocol.Protocol.BASEURI_PARAM_NAME;
 import static org.eclipse.rdf4j.http.protocol.Protocol.BINDING_PREFIX;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
@@ -246,13 +248,14 @@ public class StatementsController extends AbstractController {
 			}
 		}
 
+		final int maxQueryTime = ProtocolUtil.parseTimeoutParam(request);
 		try {
-
 			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
 			synchronized (repositoryCon) {
 				Update update = repositoryCon.prepareUpdate(queryLn, sparqlUpdateString, baseURI);
 
 				update.setIncludeInferred(includeInferred);
+				update.setMaxExecutionTime(maxQueryTime);
 
 				if (dataset != null) {
 					update.setDataset(dataset);
@@ -280,6 +283,9 @@ public class StatementsController extends AbstractController {
 			}
 
 			return new ModelAndView(EmptySuccessView.getInstance());
+		}
+		catch (QueryInterruptedException e) {
+			throw new ServerHTTPException(SC_SERVICE_UNAVAILABLE, "update execution took too long");
 		}
 		catch (UpdateExecutionException e) {
 			if (e.getCause() != null && e.getCause() instanceof HTTPException) {

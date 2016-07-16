@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.model.vocabulary.SPINX;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.Statements;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.spin.Argument;
 import org.eclipse.rdf4j.spin.SpinParser;
 
@@ -46,9 +46,9 @@ public class SpinxFunctionParser implements FunctionParser {
 	public Function parse(IRI funcUri, TripleSource store)
 		throws RDF4JException
 	{
-		Value codeValue = Statements.singleValue(funcUri, SPINX.JAVA_SCRIPT_CODE_PROPERTY, store);
+		Value codeValue = TripleSources.singleValue(funcUri, SPINX.JAVA_SCRIPT_CODE_PROPERTY, store);
 		String code = (codeValue instanceof Literal) ? ((Literal)codeValue).getLabel() : null;
-		Value fileValue = Statements.singleValue(funcUri, SPINX.JAVA_SCRIPT_FILE_PROPERTY, store);
+		Value fileValue = TripleSources.singleValue(funcUri, SPINX.JAVA_SCRIPT_FILE_PROPERTY, store);
 		String file = (fileValue instanceof Literal) ? ((Literal)fileValue).getLabel() : null;
 		if (code == null && file == null) {
 			return null;
@@ -86,7 +86,7 @@ public class SpinxFunctionParser implements FunctionParser {
 			throw new QueryEvaluationException(e);
 		}
 
-		Value returnValue = Statements.singleValue(funcUri, SPIN.RETURN_TYPE_PROPERTY, store);
+		Value returnValue = TripleSources.singleValue(funcUri, SPIN.RETURN_TYPE_PROPERTY, store);
 
 		Map<IRI, Argument> templateArgs = parser.parseArguments(funcUri, store);
 

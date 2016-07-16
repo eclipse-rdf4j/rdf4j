@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
-import org.eclipse.rdf4j.model.URI;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * http://jena.hpl.hp.com/ARQ/property#.
@@ -26,13 +26,13 @@ public final class APF {
 
 	public static final String PREFIX = "apf";
 
-	public static final URI STR_SPLIT;
+	public static final IRI STR_SPLIT;
 
-	public static final URI CONCAT;
+	public static final IRI CONCAT;
 
 	static {
-		ValueFactory factory = ValueFactoryImpl.getInstance();
-		STR_SPLIT = factory.createURI(NAMESPACE, "strSplit");
-		CONCAT = factory.createURI(NAMESPACE, "concat");
+		ValueFactory factory = SimpleValueFactory.getInstance();
+		STR_SPLIT = factory.createIRI(NAMESPACE, "strSplit");
+		CONCAT = factory.createIRI(NAMESPACE, "concat");
 	}
 }

@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryPreparer;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.Statements;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.spin.function.AbstractSpinFunction;
 
 public class Name extends AbstractSpinFunction implements Function {
@@ -44,7 +44,7 @@ public class Name extends AbstractSpinFunction implements Function {
 			QueryPreparer qp = getCurrentQueryPreparer();
 			try {
 				List<Literal> labels = Iterations.asList(
-						Statements.getObjectLiterals((Resource)args[0], RDFS.LABEL, qp.getTripleSource()));
+						TripleSources.getObjectLiterals((Resource)args[0], RDFS.LABEL, qp.getTripleSource()));
 				return !labels.isEmpty() ? labels.get(0) : valueFactory.createLiteral(args[0].stringValue());
 			}
 			catch (QueryEvaluationException e) {

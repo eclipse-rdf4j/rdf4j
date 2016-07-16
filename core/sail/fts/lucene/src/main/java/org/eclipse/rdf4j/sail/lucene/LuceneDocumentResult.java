@@ -12,10 +12,6 @@ import java.util.Set;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.search.ScoreDoc;
 
-/**
- * @deprecated since 4.1.0. Use the LuceneSail in package {@code org.openrdf.sail.lucene} instead.
- */
-@Deprecated
 public class LuceneDocumentResult implements DocumentResult {
 
 	protected final ScoreDoc scoreDoc;
@@ -26,7 +22,6 @@ public class LuceneDocumentResult implements DocumentResult {
 
 	private LuceneDocument fullDoc;
 
-	@Deprecated
 	public LuceneDocumentResult(ScoreDoc doc, LuceneIndex index, Set<String> fields) {
 		this.scoreDoc = doc;
 		this.index = index;
@@ -34,7 +29,6 @@ public class LuceneDocumentResult implements DocumentResult {
 	}
 
 	@Override
-	@Deprecated
 	public SearchDocument getDocument() {
 		if (fullDoc == null) {
 			Document doc = index.getDocument(scoreDoc.doc, fields);

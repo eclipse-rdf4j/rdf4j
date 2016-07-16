@@ -41,7 +41,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.AbstractFederatedSe
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.TupleFunctionFederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.Statements;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.query.algebra.helpers.BGPCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelVisitorBase;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -117,7 +117,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 						magicProperties.put(sp, func);
 					}
 					else {
-						Statement magicPropStmt = Statements.single(pred, RDF.TYPE, SPIN.MAGIC_PROPERTY_CLASS,
+						Statement magicPropStmt = TripleSources.single(pred, RDF.TYPE, SPIN.MAGIC_PROPERTY_CLASS,
 								tripleSource);
 						if (magicPropStmt != null) {
 							func = parser.parseMagicProperty(pred, tripleSource);
