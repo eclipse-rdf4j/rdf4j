@@ -134,6 +134,10 @@ public enum ActiveTransactionRegistry {
 							primaryCache.invalidate(transactionId);
 							logger.warn("deregistered expired transaction {}", transactionId);
 						}
+						else {
+							// operation still active. Reinsert in secondary cache.
+							secondaryCache.put(transactionId, entry);
+						}
 					}
 				}
 			}
