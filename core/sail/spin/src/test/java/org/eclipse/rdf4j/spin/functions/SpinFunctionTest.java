@@ -30,15 +30,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The property functionsunit tester. How does it work?</br>
+ * Unit tester for the property functions.</br>
+ * <h2>How does it work?</h2></br>
  * <ul>
  * <li>The functions should be embedded into a SPARQL query.</li>
  * <li>The query might be any type: graph, tuple or boolean.</li>
- * <li>The file with sparql query should be written in <code>src/test/resources/</code> directory.</li>
- * <li>The file pathway should be added into static FINCTIONS variable as presented.</li>
+ * <li>The file with sparql query should be written in <code>src/test/resources/functions/</code>
+ * directory.</li>
+ * <li>The file pathway should be added into static FUNCTIONS array as presented.</li>
  * </ul>
- * 
- * @author Jacek Grzebyta
  */
 @RunWith(Parameterized.class)
 public class SpinFunctionTest {
