@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.config;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailFactory;
@@ -67,6 +68,11 @@ public class NativeStoreFactory implements SailFactory {
 			}
 			if (nativeConfig.getIterationCacheSyncThreshold() > 0) {
 				nativeStore.setIterationCacheSyncThreshold(nativeConfig.getIterationCacheSyncThreshold());
+			}
+
+			EvaluationStrategyFactory evalStratFactory = nativeConfig.getEvaluationStrategyFactory();
+			if (evalStratFactory != null) {
+				nativeStore.setEvaluationStrategyFactory(evalStratFactory);
 			}
 		}
 

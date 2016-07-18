@@ -114,6 +114,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
@@ -154,7 +155,7 @@ import org.eclipse.rdf4j.util.UUIDable;
  * @author David Huynh
  * @author Andreas Schwarte
  */
-public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
+public class SimpleEvaluationStrategy implements EvaluationStrategy, FederatedServiceResolverClient, UUIDable {
 
 	/*-----------*
 	 * Constants *
@@ -164,7 +165,7 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 
 	protected final Dataset dataset;
 
-	protected final FederatedServiceResolver serviceResolver;
+	protected FederatedServiceResolver serviceResolver;
 
 	// shared return value for successive calls of the NOW() function within the
 	// same query. Will be reset upon each new query being evaluated. See
@@ -208,6 +209,11 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 	@Override
 	public UUID getUUID() {
 		return uuid;
+	}
+
+	@Override
+	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+		serviceResolver = resolver;
 	}
 
 	public FederatedService getService(String serviceUrl)
