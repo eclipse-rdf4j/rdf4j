@@ -13,10 +13,12 @@ import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.spin.SpinSail;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -83,12 +85,18 @@ public class SpinFunctionTest {
 		queryString = StringUtils.strip(queryString); // final cleaning
 	}
 
+	/**
+	 * That might be used as example of usage of {@link TupleFunction}.
+	 * 
+	 * @throws Exception
+	 */
 	@Before
 	public void setUp()
 		throws Exception
 	{
 		MemoryStore store = new MemoryStore();
-		repository = new SailRepository(store);
+		SpinSail spinSail = new SpinSail(store);
+		repository = new SailRepository(spinSail);
 		repository.initialize();
 
 		connection = repository.getConnection();
