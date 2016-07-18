@@ -13,5 +13,16 @@ import org.eclipse.rdf4j.query.Dataset;
  * Factory for {@link EvaluationStrategy}s.
  */
 public interface EvaluationStrategyFactory {
+
+	/**
+	 * Returns the {@link EvaluationStrategy} to use to evaluate queries for the given {@link Dataset} and
+	 * {@link TripleSource}.
+	 * 
+	 * @param dataset
+	 *        the DataSet to evaluate queries against.
+	 * @param tripleSource
+	 *        the TripleSource to evaluate queries against.
+	 * @return an EvaluationStrategy.
+	 */
 	EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource);
 }

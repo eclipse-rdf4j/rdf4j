@@ -22,6 +22,10 @@ public class SimpleEvaluationStrategyFactory implements EvaluationStrategyFactor
 		this.serviceResolver = resolver;
 	}
 
+	public FederatedServiceResolver getFederatedServiceResolver() {
+		return serviceResolver;
+	}
+
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
 		return new SimpleEvaluationStrategy(tripleSource, dataset, serviceResolver);
