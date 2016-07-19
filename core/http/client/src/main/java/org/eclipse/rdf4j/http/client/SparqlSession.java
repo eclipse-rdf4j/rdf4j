@@ -129,6 +129,11 @@ public class SparqlSession implements HttpClientDependent {
 
 	final Logger logger = LoggerFactory.getLogger(this.getClass());
 
+	/**
+	 * shared instance of a {@link Joiner} for creating a comma-separated string.
+	 */
+	private static final Joiner commaJoiner = Joiner.on(", ");
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -786,7 +791,7 @@ public class SparqlSession implements HttpClientDependent {
 			}
 		}
 
-		method.addHeader(ACCEPT_PARAM_NAME, Joiner.on(", ").join(acceptValues));
+		method.addHeader(ACCEPT_PARAM_NAME, commaJoiner.join(acceptValues));
 
 		try {
 			return executeOK(method);
@@ -917,7 +922,7 @@ public class SparqlSession implements HttpClientDependent {
 		List<String> acceptParams = RDFFormat.getAcceptParams(rdfFormats, requireContext,
 				getPreferredRDFFormat());
 
-		method.addHeader(ACCEPT_PARAM_NAME, Joiner.on(", ").join(acceptParams));
+		method.addHeader(ACCEPT_PARAM_NAME, commaJoiner.join(acceptParams));
 
 		try {
 			return executeOK(method);
@@ -998,7 +1003,7 @@ public class SparqlSession implements HttpClientDependent {
 			}
 		}
 
-		method.addHeader(ACCEPT_PARAM_NAME, Joiner.on(", ").join(acceptValues));
+		method.addHeader(ACCEPT_PARAM_NAME, commaJoiner.join(acceptValues));
 
 		return executeOK(method);
 	}
