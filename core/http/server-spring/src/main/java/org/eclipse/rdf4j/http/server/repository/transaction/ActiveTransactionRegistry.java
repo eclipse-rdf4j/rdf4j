@@ -231,7 +231,7 @@ public enum ActiveTransactionRegistry {
 			throw new RepositoryException(
 					"transaction with id " + transactionId + " is no longer registered!");
 		}
-		bumpSecondaryCache(transactionId, entry);
+		updateSecondaryCache(transactionId, entry);
 
 		return entry.getConnection();
 	}
@@ -246,7 +246,7 @@ public enum ActiveTransactionRegistry {
 	public void returnTransactionConnection(UUID transactionId) {
 		final CacheEntry entry = primaryCache.getIfPresent(transactionId);
 		if (entry != null) {
-			bumpSecondaryCache(transactionId, entry);
+			updateSecondaryCache(transactionId, entry);
 			final ReentrantLock txnLock = entry.getLock();
 			if (txnLock.isHeldByCurrentThread()) {
 				txnLock.unlock();
@@ -256,14 +256,14 @@ public enum ActiveTransactionRegistry {
 
 	/**
 	 * Checks if the given transaction entry is still in the secondary cache (resetting its last access time
-	 * in the process) and if not reinsert it.
+	 * in the process) and if not reinserts it.
 	 * 
 	 * @param transactionId
 	 *        the id for the transaction to check
 	 * @param entry
 	 *        the cache entry to insert if necessary.
 	 */
-	private void bumpSecondaryCache(UUID transactionId, final CacheEntry entry) {
+	private void updateSecondaryCache(UUID transactionId, final CacheEntry entry) {
 		try {
 			secondaryCache.get(transactionId, new Callable<CacheEntry>() {
 
