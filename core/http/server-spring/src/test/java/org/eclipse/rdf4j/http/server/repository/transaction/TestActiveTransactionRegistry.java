@@ -93,8 +93,8 @@ public class TestActiveTransactionRegistry {
 					done.countDown();
 				}
 				catch (RepositoryException | InterruptedException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
+					fail(e.getMessage());
 				}
 			}
 		};
@@ -107,8 +107,8 @@ public class TestActiveTransactionRegistry {
 					txn1registered.await();
 				}
 				catch (InterruptedException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
+					fail(e.getMessage());
 				}
 
 				try {
@@ -119,8 +119,8 @@ public class TestActiveTransactionRegistry {
 					done.countDown();
 				}
 				catch (RepositoryException | InterruptedException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
+					fail(e.getMessage());
 				}
 			}
 		};
@@ -134,8 +134,8 @@ public class TestActiveTransactionRegistry {
 					registry.deregister(txnId1);
 				}
 				catch (InterruptedException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
+					fail(e.getMessage());
 				}
 			}
 		};
@@ -147,6 +147,14 @@ public class TestActiveTransactionRegistry {
 		t3.start();
 		t2.start();
 		t1.start();
+
+		try {
+			t3.join(5000);
+		}
+		catch (InterruptedException e) {
+			e.printStackTrace();
+			fail(e.getMessage());
+		}
 	}
 
 }
