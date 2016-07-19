@@ -149,7 +149,7 @@ public class TestActiveTransactionRegistry {
 		t1.start();
 
 		try {
-			t3.join(5000);
+			t3.join();
 		}
 		catch (InterruptedException e) {
 			e.printStackTrace();
