@@ -13,11 +13,15 @@ import java.util.Date;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+
 /**
  * A factory for creating {@link IRI IRIs}, {@link BNode blank nodes}, {@link Literal literals} and
- * {@link Statement statements}.
+ * {@link Statement statements} based on the RDF-1.1 Concepts and Abstract Syntax, a W3C Recommendation.
  * 
  * @author Arjohn Kampman
+ * @see <a href="http://www.w3.org/TR/rdf11-concepts/">RDF-1.1 Concepts and Abstract Syntax</a>
  */
 public interface ValueFactory {
 
@@ -40,7 +44,7 @@ public interface ValueFactory {
 	 * @return An object representing the URI.
 	 * @throws IlllegalArgumentException
 	 *         If the supplied string does not resolve to a legal (absolute) URI.
-	 * @deprecated since 4.0. Use {{@link #createIRI(String)} instead.
+	 * @deprecated Use {{@link #createIRI(String)} instead.
 	 */
 	@Deprecated
 	public URI createURI(String uri);
@@ -69,7 +73,7 @@ public interface ValueFactory {
 	 * @return An object representing the URI.
 	 * @throws IlllegalArgumentException
 	 *         If the supplied string does not resolve to a legal (absolute) URI.
-	 * @deprecated since 4.0. Use {{@link #createIRI(String, String)} instead.
+	 * @deprecated Use {{@link #createIRI(String, String)} instead.
 	 */
 	@Deprecated
 	public URI createURI(String namespace, String localName);
@@ -91,20 +95,22 @@ public interface ValueFactory {
 	public BNode createBNode(String nodeID);
 
 	/**
-	 * Creates a new literal with the supplied label.
+	 * Creates a new literal with the supplied label. The return value of {@link Literal#getDatatype()} for
+	 * the returned object must be {@link XMLSchema#STRING}.
 	 * 
 	 * @param label
-	 *        The literal's label.
+	 *        The literal's label, must not be <tt>null</tt>.
 	 */
 	public Literal createLiteral(String label);
 
 	/**
-	 * Creates a new literal with the supplied label and language attribute.
+	 * Creates a new literal with the supplied label and language attribute. The return value of
+	 * {@link Literal#getDatatype()} for the returned object must be {@link RDF#LANGSTRING}.
 	 * 
 	 * @param label
-	 *        The literal's label.
+	 *        The literal's label, must not be <tt>null</tt>.
 	 * @param language
-	 *        The literal's language attribute, or <tt>null</tt> if the literal doesn't have a language.
+	 *        The literal's language attribute, must not be <tt>null</tt>.
 	 */
 	public Literal createLiteral(String label, String language);
 
@@ -112,9 +118,10 @@ public interface ValueFactory {
 	 * Creates a new literal with the supplied label and datatype.
 	 * 
 	 * @param label
-	 *        The literal's label.
+	 *        The literal's label, must not be <tt>null</tt>.
 	 * @param datatype
-	 *        The literal's datatype, or <tt>null</tt> if the literal doesn't have a datatype.
+	 *        The literal's datatype. If it is null, the datatype {@link XMLSchema#STRING} will be assigned to
+	 *        this literal.
 	 */
 	public Literal createLiteral(String label, IRI datatype);
 
@@ -124,8 +131,9 @@ public interface ValueFactory {
 	 * @param label
 	 *        The literal's label.
 	 * @param datatype
-	 *        The literal's datatype, or <tt>null</tt> if the literal doesn't have a datatype.
-	 * @deprecated since 4.0. Use {@link #createLiteral(String, IRI)} instead.
+	 *        The literal's datatype. If it is null, the datatype {@link XMLSchema#STRING} will be assigned to
+	 *        this literal.
+	 * @deprecated Use {@link #createLiteral(String, IRI)} instead.
 	 */
 	@Deprecated
 	public Literal createLiteral(String label, URI datatype);
@@ -244,7 +252,7 @@ public interface ValueFactory {
 	 * @param object
 	 *        The statement's object.
 	 * @return The created statement.
-	 * @deprecated since 4.0. Use {@link #createStatement(Resource, IRI, Value)} instead.
+	 * @deprecated Use {@link #createStatement(Resource, IRI, Value)} instead.
 	 */
 	@Deprecated
 	public Statement createStatement(Resource subject, URI predicate, Value object);
@@ -274,7 +282,7 @@ public interface ValueFactory {
 	 * @param object
 	 *        The statement's object.
 	 * @return The created statement.
-	 * @deprecated since 4.0. Use {@link #createStatement(Resource, IRI, Value, Resource)} instead.
+	 * @deprecated Use {@link #createStatement(Resource, IRI, Value, Resource)} instead.
 	 */
 	@Deprecated
 	public Statement createStatement(Resource subject, URI predicate, Value object, Resource context);

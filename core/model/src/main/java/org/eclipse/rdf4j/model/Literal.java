@@ -13,11 +13,14 @@ import java.math.BigInteger;
 import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
- * An RDF literal consisting of a label (the lexical value), a datatype, and optionally a language tag.
+ * An RDF-1.1 literal consisting of a label (the lexical value), a datatype, and optionally a language tag.
  * 
  * @author Arjohn Kampman
+ * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal">RDF-1.1 Concepts and Abstract
+ *      Syntax</a>
  */
 public interface Literal extends Value {
 
@@ -36,10 +39,11 @@ public interface Literal extends Value {
 	public String getLanguage();
 
 	/**
-	 * Gets the datatype for this literal.
+	 * Gets the datatype for this literal. If {@link #getLanguage()} returns a non-empty value than this must
+	 * return {@link RDF#LANGSTRING}. If no datatype was assigned to this literal by the creator, then this
+	 * method must return {@link XMLSchema#STRING}.
 	 * 
-	 * @return The datatype for this literal. If {@link #getLanguage()} returns a non-empty value than this
-	 *         must return {@link RDF#LANGSTRING}.
+	 * @return The datatype for this literal.
 	 */
 	public IRI getDatatype();
 
