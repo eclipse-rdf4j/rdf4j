@@ -34,13 +34,17 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.inferencer.fc.DedupingInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.spin.functions.SpinFunctionTest;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /**
+ * Tests are provided by {@link SpinFunctionTest} </br>
  * Runs the spif test cases.
  */
+@Deprecated
 public class SpifSailTest {
 
 	private Repository repo;
@@ -113,6 +117,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testCast()
 		throws Exception
 	{
@@ -123,6 +128,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testIndexOf()
 		throws Exception
 	{
@@ -133,6 +139,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testLastIndexOf()
 		throws Exception
 	{
@@ -143,6 +150,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testEncodeURL()
 		throws Exception
 	{
@@ -153,6 +161,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testBuildString()
 		throws Exception
 	{
@@ -163,6 +172,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testBuildURI()
 		throws Exception
 	{
@@ -183,6 +193,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testForEach()
 		throws Exception
 	{
@@ -211,6 +222,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testSplit()
 		throws Exception
 	{
@@ -225,6 +237,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testCanInvoke()
 		throws Exception
 	{
@@ -236,6 +249,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testCantInvoke()
 		throws Exception
 	{

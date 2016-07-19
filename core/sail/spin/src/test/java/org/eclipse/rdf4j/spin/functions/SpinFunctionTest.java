@@ -1,7 +1,12 @@
 package org.eclipse.rdf4j.spin.functions;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URL;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -14,9 +19,14 @@ import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.inferencer.fc.DedupingInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.spin.SpinSail;
 import org.junit.After;
@@ -37,7 +47,6 @@ import org.slf4j.LoggerFactory;
  * <li>The query might be any type: graph, tuple or boolean.</li>
  * <li>The file with sparql query should be written in <code>src/test/resources/functions/</code>
  * directory.</li>
- * <li>The file pathway should be added into static FUNCTIONS array as presented.</li>
  * </ul>
  */
 @RunWith(Parameterized.class)
@@ -49,9 +58,7 @@ public class SpinFunctionTest {
 
 	private SailRepositoryConnection connection;
 
-	public static final String TESTS_ROOT = "/functions/";
-
-	public static final String[] FUNCTIONS = new String[] { "apf/strsplit", "apf/concat" };
+	public static final String TESTS_ROOT = SpinFunctionTest.class.getResource("/functions/").getFile();
 
 	@Parameters
 	public static Collection<Object[]> loadSparqls()
@@ -59,13 +66,44 @@ public class SpinFunctionTest {
 	{
 		List<Object[]> sparqls = new ArrayList<>();
 
-		for (String f : FUNCTIONS) {
-			String sparqlFile = TESTS_ROOT + f + ".sparql";
-			URL resource = SpinFunctionTest.class.getResource(sparqlFile);
-			sparqls.add(new Object[] { resource });
+		List<Path> functions = scanTests(Paths.get(TESTS_ROOT));
+
+		for (Path f : functions) {
+			File resPath = f.toFile();
+			log.info("SPARQL file: '{}'", resPath);
+			assert resPath.exists() : "file '" + resPath + "' does not exists";
+			sparqls.add(new Object[] { resPath });
 		}
 
 		return sparqls;
+	}
+
+	/**
+	 * Adapted from {@link DirectoryStream} javadoc.
+	 * 
+	 * @param path
+	 * @return
+	 * @throws IOException
+	 */
+	private static List<Path> scanTests(Path path)
+		throws IOException
+	{
+		log.info("PATH: {}", path);
+		List<Path> toReturn = new ArrayList<>();
+
+		try (DirectoryStream<Path> files = Files.newDirectoryStream(path, "*")) {
+			for (Path f : files) {
+				if (f.toFile().isDirectory()) {
+					toReturn.addAll(scanTests(f));
+				}
+				else {
+					log.info("Load test: {}", f);
+					toReturn.add(f);
+				}
+			}
+		}
+
+		return toReturn;
 	}
 
 	// String content of the loaded SPARQL query
@@ -74,13 +112,13 @@ public class SpinFunctionTest {
 	// ... and base URI taken from file path
 	private String baseURI;
 
-	public SpinFunctionTest(URL resource)
+	public SpinFunctionTest(File resource)
 		throws Exception
 	{
 		log.info("load file: {}", resource);
 		baseURI = resource.toURI().toString();
 		assert (!baseURI.isEmpty());
-		queryString = new String(Files.readAllBytes(Paths.get(resource.toURI())), "utf-8");
+		queryString = new String(Files.readAllBytes(resource.toPath()), "utf-8");
 		assert StringUtils.isNotBlank(queryString);
 		queryString = StringUtils.strip(queryString); // final cleaning
 	}
@@ -94,12 +132,18 @@ public class SpinFunctionTest {
 	public void setUp()
 		throws Exception
 	{
-		MemoryStore store = new MemoryStore();
-		SpinSail spinSail = new SpinSail(store);
+		/*
+		 * MemoryStore store = new MemoryStore(); SpinSail spinSail = new SpinSail(store);
+		 */
+		NotifyingSail baseSail = new MemoryStore();
+		DedupingInferencer deduper = new DedupingInferencer(baseSail);
+		ForwardChainingRDFSInferencer rdfsInferencer = new ForwardChainingRDFSInferencer(deduper);
+		SpinSail spinSail = new SpinSail(rdfsInferencer);
 		repository = new SailRepository(spinSail);
 		repository.initialize();
 
 		connection = repository.getConnection();
+		loadRDF("/schema/owl.ttl");
 	}
 
 	@Test
@@ -124,10 +168,34 @@ public class SpinFunctionTest {
 
 	@After
 	public void tearDown()
-		throws Exception
+		// taken from SpifSailTest
+		throws RepositoryException
 	{
-		connection.close();
-		repository.shutDown();
+		if (connection != null) {
+			connection.close();
+		}
+		if (repository != null) {
+			repository.shutDown();
+		}
+	}
+
+	/**
+	 * Taken from SpifSailTest
+	 * 
+	 * @param path
+	 * @throws IOException
+	 */
+	private void loadRDF(String path)
+		throws IOException
+	{
+		URL url = getClass().getResource(path);
+		InputStream in = url.openStream();
+		try {
+			connection.add(in, url.toString(), RDFFormat.TURTLE);
+		}
+		finally {
+			in.close();
+		}
 	}
 
 }

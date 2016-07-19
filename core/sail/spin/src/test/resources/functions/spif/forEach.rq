@@ -1,0 +1,2 @@
+prefix spif: <http://spinrdf.org/spif#> 
+select ?x where {?x spif:foreach (1 2 3)}
