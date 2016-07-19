@@ -29,10 +29,11 @@ public class Slice extends UnaryTupleOperator {
 	 *--------------*/
 
 	public Slice() {
+		this(null);
 	}
 
 	public Slice(TupleExpr arg) {
-		this(arg, 0, -1);
+		this(arg, -1, -1);
 	}
 
 	public Slice(TupleExpr arg, long offset2, long limit2) {
