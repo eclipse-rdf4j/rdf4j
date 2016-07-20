@@ -120,10 +120,16 @@ public class SparqlSession implements HttpClientDependent {
 	protected static final Charset UTF8 = Charset.forName("UTF-8");
 
 	/**
-	 * The default threshold for URL length, beyond which we use the POST method. The default is based on the
-	 * lowest common denominator for various web servers.
+	 * The default value of the threshold for URL length, beyond which we use the POST method. The default is
+	 * based on the lowest common denominator for various web servers.
 	 */
 	public static final int DEFAULT_MAXIMUM_URL_LENGTH = 4083;
+
+	/**
+	 * @deprecated use {@link #DEFAULT_MAXIMUM_URL_LENGTH} instead.
+	 */
+	@Deprecated
+	public static final int MAXIMUM_URL_LENGTH = DEFAULT_MAXIMUM_URL_LENGTH;
 
 	/**
 	 * System property for configuration of URL length threshold: rdf4j.sparql.url.maxlength
@@ -131,7 +137,7 @@ public class SparqlSession implements HttpClientDependent {
 	public static final String MAXIMUM_URL_LENGTH_PARAM = "rdf4j.sparql.url.maxlength";
 
 	/**
-	 * The default threshold for URL length, beyond which we use the POST method.
+	 * The threshold for URL length, beyond which we use the POST method.
 	 */
 	private final int maximumUrlLength;
 
