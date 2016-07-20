@@ -812,7 +812,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 				if (Literals.isLanguageLiteral(lit)) {
 					qb.append("@");
-					qb.append(lit.getLanguage().get());
+					qb.append(lit.getLanguage());
 				}
 				else {
 					qb.append("^^<" + lit.getDatatype().stringValue() + ">");
@@ -938,9 +938,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 				qb.append(SPARQLUtil.encodeString(lit.getLabel()));
 				qb.append("\"");
 
-				if (lit.getLanguage().isPresent()) {
+				if (Literals.isLanguageLiteral(lit)) {
 					qb.append("@");
-					qb.append(lit.getLanguage().get());
+					qb.append(lit.getLanguage());
 				}
 				else {
 					qb.append("^^<" + lit.getDatatype().stringValue() + ">");
