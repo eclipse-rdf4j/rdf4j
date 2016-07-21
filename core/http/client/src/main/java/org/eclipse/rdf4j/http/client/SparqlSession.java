@@ -53,6 +53,7 @@ import org.apache.http.params.BasicHttpParams;
 import org.apache.http.params.CoreConnectionPNames;
 import org.apache.http.params.HttpParams;
 import org.apache.http.util.EntityUtils;
+import org.eclipse.rdf4j.RDF4JConfigException;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -122,10 +123,29 @@ public class SparqlSession implements HttpClientDependent {
 	protected static final Charset UTF8 = Charset.forName("UTF-8");
 
 	/**
-	 * The threshold for URL length, beyond which we use the POST method based on the lowest common
-	 * denominator for various web servers
+	 * The default value of the threshold for URL length, beyond which we use the POST method for SPARQL query
+	 * requests. The default is based on the lowest common denominator for various web servers.
 	 */
-	public static final int MAXIMUM_URL_LENGTH = 8192;
+	public static final int DEFAULT_MAXIMUM_URL_LENGTH = 4083;
+
+	/**
+	 * @deprecated use {@link #DEFAULT_MAXIMUM_URL_LENGTH} instead.
+	 */
+	@Deprecated
+	public static final int MAXIMUM_URL_LENGTH = DEFAULT_MAXIMUM_URL_LENGTH;
+
+	/**
+	 * System property for configuration of URL length threshold: {@code rdf4j.sparql.url.maxlength}. A
+	 * threshold of 0 (or a negative value) means that the POST method is used for <strong>every</strong>
+	 * SPARQL query request.
+	 */
+	public static final String MAXIMUM_URL_LENGTH_PARAM = "rdf4j.sparql.url.maxlength";
+
+	/**
+	 * The threshold for URL length, beyond which we use the POST method. A threshold of 0 (or a negative
+	 * value) means that the POST method is used for <strong>every</strong> SPARQL query request.
+	 */
+	private final int maximumUrlLength;
 
 	final Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -179,6 +199,20 @@ public class SparqlSession implements HttpClientDependent {
 		// parser used for processing server response data should be lenient
 		parserConfig.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 		parserConfig.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
+
+		// configure the maximum url length for SPARQL query GET requests
+		int maximumUrlLength = DEFAULT_MAXIMUM_URL_LENGTH;
+		String propertyValue = System.getProperty(MAXIMUM_URL_LENGTH_PARAM);
+		if (propertyValue != null) {
+			try {
+				maximumUrlLength = Integer.parseInt(propertyValue);
+			}
+			catch (NumberFormatException e) {
+				throw new RDF4JConfigException(
+						"integer value expected for property " + MAXIMUM_URL_LENGTH_PARAM, e);
+			}
+		}
+		this.maximumUrlLength = maximumUrlLength;
 	}
 
 	/*-----------------*
@@ -534,7 +568,7 @@ public class SparqlSession implements HttpClientDependent {
 	 *        the complete URL, including hostname and all HTTP query parameters
 	 */
 	protected boolean shouldUsePost(String fullQueryUrl) {
-		return fullQueryUrl.length() > MAXIMUM_URL_LENGTH;
+		return fullQueryUrl.length() > maximumUrlLength;
 	}
 
 	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
