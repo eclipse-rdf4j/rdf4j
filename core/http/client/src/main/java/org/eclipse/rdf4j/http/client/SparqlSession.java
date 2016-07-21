@@ -97,6 +97,8 @@ import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.base.Joiner;
+
 /**
  * The SparqlSession provides low level HTTP methods for the HTTP communication of the SPARQL repository as
  * well as the HTTP Repository. All methods are compliant to the SPARQL 1.1 protocol. For both Tuple and Graph
@@ -126,6 +128,11 @@ public class SparqlSession implements HttpClientDependent {
 	public static final int MAXIMUM_URL_LENGTH = 8192;
 
 	final Logger logger = LoggerFactory.getLogger(this.getClass());
+
+	/**
+	 * shared instance of a {@link Joiner} for creating a comma-separated string.
+	 */
+	private static final Joiner commaJoiner = Joiner.on(", ");
 
 	/*-----------*
 	 * Variables *
@@ -763,7 +770,9 @@ public class SparqlSession implements HttpClientDependent {
 		throws RepositoryException, IOException, QueryInterruptedException, MalformedQueryException
 	{
 
+		final List<String> acceptValues = new ArrayList<String>(tqrFormats.size());
 		for (QueryResultFormat format : tqrFormats) {
+
 			// Determine a q-value that reflects the user specified preference
 			int qValue = 10;
 
@@ -778,10 +787,11 @@ public class SparqlSession implements HttpClientDependent {
 				if (qValue < 10) {
 					acceptParam += ";q=0." + qValue;
 				}
-
-				method.addHeader(ACCEPT_PARAM_NAME, acceptParam);
+				acceptValues.add(acceptParam);
 			}
 		}
+
+		method.addHeader(ACCEPT_PARAM_NAME, commaJoiner.join(acceptValues));
 
 		try {
 			return executeOK(method);
@@ -911,9 +921,8 @@ public class SparqlSession implements HttpClientDependent {
 
 		List<String> acceptParams = RDFFormat.getAcceptParams(rdfFormats, requireContext,
 				getPreferredRDFFormat());
-		for (String acceptParam : acceptParams) {
-			method.addHeader(ACCEPT_PARAM_NAME, acceptParam);
-		}
+
+		method.addHeader(ACCEPT_PARAM_NAME, commaJoiner.join(acceptParams));
 
 		try {
 			return executeOK(method);
@@ -972,6 +981,8 @@ public class SparqlSession implements HttpClientDependent {
 		throws IOException, RDF4JException
 	{
 
+		final List<String> acceptValues = new ArrayList<>(booleanFormats.size());
+
 		for (QueryResultFormat format : booleanFormats) {
 			// Determine a q-value that reflects the user specified preference
 			int qValue = 10;
@@ -988,9 +999,11 @@ public class SparqlSession implements HttpClientDependent {
 					acceptParam += ";q=0." + qValue;
 				}
 
-				method.addHeader(ACCEPT_PARAM_NAME, acceptParam);
+				acceptValues.add(acceptParam);
 			}
 		}
+
+		method.addHeader(ACCEPT_PARAM_NAME, commaJoiner.join(acceptValues));
 
 		return executeOK(method);
 	}
