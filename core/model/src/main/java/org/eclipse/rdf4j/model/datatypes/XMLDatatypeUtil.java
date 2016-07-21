@@ -82,7 +82,8 @@ public class XMLDatatypeUtil {
 				|| datatype.equals(XMLSchema.NON_NEGATIVE_INTEGER)
 				|| datatype.equals(XMLSchema.POSITIVE_INTEGER) || datatype.equals(XMLSchema.UNSIGNED_LONG)
 				|| datatype.equals(XMLSchema.UNSIGNED_INT) || datatype.equals(XMLSchema.UNSIGNED_SHORT)
-				|| datatype.equals(XMLSchema.UNSIGNED_BYTE);
+				|| datatype.equals(XMLSchema.UNSIGNED_BYTE) || datatype.equals(XMLSchema.DAYTIMEDURATION)
+				|| datatype.equals(XMLSchema.YEARMONTHDURATION);
 	}
 
 	/**
@@ -143,6 +144,17 @@ public class XMLDatatypeUtil {
 				|| datatype.equals(XMLSchema.GMONTHDAY) || datatype.equals(XMLSchema.GYEAR)
 				|| datatype.equals(XMLSchema.GMONTH) || datatype.equals(XMLSchema.GDAY);
 
+	}
+
+	/**
+	 * Checks whether the supplied datatype is equal to xsd:duration, xsd:dayTimeDuration, xsd:yearMonthDuration.
+	 * These are the datatypes that represents durations.
+	 *
+	 * @see Duration
+	 */
+	public static boolean isDurationDatatype(IRI datatype) {
+		return datatype.equals(XMLSchema.DURATION) || datatype.equals(XMLSchema.DAYTIMEDURATION)
+				|| datatype.equals(XMLSchema.YEARMONTHDURATION);
 	}
 
 	/**
@@ -249,6 +261,9 @@ public class XMLDatatypeUtil {
 		}
 		else if (datatype.equals(XMLSchema.DAYTIMEDURATION)) {
 			result = isValidDayTimeDuration(value);
+		}
+		else if (datatype.equals(XMLSchema.YEARMONTHDURATION)) {
+			result = isValidYearMonthDuration(value);
 		}
 		else if (datatype.equals(XMLSchema.QNAME)) {
 			result = isValidQName(value);
@@ -440,6 +455,14 @@ public class XMLDatatypeUtil {
 		// regex for checking valid xsd:dayTimeDuration string. See
 		// http://www.schemacentral.com/sc/xsd/t-xsd_dayTimeDuration.html
 		String regex = "-?P((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?";
+		return value.length() > 1 && value.matches(regex);
+	}
+
+	public static boolean isValidYearMonthDuration(String value) {
+
+		// regex for checking valid xsd:yearMontheDuration string. See
+		// http://www.schemacentral.com/sc/xsd/t-xsd_yearMonthDuration.html
+		String regex = "-?P((\\d)+Y)?((\\d)+M)?";
 		return value.length() > 1 && value.matches(regex);
 	}
 
@@ -1897,7 +1920,7 @@ public class XMLDatatypeUtil {
 	 *        A string representation of an xsd:dateTime, xsd:time, xsd:date, xsd:gYearMonth, xsd:gMonthDay,
 	 *        xsd:gYear, xsd:gMonth or xsd:gDay value.
 	 * @return The calendar value represented by the supplied string argument.
-	 * @throws NumberFormatException
+	 * @throws IllegalArgumentException
 	 *         If the supplied string is not a valid calendar value.
 	 */
 	public static XMLGregorianCalendar parseCalendar(String s) {
@@ -1955,6 +1978,12 @@ public class XMLDatatypeUtil {
 		}
 		else if (DatatypeConstants.DURATION.equals(qname)) {
 			return XMLSchema.DURATION;
+		}
+		else if (DatatypeConstants.DURATION_DAYTIME.equals(qname)) {
+			return XMLSchema.DAYTIMEDURATION;
+		}
+		else if (DatatypeConstants.DURATION_YEARMONTH.equals(qname)) {
+			return XMLSchema.YEARMONTHDURATION;
 		}
 		else {
 			throw new IllegalArgumentException(
