@@ -53,6 +53,7 @@ import org.apache.http.params.BasicHttpParams;
 import org.apache.http.params.CoreConnectionPNames;
 import org.apache.http.params.HttpParams;
 import org.apache.http.util.EntityUtils;
+import org.eclipse.rdf4j.RDF4JConfigException;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -120,8 +121,8 @@ public class SparqlSession implements HttpClientDependent {
 	protected static final Charset UTF8 = Charset.forName("UTF-8");
 
 	/**
-	 * The default value of the threshold for URL length, beyond which we use the POST method. The default is
-	 * based on the lowest common denominator for various web servers.
+	 * The default value of the threshold for URL length, beyond which we use the POST method for SPARQL query
+	 * requests. The default is based on the lowest common denominator for various web servers.
 	 */
 	public static final int DEFAULT_MAXIMUM_URL_LENGTH = 4083;
 
@@ -132,12 +133,15 @@ public class SparqlSession implements HttpClientDependent {
 	public static final int MAXIMUM_URL_LENGTH = DEFAULT_MAXIMUM_URL_LENGTH;
 
 	/**
-	 * System property for configuration of URL length threshold: rdf4j.sparql.url.maxlength
+	 * System property for configuration of URL length threshold: {@code rdf4j.sparql.url.maxlength}. A
+	 * threshold of 0 (or a negative value) means that the POST method is used for <strong>every</strong>
+	 * SPARQL query request.
 	 */
 	public static final String MAXIMUM_URL_LENGTH_PARAM = "rdf4j.sparql.url.maxlength";
 
 	/**
-	 * The threshold for URL length, beyond which we use the POST method.
+	 * The threshold for URL length, beyond which we use the POST method. A threshold of 0 (or a negative
+	 * value) means that the POST method is used for <strong>every</strong> SPARQL query request.
 	 */
 	private final int maximumUrlLength;
 
@@ -197,12 +201,8 @@ public class SparqlSession implements HttpClientDependent {
 				maximumUrlLength = Integer.parseInt(propertyValue);
 			}
 			catch (NumberFormatException e) {
-				throw new RDF4JException("integer value expected for property " + MAXIMUM_URL_LENGTH_PARAM,
-						e)
-				{
-
-					private static final long serialVersionUID = 1L;
-				};
+				throw new RDF4JConfigException(
+						"integer value expected for property " + MAXIMUM_URL_LENGTH_PARAM, e);
 			}
 		}
 		this.maximumUrlLength = maximumUrlLength;
