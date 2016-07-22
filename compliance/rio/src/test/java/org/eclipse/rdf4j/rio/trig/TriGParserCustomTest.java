@@ -70,9 +70,10 @@ public class TriGParserCustomTest {
 	public void testSPARQLGraphKeyword()
 		throws Exception
 	{
-		Model model = Rio.parse(new StringReader("GRAPH <urn:a> { [] <http://www.example.net/test> \"Foo\" }"), "",
+		Model model = Rio.parse(
+				new StringReader("GRAPH <urn:a> { [] <http://www.example.net/test> \"Foo\" }"), "",
 				RDFFormat.TRIG);
-		
+
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
 		assertEquals("urn:a", model.contexts().iterator().next().stringValue());
@@ -87,7 +88,7 @@ public class TriGParserCustomTest {
 	{
 		Model model = Rio.parse(new StringReader("<urn:a> { [] <http://www.example.net/test> \"Foo\" }"), "",
 				RDFFormat.TRIG);
-		
+
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
 		assertEquals("urn:a", model.contexts().iterator().next().stringValue());
@@ -100,9 +101,11 @@ public class TriGParserCustomTest {
 	public void testGraphLocalNameGraph()
 		throws Exception
 	{
-		Model model = Rio.parse(new StringReader("@prefix graph: <urn:> .\n graph:a { [] <http://www.example.net/test> \"Foo\" }"), "",
-				RDFFormat.TRIG);
-		
+		Model model = Rio.parse(
+				new StringReader(
+						"@prefix graph: <urn:> .\n graph:a { [] <http://www.example.net/test> \"Foo\" }"),
+				"", RDFFormat.TRIG);
+
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
 		assertEquals("urn:a", model.contexts().iterator().next().stringValue());
@@ -110,14 +113,16 @@ public class TriGParserCustomTest {
 		assertEquals("http://www.example.net/test", model.predicates().iterator().next().stringValue());
 		assertEquals("Foo", model.objects().iterator().next().stringValue());
 	}
-	
+
 	@Test
 	public void testGraphLocalNameIntegerGraph()
 		throws Exception
 	{
-		Model model = Rio.parse(new StringReader("@prefix graph: <urn:> .\n graph:1 { [] <http://www.example.net/test> \"Foo\" }"), "",
-				RDFFormat.TRIG);
-		
+		Model model = Rio.parse(
+				new StringReader(
+						"@prefix graph: <urn:> .\n graph:1 { [] <http://www.example.net/test> \"Foo\" }"),
+				"", RDFFormat.TRIG);
+
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
 		assertEquals("urn:1", model.contexts().iterator().next().stringValue());
@@ -125,14 +130,15 @@ public class TriGParserCustomTest {
 		assertEquals("http://www.example.net/test", model.predicates().iterator().next().stringValue());
 		assertEquals("Foo", model.objects().iterator().next().stringValue());
 	}
-	
+
 	@Test
 	public void testGraphLocalNameNotGraph()
 		throws Exception
 	{
-		Model model = Rio.parse(new StringReader("@prefix ex: <urn:> .\n ex:a { [] <http://www.example.net/test> \"Foo\" }"), "",
-				RDFFormat.TRIG);
-		
+		Model model = Rio.parse(
+				new StringReader("@prefix ex: <urn:> .\n ex:a { [] <http://www.example.net/test> \"Foo\" }"),
+				"", RDFFormat.TRIG);
+
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
 		assertEquals("urn:a", model.contexts().iterator().next().stringValue());
@@ -140,14 +146,15 @@ public class TriGParserCustomTest {
 		assertEquals("http://www.example.net/test", model.predicates().iterator().next().stringValue());
 		assertEquals("Foo", model.objects().iterator().next().stringValue());
 	}
-	
+
 	@Test
 	public void testGraphLocalNameIntegerNotGraph()
 		throws Exception
 	{
-		Model model = Rio.parse(new StringReader("@prefix ex: <urn:> .\n ex:1 { [] <http://www.example.net/test> \"Foo\" }"), "",
-				RDFFormat.TRIG);
-		
+		Model model = Rio.parse(
+				new StringReader("@prefix ex: <urn:> .\n ex:1 { [] <http://www.example.net/test> \"Foo\" }"),
+				"", RDFFormat.TRIG);
+
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
 		assertEquals("urn:1", model.contexts().iterator().next().stringValue());
@@ -155,7 +162,7 @@ public class TriGParserCustomTest {
 		assertEquals("http://www.example.net/test", model.predicates().iterator().next().stringValue());
 		assertEquals("Foo", model.objects().iterator().next().stringValue());
 	}
-	
+
 	@Test
 	public void testTrailingSemicolon()
 		throws Exception
