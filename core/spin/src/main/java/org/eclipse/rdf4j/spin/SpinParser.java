@@ -934,8 +934,9 @@ public class SpinParser {
 						String.format("Value of %s is not a resource", SP.RESULT_VARIABLES_PROPERTY));
 			}
 
+			Map<String, ProjectionElem> oldProjElems = projElems;
 			projElems = new LinkedHashMap<String, ProjectionElem>();
-			Projection projection = visitResultVariables((Resource)resultVars);
+			Projection projection = visitResultVariables((Resource)resultVars, oldProjElems);
 			visitWhere(select);
 
 			Value groupBy = TripleSources.singleValue(select, SP.GROUP_BY_PROPERTY, store);
@@ -954,6 +955,7 @@ public class SpinParser {
 			}
 
 			addSourceExpressions(projection, projElems.values());
+			projElems = oldProjElems;
 
 			Value orderby = TripleSources.singleValue(select, SP.ORDER_BY_PROPERTY, store);
 			if (orderby instanceof Resource) {
@@ -1049,11 +1051,11 @@ public class SpinParser {
 		{
 			ProjectionElemList projElems = new ProjectionElemList();
 			Value subj = TripleSources.singleValue(r, SP.SUBJECT_PROPERTY, store);
-			projElems.addElement(createProjectionElem(subj, "subject"));
+			projElems.addElement(createProjectionElem(subj, "subject", null));
 			Value pred = TripleSources.singleValue(r, SP.PREDICATE_PROPERTY, store);
-			projElems.addElement(createProjectionElem(pred, "predicate"));
+			projElems.addElement(createProjectionElem(pred, "predicate", null));
 			Value obj = TripleSources.singleValue(r, SP.OBJECT_PROPERTY, store);
-			projElems.addElement(createProjectionElem(obj, "object"));
+			projElems.addElement(createProjectionElem(obj, "object", null));
 			return projElems;
 		}
 
@@ -1082,10 +1084,11 @@ public class SpinParser {
 		private ProjectionElem visitResultNode(Resource r)
 			throws RDF4JException
 		{
-			return createProjectionElem(r, null);
+			return createProjectionElem(r, null, null);
 		}
 
-		private Projection visitResultVariables(Resource resultVars)
+		private Projection visitResultVariables(Resource resultVars,
+				Map<String, ProjectionElem> previousProjElems)
 			throws RDF4JException
 		{
 			ProjectionElemList projElemList = new ProjectionElemList();
@@ -1093,7 +1096,7 @@ public class SpinParser {
 					resultVars, store);
 			while (iter.hasNext()) {
 				Resource r = iter.next();
-				ProjectionElem projElem = visitResultVariable(r);
+				ProjectionElem projElem = visitResultVariable(r, previousProjElems);
 				projElemList.addElement(projElem);
 			}
 
@@ -1107,10 +1110,10 @@ public class SpinParser {
 			return proj;
 		}
 
-		private ProjectionElem visitResultVariable(Resource r)
+		private ProjectionElem visitResultVariable(Resource r, Map<String, ProjectionElem> previousProjElems)
 			throws RDF4JException
 		{
-			return createProjectionElem(r, null);
+			return createProjectionElem(r, null, previousProjElems);
 		}
 
 		private void visitGroupBy(Resource groupby)
@@ -1175,7 +1178,8 @@ public class SpinParser {
 			return new OrderElem(valueExpr, asc);
 		}
 
-		private ProjectionElem createProjectionElem(Value v, String projName)
+		private ProjectionElem createProjectionElem(Value v, String projName,
+				Map<String, ProjectionElem> previousProjElems)
 			throws RDF4JException
 		{
 			String varName;
@@ -1231,6 +1235,9 @@ public class SpinParser {
 			aggregates = oldAggregates;
 			if (projElems != null) {
 				projElems.put(varName, projElem);
+			}
+			if (previousProjElems != null) {
+				previousProjElems.remove(projName);
 			}
 			return projElem;
 		}
@@ -2132,7 +2139,7 @@ public class SpinParser {
 				if (projElem != null) {
 					ExtensionElem extElem = projElem.getSourceExpression();
 					if (extElem != null && extElem.getExpr() instanceof Var) {
-						projElem.setSourceExpression(null);
+						projElems.remove(varName);
 					}
 				}
 			}
