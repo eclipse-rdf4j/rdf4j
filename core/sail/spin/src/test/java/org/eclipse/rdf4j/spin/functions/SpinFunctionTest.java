@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.spin.functions;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -11,14 +12,17 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 
 import org.apache.commons.lang.StringUtils;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.query.BooleanQuery;
-import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
+import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -39,6 +43,10 @@ import org.junit.runners.Parameterized.Parameters;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.base.Function;
+import com.google.common.collect.Iterators;
+import com.google.common.collect.Sets;
+
 /**
  * Unit tester for the property functions.</br>
  * <h2>How does it work?</h2></br>
@@ -48,6 +56,8 @@ import org.slf4j.LoggerFactory;
  * <li>The file with sparql query should be written in <code>src/test/resources/functions/</code>
  * directory.</li>
  * </ul>
+ * 
+ * @author Jacek Grzebyta
  */
 @RunWith(Parameterized.class)
 public class SpinFunctionTest {
@@ -58,7 +68,19 @@ public class SpinFunctionTest {
 
 	private SailRepositoryConnection connection;
 
+	public class TestingCase {
+
+		public Path testFile;
+
+		public Path resultFile;
+	}
+
 	public static final String TESTS_ROOT = SpinFunctionTest.class.getResource("/functions/").getFile();
+
+	// Extensions for different file formats
+	public static final String SPARQL_EXT = ".rq";
+
+	public static final String SPARQL_RES_EXT = ".srx";
 
 	@Parameters
 	public static Collection<Object[]> loadSparqls()
@@ -68,11 +90,32 @@ public class SpinFunctionTest {
 
 		List<Path> functions = scanTests(Paths.get(TESTS_ROOT));
 
-		for (Path f : functions) {
-			File resPath = f.toFile();
-			log.info("SPARQL file: '{}'", resPath);
-			assert resPath.exists() : "file '" + resPath + "' does not exists";
-			sparqls.add(new Object[] { resPath });
+		Set<String> names = Sets.newHashSet(
+				Iterators.transform(functions.iterator(), new Function<Path, String>()
+		{
+
+					@Override
+					public String apply(Path input) {
+						String filename = input.toFile().getAbsolutePath();
+						log.info("Process {}", filename);
+						return filename.split("\\.")[0];
+					}
+
+				}));
+		assert (!names.isEmpty()) : "Missing files set";
+
+		for (String f : names) {
+			File reqPath = new File(f + SPARQL_EXT);
+			log.debug("SPARQL file: '{}'", reqPath);
+
+			// find tuple query result
+			File tupleResult = new File(f + SPARQL_RES_EXT);
+			log.debug("Tuple result: '{}'", tupleResult);
+			if (!tupleResult.exists()) {
+				tupleResult = null;
+			}
+
+			sparqls.add(new Object[] { reqPath, tupleResult });
 		}
 
 		return sparqls;
@@ -88,7 +131,7 @@ public class SpinFunctionTest {
 	private static List<Path> scanTests(Path path)
 		throws IOException
 	{
-		log.info("PATH: {}", path);
+		log.debug("PATH: {}", path);
 		List<Path> toReturn = new ArrayList<>();
 
 		try (DirectoryStream<Path> files = Files.newDirectoryStream(path, "*")) {
@@ -97,8 +140,8 @@ public class SpinFunctionTest {
 					toReturn.addAll(scanTests(f));
 				}
 				else {
-					log.info("Load test: {}", f);
-					toReturn.add(f);
+					log.debug("Load test: {}", f);
+					toReturn.add(f.normalize());
 				}
 			}
 		}
@@ -112,7 +155,9 @@ public class SpinFunctionTest {
 	// ... and base URI taken from file path
 	private String baseURI;
 
-	public SpinFunctionTest(File resource)
+	private File tupleResult;
+
+	public SpinFunctionTest(File resource, File tupleResult)
 		throws Exception
 	{
 		log.info("load file: {}", resource);
@@ -121,6 +166,7 @@ public class SpinFunctionTest {
 		queryString = new String(Files.readAllBytes(resource.toPath()), "utf-8");
 		assert StringUtils.isNotBlank(queryString);
 		queryString = StringUtils.strip(queryString); // final cleaning
+		this.tupleResult = tupleResult;
 	}
 
 	/**
@@ -144,25 +190,38 @@ public class SpinFunctionTest {
 
 		connection = repository.getConnection();
 		loadRDF("/schema/owl.ttl");
+		loadRDF("/schema/spif.ttl");
 	}
 
 	@Test
 	public void runTest()
 		throws Exception
 	{
-		log.info("\nSPARQL query: \n+++++++++++\n{}\n+++++++++++\n", queryString);
+		log.debug("\nSPARQL query: \n+++++++++++\n{}\n+++++++++++\n", queryString);
 		SailQuery query = connection.prepareQuery(QueryLanguage.SPARQL, this.queryString, this.baseURI);
 
 		if (query instanceof BooleanQuery) {
-			Assert.assertTrue(((BooleanQuery)query).evaluate());
+			Assert.assertTrue(String.format("test <%s> returns false", baseURI),
+					((BooleanQuery)query).evaluate());
 		}
 		else if (query instanceof TupleQuery) {
-			Assert.assertFalse("Outcome result is empty",
-					Iterations.asList(((TupleQuery)query).evaluate()).isEmpty());
+
+			/*
+			 * //Print result to logger ByteArrayOutputStream out = new ByteArrayOutputStream();
+			 * SPARQLResultsXMLWriter writer = new SPARQLResultsXMLWriter(out);
+			 * ((TupleQuery)query).evaluate(writer);
+			 * log.info("SPARQL response: \n----------\n{}\n---------\n", new String(out.toByteArray()));
+			 */
+
+			if (tupleResult == null) {
+				throw new RuntimeException(String.format("File does not exists"));
+			}
+			Assert.assertTrue(assertTupleResults(((TupleQuery)query).evaluate(), tupleResult));
+
 		}
-		else if (query instanceof GraphQuery) {
-			Assert.assertFalse("Outcome graph is empty",
-					Iterations.asList(((GraphQuery)query).evaluate()).isEmpty());
+		else {
+			throw new RuntimeException(
+					String.format("query result format [%s] is not support", query.getClass()));
 		}
 	}
 
@@ -198,4 +257,19 @@ public class SpinFunctionTest {
 		}
 	}
 
+	/**
+	 * Run assertion of {@link TupleQueryResult} by comparing with expected result in file.
+	 * 
+	 * @param tqr
+	 * @param expectedResult
+	 * @return
+	 * @throws Exception
+	 */
+	protected boolean assertTupleResults(TupleQueryResult tqr, File expectedResult)
+		throws Exception
+	{
+		TupleQueryResult expected = QueryResultIO.parseTuple(new FileInputStream(expectedResult),
+				TupleQueryResultFormat.SPARQL);
+		return QueryResults.isSubset(tqr, expected);
+	}
 }

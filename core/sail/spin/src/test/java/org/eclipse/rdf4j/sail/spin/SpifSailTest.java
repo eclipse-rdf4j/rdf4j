@@ -76,11 +76,6 @@ public class SpifSailTest {
 		}
 	}
 
-	/**
-	 * Probably that test is damaged because there is no spif.ttl file.
-	 * 
-	 * @throws Exception
-	 */
 	@Test
 	@Ignore
 	public void runTests()
@@ -189,6 +184,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testName()
 		throws Exception
 	{
@@ -214,6 +210,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testFor()
 		throws Exception
 	{
@@ -254,6 +251,12 @@ public class SpifSailTest {
 		assertTrue(bq.evaluate());
 	}
 
+	/**
+	 * In {@link SpinFunctionTest} the SPARQL request from this test was changed into tuple type. It can be
+	 * found in file <code>src/test/resources/functions/spif/canInvoke2.rq</code>.
+	 * 
+	 * @throws Exception
+	 */
 	@Test
 	@Ignore
 	public void testCantInvoke()
