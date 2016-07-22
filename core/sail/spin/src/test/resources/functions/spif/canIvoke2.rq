@@ -1,2 +1,0 @@
-prefix spif: <http://spinrdf.org/spif#> 
-ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}

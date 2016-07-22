@@ -1,0 +1,4 @@
+prefix spif: <http://spinrdf.org/spif#> 
+select * where {
+  bind(spif:canInvoke(spif:indexOf, 'foobar', 2) as ?b)
+}
