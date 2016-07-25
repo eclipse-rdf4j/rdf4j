@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -55,7 +56,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 
 	private final Collection<? extends RepositoryConnection> members;
 
-	private final Function<? super RepositoryConnection, ? extends RepositoryBloomFilter> bloomFilters;
+	private final Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters;
 
 	private Map<Resource, List<RepositoryConnection>> contextToMemberMap;
 
@@ -74,7 +75,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 
 	public FederationJoinOptimizer(Collection<? extends RepositoryConnection> members, boolean distinct,
 			PrefixHashSet localSpace,
-			Function<? super RepositoryConnection, ? extends RepositoryBloomFilter> bloomFilters)
+			Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters)
 	{
 		this.members = members;
 		this.localSpace = localSpace;
@@ -369,7 +370,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 				// fallback to using hasStatement()
 				// but hopefully we narrowed it down to results
 				for (RepositoryConnection member : results) {
-					RepositoryBloomFilter bloomFilter = bloomFilters.apply(member);
+					RepositoryBloomFilter bloomFilter = bloomFilters.apply(member.getRepository());
 					if (bloomFilter == null || bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
 						if (result == null) {
 							result = member;

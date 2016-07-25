@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.filters.AccurateRepositoryBloomFilter;
@@ -38,14 +39,14 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 
 	private final Collection<? extends RepositoryConnection> members;
 
-	private final Function<? super RepositoryConnection, ? extends RepositoryBloomFilter> bloomFilters;
+	private final Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters;
 
 	public EmptyPatternOptimizer(Collection<? extends RepositoryConnection> members) {
 		this(members, c -> new AccurateRepositoryBloomFilter(true));
 	}
 
 	public EmptyPatternOptimizer(Collection<? extends RepositoryConnection> members,
-			Function<? super RepositoryConnection, ? extends RepositoryBloomFilter> bloomFilters)
+			Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters)
 	{
 		this.members = members;
 		this.bloomFilters = bloomFilters;
@@ -69,7 +70,7 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 		Value obj = node.getObjectVar().getValue();
 		Resource[] ctx = getContexts(node.getContextVar());
 		for (RepositoryConnection member : members) {
-			RepositoryBloomFilter bloomFilter = bloomFilters.apply(member);
+			RepositoryBloomFilter bloomFilter = bloomFilters.apply(member.getRepository());
 			if (bloomFilter == null || bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
 				return;
 			}
