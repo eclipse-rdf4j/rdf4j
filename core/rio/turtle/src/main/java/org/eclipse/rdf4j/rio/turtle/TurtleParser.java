@@ -1405,7 +1405,7 @@ public class TurtleParser extends AbstractRDFParser {
 		throw new RDFParseException("Unexpected end of file");
 	}
 
-	private int getLineNumber() {
+	protected int getLineNumber() {
 		return lineNumber;
 	}
 }
