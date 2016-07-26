@@ -1238,6 +1238,7 @@ public class TurtleParser extends AbstractRDFParser {
 				// we only count line feeds (LF), not carriage return (CR), as
 				// normally a CR is immediately followed by a LF.
 				lineNumber++;
+				reportLocation();
 			}
 
 			c = readCodePoint();
