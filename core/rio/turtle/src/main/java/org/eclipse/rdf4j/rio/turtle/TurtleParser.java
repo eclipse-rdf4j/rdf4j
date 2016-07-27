@@ -1263,10 +1263,15 @@ public class TurtleParser extends AbstractRDFParser {
 			c = readCodePoint();
 		}
 
+		if (c == 0xA) {
+			lineNumber++;
+		}
+		
 		// c is equal to -1, \r or \n.
 		// In case c is equal to \r, we should also read a following \n.
 		if (c == 0xD) {
 			c = readCodePoint();
+			lineNumber++;
 
 			if (c != 0xA) {
 				unread(c);
