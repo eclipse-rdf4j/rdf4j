@@ -228,6 +228,54 @@ public class TestTurtleParser {
 	}
 
 	@Test
+	public void testLineNumberReportingOnlySingleCommentNoEndline()
+		throws Exception
+	{
+		assertEquals(0, locationListener.getLineNo());
+		assertEquals(0, locationListener.getColumnNo());
+		Reader in = new StringReader("# This is just a comment");
+		parser.parse(in, baseURI);
+		assertEquals(1, locationListener.getLineNo());
+		assertEquals(-1, locationListener.getColumnNo());
+	}
+
+	@Test
+	public void testLineNumberReportingOnlySingleCommentEndline()
+		throws Exception
+	{
+		assertEquals(0, locationListener.getLineNo());
+		assertEquals(0, locationListener.getColumnNo());
+		Reader in = new StringReader("# This is just a comment\n");
+		parser.parse(in, baseURI);
+		assertEquals(2, locationListener.getLineNo());
+		assertEquals(-1, locationListener.getColumnNo());
+	}
+
+	@Test
+	public void testLineNumberReportingOnlySingleCommentCarriageReturn()
+		throws Exception
+	{
+		assertEquals(0, locationListener.getLineNo());
+		assertEquals(0, locationListener.getColumnNo());
+		Reader in = new StringReader("# This is just a comment\r");
+		parser.parse(in, baseURI);
+		assertEquals(2, locationListener.getLineNo());
+		assertEquals(-1, locationListener.getColumnNo());
+	}
+
+	@Test
+	public void testLineNumberReportingOnlySingleCommentCarriageReturnNewline()
+		throws Exception
+	{
+		assertEquals(0, locationListener.getLineNo());
+		assertEquals(0, locationListener.getColumnNo());
+		Reader in = new StringReader("# This is just a comment\r\n");
+		parser.parse(in, baseURI);
+		assertEquals(2, locationListener.getLineNo());
+		assertEquals(-1, locationListener.getColumnNo());
+	}
+
+	@Test
 	public void testParseBooleanLiteralComma()
 		throws Exception
 	{
