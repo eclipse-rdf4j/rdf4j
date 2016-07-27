@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.federation.optimizers;
 
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.Collection;
+import java.util.Optional;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -36,20 +37,21 @@ import org.eclipse.rdf4j.repository.filters.RepositoryBloomFilter;
 public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryException>
 		implements QueryOptimizer
 {
-
 	private final Collection<? extends RepositoryConnection> members;
 
 	private final Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters;
 
 	public EmptyPatternOptimizer(Collection<? extends RepositoryConnection> members) {
-		this(members, c -> new AccurateRepositoryBloomFilter(true));
+		this.members = members;
+		this.bloomFilters = c -> AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE;
 	}
 
 	public EmptyPatternOptimizer(Collection<? extends RepositoryConnection> members,
 			Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters)
 	{
 		this.members = members;
-		this.bloomFilters = bloomFilters;
+		this.bloomFilters = c -> Optional.ofNullable((RepositoryBloomFilter)bloomFilters.apply(c)).orElse(
+				AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
 	}
 
 	public void optimize(TupleExpr query, Dataset dataset, BindingSet bindings) {
@@ -71,7 +73,7 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 		Resource[] ctx = getContexts(node.getContextVar());
 		for (RepositoryConnection member : members) {
 			RepositoryBloomFilter bloomFilter = bloomFilters.apply(member.getRepository());
-			if (bloomFilter == null || bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
+			if (bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
 				return;
 			}
 		}

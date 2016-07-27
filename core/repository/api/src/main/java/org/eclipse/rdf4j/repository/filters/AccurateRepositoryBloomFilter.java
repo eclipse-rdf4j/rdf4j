@@ -17,6 +17,9 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
  */
 public class AccurateRepositoryBloomFilter implements RepositoryBloomFilter {
 
+	public static final AccurateRepositoryBloomFilter INCLUDE_INFERRED_INSTANCE = new AccurateRepositoryBloomFilter(
+			true);
+
 	private final boolean includeInferred;
 
 	public AccurateRepositoryBloomFilter(boolean includeInferred) {

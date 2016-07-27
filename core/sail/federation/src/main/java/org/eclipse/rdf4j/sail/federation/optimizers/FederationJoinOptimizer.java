@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -69,8 +70,10 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	public FederationJoinOptimizer(Collection<? extends RepositoryConnection> members, boolean distinct,
 			PrefixHashSet localSpace)
 	{
-		this(members, distinct, localSpace,
-				c -> new AccurateRepositoryBloomFilter(true));
+		this.members = members;
+		this.localSpace = localSpace;
+		this.bloomFilters = c -> AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE;
+		this.distinct = distinct;
 	}
 
 	public FederationJoinOptimizer(Collection<? extends RepositoryConnection> members, boolean distinct,
@@ -79,7 +82,8 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	{
 		this.members = members;
 		this.localSpace = localSpace;
-		this.bloomFilters = bloomFilters;
+		this.bloomFilters = c -> Optional.ofNullable((RepositoryBloomFilter)bloomFilters.apply(c)).orElse(
+				AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
 		this.distinct = distinct;
 	}
 
@@ -371,7 +375,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 				// but hopefully we narrowed it down to results
 				for (RepositoryConnection member : results) {
 					RepositoryBloomFilter bloomFilter = bloomFilters.apply(member.getRepository());
-					if (bloomFilter == null || bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
+					if (bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
 						if (result == null) {
 							result = member;
 						}

@@ -30,7 +30,7 @@ public interface RepositoryBloomFilter {
 	 * @param obj
 	 *        object of the statement to check for (can be null).
 	 * @param ctxs
-	 *        contexts of the statement to check for (can be null).
+	 *        contexts of the statement to check for.
 	 */
 	boolean mayHaveStatement(RepositoryConnection conn, Resource subj, IRI pred, Value obj,
 			Resource... ctxs);

@@ -13,7 +13,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 import org.apache.http.client.HttpClient;
@@ -441,8 +440,8 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 		// prepare bloom filters
 		RepositoryBloomFilter defaultBloomFilter = new AccurateRepositoryBloomFilter(includeInferred);
 		Map<Repository, RepositoryBloomFilter> bloomFilters = federation.getBloomFilters();
-		java.util.function.Function<Repository, RepositoryBloomFilter> bloomFilterFunction = c -> Optional.ofNullable(
-				bloomFilters.get(c)).orElse(defaultBloomFilter);
+		java.util.function.Function<Repository, RepositoryBloomFilter> bloomFilterFunction = c -> bloomFilters.getOrDefault(
+				c, defaultBloomFilter);
 
 		new EmptyPatternOptimizer(members, bloomFilterFunction).optimize(query, dataset,
 				bindings);

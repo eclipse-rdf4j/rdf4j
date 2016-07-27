@@ -100,15 +100,33 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 		members.add(member);
 	}
 
+	/**
+	 * Returns the members of this federation.
+	 * 
+	 * @return unmodifiable list of federation members.
+	 */
 	protected List<Repository> getMembers() {
+		// unmodifiable to ensure no back-door changes
 		return Collections.unmodifiableList(members);
 	}
 
+	/**
+	 * Sets an optional {@link RepositoryBloomFilter} to use with the given {@link Repository}.
+	 * 
+	 * @param filter
+	 *        the filter to use or null to not use a filter.
+	 */
 	public void setBloomFilter(Repository member, RepositoryBloomFilter filter) {
 		bloomFilters.put(member, filter);
 	}
 
+	/**
+	 * Returns the configured {@link RepositoryBloomFilter}s (if any).
+	 * 
+	 * @return unmodifiable map of repositories to bloom filters.
+	 */
 	protected Map<Repository, RepositoryBloomFilter> getBloomFilters() {
+		// unmodifiable to ensure no back-door changes
 		return Collections.unmodifiableMap(bloomFilters);
 	}
 
