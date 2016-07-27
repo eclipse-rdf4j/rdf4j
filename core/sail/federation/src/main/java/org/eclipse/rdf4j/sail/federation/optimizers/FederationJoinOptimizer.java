@@ -16,7 +16,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -46,6 +45,8 @@ import org.eclipse.rdf4j.sail.federation.PrefixHashSet;
 import org.eclipse.rdf4j.sail.federation.algebra.NaryJoin;
 import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
 
+import com.google.common.base.MoreObjects;
+
 /**
  * Search for Join, LeftJoin, and Union arguments that can be evaluated in a single member.
  * 
@@ -70,10 +71,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	public FederationJoinOptimizer(Collection<? extends RepositoryConnection> members, boolean distinct,
 			PrefixHashSet localSpace)
 	{
-		this.members = members;
-		this.localSpace = localSpace;
-		this.bloomFilters = c -> AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE;
-		this.distinct = distinct;
+		this(members, distinct, localSpace, c -> AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
 	}
 
 	public FederationJoinOptimizer(Collection<? extends RepositoryConnection> members, boolean distinct,
@@ -82,8 +80,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	{
 		this.members = members;
 		this.localSpace = localSpace;
-		this.bloomFilters = c -> Optional.ofNullable((RepositoryBloomFilter)bloomFilters.apply(c)).orElse(
-				AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
+		this.bloomFilters = bloomFilters;
 		this.distinct = distinct;
 	}
 
@@ -374,7 +371,9 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 				// fallback to using hasStatement()
 				// but hopefully we narrowed it down to results
 				for (RepositoryConnection member : results) {
-					RepositoryBloomFilter bloomFilter = bloomFilters.apply(member.getRepository());
+					RepositoryBloomFilter bloomFilter = MoreObjects.firstNonNull(
+							bloomFilters.apply(member.getRepository()),
+							AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
 					if (bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
 						if (result == null) {
 							result = member;

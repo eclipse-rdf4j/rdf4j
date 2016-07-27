@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.sail.federation.optimizers;
 
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.Collection;
-import java.util.Optional;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -29,6 +28,8 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.filters.AccurateRepositoryBloomFilter;
 import org.eclipse.rdf4j.repository.filters.RepositoryBloomFilter;
 
+import com.google.common.base.MoreObjects;
+
 /**
  * Remove StatementPatterns that have no statements.
  * 
@@ -42,16 +43,14 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 	private final Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters;
 
 	public EmptyPatternOptimizer(Collection<? extends RepositoryConnection> members) {
-		this.members = members;
-		this.bloomFilters = c -> AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE;
+		this(members, c -> AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
 	}
 
 	public EmptyPatternOptimizer(Collection<? extends RepositoryConnection> members,
 			Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters)
 	{
 		this.members = members;
-		this.bloomFilters = c -> Optional.ofNullable((RepositoryBloomFilter)bloomFilters.apply(c)).orElse(
-				AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
+		this.bloomFilters = bloomFilters;
 	}
 
 	public void optimize(TupleExpr query, Dataset dataset, BindingSet bindings) {
@@ -72,7 +71,9 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 		Value obj = node.getObjectVar().getValue();
 		Resource[] ctx = getContexts(node.getContextVar());
 		for (RepositoryConnection member : members) {
-			RepositoryBloomFilter bloomFilter = bloomFilters.apply(member.getRepository());
+			RepositoryBloomFilter bloomFilter = MoreObjects.firstNonNull(
+					bloomFilters.apply(member.getRepository()),
+					AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
 			if (bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
 				return;
 			}
