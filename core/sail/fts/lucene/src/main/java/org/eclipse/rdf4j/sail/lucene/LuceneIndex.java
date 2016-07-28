@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.sail.lucene;
 
 import java.io.IOException;
 import java.io.StringReader;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -69,7 +68,6 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.RAMDirectory;
 import org.apache.lucene.util.Bits;
-import org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
@@ -167,10 +165,6 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		postInit();
 	}
 
-	// this method uses java.nio.Path which is a Java 7 feature. We ignore this
-	// as the Lucene modules
-	// are marked as an exception to the rule that we are Java 6-compatible.
-	@IgnoreJRERequirement
 	protected Directory createDirectory(Properties parameters)
 		throws IOException
 	{
