@@ -167,10 +167,6 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		postInit();
 	}
 
-	// this method uses java.nio.Path which is a Java 7 feature. We ignore this
-	// as the Lucene modules
-	// are marked as an exception to the rule that we are Java 6-compatible.
-	@IgnoreJRERequirement
 	protected Directory createDirectory(Properties parameters)
 		throws IOException
 	{
