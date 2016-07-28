@@ -8,6 +8,8 @@
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -39,23 +41,34 @@ public enum ActiveTransactionRegistry {
 	private final Logger logger = LoggerFactory.getLogger(ActiveTransactionRegistry.class);
 
 	/**
-	 * Configurable system property {@code sesame.server.txn.registry.timeout} for specifying the transaction
+	 * Configurable system property {@code rdf4j.server.txn.registry.timeout} for specifying the transaction
 	 * cache timeout (in seconds).
 	 */
-	public static final String CACHE_TIMEOUT_PROPERTY = "sesame.server.txn.registry.timeout";
+	public static final String CACHE_TIMEOUT_PROPERTY = "rdf4j.server.txn.registry.timeout";
 
 	/**
 	 * Default timeout setting for transaction cache entries (in seconds).
 	 */
 	public final static int DEFAULT_TIMEOUT = 60;
 
-	private final Cache<UUID, CacheEntry> activeConnections;
+	/**
+	 * primary cache for transactions, accessible via transaction ID. Cache entries are kept until a
+	 * transaction signals it has ended, or until the secondary cache finds an "orphaned" transaction entry.
+	 */
+	private final Cache<UUID, CacheEntry> primaryCache;
+
+	/**
+	 * The secondary cache does automatic cleanup of its entries based on the configured timeout. If an
+	 * expired entry is no longer locked by any thread, it is considered "orphaned" and discarded from the
+	 * primary cache.
+	 */
+	private final Cache<UUID, CacheEntry> secondaryCache;
 
 	static class CacheEntry {
 
 		private final RepositoryConnection connection;
 
-		private final Lock lock = new ReentrantLock();
+		private final ReentrantLock lock = new ReentrantLock();
 
 		public CacheEntry(RepositoryConnection connection) {
 			this.connection = connection;
@@ -71,7 +84,7 @@ public enum ActiveTransactionRegistry {
 		/**
 		 * @return Returns the lock.
 		 */
-		public Lock getLock() {
+		public ReentrantLock getLock() {
 			return lock;
 		}
 
@@ -94,30 +107,42 @@ public enum ActiveTransactionRegistry {
 			}
 		}
 
-		activeConnections = initializeCache(timeout, TimeUnit.SECONDS);
-	}
+		primaryCache = CacheBuilder.newBuilder().removalListener(new RemovalListener<UUID, CacheEntry>() {
 
-	private final Cache<UUID, CacheEntry> initializeCache(int timeout, TimeUnit unit) {
-		return CacheBuilder.newBuilder().removalListener(new RemovalListener<UUID, CacheEntry>() {
+			@Override
+			public void onRemoval(RemovalNotification<UUID, CacheEntry> notification) {
+				CacheEntry entry = notification.getValue();
+				try {
+					entry.getConnection().close();
+				}
+				catch (RepositoryException e) {
+					// fall through
+				}
+			}
+		}).build();
+
+		secondaryCache = CacheBuilder.newBuilder().removalListener(new RemovalListener<UUID, CacheEntry>() {
 
 			@Override
 			public void onRemoval(RemovalNotification<UUID, CacheEntry> notification) {
 				if (RemovalCause.EXPIRED.equals(notification.getCause())) {
-					logger.warn("transaction registry item {} removed after expiry", notification.getKey());
-					CacheEntry entry = notification.getValue();
-					try {
-						entry.getConnection().close();
+					final UUID transactionId = notification.getKey();
+					final CacheEntry entry = notification.getValue();
+					synchronized (primaryCache) {
+						if (!entry.getLock().isLocked()) {
+							// no operation active, we can decommission this entry
+							primaryCache.invalidate(transactionId);
+							logger.warn("deregistered expired transaction {}", transactionId);
+						}
+						else {
+							// operation still active. Reinsert in secondary cache.
+							secondaryCache.put(transactionId, entry);
+						}
 					}
-					catch (RepositoryException e) {
-						// fall through
-					}
-				}
-				else {
-					logger.debug("transaction {} removed from registry. cause: {}", notification.getKey(),
-							notification.getCause());
 				}
 			}
-		}).expireAfterAccess(timeout, unit).build();
+		}).expireAfterAccess(timeout, TimeUnit.SECONDS).build();
+
 	}
 
 	/**
@@ -133,9 +158,11 @@ public enum ActiveTransactionRegistry {
 	public void register(UUID transactionId, RepositoryConnection conn)
 		throws RepositoryException
 	{
-		synchronized (activeConnections) {
-			if (activeConnections.getIfPresent(transactionId) == null) {
-				activeConnections.put(transactionId, new CacheEntry(conn));
+		synchronized (primaryCache) {
+			if (primaryCache.getIfPresent(transactionId) == null) {
+				final CacheEntry cacheEntry = new CacheEntry(conn);
+				primaryCache.put(transactionId, cacheEntry);
+				secondaryCache.put(transactionId, cacheEntry);
 				logger.debug("registered transaction {} ", transactionId);
 			}
 			else {
@@ -157,16 +184,15 @@ public enum ActiveTransactionRegistry {
 	public void deregister(UUID transactionId)
 		throws RepositoryException
 	{
-		synchronized (activeConnections) {
-			CacheEntry entry = activeConnections.getIfPresent(transactionId);
+		synchronized (primaryCache) {
+			CacheEntry entry = primaryCache.getIfPresent(transactionId);
 			if (entry == null) {
 				throw new RepositoryException(
 						"transaction with id " + transactionId.toString() + " not registered.");
 			}
 			else {
-				activeConnections.invalidate(transactionId);
-				final Lock txnLock = entry.getLock();
-				txnLock.unlock();
+				primaryCache.invalidate(transactionId);
+				secondaryCache.invalidate(transactionId);
 				logger.debug("deregistered transaction {}", transactionId);
 			}
 		}
@@ -188,8 +214,8 @@ public enum ActiveTransactionRegistry {
 		throws RepositoryException, InterruptedException
 	{
 		Lock txnLock = null;
-		synchronized (activeConnections) {
-			CacheEntry entry = activeConnections.getIfPresent(transactionId);
+		synchronized (primaryCache) {
+			CacheEntry entry = primaryCache.getIfPresent(transactionId);
 			if (entry == null) {
 				throw new RepositoryException(
 						"transaction with id " + transactionId.toString() + " not registered.");
@@ -200,11 +226,13 @@ public enum ActiveTransactionRegistry {
 
 		txnLock.lockInterruptibly();
 		/* Another thread might have deregistered the transaction while we were acquiring the lock */
-		final CacheEntry entry = activeConnections.getIfPresent(transactionId);
+		final CacheEntry entry = primaryCache.getIfPresent(transactionId);
 		if (entry == null) {
 			throw new RepositoryException(
 					"transaction with id " + transactionId + " is no longer registered!");
 		}
+		updateSecondaryCache(transactionId, entry);
+
 		return entry.getConnection();
 	}
 
@@ -216,12 +244,39 @@ public enum ActiveTransactionRegistry {
 	 *        a transaction identifier.
 	 */
 	public void returnTransactionConnection(UUID transactionId) {
-
-		final CacheEntry entry = activeConnections.getIfPresent(transactionId);
-
+		final CacheEntry entry = primaryCache.getIfPresent(transactionId);
 		if (entry != null) {
-			final Lock txnLock = entry.getLock();
-			txnLock.unlock();
+			updateSecondaryCache(transactionId, entry);
+			final ReentrantLock txnLock = entry.getLock();
+			if (txnLock.isHeldByCurrentThread()) {
+				txnLock.unlock();
+			}
+		}
+	}
+
+	/**
+	 * Checks if the given transaction entry is still in the secondary cache (resetting its last access time
+	 * in the process) and if not reinserts it.
+	 * 
+	 * @param transactionId
+	 *        the id for the transaction to check
+	 * @param entry
+	 *        the cache entry to insert if necessary.
+	 */
+	private void updateSecondaryCache(UUID transactionId, final CacheEntry entry) {
+		try {
+			secondaryCache.get(transactionId, new Callable<CacheEntry>() {
+
+				@Override
+				public CacheEntry call()
+					throws Exception
+				{
+					return entry;
+				}
+			});
+		}
+		catch (ExecutionException e) {
+			throw new RuntimeException(e);
 		}
 	}
 }

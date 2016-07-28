@@ -53,6 +53,7 @@ import org.apache.http.params.BasicHttpParams;
 import org.apache.http.params.CoreConnectionPNames;
 import org.apache.http.params.HttpParams;
 import org.apache.http.util.EntityUtils;
+import org.eclipse.rdf4j.RDF4JConfigException;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -97,6 +98,8 @@ import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.base.Joiner;
+
 /**
  * The SparqlSession provides low level HTTP methods for the HTTP communication of the SPARQL repository as
  * well as the HTTP Repository. All methods are compliant to the SPARQL 1.1 protocol. For both Tuple and Graph
@@ -120,12 +123,36 @@ public class SparqlSession implements HttpClientDependent {
 	protected static final Charset UTF8 = Charset.forName("UTF-8");
 
 	/**
-	 * The threshold for URL length, beyond which we use the POST method based on the lowest common
-	 * denominator for various web servers
+	 * The default value of the threshold for URL length, beyond which we use the POST method for SPARQL query
+	 * requests. The default is based on the lowest common denominator for various web servers.
 	 */
-	public static final int MAXIMUM_URL_LENGTH = 8192;
+	public static final int DEFAULT_MAXIMUM_URL_LENGTH = 4083;
+
+	/**
+	 * @deprecated use {@link #DEFAULT_MAXIMUM_URL_LENGTH} instead.
+	 */
+	@Deprecated
+	public static final int MAXIMUM_URL_LENGTH = DEFAULT_MAXIMUM_URL_LENGTH;
+
+	/**
+	 * System property for configuration of URL length threshold: {@code rdf4j.sparql.url.maxlength}. A
+	 * threshold of 0 (or a negative value) means that the POST method is used for <strong>every</strong>
+	 * SPARQL query request.
+	 */
+	public static final String MAXIMUM_URL_LENGTH_PARAM = "rdf4j.sparql.url.maxlength";
+
+	/**
+	 * The threshold for URL length, beyond which we use the POST method. A threshold of 0 (or a negative
+	 * value) means that the POST method is used for <strong>every</strong> SPARQL query request.
+	 */
+	private final int maximumUrlLength;
 
 	final Logger logger = LoggerFactory.getLogger(this.getClass());
+
+	/**
+	 * shared instance of a {@link Joiner} for creating a comma-separated string.
+	 */
+	private static final Joiner commaJoiner = Joiner.on(", ");
 
 	/*-----------*
 	 * Variables *
@@ -172,6 +199,20 @@ public class SparqlSession implements HttpClientDependent {
 		// parser used for processing server response data should be lenient
 		parserConfig.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 		parserConfig.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
+
+		// configure the maximum url length for SPARQL query GET requests
+		int maximumUrlLength = DEFAULT_MAXIMUM_URL_LENGTH;
+		String propertyValue = System.getProperty(MAXIMUM_URL_LENGTH_PARAM);
+		if (propertyValue != null) {
+			try {
+				maximumUrlLength = Integer.parseInt(propertyValue);
+			}
+			catch (NumberFormatException e) {
+				throw new RDF4JConfigException(
+						"integer value expected for property " + MAXIMUM_URL_LENGTH_PARAM, e);
+			}
+		}
+		this.maximumUrlLength = maximumUrlLength;
 	}
 
 	/*-----------------*
@@ -527,7 +568,7 @@ public class SparqlSession implements HttpClientDependent {
 	 *        the complete URL, including hostname and all HTTP query parameters
 	 */
 	protected boolean shouldUsePost(String fullQueryUrl) {
-		return fullQueryUrl.length() > MAXIMUM_URL_LENGTH;
+		return fullQueryUrl.length() > maximumUrlLength;
 	}
 
 	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
@@ -763,7 +804,9 @@ public class SparqlSession implements HttpClientDependent {
 		throws RepositoryException, IOException, QueryInterruptedException, MalformedQueryException
 	{
 
+		final List<String> acceptValues = new ArrayList<String>(tqrFormats.size());
 		for (QueryResultFormat format : tqrFormats) {
+
 			// Determine a q-value that reflects the user specified preference
 			int qValue = 10;
 
@@ -778,10 +821,11 @@ public class SparqlSession implements HttpClientDependent {
 				if (qValue < 10) {
 					acceptParam += ";q=0." + qValue;
 				}
-
-				method.addHeader(ACCEPT_PARAM_NAME, acceptParam);
+				acceptValues.add(acceptParam);
 			}
 		}
+
+		method.addHeader(ACCEPT_PARAM_NAME, commaJoiner.join(acceptValues));
 
 		try {
 			return executeOK(method);
@@ -911,9 +955,8 @@ public class SparqlSession implements HttpClientDependent {
 
 		List<String> acceptParams = RDFFormat.getAcceptParams(rdfFormats, requireContext,
 				getPreferredRDFFormat());
-		for (String acceptParam : acceptParams) {
-			method.addHeader(ACCEPT_PARAM_NAME, acceptParam);
-		}
+
+		method.addHeader(ACCEPT_PARAM_NAME, commaJoiner.join(acceptParams));
 
 		try {
 			return executeOK(method);
@@ -972,6 +1015,8 @@ public class SparqlSession implements HttpClientDependent {
 		throws IOException, RDF4JException
 	{
 
+		final List<String> acceptValues = new ArrayList<>(booleanFormats.size());
+
 		for (QueryResultFormat format : booleanFormats) {
 			// Determine a q-value that reflects the user specified preference
 			int qValue = 10;
@@ -988,9 +1033,11 @@ public class SparqlSession implements HttpClientDependent {
 					acceptParam += ";q=0." + qValue;
 				}
 
-				method.addHeader(ACCEPT_PARAM_NAME, acceptParam);
+				acceptValues.add(acceptParam);
 			}
 		}
+
+		method.addHeader(ACCEPT_PARAM_NAME, commaJoiner.join(acceptValues));
 
 		return executeOK(method);
 	}

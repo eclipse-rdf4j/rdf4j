@@ -373,7 +373,12 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		throws RepositoryException
 	{
 		try {
-			sailConnection.removeStatements(subject, predicate, object, contexts);
+			if (subject == null && predicate == null && object == null) {
+				sailConnection.clear(contexts);
+			}
+			else {
+				sailConnection.removeStatements(subject, predicate, object, contexts);
+			}
 		}
 		catch (SailReadOnlyException e) {
 			throw new RepositoryReadOnlyException(e.getMessage(), e);

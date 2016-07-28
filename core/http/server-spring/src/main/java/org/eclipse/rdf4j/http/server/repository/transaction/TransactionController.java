@@ -775,13 +775,26 @@ public class TransactionController extends AbstractController {
 			IRI predicate = SESAME.WILDCARD.equals(st.getPredicate()) ? null : st.getPredicate();
 			Value object = SESAME.WILDCARD.equals(st.getObject()) ? null : st.getObject();
 
+			// use the RepositoryConnection.clear operation if we're removing all statements
+			final boolean clearAllTriples = subject == null && predicate == null && object == null;
+
 			try {
 				Resource context = st.getContext();
 				if (context != null) {
-					conn.remove(subject, predicate, object, st.getContext());
+					if (clearAllTriples) {
+						conn.clear(context);
+					}
+					else {
+						conn.remove(subject, predicate, object, context);
+					}
 				}
 				else {
-					conn.remove(subject, predicate, object);
+					if (clearAllTriples) {
+						conn.clear();
+					}
+					else {
+						conn.remove(subject, predicate, object);
+					}
 				}
 			}
 			catch (RepositoryException e) {
