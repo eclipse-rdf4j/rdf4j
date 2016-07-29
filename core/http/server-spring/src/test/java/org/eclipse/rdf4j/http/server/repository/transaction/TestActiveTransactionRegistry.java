@@ -74,9 +74,9 @@ public class TestActiveTransactionRegistry {
 	@Test
 	public void testMultithreadedAccess() {
 
-		CountDownLatch txn1registered = new CountDownLatch(1);
+		final CountDownLatch txn1registered = new CountDownLatch(1);
 
-		CountDownLatch done = new CountDownLatch(2);
+		final CountDownLatch done = new CountDownLatch(2);
 
 		Runnable r1 = new Runnable() {
 
