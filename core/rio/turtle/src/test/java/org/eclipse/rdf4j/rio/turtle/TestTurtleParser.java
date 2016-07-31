@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
+import org.eclipse.rdf4j.rio.helpers.SimpleParseLocationListener;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.hamcrest.CoreMatchers;
 import org.hamcrest.Matchers;
@@ -56,6 +57,8 @@ public class TestTurtleParser {
 
 	private final String baseURI = "http://example.org/";
 
+	private SimpleParseLocationListener locationListener = new SimpleParseLocationListener();
+
 	/**
 	 * @throws java.lang.Exception
 	 */
@@ -66,6 +69,7 @@ public class TestTurtleParser {
 		parser = new TurtleParser();
 		parser.setParseErrorListener(errorCollector);
 		parser.setRDFHandler(statementCollector);
+		parser.setParseLocationListener(locationListener);
 	}
 
 	@Test
@@ -170,7 +174,105 @@ public class TestTurtleParser {
 			final String error = errorCollector.getFatalErrors().get(0);
 			// expected to fail at line 9.
 			assertTrue(error.contains("(9,"));
+			assertEquals(9, locationListener.getLineNo());
+			assertEquals(-1, locationListener.getColumnNo());
 		}
+	}
+
+	@Test
+	public void testLineNumberReportingNoErrorsSingleLine()
+		throws Exception
+	{
+		assertEquals(0, locationListener.getLineNo());
+		assertEquals(0, locationListener.getColumnNo());
+		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.");
+		parser.parse(in, baseURI);
+		assertEquals(1, locationListener.getLineNo());
+		assertEquals(-1, locationListener.getColumnNo());
+	}
+
+	@Test
+	public void testLineNumberReportingNoErrorsSingleLineEndNewline()
+		throws Exception
+	{
+		assertEquals(0, locationListener.getLineNo());
+		assertEquals(0, locationListener.getColumnNo());
+		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.\n");
+		parser.parse(in, baseURI);
+		assertEquals(2, locationListener.getLineNo());
+		assertEquals(-1, locationListener.getColumnNo());
+	}
+
+	@Test
+	public void testLineNumberReportingNoErrorsMultipleLinesNoEndNewline()
+		throws Exception
+	{
+		assertEquals(0, locationListener.getLineNo());
+		assertEquals(0, locationListener.getColumnNo());
+		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.\n<urn:a> <urn:b> <urn:d>.");
+		parser.parse(in, baseURI);
+		assertEquals(2, locationListener.getLineNo());
+		assertEquals(-1, locationListener.getColumnNo());
+	}
+
+	@Test
+	public void testLineNumberReportingNoErrorsMultipleLinesEndNewline()
+		throws Exception
+	{
+		assertEquals(0, locationListener.getLineNo());
+		assertEquals(0, locationListener.getColumnNo());
+		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.\n<urn:a> <urn:b> <urn:d>.\n");
+		parser.parse(in, baseURI);
+		assertEquals(3, locationListener.getLineNo());
+		assertEquals(-1, locationListener.getColumnNo());
+	}
+
+	@Test
+	public void testLineNumberReportingOnlySingleCommentNoEndline()
+		throws Exception
+	{
+		assertEquals(0, locationListener.getLineNo());
+		assertEquals(0, locationListener.getColumnNo());
+		Reader in = new StringReader("# This is just a comment");
+		parser.parse(in, baseURI);
+		assertEquals(1, locationListener.getLineNo());
+		assertEquals(-1, locationListener.getColumnNo());
+	}
+
+	@Test
+	public void testLineNumberReportingOnlySingleCommentEndline()
+		throws Exception
+	{
+		assertEquals(0, locationListener.getLineNo());
+		assertEquals(0, locationListener.getColumnNo());
+		Reader in = new StringReader("# This is just a comment\n");
+		parser.parse(in, baseURI);
+		assertEquals(2, locationListener.getLineNo());
+		assertEquals(-1, locationListener.getColumnNo());
+	}
+
+	@Test
+	public void testLineNumberReportingOnlySingleCommentCarriageReturn()
+		throws Exception
+	{
+		assertEquals(0, locationListener.getLineNo());
+		assertEquals(0, locationListener.getColumnNo());
+		Reader in = new StringReader("# This is just a comment\r");
+		parser.parse(in, baseURI);
+		assertEquals(2, locationListener.getLineNo());
+		assertEquals(-1, locationListener.getColumnNo());
+	}
+
+	@Test
+	public void testLineNumberReportingOnlySingleCommentCarriageReturnNewline()
+		throws Exception
+	{
+		assertEquals(0, locationListener.getLineNo());
+		assertEquals(0, locationListener.getColumnNo());
+		Reader in = new StringReader("# This is just a comment\r\n");
+		parser.parse(in, baseURI);
+		assertEquals(2, locationListener.getLineNo());
+		assertEquals(-1, locationListener.getColumnNo());
 	}
 
 	@Test
