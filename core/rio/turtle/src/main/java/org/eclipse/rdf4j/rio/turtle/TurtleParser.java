@@ -1157,6 +1157,7 @@ public class TurtleParser extends AbstractRDFParser {
 				// we only count line feeds (LF), not carriage return (CR), as
 				// normally a CR is immediately followed by a LF.
 				lineNumber++;
+				reportLocation();
 			}
 
 			c = readCodePoint();
@@ -1179,10 +1180,15 @@ public class TurtleParser extends AbstractRDFParser {
 			c = readCodePoint();
 		}
 
+		if (c == 0xA) {
+			lineNumber++;
+		}
+		
 		// c is equal to -1, \r or \n.
 		// In case c is equal to \r, we should also read a following \n.
 		if (c == 0xD) {
 			c = readCodePoint();
+			lineNumber++;
 
 			if (c != 0xA) {
 				unread(c);
@@ -1309,7 +1315,7 @@ public class TurtleParser extends AbstractRDFParser {
 		throw new RDFParseException("Unexpected end of file");
 	}
 
-	private int getLineNumber() {
+	protected int getLineNumber() {
 		return lineNumber;
 	}
 }

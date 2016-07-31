@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
+import org.eclipse.rdf4j.rio.helpers.SimpleParseLocationListener;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.After;
 import org.junit.Assert;
@@ -666,18 +667,11 @@ public abstract class AbstractNQuadsParserUnitTest {
 		rdfHandler.assertHandler(1);
 	}
 
-	private class TestParseLocationListener implements ParseLocationListener {
-
-		private long lastRow, lastCol;
-
-		public void parseLocationUpdate(long r, long c) {
-			lastRow = r;
-			lastCol = c;
-		}
+	private class TestParseLocationListener extends SimpleParseLocationListener {
 
 		private void assertListener(int row, int col) {
-			Assert.assertEquals("Unexpected last row", row, lastRow);
-			Assert.assertEquals("Unexpected last col", col, lastCol);
+			Assert.assertEquals("Unexpected last row", row, this.getLineNo());
+			Assert.assertEquals("Unexpected last col", col, this.getColumnNo());
 		}
 
 	}
