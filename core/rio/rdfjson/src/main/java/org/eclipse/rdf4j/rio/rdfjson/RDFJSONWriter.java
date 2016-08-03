@@ -68,18 +68,22 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	{
 		try {
 			if (this.writer != null) {
-				final JsonGenerator jg = RDFJSONUtility.JSON_FACTORY.createGenerator(this.writer);
-				RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
-
-				jg.close();
-				this.writer.flush();
+				try (final JsonGenerator jg = RDFJSONUtility.JSON_FACTORY.createGenerator(this.writer);) {
+					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
+				}
+				finally {
+					this.writer.flush();
+				}
 			}
 			else if (this.outputStream != null) {
-				final JsonGenerator jg = RDFJSONUtility.JSON_FACTORY.createGenerator(this.outputStream);
-				RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
-
-				jg.close();
-				this.outputStream.flush();
+				try (final JsonGenerator jg = RDFJSONUtility.JSON_FACTORY.createGenerator(
+						this.outputStream);)
+				{
+					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
+				}
+				finally {
+					this.outputStream.flush();
+				}
 			}
 			else {
 				throw new IllegalStateException("The output stream and the writer were both null.");
