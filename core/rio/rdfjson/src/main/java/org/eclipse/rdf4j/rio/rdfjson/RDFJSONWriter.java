@@ -33,8 +33,9 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 import com.fasterxml.jackson.core.JsonGenerationException;
 import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.util.DefaultIndenter;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
-import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Lf2SpacesIndenter;
+import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
 
 /**
  * {@link RDFWriter} implementation for the RDF/JSON format
@@ -67,18 +68,22 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	{
 		try {
 			if (this.writer != null) {
-				final JsonGenerator jg = RDFJSONUtility.JSON_FACTORY.createJsonGenerator(this.writer);
-				RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
-
-				jg.close();
-				this.writer.flush();
+				try (final JsonGenerator jg = RDFJSONUtility.JSON_FACTORY.createGenerator(this.writer);) {
+					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
+				}
+				finally {
+					this.writer.flush();
+				}
 			}
 			else if (this.outputStream != null) {
-				final JsonGenerator jg = RDFJSONUtility.JSON_FACTORY.createJsonGenerator(this.outputStream);
-				RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
-
-				jg.close();
-				this.outputStream.flush();
+				try (final JsonGenerator jg = RDFJSONUtility.JSON_FACTORY.createGenerator(
+						this.outputStream);)
+				{
+					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
+				}
+				finally {
+					this.outputStream.flush();
+				}
 			}
 			else {
 				throw new IllegalStateException("The output stream and the writer were both null.");
@@ -213,7 +218,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	{
 		if (writerConfig.get(BasicWriterSettings.PRETTY_PRINT)) {
 			// SES-2011: Always use \n for consistency
-			Lf2SpacesIndenter indenter = Lf2SpacesIndenter.instance.withLinefeed("\n");
+			Indenter indenter = DefaultIndenter.SYSTEM_LINEFEED_INSTANCE;
 			// By default Jackson does not pretty print, so enable this unless
 			// PRETTY_PRINT setting is disabled
 			DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(
