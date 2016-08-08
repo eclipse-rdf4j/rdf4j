@@ -265,7 +265,7 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 			}
 
 			xmlReader.setContentHandler(saxFilter);
-			xmlReader.setErrorHandler(this);
+			//xmlReader.setErrorHandler(this);
 
 			// Set all compulsory feature settings, using the defaults if they are
 			// not explicitly set
