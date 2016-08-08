@@ -1,0 +1,11 @@
+prefix spin: <http://spinrdf.org/spin#> 
+prefix spl: <http://spinrdf.org/spl#>
+
+select ?testCase ?expected ?actual where {
+  ?testCase a spl:TestCase. 
+  ?testCase spl:testResult ?expected. 
+  ?testCase spl:testExpression ?expr. 
+BIND(spin:eval(?expr) as ?actual) 
+FILTER(?expected != ?actual) 
+FILTER(strstarts(str(?testCase), 'http://spinrdf.org/spif#'))
+}

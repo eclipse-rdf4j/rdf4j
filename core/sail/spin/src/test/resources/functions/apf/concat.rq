@@ -1,0 +1,5 @@
+prefix apf: <http://jena.hpl.hp.com/ARQ/property#>
+
+select ?text where {
+   ?text apf:concat ("very" "sour" "berry") .
+}

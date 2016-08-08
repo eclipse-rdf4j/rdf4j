@@ -34,13 +34,17 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.inferencer.fc.DedupingInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.spin.functions.SpinFunctionTest;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /**
+ * Tests are provided by {@link SpinFunctionTest} </br>
  * Runs the spif test cases.
  */
+@Deprecated
 public class SpifSailTest {
 
 	private Repository repo;
@@ -73,6 +77,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void runTests()
 		throws Exception
 	{
@@ -113,6 +118,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testCast()
 		throws Exception
 	{
@@ -123,6 +129,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testIndexOf()
 		throws Exception
 	{
@@ -133,6 +140,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testLastIndexOf()
 		throws Exception
 	{
@@ -143,6 +151,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testEncodeURL()
 		throws Exception
 	{
@@ -153,6 +162,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testBuildString()
 		throws Exception
 	{
@@ -163,6 +173,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testBuildURI()
 		throws Exception
 	{
@@ -173,6 +184,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testName()
 		throws Exception
 	{
@@ -183,6 +195,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testForEach()
 		throws Exception
 	{
@@ -197,6 +210,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testFor()
 		throws Exception
 	{
@@ -211,6 +225,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testSplit()
 		throws Exception
 	{
@@ -225,6 +240,7 @@ public class SpifSailTest {
 	}
 
 	@Test
+	@Ignore
 	public void testCanInvoke()
 		throws Exception
 	{
@@ -235,7 +251,14 @@ public class SpifSailTest {
 		assertTrue(bq.evaluate());
 	}
 
+	/**
+	 * In {@link SpinFunctionTest} the SPARQL request from this test was changed into tuple type. It can be
+	 * found in file <code>src/test/resources/functions/spif/canInvoke2.rq</code>.
+	 * 
+	 * @throws Exception
+	 */
 	@Test
+	@Ignore
 	public void testCantInvoke()
 		throws Exception
 	{
