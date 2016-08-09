@@ -1,5 +1,0 @@
-prefix apf: <http://jena.hpl.hp.com/ARQ/property#>
-
-select ?text ?out_test where {
-   ?text apf:strSplit ("very:sour:berry" ":") .
-}
