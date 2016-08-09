@@ -1,2 +1,0 @@
-prefix spif: <http://spinrdf.org/spif#> 
-select ?x where {?x spif:for (1 4)}
