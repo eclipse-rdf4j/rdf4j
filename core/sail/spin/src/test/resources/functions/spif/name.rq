@@ -1,2 +1,0 @@
-prefix spif: <http://spinrdf.org/spif#> 
-ask where {?s rdfs:label ?l. filter(spif:name(?s) = ?l)}

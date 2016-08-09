@@ -1,2 +1,0 @@
-prefix spif: <http://spinrdf.org/spif#>
-ask where {filter(spif:cast(3.14, xsd:integer) = 3)}
