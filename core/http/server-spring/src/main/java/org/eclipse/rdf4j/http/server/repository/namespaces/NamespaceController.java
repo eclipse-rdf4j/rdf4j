@@ -52,8 +52,7 @@ public class NamespaceController extends AbstractController {
 		throws Exception
 	{
 		String pathInfoStr = request.getPathInfo();
-		String[] pathInfo = pathInfoStr.substring(1).split("/");
-		String prefix = pathInfo[pathInfo.length - 1];
+		String prefix = pathInfoStr.substring(pathInfoStr.lastIndexOf('/') + 1);
 
 		String reqMethod = request.getMethod();
 
