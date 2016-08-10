@@ -18,14 +18,19 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
+import org.xml.sax.ErrorHandler;
 import org.xml.sax.SAXException;
+import org.xml.sax.SAXParseException;
+import org.xml.sax.XMLReader;
 
 /**
  * Abstract base class for SPARQL Results XML Parsers.
  * 
  * @author Peter Ansell
  */
-public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser {
+public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser implements ErrorHandler {
+
+	private SimpleSAXParser internalSAXParser;
 
 	/**
 	 * 
@@ -58,6 +63,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 		}
 
 		BufferedInputStream buff = new BufferedInputStream(in);
+		// Wrap in a custom InputStream that doesn't allow close to be called by dependencies before we are ready to call it
 		UncloseableInputStream uncloseable = new UncloseableInputStream(buff);
 
 		SAXException caughtException = null;
@@ -70,10 +76,14 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 				try {
 					SPARQLBooleanSAXParser valueParser = new SPARQLBooleanSAXParser();
 
-					SimpleSAXParser booleanSAXParser = new SimpleSAXParser(
-							XMLReaderFactory.createXMLReader());
-					booleanSAXParser.setListener(valueParser);
-					booleanSAXParser.parse(uncloseable);
+					XMLReader xmlReader = XMLReaderFactory.createXMLReader();
+					xmlReader.setErrorHandler(this);
+
+					internalSAXParser = new SimpleSAXParser(xmlReader);
+					internalSAXParser.setPreserveWhitespace(true);
+
+					internalSAXParser.setListener(valueParser);
+					internalSAXParser.parse(uncloseable);
 
 					result = valueParser.getValue();
 
@@ -107,13 +117,15 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 
 			if (attemptParseTuple) {
 				try {
-					SimpleSAXParser resultsSAXParser = new SimpleSAXParser(
-							XMLReaderFactory.createXMLReader());
-					resultsSAXParser.setPreserveWhitespace(true);
+					XMLReader xmlReader = XMLReaderFactory.createXMLReader();
+					xmlReader.setErrorHandler(this);
+					internalSAXParser = new SimpleSAXParser(xmlReader);
+					internalSAXParser.setPreserveWhitespace(true);
 
-					resultsSAXParser.setListener(new SPARQLResultsSAXParser(this.valueFactory, this.handler));
+					internalSAXParser.setListener(
+							new SPARQLResultsSAXParser(this.valueFactory, this.handler));
 
-					resultsSAXParser.parse(uncloseable);
+					internalSAXParser.parse(uncloseable);
 
 					// we had success, so remove the exception that we were tracking
 					// from
@@ -144,10 +156,35 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 
 		}
 		finally {
+			// Explicitly call the delegator to the close method to actually close it
 			uncloseable.doClose();
 		}
 
 		return result;
+	}
+
+	@Override
+	public void warning(SAXParseException exception)
+		throws SAXException
+	{
+		// FIXME: No infrastructure in QueryResultParser for reporting or deciding to rethrow warnings for parsing as in Rio RDFParser
+	}
+
+	@Override
+	public void error(SAXParseException exception)
+		throws SAXException
+	{
+		// FIXME: No infrastructure in QueryResultParser for reporting or deciding to rethrow non-fatal errors for parsing as in Rio RDFParser
+	}
+
+	@Override
+	public void fatalError(SAXParseException exception)
+		throws SAXException
+	{
+		// FIXME: No infrastructure in QueryResultParser for reporting fatal errors for parsing as in Rio RDFParser
+		throw new SAXParseException(exception.getMessage(), internalSAXParser.getLocator(),
+				new QueryResultParseException(exception, internalSAXParser.getLocator().getLineNumber(),
+						internalSAXParser.getLocator().getColumnNumber()));
 	}
 
 }
