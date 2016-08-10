@@ -16,6 +16,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.util.Locale;
 
 import org.eclipse.rdf4j.OpenRDFException;
 import org.eclipse.rdf4j.model.Literal;
@@ -47,6 +48,8 @@ public class SpifSailTest {
 
 	private RepositoryConnection conn;
 
+	private Locale locale;
+
 	@Before
 	public void setup()
 		throws RepositoryException
@@ -58,18 +61,28 @@ public class SpifSailTest {
 		repo = new SailRepository(spinSail);
 		repo.initialize();
 		conn = repo.getConnection();
+
+		locale = Locale.getDefault();
+
+		/*
+		 * FIXME See #280 . Some tests (e.g. test involving spif:dateFormat) require English locale to
+		 * succeed, instead of platform locale.
+		 */
+		Locale.setDefault(Locale.ENGLISH);
 	}
 
 	@After
 	public void tearDown()
 		throws RepositoryException
 	{
+		Locale.setDefault(locale);
 		if (conn != null) {
 			conn.close();
 		}
 		if (repo != null) {
 			repo.shutDown();
 		}
+
 	}
 
 	@Test
