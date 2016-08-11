@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.http.server;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.ByteArrayInputStream;
@@ -18,8 +19,11 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -37,7 +41,9 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicNameValuePair;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -48,6 +54,8 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
+
+import com.google.common.collect.Sets;
 
 public class ProtocolTest {
 
@@ -430,6 +438,32 @@ public class ProtocolTest {
 	}
 
 	/**
+	 * Test for GitHub issue #262
+	 * 
+	 * @throws Exception
+	 */
+	@Test
+	public void testPutEmptyPrefix()
+		throws Exception
+	{
+		String repositoryLocation = TestServer.REPOSITORY_URL;
+		String namespacesLocation = Protocol.getNamespacesLocation(repositoryLocation);
+		String emptyPrefixLocation = Protocol.getNamespacePrefixLocation(repositoryLocation, "");
+
+		Set<Namespace> namespacesBefore = getNamespaces(namespacesLocation);
+
+		putNamespace(emptyPrefixLocation, "http://example.org/");
+
+		Set<Namespace> namespacesAfter = getNamespaces(namespacesLocation);
+
+		Set<Namespace> namespaceDeletions = Sets.difference(namespacesBefore, namespacesAfter);
+		Set<Namespace> namespaceAdditions = Sets.difference(namespacesAfter, namespacesBefore);
+
+		assertTrue("Some namespaces have been deleted", namespaceDeletions.isEmpty());
+		assertEquals(Sets.newHashSet(new SimpleNamespace("", "http://example.org/")), namespaceAdditions);
+	}
+
+	/**
 	 * Test for SES-1861
 	 * 
 	 * @throws Exception
@@ -480,6 +514,62 @@ public class ProtocolTest {
 		threadPool.shutdown();
 		threadPool.awaitTermination(30000, TimeUnit.MILLISECONDS);
 		threadPool.shutdownNow();
+	}
+
+	private Set<Namespace> getNamespaces(String location)
+		throws Exception
+	{
+		URL url = new URL(location);
+		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+		try {
+			conn.setRequestProperty("Accept", "text/csv; charset=utf-8");
+			conn.connect();
+
+			InputStream connIs = conn.getInputStream();
+			try {
+				int responseCode = conn.getResponseCode();
+				if (responseCode != HttpURLConnection.HTTP_OK) {
+					String response = "location " + location + " responded: " + conn.getResponseMessage()
+							+ " (" + responseCode + ")";
+					fail(response);
+				}
+
+				String responseText = IOUtil.readString(connIs);
+				String[] rows = responseText.split("\\r?\\n");
+
+				if (rows.length == 0) {
+					String response = "location " + location + " responded with no rows";
+					fail(response);
+				}
+
+				if (!Arrays.equals(rows[0].split(","), new String[] { "prefix", "namespace" })) {
+					fail("illegal header row: " + rows[0]);
+				}
+
+				Set<Namespace> namespaces = new HashSet<Namespace>();
+
+				for (int i = 1; i < rows.length; i++) {
+					String aRow = rows[i];
+					int separatorIndex = aRow.indexOf(",");
+
+					if (separatorIndex == -1) {
+						fail("missing separator on row #" + i);
+					}
+
+					String prefix = aRow.substring(0, separatorIndex);
+					String namespace = aRow.substring(separatorIndex + 1);
+
+					namespaces.add(new SimpleNamespace(prefix, namespace));
+				}
+				return namespaces;
+			}
+			finally {
+				connIs.close();
+			}
+		}
+		finally {
+			conn.disconnect();
+		}
 	}
 
 	private void putNamespace(String location, String namespace)
