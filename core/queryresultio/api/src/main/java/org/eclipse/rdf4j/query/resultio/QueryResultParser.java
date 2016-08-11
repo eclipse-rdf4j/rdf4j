@@ -50,25 +50,25 @@ public interface QueryResultParser {
 	 */
 	QueryResultParser setValueFactory(ValueFactory valueFactory);
 
-    /**
-     * Sets the ParseErrorListener that will be notified of any errors that this parser finds during parsing.
-     * 
-     * @param el
-     *        The ParseErrorListener that will be notified of errors or warnings.
-     * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
-     *         calls.
-     */
-    QueryResultParser setParseErrorListener(ParseErrorListener el);
+	/**
+	 * Sets the ParseErrorListener that will be notified of any errors that this parser finds during parsing.
+	 * 
+	 * @param el
+	 *        The ParseErrorListener that will be notified of errors or warnings.
+	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
+	 *         calls.
+	 */
+	QueryResultParser setParseErrorListener(ParseErrorListener el);
 
-    /**
-     * Sets the ParseLocationListener that will be notified of the parser's progress during the parse process.
-     * 
-     * @param ll
-     *        The ParseLocationListener that will be notified of the parser's progress.
-     * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
-     *         calls.
-     */
-    QueryResultParser setParseLocationListener(ParseLocationListener ll);
+	/**
+	 * Sets the ParseLocationListener that will be notified of the parser's progress during the parse process.
+	 * 
+	 * @param ll
+	 *        The ParseLocationListener that will be notified of the parser's progress.
+	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
+	 *         calls.
+	 */
+	QueryResultParser setParseLocationListener(ParseLocationListener ll);
 
 	/**
 	 * Parse the query results out of the given {@link InputStream} into the handler setup using
@@ -107,16 +107,16 @@ public interface QueryResultParser {
 	 */
 	Collection<RioSetting<?>> getSupportedSettings();
 
-    /**
-     * Set a setting on the parser, and return this parser object to allow chaining.
-     * 
-     * @param setting
-     *        The setting to change.
-     * @param value
-     *        The value to change.
-     * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
-     *         calls.
-     */
-    <T> QueryResultParser set(RioSetting<T> setting, T value);
+	/**
+	 * Set a setting on the parser, and return this parser object to allow chaining.
+	 * 
+	 * @param setting
+	 *        The setting to change.
+	 * @param value
+	 *        The value to change.
+	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
+	 *         calls.
+	 */
+	<T> QueryResultParser set(RioSetting<T> setting, T value);
 
 }
