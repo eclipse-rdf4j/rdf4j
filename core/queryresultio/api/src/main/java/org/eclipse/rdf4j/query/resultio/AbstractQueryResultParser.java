@@ -13,7 +13,10 @@ import java.util.Collections;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandler;
+import org.eclipse.rdf4j.rio.ParseErrorListener;
+import org.eclipse.rdf4j.rio.ParseLocationListener;
 import org.eclipse.rdf4j.rio.ParserConfig;
+import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
@@ -35,7 +38,20 @@ public abstract class AbstractQueryResultParser implements QueryResultParser {
 	 */
 	protected QueryResultHandler handler;
 
-	private ParserConfig parserConfig = new ParserConfig();
+	/**
+	 * A collection of configuration options for this parser.
+	 */
+	private ParserConfig parserConfig;
+
+	/**
+	 * An optional ParseErrorListener to report parse errors to.
+	 */
+	private ParseErrorListener errListener;
+
+	/**
+	 * An optional ParseLocationListener to report parse progress in the form of line- and column numbers to.
+	 */
+	private ParseLocationListener locationListener;
 
 	/*--------------*
 	 * Constructors *
@@ -54,6 +70,7 @@ public abstract class AbstractQueryResultParser implements QueryResultParser {
 	 */
 	public AbstractQueryResultParser(ValueFactory valueFactory) {
 		setValueFactory(valueFactory);
+		setParserConfig(new ParserConfig());
 	}
 
 	/*---------*
@@ -61,23 +78,46 @@ public abstract class AbstractQueryResultParser implements QueryResultParser {
 	 *---------*/
 
 	@Override
-	public void setValueFactory(ValueFactory valueFactory) {
+	public QueryResultParser setValueFactory(ValueFactory valueFactory) {
 		this.valueFactory = valueFactory;
+		return this;
 	}
 
 	@Override
-	public void setQueryResultHandler(QueryResultHandler handler) {
+	public QueryResultParser setQueryResultHandler(QueryResultHandler handler) {
 		this.handler = handler;
+		return this;
 	}
 
 	@Override
-	public void setParserConfig(ParserConfig config) {
+	public QueryResultParser setParserConfig(ParserConfig config) {
 		this.parserConfig = config;
+		return this;
 	}
 
 	@Override
 	public ParserConfig getParserConfig() {
 		return this.parserConfig;
+	}
+
+	@Override
+	public QueryResultParser setParseErrorListener(ParseErrorListener el) {
+		errListener = el;
+		return this;
+	}
+
+	public ParseErrorListener getParseErrorListener() {
+		return errListener;
+	}
+
+	@Override
+	public QueryResultParser setParseLocationListener(ParseLocationListener el) {
+		locationListener = el;
+		return this;
+	}
+
+	public ParseLocationListener getParseLocationListener() {
+		return locationListener;
 	}
 
 	/*
@@ -86,5 +126,11 @@ public abstract class AbstractQueryResultParser implements QueryResultParser {
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
 		return Collections.emptyList();
+	}
+
+	@Override
+	public <T> QueryResultParser set(RioSetting<T> setting, T value) {
+		getParserConfig().set(setting, value);
+		return this;
 	}
 }
