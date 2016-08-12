@@ -346,7 +346,7 @@ public abstract class RDFWriterTest {
 		// interpretation
 		Statement st23 = vf.createStatement(bnodeUseAcrossContextsSubject, uri4, uri3, uri1);
 		Statement st24 = vf.createStatement(bnodeUseAcrossContextsSubject, uri4, uri3, uri2);
-		Statement st25 = vf.createStatement(bnodeUseAcrossContextsSubjectAndObject, uri4, uri2, uri1);
+		Statement st25 = vf.createStatement(bnodeUseAcrossContextsSubjectAndObject, uri5, uri4, uri1);
 		Statement st26 = vf.createStatement(uri4, uri3, bnodeUseAcrossContextsSubjectAndObject, uri3);
 		Statement st27 = vf.createStatement(uri3, uri4, bnodeUseAcrossContextsObject, uri1);
 		Statement st28 = vf.createStatement(uri3, uri4, bnodeUseAcrossContextsObject, uri2);
@@ -418,37 +418,40 @@ public abstract class RDFWriterTest {
 		}
 
 		// Test for four unique statements for blank nodes in subject position
-		assertEquals(5, model.filter(null, uri1, plainLit).size());
+		assertEquals("Unexpected number of statements with blank node subjects", 5,
+				model.filter(null, uri1, plainLit).size());
 		// Test for four unique statements for blank nodes in object position
-		assertEquals(5, model.filter(uri2, uri1, null).size());
+		assertEquals("Unexpected number of statements with blank node objects", 5,
+				model.filter(uri2, uri1, null).size());
 		if (rdfParser.getRDFFormat().supportsContexts()) {
-			assertTrue("missing statement with language literal and context", model.contains(st11));
+			assertTrue("missing statement with language literal and context: st11", model.contains(st11));
 		}
 		else {
-			assertTrue("missing statement with language literal",
+			assertTrue("missing statement with language literal: st11",
 					model.contains(vf.createStatement(uri1, uri2, langLit)));
 		}
-		assertTrue("missing statement with datatype", model.contains(st12));
+		assertTrue("missing statement with datatype: st12", model.contains(st12));
 		if (rdfParser.getRDFFormat().equals(RDFFormat.RDFXML)) {
 			System.out.println(
 					"FIXME: SES-879: RDFXML Parser does not preserve literals starting or ending in newline character");
 		}
 		else {
-			assertTrue("missing statement with literal ending with newline", model.contains(st13));
-			assertTrue("missing statement with literal starting with newline", model.contains(st14));
-			assertTrue("missing statement with literal containing multiple newlines", model.contains(st15));
+			assertTrue("missing statement with literal ending with newline: st13", model.contains(st13));
+			assertTrue("missing statement with literal starting with newline: st14", model.contains(st14));
+			assertTrue("missing statement with literal containing multiple newlines: st15",
+					model.contains(st15));
 		}
-		assertTrue("missing statement with single quotes", model.contains(st16));
-		assertTrue("missing statement with double quotes", model.contains(st17));
-		assertTrue("missing statement with object URI ending in period", model.contains(st18));
-		assertTrue("missing statement with predicate URI ending in period", model.contains(st19));
-		assertTrue("missing statement with subject URI ending in period", model.contains(st20));
+		assertTrue("missing statement with single quotes: st16", model.contains(st16));
+		assertTrue("missing statement with double quotes: st17", model.contains(st17));
+		assertTrue("missing statement with object URI ending in period: st18", model.contains(st18));
+		assertTrue("missing statement with predicate URI ending in period: st19", model.contains(st19));
+		assertTrue("missing statement with subject URI ending in period: st20", model.contains(st20));
 
 		if (rdfParser.getRDFFormat().supportsContexts()) {
-			assertTrue("missing statement with blank node single use subject", model.contains(st21));
+			assertTrue("missing statement with blank node single use subject: st21", model.contains(st21));
 		}
 		else {
-			assertEquals("missing statement with blank node single use subject", 1,
+			assertEquals("missing statement with blank node single use subject: st21", 1,
 					model.filter(null, uri4, uri5).size());
 		}
 		if (rdfParser.getRDFFormat().supportsContexts()) {
@@ -465,7 +468,7 @@ public abstract class RDFWriterTest {
 					model.contains(st24));
 		}
 		else {
-			assertEquals("missing statement with blank node use across contexts: st23/st24", 1,
+			assertEquals("missing statement with blank node use: st23/st24", 1,
 					model.filter(null, uri4, uri3).size());
 		}
 		if (rdfParser.getRDFFormat().supportsContexts()) {
@@ -475,9 +478,9 @@ public abstract class RDFWriterTest {
 					model.contains(st26));
 		}
 		else {
-			assertEquals("missing statement with blank node use across contexts subject and object: st25", 1,
-					model.filter(null, uri4, uri2).size());
-			assertEquals("missing statement with blank node use across contexts subject and object: st26", 1,
+			assertEquals("missing statement with blank node use subject and object: st25", 1,
+					model.filter(null, uri5, uri4).size());
+			assertEquals("missing statement with blank node use subject and object: st26", 1,
 					model.filter(uri4, uri3, null).size());
 		}
 		if (rdfParser.getRDFFormat().supportsContexts()) {
@@ -487,7 +490,7 @@ public abstract class RDFWriterTest {
 					model.contains(st28));
 		}
 		else {
-			assertEquals("missing statement with blank node use across contexts: object: st27/st28", 1,
+			assertEquals("missing statement with blank node use: object: st27/st28", 1,
 					model.filter(uri3, uri4, null).size());
 		}
 		if (rdfParser.getRDFFormat().supportsContexts()) {
@@ -510,9 +513,9 @@ public abstract class RDFWriterTest {
 					model.filter(null, null, null, st30Contexts.iterator().next()).size());
 		}
 		else {
-			assertEquals("missing statement with blank node context: st29", 1,
+			assertEquals("missing statement with blank node context in non-quads format: st29", 1,
 					model.filter(uri5, uri4, uri1).size());
-			assertEquals("missing statement with blank node context: st30", 1,
+			assertEquals("missing statement with blank node context in non-quads format: st30", 1,
 					model.filter(uri5, uri4, uri2).size());
 		}
 	}
