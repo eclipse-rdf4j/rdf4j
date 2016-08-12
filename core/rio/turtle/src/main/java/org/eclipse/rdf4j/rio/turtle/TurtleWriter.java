@@ -241,7 +241,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 *        The next statement to write
 	 * @param endRDFCalled
 	 */
-	private void handleStatementInternal(Statement st, boolean endRDFCalled) {
+	protected void handleStatementInternal(Statement st, boolean endRDFCalled) {
 		// Avoid accidentally writing statements early, but don't lose track of
 		// them if they are sent here
 		if (prettyPrintModel != null && !endRDFCalled) {

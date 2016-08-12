@@ -16,15 +16,15 @@ import org.eclipse.rdf4j.rio.trig.TriGWriterFactory;
 /**
  * @author Arjohn Kampman
  */
-public class TriGWriterTest extends RDFWriterTest {
+public class TriGPrettyWriterTest extends RDFWriterTest {
 
-	public TriGWriterTest() {
+	public TriGPrettyWriterTest() {
 		super(new TriGWriterFactory(), new TriGParserFactory());
 	}
 
 	@Override
 	protected void setupWriterConfig(WriterConfig config) {
-		config.set(BasicWriterSettings.PRETTY_PRINT, false);
+		config.set(BasicWriterSettings.PRETTY_PRINT, true);
 	}
 
 }

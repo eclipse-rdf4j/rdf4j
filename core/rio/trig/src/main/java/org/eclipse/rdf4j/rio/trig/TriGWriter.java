@@ -127,7 +127,7 @@ public class TriGWriter extends TurtleWriter {
 			throw new RDFHandlerException(e);
 		}
 
-		super.handleStatement(st);
+		super.handleStatementInternal(st, false);
 	}
 
 	@Override
