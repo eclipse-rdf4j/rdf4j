@@ -161,7 +161,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 						// So just need to do checking for BNode subjects
 						if (nextSubject instanceof BNode) {
 							if (getRDFFormat().equals(RDFFormat.TRIG) && prettyPrintModel.filter(nextSubject,
-									null, null, null).contexts().size() > 1)
+									null, null, (Resource)null).contexts().size() > 1)
 							{
 								// TriG section 2.3.1 specifies that we cannot shorten blank nodes shared across contexts, 
 								// and this code is shared with TriG.
