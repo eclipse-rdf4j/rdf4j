@@ -1238,6 +1238,23 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	/**
+	 * Overrides {@link AbstractRDFParser#reportError(String, RioSetting)}, adding line- and column number
+	 * information to the error.
+	 */
+	@Override
+	protected void reportError(Exception e, RioSetting<Boolean> setting)
+		throws RDFParseException
+	{
+		Locator locator = saxFilter.getLocator();
+		if (locator != null) {
+			reportError(e, locator.getLineNumber(), locator.getColumnNumber(), setting);
+		}
+		else {
+			reportError(e, -1, -1, setting);
+		}
+	}
+
+	/**
 	 * Overrides {@link AbstractRDFParser#reportFatalError(String)}, adding line- and column number
 	 * information to the error.
 	 */
@@ -1388,7 +1405,7 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 		throws SAXException
 	{
 		try {
-			this.reportError(exception.getMessage(), XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS);
+			this.reportError(exception, XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS);
 		}
 		catch (RDFParseException rdfpe) {
 			throw new SAXException(rdfpe);
@@ -1403,7 +1420,7 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 		throws SAXException
 	{
 		try {
-			this.reportFatalError(exception.getMessage());
+			this.reportFatalError(exception);
 		}
 		catch (RDFParseException rdfpe) {
 			throw new SAXException(rdfpe);
