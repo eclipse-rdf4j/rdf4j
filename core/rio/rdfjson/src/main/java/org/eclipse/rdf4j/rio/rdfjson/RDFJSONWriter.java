@@ -182,7 +182,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 					jg.writeNull();
 				}
 				else {
-					jg.writeString(nextContext.stringValue());
+					jg.writeString(resourceToString(nextContext));
 				}
 			}
 			jg.writeEndArray();
