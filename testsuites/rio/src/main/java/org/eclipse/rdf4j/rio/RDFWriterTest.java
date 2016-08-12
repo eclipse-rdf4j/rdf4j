@@ -170,8 +170,8 @@ public abstract class RDFWriterTest {
 		uri1 = vf.createIRI(exNs, "uri1");
 		uri2 = vf.createIRI(exNs, "uri2");
 		uri3 = vf.createIRI(exNs, "uri3.");
-		uri4 = vf.createIRI(exNs, "uri4#");
-		uri5 = vf.createIRI(exNs, "uri5/");
+		uri4 = vf.createIRI(exNs, "uri4#me");
+		uri5 = vf.createIRI(exNs, "uri5/you");
 		plainLit = vf.createLiteral("plain");
 		dtLit = vf.createLiteral(1);
 		langLit = vf.createLiteral("test", "en");
