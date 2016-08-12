@@ -348,7 +348,7 @@ public abstract class RDFWriterTest {
 		Statement st26 = vf.createStatement(uri4, uri3, bnodeUseAcrossContextsSubjectAndObject, uri3);
 		Statement st27 = vf.createStatement(uri3, uri4, bnodeUseAcrossContextsObject, uri1);
 		Statement st28 = vf.createStatement(uri3, uri4, bnodeUseAcrossContextsObject, uri2);
-		Statement st29 = vf.createStatement(uri5, uri4, uri3, bnodeSpecialChars);
+		Statement st29 = vf.createStatement(uri5, uri4, uri1, bnodeSpecialChars);
 
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
@@ -491,7 +491,7 @@ public abstract class RDFWriterTest {
 		}
 		else {
 			assertEquals("missing statement with blank node context: st29", 1,
-					model.filter(uri5, uri4, uri3).size());
+					model.filter(uri5, uri4, uri1).size());
 		}
 	}
 
