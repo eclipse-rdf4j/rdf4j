@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.rio;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -23,6 +24,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.model.BNode;
@@ -349,6 +351,7 @@ public abstract class RDFWriterTest {
 		Statement st27 = vf.createStatement(uri3, uri4, bnodeUseAcrossContextsObject, uri1);
 		Statement st28 = vf.createStatement(uri3, uri4, bnodeUseAcrossContextsObject, uri2);
 		Statement st29 = vf.createStatement(uri5, uri4, uri1, bnodeSpecialChars);
+		Statement st30 = vf.createStatement(uri5, uri4, uri2, bnodeSpecialChars);
 
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
@@ -384,6 +387,7 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleStatement(st27);
 		rdfWriter.handleStatement(st28);
 		rdfWriter.handleStatement(st29);
+		rdfWriter.handleStatement(st30);
 		rdfWriter.endRDF();
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
@@ -399,12 +403,12 @@ public abstract class RDFWriterTest {
 		rdfParser.parse(in, "foo:bar");
 
 		if (rdfParser.getRDFFormat().supportsContexts()) {
-			assertEquals("Unexpected number of statements, found " + model.size(), 29, model.size());
+			assertEquals("Unexpected number of statements, found " + model.size(), 30, model.size());
 		}
 		else {
 			// Two sets of two statements, st23/st24 and st27/st28 in the input set differ only on context
 			// which isn't preserved by this format
-			assertEquals("Unexpected number of statements, found " + model.size(), 27, model.size());
+			assertEquals("Unexpected number of statements, found " + model.size(), 28, model.size());
 		}
 
 		if (rdfParser.getRDFFormat().supportsNamespaces()) {
@@ -487,11 +491,29 @@ public abstract class RDFWriterTest {
 					model.filter(uri3, uri4, null).size());
 		}
 		if (rdfParser.getRDFFormat().supportsContexts()) {
-			assertTrue("missing statement with blank node context: st29", model.contains(st29));
+			Set<Resource> st29Contexts = model.filter(uri5, uri4, uri1).contexts();
+			assertEquals("Unexpected number of contexts containing blank node context statement", 1,
+					st29Contexts.size());
+			assertNotNull("missing statements with blank node context: st29", st29Contexts.iterator().next());
+
+			Set<Resource> st30Contexts = model.filter(uri5, uri4, uri2).contexts();
+			assertEquals("Unexpected number of contexts containing blank node context statement", 1,
+					st30Contexts.size());
+			assertNotNull("missing statements with blank node context: st30", st30Contexts.iterator().next());
+
+			assertEquals("Context for two blank node statements was not the same",
+					st29Contexts.iterator().next(), st30Contexts.iterator().next());
+
+			assertEquals("Unexpected number of statements in the blank node context", 2,
+					model.filter(null, null, null, st29Contexts.iterator().next()).size());
+			assertEquals("Unexpected number of statements in the blank node context", 2,
+					model.filter(null, null, null, st30Contexts.iterator().next()).size());
 		}
 		else {
 			assertEquals("missing statement with blank node context: st29", 1,
 					model.filter(uri5, uri4, uri1).size());
+			assertEquals("missing statement with blank node context: st30", 1,
+					model.filter(uri5, uri4, uri2).size());
 		}
 	}
 
