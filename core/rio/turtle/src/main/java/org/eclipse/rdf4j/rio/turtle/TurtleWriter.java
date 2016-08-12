@@ -11,8 +11,12 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.lang.reflect.GenericArrayType;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.StringTokenizer;
 
@@ -20,10 +24,13 @@ import org.eclipse.rdf4j.common.io.IndentingWriter;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
@@ -56,6 +63,11 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	protected Resource lastWrittenSubject;
 
 	protected IRI lastWrittenPredicate;
+
+	/**
+	 * A {@link Model} that is only used if pretty printing is enabled before startRDF is called;
+	 */
+	protected Model prettyPrintModel = null;
 
 	/*--------------*
 	 * Constructors *
@@ -103,6 +115,10 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 		writingStarted = true;
 
+		if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {
+			prettyPrintModel = new LinkedHashModel();
+		}
+
 		try {
 			// Write namespace declarations
 			for (Map.Entry<String, String> entry : namespaceTable.entrySet()) {
@@ -110,6 +126,9 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 				String prefix = entry.getValue();
 
 				writeNamespace(prefix, name);
+				if (prettyPrintModel != null) {
+					prettyPrintModel.setNamespace(prefix, name);
+				}
 			}
 
 			if (!namespaceTable.isEmpty()) {
@@ -129,6 +148,22 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 
 		try {
+			if (prettyPrintModel != null) {
+				// Note: We can't guarantee ordering at this point because Resource doesn't implement Comparable<Resource>
+				for (Resource nextContext : prettyPrintModel.contexts()) {
+					for (Resource nextSubject : prettyPrintModel.subjects()) {
+						for (IRI nextPredicate : prettyPrintModel.filter(nextSubject, null, null,
+								nextContext).predicates())
+						{
+							for (Statement nextSt : prettyPrintModel.filter(nextSubject, nextPredicate, null,
+									nextContext))
+							{
+								handleStatementInternal(nextSt, true);
+							}
+						}
+					}
+				}
+			}
 			closePreviousStatement();
 			writer.flush();
 		}
@@ -151,7 +186,8 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 				boolean isLegalPrefix = prefix.length() == 0 || TurtleUtil.isPN_PREFIX(prefix);
 
 				if (!isLegalPrefix || namespaceTable.containsValue(prefix)) {
-					// Specified prefix is not legal or the prefix is already in use,
+					// Specified prefix is not legal or the prefix is already in
+					// use,
 					// generate a legal unique prefix
 
 					if (prefix.length() == 0 || !isLegalPrefix) {
@@ -186,6 +222,31 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	{
 		if (!writingStarted) {
 			throw new RuntimeException("Document writing has not yet been started");
+		}
+
+		// If we are pretty-printing, all writing is buffered until endRDF is
+		// called
+		if (prettyPrintModel != null) {
+			prettyPrintModel.add(st);
+		}
+		else {
+			handleStatementInternal(st, false);
+		}
+	}
+
+	/**
+	 * Internal method that differentiates between the pretty-print and streaming writer cases.
+	 * 
+	 * @param st
+	 *        The next statement to write
+	 * @param endRDFCalled
+	 */
+	private void handleStatementInternal(Statement st, boolean endRDFCalled) {
+		// Avoid accidentally writing statements early, but don't lose track of
+		// them if they are sent here
+		if (prettyPrintModel != null && !endRDFCalled) {
+			prettyPrintModel.add(st);
+			return;
 		}
 
 		Resource subj = st.getSubject();
@@ -399,7 +460,8 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 					return; // done
 				}
 				catch (IllegalArgumentException e) {
-					// not a valid numeric typed literal. ignore error and write as
+					// not a valid numeric typed literal. ignore error and write
+					// as
 					// quoted string instead.
 				}
 			}
