@@ -100,31 +100,30 @@ public class TriGWriter extends TurtleWriter {
 			throw new RuntimeException("Document writing has not yet been started");
 		}
 
-        // If we are pretty-printing, all writing is buffered until endRDF is
-        // called
-        if (prettyPrintModel != null) {
-            prettyPrintModel.add(st);
-        }
-        else {
-            handleStatementInternal(st, false);
-        }
-    }
+		// If we are pretty-printing, all writing is buffered until endRDF is called
+		if (prettyPrintModel != null) {
+			prettyPrintModel.add(st);
+		}
+		else {
+			handleStatementInternal(st, false);
+		}
+	}
 
-    /**
-     * Internal method that differentiates between the pretty-print and streaming writer cases.
-     * 
-     * @param st
-     *        The next statement to write
-     * @param endRDFCalled
-     */
+	/**
+	 * Internal method that differentiates between the pretty-print and streaming writer cases.
+	 * 
+	 * @param st
+	 *        The next statement to write
+	 * @param endRDFCalled
+	 */
 	@Override
-    protected void handleStatementInternal(Statement st, boolean endRDFCalled) {
-        // Avoid accidentally writing statements early, but don't lose track of
-        // them if they are sent here
-        if (prettyPrintModel != null && !endRDFCalled) {
-            prettyPrintModel.add(st);
-            return;
-        }
+	protected void handleStatementInternal(Statement st, boolean endRDFCalled) {
+		// Avoid accidentally writing statements early, but don't lose track of
+		// them if they are sent here
+		if (prettyPrintModel != null && !endRDFCalled) {
+			prettyPrintModel.add(st);
+			return;
+		}
 
 		try {
 			Resource context = st.getContext();

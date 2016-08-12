@@ -98,11 +98,25 @@ public abstract class RDFWriterTest {
 
 	private BNode bnodeSpecialChars;
 
+	private BNode bnodeSingleUseSubject;
+
+	private BNode bnodeSingleUseObject;
+
+	private BNode bnodeUseAcrossContextsSubject;
+
+	private BNode bnodeUseAcrossContextsSubjectAndObject;
+
+	private BNode bnodeUseAcrossContextsObject;
+
 	private IRI uri1;
 
 	private IRI uri2;
 
 	private IRI uri3;
+
+	private IRI uri4;
+
+	private IRI uri5;
 
 	private Literal plainLit;
 
@@ -145,9 +159,17 @@ public abstract class RDFWriterTest {
 		bnodeNumeric = vf.createBNode("123");
 		bnodeDashes = vf.createBNode("a-b");
 		bnodeSpecialChars = vf.createBNode("$%^&*()!@#$a-b<>?\"'[]{}|\\");
+		bnodeSingleUseSubject = vf.createBNode("bnodeSingleUseSubject");
+		bnodeSingleUseObject = vf.createBNode("bnodeSingleUseObject");
+		bnodeUseAcrossContextsSubject = vf.createBNode("bnodeUseAcrossContextsSubject");
+		bnodeUseAcrossContextsSubjectAndObject = vf.createBNode("bnodeUseAcrossContextsSubjectAndObject");
+		bnodeUseAcrossContextsObject = vf.createBNode("bnodeUseAcrossContextsObject");
+
 		uri1 = vf.createIRI(exNs, "uri1");
 		uri2 = vf.createIRI(exNs, "uri2");
 		uri3 = vf.createIRI(exNs, "uri3.");
+		uri4 = vf.createIRI(exNs, "uri4#");
+		uri5 = vf.createIRI(exNs, "uri5/");
 		plainLit = vf.createLiteral("plain");
 		dtLit = vf.createLiteral(1);
 		langLit = vf.createLiteral("test", "en");
@@ -170,6 +192,8 @@ public abstract class RDFWriterTest {
 		potentialSubjects.add(uri1);
 		potentialSubjects.add(uri2);
 		potentialSubjects.add(uri3);
+		potentialSubjects.add(uri4);
+		potentialSubjects.add(uri5);
 		for (int i = 0; i < 50; i++) {
 			potentialSubjects.add(vf.createBNode());
 		}
@@ -198,7 +222,8 @@ public abstract class RDFWriterTest {
 		// start with
 
 		if (rdfParserFactory.getRDFFormat().equals(RDFFormat.RDFXML)) {
-			// System.out.println("FIXME: SES-879: RDFXML Parser does not preserve literals starting or ending in newline character");
+			// System.out.println("FIXME: SES-879: RDFXML Parser does not
+			// preserve literals starting or ending in newline character");
 		}
 		else {
 			potentialObjects.add(litWithNewlineAtEnd);
@@ -213,7 +238,8 @@ public abstract class RDFWriterTest {
 		potentialPredicates = new ArrayList<IRI>();
 		// In particular, the following fuzz tests the ability of the parser to
 		// cater for rdf:type predicates with literal endings, in unknown
-		// situations. All parsers/writers should preserve these statements, even
+		// situations. All parsers/writers should preserve these statements,
+		// even
 		// if they have shortcuts for URIs
 		potentialPredicates.add(RDF.TYPE);
 		potentialPredicates.add(RDF.NIL);
@@ -312,6 +338,17 @@ public abstract class RDFWriterTest {
 		Statement st18 = vf.createStatement(uri1, uri2, uri3);
 		Statement st19 = vf.createStatement(uri2, uri3, uri1);
 		Statement st20 = vf.createStatement(uri3, uri1, uri2);
+		Statement st21 = vf.createStatement(bnodeSingleUseSubject, uri4, uri5);
+		Statement st22 = vf.createStatement(uri4, uri5, bnodeSingleUseObject);
+		// Blank node use across contexts, which is unique to TriG-1.1 in
+		// interpretation
+		Statement st23 = vf.createStatement(bnodeUseAcrossContextsSubject, uri4, uri3, uri1);
+		Statement st24 = vf.createStatement(bnodeUseAcrossContextsSubject, uri4, uri3, uri2);
+		Statement st25 = vf.createStatement(bnodeUseAcrossContextsSubjectAndObject, uri4, uri2, uri1);
+		Statement st26 = vf.createStatement(uri4, uri3, bnodeUseAcrossContextsSubjectAndObject, uri3);
+		Statement st27 = vf.createStatement(uri3, uri4, bnodeUseAcrossContextsObject, uri1);
+		Statement st28 = vf.createStatement(uri3, uri4, bnodeUseAcrossContextsObject, uri2);
+		Statement st29 = vf.createStatement(uri5, uri4, uri3, bnodeSpecialChars);
 
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
@@ -338,6 +375,15 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleStatement(st18);
 		rdfWriter.handleStatement(st19);
 		rdfWriter.handleStatement(st20);
+		rdfWriter.handleStatement(st21);
+		rdfWriter.handleStatement(st22);
+		rdfWriter.handleStatement(st23);
+		rdfWriter.handleStatement(st24);
+		rdfWriter.handleStatement(st25);
+		rdfWriter.handleStatement(st26);
+		rdfWriter.handleStatement(st27);
+		rdfWriter.handleStatement(st28);
+		rdfWriter.handleStatement(st29);
 		rdfWriter.endRDF();
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
@@ -352,7 +398,14 @@ public abstract class RDFWriterTest {
 
 		rdfParser.parse(in, "foo:bar");
 
-		assertEquals("Unexpected number of statements, found " + model.size(), 20, model.size());
+		if (rdfParser.getRDFFormat().supportsContexts()) {
+			assertEquals("Unexpected number of statements, found " + model.size(), 29, model.size());
+		}
+		else {
+			// Two sets of two statements, st23/st24 and st27/st28 in the input set differ only on context
+			// which isn't preserved by this format
+			assertEquals("Unexpected number of statements, found " + model.size(), 27, model.size());
+		}
 
 		if (rdfParser.getRDFFormat().supportsNamespaces()) {
 			assertTrue("Expected at least one namespace, found" + model.getNamespaces().size(),
@@ -386,6 +439,60 @@ public abstract class RDFWriterTest {
 		assertTrue("missing statement with object URI ending in period", model.contains(st18));
 		assertTrue("missing statement with predicate URI ending in period", model.contains(st19));
 		assertTrue("missing statement with subject URI ending in period", model.contains(st20));
+
+		if (rdfParser.getRDFFormat().supportsContexts()) {
+			assertTrue("missing statement with blank node single use subject", model.contains(st21));
+		}
+		else {
+			assertEquals("missing statement with blank node single use subject", 1,
+					model.filter(null, uri4, uri5).size());
+		}
+		if (rdfParser.getRDFFormat().supportsContexts()) {
+			assertTrue("missing statement with blank node single use object: st22", model.contains(st22));
+		}
+		else {
+			assertEquals("missing statement with blank node single use object: st22", 1,
+					model.filter(uri4, uri5, null).size());
+		}
+		if (rdfParser.getRDFFormat().supportsContexts()) {
+			assertTrue("missing statement with blank node use across contexts subject: st23",
+					model.contains(st23));
+			assertTrue("missing statement with blank node use across contexts subject: st24",
+					model.contains(st24));
+		}
+		else {
+			assertEquals("missing statement with blank node use across contexts: st23/st24", 1,
+					model.filter(null, uri4, uri3).size());
+		}
+		if (rdfParser.getRDFFormat().supportsContexts()) {
+			assertTrue("missing statement with blank node use across contexts subject and object: st25",
+					model.contains(st25));
+			assertTrue("missing statement with blank node use across contexts subject and object: st26",
+					model.contains(st26));
+		}
+		else {
+			assertEquals("missing statement with blank node use across contexts subject and object: st25", 1,
+					model.filter(null, uri4, uri2).size());
+			assertEquals("missing statement with blank node use across contexts subject and object: st26", 1,
+					model.filter(uri4, uri3, null).size());
+		}
+		if (rdfParser.getRDFFormat().supportsContexts()) {
+			assertTrue("missing statement with blank node use across contexts subject: st27",
+					model.contains(st27));
+			assertTrue("missing statement with blank node use across contexts subject: st28",
+					model.contains(st28));
+		}
+		else {
+			assertEquals("missing statement with blank node use across contexts: object: st27/st28", 1,
+					model.filter(uri3, uri4, null).size());
+		}
+		if (rdfParser.getRDFFormat().supportsContexts()) {
+			assertTrue("missing statement with blank node context: st29", model.contains(st29));
+		}
+		else {
+			assertEquals("missing statement with blank node context: st29", 1,
+					model.filter(uri5, uri4, uri3).size());
+		}
 	}
 
 	@Test
