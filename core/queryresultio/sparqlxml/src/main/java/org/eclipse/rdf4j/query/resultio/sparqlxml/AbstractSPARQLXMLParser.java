@@ -10,6 +10,10 @@ package org.eclipse.rdf4j.query.resultio.sparqlxml;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 import org.eclipse.rdf4j.common.xml.SimpleSAXParser;
@@ -18,8 +22,12 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
+import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.SAXException;
+import org.xml.sax.SAXNotRecognizedException;
+import org.xml.sax.SAXNotSupportedException;
 import org.xml.sax.SAXParseException;
 import org.xml.sax.XMLReader;
 
@@ -76,8 +84,83 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 				try {
 					SPARQLBooleanSAXParser valueParser = new SPARQLBooleanSAXParser();
 
-					XMLReader xmlReader = XMLReaderFactory.createXMLReader();
+					XMLReader xmlReader;
+
+					if (getParserConfig().isSet(XMLParserSettings.CUSTOM_XML_READER)) {
+						xmlReader = getParserConfig().get(XMLParserSettings.CUSTOM_XML_READER);
+					}
+					else {
+						xmlReader = XMLReaderFactory.createXMLReader();
+					}
 					xmlReader.setErrorHandler(this);
+
+					// Set all compulsory feature settings, using the defaults if they are
+					// not explicitly set
+					for (RioSetting<Boolean> aSetting : getCompulsoryXmlFeatureSettings()) {
+						try {
+							xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));
+						}
+						catch (SAXNotRecognizedException e) {
+							reportWarning(
+									String.format("%s is not a recognized SAX feature.", aSetting.getKey()));
+						}
+						catch (SAXNotSupportedException e) {
+							reportWarning(
+									String.format("%s is not a supported SAX feature.", aSetting.getKey()));
+						}
+					}
+
+					// Set all compulsory property settings, using the defaults if they are
+					// not explicitly set
+					for (RioSetting<?> aSetting : getCompulsoryXmlPropertySettings()) {
+						try {
+							xmlReader.setProperty(aSetting.getKey(), getParserConfig().get(aSetting));
+						}
+						catch (SAXNotRecognizedException e) {
+							reportWarning(
+									String.format("%s is not a recognized SAX property.", aSetting.getKey()));
+						}
+						catch (SAXNotSupportedException e) {
+							reportWarning(
+									String.format("%s is not a supported SAX property.", aSetting.getKey()));
+						}
+					}
+
+					// Check for any optional feature settings that are explicitly set in
+					// the parser config
+					for (RioSetting<Boolean> aSetting : getOptionalXmlFeatureSettings()) {
+						try {
+							if (getParserConfig().isSet(aSetting)) {
+								xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));
+							}
+						}
+						catch (SAXNotRecognizedException e) {
+							reportWarning(
+									String.format("%s is not a recognized SAX feature.", aSetting.getKey()));
+						}
+						catch (SAXNotSupportedException e) {
+							reportWarning(
+									String.format("%s is not a supported SAX feature.", aSetting.getKey()));
+						}
+					}
+
+					// Check for any optional property settings that are explicitly set in
+					// the parser config
+					for (RioSetting<?> aSetting : getOptionalXmlPropertySettings()) {
+						try {
+							if (getParserConfig().isSet(aSetting)) {
+								xmlReader.setProperty(aSetting.getKey(), getParserConfig().get(aSetting));
+							}
+						}
+						catch (SAXNotRecognizedException e) {
+							reportWarning(
+									String.format("%s is not a recognized SAX property.", aSetting.getKey()));
+						}
+						catch (SAXNotSupportedException e) {
+							reportWarning(
+									String.format("%s is not a supported SAX property.", aSetting.getKey()));
+						}
+					}
 
 					internalSAXParser = new SimpleSAXParser(xmlReader);
 					internalSAXParser.setPreserveWhitespace(true);
@@ -163,25 +246,126 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 		return result;
 	}
 
+	protected void reportWarning(String msg) {
+		if (getParseErrorListener() != null) {
+			getParseErrorListener().warning(msg, internalSAXParser.getLocator().getLineNumber(),
+					internalSAXParser.getLocator().getColumnNumber());
+		}
+	}
+
+	/**
+	 * Returns a collection of settings that will always be set as XML parser properties using
+	 * {@link XMLReader#setProperty(String, Object)}
+	 * <p>
+	 * Subclasses can override this to specify more supported settings.
+	 * 
+	 * @return A collection of {@link RioSetting}s that indicate which properties will always be setup using
+	 *         {@link XMLReader#setProperty(String, Object)}.
+	 */
+	public Collection<RioSetting<?>> getCompulsoryXmlPropertySettings() {
+		return Collections.<RioSetting<?>> emptyList();
+	}
+
+	/**
+	 * Returns a collection of settings that will always be set as XML parser features using
+	 * {@link XMLReader#setFeature(String, boolean)}.
+	 * <p>
+	 * Subclasses can override this to specify more supported settings.
+	 * 
+	 * @return A collection of {@link RioSetting}s that indicate which boolean settings will always be setup
+	 *         using {@link XMLReader#setFeature(String, boolean)}.
+	 */
+	public Collection<RioSetting<Boolean>> getCompulsoryXmlFeatureSettings() {
+		Set<RioSetting<Boolean>> results = new HashSet<RioSetting<Boolean>>();
+		results.add(XMLParserSettings.SECURE_PROCESSING);
+		return results;
+	}
+
+	/**
+	 * Returns a collection of settings that will be used, if set in {@link #getParserConfig()}, as XML parser
+	 * properties using {@link XMLReader#setProperty(String, Object)}
+	 * <p>
+	 * Subclasses can override this to specify more supported settings.
+	 * 
+	 * @return A collection of {@link RioSetting}s that indicate which properties can be setup using
+	 *         {@link XMLReader#setProperty(String, Object)}.
+	 */
+	public Collection<RioSetting<?>> getOptionalXmlPropertySettings() {
+		return Collections.<RioSetting<?>> emptyList();
+	}
+
+	/**
+	 * Returns a collection of settings that will be used, if set in {@link #getParserConfig()}, as XML parser
+	 * features using {@link XMLReader#setFeature(String, boolean)}.
+	 * <p>
+	 * Subclasses can override this to specify more supported settings.
+	 * 
+	 * @return A collection of {@link RioSetting}s that indicate which boolean settings can be setup using
+	 *         {@link XMLReader#setFeature(String, boolean)}.
+	 */
+	public Collection<RioSetting<Boolean>> getOptionalXmlFeatureSettings() {
+		Set<RioSetting<Boolean>> results = new HashSet<RioSetting<Boolean>>();
+		results.add(XMLParserSettings.LOAD_EXTERNAL_DTD);
+		return results;
+	}
+
+	@Override
+	public Collection<RioSetting<?>> getSupportedSettings() {
+		// Override to add SPARQL/XML specific supported settings
+		Set<RioSetting<?>> results = new HashSet<RioSetting<?>>(super.getSupportedSettings());
+
+		results.addAll(getCompulsoryXmlPropertySettings());
+		results.addAll(getCompulsoryXmlFeatureSettings());
+		results.addAll(getOptionalXmlPropertySettings());
+		results.addAll(getOptionalXmlFeatureSettings());
+
+		results.add(XMLParserSettings.CUSTOM_XML_READER);
+		results.add(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS);
+
+		return results;
+	}
+
 	@Override
 	public void warning(SAXParseException exception)
 		throws SAXException
 	{
-		// FIXME: No infrastructure in QueryResultParser for reporting or deciding to rethrow warnings for parsing as in Rio RDFParser
+		reportWarning(exception.getMessage());
 	}
 
 	@Override
 	public void error(SAXParseException exception)
 		throws SAXException
 	{
-		// FIXME: No infrastructure in QueryResultParser for reporting or deciding to rethrow non-fatal errors for parsing as in Rio RDFParser
+		try {
+			if (getParserConfig().get(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS)) {
+				if (getParseErrorListener() != null) {
+					getParseErrorListener().error(exception.getMessage(),
+							internalSAXParser.getLocator().getLineNumber(),
+							internalSAXParser.getLocator().getColumnNumber());
+				}
+
+				if (!getParserConfig().isNonFatalError(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS)) {
+					throw new QueryResultParseException(exception,
+							internalSAXParser.getLocator().getLineNumber(),
+							internalSAXParser.getLocator().getColumnNumber());
+				}
+			}
+		}
+		catch (QueryResultParseException e) {
+			throw new SAXException(e);
+		}
 	}
 
 	@Override
 	public void fatalError(SAXParseException exception)
 		throws SAXException
 	{
-		// FIXME: No infrastructure in QueryResultParser for reporting fatal errors for parsing as in Rio RDFParser
+		if (getParseErrorListener() != null) {
+			getParseErrorListener().fatalError(exception.getMessage(),
+					internalSAXParser.getLocator().getLineNumber(),
+					internalSAXParser.getLocator().getColumnNumber());
+		}
+
 		throw new SAXParseException(exception.getMessage(), internalSAXParser.getLocator(),
 				new QueryResultParseException(exception, internalSAXParser.getLocator().getLineNumber(),
 						internalSAXParser.getLocator().getColumnNumber()));
