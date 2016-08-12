@@ -447,51 +447,37 @@ public abstract class RDFWriterTest {
 		assertTrue("missing statement with predicate URI ending in period: st19", model.contains(st19));
 		assertTrue("missing statement with subject URI ending in period: st20", model.contains(st20));
 
+		assertEquals("missing statement with blank node single use subject: st21", 1,
+				model.filter(null, uri4, uri5).size());
+
+		assertEquals("missing statement with blank node single use object: st22", 1,
+				model.filter(uri4, uri5, null).size());
+
+		Model st23Statements = model.filter(null, uri4, uri3);
 		if (rdfParser.getRDFFormat().supportsContexts()) {
-			assertTrue("missing statement with blank node single use subject: st21", model.contains(st21));
+			assertEquals("missing statement with blank node use: st23/st24", 2, st23Statements.size());
+			Set<Resource> st23Contexts = st23Statements.contexts();
+			assertTrue(st23Contexts.contains(uri1));
+			assertTrue(st23Contexts.contains(uri2));
 		}
 		else {
-			assertEquals("missing statement with blank node single use subject: st21", 1,
-					model.filter(null, uri4, uri5).size());
+			assertEquals("missing statement with blank node use: st23/st24", 1, st23Statements.size());
 		}
+		assertEquals("missing statement with blank node use subject and object: st25", 1,
+				model.filter(null, uri5, uri4).size());
+		assertEquals("missing statement with blank node use subject and object: st26", 1,
+				model.filter(uri4, uri3, null).size());
+		Model st27Statements = model.filter(uri3, uri4, null);
 		if (rdfParser.getRDFFormat().supportsContexts()) {
-			assertTrue("missing statement with blank node single use object: st22", model.contains(st22));
-		}
-		else {
-			assertEquals("missing statement with blank node single use object: st22", 1,
-					model.filter(uri4, uri5, null).size());
-		}
-		if (rdfParser.getRDFFormat().supportsContexts()) {
-			assertTrue("missing statement with blank node use across contexts subject: st23",
-					model.contains(st23));
-			assertTrue("missing statement with blank node use across contexts subject: st24",
-					model.contains(st24));
-		}
-		else {
-			assertEquals("missing statement with blank node use: st23/st24", 1,
-					model.filter(null, uri4, uri3).size());
-		}
-		if (rdfParser.getRDFFormat().supportsContexts()) {
-			assertTrue("missing statement with blank node use across contexts subject and object: st25",
-					model.contains(st25));
-			assertTrue("missing statement with blank node use across contexts subject and object: st26",
-					model.contains(st26));
-		}
-		else {
-			assertEquals("missing statement with blank node use subject and object: st25", 1,
-					model.filter(null, uri5, uri4).size());
-			assertEquals("missing statement with blank node use subject and object: st26", 1,
-					model.filter(uri4, uri3, null).size());
-		}
-		if (rdfParser.getRDFFormat().supportsContexts()) {
-			assertTrue("missing statement with blank node use across contexts subject: st27",
-					model.contains(st27));
-			assertTrue("missing statement with blank node use across contexts subject: st28",
-					model.contains(st28));
+			assertEquals("missing statement with blank node use: object: st27/st28", 2,
+				st27Statements.size());
+			Set<Resource> st27Contexts = st27Statements.contexts();
+			assertTrue(st27Contexts.contains(uri1));
+			assertTrue(st27Contexts.contains(uri2));
 		}
 		else {
 			assertEquals("missing statement with blank node use: object: st27/st28", 1,
-					model.filter(uri3, uri4, null).size());
+					st27Statements.size());
 		}
 		if (rdfParser.getRDFFormat().supportsContexts()) {
 			Set<Resource> st29Contexts = model.filter(uri5, uri4, uri1).contexts();
