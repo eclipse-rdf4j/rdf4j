@@ -265,6 +265,22 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param endRDFCalled
 	 */
 	protected void handleStatementInternal(Statement st, boolean endRDFCalled) {
+		handleStatementInternal(st, endRDFCalled, false, false);
+	}
+
+	/**
+	 * Internal method that differentiates between the pretty-print and streaming writer cases.
+	 * 
+	 * @param st
+	 *        The next statement to write
+	 * @param endRDFCalled
+	 * @param canShortenSubject
+	 * @param canShortenObject
+	 */
+	protected void handleStatementInternal(Statement st, boolean endRDFCalled, boolean canShortenSubject,
+			boolean canShortenObject)
+	{
+
 		// Avoid accidentally writing statements early, but don't lose track of
 		// them if they are sent here
 		if (prettyPrintModel != null && !endRDFCalled) {
@@ -299,7 +315,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 				// Write new subject:
 				writer.writeEOL();
-				writeResource(subj);
+				writeResource(subj, canShortenSubject);
 				writer.write(" ");
 				lastWrittenSubject = subj;
 
@@ -392,11 +408,17 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	protected void writeResource(Resource res)
 		throws IOException
 	{
+		writeResource(res, false);
+	}
+
+	protected void writeResource(Resource res, boolean canShorten)
+		throws IOException
+	{
 		if (res instanceof IRI) {
 			writeURI((IRI)res);
 		}
 		else {
-			writeBNode((BNode)res);
+			writeBNode((BNode)res, canShorten);
 		}
 	}
 
@@ -431,6 +453,17 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	protected void writeBNode(BNode bNode)
 		throws IOException
 	{
+		writeBNode(bNode, false);
+	}
+
+	protected void writeBNode(BNode bNode, boolean canShorten)
+		throws IOException
+	{
+		if(canShorten) {
+			writer.write("[]");
+			return;
+		}
+		
 		writer.write("_:");
 		String id = bNode.getID();
 
