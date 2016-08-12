@@ -102,10 +102,12 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.TURTLE;
 	}
 
+	@Override
 	public void startRDF()
 		throws RDFHandlerException
 	{
@@ -140,6 +142,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	@Override
 	public void endRDF()
 		throws RDFHandlerException
 	{
@@ -175,6 +178,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	@Override
 	public void handleNamespace(String prefix, String name)
 		throws RDFHandlerException
 	{
@@ -217,6 +221,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	@Override
 	public void handleStatement(Statement st)
 		throws RDFHandlerException
 	{
@@ -299,6 +304,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	@Override
 	public void handleComment(String comment)
 		throws RDFHandlerException
 	{
