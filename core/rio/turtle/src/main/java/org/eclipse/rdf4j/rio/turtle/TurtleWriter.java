@@ -155,6 +155,24 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 				// Note: We can't guarantee ordering at this point because Resource doesn't implement Comparable<Resource>
 				for (Resource nextContext : prettyPrintModel.contexts()) {
 					for (Resource nextSubject : prettyPrintModel.subjects()) {
+						boolean canShortenSubject = true;
+						// We can almost always shorten subject IRIs, 
+						// with some known corner cases that are already embedded in the algorithm
+						// So just need to do checking for BNode subjects
+						if (nextSubject instanceof BNode) {
+							if (getRDFFormat().equals(RDFFormat.TRIG) && prettyPrintModel.filter(nextSubject,
+									null, null, null).contexts().size() > 1)
+							{
+								// TriG section 2.3.1 specifies that we cannot shorten blank nodes shared across contexts, 
+								// and this code is shared with TriG.
+								canShortenSubject = false;
+							}
+							if (!prettyPrintModel.contains(null, null, nextSubject)) {
+								// Cannot shorten this blank node as it is used as the object of a statement somewhere 
+								// so must be written in a non-anonymous form
+								canShortenSubject = false;
+							}
+						}
 						for (IRI nextPredicate : prettyPrintModel.filter(nextSubject, null, null,
 								nextContext).predicates())
 						{
