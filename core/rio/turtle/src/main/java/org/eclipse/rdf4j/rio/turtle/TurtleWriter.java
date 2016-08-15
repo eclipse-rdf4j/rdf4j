@@ -161,16 +161,16 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 						// with some known corner cases that are already embedded in the algorithm
 						// So just need to do checking for BNode subjects
 						if (nextSubject instanceof BNode) {
-							if (getRDFFormat().supportsContexts() && prettyPrintModel.filter(nextSubject,
+							if (prettyPrintModel.contains(null, null, nextSubject)) {
+								// Cannot shorten this blank node as it is used as the object of a statement somewhere 
+								// so must be written in a non-anonymous form
+								canShortenSubject = false;
+							}
+							else if (getRDFFormat().supportsContexts() && prettyPrintModel.filter(nextSubject,
 									null, null).contexts().size() > 1)
 							{
 								// TriG section 2.3.1 specifies that we cannot shorten blank nodes shared across contexts, 
 								// and this code is shared with TriG.
-								canShortenSubject = false;
-							}
-							if (prettyPrintModel.contains(null, null, nextSubject)) {
-								// Cannot shorten this blank node as it is used as the object of a statement somewhere 
-								// so must be written in a non-anonymous form
 								canShortenSubject = false;
 							}
 						}
@@ -179,10 +179,10 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 						{
 							Model nextObjects = prettyPrintModel.filter(nextSubject, nextPredicate, null,
 									nextContext);
-							if (nextObjects.size() > 1) {
+							//if (nextObjects.size() > 1) {
 								// In this structure, cannot support shortening subject for multiple statements
-								canShortenSubject = false;
-							}
+							//	canShortenSubject = false;
+							//}
 							for (Statement nextSt : nextObjects) {
 								// TODO: Implement rules for canShortenObject
 								boolean canShortenObject = false;
