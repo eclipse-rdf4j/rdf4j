@@ -18,6 +18,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.io.Writer;
@@ -293,7 +295,7 @@ public abstract class RDFWriterTest {
 		config.set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);
 	}
 
-	protected void write(Model model, Writer writer)
+	protected void write(Model model, OutputStream writer)
 		throws RDFHandlerException
 	{
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(writer);
@@ -301,7 +303,7 @@ public abstract class RDFWriterTest {
 		Rio.write(model, rdfWriter);
 	}
 
-	protected Model parse(StringReader reader, String baseURI)
+	protected Model parse(InputStream reader, String baseURI)
 		throws RDFParseException, RDFHandlerException, IOException
 	{
 		RDFParser rdfParser = rdfParserFactory.getParser();
@@ -805,11 +807,9 @@ public abstract class RDFWriterTest {
 	{
 		Model input = new LinkedHashModel();
 		input.add(vf.createStatement(uri1, uri1, uri1));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1)));
@@ -821,11 +821,9 @@ public abstract class RDFWriterTest {
 	{
 		Model input = new LinkedHashModel();
 		input.add(vf.createStatement(uri1, uri1, uri1, uri1));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
@@ -842,11 +840,9 @@ public abstract class RDFWriterTest {
 	{
 		Model input = new LinkedHashModel();
 		input.add(vf.createStatement(uri1, uri1, uri1, bnode));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(uri1, uri1, uri1).size());
@@ -862,11 +858,9 @@ public abstract class RDFWriterTest {
 	{
 		Model input = new LinkedHashModel();
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
@@ -880,11 +874,9 @@ public abstract class RDFWriterTest {
 	{
 		Model input = new LinkedHashModel();
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, uri1));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
@@ -903,11 +895,9 @@ public abstract class RDFWriterTest {
 	{
 		Model input = new LinkedHashModel();
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, bnode));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
@@ -926,11 +916,9 @@ public abstract class RDFWriterTest {
 		Model input = new LinkedHashModel();
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1));
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
@@ -946,11 +934,9 @@ public abstract class RDFWriterTest {
 		Model input = new LinkedHashModel();
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, uri1));
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2, uri1));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
@@ -972,11 +958,9 @@ public abstract class RDFWriterTest {
 		Model input = new LinkedHashModel();
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, bnode));
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2, bnode));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
@@ -996,11 +980,9 @@ public abstract class RDFWriterTest {
 		Model input = new LinkedHashModel();
 		input.setNamespace("ex", exNs);
 		input.add(vf.createStatement(uri1, uri1, uri1));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1)));
@@ -1013,11 +995,9 @@ public abstract class RDFWriterTest {
 		Model input = new LinkedHashModel();
 		input.setNamespace("ex", exNs);
 		input.add(vf.createStatement(uri1, uri1, uri1, uri1));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
@@ -1035,11 +1015,9 @@ public abstract class RDFWriterTest {
 		Model input = new LinkedHashModel();
 		input.setNamespace("ex", exNs);
 		input.add(vf.createStatement(uri1, uri1, uri1, bnode));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(uri1, uri1, uri1).size());
@@ -1056,11 +1034,9 @@ public abstract class RDFWriterTest {
 		Model input = new LinkedHashModel();
 		input.setNamespace("ex", exNs);
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
@@ -1075,11 +1051,9 @@ public abstract class RDFWriterTest {
 		Model input = new LinkedHashModel();
 		input.setNamespace("ex", exNs);
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, uri1));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
@@ -1099,11 +1073,9 @@ public abstract class RDFWriterTest {
 		Model input = new LinkedHashModel();
 		input.setNamespace("ex", exNs);
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, bnode));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
@@ -1123,11 +1095,9 @@ public abstract class RDFWriterTest {
 		input.setNamespace("ex", exNs);
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1));
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
@@ -1144,11 +1114,9 @@ public abstract class RDFWriterTest {
 		input.setNamespace("ex", exNs);
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, uri1));
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2, uri1));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
@@ -1171,11 +1139,9 @@ public abstract class RDFWriterTest {
 		input.setNamespace("ex", exNs);
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, bnode));
 		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2, bnode));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
@@ -1196,11 +1162,9 @@ public abstract class RDFWriterTest {
 		input.setNamespace("ex", exNs);
 		input.add(vf.createStatement(uri1, uri1, bnodeSingleUseObject, bnode));
 		input.add(vf.createStatement(uri1, uri2, bnodeSingleUseObject, bnode));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(uri1, uri1, null).size());
@@ -1221,11 +1185,9 @@ public abstract class RDFWriterTest {
 		input.setNamespace("ex", exNs);
 		input.add(vf.createStatement(uri1, uri1, bnodeSingleUseObject, bnode));
 		input.add(vf.createStatement(bnode, uri2, bnodeSingleUseObject, bnode));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		Model doubleBNodeStatement = parsedOutput.filter(uri1, uri1, null);
@@ -1252,11 +1214,9 @@ public abstract class RDFWriterTest {
 		Model input = new LinkedHashModel();
 		input.setNamespace("ex", exNs);
 		input.add(vf.createStatement(uri1, uri1, bnode, bnode));
-		StringWriter outputWriter = new StringWriter();
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		write(input, outputWriter);
-		String outputString = outputWriter.toString();
-		System.out.println(outputString);
-		StringReader inputReader = new StringReader(outputString);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		Model doubleBNodeStatement = parsedOutput.filter(uri1, uri1, null);
@@ -1278,19 +1238,19 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentURIContext()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.endRDF();
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
 			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
@@ -1304,21 +1264,21 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentURIContextURI()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, uri1));
 		rdfWriter.endRDF();
-		System.out.println(stringWriter.toString());
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
 			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
@@ -1334,20 +1294,20 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentBNodeContext()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.endRDF();
-		System.out.println(stringWriter.toString());
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
 	}
@@ -1356,21 +1316,21 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentBNodeContextBNode()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, bnode));
 		rdfWriter.endRDF();
-		System.out.println(stringWriter.toString());
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
 		assertTrue(parsedOutput.contains(uri1, uri1, uri2));
@@ -1381,20 +1341,20 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentURIContextWithNamespace()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleNamespace("ex", exNs);
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.endRDF();
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
 			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
@@ -1408,8 +1368,8 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentURIContextURIWithNamespace()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleNamespace("ex", exNs);
@@ -1417,13 +1377,13 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, uri1));
 		rdfWriter.endRDF();
-		System.out.println(stringWriter.toString());
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
 			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
@@ -1439,21 +1399,21 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentBNodeContextWithNamespace()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleNamespace("ex", exNs);
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.endRDF();
-		System.out.println(stringWriter.toString());
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
 	}
@@ -1462,8 +1422,8 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentBNodeContextBNodeWithNamespace()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleNamespace("ex", exNs);
@@ -1471,13 +1431,13 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, bnode));
 		rdfWriter.endRDF();
-		System.out.println(stringWriter.toString());
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
 		assertTrue(parsedOutput.contains(uri1, uri1, uri2));
@@ -1488,20 +1448,20 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentURIContextBeforeNamespace()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.handleNamespace("ex1", exNs);
 		rdfWriter.endRDF();
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
 			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
@@ -1515,8 +1475,8 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentURIContextURIBeforeNamespace()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
@@ -1524,13 +1484,13 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleNamespace("ex1", exNs);
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, uri1));
 		rdfWriter.endRDF();
-		System.out.println(stringWriter.toString());
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
 			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
@@ -1546,21 +1506,21 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentBNodeContextBeforeNamespace()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.handleNamespace("ex1", exNs);
 		rdfWriter.endRDF();
-		System.out.println(stringWriter.toString());
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
 	}
@@ -1569,8 +1529,8 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentBNodeContextBNodeBeforeNamespace()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
@@ -1578,13 +1538,13 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleNamespace("ex1", exNs);
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, bnode));
 		rdfWriter.endRDF();
-		System.out.println(stringWriter.toString());
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
 		assertTrue(parsedOutput.contains(uri1, uri1, uri2));
@@ -1595,8 +1555,8 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentURIContextWithNamespaceBeforeNamespace()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleNamespace("ex", exNs);
@@ -1604,12 +1564,12 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.handleNamespace("ex1", exNs);
 		rdfWriter.endRDF();
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
 			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
@@ -1623,8 +1583,8 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentURIContextURIWithNamespaceBeforeNamespace()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleNamespace("ex", exNs);
@@ -1633,13 +1593,13 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleNamespace("ex1", exNs);
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, uri1));
 		rdfWriter.endRDF();
-		System.out.println(stringWriter.toString());
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
 			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
@@ -1655,8 +1615,8 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentBNodeContextWithNamespaceBeforeNamespace()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleNamespace("ex", exNs);
@@ -1664,13 +1624,13 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.handleNamespace("ex1", exNs);
 		rdfWriter.endRDF();
-		System.out.println(stringWriter.toString());
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
 		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
 	}
@@ -1679,8 +1639,8 @@ public abstract class RDFWriterTest {
 	public void testWriteCommentBNodeContextBNodeWithNamespaceBeforeNamespace()
 		throws Exception
 	{
-		StringWriter stringWriter = new StringWriter();
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
 		rdfWriter.startRDF();
 		rdfWriter.handleNamespace("ex", exNs);
@@ -1689,13 +1649,12 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleNamespace("ex1", exNs);
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, bnode));
 		rdfWriter.endRDF();
-		System.out.println(stringWriter.toString());
-		StringReader stringReader = new StringReader(stringWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
-		rdfParser.parse(stringReader, "");
+		rdfParser.parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
 		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
 		assertTrue(parsedOutput.contains(uri1, uri1, uri2));
