@@ -163,6 +163,7 @@ public class TriGWriter extends TurtleWriter {
 	protected void writeCommentLine(String line)
 		throws IOException
 	{
+		// TODO: Does the spec actually say we need to close the context to write a comment?
 		closeActiveContext();
 		super.writeCommentLine(line);
 	}
@@ -171,6 +172,7 @@ public class TriGWriter extends TurtleWriter {
 	protected void writeNamespace(String prefix, String name)
 		throws IOException
 	{
+		// TODO: Does the spec actually say we need to close the context to write a namespace?
 		closeActiveContext();
 		super.writeNamespace(prefix, name);
 	}
