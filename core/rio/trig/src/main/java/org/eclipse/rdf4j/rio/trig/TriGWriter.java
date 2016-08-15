@@ -132,12 +132,12 @@ public class TriGWriter extends TurtleWriter {
 				writer.writeEOL();
 
 				if (context != null) {
-					boolean canShortenContext = true;
+					boolean canShortenContext = false;
 					if (context instanceof BNode) {
-						if (prettyPrintModel != null && (prettyPrintModel.contains(context, null, null)
-								|| prettyPrintModel.contains(null, null, context)))
+						if (prettyPrintModel != null && !prettyPrintModel.contains(context, null, null)
+								&& !prettyPrintModel.contains(null, null, context))
 						{
-							canShortenContext = false;
+							canShortenContext = true;
 						}
 					}
 					writeResource(context, canShortenContext);
@@ -163,7 +163,7 @@ public class TriGWriter extends TurtleWriter {
 	protected void writeCommentLine(String line)
 		throws IOException
 	{
-		// TODO: Does the spec actually say we need to close the context to write a comment?
+		// Comments can be written anywhere, so disabling this
 		//closeActiveContext();
 		super.writeCommentLine(line);
 	}
@@ -172,8 +172,11 @@ public class TriGWriter extends TurtleWriter {
 	protected void writeNamespace(String prefix, String name)
 		throws IOException
 	{
-		// TODO: Does the spec actually say we need to close the context to write a namespace?
-		//closeActiveContext();
+		if (currentContext != null && currentContext instanceof BNode) {
+			// FIXME: No formal way to warn the user that things may break in this situation
+		}
+		// TriG spec requires that we close the active context before writing a namespace declaration
+		closeActiveContext();
 		super.writeNamespace(prefix, name);
 	}
 
