@@ -173,7 +173,7 @@ public class TriGWriter extends TurtleWriter {
 		throws IOException
 	{
 		// TODO: Does the spec actually say we need to close the context to write a namespace?
-		closeActiveContext();
+		//closeActiveContext();
 		super.writeNamespace(prefix, name);
 	}
 
