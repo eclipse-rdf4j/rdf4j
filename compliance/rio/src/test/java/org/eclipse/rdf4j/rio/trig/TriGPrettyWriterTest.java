@@ -543,7 +543,8 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
 		rdfParser.parse(stringReader, "");
 		assertEquals(2, parsedOutput.size());
-		assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
-		assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+		assertTrue(parsedOutput.contains(uri1, uri1, uri2));
+		assertEquals(1, parsedOutput.contexts().size());
 	}
 }
