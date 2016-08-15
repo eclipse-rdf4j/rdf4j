@@ -204,7 +204,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 		assertEquals(1, parsedOutput.subjects().size());
 		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
 	}
-	
+
 	@Test
 	public void testPrettyWriteSingleStatementNoBNodesNoContextWithNamespace()
 		throws Exception
@@ -380,5 +380,81 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
 		assertEquals(1, parsedOutput.subjects().size());
 		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
-	}	
+	}
+
+	@Test
+	public void testPrettyWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(uri1, uri1, bnodeSingleUseObject, bnode));
+		input.add(vf.createStatement(uri1, uri2, bnodeSingleUseObject, bnode));
+		StringWriter outputWriter = new StringWriter();
+		write(input, outputWriter);
+		String outputString = outputWriter.toString();
+		System.out.println(outputString);
+		StringReader inputReader = new StringReader(outputString);
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(uri1, uri1, null).size());
+		assertEquals(1, parsedOutput.filter(uri1, uri2, null).size());
+		assertEquals(1, parsedOutput.contexts().size());
+		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		assertEquals(1, parsedOutput.objects().size());
+		assertTrue(parsedOutput.objects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testPrettyWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeReusedWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(uri1, uri1, bnodeSingleUseObject, bnode));
+		input.add(vf.createStatement(bnode, uri2, bnodeSingleUseObject, bnode));
+		StringWriter outputWriter = new StringWriter();
+		write(input, outputWriter);
+		String outputString = outputWriter.toString();
+		System.out.println(outputString);
+		StringReader inputReader = new StringReader(outputString);
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		Model doubleBNodeStatement = parsedOutput.filter(uri1, uri1, null);
+		assertEquals(1, doubleBNodeStatement.size());
+		Model tripleBNodeStatement = parsedOutput.filter(null, uri2, null);
+		assertEquals(1, tripleBNodeStatement.size());
+		assertEquals(1, parsedOutput.contexts().size());
+		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		assertEquals(1, parsedOutput.objects().size());
+		assertTrue(parsedOutput.objects().iterator().next() instanceof BNode);
+		assertTrue(tripleBNodeStatement.subjects().iterator().next() instanceof BNode);
+		assertEquals(tripleBNodeStatement.subjects().iterator().next(),
+				doubleBNodeStatement.contexts().iterator().next());
+	}
+
+	@Test
+	public void testPrettyWriteOneStatementsObjectBNodeSinglePredicateSingleContextBNodeReusedWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(uri1, uri1, bnode, bnode));
+		StringWriter outputWriter = new StringWriter();
+		write(input, outputWriter);
+		String outputString = outputWriter.toString();
+		System.out.println(outputString);
+		StringReader inputReader = new StringReader(outputString);
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		Model doubleBNodeStatement = parsedOutput.filter(uri1, uri1, null);
+		assertEquals(1, doubleBNodeStatement.size());
+		assertEquals(1, parsedOutput.contexts().size());
+		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		assertEquals(1, parsedOutput.objects().size());
+		assertTrue(parsedOutput.objects().iterator().next() instanceof BNode);
+		assertTrue(doubleBNodeStatement.objects().iterator().next() instanceof BNode);
+		assertEquals(doubleBNodeStatement.objects().iterator().next(),
+				doubleBNodeStatement.contexts().iterator().next());
+	}
 }
