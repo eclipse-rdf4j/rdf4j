@@ -173,6 +173,10 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 								// and this code is shared with TriG.
 								canShortenSubjectBNode = false;
 							}
+							else if (prettyPrintModel.contains(null, null, null, nextSubject)) {
+								// Cannot anonymize if this blank node has been used as a context also
+								canShortenSubjectBNode = false;
+							}
 						}
 						for (IRI nextPredicate : prettyPrintModel.filter(nextSubject, null, null,
 								nextContext).predicates())
@@ -196,6 +200,12 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 									}
 									else if (prettyPrintModel.filter(null, null, nextObject).size() > 1) {
 										// Cannot shorten BNode if any other statements reference it as an object
+										canShortenObjectBNode = false;
+									}
+									else if (prettyPrintModel.filter(null, null, null,
+											(BNode)nextObject).size() > 0)
+									{
+										// Cannot anonymize if this blank node has been used as a context also
 										canShortenObjectBNode = false;
 									}
 								}

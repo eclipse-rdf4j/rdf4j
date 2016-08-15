@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Writer;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -131,7 +132,15 @@ public class TriGWriter extends TurtleWriter {
 				writer.writeEOL();
 
 				if (context != null) {
-					writeResource(context);
+					boolean canShortenContext = true;
+					if (context instanceof BNode) {
+						if (prettyPrintModel.contains(context, null, null)
+								|| prettyPrintModel.contains(null, null, context))
+						{
+							canShortenContext = false;
+						}
+					}
+					writeResource(context, canShortenContext);
 					writer.write(" ");
 				}
 
