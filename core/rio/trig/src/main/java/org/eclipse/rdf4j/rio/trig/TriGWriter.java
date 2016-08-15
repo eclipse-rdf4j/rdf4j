@@ -134,8 +134,8 @@ public class TriGWriter extends TurtleWriter {
 				if (context != null) {
 					boolean canShortenContext = true;
 					if (context instanceof BNode) {
-						if (prettyPrintModel.contains(context, null, null)
-								|| prettyPrintModel.contains(null, null, context))
+						if (prettyPrintModel != null && (prettyPrintModel.contains(context, null, null)
+								|| prettyPrintModel.contains(null, null, context)))
 						{
 							canShortenContext = false;
 						}
