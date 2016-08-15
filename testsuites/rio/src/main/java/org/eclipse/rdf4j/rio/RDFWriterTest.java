@@ -86,7 +86,7 @@ public abstract class RDFWriterTest {
 
 	protected ValueFactory vf;
 
-	private BNode bnode;
+	protected BNode bnode;
 
 	private BNode bnodeEmpty;
 
@@ -100,31 +100,31 @@ public abstract class RDFWriterTest {
 
 	private BNode bnodeSpecialChars;
 
-	private BNode bnodeSingleUseSubject;
+	protected BNode bnodeSingleUseSubject;
 
-	private BNode bnodeSingleUseObject;
+	protected BNode bnodeSingleUseObject;
 
-	private BNode bnodeUseAcrossContextsSubject;
+	protected BNode bnodeUseAcrossContextsSubject;
 
-	private BNode bnodeUseAcrossContextsSubjectAndObject;
+	protected BNode bnodeUseAcrossContextsSubjectAndObject;
 
-	private BNode bnodeUseAcrossContextsObject;
+	protected BNode bnodeUseAcrossContextsObject;
 
-	private IRI uri1;
+	protected IRI uri1;
 
-	private IRI uri2;
+	protected IRI uri2;
 
-	private IRI uri3;
+	protected IRI uri3;
 
-	private IRI uri4;
+	protected IRI uri4;
 
-	private IRI uri5;
+	protected IRI uri5;
 
-	private Literal plainLit;
+	protected Literal plainLit;
 
-	private Literal dtLit;
+	protected Literal dtLit;
 
-	private Literal langLit;
+	protected Literal langLit;
 
 	private Literal litWithNewlineAtEnd;
 
