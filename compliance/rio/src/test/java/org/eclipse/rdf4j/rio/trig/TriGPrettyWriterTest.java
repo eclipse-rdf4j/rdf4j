@@ -7,11 +7,22 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trig;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+import java.io.StringReader;
+import java.io.StringWriter;
+
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.trig.TriGParserFactory;
 import org.eclipse.rdf4j.rio.trig.TriGWriterFactory;
+import org.junit.Test;
 
 /**
  * @author Arjohn Kampman
@@ -27,4 +38,171 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 		config.set(BasicWriterSettings.PRETTY_PRINT, true);
 	}
 
+	@Test
+	public void testPrettyWriteSingleStatementNoBNodesNoContext()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(uri1, uri1, uri1));
+		StringWriter outputWriter = new StringWriter();
+		Rio.write(input, outputWriter, rdfWriterFactory.getRDFFormat());
+		String outputString = outputWriter.toString();
+		System.out.println(outputString);
+		StringReader inputReader = new StringReader(outputString);
+		Model parsedOutput = Rio.parse(inputReader, "", rdfParserFactory.getRDFFormat());
+		assertEquals(1, parsedOutput.size());
+		assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1)));
+	}
+
+	@Test
+	public void testPrettyWriteSingleStatementNoBNodesSingleContextIRI()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(uri1, uri1, uri1, uri1));
+		StringWriter outputWriter = new StringWriter();
+		Rio.write(input, outputWriter, rdfWriterFactory.getRDFFormat());
+		String outputString = outputWriter.toString();
+		System.out.println(outputString);
+		StringReader inputReader = new StringReader(outputString);
+		Model parsedOutput = Rio.parse(inputReader, "", rdfParserFactory.getRDFFormat());
+		assertEquals(1, parsedOutput.size());
+		assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1, uri1)));
+	}
+	
+	@Test
+	public void testPrettyWriteSingleStatementNoBNodesSingleContextBnode()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(uri1, uri1, uri1, bnode));
+		StringWriter outputWriter = new StringWriter();
+		Rio.write(input, outputWriter, rdfWriterFactory.getRDFFormat());
+		String outputString = outputWriter.toString();
+		System.out.println(outputString);
+		StringReader inputReader = new StringReader(outputString);
+		Model parsedOutput = Rio.parse(inputReader, "", rdfParserFactory.getRDFFormat());
+		assertEquals(1, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(uri1, uri1, uri1).size());
+		assertEquals(1, parsedOutput.contexts().size());
+		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+	}
+	
+	@Test
+	public void testPrettyWriteSingleStatementSubjectBNodeNoContext()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1));
+		StringWriter outputWriter = new StringWriter();
+		Rio.write(input, outputWriter, rdfWriterFactory.getRDFFormat());
+		String outputString = outputWriter.toString();
+		System.out.println(outputString);
+		StringReader inputReader = new StringReader(outputString);
+		Model parsedOutput = Rio.parse(inputReader, "", rdfParserFactory.getRDFFormat());
+		assertEquals(1, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testPrettyWriteSingleStatementSubjectBNodeSingleContextIRI()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, uri1));
+		StringWriter outputWriter = new StringWriter();
+		Rio.write(input, outputWriter, rdfWriterFactory.getRDFFormat());
+		String outputString = outputWriter.toString();
+		System.out.println(outputString);
+		StringReader inputReader = new StringReader(outputString);
+		Model parsedOutput = Rio.parse(inputReader, "", rdfParserFactory.getRDFFormat());
+		assertEquals(1, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri1, uri1).size());
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testPrettyWriteSingleStatementSubjectBNodeSingleContextBNode()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, bnode));
+		StringWriter outputWriter = new StringWriter();
+		Rio.write(input, outputWriter, rdfWriterFactory.getRDFFormat());
+		String outputString = outputWriter.toString();
+		System.out.println(outputString);
+		StringReader inputReader = new StringReader(outputString);
+		Model parsedOutput = Rio.parse(inputReader, "", rdfParserFactory.getRDFFormat());
+		assertEquals(1, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		assertEquals(1, parsedOutput.contexts().size());
+		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testPrettyWriteTwoStatementsSubjectBNodeSinglePredicateNoContext()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1));
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2));
+		StringWriter outputWriter = new StringWriter();
+		Rio.write(input, outputWriter, rdfWriterFactory.getRDFFormat());
+		String outputString = outputWriter.toString();
+		System.out.println(outputString);
+		StringReader inputReader = new StringReader(outputString);
+		Model parsedOutput = Rio.parse(inputReader, "", rdfParserFactory.getRDFFormat());
+		assertEquals(2, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri2).size());
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testPrettyWriteTwoStatementsSubjectBNodeSinglePredicateSingleContextIRI()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, uri1));
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2, uri1));
+		StringWriter outputWriter = new StringWriter();
+		Rio.write(input, outputWriter, rdfWriterFactory.getRDFFormat());
+		String outputString = outputWriter.toString();
+		System.out.println(outputString);
+		StringReader inputReader = new StringReader(outputString);
+		Model parsedOutput = Rio.parse(inputReader, "", rdfParserFactory.getRDFFormat());
+		assertEquals(2, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri1, uri1).size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri2, uri1).size());
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testPrettyWriteTwoStatementsSubjectBNodeSinglePredicateSingleContextBNode()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, bnode));
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2, bnode));
+		StringWriter outputWriter = new StringWriter();
+		Rio.write(input, outputWriter, rdfWriterFactory.getRDFFormat());
+		String outputString = outputWriter.toString();
+		System.out.println(outputString);
+		StringReader inputReader = new StringReader(outputString);
+		Model parsedOutput = Rio.parse(inputReader, "", rdfParserFactory.getRDFFormat());
+		assertEquals(2, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri2).size());
+		assertEquals(1, parsedOutput.contexts().size());
+		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
 }
