@@ -547,4 +547,92 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 		assertTrue(parsedOutput.contains(uri1, uri1, uri2));
 		assertEquals(1, parsedOutput.contexts().size());
 	}
+
+	@Test
+	public void testWriteCommentURIContextWithNamespace()
+		throws Exception
+	{
+		StringWriter stringWriter = new StringWriter();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.endRDF();
+		StringReader stringReader = new StringReader(stringWriter.toString());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(stringReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+	}
+
+	@Test
+	public void testWriteCommentURIContextURIWithNamespace()
+		throws Exception
+	{
+		StringWriter stringWriter = new StringWriter();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, uri1));
+		rdfWriter.endRDF();
+		System.out.println(stringWriter.toString());
+		StringReader stringReader = new StringReader(stringWriter.toString());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(stringReader, "");
+		assertEquals(2, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+	}
+
+	@Test
+	public void testWriteCommentBNodeContextWithNamespace()
+		throws Exception
+	{
+		StringWriter stringWriter = new StringWriter();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.endRDF();
+		System.out.println(stringWriter.toString());
+		StringReader stringReader = new StringReader(stringWriter.toString());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(stringReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+	}
+
+	@Test
+	public void testWriteCommentBNodeContextBNodeWithNamespace()
+		throws Exception
+	{
+		StringWriter stringWriter = new StringWriter();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, bnode));
+		rdfWriter.endRDF();
+		System.out.println(stringWriter.toString());
+		StringReader stringReader = new StringReader(stringWriter.toString());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(stringReader, "");
+		assertEquals(2, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+		assertTrue(parsedOutput.contains(uri1, uri1, uri2));
+		assertEquals(1, parsedOutput.contexts().size());
+	}
 }
