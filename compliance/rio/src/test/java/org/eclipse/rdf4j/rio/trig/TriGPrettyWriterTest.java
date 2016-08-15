@@ -43,7 +43,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteSingleStatementNoBNodesNoContext()
+	public void testWriteSingleStatementNoBNodesNoContext()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -59,7 +59,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteSingleStatementNoBNodesSingleContextIRI()
+	public void testWriteSingleStatementNoBNodesSingleContextIRI()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -75,7 +75,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteSingleStatementNoBNodesSingleContextBnode()
+	public void testWriteSingleStatementNoBNodesSingleContextBnode()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -93,7 +93,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteSingleStatementSubjectBNodeNoContext()
+	public void testWriteSingleStatementSubjectBNodeNoContext()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -111,7 +111,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteSingleStatementSubjectBNodeSingleContextIRI()
+	public void testWriteSingleStatementSubjectBNodeSingleContextIRI()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -129,7 +129,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteSingleStatementSubjectBNodeSingleContextBNode()
+	public void testWriteSingleStatementSubjectBNodeSingleContextBNode()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -149,7 +149,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteTwoStatementsSubjectBNodeSinglePredicateNoContext()
+	public void testWriteTwoStatementsSubjectBNodeSinglePredicateNoContext()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -169,7 +169,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteTwoStatementsSubjectBNodeSinglePredicateSingleContextIRI()
+	public void testWriteTwoStatementsSubjectBNodeSinglePredicateSingleContextIRI()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -189,7 +189,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteTwoStatementsSubjectBNodeSinglePredicateSingleContextBNode()
+	public void testWriteTwoStatementsSubjectBNodeSinglePredicateSingleContextBNode()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -211,7 +211,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteSingleStatementNoBNodesNoContextWithNamespace()
+	public void testWriteSingleStatementNoBNodesNoContextWithNamespace()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -228,7 +228,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteSingleStatementNoBNodesSingleContextIRIWithNamespace()
+	public void testWriteSingleStatementNoBNodesSingleContextIRIWithNamespace()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -245,7 +245,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteSingleStatementNoBNodesSingleContextBnodeWithNamespace()
+	public void testWriteSingleStatementNoBNodesSingleContextBnodeWithNamespace()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -264,7 +264,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteSingleStatementSubjectBNodeNoContextWithNamespace()
+	public void testWriteSingleStatementSubjectBNodeNoContextWithNamespace()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -283,7 +283,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteSingleStatementSubjectBNodeSingleContextIRIWithNamespace()
+	public void testWriteSingleStatementSubjectBNodeSingleContextIRIWithNamespace()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -302,7 +302,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteSingleStatementSubjectBNodeSingleContextBNodeWithNamespace()
+	public void testWriteSingleStatementSubjectBNodeSingleContextBNodeWithNamespace()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -323,7 +323,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteTwoStatementsSubjectBNodeSinglePredicateNoContextWithNamespace()
+	public void testWriteTwoStatementsSubjectBNodeSinglePredicateNoContextWithNamespace()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -344,7 +344,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteTwoStatementsSubjectBNodeSinglePredicateSingleContextIRIWithNamespace()
+	public void testWriteTwoStatementsSubjectBNodeSinglePredicateSingleContextIRIWithNamespace()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -365,7 +365,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteTwoStatementsSubjectBNodeSinglePredicateSingleContextBNodeWithNamespace()
+	public void testWriteTwoStatementsSubjectBNodeSinglePredicateSingleContextBNodeWithNamespace()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -388,7 +388,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeWithNamespace()
+	public void testWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeWithNamespace()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -411,7 +411,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeReusedWithNamespace()
+	public void testWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeReusedWithNamespace()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
@@ -439,7 +439,7 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testPrettyWriteOneStatementsObjectBNodeSinglePredicateSingleContextBNodeReusedWithNamespace()
+	public void testWriteOneStatementsObjectBNodeSinglePredicateSingleContextBNodeReusedWithNamespace()
 		throws Exception
 	{
 		Model input = new LinkedHashModel();
