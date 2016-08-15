@@ -164,7 +164,7 @@ public class TriGWriter extends TurtleWriter {
 		throws IOException
 	{
 		// TODO: Does the spec actually say we need to close the context to write a comment?
-		closeActiveContext();
+		//closeActiveContext();
 		super.writeCommentLine(line);
 	}
 
