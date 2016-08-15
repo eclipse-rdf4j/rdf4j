@@ -105,19 +105,13 @@ public class TriGWriter extends TurtleWriter {
 			prettyPrintModel.add(st);
 		}
 		else {
-			handleStatementInternal(st, false);
+			handleStatementInternal(st, false, false, false);
 		}
 	}
 
-	/**
-	 * Internal method that differentiates between the pretty-print and streaming writer cases.
-	 * 
-	 * @param st
-	 *        The next statement to write
-	 * @param endRDFCalled
-	 */
-	@Override
-	protected void handleStatementInternal(Statement st, boolean endRDFCalled) {
+	protected void handleStatementInternal(Statement st, boolean endRDFCalled, boolean canShortenSubject,
+			boolean canShortenObject)
+	{
 		// Avoid accidentally writing statements early, but don't lose track of
 		// them if they are sent here
 		if (prettyPrintModel != null && !endRDFCalled) {
@@ -153,7 +147,7 @@ public class TriGWriter extends TurtleWriter {
 		}
 
 		// If we get to this point, switch endRDFCalled to true so writing occurs
-		super.handleStatementInternal(st, true);
+		super.handleStatementInternal(st, true, canShortenSubject, canShortenObject);
 	}
 
 	@Override
