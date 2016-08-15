@@ -155,19 +155,20 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 				// Note: We can't guarantee ordering at this point because Resource doesn't implement Comparable<Resource>
 				for (Resource nextContext : prettyPrintModel.contexts()) {
 					for (Resource nextSubject : prettyPrintModel.subjects()) {
+						// TODO: Implement rules for canShortenObject
 						boolean canShortenSubject = true;
 						// We can almost always shorten subject IRIs, 
 						// with some known corner cases that are already embedded in the algorithm
 						// So just need to do checking for BNode subjects
 						if (nextSubject instanceof BNode) {
 							if (getRDFFormat().equals(RDFFormat.TRIG) && prettyPrintModel.filter(nextSubject,
-									null, null, (Resource)null).contexts().size() > 1)
+									null, null).contexts().size() > 1)
 							{
 								// TriG section 2.3.1 specifies that we cannot shorten blank nodes shared across contexts, 
 								// and this code is shared with TriG.
 								canShortenSubject = false;
 							}
-							if (!prettyPrintModel.contains(null, null, nextSubject)) {
+							if (prettyPrintModel.contains(null, null, nextSubject)) {
 								// Cannot shorten this blank node as it is used as the object of a statement somewhere 
 								// so must be written in a non-anonymous form
 								canShortenSubject = false;
@@ -176,10 +177,17 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 						for (IRI nextPredicate : prettyPrintModel.filter(nextSubject, null, null,
 								nextContext).predicates())
 						{
-							for (Statement nextSt : prettyPrintModel.filter(nextSubject, nextPredicate, null,
-									nextContext))
+							Model nextObjects = prettyPrintModel.filter(nextSubject, nextPredicate, null,
+									nextContext);
+							if(nextObjects.size() > 1) {
+								// In this structure, cannot support shortening subject for multiple statements
+								canShortenSubject = false;
+							}
+							for (Statement nextSt : nextObjects)
 							{
-								handleStatementInternal(nextSt, true);
+								// TODO: Implement rules for canShortenObject
+								boolean canShortenObject = false;
+								handleStatementInternal(nextSt, true, canShortenSubject, canShortenObject);
 							}
 						}
 					}
@@ -253,19 +261,8 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			prettyPrintModel.add(st);
 		}
 		else {
-			handleStatementInternal(st, false);
+			handleStatementInternal(st, false, false, false);
 		}
-	}
-
-	/**
-	 * Internal method that differentiates between the pretty-print and streaming writer cases.
-	 * 
-	 * @param st
-	 *        The next statement to write
-	 * @param endRDFCalled
-	 */
-	protected void handleStatementInternal(Statement st, boolean endRDFCalled) {
-		handleStatementInternal(st, endRDFCalled, false, false);
 	}
 
 	/**
