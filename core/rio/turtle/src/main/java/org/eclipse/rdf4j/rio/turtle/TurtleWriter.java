@@ -166,9 +166,10 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 								// so must be written in a non-anonymous form
 								canShortenSubject = false;
 							}
-							else if (getRDFFormat().supportsContexts() && prettyPrintModel.filter(nextSubject,
-									null, null).contexts().size() > 1)
-							{
+							// Must check this for all writers, not just TriG/etc., 
+							// as Turtle writing only works right now for these statements because of the common blank node identifier
+							// The nextObjects iterator below does not take into account contexts
+							else if (prettyPrintModel.filter(nextSubject, null, null).contexts().size() > 1) {
 								// TriG section 2.3.1 specifies that we cannot shorten blank nodes shared across contexts, 
 								// and this code is shared with TriG.
 								canShortenSubject = false;
@@ -180,7 +181,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 							Model nextObjects = prettyPrintModel.filter(nextSubject, nextPredicate, null,
 									nextContext);
 							//if (nextObjects.size() > 1) {
-								// In this structure, cannot support shortening subject for multiple statements
+							// In this structure, cannot support shortening subject for multiple statements
 							//	canShortenSubject = false;
 							//}
 							for (Statement nextSt : nextObjects) {
