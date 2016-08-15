@@ -10,15 +10,21 @@ package org.eclipse.rdf4j.rio.trig;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.io.OutputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.util.Collection;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.rio.RDFParser;
+import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.rio.trig.TriGParserFactory;
 import org.eclipse.rdf4j.rio.trig.TriGWriterFactory;
 import org.junit.Test;
@@ -456,5 +462,88 @@ public class TriGPrettyWriterTest extends RDFWriterTest {
 		assertTrue(doubleBNodeStatement.objects().iterator().next() instanceof BNode);
 		assertEquals(doubleBNodeStatement.objects().iterator().next(),
 				doubleBNodeStatement.contexts().iterator().next());
+	}
+
+	@Test
+	public void testWriteCommentURIContext()
+		throws Exception
+	{
+		StringWriter stringWriter = new StringWriter();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.endRDF();
+		StringReader stringReader = new StringReader(stringWriter.toString());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(stringReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+	}
+
+	@Test
+	public void testWriteCommentURIContextURI()
+		throws Exception
+	{
+		StringWriter stringWriter = new StringWriter();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, uri1));
+		rdfWriter.endRDF();
+		System.out.println(stringWriter.toString());
+		StringReader stringReader = new StringReader(stringWriter.toString());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(stringReader, "");
+		assertEquals(2, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+	}
+
+	@Test
+	public void testWriteCommentBNodeContext()
+		throws Exception
+	{
+		StringWriter stringWriter = new StringWriter();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.endRDF();
+		System.out.println(stringWriter.toString());
+		StringReader stringReader = new StringReader(stringWriter.toString());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(stringReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+	}
+
+	@Test
+	public void testWriteCommentBNodeContextBNode()
+		throws Exception
+	{
+		StringWriter stringWriter = new StringWriter();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, bnode));
+		rdfWriter.endRDF();
+		System.out.println(stringWriter.toString());
+		StringReader stringReader = new StringReader(stringWriter.toString());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(stringReader, "");
+		assertEquals(2, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
 	}
 }
