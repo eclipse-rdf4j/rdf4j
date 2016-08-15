@@ -143,7 +143,7 @@ public abstract class RDFWriterTest {
 
 	private Literal litBigPlaceholder;
 
-	protected String exNs;
+	private String exNs;
 
 	private List<Resource> potentialSubjects;
 
