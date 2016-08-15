@@ -18,6 +18,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.io.Writer;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -138,7 +141,7 @@ public abstract class RDFWriterTest {
 
 	private Literal litBigPlaceholder;
 
-	private String exNs;
+	protected String exNs;
 
 	private List<Resource> potentialSubjects;
 
@@ -288,6 +291,25 @@ public abstract class RDFWriterTest {
 	protected void setupParserConfig(ParserConfig config) {
 		config.set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);
 		config.set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);
+	}
+
+	protected void write(Model model, Writer writer)
+		throws RDFHandlerException
+	{
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(writer);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		Rio.write(model, rdfWriter);
+	}
+
+	protected Model parse(StringReader reader, String baseURI)
+		throws RDFParseException, RDFHandlerException, IOException
+	{
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model result = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(result));
+		rdfParser.parse(reader, baseURI);
+		return result;
 	}
 
 	@Test
@@ -470,7 +492,7 @@ public abstract class RDFWriterTest {
 		Model st27Statements = model.filter(uri3, uri4, null);
 		if (rdfParser.getRDFFormat().supportsContexts()) {
 			assertEquals("missing statement with blank node use: object: st27/st28", 2,
-				st27Statements.size());
+					st27Statements.size());
 			Set<Resource> st27Contexts = st27Statements.contexts();
 			assertTrue(st27Contexts.contains(uri1));
 			assertTrue(st27Contexts.contains(uri2));
