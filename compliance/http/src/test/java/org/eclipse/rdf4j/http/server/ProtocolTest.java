@@ -14,10 +14,12 @@ import static org.junit.Assert.fail;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -56,6 +58,7 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import com.google.common.collect.Sets;
+import com.opencsv.CSVReader;
 
 public class ProtocolTest {
 
@@ -525,46 +528,40 @@ public class ProtocolTest {
 			conn.setRequestProperty("Accept", "text/csv; charset=utf-8");
 			conn.connect();
 
-			InputStream connIs = conn.getInputStream();
+			int responseCode = conn.getResponseCode();
+			if (responseCode != HttpURLConnection.HTTP_OK) {
+				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
+						+ responseCode + ")";
+				fail(response);
+			}
+
+			CSVReader reader = new CSVReader(
+					new InputStreamReader(conn.getInputStream(), Charset.forName("UTF-8")));
+
 			try {
-				int responseCode = conn.getResponseCode();
-				if (responseCode != HttpURLConnection.HTTP_OK) {
-					String response = "location " + location + " responded: " + conn.getResponseMessage()
-							+ " (" + responseCode + ")";
-					fail(response);
+				String[] headerRow = reader.readNext();
+
+				if (headerRow == null) {
+					fail("header not found");
 				}
 
-				String responseText = IOUtil.readString(connIs);
-				String[] rows = responseText.split("\\r?\\n");
-
-				if (rows.length == 0) {
-					String response = "location " + location + " responded with no rows";
-					fail(response);
-				}
-
-				if (!Arrays.equals(rows[0].split(","), new String[] { "prefix", "namespace" })) {
-					fail("illegal header row: " + rows[0]);
+				if (!Arrays.equals(headerRow, new String[] { "prefix", "namespace" })) {
+					fail("illegal header row: " + Arrays.toString(headerRow));
 				}
 
 				Set<Namespace> namespaces = new HashSet<Namespace>();
 
-				for (int i = 1; i < rows.length; i++) {
-					String aRow = rows[i];
-					int separatorIndex = aRow.indexOf(",");
-
-					if (separatorIndex == -1) {
-						fail("missing separator on row #" + i);
-					}
-
-					String prefix = aRow.substring(0, separatorIndex);
-					String namespace = aRow.substring(separatorIndex + 1);
+				String[] aRow;
+				while ((aRow = reader.readNext()) != null) {
+					String prefix = aRow[0];
+					String namespace = aRow[1];
 
 					namespaces.add(new SimpleNamespace(prefix, namespace));
 				}
 				return namespaces;
 			}
 			finally {
-				connIs.close();
+				reader.close();
 			}
 		}
 		finally {
