@@ -828,7 +828,12 @@ public abstract class RDFWriterTest {
 		StringReader inputReader = new StringReader(outputString);
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
-		assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1, uri1)));
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1, uri1)));
+		}
+		else {
+			assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1)));
+		}
 	}
 
 	@Test
@@ -846,7 +851,9 @@ public abstract class RDFWriterTest {
 		assertEquals(1, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(uri1, uri1, uri1).size());
 		assertEquals(1, parsedOutput.contexts().size());
-		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
 	}
 
 	@Test
@@ -880,7 +887,12 @@ public abstract class RDFWriterTest {
 		StringReader inputReader = new StringReader(outputString);
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
-		assertEquals(1, parsedOutput.filter(null, uri1, uri1, uri1).size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1, uri1).size());
+		}
+		else {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		}
 		assertEquals(1, parsedOutput.subjects().size());
 		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
 	}
@@ -900,7 +912,9 @@ public abstract class RDFWriterTest {
 		assertEquals(1, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
 		assertEquals(1, parsedOutput.contexts().size());
-		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
 		assertEquals(1, parsedOutput.subjects().size());
 		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
 	}
@@ -939,8 +953,14 @@ public abstract class RDFWriterTest {
 		StringReader inputReader = new StringReader(outputString);
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
-		assertEquals(1, parsedOutput.filter(null, uri1, uri1, uri1).size());
-		assertEquals(1, parsedOutput.filter(null, uri1, uri2, uri1).size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1, uri1).size());
+			assertEquals(1, parsedOutput.filter(null, uri1, uri2, uri1).size());
+		}
+		else {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+			assertEquals(1, parsedOutput.filter(null, uri1, uri2).size());
+		}
 		assertEquals(1, parsedOutput.subjects().size());
 		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
 	}
@@ -962,7 +982,9 @@ public abstract class RDFWriterTest {
 		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
 		assertEquals(1, parsedOutput.filter(null, uri1, uri2).size());
 		assertEquals(1, parsedOutput.contexts().size());
-		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
 		assertEquals(1, parsedOutput.subjects().size());
 		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
 	}
@@ -998,7 +1020,12 @@ public abstract class RDFWriterTest {
 		StringReader inputReader = new StringReader(outputString);
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
-		assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1, uri1)));
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1, uri1)));
+		}
+		else {
+			assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1)));
+		}
 	}
 
 	@Test
@@ -1017,7 +1044,9 @@ public abstract class RDFWriterTest {
 		assertEquals(1, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(uri1, uri1, uri1).size());
 		assertEquals(1, parsedOutput.contexts().size());
-		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
 	}
 
 	@Test
@@ -1053,7 +1082,12 @@ public abstract class RDFWriterTest {
 		StringReader inputReader = new StringReader(outputString);
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(1, parsedOutput.size());
-		assertEquals(1, parsedOutput.filter(null, uri1, uri1, uri1).size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1, uri1).size());
+		}
+		else {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		}
 		assertEquals(1, parsedOutput.subjects().size());
 		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
 	}
@@ -1074,7 +1108,9 @@ public abstract class RDFWriterTest {
 		assertEquals(1, parsedOutput.size());
 		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
 		assertEquals(1, parsedOutput.contexts().size());
-		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
 		assertEquals(1, parsedOutput.subjects().size());
 		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
 	}
@@ -1115,8 +1151,14 @@ public abstract class RDFWriterTest {
 		StringReader inputReader = new StringReader(outputString);
 		Model parsedOutput = parse(inputReader, "");
 		assertEquals(2, parsedOutput.size());
-		assertEquals(1, parsedOutput.filter(null, uri1, uri1, uri1).size());
-		assertEquals(1, parsedOutput.filter(null, uri1, uri2, uri1).size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1, uri1).size());
+			assertEquals(1, parsedOutput.filter(null, uri1, uri2, uri1).size());
+		}
+		else {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+			assertEquals(1, parsedOutput.filter(null, uri1, uri2).size());
+		}
 		assertEquals(1, parsedOutput.subjects().size());
 		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
 	}
@@ -1139,7 +1181,9 @@ public abstract class RDFWriterTest {
 		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
 		assertEquals(1, parsedOutput.filter(null, uri1, uri2).size());
 		assertEquals(1, parsedOutput.contexts().size());
-		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
 		assertEquals(1, parsedOutput.subjects().size());
 		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
 	}
@@ -1162,7 +1206,9 @@ public abstract class RDFWriterTest {
 		assertEquals(1, parsedOutput.filter(uri1, uri1, null).size());
 		assertEquals(1, parsedOutput.filter(uri1, uri2, null).size());
 		assertEquals(1, parsedOutput.contexts().size());
-		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
 		assertEquals(1, parsedOutput.objects().size());
 		assertTrue(parsedOutput.objects().iterator().next() instanceof BNode);
 	}
@@ -1187,12 +1233,16 @@ public abstract class RDFWriterTest {
 		Model tripleBNodeStatement = parsedOutput.filter(null, uri2, null);
 		assertEquals(1, tripleBNodeStatement.size());
 		assertEquals(1, parsedOutput.contexts().size());
-		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
 		assertEquals(1, parsedOutput.objects().size());
 		assertTrue(parsedOutput.objects().iterator().next() instanceof BNode);
 		assertTrue(tripleBNodeStatement.subjects().iterator().next() instanceof BNode);
-		assertEquals(tripleBNodeStatement.subjects().iterator().next(),
-				doubleBNodeStatement.contexts().iterator().next());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertEquals(tripleBNodeStatement.subjects().iterator().next(),
+					doubleBNodeStatement.contexts().iterator().next());
+		}
 	}
 
 	@Test
@@ -1212,12 +1262,16 @@ public abstract class RDFWriterTest {
 		Model doubleBNodeStatement = parsedOutput.filter(uri1, uri1, null);
 		assertEquals(1, doubleBNodeStatement.size());
 		assertEquals(1, parsedOutput.contexts().size());
-		assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
 		assertEquals(1, parsedOutput.objects().size());
 		assertTrue(parsedOutput.objects().iterator().next() instanceof BNode);
 		assertTrue(doubleBNodeStatement.objects().iterator().next() instanceof BNode);
-		assertEquals(doubleBNodeStatement.objects().iterator().next(),
-				doubleBNodeStatement.contexts().iterator().next());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertEquals(doubleBNodeStatement.objects().iterator().next(),
+					doubleBNodeStatement.contexts().iterator().next());
+		}
 	}
 
 	@Test
@@ -1238,7 +1292,12 @@ public abstract class RDFWriterTest {
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
 		rdfParser.parse(stringReader, "");
 		assertEquals(1, parsedOutput.size());
-		assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+		}
 	}
 
 	@Test
@@ -1261,8 +1320,14 @@ public abstract class RDFWriterTest {
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
 		rdfParser.parse(stringReader, "");
 		assertEquals(2, parsedOutput.size());
-		assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
-		assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2));
+		}
 	}
 
 	@Test
@@ -1331,7 +1396,12 @@ public abstract class RDFWriterTest {
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
 		rdfParser.parse(stringReader, "");
 		assertEquals(1, parsedOutput.size());
-		assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+		}
 	}
 
 	@Test
@@ -1355,8 +1425,14 @@ public abstract class RDFWriterTest {
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
 		rdfParser.parse(stringReader, "");
 		assertEquals(2, parsedOutput.size());
-		assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
-		assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2));
+		}
 	}
 
 	@Test
@@ -1427,7 +1503,12 @@ public abstract class RDFWriterTest {
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
 		rdfParser.parse(stringReader, "");
 		assertEquals(1, parsedOutput.size());
-		assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+		}
 	}
 
 	@Test
@@ -1451,8 +1532,14 @@ public abstract class RDFWriterTest {
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
 		rdfParser.parse(stringReader, "");
 		assertEquals(2, parsedOutput.size());
-		assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
-		assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2));
+		}
 	}
 
 	@Test
@@ -1524,7 +1611,12 @@ public abstract class RDFWriterTest {
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
 		rdfParser.parse(stringReader, "");
 		assertEquals(1, parsedOutput.size());
-		assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+		}
 	}
 
 	@Test
@@ -1549,8 +1641,14 @@ public abstract class RDFWriterTest {
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
 		rdfParser.parse(stringReader, "");
 		assertEquals(2, parsedOutput.size());
-		assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
-		assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2));
+		}
 	}
 
 	@Test
