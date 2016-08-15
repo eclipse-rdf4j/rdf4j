@@ -161,7 +161,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 						// with some known corner cases that are already embedded in the algorithm
 						// So just need to do checking for BNode subjects
 						if (nextSubject instanceof BNode) {
-							if (getRDFFormat().equals(RDFFormat.TRIG) && prettyPrintModel.filter(nextSubject,
+							if (getRDFFormat().supportsContexts() && prettyPrintModel.filter(nextSubject,
 									null, null).contexts().size() > 1)
 							{
 								// TriG section 2.3.1 specifies that we cannot shorten blank nodes shared across contexts, 
@@ -179,12 +179,11 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 						{
 							Model nextObjects = prettyPrintModel.filter(nextSubject, nextPredicate, null,
 									nextContext);
-							if(nextObjects.size() > 1) {
+							if (nextObjects.size() > 1) {
 								// In this structure, cannot support shortening subject for multiple statements
 								canShortenSubject = false;
 							}
-							for (Statement nextSt : nextObjects)
-							{
+							for (Statement nextSt : nextObjects) {
 								// TODO: Implement rules for canShortenObject
 								boolean canShortenObject = false;
 								handleStatementInternal(nextSt, true, canShortenSubject, canShortenObject);
@@ -456,11 +455,11 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	protected void writeBNode(BNode bNode, boolean canShorten)
 		throws IOException
 	{
-		if(canShorten) {
+		if (canShorten) {
 			writer.write("[]");
 			return;
 		}
-		
+
 		writer.write("_:");
 		String id = bNode.getID();
 
