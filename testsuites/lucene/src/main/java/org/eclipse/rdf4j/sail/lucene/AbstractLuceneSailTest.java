@@ -1055,11 +1055,11 @@ public abstract class AbstractLuceneSailTest {
 		final Set<Throwable> exceptions = ConcurrentHashMap.newKeySet();
 		for (int i = 0; i < numThreads; i++) {
 			new Thread(new Runnable() {
-
+				private long iterationCount = 10 + Math.round(Math.random() * 100);
 				public void run() {
 					try (RepositoryConnection con = repository.getConnection()) {
 						startLatch.await();
-						for (int i = 0; i < 10; i++) {
+						for (long i = 0; i < iterationCount; i++) {
 							con.add(vf.createIRI("ex:" + i), vf.createIRI("ex:prop" + i % 3),
 									vf.createLiteral(i));
 						}

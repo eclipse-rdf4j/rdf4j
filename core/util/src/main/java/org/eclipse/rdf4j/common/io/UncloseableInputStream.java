@@ -23,6 +23,7 @@ public class UncloseableInputStream extends FilterInputStream {
 		super(parent);
 	}
 
+	@Override
 	public void close()
 		throws IOException
 	{

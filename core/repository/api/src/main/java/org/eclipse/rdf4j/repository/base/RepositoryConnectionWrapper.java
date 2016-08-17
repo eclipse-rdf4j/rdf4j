@@ -254,8 +254,12 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	public void close()
 		throws RepositoryException
 	{
-		getDelegate().close();
-		super.close();
+		try {
+			super.close();
+		}
+		finally {
+			getDelegate().close();
+		}
 	}
 
 	@Override

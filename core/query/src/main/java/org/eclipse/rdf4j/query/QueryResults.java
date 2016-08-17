@@ -12,11 +12,13 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -424,11 +426,13 @@ public class QueryResults extends Iterations {
 		return true;
 	}
 
-	private static class GraphQueryResultFilter implements GraphQueryResult {
+	private static class GraphQueryResultFilter extends
+			AbstractCloseableIteration<Statement, QueryEvaluationException> implements GraphQueryResult
+	{
 
-		private DistinctIteration<Statement, QueryEvaluationException> filter;
+		private final DistinctIteration<Statement, QueryEvaluationException> filter;
 
-		private GraphQueryResult unfiltered;
+		private final GraphQueryResult unfiltered;
 
 		public GraphQueryResultFilter(GraphQueryResult wrappedResult) {
 			this.filter = new DistinctIteration<Statement, QueryEvaluationException>(wrappedResult);
@@ -436,31 +440,64 @@ public class QueryResults extends Iterations {
 		}
 
 		@Override
-		public void close()
-			throws QueryEvaluationException
-		{
-			filter.close();
-		}
-
-		@Override
 		public boolean hasNext()
 			throws QueryEvaluationException
 		{
-			return filter.hasNext();
+			if (isClosed()) {
+				return false;
+			}
+			
+			boolean result = filter.hasNext();
+			if (!result) {
+				close();
+			}
+			return result;
 		}
 
 		@Override
 		public Statement next()
 			throws QueryEvaluationException
 		{
-			return filter.next();
+			if (isClosed()) {
+				throw new NoSuchElementException("The iteration has been closed.");
+			}
+			
+			try {
+				return filter.next();
+			}
+			catch (NoSuchElementException e) {
+				close();
+				throw e;
+			}
 		}
 
 		@Override
 		public void remove()
 			throws QueryEvaluationException
 		{
-			filter.remove();
+			if (isClosed()) {
+				throw new IllegalStateException("The iteration has been closed.");
+			}
+			
+			try {
+				filter.remove();
+			}
+			catch (IllegalStateException e) {
+				close();
+				throw e;
+			}
+		}
+
+		@Override
+		public void handleClose()
+			throws QueryEvaluationException
+		{
+			try {
+				super.handleClose();
+			}
+			finally {
+				filter.close();
+			}
 		}
 
 		@Override
@@ -471,11 +508,13 @@ public class QueryResults extends Iterations {
 		}
 	}
 
-	private static class TupleQueryResultFilter implements TupleQueryResult {
+	private static class TupleQueryResultFilter extends
+			AbstractCloseableIteration<BindingSet, QueryEvaluationException> implements TupleQueryResult
+	{
 
-		private DistinctIteration<BindingSet, QueryEvaluationException> filter;
+		private final DistinctIteration<BindingSet, QueryEvaluationException> filter;
 
-		private TupleQueryResult unfiltered;
+		private final TupleQueryResult unfiltered;
 
 		public TupleQueryResultFilter(TupleQueryResult wrappedResult) {
 			this.filter = new DistinctIteration<BindingSet, QueryEvaluationException>(wrappedResult);
@@ -483,31 +522,64 @@ public class QueryResults extends Iterations {
 		}
 
 		@Override
-		public void close()
-			throws QueryEvaluationException
-		{
-			filter.close();
-		}
-
-		@Override
 		public boolean hasNext()
 			throws QueryEvaluationException
 		{
-			return filter.hasNext();
+			if (isClosed()) {
+				return false;
+			}
+
+			boolean result = filter.hasNext();
+			if (!result) {
+				close();
+			}
+			return result;
 		}
 
 		@Override
 		public BindingSet next()
 			throws QueryEvaluationException
 		{
-			return filter.next();
+			if (isClosed()) {
+				throw new NoSuchElementException("The iteration has been closed.");
+			}
+			
+			try {
+				return filter.next();
+			}
+			catch (NoSuchElementException e) {
+				close();
+				throw e;
+			}
 		}
 
 		@Override
 		public void remove()
 			throws QueryEvaluationException
 		{
-			filter.remove();
+			if (isClosed()) {
+				throw new IllegalStateException("The iteration has been closed.");
+			}
+			
+			try {
+				filter.remove();
+			}
+			catch (IllegalStateException e) {
+				close();
+				throw e;
+			}
+		}
+
+		@Override
+		public void handleClose()
+			throws QueryEvaluationException
+		{
+			try {
+				super.handleClose();
+			}
+			finally {
+				filter.close();
+			}
 		}
 
 		@Override

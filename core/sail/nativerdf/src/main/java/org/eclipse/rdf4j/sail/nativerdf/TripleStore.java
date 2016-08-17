@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -40,7 +41,7 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Arjohn Kampman
  */
-class TripleStore {
+class TripleStore implements Closeable {
 
 	/*-----------*
 	 * Constants *
@@ -378,18 +379,27 @@ class TripleStore {
 				logger.debug("Initializing new index '{}'...", fieldSeq);
 
 				TripleIndex addedIndex = new TripleIndex(fieldSeq);
-				BTree addedBTree = addedIndex.getBTree();
-
-				RecordIterator sourceIter = sourceIndex.getBTree().iterateAll();
+				BTree addedBTree = null;
+				RecordIterator sourceIter = null;
 				try {
+					addedBTree = addedIndex.getBTree();
+					sourceIter = sourceIndex.getBTree().iterateAll();
 					byte[] value = null;
 					while ((value = sourceIter.next()) != null) {
 						addedBTree.insert(value);
 					}
-					addedBTree.sync();
 				}
 				finally {
-					sourceIter.close();
+					try {
+						if (sourceIter != null) {
+							sourceIter.close();
+						}
+					}
+					finally {
+						if (addedBTree != null) {
+							addedBTree.sync();
+						}
+					}
 				}
 
 				currentIndexes.put(fieldSeq, addedIndex);
@@ -402,18 +412,28 @@ class TripleStore {
 		Set<String> removedIndexSpecs = new HashSet<String>(currentIndexSpecs);
 		removedIndexSpecs.removeAll(newIndexSpecs);
 
+		List<Throwable> removedIndexExceptions = new ArrayList<>();
 		// Delete files for removed indexes
 		for (String fieldSeq : removedIndexSpecs) {
-			TripleIndex removedIndex = currentIndexes.remove(fieldSeq);
+			try {
+				TripleIndex removedIndex = currentIndexes.remove(fieldSeq);
 
-			boolean deleted = removedIndex.getBTree().delete();
+				boolean deleted = removedIndex.getBTree().delete();
 
-			if (deleted) {
-				logger.debug("Deleted file(s) for removed {} index", fieldSeq);
+				if (deleted) {
+					logger.debug("Deleted file(s) for removed {} index", fieldSeq);
+				}
+				else {
+					logger.warn("Unable to delete file(s) for removed {} index", fieldSeq);
+				}
 			}
-			else {
-				logger.warn("Unable to delete file(s) for removed {} index", fieldSeq);
+			catch (Throwable e) {
+				removedIndexExceptions.add(e);
 			}
+		}
+
+		if (!removedIndexExceptions.isEmpty()) {
+			throw new IOException(removedIndexExceptions.get(0));
 		}
 
 		// Update the indexes variable, using the specified index order
@@ -427,19 +447,37 @@ class TripleStore {
 		return properties.getProperty(INDEXES_KEY);
 	}
 
+	@Override
 	public void close()
 		throws IOException
 	{
-		for (TripleIndex index : indexes) {
-			index.getBTree().close();
+		try {
+			List<Throwable> caughtExceptions = new ArrayList<>();
+			for (TripleIndex index : indexes) {
+				try {
+					index.getBTree().close();
+				}
+				catch (Throwable e) {
+					logger.warn("Failed to close file for {} index", new String(index.getFieldSeq()));
+					caughtExceptions.add(e);
+				}
+			}
+			if (!caughtExceptions.isEmpty()) {
+				throw new IOException(caughtExceptions.get(0));
+			}
 		}
-
-		txnStatusFile.close();
-
-		// Should have been removed upon commit() or rollback(), but just to be sure
-		if (updatedTriplesCache != null) {
-			updatedTriplesCache.discard();
-			updatedTriplesCache = null;
+		finally {
+			try {
+				txnStatusFile.close();
+			}
+			finally {
+				// Should have been removed upon commit() or rollback(), but just to be sure
+				RecordCache toCloseUpdatedTriplesCache = updatedTriplesCache;
+				updatedTriplesCache = null;
+				if (toCloseUpdatedTriplesCache != null) {
+					toCloseUpdatedTriplesCache.discard();
+				}
+			}
 		}
 	}
 
@@ -1020,8 +1058,17 @@ class TripleStore {
 	protected void sync()
 		throws IOException
 	{
+		List<Throwable> exceptions = new ArrayList<>();
 		for (TripleIndex index : indexes) {
-			index.getBTree().sync();
+			try {
+				index.getBTree().sync();
+			}
+			catch (Throwable e) {
+				exceptions.add(e);
+			}
+		}
+		if (!exceptions.isEmpty()) {
+			throw new IOException(exceptions.get(0));
 		}
 	}
 

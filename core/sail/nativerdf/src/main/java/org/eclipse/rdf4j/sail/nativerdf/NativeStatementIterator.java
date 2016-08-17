@@ -86,12 +86,16 @@ class NativeStatementIterator extends LookAheadIteration<Statement, SailExceptio
 	protected void handleClose()
 		throws SailException
 	{
-		super.handleClose();
 		try {
-			btreeIter.close();
+			super.handleClose();
 		}
-		catch (IOException e) {
-			throw causeIOException(e);
+		finally {
+			try {
+				btreeIter.close();
+			}
+			catch (IOException e) {
+				throw causeIOException(e);
+			}
 		}
 	}
 

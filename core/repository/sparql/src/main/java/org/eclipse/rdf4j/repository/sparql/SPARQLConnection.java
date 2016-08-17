@@ -137,12 +137,16 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	public RepositoryResult<Resource> getContextIDs()
 		throws RepositoryException
 	{
+		TupleQueryResult iter = null;
+		RepositoryResult<Resource> result = null;
+
+		boolean allGood = false;
 		try {
 			TupleQuery query = prepareTupleQuery(SPARQL, NAMEDGRAPHS, "");
-			TupleQueryResult result = query.evaluate();
-			return new RepositoryResult<Resource>(
+			iter = query.evaluate();
+			result = new RepositoryResult<Resource>(
 					new ExceptionConvertingIteration<Resource, RepositoryException>(
-							new ConvertingIteration<BindingSet, Resource, QueryEvaluationException>(result)
+							new ConvertingIteration<BindingSet, Resource, QueryEvaluationException>(iter)
 					{
 
 								@Override
@@ -158,12 +162,28 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 							return new RepositoryException(e);
 						}
 					});
+			allGood = true;
+			return result;
 		}
 		catch (MalformedQueryException e) {
 			throw new RepositoryException(e);
 		}
 		catch (QueryEvaluationException e) {
 			throw new RepositoryException(e);
+		}
+		finally {
+			if (!allGood) {
+				try {
+					if (result != null) {
+						result.close();
+					}
+				}
+				finally {
+					if (iter != null) {
+						iter.close();
+					}
+				}
+			}
 		}
 	}
 
@@ -223,38 +243,95 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	{
 		try {
 			if (isQuadMode()) {
-				TupleQuery tupleQuery = prepareTupleQuery(SPARQL, EVERYTHING_WITH_GRAPH);
-				setBindings(tupleQuery, subj, pred, obj, contexts);
-				tupleQuery.setIncludeInferred(includeInferred);
-				TupleQueryResult qRes = tupleQuery.evaluate();
-				return new RepositoryResult<Statement>(
-						new ExceptionConvertingIteration<Statement, RepositoryException>(
-								toStatementIteration(qRes, subj, pred, obj))
-						{
+				return getStatementsQuadMode(subj, pred, obj, includeInferred, contexts);
+			}
+			else if (subj != null && pred != null && obj != null) {
+				return getStatementsSingleTriple(subj, pred, obj, includeInferred, contexts);
+			}
+			else {
+				return getStatementGeneral(subj, pred, obj, includeInferred, contexts);
+			}
+		}
+		catch (MalformedQueryException e) {
+			throw new RepositoryException(e);
+		}
+		catch (QueryEvaluationException e) {
+			throw new RepositoryException(e);
+		}
+	}
 
-							@Override
-							protected RepositoryException convert(Exception e) {
-								return new RepositoryException(e);
-							}
-						});
-			}
-			if (subj != null && pred != null && obj != null) {
-				if (hasStatement(subj, pred, obj, includeInferred, contexts)) {
-					Statement st = getValueFactory().createStatement(subj, pred, obj);
-					CloseableIteration<Statement, RepositoryException> cursor;
-					cursor = new SingletonIteration<Statement, RepositoryException>(st);
-					return new RepositoryResult<Statement>(cursor);
+	private RepositoryResult<Statement> getStatementsQuadMode(Resource subj, IRI pred, Value obj,
+			boolean includeInferred, Resource... contexts)
+		throws MalformedQueryException, RepositoryException, QueryEvaluationException
+	{
+		TupleQueryResult qRes = null;
+		RepositoryResult<Statement> result = null;
+
+		boolean allGood = false;
+		try {
+			TupleQuery tupleQuery = prepareTupleQuery(SPARQL, EVERYTHING_WITH_GRAPH);
+			setBindings(tupleQuery, subj, pred, obj, contexts);
+			tupleQuery.setIncludeInferred(includeInferred);
+			qRes = tupleQuery.evaluate();
+			result = new RepositoryResult<Statement>(
+					new ExceptionConvertingIteration<Statement, RepositoryException>(
+							toStatementIteration(qRes, subj, pred, obj))
+					{
+
+						@Override
+						protected RepositoryException convert(Exception e) {
+							return new RepositoryException(e);
+						}
+					});
+			allGood = true;
+			return result;
+		}
+		finally {
+			if (!allGood) {
+				try {
+					if (result != null) {
+						result.close();
+					}
 				}
-				else {
-					return new RepositoryResult<Statement>(
-							new EmptyIteration<Statement, RepositoryException>());
+				finally {
+					if (qRes != null) {
+						qRes.close();
+					}
 				}
 			}
+		}
+	}
+
+	private RepositoryResult<Statement> getStatementsSingleTriple(Resource subj, IRI pred, Value obj,
+			boolean includeInferred, Resource... contexts)
+		throws RepositoryException
+	{
+		if (hasStatement(subj, pred, obj, includeInferred, contexts)) {
+			Statement st = getValueFactory().createStatement(subj, pred, obj);
+			CloseableIteration<Statement, RepositoryException> cursor;
+			cursor = new SingletonIteration<Statement, RepositoryException>(st);
+			return new RepositoryResult<Statement>(cursor);
+		}
+		else {
+			return new RepositoryResult<Statement>(new EmptyIteration<Statement, RepositoryException>());
+		}
+	}
+
+	private RepositoryResult<Statement> getStatementGeneral(Resource subj, IRI pred, Value obj,
+			boolean includeInferred, Resource... contexts)
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException
+	{
+		GraphQueryResult gRes = null;
+		RepositoryResult<Statement> result = null;
+
+		boolean allGood = false;
+		try {
 			GraphQuery query = prepareGraphQuery(SPARQL, EVERYTHING, "");
+			query.setIncludeInferred(includeInferred);
 			setBindings(query, subj, pred, obj, contexts);
-			GraphQueryResult result = query.evaluate();
-			return new RepositoryResult<Statement>(
-					new ExceptionConvertingIteration<Statement, RepositoryException>(result)
+			gRes = query.evaluate();
+			result = new RepositoryResult<Statement>(
+					new ExceptionConvertingIteration<Statement, RepositoryException>(gRes)
 			{
 
 						@Override
@@ -262,12 +339,22 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 							return new RepositoryException(e);
 						}
 					});
+			allGood = true;
+			return result;
 		}
-		catch (MalformedQueryException e) {
-			throw new RepositoryException(e);
-		}
-		catch (QueryEvaluationException e) {
-			throw new RepositoryException(e);
+		finally {
+			if (!allGood) {
+				try {
+					if (result != null) {
+						result.close();
+					}
+				}
+				finally {
+					if (gRes != null) {
+						gRes.close();
+					}
+				}
+			}
 		}
 	}
 
