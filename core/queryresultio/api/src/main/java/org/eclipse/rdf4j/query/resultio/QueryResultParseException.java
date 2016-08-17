@@ -27,9 +27,9 @@ public class QueryResultParseException extends RDF4JException {
 	 * Variables *
 	 *-----------*/
 
-	private int lineNo = -1;
+	private long lineNo = -1L;
 
-	private int columnNo = -1;
+	private long columnNo = -1L;
 
 	/*--------------*
 	 * Constructors *
@@ -67,7 +67,7 @@ public class QueryResultParseException extends RDF4JException {
 	 * @param columnNo
 	 *        A column number associated with the message.
 	 */
-	public QueryResultParseException(String msg, int lineNo, int columnNo) {
+	public QueryResultParseException(String msg, long lineNo, long columnNo) {
 		super(msg);
 		this.lineNo = lineNo;
 		this.columnNo = columnNo;
@@ -95,7 +95,7 @@ public class QueryResultParseException extends RDF4JException {
 	 * @param columnNo
 	 *        A column number associated with the message.
 	 */
-	public QueryResultParseException(Throwable t, int lineNo, int columnNo) {
+	public QueryResultParseException(Throwable t, long lineNo, long columnNo) {
 		super(t);
 		this.lineNo = lineNo;
 		this.columnNo = columnNo;
@@ -110,7 +110,7 @@ public class QueryResultParseException extends RDF4JException {
 	 * 
 	 * @return A line number, or <tt>-1</tt> if no line number is available or applicable.
 	 */
-	public int getLineNumber() {
+	public long getLineNumber() {
 		return lineNo;
 	}
 
@@ -119,7 +119,7 @@ public class QueryResultParseException extends RDF4JException {
 	 * 
 	 * @return A column number, or <tt>-1</tt> if no column number is available or applicable.
 	 */
-	public int getColumnNumber() {
+	public long getColumnNumber() {
 		return columnNo;
 	}
 }

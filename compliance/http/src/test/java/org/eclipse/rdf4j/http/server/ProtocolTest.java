@@ -9,17 +9,23 @@ package org.eclipse.rdf4j.http.server;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -37,7 +43,9 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicNameValuePair;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -48,6 +56,9 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
+
+import com.google.common.collect.Sets;
+import com.opencsv.CSVReader;
 
 public class ProtocolTest {
 
@@ -430,6 +441,32 @@ public class ProtocolTest {
 	}
 
 	/**
+	 * Test for GitHub issue #262
+	 * 
+	 * @throws Exception
+	 */
+	@Test
+	public void testPutEmptyPrefix()
+		throws Exception
+	{
+		String repositoryLocation = TestServer.REPOSITORY_URL;
+		String namespacesLocation = Protocol.getNamespacesLocation(repositoryLocation);
+		String emptyPrefixLocation = Protocol.getNamespacePrefixLocation(repositoryLocation, "");
+
+		Set<Namespace> namespacesBefore = getNamespaces(namespacesLocation);
+
+		putNamespace(emptyPrefixLocation, "http://example.org/");
+
+		Set<Namespace> namespacesAfter = getNamespaces(namespacesLocation);
+
+		Set<Namespace> namespaceDeletions = Sets.difference(namespacesBefore, namespacesAfter);
+		Set<Namespace> namespaceAdditions = Sets.difference(namespacesAfter, namespacesBefore);
+
+		assertTrue("Some namespaces have been deleted", namespaceDeletions.isEmpty());
+		assertEquals(Sets.newHashSet(new SimpleNamespace("", "http://example.org/")), namespaceAdditions);
+	}
+
+	/**
 	 * Test for SES-1861
 	 * 
 	 * @throws Exception
@@ -480,6 +517,56 @@ public class ProtocolTest {
 		threadPool.shutdown();
 		threadPool.awaitTermination(30000, TimeUnit.MILLISECONDS);
 		threadPool.shutdownNow();
+	}
+
+	private Set<Namespace> getNamespaces(String location)
+		throws Exception
+	{
+		URL url = new URL(location);
+		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+		try {
+			conn.setRequestProperty("Accept", "text/csv; charset=utf-8");
+			conn.connect();
+
+			int responseCode = conn.getResponseCode();
+			if (responseCode != HttpURLConnection.HTTP_OK) {
+				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
+						+ responseCode + ")";
+				fail(response);
+			}
+
+			CSVReader reader = new CSVReader(
+					new InputStreamReader(conn.getInputStream(), Charset.forName("UTF-8")));
+
+			try {
+				String[] headerRow = reader.readNext();
+
+				if (headerRow == null) {
+					fail("header not found");
+				}
+
+				if (!Arrays.equals(headerRow, new String[] { "prefix", "namespace" })) {
+					fail("illegal header row: " + Arrays.toString(headerRow));
+				}
+
+				Set<Namespace> namespaces = new HashSet<Namespace>();
+
+				String[] aRow;
+				while ((aRow = reader.readNext()) != null) {
+					String prefix = aRow[0];
+					String namespace = aRow[1];
+
+					namespaces.add(new SimpleNamespace(prefix, namespace));
+				}
+				return namespaces;
+			}
+			finally {
+				reader.close();
+			}
+		}
+		finally {
+			conn.disconnect();
+		}
 	}
 
 	private void putNamespace(String location, String namespace)
