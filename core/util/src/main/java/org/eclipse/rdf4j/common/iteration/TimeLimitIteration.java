@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
 import java.util.Timer;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +25,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 
 	private final InterruptTask<E, X> interruptTask;
 
-	private volatile boolean isInterrupted = false;
+	private final AtomicBoolean isInterrupted = new AtomicBoolean(false);
 
 	public TimeLimitIteration(Iteration<? extends E, ? extends X> iter, long timeLimit) {
 		super(iter);
@@ -41,6 +42,10 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 		throws X
 	{
 		checkInterrupted();
+		if (isClosed()) {
+			return false;
+		}
+		checkInterrupted();
 		try {
 			boolean result = super.hasNext();
 			checkInterrupted();
@@ -48,6 +53,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 		}
 		catch (NoSuchElementException e) {
 			checkInterrupted();
+			close();
 			throw e;
 		}
 	}
@@ -57,11 +63,16 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 		throws X
 	{
 		checkInterrupted();
+		if (isClosed()) {
+			throw new NoSuchElementException("The iteration has been closed.");
+		}
+		checkInterrupted();
 		try {
 			return super.next();
 		}
 		catch (NoSuchElementException e) {
 			checkInterrupted();
+			close();
 			throw e;
 		}
 	}
@@ -71,30 +82,59 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 		throws X
 	{
 		checkInterrupted();
-		super.remove();
+		if (isClosed()) {
+			throw new IllegalStateException("The iteration has been closed.");
+		}
+		checkInterrupted();
+		try {
+			super.remove();
+		}
+		catch (IllegalStateException e) {
+			checkInterrupted();
+			close();
+			throw e;
+		}
 	}
 
 	@Override
 	protected void handleClose()
 		throws X
 	{
-		interruptTask.cancel();
-		super.handleClose();
+		try {
+			interruptTask.cancel();
+		}
+		finally {
+			super.handleClose();
+		}
 	}
 
 	private final void checkInterrupted()
 		throws X
 	{
-		if (isInterrupted) {
+		if (isInterrupted.get()) {
 			throwInterruptedException();
 		}
 	}
 
+	/**
+	 * If the iteration is interrupted by its time limit, this method is called to generate and throw the
+	 * appropriate exception.
+	 * 
+	 * @throws X
+	 *         The generic class of exceptions thrown by this method.
+	 */
 	protected abstract void throwInterruptedException()
 		throws X;
 
+	/**
+	 * Users of this class must call this method to interrupt the execution at the next available point. It
+	 * does not immediately interrupt the running method, but will call close() and set a flag to increase the
+	 * chances of it being picked up as soon as possible and to cleanup its resources. <br/>
+	 * Note, this method does not generate {@link InterruptedException}s that would occur if
+	 * {@link Thread#interrupt()} were called on this thread.
+	 */
 	void interrupt() {
-		isInterrupted = true;
+		isInterrupted.set(true);
 		if (!isClosed()) {
 			try {
 				close();

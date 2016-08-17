@@ -9,8 +9,10 @@ package org.eclipse.rdf4j.query.algebra.evaluation.federation;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -68,17 +70,14 @@ public class TupleFunctionFederatedService implements FederatedService {
 	public boolean ask(Service service, BindingSet bindings, String baseUri)
 		throws QueryEvaluationException
 	{
-		final CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(service,
-				new SingletonIteration<BindingSet, QueryEvaluationException>(bindings), baseUri);
-		try {
+		try (final CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(service,
+				new SingletonIteration<BindingSet, QueryEvaluationException>(bindings), baseUri);)
+		{
 			while (iter.hasNext()) {
 				BindingSet bs = iter.next();
 				String firstVar = service.getBindingNames().iterator().next();
 				return QueryEvaluationUtil.getEffectiveBooleanValue(bs.getValue(firstVar));
 			}
-		}
-		finally {
-			iter.close();
 		}
 		return false;
 	}
@@ -94,40 +93,70 @@ public class TupleFunctionFederatedService implements FederatedService {
 			return iter;
 		}
 
-		return new CloseableIteration<BindingSet, QueryEvaluationException>() {
+		return new AbstractCloseableIteration<BindingSet, QueryEvaluationException>() {
 
 			@Override
 			public boolean hasNext()
 				throws QueryEvaluationException
 			{
-				return iter.hasNext();
+				if (isClosed()) {
+					return false;
+				}
+				boolean result = iter.hasNext();
+				if (!result) {
+					close();
+				}
+				return result;
 			}
 
 			@Override
 			public BindingSet next()
 				throws QueryEvaluationException
 			{
-				QueryBindingSet projected = new QueryBindingSet();
-				BindingSet result = iter.next();
-				for (String var : projectionVars) {
-					Value v = result.getValue(var);
-					projected.addBinding(var, v);
+				if (isClosed()) {
+					throw new NoSuchElementException("The iteration has been closed.");
 				}
-				return projected;
+				try {
+					QueryBindingSet projected = new QueryBindingSet();
+					BindingSet result = iter.next();
+					for (String var : projectionVars) {
+						Value v = result.getValue(var);
+						projected.addBinding(var, v);
+					}
+					return projected;
+				}
+				catch (NoSuchElementException e) {
+					close();
+					throw e;
+				}
 			}
 
 			@Override
 			public void remove()
 				throws QueryEvaluationException
 			{
-				iter.remove();
+				if (isClosed()) {
+					throw new IllegalStateException("The iteration has been closed.");
+				}
+				try {
+					iter.remove();
+				}
+				catch (IllegalStateException e) {
+					close();
+					throw e;
+				}
 			}
 
 			@Override
-			public void close()
+			public void handleClose()
 				throws QueryEvaluationException
 			{
-				iter.close();
+				try {
+					super.handleClose();
+				}
+				finally {
+					iter.close();
+				}
 			}
 		};
 	}

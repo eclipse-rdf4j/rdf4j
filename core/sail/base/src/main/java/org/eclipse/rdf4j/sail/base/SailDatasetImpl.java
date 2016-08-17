@@ -16,6 +16,7 @@ import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -62,6 +63,7 @@ class SailDatasetImpl implements SailDataset {
 		changes.addRefback(this);
 	}
 
+	@Override
 	public String toString() {
 		return changes + "\n" + derivedFrom;
 	}
@@ -111,50 +113,71 @@ class SailDatasetImpl implements SailDataset {
 			return namespaces;
 		final Iterator<Map.Entry<String, String>> addedIter = added;
 		final Set<String> removedSet = removed;
-		return new CloseableIteration<Namespace, SailException>() {
+		return new AbstractCloseableIteration<Namespace, SailException>() {
 
-			Namespace next;
+			volatile Namespace next;
 
+			@Override
 			public boolean hasNext()
 				throws SailException
 			{
-				if (addedIter != null && addedIter.hasNext())
+				if (isClosed()) {
+					return false;
+				}
+				if (addedIter != null && addedIter.hasNext()) {
 					return true;
-				while (next == null && namespaces.hasNext()) {
-					next = namespaces.next();
-					if (removedSet != null && removedSet.contains(next.getPrefix())) {
-						next = null;
+				}
+				Namespace toCheckNext = next;
+				while (toCheckNext == null && namespaces.hasNext()) {
+					toCheckNext = next = namespaces.next();
+					if (removedSet != null && removedSet.contains(toCheckNext.getPrefix())) {
+						toCheckNext = next = null;
 					}
 				}
-				return next != null;
+				return toCheckNext != null;
 			}
 
+			@Override
 			public Namespace next()
 				throws SailException
 			{
+				if (isClosed()) {
+					throw new NoSuchElementException("The iteration has been closed.");
+				}
 				if (addedIter != null && addedIter.hasNext()) {
 					Entry<String, String> e = addedIter.next();
 					return new SimpleNamespace(e.getKey(), e.getValue());
 				}
 				try {
-					if (hasNext())
-						return next;
-					throw new NoSuchElementException();
+					if (hasNext()) {
+						Namespace toCheckNext = next;
+						if (toCheckNext != null) {
+							return toCheckNext;
+						}
+					}
+					close();
+					throw new NoSuchElementException("The iteration has been closed.");
 				}
 				finally {
 					next = null;
 				}
 			}
 
+			@Override
 			public void remove() {
 				throw new UnsupportedOperationException();
 			}
 
 			@Override
-			public void close()
+			public void handleClose()
 				throws SailException
 			{
-				namespaces.close();
+				try {
+					super.handleClose();
+				}
+				finally {
+					namespaces.close();
+				}
 			}
 		};
 	}
@@ -181,51 +204,73 @@ class SailDatasetImpl implements SailDataset {
 			return contextIDs;
 		final Iterator<Resource> addedIter = added;
 		final Set<Resource> removedSet = removed;
-		return new CloseableIteration<Resource, SailException>() {
+		return new AbstractCloseableIteration<Resource, SailException>() {
 
-			Resource next;
+			volatile Resource next;
 
-			public void close()
-				throws SailException
-			{
-				contextIDs.close();
-			}
-
+			@Override
 			public boolean hasNext()
 				throws SailException
 			{
-				if (addedIter != null && addedIter.hasNext())
+				if (isClosed()) {
+					return false;
+				}
+				if (addedIter != null && addedIter.hasNext()) {
 					return true;
-				while (next == null && contextIDs.hasNext()) {
-					next = contextIDs.next();
-					if (removedSet != null && removedSet.contains(next)) {
-						next = null;
+				}
+				Resource toCheckNext = next;
+				while (toCheckNext == null && contextIDs.hasNext()) {
+					toCheckNext = next = contextIDs.next();
+					if (removedSet != null && removedSet.contains(toCheckNext)) {
+						toCheckNext = next = null;
 					}
 				}
-				return next != null;
+				return toCheckNext != null;
 			}
 
+			@Override
 			public Resource next()
 				throws SailException
 			{
-				if (addedIter != null && addedIter.hasNext())
+				if (isClosed()) {
+					throw new NoSuchElementException("The iteration has been closed.");
+				}
+				if (addedIter != null && addedIter.hasNext()) {
 					return addedIter.next();
+				}
 				try {
-					if (hasNext())
-						return next;
-					throw new NoSuchElementException();
+					if (hasNext()) {
+						Resource toCheckNext = next;
+						if (toCheckNext != null) {
+							return toCheckNext;
+						}
+					}
+					close();
+					throw new NoSuchElementException("The iteration has been closed.");
 				}
 				finally {
 					next = null;
 				}
 			}
 
+			@Override
 			public void remove()
 				throws SailException
 			{
 				throw new UnsupportedOperationException();
 			}
 
+			@Override
+			public void handleClose()
+				throws SailException
+			{
+				try {
+					super.handleClose();
+				}
+				finally {
+					contextIDs.close();
+				}
+			}
 		};
 	}
 

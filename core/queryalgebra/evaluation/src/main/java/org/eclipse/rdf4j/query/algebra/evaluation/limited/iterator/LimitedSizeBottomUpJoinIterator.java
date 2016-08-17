@@ -27,9 +27,9 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 
 	private static final String SIZE_LIMIT_REACHED = "Size limited reached inside bottom up join operator, max size is:";
 
-	private AtomicLong used;
+	private final AtomicLong used;
 
-	private long maxSize;
+	private final long maxSize;
 
 	/**
 	 * @param limitedSizeEvaluationStrategy
@@ -92,9 +92,13 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 	protected void handleClose()
 		throws QueryEvaluationException
 	{
-		long htvSize = clearHashTable();
-		super.handleClose();
-		used.addAndGet(-htvSize);
+		try {
+			super.handleClose();
+		}
+		finally {
+			long htvSize = clearHashTable();
+			used.addAndGet(-htvSize);
+		}
 	}
 
 }

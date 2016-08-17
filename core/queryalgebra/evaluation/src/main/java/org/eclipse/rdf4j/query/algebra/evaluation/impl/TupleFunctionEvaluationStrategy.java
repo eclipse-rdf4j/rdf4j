@@ -157,7 +157,12 @@ public class TupleFunctionEvaluationStrategy implements EvaluationStrategy {
 			protected void handleClose()
 				throws QueryEvaluationException
 			{
-				iter.close();
+				try {
+					super.handleClose();
+				}
+				finally {
+					iter.close();
+				}
 			}
 		};
 	}

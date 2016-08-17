@@ -39,23 +39,25 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 
 	@Override
 	public ParsedGraphQuery getParsedQuery() {
-		return (ParsedGraphQuery)super.getParsedQuery();
+		return (ParsedGraphQuery) super.getParsedQuery();
 	}
 
-	public GraphQueryResult evaluate()
-		throws QueryEvaluationException
-	{
+	public GraphQueryResult evaluate() throws QueryEvaluationException {
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter2 = null;
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter3 = null;
+		CloseableIteration<Statement, QueryEvaluationException> stIter = null;
+		IteratingGraphQueryResult result = null;
+		boolean allGood = false;
 		try {
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter;
 
 			SailConnection sailCon = getConnection().getSailConnection();
-			bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(),
-					getIncludeInferred());
+			bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
 
 			// Filters out all partial and invalid matches
-			bindingsIter = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter) {
+			bindingsIter2 = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter1) {
 
 				@Override
 				protected boolean accept(BindingSet bindingSet) {
@@ -68,39 +70,66 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 				}
 			};
 
-			bindingsIter = enforceMaxQueryTime(bindingsIter);
+			bindingsIter3 = enforceMaxQueryTime(bindingsIter2);
 
 			// Convert the BindingSet objects to actual RDF statements
 			final ValueFactory vf = getConnection().getRepository().getValueFactory();
-			CloseableIteration<Statement, QueryEvaluationException> stIter;
-			stIter = new ConvertingIteration<BindingSet, Statement, QueryEvaluationException>(bindingsIter) {
+			stIter = new ConvertingIteration<BindingSet, Statement, QueryEvaluationException>(bindingsIter3) {
 
 				@Override
 				protected Statement convert(BindingSet bindingSet) {
-					Resource subject = (Resource)bindingSet.getValue("subject");
-					IRI predicate = (IRI)bindingSet.getValue("predicate");
+					Resource subject = (Resource) bindingSet.getValue("subject");
+					IRI predicate = (IRI) bindingSet.getValue("predicate");
 					Value object = bindingSet.getValue("object");
-					Resource context = (Resource)bindingSet.getValue("context");
+					Resource context = (Resource) bindingSet.getValue("context");
 
 					if (context == null) {
 						return vf.createStatement(subject, predicate, object);
-					}
-					else {
+					} else {
 						return vf.createStatement(subject, predicate, object, context);
 					}
 				}
 			};
 
-			return new IteratingGraphQueryResult(getParsedQuery().getQueryNamespaces(), stIter);
-		}
-		catch (SailException e) {
+			result = new IteratingGraphQueryResult(getParsedQuery().getQueryNamespaces(), stIter);
+			allGood = true;
+			return result;
+		} catch (SailException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
+		} finally {
+			if (!allGood) {
+				try {
+					if (result != null) {
+						result.close();
+					}
+				} finally {
+					try {
+						if (stIter != null) {
+							stIter.close();
+						}
+					} finally {
+						try {
+							if (bindingsIter3 != null) {
+								bindingsIter3.close();
+							}
+						} finally {
+							try {
+								if (bindingsIter2 != null) {
+									bindingsIter2.close();
+								}
+							} finally {
+								if (bindingsIter1 != null) {
+									bindingsIter1.close();
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 
-	public void evaluate(RDFHandler handler)
-		throws QueryEvaluationException, RDFHandlerException
-	{
+	public void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException {
 		GraphQueryResult queryResult = evaluate();
 		QueryResults.report(queryResult, handler);
 	}

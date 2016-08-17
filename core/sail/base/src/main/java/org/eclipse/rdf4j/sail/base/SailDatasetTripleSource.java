@@ -33,10 +33,12 @@ class SailDatasetTripleSource implements TripleSource {
 		this.dataset = dataset;
 	}
 
+	@Override
 	public String toString() {
 		return dataset.toString();
 	}
 
+	@Override
 	public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
 			IRI pred, Value obj, Resource... contexts)
 		throws QueryEvaluationException
@@ -49,6 +51,7 @@ class SailDatasetTripleSource implements TripleSource {
 		}
 	}
 
+	@Override
 	public ValueFactory getValueFactory() {
 		return vf;
 	}

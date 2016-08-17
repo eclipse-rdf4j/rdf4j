@@ -21,7 +21,7 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 	 * Variables *
 	 *-----------*/
 
-	private E nextElement;
+	private volatile E nextElement;
 
 	/*--------------*
 	 * Constructors *
@@ -42,17 +42,29 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 	protected abstract E getNextElement()
 		throws X;
 
+	@Override
 	public final boolean hasNext()
 		throws X
 	{
+		if (isClosed()) {
+			return false;
+		}
 		lookAhead();
 
-		return nextElement != null;
+		boolean result = nextElement != null;
+		if (!result) {
+			close();
+		}
+		return result;
 	}
 
+	@Override
 	public final E next()
 		throws X
 	{
+		if (isClosed()) {
+			throw new NoSuchElementException("The iteration has been closed.");
+		}
 		lookAhead();
 
 		E result = nextElement;
@@ -62,6 +74,7 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 			return result;
 		}
 		else {
+			close();
 			throw new NoSuchElementException();
 		}
 	}
@@ -74,10 +87,11 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 	private void lookAhead()
 		throws X
 	{
-		if (nextElement == null && !isClosed()) {
-			nextElement = getNextElement();
+		E checkElement = nextElement;
+		if (checkElement == null && !isClosed()) {
+			checkElement = nextElement = getNextElement();
 
-			if (nextElement == null) {
+			if (checkElement == null) {
 				close();
 			}
 		}
@@ -86,6 +100,7 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 	/**
 	 * Throws an {@link UnsupportedOperationException}.
 	 */
+	@Override
 	public void remove() {
 		throw new UnsupportedOperationException();
 	}
@@ -94,7 +109,11 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 	protected void handleClose()
 		throws X
 	{
-		super.handleClose();
-		nextElement = null;
+		try {
+			super.handleClose();
+		}
+		finally {
+			nextElement = null;
+		}
 	}
 }

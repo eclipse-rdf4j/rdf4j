@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.io;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -24,7 +25,7 @@ import java.nio.channels.WritableByteChannel;
  * 
  * @author Arjohn Kampman
  */
-public final class NioFile {
+public final class NioFile implements Closeable {
 
 	private final File file;
 
@@ -79,6 +80,7 @@ public final class NioFile {
 		open();
 	}
 
+	@Override
 	public synchronized void close()
 		throws IOException
 	{
@@ -104,8 +106,12 @@ public final class NioFile {
 	public boolean delete()
 		throws IOException
 	{
-		close();
-		return file.delete();
+		try {
+			return file.delete();
+		}
+		finally {
+			close();
+		}
 	}
 
 	/**

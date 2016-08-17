@@ -140,14 +140,27 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	protected void handleClose()
 		throws QueryEvaluationException
 	{
-		super.handleClose();
-
-		leftIter.close();
-		rightIter.close();
-
-		hashTable = null;
-		hashTableValues = null;
-		scanList = null;
+		try {
+			super.handleClose();
+		}
+		finally {
+			try {
+				leftIter.close();
+			}
+			finally {
+				try {
+					CloseableIteration<BindingSet, QueryEvaluationException> toCloseRightIter = rightIter;
+					if (toCloseRightIter != null) {
+						toCloseRightIter.close();
+					}
+				}
+				finally {
+					hashTable = null;
+					hashTableValues = null;
+					scanList = null;
+				}
+			}
+		}
 	}
 
 	/**

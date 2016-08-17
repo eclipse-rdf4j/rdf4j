@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.datastore;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
@@ -19,7 +20,7 @@ import org.eclipse.rdf4j.common.io.ByteArrayUtil;
  * 
  * @author Arjohn Kampman
  */
-public class DataStore {
+public class DataStore implements Closeable {
 
 	/*-----------*
 	 * Variables *
@@ -182,9 +183,17 @@ public class DataStore {
 	public void clear()
 		throws IOException
 	{
-		hashFile.clear();
-		idFile.clear();
-		dataFile.clear();
+		try {
+			hashFile.clear();
+		}
+		finally {
+			try {
+				idFile.clear();
+			}
+			finally {
+				dataFile.clear();
+			}
+		}
 	}
 
 	/**
@@ -194,12 +203,21 @@ public class DataStore {
 	 * @exception IOException
 	 *            If an I/O error occurred.
 	 */
+	@Override
 	public void close()
 		throws IOException
 	{
-		hashFile.close();
-		idFile.close();
-		dataFile.close();
+		try {
+			hashFile.close();
+		}
+		finally {
+			try {
+				idFile.close();
+			}
+			finally {
+				dataFile.close();
+			}
+		}
 	}
 
 	/**

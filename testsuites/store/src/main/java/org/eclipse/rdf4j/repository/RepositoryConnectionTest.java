@@ -43,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.concurrent.TimeUnit;
 
 import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -96,7 +97,9 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Ignore;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.Timeout;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
@@ -110,10 +113,10 @@ public abstract class RepositoryConnectionTest {
 	}
 
 	/**
-	 * Timeout all individual tests after 1 minute.
+	 * Timeout all individual tests after 10 minutes.
 	 */
-	// @Rule
-	// public Timeout to = new Timeout(60000);
+	@Rule
+	public Timeout to = new Timeout(10, TimeUnit.MINUTES);
 
 	private static final String URN_TEST_OTHER = "urn:test:other";
 
@@ -2089,13 +2092,12 @@ public abstract class RepositoryConnectionTest {
 				"SELECT * WHERE { ?s ?p ?o . ?s1 ?p1 ?o1 . ?s2 ?p2 ?o2 . ?s3 ?p3 ?o3 } ORDER BY ?s1 ?p1 ?o1 LIMIT 1000");
 		query.setMaxQueryTime(2);
 
-		TupleQueryResult result = query.evaluate();
 		long startTime = System.currentTimeMillis();
-		try {
+		try (TupleQueryResult result = query.evaluate();) {
 			result.hasNext();
 			fail("Query should have been interrupted");
 		}
-		catch (QueryInterruptedException e) {
+		catch (QueryEvaluationException e) {
 			// Expected
 			long duration = System.currentTimeMillis() - startTime;
 

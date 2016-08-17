@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 
@@ -32,18 +33,27 @@ public class CollectionIteration<E, X extends Exception> extends AbstractCloseab
 		iterator = collection.iterator();
 	}
 
+	@Override
 	public boolean hasNext()
 		throws X
 	{
+		if (isClosed()) {
+			return false;
+		}
 		return iterator.hasNext();
 	}
 
+	@Override
 	public E next()
 		throws X
 	{
+		if (isClosed()) {
+			throw new NoSuchElementException("The iteration has been closed.");
+		}
 		return iterator.next();
 	}
 
+	@Override
 	public void remove()
 		throws X
 	{
