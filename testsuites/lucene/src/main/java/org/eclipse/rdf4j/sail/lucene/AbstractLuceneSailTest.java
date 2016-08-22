@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -52,10 +53,15 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.Timeout;
 
 public abstract class AbstractLuceneSailTest {
 
+	@Rule
+	public Timeout timeout = new Timeout(10, TimeUnit.MINUTES);
+	
 	protected static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	public static final String QUERY_STRING;
