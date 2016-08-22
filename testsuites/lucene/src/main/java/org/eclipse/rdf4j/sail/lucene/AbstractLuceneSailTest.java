@@ -27,6 +27,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -1045,6 +1046,7 @@ public abstract class AbstractLuceneSailTest {
 		int numThreads = 3;
 		final CountDownLatch startLatch = new CountDownLatch(1);
 		final CountDownLatch endLatch = new CountDownLatch(numThreads);
+		final Set<Throwable> exceptions = ConcurrentHashMap.newKeySet();
 		for (int i = 0; i < numThreads; i++) {
 			new Thread(new Runnable() {
 				public void run() {
@@ -1056,15 +1058,22 @@ public abstract class AbstractLuceneSailTest {
 									vf.createLiteral(i));
 						}
 					}
-					catch (InterruptedException e) {
+					catch (Throwable e) {
+						exceptions.add(e);
 						throw new AssertionError(e);
 					}
-					endLatch.countDown();
+					finally {
+						endLatch.countDown();
+					}
 				}
 			}).start();
 		}
 		startLatch.countDown();
 		endLatch.await();
+		assertEquals(0, exceptions.size());
+		for(Throwable e : exceptions) {
+			throw new AssertionError(e);
+		}
 	}
 
 	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri)
