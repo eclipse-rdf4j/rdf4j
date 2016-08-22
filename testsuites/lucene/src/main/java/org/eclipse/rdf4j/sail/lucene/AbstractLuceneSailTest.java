@@ -61,7 +61,7 @@ public abstract class AbstractLuceneSailTest {
 
 	@Rule
 	public Timeout timeout = new Timeout(10, TimeUnit.MINUTES);
-	
+
 	protected static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	public static final String QUERY_STRING;
@@ -1055,9 +1055,9 @@ public abstract class AbstractLuceneSailTest {
 		final Set<Throwable> exceptions = ConcurrentHashMap.newKeySet();
 		for (int i = 0; i < numThreads; i++) {
 			new Thread(new Runnable() {
+
 				public void run() {
-					try (RepositoryConnection con = repository.getConnection())
-					{
+					try (RepositoryConnection con = repository.getConnection()) {
 						startLatch.await();
 						for (int i = 0; i < 10; i++) {
 							con.add(vf.createIRI("ex:" + i), vf.createIRI("ex:prop" + i % 3),
@@ -1076,10 +1076,11 @@ public abstract class AbstractLuceneSailTest {
 		}
 		startLatch.countDown();
 		endLatch.await();
-		assertEquals(0, exceptions.size());
-		for(Throwable e : exceptions) {
-			throw new AssertionError(e);
+		for (Throwable e : exceptions) {
+			e.printStackTrace(System.err);
 		}
+		assertEquals("Exceptions occurred during testMultithreadedAdd, see stacktraces above", 0,
+				exceptions.size());
 	}
 
 	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri)
