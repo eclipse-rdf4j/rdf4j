@@ -128,10 +128,7 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	 * Creates a new RDFXMLParser that will use a {@link SimpleValueFactory} to create RDF model objects.
 	 */
 	public RDFXMLParser() {
-		super();
-
-		// SAXFilter does some filtering and verifying of SAX events
-		saxFilter = new SAXFilter(this);
+		this(SimpleValueFactory.getInstance());
 	}
 
 	/**
