@@ -14,6 +14,8 @@ import java.util.Collection;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandler;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
+import org.eclipse.rdf4j.rio.ParseErrorListener;
+import org.eclipse.rdf4j.rio.ParseLocationListener;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RioSetting;
 
@@ -38,7 +40,7 @@ public interface QueryResultParser {
 	 * @param handler
 	 *        The {@link QueryResultHandler} to use for handling results.
 	 */
-	void setQueryResultHandler(QueryResultHandler handler);
+	QueryResultParser setQueryResultHandler(QueryResultHandler handler);
 
 	/**
 	 * Sets the ValueFactory that the parser will use to create Value objects for the parsed query result.
@@ -46,7 +48,27 @@ public interface QueryResultParser {
 	 * @param valueFactory
 	 *        The value factory that the parser should use.
 	 */
-	void setValueFactory(ValueFactory valueFactory);
+	QueryResultParser setValueFactory(ValueFactory valueFactory);
+
+	/**
+	 * Sets the ParseErrorListener that will be notified of any errors that this parser finds during parsing.
+	 * 
+	 * @param el
+	 *        The ParseErrorListener that will be notified of errors or warnings.
+	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
+	 *         calls.
+	 */
+	QueryResultParser setParseErrorListener(ParseErrorListener el);
+
+	/**
+	 * Sets the ParseLocationListener that will be notified of the parser's progress during the parse process.
+	 * 
+	 * @param ll
+	 *        The ParseLocationListener that will be notified of the parser's progress.
+	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
+	 *         calls.
+	 */
+	QueryResultParser setParseLocationListener(ParseLocationListener ll);
 
 	/**
 	 * Parse the query results out of the given {@link InputStream} into the handler setup using
@@ -71,18 +93,30 @@ public interface QueryResultParser {
 	 * @param config
 	 *        a parser configuration object.
 	 */
-	public void setParserConfig(ParserConfig config);
+	QueryResultParser setParserConfig(ParserConfig config);
 
 	/**
 	 * Retrieves the current parser configuration as a single object.
 	 * 
 	 * @return a parser configuration object representing the current configuration of the parser.
 	 */
-	public ParserConfig getParserConfig();
+	ParserConfig getParserConfig();
 
 	/**
 	 * @return A collection of {@link RioSetting}s that are supported by this QueryResultParser.
 	 */
-	public Collection<RioSetting<?>> getSupportedSettings();
+	Collection<RioSetting<?>> getSupportedSettings();
+
+	/**
+	 * Set a setting on the parser, and return this parser object to allow chaining.
+	 * 
+	 * @param setting
+	 *        The setting to change.
+	 * @param value
+	 *        The value to change.
+	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method
+	 *         calls.
+	 */
+	<T> QueryResultParser set(RioSetting<T> setting, T value);
 
 }
