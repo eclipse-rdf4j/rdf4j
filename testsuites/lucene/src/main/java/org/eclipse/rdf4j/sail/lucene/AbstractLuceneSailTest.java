@@ -27,7 +27,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -51,9 +53,14 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.Timeout;
 
 public abstract class AbstractLuceneSailTest {
+
+	@Rule
+	public Timeout timeout = new Timeout(10, TimeUnit.MINUTES);
 
 	protected static final ValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -1045,26 +1052,35 @@ public abstract class AbstractLuceneSailTest {
 		int numThreads = 3;
 		final CountDownLatch startLatch = new CountDownLatch(1);
 		final CountDownLatch endLatch = new CountDownLatch(numThreads);
+		final Set<Throwable> exceptions = ConcurrentHashMap.newKeySet();
 		for (int i = 0; i < numThreads; i++) {
 			new Thread(new Runnable() {
+
 				public void run() {
-					try (RepositoryConnection con = repository.getConnection())
-					{
+					try (RepositoryConnection con = repository.getConnection()) {
 						startLatch.await();
 						for (int i = 0; i < 10; i++) {
 							con.add(vf.createIRI("ex:" + i), vf.createIRI("ex:prop" + i % 3),
 									vf.createLiteral(i));
 						}
 					}
-					catch (InterruptedException e) {
+					catch (Throwable e) {
+						exceptions.add(e);
 						throw new AssertionError(e);
 					}
-					endLatch.countDown();
+					finally {
+						endLatch.countDown();
+					}
 				}
 			}).start();
 		}
 		startLatch.countDown();
 		endLatch.await();
+		for (Throwable e : exceptions) {
+			e.printStackTrace(System.err);
+		}
+		assertEquals("Exceptions occurred during testMultithreadedAdd, see stacktraces above", 0,
+				exceptions.size());
 	}
 
 	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri)
