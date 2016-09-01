@@ -16,14 +16,15 @@ import org.eclipse.rdf4j.rio.turtle.TurtleWriterFactory;
 /**
  * @author Arjohn Kampman
  */
-public class TurtleWriterTest extends RDFWriterTest {
+public class TurtlePrettyWriterTest extends RDFWriterTest {
 
-	public TurtleWriterTest() {
+	public TurtlePrettyWriterTest() {
 		super(new TurtleWriterFactory(), new TurtleParserFactory());
 	}
-
+	
 	@Override
 	protected void setupWriterConfig(WriterConfig config) {
-		config.set(BasicWriterSettings.PRETTY_PRINT, false);
+		config.set(BasicWriterSettings.PRETTY_PRINT, true);
 	}
+
 }

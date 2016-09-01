@@ -353,8 +353,17 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 
 					if (!nextContexts.isEmpty()) {
 						for (final String nextContext : nextContexts) {
-							final Resource context = nextContext.equals(RDFJSONUtility.NULL) ? null
-									: vf.createIRI(nextContext);
+							final Resource context;
+							
+							if(nextContext.equals(RDFJSONUtility.NULL)) {
+								context = null;
+							}
+							else if(nextContext.startsWith("_:")) {
+								context = vf.createBNode(nextContext.substring(2));
+							}
+							else {
+								context = vf.createIRI(nextContext);
+							}
 							Statement st = vf.createStatement(subject, predicate, object, context);
 							if (handler != null) {
 								handler.handleStatement(st);

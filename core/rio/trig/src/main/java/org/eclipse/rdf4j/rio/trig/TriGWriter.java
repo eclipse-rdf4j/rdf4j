@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Writer;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -100,6 +101,25 @@ public class TriGWriter extends TurtleWriter {
 			throw new RuntimeException("Document writing has not yet been started");
 		}
 
+		// If we are pretty-printing, all writing is buffered until endRDF is called
+		if (prettyPrintModel != null) {
+			prettyPrintModel.add(st);
+		}
+		else {
+			handleStatementInternal(st, false, false, false);
+		}
+	}
+
+	protected void handleStatementInternal(Statement st, boolean endRDFCalled, boolean canShortenSubject,
+			boolean canShortenObject)
+	{
+		// Avoid accidentally writing statements early, but don't lose track of
+		// them if they are sent here
+		if (prettyPrintModel != null && !endRDFCalled) {
+			prettyPrintModel.add(st);
+			return;
+		}
+
 		try {
 			Resource context = st.getContext();
 
@@ -112,7 +132,15 @@ public class TriGWriter extends TurtleWriter {
 				writer.writeEOL();
 
 				if (context != null) {
-					writeResource(context);
+					boolean canShortenContext = false;
+					if (context instanceof BNode) {
+						if (prettyPrintModel != null && !prettyPrintModel.contains(context, null, null)
+								&& !prettyPrintModel.contains(null, null, context))
+						{
+							canShortenContext = true;
+						}
+					}
+					writeResource(context, canShortenContext);
 					writer.write(" ");
 				}
 
@@ -127,14 +155,16 @@ public class TriGWriter extends TurtleWriter {
 			throw new RDFHandlerException(e);
 		}
 
-		super.handleStatement(st);
+		// If we get to this point, switch endRDFCalled to true so writing occurs
+		super.handleStatementInternal(st, true, canShortenSubject, canShortenObject);
 	}
 
 	@Override
 	protected void writeCommentLine(String line)
 		throws IOException
 	{
-		closeActiveContext();
+		// Comments can be written anywhere, so disabling this
+		//closeActiveContext();
 		super.writeCommentLine(line);
 	}
 
@@ -142,6 +172,10 @@ public class TriGWriter extends TurtleWriter {
 	protected void writeNamespace(String prefix, String name)
 		throws IOException
 	{
+		if (currentContext != null && currentContext instanceof BNode) {
+			// FIXME: No formal way to warn the user that things may break in this situation
+		}
+		// TriG spec requires that we close the active context before writing a namespace declaration
 		closeActiveContext();
 		super.writeNamespace(prefix, name);
 	}
