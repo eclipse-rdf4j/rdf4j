@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
-import java.util.Iterator;
-import java.util.List;
-
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+
+import java.util.Iterator;
+import java.util.List;
 
 /**
  * Iteration which forms the cross product of a list of materialized input bindings with each result obtained
@@ -72,7 +72,11 @@ public class CrossProductIteration extends LookAheadIteration<BindingSet, QueryE
 	protected void handleClose()
 		throws QueryEvaluationException
 	{
-		super.handleClose();
-		resultIteration.close();
+		try {
+			super.handleClose();
+		}
+		finally {
+			resultIteration.close();
+		}
 	}
 }
