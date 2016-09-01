@@ -55,15 +55,11 @@
 			<filtered>true</filtered>
 		</file>
 		<file>
-			<source>../../edl-v1.0.txt</source>
+			<source>../../license.html</source>
 			<outputDirectory/>
 		</file>
 		<file>
-			<source>../../about.md</source>
-			<outputDirectory/>
-		</file>
-		<file>
-			<source>../../notice.md</source>
+			<source>../../about.html</source>
 			<outputDirectory/>
 		</file>
 	</files>
