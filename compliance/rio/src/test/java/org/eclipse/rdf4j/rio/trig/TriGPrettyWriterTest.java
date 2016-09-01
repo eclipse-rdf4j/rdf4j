@@ -5,25 +5,28 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.rio.turtle;
+package org.eclipse.rdf4j.rio.trig;
 
 import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.eclipse.rdf4j.rio.turtle.TurtleParserFactory;
-import org.eclipse.rdf4j.rio.turtle.TurtleWriterFactory;
+import org.eclipse.rdf4j.rio.trig.TriGParserFactory;
+import org.eclipse.rdf4j.rio.trig.TriGWriterFactory;
 
 /**
- * @author Arjohn Kampman
+ * Unit tests for the TriG pretty printing functionality
+ * 
+ * @author Peter Ansell
  */
-public class TurtleWriterTest extends RDFWriterTest {
+public class TriGPrettyWriterTest extends RDFWriterTest {
 
-	public TurtleWriterTest() {
-		super(new TurtleWriterFactory(), new TurtleParserFactory());
+	public TriGPrettyWriterTest() {
+		super(new TriGWriterFactory(), new TriGParserFactory());
 	}
 
 	@Override
 	protected void setupWriterConfig(WriterConfig config) {
-		config.set(BasicWriterSettings.PRETTY_PRINT, false);
+		config.set(BasicWriterSettings.PRETTY_PRINT, true);
 	}
+
 }
