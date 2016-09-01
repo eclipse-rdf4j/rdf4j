@@ -1,8 +1,8 @@
-== Setup
+= Setup
 
 Before you can get started programming with RDF4J, you will need to set up your development environment, download the necessary, libraries, and so on. This chapter gives you some pointers on how to install the RDF4J libraries and how to initialize your project.
 
-=== Using Apache Maven
+== Using Apache Maven
 
 By far the most flexible and useful way to include RDF4J in your project, is to
 use Maven. Apache Maven is a software management tool that helps you by
@@ -14,12 +14,12 @@ Maven, we advise you to take a look at the http://maven.apache.org/[Apache
 Maven website]. If you are familiar with Maven, here are a few pointers to help
 set up your maven project.
 
-==== Maven Repository
+=== Maven Repository
 
 RDF4J is available from the Central Repository, which means you don’t need to
 add an additional repository configuration to your project.
 
-==== Maven Artifacts
+=== Maven Artifacts
 
 The groupId for all RDF4J core artifacts is org.eclipse.rdf4j. To include a maven dependency in your project that automatically gets you the entire RDF$J core framework, use artifactId rdf4j-runtime:
 
@@ -39,7 +39,7 @@ course, it’s up to you to vary on these basic scenarios and figure exactly
 which components you need (and if you don’t want to bother you can always just
 use the ‘everything and the kitchen sink’ rdf4j-runtime dependency).
 
-==== Simple local storage and querying of RDF
+=== Simple local storage and querying of RDF
 
 If you require functionality for quick in-memory storage and querying of RDF,
 you will need to include dependencies on the SAIL repository module (artifactId
@@ -71,7 +71,7 @@ A straightforward variation on this scenario is of course if you decide you need
     </dependency>
 ----
 
-==== Parsing / writing RDF files
+=== Parsing / writing RDF files
 
 The RDF4J parser toolkit is called Rio, and it is split in several modules: one
 for its main API (rdf4j-rio-api), and one for each specific syntax format. If
@@ -96,7 +96,7 @@ already):
 </dependency>
 ----
 
-==== Accessing a remote RDF4J Server
+=== Accessing a remote RDF4J Server
 
 If your project only needs functionality to query/manipulate a remotely running
 RDF4J Server, you can stick to just including the HTTPRepository module
@@ -111,7 +111,7 @@ RDF4J Server, you can stick to just including the HTTPRepository module
 </dependency>
 ----
 
-==== Accessing a SPARQL endpoint
+=== Accessing a SPARQL endpoint
 
 If you want to have functionality to query a remote SPARQL endpoint, such as
 DBPedia, you can use the SPARQLRepository module  (rdf4j-repository-sparql):
@@ -125,7 +125,7 @@ DBPedia, you can use the SPARQLRepository module  (rdf4j-repository-sparql):
 </dependency>
 ----
 
-==== Using the BOM (Bill Of Materials)
+=== Using the BOM (Bill Of Materials)
 
 A problem in larger projects is a thing called ‘version mismatch’: one part of
 your project uses version 1.0 of a particular RDF4J artifact, and another part
@@ -160,7 +160,7 @@ dependency, but you can leave out the version number in that dependency. The
 included BOM ensures that all included RDF4J artifacts throughout your project
 will use version 2.0.
 
-=== Using the onejar or SDK distribution
+== Using the onejar or SDK distribution
 
 If you are not familiar with Apache Maven, an alternative way to get started
 with using the RDF4J libraries is to download the RDF4J onejar library and
@@ -184,7 +184,7 @@ that you require. The SDK distribution contains all RDF4J libraries as
 individual jar files, and in addition it also contains all the third-party
 libraries you need work with RDF4J.
 
-=== Logging: SLF4J initialization
+== Logging: SLF4J initialization
 
 Before you begin using any of the RDF4J libraries, one important configuration
 step needs to be taken: the initialization and configuration of a logging

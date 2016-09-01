@@ -1,10 +1,11 @@
-== The RDF Model API
+= The RDF Model API
+:imagesdir: images
 
 The RDF Model API is the core of the RDF4J framework. It provides the basic
 building blocks for manipulating RDF data in Java. In this chapter, we
 introduce these basic building blocks and show some example on hot to use them.
 
-=== RDF Building Blocks: IRIs, literals, blank nodes and statements
+== RDF Building Blocks: IRIs, literals, blank nodes and statements
 
 The core of the RDF4J framework is the RDF Model API (see the Model API
 Javadoc). This API defines how the building blocks of RDF (statements, IRIs,
@@ -53,7 +54,7 @@ later):
 Statement typeStatement = factory.createStatement(bob, RDF.TYPE, FOAF.PERSON);
 ----
 
-=== The Model interface
+== The Model interface
 
 The above interfaces and classes show how we can create the individual building
 blocks that make up an RDF model. However, an actual collection of RDF data is
@@ -119,7 +120,7 @@ their respective javadoc entries for details). These differences are only
 really noticable when dealing with quite large collections of statements,
 however.  
 
-=== RDF Collections
+== RDF Collections
 
 To model closed lists of items, RDF provides a Collection vocabulary . RDF
 Collections are represented as a list of items using a Lisp-like structure.
@@ -132,7 +133,7 @@ As an example, a list containing three values, “A”, “B”, and “C” loo
 this as an RDF Collection:
 
 [[img-collection]]
-image::images/rdf-collection.svg[title="An RDF Collection containing three items"]
+image::rdf-collection.svg[title="An RDF Collection containing three items"]
 
 Here, the blank node _:n1 is the head resource of the list. In this example it
 is declared an instance of rdf:List, however this is not required for the
@@ -146,7 +147,7 @@ Working with this kind of structure directly is rather cumbersome. To make life
 a little easier, the RDF4J API provide several utilities to convert between
 Java Collections and RDF Collections.
 
-==== Converting to/from Java Collections
+=== Converting to/from Java Collections
 
 As an example, suppose we wish to add the above list of three string literals
 as a property value for the property ex:favoriteLetters of ex:John .
@@ -186,7 +187,7 @@ if(node != null) {
 }
 ----
 
-==== Extracting, copying, or deleting an RDF Collection
+=== Extracting, copying, or deleting an RDF Collection
 
 To extract an RDF Collection from the model which contains it, we can do the following:
 

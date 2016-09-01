@@ -1,17 +1,18 @@
 Programming with RDF4J
 ======================
 :source-highlighter: prettify
+:imagesdir: images
 :sectnums:
 :toc: left
 :toclevels: 4
 
-include::chapters/setup.adoc[]
+include::01-setup.adoc[leveloffset=+1]
 
-include::chapters/model-api.adoc[]
+include::02-model-api.adoc[leveloffset=+1]
 
-include::chapters/repository-api.adoc[]
+include::03-repository-api.adoc[leveloffset=+1]
 
-include::chapters/rio.adoc[]
+include::04-rio.adoc[leveloffset=+1]
 
-include::chapters/custom-sails.adoc[]
+include::05-custom-sails.adoc[leveloffset=+1]
 
