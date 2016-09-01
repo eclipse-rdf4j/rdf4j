@@ -69,6 +69,18 @@
 			</properties>
 		</profile>
 		<profile>
+			<id>localBuild</id>
+			<activation>
+				<property>
+					<!-- activate if property 'hudsonBuild' is not set -->
+					<name>!hudsonBuild</name>
+				</property>
+			</activation>
+			<properties>
+				<hudson.rdf4j.proxy.opts/>
+			</properties>
+		</profile>
+		<profile>
 			<id>ossrh</id>
 			<distributionManagement>
 				<snapshotRepository>
