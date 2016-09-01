@@ -1,0 +1,17 @@
+Programming with RDF4J
+======================
+:source-highlighter: prettify
+:sectnums:
+:toc: left
+:toclevels: 4
+
+include::chapters/setup.adoc[]
+
+include::chapters/model-api.adoc[]
+
+include::chapters/repository-api.adoc[]
+
+include::chapters/rio.adoc[]
+
+include::chapters/custom-sails.adoc[]
+
