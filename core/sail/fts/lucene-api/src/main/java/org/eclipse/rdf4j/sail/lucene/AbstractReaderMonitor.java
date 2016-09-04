@@ -22,10 +22,10 @@ public abstract class AbstractReaderMonitor {
 
 	private final AtomicInteger readingCount = new AtomicInteger(0);
 
-	private boolean doClose = false;
+	private final AtomicBoolean doClose = new AtomicBoolean(false);
 
 	// Remember index to be able to remove itself from the index list
-	final private AbstractLuceneIndex index;
+	private final AbstractLuceneIndex index;
 
 	private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -52,7 +52,7 @@ public abstract class AbstractReaderMonitor {
 	public void endReading()
 		throws IOException
 	{
-		if (readingCount.decrementAndGet() == 0 && doClose) {
+		if (readingCount.decrementAndGet() == 0 && doClose.get()) {
 			// when endReading is called on CurrentMonitor and it should be closed,
 			// close it
 			close();// close Lucene index remove them self from Lucene index
@@ -72,7 +72,7 @@ public abstract class AbstractReaderMonitor {
 	public boolean closeWhenPossible()
 		throws IOException
 	{
-		doClose = true;
+		doClose.set(true);
 		if (readingCount.get() == 0) {
 			close();
 		}
@@ -88,6 +88,8 @@ public abstract class AbstractReaderMonitor {
 	}
 
 	/**
+	 * This method is thread-safe (i.e. it is not called concurrently).
+	 * 
 	 * @throws IOException
 	 */
 	protected abstract void handleClose()
