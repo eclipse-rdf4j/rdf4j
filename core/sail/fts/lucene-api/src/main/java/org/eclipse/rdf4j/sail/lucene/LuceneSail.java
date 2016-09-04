@@ -251,6 +251,11 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public static final String INCOMPLETE_QUERY_FAIL_KEY = "incompletequeryfail";
 
 	/**
+	 * Set this key to "false" to disable late evaluation of search queries.
+	 */
+	public static final String LATE_EVALUATION_KEY = "lateEvaluation";
+
+	/**
 	 * The LuceneIndex holding the indexed literals.
 	 */
 	private SearchIndex luceneIndex;
@@ -260,6 +265,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 	private String reindexQuery = "SELECT ?s ?p ?o ?c WHERE {{?s ?p ?o} UNION {GRAPH ?c {?s ?p ?o.}}} ORDER BY ?s";
 
 	private boolean incompleteQueryFails = true;
+
+	private boolean useTupleFunctions = true;
 
 	private Set<IRI> indexedFields;
 
@@ -343,6 +350,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 			if (parameters.containsKey(INCOMPLETE_QUERY_FAIL_KEY))
 				setIncompleteQueryFails(
 						Boolean.parseBoolean(parameters.getProperty(INCOMPLETE_QUERY_FAIL_KEY)));
+			if (parameters.containsKey(LATE_EVALUATION_KEY))
+				useTupleFunctions = Boolean.parseBoolean(parameters.getProperty(LATE_EVALUATION_KEY));
 			if (luceneIndex == null) {
 				initializeLuceneIndex();
 			}
@@ -516,7 +525,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	protected Collection<SearchQueryInterpreter> getSearchQueryInterpreters() {
-		return Arrays.<SearchQueryInterpreter> asList(new QuerySpecBuilder(incompleteQueryFails),
+		return Arrays.<SearchQueryInterpreter> asList(
+				new QuerySpecBuilder(incompleteQueryFails, useTupleFunctions),
 				new DistanceQuerySpecBuilder(luceneIndex), new GeoRelationQuerySpecBuilder(luceneIndex));
 	}
 }
