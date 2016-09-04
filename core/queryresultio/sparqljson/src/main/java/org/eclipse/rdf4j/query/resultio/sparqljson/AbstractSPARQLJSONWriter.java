@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.query.resultio.sparqljson;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -35,8 +35,9 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.util.DefaultIndenter;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
-import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Lf2SpacesIndenter;
+import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
 
 /**
  * An abstract class to implement the base functionality for both SPARQLBooleanJSONWriter and
@@ -79,7 +80,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 
 	public AbstractSPARQLJSONWriter(OutputStream out) {
 		try {
-			jg = JSON_FACTORY.createJsonGenerator(new OutputStreamWriter(out, Charset.forName("UTF-8")));
+			jg = JSON_FACTORY.createGenerator(new OutputStreamWriter(out, StandardCharsets.UTF_8));
 		}
 		catch (IOException e) {
 			throw new IllegalArgumentException(e);
@@ -238,7 +239,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 
 			if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {
 				// SES-2011: Always use \n for consistency
-				Lf2SpacesIndenter indenter = Lf2SpacesIndenter.instance.withLinefeed("\n");
+				Indenter indenter = DefaultIndenter.SYSTEM_LINEFEED_INSTANCE;
 				// By default Jackson does not pretty print, so enable this unless
 				// PRETTY_PRINT setting is disabled
 				DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(
