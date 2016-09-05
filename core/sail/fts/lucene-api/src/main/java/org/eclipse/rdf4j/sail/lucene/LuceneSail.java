@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -253,13 +254,13 @@ public class LuceneSail extends NotifyingSailWrapper {
 	/**
 	 * The LuceneIndex holding the indexed literals.
 	 */
-	private SearchIndex luceneIndex;
+	private volatile SearchIndex luceneIndex;
 
 	protected final Properties parameters = new Properties();
 
-	private String reindexQuery = "SELECT ?s ?p ?o ?c WHERE {{?s ?p ?o} UNION {GRAPH ?c {?s ?p ?o.}}} ORDER BY ?s";
+	private volatile String reindexQuery = "SELECT ?s ?p ?o ?c WHERE {{?s ?p ?o} UNION {GRAPH ?c {?s ?p ?o.}}} ORDER BY ?s";
 
-	private boolean incompleteQueryFails = true;
+	private volatile boolean incompleteQueryFails = true;
 
 	private Set<IRI> indexedFields;
 
@@ -267,6 +268,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	private IndexableStatementFilter filter = null;
 
+	private final AtomicBoolean closed = new AtomicBoolean(false);
+	
 	public void setLuceneIndex(SearchIndex luceneIndex) {
 		this.luceneIndex = luceneIndex;
 	}
@@ -286,18 +289,22 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public void shutDown()
 		throws SailException
 	{
-		try {
-			if (luceneIndex != null) {
-				luceneIndex.shutDown();
+		if(closed.compareAndSet(false, true)) {
+			try {
+				SearchIndex toShutDownLuceneIndex = luceneIndex;
+				luceneIndex = null;
+				if (toShutDownLuceneIndex != null) {
+					toShutDownLuceneIndex.shutDown();
+				}
 			}
-		}
-		catch (IOException e) {
-			throw new SailException(e);
-		}
-		finally {
-			// ensure that super is also invoked when the LuceneIndex causes an
-			// IOException
-			super.shutDown();
+			catch (IOException e) {
+				throw new SailException(e);
+			}
+			finally {
+				// ensure that super is also invoked when the LuceneIndex causes an
+				// IOException
+				super.shutDown();
+			}
 		}
 	}
 
@@ -492,27 +499,33 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	protected boolean acceptStatementToIndex(Statement s) {
-		return (filter != null) ? filter.accept(s) : true;
+		IndexableStatementFilter nextFilter = filter;
+		return (nextFilter != null) ? nextFilter.accept(s) : true;
 	}
 
 	public Statement mapStatement(Statement statement) {
 		IRI p = statement.getPredicate();
 		boolean predicateChanged = false;
-		if (indexedFieldsMapping != null) {
-			IRI res = indexedFieldsMapping.get(p);
+		Map<IRI, IRI> nextIndexedFieldsMapping = indexedFieldsMapping;
+		if (nextIndexedFieldsMapping != null) {
+			IRI res = nextIndexedFieldsMapping.get(p);
 			if (res != null) {
 				p = res;
 				predicateChanged = true;
 			}
 		}
-		if (this.indexedFields != null && !this.indexedFields.contains(p))
+		Set<IRI> nextIndexedFields = indexedFields;
+		if (nextIndexedFields != null && !nextIndexedFields.contains(p)) {
 			return null;
+		}
 
-		if (predicateChanged)
+		if (predicateChanged) {
 			return getValueFactory().createStatement(statement.getSubject(), p, statement.getObject(),
 					statement.getContext());
-		else
+		}
+		else {
 			return statement;
+		}
 	}
 
 	protected Collection<SearchQueryInterpreter> getSearchQueryInterpreters() {
