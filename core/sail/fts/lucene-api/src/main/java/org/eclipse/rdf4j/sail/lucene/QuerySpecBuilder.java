@@ -49,7 +49,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 
 	private final boolean incompleteQueryFails;
 
-	private final boolean useTupleFunction;
+	private final String evaluationMode;
 
 	/**
 	 * Initialize a new QuerySpecBuilder
@@ -58,12 +58,12 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 	 *        see {@link LuceneSail#isIncompleteQueryFails()}
 	 */
 	public QuerySpecBuilder(boolean incompleteQueryFails) {
-		this(incompleteQueryFails, false);
+		this(incompleteQueryFails, LuceneSail.EAGER_EVALUATION_MODE);
 	}
 
-	public QuerySpecBuilder(boolean incompleteQueryFails, boolean useTupleFunction) {
+	public QuerySpecBuilder(boolean incompleteQueryFails, String evaluationMode) {
 		this.incompleteQueryFails = incompleteQueryFails;
-		this.useTupleFunction = useTupleFunction;
+		this.evaluationMode = evaluationMode;
 	}
 
 	/**
@@ -185,44 +185,50 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 				logger.debug("Query variable '{}' has not rdf:type, assuming {}", subject, LUCENE_QUERY);
 			}
 
-			if(useTupleFunction)
-			{
-				TupleFunctionCall funcCall = new TupleFunctionCall();
-				funcCall.setURI(LuceneSailSchema.SEARCH.toString());
-				funcCall.addArg(queryPattern.getObjectVar());
-				if (subject != null) {
-					funcCall.addArg(matchesPattern.getSubjectVar());
-				}
-				else {
-					funcCall.addArg(new ValueConstant(LuceneSailSchema.ALL_MATCHES));
-					funcCall.addResultVar(matchesPattern.getSubjectVar());
-				}
-				if (propertyPattern != null) {
-					funcCall.addArg(new ValueConstant(LuceneSailSchema.PROPERTY));
-					if (propertyURI != null) {
-						funcCall.addArg(propertyPattern.getObjectVar());
+			switch (evaluationMode) {
+				case LuceneSail.NATIVE_EVALUATION_MODE:
+				case LuceneSail.TRIPLE_SOURCE_EVALUATION_MODE: {
+					TupleFunctionCall funcCall = new TupleFunctionCall();
+					funcCall.setURI(LuceneSailSchema.SEARCH.toString());
+					funcCall.addArg(queryPattern.getObjectVar());
+					if (subject != null) {
+						funcCall.addArg(matchesPattern.getSubjectVar());
 					}
 					else {
-						funcCall.addArg(new ValueConstant(LuceneSailSchema.ALL_PROPERTIES));
-						funcCall.addResultVar(propertyPattern.getObjectVar());
+						funcCall.addArg(new ValueConstant(LuceneSailSchema.ALL_MATCHES));
+						funcCall.addResultVar(matchesPattern.getSubjectVar());
 					}
-				}
-				if (scoreVar != null) {
-					funcCall.addArg(new ValueConstant(LuceneSailSchema.SCORE));
-					funcCall.addResultVar(scoreVar);
-				}
-				if (snippetVar != null) {
-					funcCall.addArg(new ValueConstant(LuceneSailSchema.SNIPPET));
-					funcCall.addResultVar(snippetVar);
-				}
+					if (propertyPattern != null) {
+						funcCall.addArg(new ValueConstant(LuceneSailSchema.PROPERTY));
+						if (propertyURI != null) {
+							funcCall.addArg(propertyPattern.getObjectVar());
+						}
+						else {
+							funcCall.addArg(new ValueConstant(LuceneSailSchema.ALL_PROPERTIES));
+							funcCall.addResultVar(propertyPattern.getObjectVar());
+						}
+					}
+					if (scoreVar != null) {
+						funcCall.addArg(new ValueConstant(LuceneSailSchema.SCORE));
+						funcCall.addResultVar(scoreVar);
+					}
+					if (snippetVar != null) {
+						funcCall.addArg(new ValueConstant(LuceneSailSchema.SNIPPET));
+						funcCall.addResultVar(snippetVar);
+					}
 
-				matchesPattern.replaceWith(funcCall);
-			}
-			else
-			{
-			// register a QuerySpec with these details
-			result.add(new QuerySpec(matchesPattern, queryPattern, propertyPattern, scorePattern,
-					snippetPattern, typePattern, subject, queryString, propertyURI));
+					matchesPattern.replaceWith(funcCall);
+					break;
+				}
+				case LuceneSail.SERVICE_EVALUATION_MODE: {
+					throw new UnsupportedOperationException("TO DO");
+				}
+				case LuceneSail.EAGER_EVALUATION_MODE:
+				default: {
+					// register a QuerySpec with these details
+					result.add(new QuerySpec(matchesPattern, queryPattern, propertyPattern, scorePattern,
+							snippetPattern, typePattern, subject, queryString, propertyURI));
+				}
 			}
 		}
 

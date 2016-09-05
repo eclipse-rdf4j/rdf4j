@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -253,7 +255,29 @@ public class LuceneSail extends NotifyingSailWrapper {
 	/**
 	 * Set this key to "false" to disable late evaluation of search queries.
 	 */
-	public static final String LATE_EVALUATION_KEY = "lateEvaluation";
+	public static final String EVALUATION_MODE_KEY = "evaluationMode";
+
+	/**
+	 * Eagerly evaluates any search queries and then delegates to the base SAIL.
+	 */
+	public static final String EAGER_EVALUATION_MODE = "eager";
+
+	/**
+	 * Uses the base SAIL along with an embedded SERVICE to perform query evaluation. The SERVICE is used to
+	 * evaluate extended query algebra nodes such as {@link TupleFunction}s.
+	 */
+	public static final String SERVICE_EVALUATION_MODE = "service";
+
+	/**
+	 * Assumes the base SAIL supports an extended query algebra (e.g. {@link TupleFunction}s) and use it to
+	 * perform all query evaluation.
+	 */
+	public static final String NATIVE_EVALUATION_MODE = "native";
+
+	/**
+	 * Treats the base SAIL as a simple triple source and all the query evaluation is performed by this SAIL.
+	 */
+	public static final String TRIPLE_SOURCE_EVALUATION_MODE = "tripleSource";
 
 	/**
 	 * The LuceneIndex holding the indexed literals.
@@ -266,7 +290,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	private boolean incompleteQueryFails = true;
 
-	private boolean useTupleFunctions = true;
+	private volatile String evaluationMode = TRIPLE_SOURCE_EVALUATION_MODE;
 
 	private Set<IRI> indexedFields;
 
@@ -350,8 +374,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 			if (parameters.containsKey(INCOMPLETE_QUERY_FAIL_KEY))
 				setIncompleteQueryFails(
 						Boolean.parseBoolean(parameters.getProperty(INCOMPLETE_QUERY_FAIL_KEY)));
-			if (parameters.containsKey(LATE_EVALUATION_KEY))
-				useTupleFunctions = Boolean.parseBoolean(parameters.getProperty(LATE_EVALUATION_KEY));
+			if (parameters.containsKey(EVALUATION_MODE_KEY))
+				setEvaluationMode(parameters.getProperty(EVALUATION_MODE_KEY));
 			if (luceneIndex == null) {
 				initializeLuceneIndex();
 			}
@@ -418,6 +442,22 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public void setIncompleteQueryFails(boolean incompleteQueryFails) {
 		this.setParameter(INCOMPLETE_QUERY_FAIL_KEY, Boolean.toString(incompleteQueryFails));
 		this.incompleteQueryFails = incompleteQueryFails;
+	}
+
+	/**
+	 * See EVALUATION_MODE_KEY parameter.
+	 */
+	public String getEvaluationMode() {
+		return evaluationMode;
+	}
+
+	/**
+	 * See EVALUATION_MODE_KEY parameter.
+	 */
+	public void setEvaluationMode(String mode) {
+		Objects.requireNonNull(mode);
+		this.setParameter(EVALUATION_MODE_KEY, mode);
+		this.evaluationMode = mode;
 	}
 
 	/**
@@ -526,7 +566,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	protected Collection<SearchQueryInterpreter> getSearchQueryInterpreters() {
 		return Arrays.<SearchQueryInterpreter> asList(
-				new QuerySpecBuilder(incompleteQueryFails, useTupleFunctions),
+				new QuerySpecBuilder(incompleteQueryFails, evaluationMode),
 				new DistanceQuerySpecBuilder(luceneIndex), new GeoRelationQuerySpecBuilder(luceneIndex));
 	}
 }
