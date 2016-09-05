@@ -34,7 +34,7 @@ public class QueryTupleFunction implements TupleFunction {
 		throws QueryEvaluationException
 	{
 		// TODO Auto-generated method stub
-		return null;
+		throw new UnsupportedOperationException("TODO");
 	}
 
 }
