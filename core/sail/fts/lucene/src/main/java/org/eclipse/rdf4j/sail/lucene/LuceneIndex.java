@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.lucene;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.lang.reflect.UndeclaredThrowableException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -16,11 +17,13 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
@@ -95,7 +98,8 @@ import com.spatial4j.core.shape.Shape;
 public class LuceneIndex extends AbstractLuceneIndex {
 
 	static {
-		// do NOT set this to Integer.MAX_VALUE, because this breaks fuzzy queries
+		// do NOT set this to Integer.MAX_VALUE, because this breaks fuzzy
+		// queries
 		BooleanQuery.setMaxClauseCount(1024 * 1024);
 	}
 
@@ -106,26 +110,28 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * The Directory that holds the Lucene index files.
 	 */
-	private Directory directory;
+	private volatile Directory directory;
 
 	/**
 	 * The Analyzer used to tokenize strings and queries.
 	 */
-	private Analyzer analyzer;
+	private volatile Analyzer analyzer;
 
-	private Analyzer queryAnalyzer;
+	private volatile Analyzer queryAnalyzer;
 
 	/**
 	 * The IndexWriter that can be used to alter the index' contents. Created lazily.
 	 */
-	private IndexWriter indexWriter;
+	private volatile IndexWriter indexWriter;
 
 	/**
 	 * This holds IndexReader and IndexSearcher.
 	 */
-	protected ReaderMonitor currentMonitor;
+	protected volatile ReaderMonitor currentMonitor;
 
-	private Function<? super String, ? extends SpatialStrategy> geoStrategyMapper;
+	private volatile Function<? super String, ? extends SpatialStrategy> geoStrategyMapper;
+
+	private final AtomicBoolean closed = new AtomicBoolean(false);
 
 	public LuceneIndex() {
 	}
@@ -151,7 +157,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
-	public void initialize(Properties parameters)
+	public synchronized void initialize(Properties parameters)
 		throws Exception
 	{
 		super.initialize(parameters);
@@ -254,15 +260,21 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	// ReaderMonitor directly to be able to close the reader when they
 	// are done.
 
-	public IndexReader getIndexReader()
+	public synchronized IndexReader getIndexReader()
 		throws IOException
 	{
+		if (closed.get()) {
+			throw new SailException("Index has been closed");
+		}
 		return getIndexSearcher().getIndexReader();
 	}
 
-	public IndexSearcher getIndexSearcher()
+	public synchronized IndexSearcher getIndexSearcher()
 		throws IOException
 	{
+		if (closed.get()) {
+			throw new SailException("Index has been closed");
+		}
 		return getCurrentMonitor().getIndexSearcher();
 	}
 
@@ -270,16 +282,22 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * Current monitor holds instance of IndexReader and IndexSearcher It is used to keep track of readers
 	 */
 	@Override
-	public ReaderMonitor getCurrentMonitor() {
-		if (currentMonitor == null)
+	public synchronized ReaderMonitor getCurrentMonitor() {
+		if (closed.get()) {
+			throw new SailException("Index has been closed");
+		}
+		if (currentMonitor == null) {
 			currentMonitor = new ReaderMonitor(this, directory);
+		}
 		return currentMonitor;
 	}
 
-	public IndexWriter getIndexWriter()
+	public synchronized IndexWriter getIndexWriter()
 		throws IOException
 	{
-
+		if (closed.get()) {
+			throw new SailException("Index has been closed");
+		}
 		if (indexWriter == null) {
 			IndexWriterConfig indexWriterConfig = new IndexWriterConfig(analyzer);
 			indexWriter = new IndexWriter(directory, indexWriterConfig);
@@ -294,37 +312,59 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		// try-finally setup ensures that closing of an instance is not skipped
 		// when an earlier instance resulted in an IOException
 		// FIXME: is there a more elegant way to ensure this?
-
-		// This close oldMonitors which hold InderReader and IndexSeracher
-		// Monitor close IndexReader and IndexSearcher
-		if (currentMonitor != null) {
-			currentMonitor.close();
-			currentMonitor = null;
-		}
-		if (oldmonitors.size() > 0) {
-			logger.warn(
-					"LuceneSail: On shutdown {} IndexReaders were not closed. This is due to non-closed Query Iterators, which must be closed!",
-					oldmonitors.size());
-		}
-		for (AbstractReaderMonitor monitor : oldmonitors) {
-			monitor.close();
-		}
-		oldmonitors.clear();
-
-		try {
-			if (indexWriter != null) {
-				indexWriter.close();
+		if (closed.compareAndSet(false, true)) {
+			try {
+				// This close oldMonitors which hold InderReader and
+				// IndexSeracher
+				// Monitor close IndexReader and IndexSearcher
+				ReaderMonitor toCloseCurrentMonitor = currentMonitor;
+				currentMonitor = null;
+				if (toCloseCurrentMonitor != null) {
+					toCloseCurrentMonitor.close();
+				}
 			}
-		}
-		finally {
-			indexWriter = null;
+			finally {
+				List<Throwable> exceptions = new ArrayList<>();
+				try {
+					synchronized (oldmonitors) {
+						if (oldmonitors.size() > 0) {
+							logger.warn(
+									"LuceneSail: On shutdown {} IndexReaders were not closed. This is due to non-closed Query Iterators, which must be closed!",
+									oldmonitors.size());
+						}
+						for (AbstractReaderMonitor monitor : oldmonitors) {
+							try {
+								monitor.close();
+							}
+							catch (Throwable e) {
+								exceptions.add(e);
+							}
+						}
+						oldmonitors.clear();
+					}
+				}
+				finally {
+					try {
+						IndexWriter toCloseIndexWriter = indexWriter;
+						indexWriter = null;
+						if (toCloseIndexWriter != null) {
+							toCloseIndexWriter.close();
+						}
+					}
+					finally {
+						if (!exceptions.isEmpty()) {
+							throw new UndeclaredThrowableException(exceptions.get(0));
+						}
+					}
+				}
+			}
 		}
 	}
 
 	// //////////////////////////////// Methods for updating the index
 
 	@Override
-	protected SearchDocument getDocument(String id)
+	protected synchronized SearchDocument getDocument(String id)
 		throws IOException
 	{
 		Document document = getDocument(idTerm(id));
@@ -332,7 +372,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
-	protected Iterable<? extends SearchDocument> getDocuments(String resourceId)
+	protected synchronized Iterable<? extends SearchDocument> getDocuments(String resourceId)
 		throws IOException
 	{
 		List<Document> docs = getDocuments(new Term(SearchFields.URI_FIELD_NAME, resourceId));
@@ -346,12 +386,12 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
-	protected SearchDocument newDocument(String id, String resourceId, String context) {
+	protected synchronized SearchDocument newDocument(String id, String resourceId, String context) {
 		return new LuceneDocument(id, resourceId, context, geoStrategyMapper);
 	}
 
 	@Override
-	protected SearchDocument copyDocument(SearchDocument doc) {
+	protected synchronized SearchDocument copyDocument(SearchDocument doc) {
 		Document document = ((LuceneDocument)doc).getDocument();
 		Document newDocument = new Document();
 
@@ -363,28 +403,28 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
-	protected void addDocument(SearchDocument doc)
+	protected synchronized void addDocument(SearchDocument doc)
 		throws IOException
 	{
 		getIndexWriter().addDocument(((LuceneDocument)doc).getDocument());
 	}
 
 	@Override
-	protected void updateDocument(SearchDocument doc)
+	protected synchronized void updateDocument(SearchDocument doc)
 		throws IOException
 	{
 		getIndexWriter().updateDocument(idTerm(doc.getId()), ((LuceneDocument)doc).getDocument());
 	}
 
 	@Override
-	protected void deleteDocument(SearchDocument doc)
+	protected synchronized void deleteDocument(SearchDocument doc)
 		throws IOException
 	{
 		getIndexWriter().deleteDocuments(idTerm(doc.getId()));
 	}
 
 	@Override
-	protected BulkUpdater newBulkUpdate() {
+	protected synchronized BulkUpdater newBulkUpdate() {
 		return new SimpleBulkUpdater(this);
 	}
 
@@ -472,7 +512,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * Returns a Document representing the specified Resource & Context combination, or null when no such
 	 * Document exists yet.
 	 */
-	public Document getDocument(Resource subject, Resource context)
+	public synchronized Document getDocument(Resource subject, Resource context)
 		throws IOException
 	{
 		// fetch the Document representing this Resource
@@ -487,7 +527,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * yet). Each document represent a set of statements with the specified Resource as a subject, which are
 	 * stored in a specific context
 	 */
-	public List<Document> getDocuments(Resource subject)
+	public synchronized List<Document> getDocuments(Resource subject)
 		throws IOException
 	{
 		String resourceId = SearchFields.getResourceID(subject);
@@ -552,11 +592,14 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	{
 		synchronized (oldmonitors) {
 			// Move current monitor to old monitors and set null
-			if (currentMonitor != null)
-				// we do NOT close it directly as it may be used by an open result
+			if (currentMonitor != null) {
+				// we do NOT close it directly as it may be used by an open
+				// result
 				// iterator, hence moving it to the
-				// list of oldmonitors where it is handled as other older monitors
+				// list of oldmonitors where it is handled as other older
+				// monitors
 				oldmonitors.add(currentMonitor);
+			}
 			currentMonitor = null;
 
 			// close all monitors if possible
@@ -571,7 +614,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			if (oldmonitors.isEmpty()) {
 				logger.debug("Deleting unused files from Lucene index");
 
-				// clean up unused files (marked as 'deletable' in Luke Filewalker)
+				// clean up unused files (marked as 'deletable' in Luke
+				// Filewalker)
 				getIndexWriter().deleteUnusedFiles();
 
 				// logIndexStats();
@@ -612,9 +656,10 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 			}
 			finally {
-				if (currentMonitor != null) {
-					currentMonitor.closeWhenPossible();
-					currentMonitor = null;
+				ReaderMonitor toCloseCurrentMonitor = currentMonitor;
+				currentMonitor = null;
+				if (toCloseCurrentMonitor != null) {
+					toCloseCurrentMonitor.closeWhenPossible();
 				}
 			}
 		}
@@ -625,7 +670,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
-	public void begin()
+	public synchronized void begin()
 		throws IOException
 	{
 		// nothing to do
@@ -637,7 +682,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * LuceneSailConnection is committed/rollbacked.
 	 */
 	@Override
-	public void commit()
+	public synchronized void commit()
 		throws IOException
 	{
 		getIndexWriter().commit();
@@ -646,7 +691,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
-	public void rollback()
+	public synchronized void rollback()
 		throws IOException
 	{
 		getIndexWriter().rollback();
@@ -823,7 +868,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 *        the id of the document to return
 	 * @return the requested hit, or null if it fails
 	 */
-	public Document getDocument(int docId, Set<String> fieldsToLoad) {
+	public synchronized Document getDocument(int docId, Set<String> fieldsToLoad) {
 		try {
 			return readDocument(getIndexReader(), docId, fieldsToLoad);
 		}
@@ -837,7 +882,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		}
 	}
 
-	public String getSnippet(String fieldName, String text, Highlighter highlighter) {
+	public synchronized String getSnippet(String fieldName, String text, Highlighter highlighter) {
 		String snippet;
 		try {
 			TokenStream tokenStream = getAnalyzer().tokenStream(fieldName, new StringReader(text));
@@ -869,7 +914,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Evaluates the given query only for the given resource.
 	 */
-	public TopDocs search(Resource resource, Query query)
+	public synchronized TopDocs search(Resource resource, Query query)
 		throws IOException
 	{
 		// rewrite the query
@@ -884,7 +929,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Evaluates the given query and returns the results as a TopDocs instance.
 	 */
-	public TopDocs search(Query query)
+	public synchronized TopDocs search(Query query)
 		throws IOException
 	{
 		int nDocs;
@@ -900,7 +945,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	private QueryParser getQueryParser(URI propertyURI) {
 		// check out which query parser to use, based on the given property URI
 		if (propertyURI == null)
-			// if we have no property given, we create a default query parser which
+			// if we have no property given, we create a default query parser
+			// which
 			// has the TEXT_FIELD_NAME as the default field
 			return new QueryParser(SearchFields.TEXT_FIELD_NAME, this.queryAnalyzer);
 		else
@@ -925,7 +971,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 		logger.debug("deleting contexts: {}", Arrays.toString(contexts));
 		// these resources have to be read from the underlying rdf store
-		// and their triples have to be added to the luceneindex after deletion of
+		// and their triples have to be added to the luceneindex after deletion
+		// of
 		// documents
 		// HashSet<Resource> resourcesToUpdate = new HashSet<Resource>();
 
@@ -963,7 +1010,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			// if (c.equals(otherContextOfDocument))
 			// isAlsoDeleted = true;
 			// }
-			// // the otherContextOfDocument is now eihter marked for deletion or
+			// // the otherContextOfDocument is now eihter marked for deletion
+			// or
 			// not
 			// if (!isAlsoDeleted) {
 			// // get ID of document
@@ -1009,6 +1057,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	public synchronized void clear()
 		throws IOException
 	{
+		if (closed.get()) {
+			throw new SailException("Index has been closed");
+		}
 		// clear
 		// the old IndexReaders/Searchers are not outdated
 		invalidateReaders();
