@@ -9,7 +9,6 @@
  */
 package org.eclipse.rdf4j.sail.spin;
 
-import com.google.common.collect.Lists;
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -19,6 +18,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -291,8 +291,10 @@ public class SpifSailTest {
 		TupleQueryResult tqr = tq.evaluate();
 
 		List<BindingSet> resultList = Iterations.asList(tqr);
-		List<String> resultStringList = Lists.transform(resultList,
-				(BindingSet input) -> input.getValue("text").stringValue());
+		List<String> resultStringList = new ArrayList<>();
+		for (BindingSet result : resultList) {
+			resultStringList.add(result.getValue("text").stringValue());
+		}
 
 		Assert.assertArrayEquals(new String[] { "very", "sour", "berry" },
 				resultStringList.toArray(new String[] {}));
