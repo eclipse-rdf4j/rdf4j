@@ -6,13 +6,12 @@ Before you dive in, here are some things you need to know.
 **Table of Contents**  
 
 - [Legal stuff](#legal-stuff)
+- [Creating your contribution](#creating-your-contribution)
 - [Workflow](#workflow) 
  - [Releases](#releases)
   - [Release branches](#release-branches)
   - [A note on the 1.0.x release branch and Java 7 compatibility](#a-note-on-the-10x-release-branch-and-java-7-compatibility)
 - [Code formatting](#code-formatting)
-- [Creating your contribution](#creating-your-contribution)
-- [Submitting your changes](#submitting-your-changes)
 	
 ## Legal stuff
 
@@ -34,6 +33,31 @@ To sign the Eclipse CLA you need to:
 
 Every commit you make in your patch or pull request MUST be "signed off".
 You do this by adding the `-s` flag when you make the commit(s).
+
+## Creating your contribution
+
+Once the legalities are out of the way you can dig in. Here's how:
+
+1. Create an issue in the [RDF4J GitHub issue tracker](https://github.com/eclipse/rdf4j/issues) that describes your improvement, new feature, or bug fix. Alternatively, comment on an existing issue to indicate you're keen to help solve it.
+2. Fork the repository on GitHub.
+3. Create a new branch for your changes starting from the `master` branch. See [Workflow](#workflow) for details.
+4. Make your changes. Apply [RDF4J code formatting guidelines](#code-formatting)
+5. Make sure you include tests.
+6. Make sure the test suite passes after your changes.
+7. Commit your changes into the branch. Use meaningful commit messages. Reference the issue number in the commit message (for example "issue #276: added null check").
+8. **Sign off** every commit you do (as explained in the [legal stuff](#legal-stuff).
+9. Optionally squash your commits (not necessary, but if you want to clean your commit history a bit, _this_ is the point to do it).
+10. Push your changes to your branch in your forked repository.
+11. If your contribution is complete, use GitHub to submit a pull request (PR)
+	for your contribution back to `master` in the central RDF4J repository.
+	Once you have submitted your PR, do not use your branch for any other
+	development (unless asked to do so by the reviewers of your PR). 
+
+Once you've put up a PR, we will review your contribution, possibly make some
+suggestions for improvements, and once everything is complete it will be merged
+into the `master` branch, to be included in the next minor or major release. If
+your contribution is a bug fix in an existing release, we will also schedule it
+for inclusion in a patch release.
 
 ## Workflow
 
@@ -110,28 +134,3 @@ principles:
 4. Set line width to 110 characters 
 5. Make sure every new source file starts with the Eclipse copyright license header
 
-## Creating your contribution
-
-Once the legalities are out of the way and you're up-to-date on our workflow
-and code formatting, you can dig in. Here's how:
-
-1. Create an issue in the [RDF4J GitHub issue tracker](https://github.com/eclipse/rdf4j/issues) that describes your improvement, new feature, or bug fix. Alternatively, comment on an existing issue to indicate you're keen to help solve it.
-2. Fork the repository on GitHub
-3. Create a new branch for your changes starting from the `master` branch 
-4. Make your changes
-5. Make sure you include tests
-6. Make sure the test suite passes after your changes
-7. Commit your changes into the branch. Use meaningful commit messages. Reference the issue number in the commit message (for example "issue #276: added null check")
-8. **Sign off** every commit you do, as explained above.
-9. Optionally squash your commits (not necessary, but if you want to clean your commit history a bit, _this_ is the point to do it).
-10. Push your changes to your branch in your forked repository
-11. If your contribution is complete, use GitHub to submit a pull request (PR)
-	for your contribution back to `master` in the central RDF4J repository.
-	Once you have submitted your PR, do not use your branch for any other
-	development (unless asked to do so by the reviewers of your PR). 
-
-Once you've put up a PR, we will review your contribution, possibly make some
-suggestions for improvements, and once everything is complete it will be merged
-into the `master` branch, to be included in the next minor or major release. If
-your contribution is a bug fix in an existing release, we will also schedule it
-for inclusion in a patch release.
