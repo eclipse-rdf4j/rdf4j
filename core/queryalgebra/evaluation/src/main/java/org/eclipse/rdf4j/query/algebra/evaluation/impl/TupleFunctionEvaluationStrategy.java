@@ -14,55 +14,38 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 
 /**
- * An {@link EvaluationStrategy} that adds support for {@link TupleFunction}s to an existing
- * EvaluationStrategy.
+ * An {@link EvaluationStrategy} that has support for {@link TupleFunction}s.
  */
-public class TupleFunctionEvaluationStrategy implements EvaluationStrategy {
-
-	private final EvaluationStrategy delegate;
-
-	private final ValueFactory valueFactory;
+public class TupleFunctionEvaluationStrategy extends SimpleEvaluationStrategy {
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
 
-	public TupleFunctionEvaluationStrategy(EvaluationStrategy delegate, ValueFactory valueFactory) {
-		this(delegate, valueFactory, TupleFunctionRegistry.getInstance());
+	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+			FederatedServiceResolver serviceResolver)
+	{
+		this(tripleSource, dataset, serviceResolver, TupleFunctionRegistry.getInstance());
 	}
 
-	public TupleFunctionEvaluationStrategy(EvaluationStrategy delegate, ValueFactory valueFactory,
+	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+			FederatedServiceResolver serviceResolver,
 			TupleFunctionRegistry tupleFuncRegistry)
 	{
-		this.delegate = delegate;
-		this.valueFactory = valueFactory;
+		super(tripleSource, dataset, serviceResolver);
 		this.tupleFuncRegistry = tupleFuncRegistry;
-	}
-
-	@Override
-	public FederatedService getService(String serviceUrl)
-		throws QueryEvaluationException
-	{
-		return delegate.getService(serviceUrl);
-	}
-
-	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr, String serviceUri,
-			CloseableIteration<BindingSet, QueryEvaluationException> bindings)
-		throws QueryEvaluationException
-	{
-		return delegate.evaluate(expr, serviceUri, bindings);
 	}
 
 	@Override
@@ -74,7 +57,7 @@ public class TupleFunctionEvaluationStrategy implements EvaluationStrategy {
 			return evaluate((TupleFunctionCall)expr, bindings);
 		}
 		else {
-			return delegate.evaluate(expr, bindings);
+			return super.evaluate(expr, bindings);
 		}
 	}
 
@@ -92,21 +75,7 @@ public class TupleFunctionEvaluationStrategy implements EvaluationStrategy {
 			argValues[i] = evaluate(args.get(i), bindings);
 		}
 
-		return evaluate(func, expr.getResultVars(), bindings, valueFactory, argValues);
-	}
-
-	@Override
-	public Value evaluate(ValueExpr expr, BindingSet bindings)
-		throws QueryEvaluationException
-	{
-		return delegate.evaluate(expr, bindings);
-	}
-
-	@Override
-	public boolean isTrue(ValueExpr expr, BindingSet bindings)
-		throws QueryEvaluationException
-	{
-		return delegate.isTrue(expr, bindings);
+		return evaluate(func, expr.getResultVars(), bindings, tripleSource.getValueFactory(), argValues);
 	}
 
 	public static CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleFunction func,

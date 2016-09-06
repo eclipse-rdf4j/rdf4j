@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -33,12 +34,26 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingAssigner;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.CompareOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConjunctiveConstraintSplitter;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.FilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.IterativeEvaluationOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.OrderLimitOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.evaluation.SailTripleSource;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.AddRemoveOperation;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.ClearContextOperation;
@@ -297,13 +312,49 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			interpreter.process(tupleExpr, bindings, queries);
 		}
 
-		// evaluate lucene queries
-		if (!queries.isEmpty()) {
-			evaluateLuceneQueries(queries, tupleExpr);
-		}
+		if (LuceneSail.EAGER_EVALUATION_MODE.equals(sail.getEvaluationMode())) {
+			// evaluate lucene queries
+			if (!queries.isEmpty()) {
+				evaluateLuceneQueries(queries, tupleExpr);
+			}
 
-		// let the lower sail evaluate the remaining query
-		return super.evaluate(tupleExpr, dataset, bindings, includeInferred);
+			// let the lower sail evaluate the remaining query
+			return super.evaluate(tupleExpr, dataset, bindings, includeInferred);
+		}
+		else if (LuceneSail.TRIPLE_SOURCE_EVALUATION_MODE.equals(sail.getEvaluationMode())) {
+			ValueFactory vf = sail.getValueFactory();
+			EvaluationStrategy strategy = new TupleFunctionEvaluationStrategy(
+					new SailTripleSource(this, includeInferred, vf), dataset,
+					sail.getFederatedServiceResolver(), sail.getTupleFunctionRegistry());
+
+			// do standard optimizations
+			new BindingAssigner().optimize(tupleExpr, dataset, bindings);
+			new ConstantOptimizer(strategy).optimize(tupleExpr, dataset, bindings);
+			new CompareOptimizer().optimize(tupleExpr, dataset, bindings);
+			new ConjunctiveConstraintSplitter().optimize(tupleExpr, dataset, bindings);
+			new DisjunctiveConstraintOptimizer().optimize(tupleExpr, dataset, bindings);
+			new SameTermFilterOptimizer().optimize(tupleExpr, dataset, bindings);
+			new QueryModelNormalizer().optimize(tupleExpr, dataset, bindings);
+			new QueryJoinOptimizer(new TupleFunctionEvaluationStatistics()).optimize(tupleExpr, dataset,
+					bindings);
+			// new SubSelectJoinOptimizer().optimize(tupleExpr, dataset,
+			// bindings);
+			new IterativeEvaluationOptimizer().optimize(tupleExpr, dataset, bindings);
+			new FilterOptimizer().optimize(tupleExpr, dataset, bindings);
+			new OrderLimitOptimizer().optimize(tupleExpr, dataset, bindings);
+
+			logger.trace("Optimized query model:\n{}", tupleExpr);
+
+			try {
+				return strategy.evaluate(tupleExpr, bindings);
+			}
+			catch (QueryEvaluationException e) {
+				throw new SailException(e);
+			}
+		}
+		else {
+			return super.evaluate(tupleExpr, dataset, bindings, includeInferred);
+		}
 	}
 
 	/**
