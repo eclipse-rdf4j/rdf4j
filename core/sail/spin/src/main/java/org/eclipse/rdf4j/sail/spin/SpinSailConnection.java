@@ -33,8 +33,8 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SPIN;
@@ -56,14 +56,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.CompareOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConjunctiveConstraintSplitter;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStrategyImpl;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.IterativeEvaluationOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.rio.ParserConfig;
@@ -93,7 +92,7 @@ import com.google.common.collect.Lists;
 
 class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
-	private static final IRI EXECUTED = ValueFactoryImpl.getInstance().createIRI(
+	private static final IRI EXECUTED = SimpleValueFactory.getInstance().createIRI(
 			"http://www.openrdf.org/schema/spin#executed");
 
 	private static final Marker constraintViolationMarker = MarkerFactory.getMarker("ConstraintViolation");
@@ -206,9 +205,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 		if (evaluationMode == EvaluationMode.TRIPLE_SOURCE) {
 			EvaluationStrategy strategy = new TupleFunctionEvaluationStrategy(
-					new EvaluationStrategyImpl(new SailTripleSource(this, includeInferred, vf), dataset,
-							serviceResolver),
-					vf, tupleFunctionRegistry);
+					new SailTripleSource(this, includeInferred, vf), dataset, serviceResolver,
+					tupleFunctionRegistry);
 
 			// do standard optimizations
 			new BindingAssigner().optimize(tupleExpr, dataset, bindings);
@@ -218,7 +216,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 			new DisjunctiveConstraintOptimizer().optimize(tupleExpr, dataset, bindings);
 			new SameTermFilterOptimizer().optimize(tupleExpr, dataset, bindings);
 			new QueryModelNormalizer().optimize(tupleExpr, dataset, bindings);
-			new QueryJoinOptimizer(new EvaluationStatistics()).optimize(tupleExpr, dataset, bindings);
+			new QueryJoinOptimizer(new TupleFunctionEvaluationStatistics()).optimize(tupleExpr, dataset,
+					bindings);
 			// new SubSelectJoinOptimizer().optimize(tupleExpr, dataset,
 			// bindings);
 			new IterativeEvaluationOptimizer().optimize(tupleExpr, dataset, bindings);

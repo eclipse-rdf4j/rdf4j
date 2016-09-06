@@ -16,7 +16,7 @@
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-sail-api</artifactId>
+			<artifactId>rdf4j-sail-base</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
