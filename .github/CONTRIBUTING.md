@@ -64,8 +64,8 @@ for inclusion in a patch release.
 The short-short version for contributors: work from the `master` branch. 
 
 The more complete version: RDF4J uses a git branching model where feature
-development takes place on the `master` branch. This is where all development
-for the next (minor or major) release happens.
+development takes place on branches from the `master` branch. This is where all
+development for the next (minor or major) release happens.
 
 Every issue, no matter how small, gets its own branch while under development.
 Issue branch names are always prefixed with `issues/`, followed by the issue
@@ -91,7 +91,7 @@ time for final review and release. If a contributor cannot make that
 commitment, the feature is not included in the release and is simply
 "postponed" to the next release cycle.
 
-We occassionally also schedule *patch releases*, which only include (backward
+We occasionally also schedule *patch releases*, which only include (backward
 compatible) bug fixes. These releases are typically planned on short notice and
 can be done without much in the way of formal review.
 
@@ -100,7 +100,7 @@ can be done without much in the way of formal review.
 A few days before release of a minor or major version, we create a *release
 branch* from the current head of the master branch. The purpose of this release
 branch is to perform last-minute tweaks and little fixes. Once we are ready to
-release, the head of the release branch is tagged with the version number, and
+release, the latest commit of the release branch is tagged with the version number, and
 the release branch is merged back to master, then closed.
 
 #### A note on the 1.0.x release branch and Java 7 compatibility 
