@@ -10,7 +10,7 @@ Before you dive in, here are some things you need to know.
 - [Workflow](#workflow) 
  - [Releases](#releases)
   - [Release branches](#release-branches)
-  - [A note on the 1.0.x release branch and Java 7 compatibility](#a-note-on-the-10x-release-branch-and-java-7-compatibility)
+  - [A note on the backport-java-7 branch](#a-note-on-the-backport-java-7-branch)
 - [Code formatting](#code-formatting)
 	
 ## Legal stuff
@@ -103,9 +103,9 @@ branch is to perform last-minute tweaks and little fixes. Once we are ready to
 release, the latest commit of the release branch is tagged with the version number, and
 the release branch is merged back to master, then closed.
 
-#### A note on the 1.0.x release branch and Java 7 compatibility 
+#### A note on the `backport-java-7` branch
 
-RDF4J 1.0 is a **backport** of RDF4J 2.0, to be executable on a Java 7 Runtime Environment. This means that we do not accept any fixes or feature development directly against the `releases/1.0.x` branch, and we never merge this branch back into `master`.
+RDF4J 1.0 is a **backport** of RDF4J 2.0, to be executable on a Java 7 Runtime Environment. This means that we do not accept any fixes or feature development directly against the `backport-java-7` branch, and we never merge this branch back into `master`.
 
 ## Code formatting
 
