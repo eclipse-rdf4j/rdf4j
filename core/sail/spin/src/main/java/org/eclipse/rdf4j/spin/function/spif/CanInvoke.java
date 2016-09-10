@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.BooleanLiteralImpl;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SPIF;
 import org.eclipse.rdf4j.model.vocabulary.SPIN;
@@ -51,7 +51,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConjunctiveConstraintSpli
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStrategyImpl;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.IterativeEvaluationOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.OrderLimitOptimizer;
@@ -122,11 +121,11 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 						argValues.put(argName, argValue);
 					}
 					else {
-						return BooleanLiteralImpl.FALSE;
+						return BooleanLiteral.FALSE;
 					}
 				}
 				else if (!funcArg.isOptional()) {
-					return BooleanLiteralImpl.FALSE;
+					return BooleanLiteral.FALSE;
 				}
 			}
 
@@ -169,8 +168,6 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 
 			QueryPreparer tempQueryPreparer = new AbstractQueryPreparer(tempTripleSource) {
 
-				private final ValueFactory vf = getTripleSource().getValueFactory();
-
 				private final FunctionRegistry functionRegistry = FunctionRegistry.getInstance();
 
 				private final TupleFunctionRegistry tupleFunctionRegistry = TupleFunctionRegistry.getInstance();
@@ -199,7 +196,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 							serviceResolver).optimize(tupleExpr, dataset, bindings);
 
 					EvaluationStrategy strategy = new TupleFunctionEvaluationStrategy(
-							new EvaluationStrategyImpl(getTripleSource(), dataset, serviceResolver), vf,
+							getTripleSource(), dataset, serviceResolver,
 							tupleFunctionRegistry);
 
 					// do standard optimizations
@@ -241,7 +238,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 						ConstraintViolation violation = SpinInferencing.checkConstraint(funcInstance,
 								constraint, tempQueryPreparer, parser);
 						if (violation != null) {
-							return BooleanLiteralImpl.FALSE;
+							return BooleanLiteral.FALSE;
 						}
 					}
 				}
@@ -250,15 +247,15 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 				iter.close();
 			}
 		}
-		catch (OpenRDFException e) {
+		catch (RDF4JException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 
-		return BooleanLiteralImpl.TRUE;
+		return BooleanLiteral.TRUE;
 	}
 
 	private Function getFunction(String name, TripleSource tripleSource, FunctionRegistry functionRegistry)
-		throws OpenRDFException
+		throws RDF4JException
 	{
 		Function func = functionRegistry.get(name).orElse(null);
 		if (func == null) {

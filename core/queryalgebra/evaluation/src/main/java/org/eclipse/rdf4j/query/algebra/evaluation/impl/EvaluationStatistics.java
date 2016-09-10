@@ -54,7 +54,7 @@ public class EvaluationStatistics {
 
 	protected static class CardinalityCalculator extends AbstractQueryModelVisitor<RuntimeException> {
 
-		private static double VAR_CARDINALITY = 10;
+		protected static double VAR_CARDINALITY = 10;
 
 		private static double UNBOUND_SERVICE_CARDINALITY = 100000;
 
