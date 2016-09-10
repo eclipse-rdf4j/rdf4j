@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
@@ -185,6 +186,9 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 				logger.debug("Query variable '{}' has not rdf:type, assuming {}", subject, LUCENE_QUERY);
 			}
 
+			QuerySpec querySpec = new QuerySpec(matchesPattern, queryPattern, propertyPattern, scorePattern,
+					snippetPattern, typePattern, subject, queryString, propertyURI);
+
 			switch (evaluationMode) {
 				case LuceneSail.NATIVE_EVALUATION_MODE:
 				case LuceneSail.TRIPLE_SOURCE_EVALUATION_MODE: {
@@ -217,7 +221,11 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 						funcCall.addResultVar(snippetVar);
 					}
 
-					matchesPattern.replaceWith(funcCall);
+					Join join = new Join();
+					matchesPattern.replaceWith(join);
+					join.setLeftArg(matchesPattern);
+					join.setRightArg(funcCall);
+					querySpec.updateQueryModelNodes(true);
 					break;
 				}
 				case LuceneSail.SERVICE_EVALUATION_MODE: {
@@ -226,8 +234,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 				case LuceneSail.EAGER_EVALUATION_MODE:
 				default: {
 					// register a QuerySpec with these details
-					result.add(new QuerySpec(matchesPattern, queryPattern, propertyPattern, scorePattern,
-							snippetPattern, typePattern, subject, queryString, propertyURI));
+					result.add(querySpec);
 				}
 			}
 		}

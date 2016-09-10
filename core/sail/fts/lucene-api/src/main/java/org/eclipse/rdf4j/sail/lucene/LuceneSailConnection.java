@@ -299,6 +299,24 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
 		throws SailException
 	{
+		final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
+		QueryContext qctx = QueryContext.begin(luceneIndex);
+		try {
+			iter = evaluateInternal(tupleExpr, dataset, bindings, includeInferred);
+		}
+		finally {
+			qctx.end();
+		}
+
+		// NB: Iteration methods may do on-demand evaluation hence need to wrap
+		// these too
+		return new QueryContextIteration(iter, luceneIndex);
+	}
+
+	private CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
+			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
+		throws SailException
+	{
 		// Don't modify the original tuple expression
 		tupleExpr = tupleExpr.clone();
 
