@@ -41,6 +41,14 @@ public class QuerySpec implements SearchQueryEvaluator {
 
 	private final IRI propertyURI;
 
+	private final String matchesVarName;
+
+	private final String propertyVarName;
+
+	private final String scoreVarName;
+
+	private final String snippetVarName;
+
 	public QuerySpec(StatementPattern matchesPattern, StatementPattern queryPattern,
 			StatementPattern propertyPattern, StatementPattern scorePattern, StatementPattern snippetPattern,
 			StatementPattern typePattern, Resource subject, String queryString, IRI propertyURI)
@@ -51,6 +59,40 @@ public class QuerySpec implements SearchQueryEvaluator {
 		this.scorePattern = scorePattern;
 		this.snippetPattern = snippetPattern;
 		this.typePattern = typePattern;
+		this.subject = subject;
+		this.queryString = queryString;
+		this.propertyURI = propertyURI;
+		if (matchesPattern != null)
+			this.matchesVarName = matchesPattern.getSubjectVar().getName();
+		else
+			this.matchesVarName = null;
+		if (propertyPattern != null)
+			this.propertyVarName = propertyPattern.getObjectVar().getName();
+		else
+			this.propertyVarName = null;
+		if (scorePattern != null)
+			this.scoreVarName = scorePattern.getObjectVar().getName();
+		else
+			this.scoreVarName = null;
+		if (snippetPattern != null)
+			this.snippetVarName = snippetPattern.getObjectVar().getName();
+		else
+			this.snippetVarName = null;
+	}
+
+	public QuerySpec(String matchesVarName, String propertyVarName, String scoreVarName,
+			String snippetVarName, Resource subject, String queryString, IRI propertyURI)
+	{
+		this.matchesVarName = matchesVarName;
+		this.propertyVarName = propertyVarName;
+		this.scoreVarName = scoreVarName;
+		this.snippetVarName = snippetVarName;
+		this.matchesPattern = null;
+		this.propertyPattern = null;
+		this.scorePattern = null;
+		this.snippetPattern = null;
+		this.typePattern = null;
+		this.queryPattern = null;
 		this.subject = subject;
 		this.queryString = queryString;
 		this.propertyURI = propertyURI;
@@ -109,10 +151,7 @@ public class QuerySpec implements SearchQueryEvaluator {
 	 * @return the name of the variable or null, if no name set
 	 */
 	public String getMatchesVariableName() {
-		if (matchesPattern != null)
-			return matchesPattern.getSubjectVar().getName();
-		else
-			return null;
+		return matchesVarName;
 	}
 
 	public StatementPattern getQueryPattern() {
@@ -124,10 +163,7 @@ public class QuerySpec implements SearchQueryEvaluator {
 	}
 
 	public String getPropertyVariableName() {
-		if (propertyPattern != null)
-			return propertyPattern.getObjectVar().getName();
-		else
-			return null;
+		return propertyVarName;
 	}
 
 	public StatementPattern getScorePattern() {
@@ -140,10 +176,7 @@ public class QuerySpec implements SearchQueryEvaluator {
 	 * @return the name or null, if no score is queried in the pattern
 	 */
 	public String getScoreVariableName() {
-		if (scorePattern != null)
-			return scorePattern.getObjectVar().getName();
-		else
-			return null;
+		return scoreVarName;
 	}
 
 	public StatementPattern getSnippetPattern() {
@@ -151,10 +184,7 @@ public class QuerySpec implements SearchQueryEvaluator {
 	}
 
 	public String getSnippetVariableName() {
-		if (snippetPattern != null)
-			return snippetPattern.getObjectVar().getName();
-		else
-			return null;
+		return snippetVarName;
 	}
 
 	public StatementPattern getTypePattern() {
