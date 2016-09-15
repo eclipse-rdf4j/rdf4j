@@ -70,7 +70,7 @@ public class TurtleParser extends AbstractRDFParser {
 	protected Value object;
 
 	private int lineNumber = 1;
-	private StringBuilder parsingBuilder = new StringBuilder();
+	private final StringBuilder parsingBuilder = new StringBuilder();
 
 	/*--------------*
 	 * Constructors *
@@ -220,7 +220,7 @@ public class TurtleParser extends AbstractRDFParser {
 				unread(codePoint);
 				break;
 			}
-			Chars.append(sb, codePoint);
+			appendCodepoint(sb, codePoint);
 		} while (sb.length() < 8);
 
 		String directive = sb.toString();
@@ -305,7 +305,7 @@ public class TurtleParser extends AbstractRDFParser {
 				throwEOFException();
 			}
 
-			Chars.append(prefixID, c);
+			appendCodepoint(prefixID, c);
 		}
 
 		skipWSC();
@@ -623,7 +623,7 @@ public class TurtleParser extends AbstractRDFParser {
 						BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 			}
 
-			Chars.append(lang, c);
+			appendCodepoint(lang, c);
 
 			c = readCodePoint();
 			while (!TurtleUtil.isWhitespace(c)) {
@@ -640,7 +640,7 @@ public class TurtleParser extends AbstractRDFParser {
 					reportError("Illegal language tag char: '" + new String(Character.toChars(c)) + "'",
 							BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 				}
-				Chars.append(lang, c);
+				appendCodepoint(lang, c);
 				c = readCodePoint();
 			}
 
@@ -721,7 +721,7 @@ public class TurtleParser extends AbstractRDFParser {
 				throwEOFException();
 			}
 
-			Chars.append(sb, c);
+			appendCodepoint(sb, c);
 
 			if (c == '\\') {
 				// This escapes the next character, which might be a '"'
@@ -729,7 +729,7 @@ public class TurtleParser extends AbstractRDFParser {
 				if (c == -1) {
 					throwEOFException();
 				}
-				Chars.append(sb, c);
+				appendCodepoint(sb, c);
 			}
 		}
 
@@ -757,7 +757,7 @@ public class TurtleParser extends AbstractRDFParser {
 				doubleQuoteCount = 0;
 			}
 
-			Chars.append(sb, c);
+			appendCodepoint(sb, c);
 
 			if (c == '\\') {
 				// This escapes the next character, which might be a '"'
@@ -765,7 +765,7 @@ public class TurtleParser extends AbstractRDFParser {
 				if (c == -1) {
 					throwEOFException();
 				}
-				Chars.append(sb, c);
+				appendCodepoint(sb, c);
 			}
 		}
 
@@ -780,12 +780,12 @@ public class TurtleParser extends AbstractRDFParser {
 
 		// read optional sign character
 		if (c == '+' || c == '-') {
-			Chars.append(value, c);
+			appendCodepoint(value, c);
 			c = readCodePoint();
 		}
 
 		while (ASCIIUtil.isNumber(c)) {
-			Chars.append(value, c);
+			appendCodepoint(value, c);
 			c = readCodePoint();
 		}
 
@@ -799,12 +799,12 @@ public class TurtleParser extends AbstractRDFParser {
 					// the
 					// period to end the statement
 				} else {
-					Chars.append(value, c);
+					appendCodepoint(value, c);
 
 					c = readCodePoint();
 
 					while (ASCIIUtil.isNumber(c)) {
-						Chars.append(value, c);
+						appendCodepoint(value, c);
 						c = readCodePoint();
 					}
 
@@ -826,11 +826,11 @@ public class TurtleParser extends AbstractRDFParser {
 			// read optional exponent
 			if (c == 'e' || c == 'E') {
 				datatype = XMLSchema.DOUBLE;
-				Chars.append(value, c);
+				appendCodepoint(value, c);
 
 				c = readCodePoint();
 				if (c == '+' || c == '-') {
-					Chars.append(value, c);
+					appendCodepoint(value, c);
 					c = readCodePoint();
 				}
 
@@ -838,11 +838,11 @@ public class TurtleParser extends AbstractRDFParser {
 					reportError("Exponent value missing", BasicParserSettings.VERIFY_DATATYPE_VALUES);
 				}
 
-				Chars.append(value, c);
+				appendCodepoint(value, c);
 
 				c = readCodePoint();
 				while (ASCIIUtil.isNumber(c)) {
-					Chars.append(value, c);
+					appendCodepoint(value, c);
 					c = readCodePoint();
 				}
 			}
@@ -890,7 +890,7 @@ public class TurtleParser extends AbstractRDFParser {
 				uriIsIllegal = true;
 			}
 
-			Chars.append(uriBuf, c);
+			appendCodepoint(uriBuf, c);
 
 			if (c == '\\') {
 				// This escapes the next character, which might be a '>'
@@ -902,7 +902,7 @@ public class TurtleParser extends AbstractRDFParser {
 					reportError("IRI includes string escapes: '\\" + c + "'", BasicParserSettings.VERIFY_URI_SYNTAX);
 					uriIsIllegal = true;
 				}
-				Chars.append(uriBuf, c);
+				appendCodepoint(uriBuf, c);
 			}
 		}
 
@@ -956,12 +956,12 @@ public class TurtleParser extends AbstractRDFParser {
 		} else {
 			// c is the first letter of the prefix
 			StringBuilder prefix = new StringBuilder(8);
-			Chars.append(prefix, c);
+			appendCodepoint(prefix, c);
 
 			int previousChar = c;
 			c = readCodePoint();
 			while (TurtleUtil.isPrefixChar(c)) {
-				Chars.append(prefix, c);
+				appendCodepoint(prefix, c);
 				previousChar = c;
 				c = readCodePoint();
 			}
@@ -994,7 +994,7 @@ public class TurtleParser extends AbstractRDFParser {
 			if (c == '\\') {
 				localName.append(readLocalEscapedChar());
 			} else {
-				Chars.append(localName, c);
+				appendCodepoint(localName, c);
 			}
 
 			int previousChar = c;
@@ -1003,7 +1003,7 @@ public class TurtleParser extends AbstractRDFParser {
 				if (c == '\\') {
 					localName.append(readLocalEscapedChar());
 				} else {
-					Chars.append(localName, c);
+					appendCodepoint(localName, c);
 				}
 				previousChar = c;
 				c = readCodePoint();
@@ -1071,7 +1071,7 @@ public class TurtleParser extends AbstractRDFParser {
 		}
 
 		StringBuilder name = getBuilder();
-		Chars.append(name, c);
+		appendCodepoint(name, c);
 
 		// Read all following letter and numbers, they are part of the name
 		c = readCodePoint();
@@ -1090,7 +1090,7 @@ public class TurtleParser extends AbstractRDFParser {
 				unread(previous);
 				break;
 			}
-			name.append((char) previous);
+			appendCodepoint(name, previous);
 			if (!TurtleUtil.isBLANK_NODE_LABEL_Char(c)) {
 				unread(c);
 			}
@@ -1177,7 +1177,7 @@ public class TurtleParser extends AbstractRDFParser {
 		StringBuilder comment = getBuilder();
 		int c = readCodePoint();
 		while (c != -1 && c != 0xD && c != 0xA) {
-			Chars.append(comment, c);
+			appendCodepoint(comment, c);
 			c = readCodePoint();
 		}
 
@@ -1320,8 +1320,30 @@ public class TurtleParser extends AbstractRDFParser {
 		return lineNumber;
 	}
 
-	public StringBuilder getBuilder() {
+	private StringBuilder getBuilder() {
 		parsingBuilder.setLength(0);
 		return parsingBuilder;
+	}
+
+	/**
+	 * Appends the characters from codepoint into the string builder. This is the same
+	 * as Character#toChars but prevents the additional char array garbage for BMP codepoints.
+	 * @param dst the destination in which to append the characters
+	 * @param codePoint the codepoint to be appended
+	 */
+	private static void appendCodepoint(StringBuilder dst, int codePoint) {
+		/*
+		 * This code is copy pasted from Character#toChars but doesn't allocate new arrays.
+		 */
+		if (Character.isBmpCodePoint(codePoint)) {
+			dst.append((char)codePoint);
+		} else if (Character.isValidCodePoint(codePoint)) {
+			char[] result = new char[2];
+			// NB: Code copied Character#toSurrogates
+			dst.append(Character.highSurrogate(codePoint));
+			dst.append(Character.lowSurrogate(codePoint));
+		} else {
+			throw new IllegalArgumentException("Invalid codepoint " + codePoint);
+		}
 	}
 }
