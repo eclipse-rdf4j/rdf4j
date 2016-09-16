@@ -1332,14 +1332,9 @@ public class TurtleParser extends AbstractRDFParser {
 	 * @param codePoint the codepoint to be appended
 	 */
 	private static void appendCodepoint(StringBuilder dst, int codePoint) {
-		/*
-		 * This code is copy pasted from Character#toChars but doesn't allocate new arrays.
-		 */
 		if (Character.isBmpCodePoint(codePoint)) {
 			dst.append((char)codePoint);
 		} else if (Character.isValidCodePoint(codePoint)) {
-			char[] result = new char[2];
-			// NB: Code copied Character#toSurrogates
 			dst.append(Character.highSurrogate(codePoint));
 			dst.append(Character.lowSurrogate(codePoint));
 		} else {
