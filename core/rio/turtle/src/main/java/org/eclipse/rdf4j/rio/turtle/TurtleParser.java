@@ -70,6 +70,7 @@ public class TurtleParser extends AbstractRDFParser {
 	protected Value object;
 
 	private int lineNumber = 1;
+	private final StringBuilder parsingBuilder = new StringBuilder();
 
 	/*--------------*
 	 * Constructors *
@@ -86,7 +87,7 @@ public class TurtleParser extends AbstractRDFParser {
 	/**
 	 * Creates a new TurtleParser that will use the supplied ValueFactory to
 	 * create RDF model objects.
-	 * 
+	 *
 	 * @param valueFactory
 	 *            A ValueFactory.
 	 */
@@ -112,7 +113,7 @@ public class TurtleParser extends AbstractRDFParser {
 	/**
 	 * Implementation of the <tt>parse(InputStream, String)</tt> method defined
 	 * in the RDFParser interface.
-	 * 
+	 *
 	 * @param in
 	 *            The InputStream from which to read the data, must not be
 	 *            <tt>null</tt>. The InputStream is supposed to contain UTF-8
@@ -149,7 +150,7 @@ public class TurtleParser extends AbstractRDFParser {
 	/**
 	 * Implementation of the <tt>parse(Reader, String)</tt> method defined in
 	 * the RDFParser interface.
-	 * 
+	 *
 	 * @param reader
 	 *            The Reader from which to read the data, must not be
 	 *            <tt>null</tt>.
@@ -219,7 +220,7 @@ public class TurtleParser extends AbstractRDFParser {
 				unread(codePoint);
 				break;
 			}
-			sb.append(Character.toChars(codePoint));
+			appendCodepoint(sb, codePoint);
 		} while (sb.length() < 8);
 
 		String directive = sb.toString();
@@ -304,7 +305,7 @@ public class TurtleParser extends AbstractRDFParser {
 				throwEOFException();
 			}
 
-			prefixID.append(Character.toChars(c));
+			appendCodepoint(prefixID, c);
 		}
 
 		skipWSC();
@@ -609,7 +610,7 @@ public class TurtleParser extends AbstractRDFParser {
 			readCodePoint();
 
 			// Read language
-			StringBuilder lang = new StringBuilder(8);
+			StringBuilder lang = getBuilder();
 
 			c = readCodePoint();
 			if (c == -1) {
@@ -622,7 +623,7 @@ public class TurtleParser extends AbstractRDFParser {
 						BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 			}
 
-			lang.append(Character.toChars(c));
+			appendCodepoint(lang, c);
 
 			c = readCodePoint();
 			while (!TurtleUtil.isWhitespace(c)) {
@@ -639,7 +640,7 @@ public class TurtleParser extends AbstractRDFParser {
 					reportError("Illegal language tag char: '" + new String(Character.toChars(c)) + "'",
 							BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 				}
-				lang.append(Character.toChars(c));
+				appendCodepoint(lang, c);
 				c = readCodePoint();
 			}
 
@@ -709,7 +710,7 @@ public class TurtleParser extends AbstractRDFParser {
 	 * has already been parsed.
 	 */
 	protected String parseString(int closingCharacter) throws IOException, RDFParseException {
-		StringBuilder sb = new StringBuilder(32);
+		StringBuilder sb = getBuilder();
 
 		while (true) {
 			int c = readCodePoint();
@@ -720,7 +721,7 @@ public class TurtleParser extends AbstractRDFParser {
 				throwEOFException();
 			}
 
-			sb.append(Character.toChars(c));
+			appendCodepoint(sb, c);
 
 			if (c == '\\') {
 				// This escapes the next character, which might be a '"'
@@ -728,7 +729,7 @@ public class TurtleParser extends AbstractRDFParser {
 				if (c == -1) {
 					throwEOFException();
 				}
-				sb.append(Character.toChars(c));
+				appendCodepoint(sb, c);
 			}
 		}
 
@@ -740,7 +741,7 @@ public class TurtleParser extends AbstractRDFParser {
 	 * characters have already been parsed.
 	 */
 	protected String parseLongString(int closingCharacter) throws IOException, RDFParseException {
-		StringBuilder sb = new StringBuilder(1024);
+		StringBuilder sb = getBuilder();
 
 		int doubleQuoteCount = 0;
 		int c;
@@ -756,7 +757,7 @@ public class TurtleParser extends AbstractRDFParser {
 				doubleQuoteCount = 0;
 			}
 
-			sb.append(Character.toChars(c));
+			appendCodepoint(sb, c);
 
 			if (c == '\\') {
 				// This escapes the next character, which might be a '"'
@@ -764,7 +765,7 @@ public class TurtleParser extends AbstractRDFParser {
 				if (c == -1) {
 					throwEOFException();
 				}
-				sb.append(Character.toChars(c));
+				appendCodepoint(sb, c);
 			}
 		}
 
@@ -772,19 +773,19 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	protected Literal parseNumber() throws IOException, RDFParseException {
-		StringBuilder value = new StringBuilder(8);
+		StringBuilder value = getBuilder();
 		IRI datatype = XMLSchema.INTEGER;
 
 		int c = readCodePoint();
 
 		// read optional sign character
 		if (c == '+' || c == '-') {
-			value.append(Character.toChars(c));
+			appendCodepoint(value, c);
 			c = readCodePoint();
 		}
 
 		while (ASCIIUtil.isNumber(c)) {
-			value.append(Character.toChars(c));
+			appendCodepoint(value, c);
 			c = readCodePoint();
 		}
 
@@ -798,12 +799,12 @@ public class TurtleParser extends AbstractRDFParser {
 					// the
 					// period to end the statement
 				} else {
-					value.append(Character.toChars(c));
+					appendCodepoint(value, c);
 
 					c = readCodePoint();
 
 					while (ASCIIUtil.isNumber(c)) {
-						value.append(Character.toChars(c));
+						appendCodepoint(value, c);
 						c = readCodePoint();
 					}
 
@@ -825,11 +826,11 @@ public class TurtleParser extends AbstractRDFParser {
 			// read optional exponent
 			if (c == 'e' || c == 'E') {
 				datatype = XMLSchema.DOUBLE;
-				value.append(Character.toChars(c));
+				appendCodepoint(value, c);
 
 				c = readCodePoint();
 				if (c == '+' || c == '-') {
-					value.append(Character.toChars(c));
+					appendCodepoint(value, c);
 					c = readCodePoint();
 				}
 
@@ -837,11 +838,11 @@ public class TurtleParser extends AbstractRDFParser {
 					reportError("Exponent value missing", BasicParserSettings.VERIFY_DATATYPE_VALUES);
 				}
 
-				value.append(Character.toChars(c));
+				appendCodepoint(value, c);
 
 				c = readCodePoint();
 				while (ASCIIUtil.isNumber(c)) {
-					value.append(Character.toChars(c));
+					appendCodepoint(value, c);
 					c = readCodePoint();
 				}
 			}
@@ -867,7 +868,7 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	protected IRI parseURI() throws IOException, RDFParseException {
-		StringBuilder uriBuf = new StringBuilder(100);
+		StringBuilder uriBuf = getBuilder();
 
 		// First character should be '<'
 		int c = readCodePoint();
@@ -889,7 +890,7 @@ public class TurtleParser extends AbstractRDFParser {
 				uriIsIllegal = true;
 			}
 
-			uriBuf.append(Character.toChars(c));
+			appendCodepoint(uriBuf, c);
 
 			if (c == '\\') {
 				// This escapes the next character, which might be a '>'
@@ -901,7 +902,7 @@ public class TurtleParser extends AbstractRDFParser {
 					reportError("IRI includes string escapes: '\\" + c + "'", BasicParserSettings.VERIFY_URI_SYNTAX);
 					uriIsIllegal = true;
 				}
-				uriBuf.append(Character.toChars(c));
+				appendCodepoint(uriBuf, c);
 			}
 		}
 
@@ -955,12 +956,12 @@ public class TurtleParser extends AbstractRDFParser {
 		} else {
 			// c is the first letter of the prefix
 			StringBuilder prefix = new StringBuilder(8);
-			prefix.append(Character.toChars(c));
+			appendCodepoint(prefix, c);
 
 			int previousChar = c;
 			c = readCodePoint();
 			while (TurtleUtil.isPrefixChar(c)) {
-				prefix.append(Character.toChars(c));
+				appendCodepoint(prefix, c);
 				previousChar = c;
 				c = readCodePoint();
 			}
@@ -993,7 +994,7 @@ public class TurtleParser extends AbstractRDFParser {
 			if (c == '\\') {
 				localName.append(readLocalEscapedChar());
 			} else {
-				localName.append(Character.toChars(c));
+				appendCodepoint(localName, c);
 			}
 
 			int previousChar = c;
@@ -1002,7 +1003,7 @@ public class TurtleParser extends AbstractRDFParser {
 				if (c == '\\') {
 					localName.append(readLocalEscapedChar());
 				} else {
-					localName.append(Character.toChars(c));
+					appendCodepoint(localName, c);
 				}
 				previousChar = c;
 				c = readCodePoint();
@@ -1069,8 +1070,8 @@ public class TurtleParser extends AbstractRDFParser {
 			reportError("Expected a letter, found '" + (char) c + "'", BasicParserSettings.PRESERVE_BNODE_IDS);
 		}
 
-		StringBuilder name = new StringBuilder(32);
-		name.append(Character.toChars(c));
+		StringBuilder name = getBuilder();
+		appendCodepoint(name, c);
 
 		// Read all following letter and numbers, they are part of the name
 		c = readCodePoint();
@@ -1089,7 +1090,7 @@ public class TurtleParser extends AbstractRDFParser {
 				unread(previous);
 				break;
 			}
-			name.append((char) previous);
+			appendCodepoint(name, previous);
 			if (!TurtleUtil.isBLANK_NODE_LABEL_Char(c)) {
 				unread(c);
 			}
@@ -1144,7 +1145,7 @@ public class TurtleParser extends AbstractRDFParser {
 	 * called, the first character that is returned by <tt>reader</tt> is either
 	 * a non-ignorable character, or EOF. For convenience, this character is
 	 * also returned by this method.
-	 * 
+	 *
 	 * @return The next character code point that will be returned by
 	 *         <tt>reader</tt>.
 	 */
@@ -1173,17 +1174,17 @@ public class TurtleParser extends AbstractRDFParser {
 	 * line of text is then passed to the {@link #rdfHandler} as a comment.
 	 */
 	protected void processComment() throws IOException, RDFHandlerException {
-		StringBuilder comment = new StringBuilder(64);
+		StringBuilder comment = getBuilder();
 		int c = readCodePoint();
 		while (c != -1 && c != 0xD && c != 0xA) {
-			comment.append(Character.toChars(c));
+			appendCodepoint(comment, c);
 			c = readCodePoint();
 		}
 
 		if (c == 0xA) {
 			lineNumber++;
 		}
-		
+
 		// c is equal to -1, \r or \n.
 		// In case c is equal to \r, we should also read a following \n.
 		if (c == 0xD) {
@@ -1202,7 +1203,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 	/**
 	 * Reads the next Unicode code point.
-	 * 
+	 *
 	 * @return the next Unicode code point, or -1 if the end of the stream has
 	 *         been reached.
 	 * @throws IOException
@@ -1219,7 +1220,7 @@ public class TurtleParser extends AbstractRDFParser {
 	 * Pushes back a single code point by copying it to the front of the buffer.
 	 * After this method returns, a call to {@link #readCodePoint()} will return
 	 * the same code point c again.
-	 * 
+	 *
 	 * @param codePoint
 	 *            a single Unicode code point.
 	 * @throws IOException
@@ -1240,7 +1241,7 @@ public class TurtleParser extends AbstractRDFParser {
 	 * After this method returns, successive calls to {@link #readCodePoint()}
 	 * will return the code points in the supplied string again, starting at the
 	 * first in the String..
-	 * 
+	 *
 	 * @param string
 	 *            the string to un-read.
 	 * @throws IOException
@@ -1260,7 +1261,7 @@ public class TurtleParser extends AbstractRDFParser {
 	/**
 	 * Peeks at the next Unicode code point without advancing the reader, and
 	 * returns its value.
-	 * 
+	 *
 	 * @return the next Unicode code point, or -1 if the end of the stream has
 	 *         been reached.
 	 * @throws IOException
@@ -1317,5 +1318,27 @@ public class TurtleParser extends AbstractRDFParser {
 
 	protected int getLineNumber() {
 		return lineNumber;
+	}
+
+	private StringBuilder getBuilder() {
+		parsingBuilder.setLength(0);
+		return parsingBuilder;
+	}
+
+	/**
+	 * Appends the characters from codepoint into the string builder. This is the same
+	 * as Character#toChars but prevents the additional char array garbage for BMP codepoints.
+	 * @param dst the destination in which to append the characters
+	 * @param codePoint the codepoint to be appended
+	 */
+	private static void appendCodepoint(StringBuilder dst, int codePoint) {
+		if (Character.isBmpCodePoint(codePoint)) {
+			dst.append((char)codePoint);
+		} else if (Character.isValidCodePoint(codePoint)) {
+			dst.append(Character.highSurrogate(codePoint));
+			dst.append(Character.lowSurrogate(codePoint));
+		} else {
+			throw new IllegalArgumentException("Invalid codepoint " + codePoint);
+		}
 	}
 }
