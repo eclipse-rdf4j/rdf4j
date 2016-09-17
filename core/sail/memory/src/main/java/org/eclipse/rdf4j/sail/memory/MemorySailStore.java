@@ -362,6 +362,8 @@ class MemorySailStore implements SailStore {
 
 		private boolean txnLock;
 
+		private boolean requireCleanup;
+
 		public MemorySailSink(boolean explicit, boolean serializable)
 			throws SailException
 		{
@@ -437,7 +439,9 @@ class MemorySailStore implements SailStore {
 		{
 			if (txnLock) {
 				currentSnapshot = Math.max(currentSnapshot, nextSnapshot);
-				scheduleSnapshotCleanup();
+				if (requireCleanup) {
+					scheduleSnapshotCleanup();
+				}
 			}
 		}
 
@@ -504,6 +508,7 @@ class MemorySailStore implements SailStore {
 			throws SailException
 		{
 			acquireExclusiveTransactionLock();
+			requireCleanup = true;
 			CloseableIteration<MemStatement, SailException> iter;
 			iter = createStatementIterator(null, null, null, explicit, nextSnapshot, contexts);
 			try {
@@ -530,6 +535,7 @@ class MemorySailStore implements SailStore {
 			throws SailException
 		{
 			acquireExclusiveTransactionLock();
+			requireCleanup = true;
 			CloseableIteration<MemStatement, SailException> iter;
 			iter = createStatementIterator(subj, pred, obj, explicit, nextSnapshot, ctx);
 			try {
