@@ -258,9 +258,25 @@ class MemorySailStore implements SailStore {
 		HashSet<MemValue> processedObjects = new HashSet<MemValue>();
 		HashSet<MemValue> processedContexts = new HashSet<MemValue>();
 
-		Lock stLock = statementListLockManager.getWriteLock();
+		int lastStmtPos;
+		Lock stReadLock = statementListLockManager.getReadLock();
 		try {
-			for (int i = statements.size() - 1; i >= 0; i--) {
+			lastStmtPos = statements.size() - 1;
+		}
+		finally {
+			stReadLock.release();
+		}
+
+		/*
+		 * The statement list won't shrink or change from lastStmtPos down (it might grow) while we don't have
+		 * a lock as (1) new statements are always appended last, (2) we are the only process that removes
+		 * statements.
+		 */
+
+		for (int i = lastStmtPos; i >= 0; i--) {
+			// As we are running in the background, yield the write lock frequently to other writers.
+			Lock stWriteLock = statementListLockManager.getWriteLock();
+			try {
 				MemStatement st = statements.get(i);
 
 				if (st.getTillSnapshot() <= currentSnapshot) {
@@ -288,9 +304,9 @@ class MemorySailStore implements SailStore {
 					statements.remove(i);
 				}
 			}
-		}
-		finally {
-			stLock.release();
+			finally {
+				stWriteLock.release();
+			}
 		}
 
 		// long endTime = System.currentTimeMillis();
