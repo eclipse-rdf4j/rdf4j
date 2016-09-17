@@ -29,6 +29,7 @@ import javax.servlet.http.HttpServletResponse;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpStatus;
 import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
@@ -44,13 +45,18 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryResult;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterRegistry;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
@@ -234,6 +240,15 @@ public class RepositoryController extends AbstractController {
 						throw new ServerHTTPException("Query evaluation error: " + e.getMessage());
 					}
 				}
+
+				if (queryResult instanceof QueryResult<?>) {
+					boolean distinct = ProtocolUtil.parseBooleanParam(request, Protocol.DISTINCT_PARAM_NAME,
+							false);
+					if (distinct) {
+						queryResult = distinct((QueryResult<?>)queryResult);
+					}
+				}
+
 				Object factory = ProtocolUtil.getAcceptableService(request, response, registry);
 
 				Map<String, Object> model = new HashMap<String, Object>();
@@ -362,5 +377,19 @@ public class RepositoryController extends AbstractController {
 		if ("null".equals(graphURI))
 			return null;
 		return repository.getValueFactory().createIRI(graphURI);
+	}
+
+	private static QueryResult<?> distinct(QueryResult<?> qr) {
+		if (qr instanceof TupleQueryResult) {
+			TupleQueryResult tqr = (TupleQueryResult) qr;
+			return new IteratingTupleQueryResult(tqr.getBindingNames(), new DistinctIteration<>(tqr));
+		}
+		else if (qr instanceof GraphQueryResult) {
+			GraphQueryResult gqr = (GraphQueryResult)qr;
+			return new IteratingGraphQueryResult(gqr.getNamespaces(), new DistinctIteration<>(gqr));
+		}
+		else {
+			return qr;
+		}
 	}
 }
