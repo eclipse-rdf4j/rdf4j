@@ -268,40 +268,45 @@ class MemorySailStore implements SailStore {
 		}
 
 		/*
-		 * The statement list won't shrink or change from lastStmtPos down (it might grow) while we don't have
-		 * a lock as (1) new statements are always appended last, (2) we are the only process that removes
-		 * statements.
+		 * The order of the statement list won't change from lastStmtPos down while we don't have the write
+		 * lock (it might shrink or grow) as (1) new statements are always appended last, (2) we are the only
+		 * process that removes statements, (3) this list is cleared on close.
 		 */
 
 		for (int i = lastStmtPos; i >= 0; i--) {
 			// As we are running in the background, yield the write lock frequently to other writers.
 			Lock stWriteLock = statementListLockManager.getWriteLock();
 			try {
-				MemStatement st = statements.get(i);
+				// guard against shrinkage, e.g. clear() on close()
+				lastStmtPos = statements.size() - 1;
+				i = Math.min(i, lastStmtPos);
+				if (i >= 0) {
+					MemStatement st = statements.get(i);
 
-				if (st.getTillSnapshot() <= currentSnapshot) {
-					MemResource subj = st.getSubject();
-					if (processedSubjects.add(subj)) {
-						subj.cleanSnapshotsFromSubjectStatements(currentSnapshot);
+					if (st.getTillSnapshot() <= currentSnapshot) {
+						MemResource subj = st.getSubject();
+						if (processedSubjects.add(subj)) {
+							subj.cleanSnapshotsFromSubjectStatements(currentSnapshot);
+						}
+
+						MemIRI pred = st.getPredicate();
+						if (processedPredicates.add(pred)) {
+							pred.cleanSnapshotsFromPredicateStatements(currentSnapshot);
+						}
+
+						MemValue obj = st.getObject();
+						if (processedObjects.add(obj)) {
+							obj.cleanSnapshotsFromObjectStatements(currentSnapshot);
+						}
+
+						MemResource context = st.getContext();
+						if (context != null && processedContexts.add(context)) {
+							context.cleanSnapshotsFromContextStatements(currentSnapshot);
+						}
+
+						// stale statement
+						statements.remove(i);
 					}
-
-					MemIRI pred = st.getPredicate();
-					if (processedPredicates.add(pred)) {
-						pred.cleanSnapshotsFromPredicateStatements(currentSnapshot);
-					}
-
-					MemValue obj = st.getObject();
-					if (processedObjects.add(obj)) {
-						obj.cleanSnapshotsFromObjectStatements(currentSnapshot);
-					}
-
-					MemResource context = st.getContext();
-					if (context != null && processedContexts.add(context)) {
-						context.cleanSnapshotsFromContextStatements(currentSnapshot);
-					}
-
-					// stale statement
-					statements.remove(i);
 				}
 			}
 			finally {
