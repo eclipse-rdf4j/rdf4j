@@ -14,10 +14,14 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailTest;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.elasticsearch.common.io.FileSystemUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ElasticsearchSailTest extends AbstractLuceneSailTest {
 
 	private static final String DATA_DIR = "target/test-data";
+
+	private Logger log = LoggerFactory.getLogger(ElasticsearchSailTest.class);
 
 	@Override
 	protected void configure(LuceneSail sail) {
@@ -33,5 +37,6 @@ public class ElasticsearchSailTest extends AbstractLuceneSailTest {
 	{
 		super.tearDown();
 		FileSystemUtils.deleteRecursively(new File(DATA_DIR));
+		log.debug("Data dir: {}", DATA_DIR);
 	}
 }
