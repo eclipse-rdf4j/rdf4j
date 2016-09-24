@@ -149,6 +149,11 @@ public abstract class Protocol {
 	public static final String ACTION_PARAM_NAME = "action";
 
 	/**
+	 * Parameter name for the distinct parameter.
+	 */
+	public static final String DISTINCT_PARAM_NAME = "distinct";
+
+	/**
 	 * Relative location of the protocol resource.
 	 */
 	public static final String PROTOCOL = "protocol";
