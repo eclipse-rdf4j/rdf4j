@@ -258,39 +258,60 @@ class MemorySailStore implements SailStore {
 		HashSet<MemValue> processedObjects = new HashSet<MemValue>();
 		HashSet<MemValue> processedContexts = new HashSet<MemValue>();
 
-		Lock stLock = statementListLockManager.getWriteLock();
+		int lastStmtPos;
+		Lock stReadLock = statementListLockManager.getReadLock();
 		try {
-			for (int i = statements.size() - 1; i >= 0; i--) {
-				MemStatement st = statements.get(i);
-
-				if (st.getTillSnapshot() <= currentSnapshot) {
-					MemResource subj = st.getSubject();
-					if (processedSubjects.add(subj)) {
-						subj.cleanSnapshotsFromSubjectStatements(currentSnapshot);
-					}
-
-					MemIRI pred = st.getPredicate();
-					if (processedPredicates.add(pred)) {
-						pred.cleanSnapshotsFromPredicateStatements(currentSnapshot);
-					}
-
-					MemValue obj = st.getObject();
-					if (processedObjects.add(obj)) {
-						obj.cleanSnapshotsFromObjectStatements(currentSnapshot);
-					}
-
-					MemResource context = st.getContext();
-					if (context != null && processedContexts.add(context)) {
-						context.cleanSnapshotsFromContextStatements(currentSnapshot);
-					}
-
-					// stale statement
-					statements.remove(i);
-				}
-			}
+			lastStmtPos = statements.size() - 1;
 		}
 		finally {
-			stLock.release();
+			stReadLock.release();
+		}
+
+		/*
+		 * The order of the statement list won't change from lastStmtPos down while we don't have the write
+		 * lock (it might shrink or grow) as (1) new statements are always appended last, (2) we are the only
+		 * process that removes statements, (3) this list is cleared on close.
+		 */
+
+		for (int i = lastStmtPos; i >= 0; i--) {
+			// As we are running in the background, yield the write lock frequently to other writers.
+			Lock stWriteLock = statementListLockManager.getWriteLock();
+			try {
+				// guard against shrinkage, e.g. clear() on close()
+				lastStmtPos = statements.size() - 1;
+				i = Math.min(i, lastStmtPos);
+				if (i >= 0) {
+					MemStatement st = statements.get(i);
+
+					if (st.getTillSnapshot() <= currentSnapshot) {
+						MemResource subj = st.getSubject();
+						if (processedSubjects.add(subj)) {
+							subj.cleanSnapshotsFromSubjectStatements(currentSnapshot);
+						}
+
+						MemIRI pred = st.getPredicate();
+						if (processedPredicates.add(pred)) {
+							pred.cleanSnapshotsFromPredicateStatements(currentSnapshot);
+						}
+
+						MemValue obj = st.getObject();
+						if (processedObjects.add(obj)) {
+							obj.cleanSnapshotsFromObjectStatements(currentSnapshot);
+						}
+
+						MemResource context = st.getContext();
+						if (context != null && processedContexts.add(context)) {
+							context.cleanSnapshotsFromContextStatements(currentSnapshot);
+						}
+
+						// stale statement
+						statements.remove(i);
+					}
+				}
+			}
+			finally {
+				stWriteLock.release();
+			}
 		}
 
 		// long endTime = System.currentTimeMillis();
@@ -361,6 +382,8 @@ class MemorySailStore implements SailStore {
 		private Set<StatementPattern> observations;
 
 		private boolean txnLock;
+
+		private boolean requireCleanup;
 
 		public MemorySailSink(boolean explicit, boolean serializable)
 			throws SailException
@@ -437,7 +460,9 @@ class MemorySailStore implements SailStore {
 		{
 			if (txnLock) {
 				currentSnapshot = Math.max(currentSnapshot, nextSnapshot);
-				scheduleSnapshotCleanup();
+				if (requireCleanup) {
+					scheduleSnapshotCleanup();
+				}
 			}
 		}
 
@@ -504,6 +529,7 @@ class MemorySailStore implements SailStore {
 			throws SailException
 		{
 			acquireExclusiveTransactionLock();
+			requireCleanup = true;
 			CloseableIteration<MemStatement, SailException> iter;
 			iter = createStatementIterator(null, null, null, explicit, nextSnapshot, contexts);
 			try {
@@ -530,6 +556,7 @@ class MemorySailStore implements SailStore {
 			throws SailException
 		{
 			acquireExclusiveTransactionLock();
+			requireCleanup = true;
 			CloseableIteration<MemStatement, SailException> iter;
 			iter = createStatementIterator(subj, pred, obj, explicit, nextSnapshot, ctx);
 			try {
