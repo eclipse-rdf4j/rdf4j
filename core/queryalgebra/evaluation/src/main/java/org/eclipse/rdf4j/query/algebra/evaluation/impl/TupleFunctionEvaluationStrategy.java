@@ -108,7 +108,9 @@ public class TupleFunctionEvaluationStrategy extends SimpleEvaluationStrategy {
 						if ((varValue == null || result.equals(varValue))
 								&& (boundValue == null || result.equals(boundValue)))
 						{
-							resultBindings.addBinding(varName, result);
+							if (boundValue == null) { // if not already present
+								resultBindings.addBinding(varName, result);
+							}
 						}
 						else {
 							resultBindings = null;
