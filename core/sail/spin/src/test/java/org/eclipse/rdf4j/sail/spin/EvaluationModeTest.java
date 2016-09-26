@@ -65,6 +65,7 @@ public class EvaluationModeTest {
 		}
 		assertThat(results.size(), is(2));
 		assertThat(results, hasItems("ex:Subj1", "ex:Subj3"));
+		conn.close();
 		repo.shutDown();
 	}
 }
