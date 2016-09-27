@@ -1,21 +1,11 @@
 Eclipse RDF4J Documentation
 ===========================
 
-This repository is part of the http://www.rdf4j.org/[Eclipse RDF4J] project. It
-contains the source files for the RDF4J documentation (references, tutorials,
-code examples, etc.).
+This repository is part of the http://www.rdf4j.org/[Eclipse RDF4J] project. It contains the source files for the RDF4J documentation (references, tutorials, code examples, etc.).
 
-http://www.rdf4j.org/[Eclipse RDF4J] (formerly known as Sesame) is a powerful
-Java framework for processing and handling RDF data. This includes creating,
-parsing, scalable storage, reasoning and querying with RDF and Linked Data. It
-offers an easy-to-use API that can be connected to all leading RDF database
-solutions. 
+http://www.rdf4j.org/[Eclipse RDF4J] (formerly known as Sesame) is a powerful Java framework for processing and handling RDF data. This includes creating, parsing, scalable storage, reasoning and querying with RDF and Linked Data. It offers an easy-to-use API that can be connected to all leading RDF database solutions. 
 
 License
 -------
 
-All documentation text is licensed under the terms of the
-http://creativecommons.org/licenses/by/3.0/[Creative Commons Attribution 3.0
-(Unported) license]. All example source code is licensed under the terms of
-the https://www.eclipse.org/org/documents/edl-v10.php[Eclipse Distribution
-License (EDL), v1.0].
+All documentation text is licensed under the terms of the http://creativecommons.org/licenses/by/3.0/[Creative Commons Attribution 3.0 (Unported) license]. All example source code is licensed under the terms of the https://www.eclipse.org/org/documents/edl-v10.php[Eclipse Distribution License (EDL), v1.0].
