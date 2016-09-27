@@ -54,7 +54,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
  *    builder.defaultGraph().subject("ex:graph1").add(RDF.TYPE, "ex:Graph");
  *    
  *    // return the Model object
- *    Model m = builder.builder();
+ *    Model m = builder.build();
  * </code>
  * </pre>
  * 
@@ -150,7 +150,7 @@ public class ModelBuilder {
 	}
 
 	/**
-	 * Set the current graph in which to add new statements to the supplied named graph. This method resets
+	 * Set the current graph in which to add new statements to the supplied named graph. This method clears
 	 * the current subject.
 	 * 
 	 * @param namedGraph
@@ -164,7 +164,7 @@ public class ModelBuilder {
 	}
 
 	/**
-	 * Set the current graph in which to add new statements to the default graph. This method resets the
+	 * Set the current graph in which to add new statements to the default graph. This method clears the
 	 * current subject.
 	 * 
 	 * @return this {@link ModelBuilder}
