@@ -19,6 +19,7 @@ import java.util.Map;
 
 import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
+import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
 import org.xml.sax.XMLReader;
 import org.xml.sax.helpers.DefaultHandler;
@@ -77,6 +78,11 @@ public class SimpleSAXParser {
 	 */
 	private boolean preserveWhitespace = false;
 
+	/**
+	 * A Locator indicating a position in the text that is currently being parsed by the SAX parser.
+	 */
+	private Locator locator;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -134,6 +140,10 @@ public class SimpleSAXParser {
 	 */
 	public SimpleSAXListener getListener() {
 		return listener;
+	}
+
+	public Locator getLocator() {
+		return locator;
 	}
 
 	/**
@@ -204,7 +214,7 @@ public class SimpleSAXParser {
 	 * @param inputSource
 	 *        An <tt>InputSource</tt> containing XML data.
 	 */
-	private synchronized void parse(InputSource inputSource)
+	public synchronized void parse(InputSource inputSource)
 		throws SAXException, IOException
 	{
 		xmlReader.setContentHandler(new SimpleSAXDefaultHandler());
@@ -328,6 +338,11 @@ public class SimpleSAXParser {
 
 			// Clear character buffer
 			charBuf.setLength(0);
+		}
+
+		@Override
+		public void setDocumentLocator(Locator loc) {
+			locator = loc;
 		}
 	}
 }
