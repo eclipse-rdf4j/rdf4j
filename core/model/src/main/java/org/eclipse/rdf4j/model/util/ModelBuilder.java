@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DC;
+import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -31,7 +32,9 @@ import org.eclipse.rdf4j.model.vocabulary.SKOS;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
- * Builder to facilitate easy creation of new RDF {@link Model} objects.
+ * Builder to facilitate easier creation of new RDF {@link Model} objects via a fluent interface. All methods
+ * returning a {@link ModelBuilder} return an immutable reference to the current object, allowing method
+ * chaining.
  * <p>
  * Usage example:
  * 
@@ -351,7 +354,7 @@ public class ModelBuilder {
 	}
 
 	private Namespace[] getDefaultNamespaces() {
-		return new Namespace[] { RDF.NS, RDFS.NS, OWL.NS, XMLSchema.NS, DC.NS, FOAF.NS, SKOS.NS };
+		return new Namespace[] { RDF.NS, RDFS.NS, OWL.NS, XMLSchema.NS, DCTERMS.NS, DC.NS, FOAF.NS, SKOS.NS };
 	}
 
 }
