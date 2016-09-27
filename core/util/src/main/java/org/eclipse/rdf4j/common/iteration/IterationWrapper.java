@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
+import java.util.NoSuchElementException;
+
 /**
  * Abstract superclass for Iterations that wrap other Iterations. The abstract class <tt>IterationWrapper</tt>
  * itself provides default methods that forward method calls to the wrapped Iteration. Subclasses of
@@ -22,7 +24,9 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 
 	/**
 	 * The wrapped Iteration.
+	 * @deprecated This will be changed to private, possibly with an accessor in future. Do not rely on it.
 	 */
+	@Deprecated
 	protected final Iteration<? extends E, ? extends X> wrappedIter;
 
 	/*--------------*
@@ -53,21 +57,35 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	public boolean hasNext()
 		throws X
 	{
-		return wrappedIter.hasNext();
+		if (isClosed()) {
+			return false;
+		}
+		boolean result = wrappedIter.hasNext();
+		if (!result) {
+			close();
+		}
+		return result;
 	}
 
 	/**
 	 * Returns the next element from the wrapped Iteration.
 	 * 
 	 * @throws java.util.NoSuchElementException
-	 *         If all elements have been returned.
-	 * @throws IllegalStateException
-	 *         If the Iteration has been closed.
+	 *         If all elements have been returned or it has been closed.
 	 */
 	public E next()
 		throws X
 	{
-		return wrappedIter.next();
+		if (isClosed()) {
+			throw new NoSuchElementException("The iteration has been closed.");
+		}
+		try {
+			return wrappedIter.next();
+		}
+		catch(NoSuchElementException e) {
+			close();
+			throw e;
+		}
 	}
 
 	/**
@@ -82,17 +100,30 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	public void remove()
 		throws X
 	{
-		wrappedIter.remove();
+		if (isClosed()) {
+			throw new IllegalStateException("The iteration has been closed.");
+		}
+		try {
+			wrappedIter.remove();
+		}
+		catch(IllegalStateException e) {
+			close();
+			throw e;
+		}
 	}
 
 	/**
-	 * Closed this Iteration and also closes the wrapped Iteration if it is a {@link CloseableIteration}.
+	 * Closes this Iteration and also closes the wrapped Iteration if it is a {@link CloseableIteration}.
 	 */
 	@Override
 	protected void handleClose()
 		throws X
 	{
-		super.handleClose();
-		Iterations.closeCloseable(wrappedIter);
+		try {
+			super.handleClose();
+		}
+		finally {
+			Iterations.closeCloseable(wrappedIter);
+		}
 	}
 }

@@ -9,12 +9,15 @@
 package org.eclipse.rdf4j.common.platform;
 
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,23 +27,23 @@ import org.slf4j.LoggerFactory;
  */
 public final class ProcessLauncher {
 
-	private Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	private String commandLine;
 
 	private String[] commandArray;
 
-	private File baseDir;
+	private final File baseDir;
 
-	private ArrayList<OutputListener> listeners = new ArrayList<OutputListener>(1);
+	private final List<OutputListener> listeners = new ArrayList<OutputListener>(1);
 
-	private Process subProcess;
+	private volatile Process subProcess;
 
-	private boolean finished = false;
+	private final AtomicBoolean finished = new AtomicBoolean(false);
 
-	private StringBuilder out = new StringBuilder();
+	private final StringBuilder out = new StringBuilder();
 
-	private StringBuilder err = new StringBuilder();
+	private final StringBuilder err = new StringBuilder();
 
 	/**
 	 * Constructs a new ProcessLauncher with the given command line.
@@ -175,7 +178,7 @@ public final class ProcessLauncher {
 	 * Check whether execution has finished.
 	 */
 	public boolean hasFinished() {
-		return finished;
+		return finished.get();
 	}
 
 	/**
@@ -192,24 +195,55 @@ public final class ProcessLauncher {
 		BackgroundPrinter stdout = null;
 		BackgroundPrinter stderr = null;
 		try {
-			if (this.commandArray != null) {
-				this.subProcess = Runtime.getRuntime().exec(this.commandArray, null, this.baseDir);
+			Process nextSubProcess = subProcess;
+			try {
+				if (this.commandArray != null) {
+					nextSubProcess = subProcess = Runtime.getRuntime().exec(this.commandArray, null,
+							this.baseDir);
+				}
+				else {
+					nextSubProcess = subProcess = Runtime.getRuntime().exec(this.commandLine, null,
+							this.baseDir);
+				}
+				stdout = new BackgroundPrinter(nextSubProcess.getInputStream(), false);
+				stderr = new BackgroundPrinter(nextSubProcess.getErrorStream(), true);
+				stdout.start();
+				stderr.start();
+				// kill process and wait max 10 seconds for output to complete
+				int exitValue = nextSubProcess.waitFor();
+				stdout.join(10000);
+				stderr.join(10000);
+				if (exitValue != 0) {
+					logger.info(
+							"WARNING: exit value " + exitValue + " for command \"" + getCommandLine() + "\"");
+				}
+				return exitValue;
 			}
-			else {
-				this.subProcess = Runtime.getRuntime().exec(this.commandLine, null, this.baseDir);
+			finally {
+				try {
+					subProcess = null;
+					if (nextSubProcess != null) {
+						nextSubProcess.destroy();
+					}
+				}
+				finally {
+					try {
+						if (stdout != null) {
+							stdout.close();
+						}
+					}
+					finally {
+						try {
+							if (stderr != null) {
+								stderr.close();
+							}
+						}
+						finally {
+							this.finished.set(true);
+						}
+					}
+				}
 			}
-			stdout = new BackgroundPrinter(subProcess.getInputStream(), false);
-			stderr = new BackgroundPrinter(subProcess.getErrorStream(), true);
-			stdout.start();
-			stderr.start();
-			// kill process and wait max 10 seconds for output to complete
-			int exitValue = this.subProcess.waitFor();
-			stdout.join(10000);
-			stderr.join(10000);
-			if (exitValue != 0) {
-				logger.info("WARNING: exit value " + exitValue + " for command \"" + getCommandLine() + "\"");
-			}
-			return exitValue;
 		}
 		catch (IOException ioe) {
 			// usually caused if the command does not exist at all
@@ -218,19 +252,6 @@ public final class ProcessLauncher {
 		catch (Exception e) {
 			logger.error("Exception while running/launching \"" + getCommandLine() + "\".", e);
 		}
-		finally {
-			if (this.subProcess != null) {
-				this.subProcess.destroy();
-				this.subProcess = null;
-			}
-			if (stdout != null) {
-				stdout.close();
-			}
-			if (stderr != null) {
-				stderr.close();
-			}
-			this.finished = true;
-		}
 		return -1;
 	}
 
@@ -238,16 +259,17 @@ public final class ProcessLauncher {
 	 * Tries to abort the currently running process.
 	 */
 	public void abort() {
-		if (this.subProcess != null) {
-			this.subProcess.destroy();
-			this.subProcess = null;
+		Process nextSubProcess = subProcess;
+		subProcess = null;
+		if (nextSubProcess != null) {
+			nextSubProcess.destroy();
 		}
 	}
 
 	/**
 	 * Catches output from a "java.lang.Process" and writes it to either System.err or System.out.
 	 */
-	private class BackgroundPrinter extends Thread {
+	private class BackgroundPrinter extends Thread implements Closeable {
 
 		private InputStream in;
 
@@ -285,7 +307,10 @@ public final class ProcessLauncher {
 			}
 		}
 
-		public void close() {
+		@Override
+		public void close()
+			throws IOException
+		{
 			try {
 				this.in.close();
 			}

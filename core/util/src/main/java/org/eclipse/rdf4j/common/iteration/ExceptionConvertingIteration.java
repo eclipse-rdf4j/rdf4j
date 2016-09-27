@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
+import java.util.Objects;
 
 /**
  * A CloseableIteration that converts an arbitrary iteration to an iteration with exceptions of type
@@ -39,8 +40,7 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception>
 	 *        <tt>null</tt>.
 	 */
 	public ExceptionConvertingIteration(Iteration<? extends E, ? extends Exception> iter) {
-		assert iter != null;
-		this.iter = iter;
+		this.iter = Objects.requireNonNull(iter, "The iterator was null");
 	}
 
 	/*---------*
@@ -58,11 +58,19 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception>
 	 * @return <tt>true</tt> if the underlying Iteration contains more elements, <tt>false</tt> otherwise.
 	 * @throws X
 	 */
+	@Override
 	public boolean hasNext()
 		throws X
 	{
+		if (isClosed()) {
+			return false;
+		}
 		try {
-			return iter.hasNext();
+			boolean result = iter.hasNext();
+			if(!result) {
+				close();
+			}
+			return result;
 		}
 		catch (Exception e) {
 			throw convert(e);
@@ -78,13 +86,18 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception>
 	 * @throws IllegalStateException
 	 *         If the Iteration has been closed.
 	 */
+	@Override
 	public E next()
 		throws X
 	{
+		if (isClosed()) {
+			throw new NoSuchElementException("The iteration has been closed.");
+		}
 		try {
 			return iter.next();
 		}
 		catch (NoSuchElementException e) {
+			close();
 			throw e;
 		}
 		catch (IllegalStateException e) {
@@ -104,9 +117,13 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception>
 	 *         If the Iteration has been closed, or if {@link #next} has not yet been called, or
 	 *         {@link #remove} has already been called after the last call to {@link #next}.
 	 */
+	@Override
 	public void remove()
 		throws X
 	{
+		if (isClosed()) {
+			throw new IllegalStateException("The iteration has been closed.");
+		}
 		try {
 			iter.remove();
 		}
@@ -129,13 +146,16 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception>
 	protected void handleClose()
 		throws X
 	{
-		super.handleClose();
-
 		try {
-			Iterations.closeCloseable(iter);
+			super.handleClose();
 		}
-		catch (Exception e) {
-			throw convert(e);
+		finally {
+			try {
+				Iterations.closeCloseable(iter);
+			}
+			catch (Exception e) {
+				throw convert(e);
+			}
 		}
 	}
 }

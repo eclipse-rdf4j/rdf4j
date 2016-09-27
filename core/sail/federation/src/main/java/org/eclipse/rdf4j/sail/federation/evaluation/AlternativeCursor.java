@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  */
 public class AlternativeCursor<E> extends LookAheadIteration<E, QueryEvaluationException> {
 
-	private CloseableIteration<? extends E, QueryEvaluationException> delegate;
+	private volatile CloseableIteration<? extends E, QueryEvaluationException> delegate;
 
 	private final CloseableIteration<? extends E, QueryEvaluationException> primary;
 
@@ -32,13 +32,24 @@ public class AlternativeCursor<E> extends LookAheadIteration<E, QueryEvaluationE
 		this.primary = primary;
 	}
 
+	@Override
 	public void handleClose()
 		throws QueryEvaluationException
 	{
-		primary.close();
-		alternative.close();
+		try {
+			super.handleClose();
+		}
+		finally {
+			try {
+				primary.close();
+			}
+			finally {
+				alternative.close();
+			}
+		}
 	}
 
+	@Override
 	public E getNextElement()
 		throws QueryEvaluationException
 	{

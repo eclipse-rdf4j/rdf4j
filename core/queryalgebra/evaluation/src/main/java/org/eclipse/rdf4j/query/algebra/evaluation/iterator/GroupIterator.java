@@ -71,7 +71,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private final Group group;
 
-	private boolean initialized = false;
+	private volatile boolean initialized = false;
 
 	private final Object lock = new Object();
 
@@ -157,9 +157,13 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	protected void handleClose()
 		throws QueryEvaluationException
 	{
-		super.handleClose();
-		if (this.db != null) {
-			this.db.close();
+		try {
+			super.handleClose();
+		}
+		finally {
+			if (db != null) {
+				db.close();
+			}
 		}
 	}
 
@@ -253,19 +257,21 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		private static final long serialVersionUID = 4461951265373324084L;
 
-		private BindingSet bindingSet;
+		private final BindingSet bindingSet;
 
-		private int hash;
+		private final int hash;
 
 		public Key(BindingSet bindingSet) {
 			this.bindingSet = bindingSet;
 
+			int nextHash = 0;
 			for (String name : group.getGroupBindingNames()) {
 				Value value = bindingSet.getValue(name);
 				if (value != null) {
-					this.hash ^= value.hashCode();
+					nextHash ^= value.hashCode();
 				}
 			}
+			this.hash = nextHash;
 		}
 
 		@Override
@@ -296,9 +302,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private class Entry {
 
-		private BindingSet prototype;
+		private final BindingSet prototype;
 
-		private Map<String, Aggregate> aggregates;
+		private volatile Map<String, Aggregate> aggregates;
 
 		public Entry(BindingSet prototype)
 			throws ValueExprEvaluationException, QueryEvaluationException
@@ -310,16 +316,22 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		private Map<String, Aggregate> getAggregates()
 			throws ValueExprEvaluationException, QueryEvaluationException
 		{
-			if (this.aggregates == null) {
-				this.aggregates = new LinkedHashMap<String, Aggregate>();
-				for (GroupElem ge : group.getGroupElements()) {
-					Aggregate create = create(ge.getOperator());
-					if (create != null) {
-						aggregates.put(ge.getName(), create);
+			Map<String, Aggregate> result = aggregates;
+			if (result == null) {
+				synchronized (this) {
+					result = aggregates;
+					if (result == null) {
+						result = aggregates = new LinkedHashMap<String, Aggregate>();
+						for (GroupElem ge : group.getGroupElements()) {
+							Aggregate create = create(ge.getOperator());
+							if (create != null) {
+								aggregates.put(ge.getName(), create);
+							}
+						}
 					}
 				}
 			}
-			return this.aggregates;
+			return result;
 		}
 
 		public BindingSet getPrototype() {

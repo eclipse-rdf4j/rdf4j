@@ -8,6 +8,9 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
+import java.util.NoSuchElementException;
+import java.util.Objects;
+
 /**
  * A CloseableIteration that converts an iteration over objects of type <tt>S</tt> (the source type) to an
  * iteration over objects of type <tt>T</tt> (the target type).
@@ -36,8 +39,7 @@ public abstract class ConvertingIteration<S, T, X extends Exception>
 	 *        The source type iteration for this <tt>ConvertingIteration</tt>, must not be <tt>null</tt>.
 	 */
 	public ConvertingIteration(Iteration<? extends S, ? extends X> iter) {
-		assert iter != null;
-		this.iter = iter;
+		this.iter = Objects.requireNonNull(iter, "The iterator was null");
 	}
 
 	/*---------*
@@ -56,10 +58,18 @@ public abstract class ConvertingIteration<S, T, X extends Exception>
 	 * @return <tt>true</tt> if the source type iteration contains more elements, <tt>false</tt> otherwise.
 	 * @throws X
 	 */
+	@Override
 	public boolean hasNext()
 		throws X
 	{
-		return iter.hasNext();
+		if (isClosed()) {
+			return false;
+		}
+		boolean result = iter.hasNext();
+		if (!result) {
+			close();
+		}
+		return result;
 	}
 
 	/**
@@ -71,9 +81,13 @@ public abstract class ConvertingIteration<S, T, X extends Exception>
 	 * @throws IllegalStateException
 	 *         If the iteration has been closed.
 	 */
+	@Override
 	public T next()
 		throws X
 	{
+		if (isClosed()) {
+			throw new NoSuchElementException("The iteration has been closed.");
+		}
 		return convert(iter.next());
 	}
 
@@ -86,9 +100,13 @@ public abstract class ConvertingIteration<S, T, X extends Exception>
 	 *         If the Iteration has been closed, or if {@link #next} has not yet been called, or
 	 *         {@link #remove} has already been called after the last call to {@link #next}.
 	 */
+	@Override
 	public void remove()
 		throws X
 	{
+		if (isClosed()) {
+			throw new IllegalStateException("The iteration has been closed.");
+		}
 		iter.remove();
 	}
 
@@ -99,7 +117,11 @@ public abstract class ConvertingIteration<S, T, X extends Exception>
 	protected void handleClose()
 		throws X
 	{
-		super.handleClose();
-		Iterations.closeCloseable(iter);
+		try {
+			super.handleClose();
+		}
+		finally {
+			Iterations.closeCloseable(iter);
+		}
 	}
 }

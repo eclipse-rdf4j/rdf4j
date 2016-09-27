@@ -121,8 +121,8 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 			while (iter.hasNext()) {
 				BindingSet next = iter.next();
 
-				// Add this binding set if the limit hasn't been reached yet, or if
-				// it is sorted before the current lowest value
+				// Add this binding set if the limit hasn't been reached yet, or
+				// if it is sorted before the current lowest value
 				if (size < limit || comparator.compare(next, map.lastKey()) < 0) {
 
 					Integer count = map.get(next);
@@ -137,8 +137,8 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 					}
 
 					if (db != null && size % iterationSyncThreshold == 0L) {
-						// sync collection to disk every X new entries (where X is a
-						// multiple of the cache size)
+						// sync collection to disk every X new entries (where X
+						// is a multiple of the cache size)
 						db.commit();
 					}
 
@@ -226,10 +226,18 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	protected void handleClose()
 		throws QueryEvaluationException
 	{
-		iter.close();
-		if (db != null) {
-			this.db.close();
+		try {
+			super.handleClose();
 		}
-		super.handleClose();
+		finally {
+			try {
+				iter.close();
+			}
+			finally {
+				if (db != null) {
+					this.db.close();
+				}
+			}
+		}
 	}
 }

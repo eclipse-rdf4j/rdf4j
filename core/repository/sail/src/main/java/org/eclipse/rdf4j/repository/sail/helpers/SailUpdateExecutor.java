@@ -186,8 +186,9 @@ public class SailUpdateExecutor {
 		if (graphValue instanceof Resource) {
 			Resource namedGraph = (Resource)graphValue;
 
-			CloseableIteration<? extends Resource, SailException> contextIDs = con.getContextIDs();
+			CloseableIteration<? extends Resource, SailException> contextIDs = null;
 			try {
+				contextIDs = con.getContextIDs();
 				while (contextIDs.hasNext()) {
 					Resource contextID = contextIDs.next();
 
@@ -197,7 +198,9 @@ public class SailUpdateExecutor {
 				}
 			}
 			finally {
-				contextIDs.close();
+				if (contextIDs != null) {
+					contextIDs.close();
+				}
 			}
 		}
 	}
@@ -233,24 +236,24 @@ public class SailUpdateExecutor {
 		}
 
 		// get all statements from source and add them to destination
-		CloseableIteration<? extends Statement, SailException> statements = con.getStatements(null, null,
-				null, uc.isIncludeInferred(), (Resource)source);
-
-		if (maxExecutionTime > 0) {
-			statements = new TimeLimitIteration<Statement, SailException>(statements,
-					1000L * (maxExecutionTime - clearTime))
-			{
-
-				@Override
-				protected void throwInterruptedException()
-					throws SailException
-				{
-					throw new SailException("execution took too long");
-				}
-			};
-		}
-
+		CloseableIteration<? extends Statement, SailException> statements = null;
 		try {
+			statements = con.getStatements(null, null, null, uc.isIncludeInferred(), (Resource)source);
+
+			if (maxExecutionTime > 0) {
+				statements = new TimeLimitIteration<Statement, SailException>(statements,
+						1000L * (maxExecutionTime - clearTime))
+				{
+
+					@Override
+					protected void throwInterruptedException()
+						throws SailException
+					{
+						throw new SailException("execution took too long");
+					}
+				};
+			}
+
 			while (statements.hasNext()) {
 				Statement st = statements.next();
 				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(),
@@ -258,7 +261,9 @@ public class SailUpdateExecutor {
 			}
 		}
 		finally {
-			statements.close();
+			if (statements != null) {
+				statements.close();
+			}
 		}
 	}
 
@@ -282,22 +287,24 @@ public class SailUpdateExecutor {
 		}
 
 		// get all statements from source and add them to destination
-		CloseableIteration<? extends Statement, SailException> statements = con.getStatements(null, null,
-				null, uc.isIncludeInferred(), (Resource)source);
-
-		if (maxExecTime > 0) {
-			statements = new TimeLimitIteration<Statement, SailException>(statements, 1000L * maxExecTime) {
-
-				@Override
-				protected void throwInterruptedException()
-					throws SailException
-				{
-					throw new SailException("execution took too long");
-				}
-			};
-		}
-
+		CloseableIteration<? extends Statement, SailException> statements = null;
 		try {
+			statements = con.getStatements(null, null, null, uc.isIncludeInferred(), (Resource)source);
+
+			if (maxExecTime > 0) {
+				statements = new TimeLimitIteration<Statement, SailException>(statements,
+						1000L * maxExecTime)
+				{
+
+					@Override
+					protected void throwInterruptedException()
+						throws SailException
+					{
+						throw new SailException("execution took too long");
+					}
+				};
+			}
+
 			while (statements.hasNext()) {
 				Statement st = statements.next();
 				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(),
@@ -305,7 +312,9 @@ public class SailUpdateExecutor {
 			}
 		}
 		finally {
-			statements.close();
+			if (statements != null) {
+				statements.close();
+			}
 		}
 	}
 
@@ -338,24 +347,24 @@ public class SailUpdateExecutor {
 		}
 
 		// remove all statements from source and add them to destination
-		CloseableIteration<? extends Statement, SailException> statements = con.getStatements(null, null,
-				null, uc.isIncludeInferred(), (Resource)source);
-
-		if (maxExecutionTime > 0) {
-			statements = new TimeLimitIteration<Statement, SailException>(statements,
-					1000L * (maxExecutionTime - clearTime))
-			{
-
-				@Override
-				protected void throwInterruptedException()
-					throws SailException
-				{
-					throw new SailException("execution took too long");
-				}
-			};
-		}
+		CloseableIteration<? extends Statement, SailException> statements = null;
 
 		try {
+			statements = con.getStatements(null, null, null, uc.isIncludeInferred(), (Resource)source);
+			if (maxExecutionTime > 0) {
+				statements = new TimeLimitIteration<Statement, SailException>(statements,
+						1000L * (maxExecutionTime - clearTime))
+				{
+
+					@Override
+					protected void throwInterruptedException()
+						throws SailException
+					{
+						throw new SailException("execution took too long");
+					}
+				};
+			}
+
 			while (statements.hasNext()) {
 				Statement st = statements.next();
 				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(),
@@ -364,7 +373,9 @@ public class SailUpdateExecutor {
 			}
 		}
 		finally {
-			statements.close();
+			if (statements != null) {
+				statements.close();
+			}
 		}
 	}
 
@@ -386,27 +397,30 @@ public class SailUpdateExecutor {
 			else {
 				Scope scope = clearExpr.getScope();
 				if (Scope.NAMED_CONTEXTS.equals(scope)) {
-					CloseableIteration<? extends Resource, SailException> contextIDs = con.getContextIDs();
-					if (maxExecutionTime > 0) {
-						contextIDs = new TimeLimitIteration<Resource, SailException>(contextIDs,
-								1000L * maxExecutionTime)
-						{
-
-							@Override
-							protected void throwInterruptedException()
-								throws SailException
-							{
-								throw new SailException("execution took too long");
-							}
-						};
-					}
+					CloseableIteration<? extends Resource, SailException> contextIDs = null;
 					try {
+						contextIDs = con.getContextIDs();
+						if (maxExecutionTime > 0) {
+							contextIDs = new TimeLimitIteration<Resource, SailException>(contextIDs,
+									1000L * maxExecutionTime)
+							{
+
+								@Override
+								protected void throwInterruptedException()
+									throws SailException
+								{
+									throw new SailException("execution took too long");
+								}
+							};
+						}
 						while (contextIDs.hasNext()) {
 							con.clear(contextIDs.next());
 						}
 					}
 					finally {
-						contextIDs.close();
+						if (contextIDs != null) {
+							contextIDs.close();
+						}
 					}
 				}
 				else if (Scope.DEFAULT_CONTEXTS.equals(scope)) {
@@ -499,9 +513,9 @@ public class SailUpdateExecutor {
 				whereClause = new QueryRoot(whereClause);
 			}
 
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings;
-			sourceBindings = evaluateWhereClause(whereClause, uc, maxExecutionTime);
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings = null;
 			try {
+				sourceBindings = evaluateWhereClause(whereClause, uc, maxExecutionTime);
 				while (sourceBindings.hasNext()) {
 					BindingSet sourceBinding = sourceBindings.next();
 					deleteBoundTriples(sourceBinding, modify.getDeleteExpr(), uc);
@@ -510,7 +524,9 @@ public class SailUpdateExecutor {
 				}
 			}
 			finally {
-				sourceBindings.close();
+				if (sourceBindings != null) {
+					sourceBindings.close();
+				}
 			}
 		}
 		catch (QueryEvaluationException e) {
@@ -531,55 +547,91 @@ public class SailUpdateExecutor {
 			final TupleExpr whereClause, final UpdateContext uc, final int maxExecutionTime)
 		throws SailException, QueryEvaluationException
 	{
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings;
-		sourceBindings = con.evaluate(whereClause, uc.getDataset(), uc.getBindingSet(),
-				uc.isIncludeInferred());
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings1 = null;
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings2 = null;
+		ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> result = null;
+		boolean allGood = false;
+		try {
+			sourceBindings1 = con.evaluate(whereClause, uc.getDataset(), uc.getBindingSet(),
+					uc.isIncludeInferred());
 
-		if (maxExecutionTime > 0) {
-			sourceBindings = new TimeLimitIteration<BindingSet, QueryEvaluationException>(sourceBindings,
-					1000L * maxExecutionTime)
+			if (maxExecutionTime > 0) {
+				sourceBindings2 = new TimeLimitIteration<BindingSet, QueryEvaluationException>(
+						sourceBindings1, 1000L * maxExecutionTime)
+				{
+
+					@Override
+					protected void throwInterruptedException()
+						throws QueryEvaluationException
+					{
+						throw new QueryInterruptedException("execution took too long");
+					}
+				};
+			}
+			else {
+				sourceBindings2 = sourceBindings1;
+			}
+
+			result = new ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException>(
+					sourceBindings2)
 			{
 
-				@Override
-				protected void throwInterruptedException()
+				protected BindingSet convert(BindingSet sourceBinding)
 					throws QueryEvaluationException
 				{
-					throw new QueryInterruptedException("execution took too long");
+					if (whereClause instanceof SingletonSet && sourceBinding instanceof EmptyBindingSet
+							&& uc.getBindingSet() != null)
+					{
+						// in the case of an empty WHERE clause, we use the
+						// supplied
+						// bindings to produce triples to DELETE/INSERT
+						return uc.getBindingSet();
+					}
+					else {
+						// check if any supplied bindings do not occur in the
+						// bindingset
+						// produced by the WHERE clause. If so, merge.
+						Set<String> uniqueBindings = new HashSet<String>(
+								uc.getBindingSet().getBindingNames());
+						uniqueBindings.removeAll(sourceBinding.getBindingNames());
+						if (uniqueBindings.size() > 0) {
+							MapBindingSet mergedSet = new MapBindingSet();
+							for (String bindingName : sourceBinding.getBindingNames()) {
+								mergedSet.addBinding(sourceBinding.getBinding(bindingName));
+							}
+							for (String bindingName : uniqueBindings) {
+								mergedSet.addBinding(uc.getBindingSet().getBinding(bindingName));
+							}
+							return mergedSet;
+						}
+						return sourceBinding;
+					}
 				}
 			};
+			allGood = true;
+			return result;
 		}
-
-		return new ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException>(sourceBindings) {
-
-			protected BindingSet convert(BindingSet sourceBinding)
-				throws QueryEvaluationException
-			{
-				if (whereClause instanceof SingletonSet && sourceBinding instanceof EmptyBindingSet
-						&& uc.getBindingSet() != null)
-				{
-					// in the case of an empty WHERE clause, we use the supplied
-					// bindings to produce triples to DELETE/INSERT
-					return uc.getBindingSet();
-				}
-				else {
-					// check if any supplied bindings do not occur in the bindingset
-					// produced by the WHERE clause. If so, merge.
-					Set<String> uniqueBindings = new HashSet<String>(uc.getBindingSet().getBindingNames());
-					uniqueBindings.removeAll(sourceBinding.getBindingNames());
-					if (uniqueBindings.size() > 0) {
-						MapBindingSet mergedSet = new MapBindingSet();
-						for (String bindingName : sourceBinding.getBindingNames()) {
-							mergedSet.addBinding(sourceBinding.getBinding(bindingName));
-						}
-						for (String bindingName : uniqueBindings) {
-							mergedSet.addBinding(uc.getBindingSet().getBinding(bindingName));
-						}
-						return mergedSet;
+		finally {
+			if (!allGood) {
+				try {
+					if (result != null) {
+						result.close();
 					}
-					return sourceBinding;
+				}
+				finally {
+					try {
+						if (sourceBindings2 != null) {
+							sourceBindings2.close();
+						}
+					}
+					finally {
+						if (sourceBindings1 != null) {
+							sourceBindings1.close();
+						}
+					}
 				}
 			}
-		};
+		}
 	}
 
 	/**
@@ -605,7 +657,8 @@ public class SailUpdateExecutor {
 				}
 
 				if (subject == null || predicate == null || object == null) {
-					// skip removal of triple if any variable is unbound (may happen
+					// skip removal of triple if any variable is unbound (may
+					// happen
 					// with optional patterns)
 					// See SES-1047.
 					continue;

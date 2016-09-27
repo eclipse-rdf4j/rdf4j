@@ -8,8 +8,11 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
+import java.lang.reflect.UndeclaredThrowableException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.List;
 
 /**
  * An Iteration that returns the bag union of the results of a number of Iterations. 'Bag union' means that
@@ -48,7 +51,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	public UnionIteration(Iterable<? extends Iteration<? extends E, X>> args) {
 		argIter = args.iterator();
 
-		// Initialize with empty iteration so that var is never null
+		// Initialize with empty iteration
 		currentIter = new EmptyIteration<E, X>();
 	}
 
@@ -59,12 +62,16 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	protected E getNextElement()
 		throws X
 	{
-		if (currentIter.hasNext()) {
-			return currentIter.next();
+		if (isClosed()) {
+			return null;
+		}
+		Iteration<? extends E, X> nextCurrentIter = currentIter;
+		if (nextCurrentIter != null && nextCurrentIter.hasNext()) {
+			return nextCurrentIter.next();
 		}
 
 		// Current Iteration exhausted, continue with the next one
-		Iterations.closeCloseable(currentIter);
+		Iterations.closeCloseable(nextCurrentIter);
 
 		synchronized (this) {
 			if (argIter.hasNext()) {
@@ -83,16 +90,31 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	protected void handleClose()
 		throws X
 	{
-		// Close this iteration, this will prevent lookAhead() from calling
-		// getNextElement() again
-		super.handleClose();
-
-		synchronized (this) {
-			while (argIter.hasNext()) {
-				Iterations.closeCloseable(argIter.next());
+		try {
+			// Close this iteration, this will prevent lookAhead() from calling
+			// getNextElement() again
+			super.handleClose();
+		}
+		finally {
+			try {
+				List<Throwable> collectedExceptions = new ArrayList<>();
+				synchronized (this) {
+					while (argIter.hasNext()) {
+						try {
+							Iterations.closeCloseable(argIter.next());
+						}
+						catch (Throwable e) {
+							collectedExceptions.add(e);
+						}
+					}
+				}
+				if (!collectedExceptions.isEmpty()) {
+					throw new UndeclaredThrowableException(collectedExceptions.get(0));
+				}
+			}
+			finally {
+				Iterations.closeCloseable(currentIter);
 			}
 		}
-
-		Iterations.closeCloseable(currentIter);
 	}
 }

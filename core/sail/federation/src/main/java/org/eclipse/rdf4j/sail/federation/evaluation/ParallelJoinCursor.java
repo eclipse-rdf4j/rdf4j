@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation.evaluation;
 
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -40,8 +41,11 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 
 	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+	private volatile CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
 
+	/**
+	 * @deprecated Use {@link AbstractCloseableIteration#isClosed()} instead.
+	 */
 	private volatile boolean closed;
 
 	private final QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>> rightQueue = new QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>>(
@@ -68,7 +72,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	public void run() {
 		evaluationThread = Thread.currentThread();
 		try {
-			while (!closed && leftIter.hasNext()) {
+			while (!isClosed() && leftIter.hasNext()) {
 				rightQueue.put(strategy.evaluate(rightArg, leftIter.next()));
 			}
 		}
@@ -85,21 +89,24 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	}
 
 	@Override
-	public synchronized BindingSet getNextElement()
+	public BindingSet getNextElement()
 		throws QueryEvaluationException
 	{
 		BindingSet result = null;
-		while (rightIter != null || rightQueue.hasNext()) {
-			if (rightIter == null) {
-				rightIter = rightQueue.next();
+		CloseableIteration<BindingSet, QueryEvaluationException> nextRightIter = rightIter;
+		while (!isClosed() && (nextRightIter != null || rightQueue.hasNext())) {
+			if (nextRightIter == null) {
+				nextRightIter = rightIter = rightQueue.next();
 			}
-			if (rightIter.hasNext()) {
-				result = rightIter.next();
-				break;
-			}
-			else {
-				rightIter.close();
-				rightIter = null; // NOPMD
+			if (nextRightIter != null) {
+				if (nextRightIter.hasNext()) {
+					result = nextRightIter.next();
+					break;
+				}
+				else {
+					nextRightIter.close();
+					nextRightIter = rightIter = null; // NOPMD
+				}
 			}
 		}
 
@@ -107,25 +114,40 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	}
 
 	@Override
-	public synchronized void handleClose()
+	public void handleClose()
 		throws QueryEvaluationException
 	{
 		closed = true;
-		if (evaluationThread != null) {
-			evaluationThread.interrupt();
+		try {
+			super.handleClose();
 		}
-		if (rightIter != null) {
-			rightIter.close();
-			rightIter = null; // NOPMD
+		finally {
+			try {
+				Thread toCloseEvaluationThread = evaluationThread;
+				if (toCloseEvaluationThread != null) {
+					toCloseEvaluationThread.interrupt();
+				}
+			}
+			finally {
+				try {
+					CloseableIteration<BindingSet, QueryEvaluationException> toCloseRightIter = rightIter;
+					rightIter = null; // NOPMD
+					if (toCloseRightIter != null) {
+						toCloseRightIter.close();
+					}
+				}
+				finally {
+					leftIter.close();
+				}
+			}
 		}
-
-		leftIter.close();
 	}
 
 	@Override
 	public String toString() {
 		String left = leftIter.toString().replace("\n", "\n\t");
-		String right = (null == rightIter) ? rightArg.toString() : rightIter.toString();
+		CloseableIteration<BindingSet, QueryEvaluationException> nextRightIter = rightIter;
+		String right = (null == nextRightIter) ? rightArg.toString() : nextRightIter.toString();
 		return "ParallelJoin\n\t" + left + "\n\t" + right.replace("\n", "\n\t");
 	}
 }

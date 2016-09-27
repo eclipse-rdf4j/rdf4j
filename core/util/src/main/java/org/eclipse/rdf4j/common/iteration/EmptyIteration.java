@@ -13,7 +13,7 @@ import java.util.NoSuchElementException;
 /**
  * An iterator that does not contain any elements.
  */
-public class EmptyIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
+public final class EmptyIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
 
 	/*--------------*
 	 * Constructors *
@@ -29,15 +29,18 @@ public class EmptyIteration<E, X extends Exception> extends AbstractCloseableIte
 	 * Methods *
 	 *---------*/
 
-	public boolean hasNext() {
+	@Override
+	public final boolean hasNext() {
 		return false;
 	}
 
-	public E next() {
+	@Override
+	public final E next() {
 		throw new NoSuchElementException();
 	}
 
-	public void remove() {
+	@Override
+	public final void remove() {
 		throw new IllegalStateException("Empty iterator does not contain any elements");
 	}
 }

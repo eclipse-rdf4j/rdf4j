@@ -20,9 +20,9 @@ public abstract class LookAheadIterator<E> extends AbstractCloseableIterator<E> 
 	 * Variables *
 	 *-----------*/
 
-	private E nextElement;
+	private volatile E nextElement;
 
-	private IOException closeException;
+	private volatile IOException closeException;
 
 	/*--------------*
 	 * Constructors *
@@ -42,13 +42,21 @@ public abstract class LookAheadIterator<E> extends AbstractCloseableIterator<E> 
 	 */
 	protected abstract E getNextElement();
 
+	@Override
 	public final boolean hasNext() {
+		if (isClosed()) {
+			return false;
+		}
 		lookAhead();
 
 		return nextElement != null;
 	}
 
+	@Override
 	public final E next() {
+		if (isClosed()) {
+			throw new NoSuchElementException("The iteration has been closed.");
+		}
 		lookAhead();
 
 		E result = nextElement;
@@ -93,15 +101,21 @@ public abstract class LookAheadIterator<E> extends AbstractCloseableIterator<E> 
 	protected void handleClose()
 		throws IOException
 	{
-		super.handleClose();
-		nextElement = null;
+		try {
+			super.handleClose();
+		}
+		finally {
+			nextElement = null;
+		}
 	}
 
+	@Override
 	protected void handleAlreadyClosed()
 		throws IOException
 	{
-		if (closeException != null) {
-			throw closeException;
+		IOException toThrowException = closeException;
+		if (toThrowException != null) {
+			throw toThrowException;
 		}
 	}
 }

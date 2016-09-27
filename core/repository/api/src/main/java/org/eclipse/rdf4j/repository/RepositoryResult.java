@@ -68,8 +68,12 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 	protected void handleClose()
 		throws RepositoryException
 	{
-		super.handleClose();
-		Iterations.closeCloseable(wrappedIter);
+		try {
+			super.handleClose();
+		}
+		finally {
+			Iterations.closeCloseable(wrappedIter);
+		}
 	}
 
 	/**

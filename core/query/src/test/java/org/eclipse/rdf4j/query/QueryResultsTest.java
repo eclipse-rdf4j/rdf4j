@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -188,7 +189,9 @@ public class QueryResultsTest {
 		}
 	}
 
-	private class StubGraphQueryResult implements GraphQueryResult {
+	private class StubGraphQueryResult extends AbstractCloseableIteration<Statement, QueryEvaluationException>
+			implements GraphQueryResult
+	{
 
 		private List<Statement> statements = new ArrayList<Statement>();
 
@@ -200,30 +203,28 @@ public class QueryResultsTest {
 			statements.add(VF.createStatement(a, p, b));
 		}
 
-		public void close()
-			throws QueryEvaluationException
-		{
-			// TODO Auto-generated method stub
-		}
-
+		@Override
 		public boolean hasNext()
 			throws QueryEvaluationException
 		{
 			return !statements.isEmpty();
 		}
 
+		@Override
 		public Statement next()
 			throws QueryEvaluationException
 		{
 			return statements.remove(0);
 		}
 
+		@Override
 		public void remove()
 			throws QueryEvaluationException
 		{
 			statements.remove(0);
 		}
 
+		@Override
 		public Map<String, String> getNamespaces()
 			throws QueryEvaluationException
 		{

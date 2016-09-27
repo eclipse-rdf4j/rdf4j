@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.http.server.repository;
 
 import static javax.servlet.http.HttpServletResponse.SC_NOT_FOUND;
 
+import java.util.Objects;
+
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
@@ -51,18 +53,18 @@ public class RepositoryInterceptor extends ServerInterceptor {
 	 * Variables *
 	 *-----------*/
 
-	private RepositoryManager repositoryManager;
+	private volatile RepositoryManager repositoryManager;
 
-	private String repositoryID;
+	private volatile String repositoryID;
 
-	private RepositoryConnection repositoryCon;
+	private volatile RepositoryConnection repositoryCon;
 
 	/*---------*
 	 * Methods *
 	 *---------*/
 
 	public void setRepositoryManager(RepositoryManager repMan) {
-		repositoryManager = repMan;
+		repositoryManager = Objects.requireNonNull(repMan, "Repository manager was null");
 	}
 
 	@Override
@@ -91,8 +93,9 @@ public class RepositoryInterceptor extends ServerInterceptor {
 	protected String getThreadName() {
 		String threadName = Protocol.REPOSITORIES;
 
-		if (repositoryID != null) {
-			threadName += "/" + repositoryID;
+		String nextRepositoryID = repositoryID;
+		if (nextRepositoryID != null) {
+			threadName += "/" + nextRepositoryID;
 		}
 
 		return threadName;
@@ -102,31 +105,45 @@ public class RepositoryInterceptor extends ServerInterceptor {
 	protected void setRequestAttributes(HttpServletRequest request)
 		throws ClientHTTPException, ServerHTTPException
 	{
-		if (repositoryID != null) {
+		String nextRepositoryID = repositoryID;
+		if (nextRepositoryID != null) {
 			try {
-				Repository repository = repositoryManager.getRepository(repositoryID);
+				Repository repository = repositoryManager.getRepository(nextRepositoryID);
 
 				if (repository == null) {
-					throw new ClientHTTPException(SC_NOT_FOUND, "Unknown repository: " + repositoryID);
+					throw new ClientHTTPException(SC_NOT_FOUND, "Unknown repository: " + nextRepositoryID);
 				}
 
-				repositoryCon = repository.getConnection();
+				RepositoryConnection nextRepositoryCon = repositoryCon;
+				if (nextRepositoryCon == null) {
+					synchronized (this) {
+						nextRepositoryCon = repositoryCon;
+						if (nextRepositoryCon == null) {
+							nextRepositoryCon = repositoryCon = repository.getConnection();
+							// SES-1834 by default, the Sesame server should not
+							// treat datatype or language value verification
+							// errors as fatal. This is to be graceful, by
+							// default, about accepting "dirty" data.
+							// FIXME SES-1833 this should be configurable by the
+							// user.
+							nextRepositoryCon.getParserConfig().addNonFatalError(
+									BasicParserSettings.VERIFY_DATATYPE_VALUES);
+							nextRepositoryCon.getParserConfig().addNonFatalError(
+									BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 
-				// SES-1834 by default, the Sesame server should not treat datatype or language value verification errors
-				// as fatal. This is to be graceful, by default, about accepting "dirty" data.
-				// FIXME SES-1833 this should be configurable by the user.
-				repositoryCon.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
-				repositoryCon.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
-
-				// FIXME: hack for repositories that return connections that are not
-				// in auto-commit mode by default
-				if (!repositoryCon.isAutoCommit()) {
-					repositoryCon.setAutoCommit(true);
+							// FIXME: hack for repositories that return
+							// connections that are not in auto-commit mode by
+							// default
+							if (!nextRepositoryCon.isAutoCommit()) {
+								nextRepositoryCon.setAutoCommit(true);
+							}
+						}
+					}
 				}
 
-				request.setAttribute(REPOSITORY_ID_KEY, repositoryID);
+				request.setAttribute(REPOSITORY_ID_KEY, nextRepositoryID);
 				request.setAttribute(REPOSITORY_KEY, repository);
-				request.setAttribute(REPOSITORY_CONNECTION_KEY, repositoryCon);
+				request.setAttribute(REPOSITORY_CONNECTION_KEY, nextRepositoryCon);
 			}
 			catch (RepositoryConfigException e) {
 				throw new ServerHTTPException(e.getMessage(), e);
@@ -141,9 +158,10 @@ public class RepositoryInterceptor extends ServerInterceptor {
 	protected void cleanUpResources()
 		throws ServerHTTPException
 	{
-		if (repositoryCon != null) {
+		RepositoryConnection nextRepositoryCon = repositoryCon;
+		if (nextRepositoryCon != null) {
 			try {
-				repositoryCon.close();
+				nextRepositoryCon.close();
 			}
 			catch (RepositoryException e) {
 				throw new ServerHTTPException(e.getMessage(), e);

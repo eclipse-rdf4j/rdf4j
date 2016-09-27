@@ -42,23 +42,33 @@ public class SailBooleanQuery extends SailQuery implements BooleanQuery {
 			dataset = parsedBooleanQuery.getDataset();
 		}
 
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter2 = null;
+
 		try {
 			SailConnection sailCon = getConnection().getSailConnection();
 
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter;
-			bindingsIter = sailCon.evaluate(tupleExpr, dataset, getBindings(), getIncludeInferred());
+			bindingsIter1 = sailCon.evaluate(tupleExpr, dataset, getBindings(), getIncludeInferred());
 
-			bindingsIter = enforceMaxQueryTime(bindingsIter);
+			bindingsIter2 = enforceMaxQueryTime(bindingsIter1);
 
-			try {
-				return bindingsIter.hasNext();
-			}
-			finally {
-				bindingsIter.close();
-			}
+			return bindingsIter2.hasNext();
 		}
 		catch (SailException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
+		}
+		finally {
+			// Always cleanup all iterators, as they are not persistently visible outside of this method
+			try {
+				if (bindingsIter2 != null) {
+					bindingsIter2.close();
+				}
+			}
+			finally {
+				if (bindingsIter1 != null) {
+					bindingsIter1.close();
+				}
+			}
 		}
 	}
 }
