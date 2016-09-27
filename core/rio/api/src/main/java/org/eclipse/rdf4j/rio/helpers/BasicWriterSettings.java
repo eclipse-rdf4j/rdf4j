@@ -19,10 +19,10 @@ public class BasicWriterSettings {
 	/**
 	 * Boolean setting for writer to determine whether pretty printing is preferred.
 	 * <p>
-	 * Defaults to true.
+	 * Defaults to false because it isn't always scalable.
 	 */
 	public static final RioSetting<Boolean> PRETTY_PRINT = new RioSettingImpl<Boolean>(
-			"org.eclipse.rdf4j.rio.prettyprint", "Pretty print", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.prettyprint", "Pretty print", Boolean.FALSE);
 
 	/**
 	 * Boolean setting for writer to determine whether it should remove the xsd:string datatype from literals

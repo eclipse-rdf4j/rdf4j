@@ -1,0 +1,35 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+@prefix spin: <http://spinrdf.org/spin#>.
+@prefix ex: <ex:>.
+
+[ a       sp:Ask ;
+	sp:text """
+PREFIX ex: <ex:>
+
+ASK
+WHERE {
+	?this ex:age ?age.
+	FILTER(?age > 25)
+	MINUS {
+		?this a ex:Student.
+	}
+}
+""";
+        sp:where ([ sp:object _:age ;
+                    sp:predicate ex:age ;
+                    sp:subject spin:_this
+                  ] [ a       sp:Filter ;
+	               	sp:expression
+                  		[ a sp:gt;
+                  			sp:arg1 _:age ;
+                  			sp:arg2 25
+                  		]
+        	      ] [ a sp:Minus ;
+				    sp:elements ([ sp:subject spin:_this ;
+				                   sp:predicate rdf:type ;
+				                   sp:object  ex:Student ;
+				                 ])
+                  ]) ;
+      ].
+
+_:age sp:varName "age" .

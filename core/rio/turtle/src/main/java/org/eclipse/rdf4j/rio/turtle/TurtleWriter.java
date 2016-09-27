@@ -11,8 +11,12 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.lang.reflect.GenericArrayType;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.StringTokenizer;
 
@@ -20,10 +24,13 @@ import org.eclipse.rdf4j.common.io.IndentingWriter;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
@@ -56,6 +63,11 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	protected Resource lastWrittenSubject;
 
 	protected IRI lastWrittenPredicate;
+
+	/**
+	 * A {@link Model} that is only used if pretty printing is enabled before startRDF is called;
+	 */
+	protected Model prettyPrintModel = null;
 
 	/*--------------*
 	 * Constructors *
@@ -90,10 +102,12 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.TURTLE;
 	}
 
+	@Override
 	public void startRDF()
 		throws RDFHandlerException
 	{
@@ -103,6 +117,10 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 		writingStarted = true;
 
+		if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {
+			prettyPrintModel = new LinkedHashModel();
+		}
+
 		try {
 			// Write namespace declarations
 			for (Map.Entry<String, String> entry : namespaceTable.entrySet()) {
@@ -110,6 +128,9 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 				String prefix = entry.getValue();
 
 				writeNamespace(prefix, name);
+				if (prettyPrintModel != null) {
+					prettyPrintModel.setNamespace(prefix, name);
+				}
 			}
 
 			if (!namespaceTable.isEmpty()) {
@@ -121,6 +142,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	@Override
 	public void endRDF()
 		throws RDFHandlerException
 	{
@@ -129,6 +151,71 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 
 		try {
+			if (prettyPrintModel != null) {
+				// Note: We can't guarantee ordering at this point because Resource doesn't implement Comparable<Resource>
+				for (Resource nextContext : prettyPrintModel.contexts()) {
+					for (Resource nextSubject : prettyPrintModel.subjects()) {
+						boolean canShortenSubjectBNode = true;
+						// We can almost always shorten subject IRIs, 
+						// with some known corner cases that are already embedded in the algorithm
+						// So just need to do checking for BNode subjects
+						if (nextSubject instanceof BNode) {
+							if (prettyPrintModel.contains(null, null, nextSubject)) {
+								// Cannot shorten this blank node as it is used as the object of a statement somewhere 
+								// so must be written in a non-anonymous form
+								canShortenSubjectBNode = false;
+							}
+							// Must check this for all writers, not just TriG/etc., 
+							// as Turtle writing only works right now for these statements because of the common blank node identifier
+							// The nextObjects iterator below does not take into account contexts
+							else if (prettyPrintModel.filter(nextSubject, null, null).contexts().size() > 1) {
+								// TriG section 2.3.1 specifies that we cannot shorten blank nodes shared across contexts, 
+								// and this code is shared with TriG.
+								canShortenSubjectBNode = false;
+							}
+							else if (prettyPrintModel.contains(null, null, null, nextSubject)) {
+								// Cannot anonymize if this blank node has been used as a context also
+								canShortenSubjectBNode = false;
+							}
+						}
+						for (IRI nextPredicate : prettyPrintModel.filter(nextSubject, null, null,
+								nextContext).predicates())
+						{
+							Model nextObjects = prettyPrintModel.filter(nextSubject, nextPredicate, null,
+									nextContext);
+							//if (nextObjects.size() > 1) {
+							// In this structure, cannot support shortening subject for multiple statements
+							//	canShortenSubject = false;
+							//}
+							for (Statement nextSt : nextObjects) {
+								Value nextObject = nextSt.getObject();
+								boolean canShortenObjectBNode = true;
+								if (nextObject instanceof BNode) {
+									if (prettyPrintModel.contains((BNode)nextObject, null, null)) {
+										// Cannot shorten this blank node as it is used as the subject of a statement somewhere 
+										// so must be written in a non-anonymous form
+										// NOTE: that this is only a restriction in this implementation because we write in CSPO order, 
+										// if we followed the linked chain we could be able to shorten here in some cases
+										canShortenObjectBNode = false;
+									}
+									else if (prettyPrintModel.filter(null, null, nextObject).size() > 1) {
+										// Cannot shorten BNode if any other statements reference it as an object
+										canShortenObjectBNode = false;
+									}
+									else if (prettyPrintModel.filter(null, null, null,
+											(BNode)nextObject).size() > 0)
+									{
+										// Cannot anonymize if this blank node has been used as a context also
+										canShortenObjectBNode = false;
+									}
+								}
+								handleStatementInternal(nextSt, true, canShortenSubjectBNode,
+										canShortenObjectBNode);
+							}
+						}
+					}
+				}
+			}
 			closePreviousStatement();
 			writer.flush();
 		}
@@ -140,6 +227,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	@Override
 	public void handleNamespace(String prefix, String name)
 		throws RDFHandlerException
 	{
@@ -151,7 +239,8 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 				boolean isLegalPrefix = prefix.length() == 0 || TurtleUtil.isPN_PREFIX(prefix);
 
 				if (!isLegalPrefix || namespaceTable.containsValue(prefix)) {
-					// Specified prefix is not legal or the prefix is already in use,
+					// Specified prefix is not legal or the prefix is already in
+					// use,
 					// generate a legal unique prefix
 
 					if (prefix.length() == 0 || !isLegalPrefix) {
@@ -181,11 +270,48 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	@Override
 	public void handleStatement(Statement st)
 		throws RDFHandlerException
 	{
 		if (!writingStarted) {
 			throw new RuntimeException("Document writing has not yet been started");
+		}
+
+		// If we are pretty-printing, all writing is buffered until endRDF is
+		// called
+		if (prettyPrintModel != null) {
+			prettyPrintModel.add(st);
+		}
+		else {
+			handleStatementInternal(st, false, false, false);
+		}
+	}
+
+	/**
+	 * Internal method that differentiates between the pretty-print and streaming writer cases.
+	 * 
+	 * @param st
+	 *        The next statement to write
+	 * @param endRDFCalled
+	 *        True if endRDF has been called before this method is called. This is used to buffer statements
+	 *        for pretty-printing before dumping them when all statements have been delivered to us.
+	 * @param canShortenSubjectBNode
+	 *        True if, in the current context, we may be able to shorten the subject of this statement iff it
+	 *        is an instance of {@link BNode}.
+	 * @param canShortenObjectBNode
+	 *        True if, in the current context, we may be able to shorten the object of this statement iff it
+	 *        is an instance of {@link BNode}.
+	 */
+	protected void handleStatementInternal(Statement st, boolean endRDFCalled, boolean canShortenSubjectBNode,
+			boolean canShortenObjectBNode)
+	{
+
+		// Avoid accidentally writing statements early, but don't lose track of
+		// them if they are sent here
+		if (prettyPrintModel != null && !endRDFCalled) {
+			prettyPrintModel.add(st);
+			return;
 		}
 
 		Resource subj = st.getSubject();
@@ -215,7 +341,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 				// Write new subject:
 				writer.writeEOL();
-				writeResource(subj);
+				writeResource(subj, canShortenSubjectBNode);
 				writer.write(" ");
 				lastWrittenSubject = subj;
 
@@ -228,7 +354,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 				writer.increaseIndentation();
 			}
 
-			writeValue(obj);
+			writeValue(obj, canShortenObjectBNode);
 
 			// Don't close the line just yet. Maybe the next
 			// statement has the same subject and/or predicate.
@@ -238,6 +364,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	@Override
 	public void handleComment(String comment)
 		throws RDFHandlerException
 	{
@@ -293,25 +420,75 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	/**
+	 * @param val
+	 *        The {@link Value} to write.
+	 * @throws IOException
+	 * @deprecated Use {@link #writeValue(Value, boolean)} instead.
+	 */
+	@Deprecated
 	protected void writeValue(Value val)
 		throws IOException
 	{
+		writeValue(val, false);
+	}
+
+	/**
+	 * Writes a value, optionally shortening it if it is an {@link IRI} and has a namespace definition that is
+	 * suitable for use in this context for shortening or a {@link BNode} that has been confirmed to be able
+	 * to be shortened in this context.
+	 * 
+	 * @param val
+	 *        The {@link Value} to write.
+	 * @param canShorten
+	 *        True if, in the current context, we can shorten this value if it is an instance of {@link BNode}
+	 *        .
+	 * @throws IOException
+	 */
+	protected void writeValue(Value val, boolean canShorten)
+		throws IOException
+	{
 		if (val instanceof Resource) {
-			writeResource((Resource)val);
+			writeResource((Resource)val, canShorten);
 		}
 		else {
 			writeLiteral((Literal)val);
 		}
 	}
 
+	/**
+	 * @param res
+	 *        The {@link Resource} to write.
+	 * @throws IOException
+	 * @deprecated Use {@link #writeResource(Resource, boolean)} instead.
+	 */
+	@Deprecated
 	protected void writeResource(Resource res)
+		throws IOException
+	{
+		writeResource(res, false);
+	}
+
+	/**
+	 * Writes a {@link Resource}, optionally shortening it if it is an {@link IRI} and has a namespace
+	 * definition that is suitable for use in this context for shortening or a {@link BNode} that has been
+	 * confirmed to be able to be shortened in this context.
+	 * 
+	 * @param res
+	 *        The {@link Resource} to write.
+	 * @param canShorten
+	 *        True if, in the current context, we can shorten this value if it is an instance of {@link BNode}
+	 *        .
+	 * @throws IOException
+	 */
+	protected void writeResource(Resource res, boolean canShorten)
 		throws IOException
 	{
 		if (res instanceof IRI) {
 			writeURI((IRI)res);
 		}
 		else {
-			writeBNode((BNode)res);
+			writeBNode((BNode)res, canShorten);
 		}
 	}
 
@@ -343,9 +520,27 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	/**
+	 * @param bNode
+	 *        The {@link BNode} to write.
+	 * @throws IOException
+	 * @deprecated Use {@link #writeBNode(BNode, boolean)} instead.
+	 */
+	@Deprecated
 	protected void writeBNode(BNode bNode)
 		throws IOException
 	{
+		writeBNode(bNode, false);
+	}
+
+	protected void writeBNode(BNode bNode, boolean canShorten)
+		throws IOException
+	{
+		if (canShorten) {
+			writer.write("[]");
+			return;
+		}
+
 		writer.write("_:");
 		String id = bNode.getID();
 
@@ -399,7 +594,8 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 					return; // done
 				}
 				catch (IllegalArgumentException e) {
-					// not a valid numeric typed literal. ignore error and write as
+					// not a valid numeric typed literal. ignore error and write
+					// as
 					// quoted string instead.
 				}
 			}

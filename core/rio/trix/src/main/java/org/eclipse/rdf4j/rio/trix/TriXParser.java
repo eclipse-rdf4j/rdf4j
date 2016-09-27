@@ -26,7 +26,9 @@ import java.util.Map;
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.common.xml.SimpleSAXAdapter;
 import org.eclipse.rdf4j.common.xml.SimpleSAXParser;
+import org.eclipse.rdf4j.common.xml.XMLReaderFactory;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -35,10 +37,18 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 import org.eclipse.rdf4j.rio.helpers.TriXParserSettings;
+import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
+import org.xml.sax.ErrorHandler;
+import org.xml.sax.InputSource;
+import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
+import org.xml.sax.SAXNotRecognizedException;
+import org.xml.sax.SAXNotSupportedException;
 import org.xml.sax.SAXParseException;
+import org.xml.sax.XMLReader;
 
 /**
  * A parser that can parse RDF files that are in the <a href="http://www.w3.org/2004/03/trix/">TriX format</a>
@@ -46,18 +56,20 @@ import org.xml.sax.SAXParseException;
  * 
  * @author Arjohn Kampman
  */
-public class TriXParser extends AbstractRDFParser {
+public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
+
+	private SimpleSAXParser saxParser;
 
 	/**
 	 * Creates a new TriXParser that will use a {@link SimpleValueFactory} to create objects for resources,
 	 * bNodes, literals and statements.
 	 */
 	public TriXParser() {
-		super();
+		this(SimpleValueFactory.getInstance());
 	}
 
 	/**
@@ -75,23 +87,80 @@ public class TriXParser extends AbstractRDFParser {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public final RDFFormat getRDFFormat() {
 		return RDFFormat.TRIX;
 	}
 
+	/**
+	 * Parses the data from the supplied InputStream, using the supplied baseURI to resolve any relative URI
+	 * references.
+	 * 
+	 * @param in
+	 *        The InputStream from which to read the data, must not be <tt>null</tt>.
+	 * @param baseURI
+	 *        The URI associated with the data in the InputStream, must not be <tt>null</tt>.
+	 * @throws IOException
+	 *         If an I/O error occurred while data was read from the InputStream.
+	 * @throws RDFParseException
+	 *         If the parser has found an unrecoverable parse error.
+	 * @throws RDFHandlerException
+	 *         If the configured statement handler encountered an unrecoverable error.
+	 * @throws IllegalArgumentException
+	 *         If the supplied input stream or base URI is <tt>null</tt>.
+	 */
+	@Override
 	public void parse(InputStream in, String baseURI)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
-		parse(new BOMInputStream(in, false));
+		if (in == null) {
+			throw new IllegalArgumentException("Input stream cannot be 'null'");
+		}
+		if (baseURI == null) {
+			throw new IllegalArgumentException("Base URI cannot be 'null'");
+		}
+
+		InputSource inputSource = new InputSource(new BOMInputStream(in, false));
+		inputSource.setSystemId(baseURI);
+
+		parse(inputSource);
 	}
 
+	/**
+	 * Parses the data from the supplied Reader, using the supplied baseURI to resolve any relative URI
+	 * references.
+	 * 
+	 * @param reader
+	 *        The Reader from which to read the data, must not be <tt>null</tt>.
+	 * @param baseURI
+	 *        The URI associated with the data in the InputStream, must not be <tt>null</tt>.
+	 * @throws IOException
+	 *         If an I/O error occurred while data was read from the InputStream.
+	 * @throws RDFParseException
+	 *         If the parser has found an unrecoverable parse error.
+	 * @throws RDFHandlerException
+	 *         If the configured statement handler has encountered an unrecoverable error.
+	 * @throws IllegalArgumentException
+	 *         If the supplied reader or base URI is <tt>null</tt>.
+	 */
+	@Override
 	public void parse(Reader reader, String baseURI)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
-		parse(reader);
+		if (reader == null) {
+			throw new IllegalArgumentException("Reader cannot be 'null'");
+		}
+		if (baseURI == null) {
+			throw new IllegalArgumentException("Base URI cannot be 'null'");
+		}
+
+		InputSource inputSource = new InputSource(reader);
+		inputSource.setSystemId(baseURI);
+
+		parse(inputSource);
 	}
 
-	private void parse(Object inputStreamOrReader)
+	private void parse(InputSource inputStreamOrReader)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
 		if (rdfHandler != null) {
@@ -99,16 +168,22 @@ public class TriXParser extends AbstractRDFParser {
 		}
 
 		try {
-			SimpleSAXParser saxParser = new SimpleSAXParser();
+			XMLReader xmlReader;
+
+			if (getParserConfig().isSet(XMLParserSettings.CUSTOM_XML_READER)) {
+				xmlReader = getParserConfig().get(XMLParserSettings.CUSTOM_XML_READER);
+			}
+			else {
+				xmlReader = XMLReaderFactory.createXMLReader();
+			}
+
+			xmlReader.setErrorHandler(this);
+
+			saxParser = new SimpleSAXParser(xmlReader);
 			saxParser.setPreserveWhitespace(true);
 			saxParser.setListener(new TriXSAXHandler());
 
-			if (inputStreamOrReader instanceof InputStream) {
-				saxParser.parse((InputStream)inputStreamOrReader);
-			}
-			else {
-				saxParser.parse((Reader)inputStreamOrReader);
-			}
+			saxParser.parse(inputStreamOrReader);
 		}
 		catch (SAXParseException e) {
 			Exception wrappedExc = e.getException();
@@ -142,6 +217,85 @@ public class TriXParser extends AbstractRDFParser {
 
 		if (rdfHandler != null) {
 			rdfHandler.endRDF();
+		}
+	}
+
+	@Override
+	protected Literal createLiteral(String label, String lang, IRI datatype)
+		throws RDFParseException
+	{
+		Locator locator = saxParser.getLocator();
+		if (locator != null) {
+			return createLiteral(label, lang, datatype, locator.getLineNumber(), locator.getColumnNumber());
+		}
+		else {
+			return createLiteral(label, lang, datatype, -1, -1);
+		}
+	}
+
+	/**
+	 * Overrides {@link AbstractRDFParser#reportWarning(String)}, adding line- and column number information
+	 * to the error.
+	 */
+	@Override
+	protected void reportWarning(String msg) {
+		Locator locator = saxParser.getLocator();
+		if (locator != null) {
+			reportWarning(msg, locator.getLineNumber(), locator.getColumnNumber());
+		}
+		else {
+			reportWarning(msg, -1, -1);
+		}
+	}
+
+	/**
+	 * Overrides {@link AbstractRDFParser#reportError(String, RioSetting)}, adding line- and column number
+	 * information to the error.
+	 */
+	@Override
+	protected void reportError(String msg, RioSetting<Boolean> setting)
+		throws RDFParseException
+	{
+		Locator locator = saxParser.getLocator();
+		if (locator != null) {
+			reportError(msg, locator.getLineNumber(), locator.getColumnNumber(), setting);
+		}
+		else {
+			reportError(msg, -1, -1, setting);
+		}
+	}
+
+	/**
+	 * Overrides {@link AbstractRDFParser#reportFatalError(String)}, adding line- and column number
+	 * information to the error.
+	 */
+	@Override
+	protected void reportFatalError(String msg)
+		throws RDFParseException
+	{
+		Locator locator = saxParser.getLocator();
+		if (locator != null) {
+			reportFatalError(msg, locator.getLineNumber(), locator.getColumnNumber());
+		}
+		else {
+			reportFatalError(msg, -1, -1);
+		}
+	}
+
+	/**
+	 * Overrides {@link AbstractRDFParser#reportFatalError(Exception)}, adding line- and column number
+	 * information to the error.
+	 */
+	@Override
+	protected void reportFatalError(Exception e)
+		throws RDFParseException
+	{
+		Locator locator = saxParser.getLocator();
+		if (locator != null) {
+			reportFatalError(e, locator.getLineNumber(), locator.getColumnNumber());
+		}
+		else {
+			reportFatalError(e, -1, -1);
 		}
 	}
 
@@ -288,4 +442,44 @@ public class TriXParser extends AbstractRDFParser {
 			}
 		}
 	} // end inner class TriXSAXHandler
+
+	/**
+	 * Implementation of SAX ErrorHandler.warning
+	 */
+	@Override
+	public void warning(SAXParseException exception)
+		throws SAXException
+	{
+		this.reportWarning(exception.getMessage());
+	}
+
+	/**
+	 * Implementation of SAX ErrorHandler.error
+	 */
+	@Override
+	public void error(SAXParseException exception)
+		throws SAXException
+	{
+		try {
+			this.reportError(exception.getMessage(), XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS);
+		}
+		catch (RDFParseException rdfpe) {
+			throw new SAXException(rdfpe);
+		}
+	}
+
+	/**
+	 * Implementation of SAX ErrorHandler.fatalError
+	 */
+	@Override
+	public void fatalError(SAXParseException exception)
+		throws SAXException
+	{
+		try {
+			this.reportFatalError(exception.getMessage());
+		}
+		catch (RDFParseException rdfpe) {
+			throw new SAXException(rdfpe);
+		}
+	}
 }

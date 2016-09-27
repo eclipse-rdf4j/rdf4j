@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.rio;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -17,12 +18,18 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.io.Writer;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.model.BNode;
@@ -98,11 +105,25 @@ public abstract class RDFWriterTest {
 
 	private BNode bnodeSpecialChars;
 
+	private BNode bnodeSingleUseSubject;
+
+	private BNode bnodeSingleUseObject;
+
+	private BNode bnodeUseAcrossContextsSubject;
+
+	private BNode bnodeUseAcrossContextsSubjectAndObject;
+
+	private BNode bnodeUseAcrossContextsObject;
+
 	private IRI uri1;
 
 	private IRI uri2;
 
 	private IRI uri3;
+
+	private IRI uri4;
+
+	private IRI uri5;
 
 	private Literal plainLit;
 
@@ -145,9 +166,17 @@ public abstract class RDFWriterTest {
 		bnodeNumeric = vf.createBNode("123");
 		bnodeDashes = vf.createBNode("a-b");
 		bnodeSpecialChars = vf.createBNode("$%^&*()!@#$a-b<>?\"'[]{}|\\");
+		bnodeSingleUseSubject = vf.createBNode("bnodeSingleUseSubject");
+		bnodeSingleUseObject = vf.createBNode("bnodeSingleUseObject");
+		bnodeUseAcrossContextsSubject = vf.createBNode("bnodeUseAcrossContextsSubject");
+		bnodeUseAcrossContextsSubjectAndObject = vf.createBNode("bnodeUseAcrossContextsSubjectAndObject");
+		bnodeUseAcrossContextsObject = vf.createBNode("bnodeUseAcrossContextsObject");
+
 		uri1 = vf.createIRI(exNs, "uri1");
 		uri2 = vf.createIRI(exNs, "uri2");
 		uri3 = vf.createIRI(exNs, "uri3.");
+		uri4 = vf.createIRI(exNs, "uri4#me");
+		uri5 = vf.createIRI(exNs, "uri5/you");
 		plainLit = vf.createLiteral("plain");
 		dtLit = vf.createLiteral(1);
 		langLit = vf.createLiteral("test", "en");
@@ -170,6 +199,8 @@ public abstract class RDFWriterTest {
 		potentialSubjects.add(uri1);
 		potentialSubjects.add(uri2);
 		potentialSubjects.add(uri3);
+		potentialSubjects.add(uri4);
+		potentialSubjects.add(uri5);
 		for (int i = 0; i < 50; i++) {
 			potentialSubjects.add(vf.createBNode());
 		}
@@ -198,7 +229,8 @@ public abstract class RDFWriterTest {
 		// start with
 
 		if (rdfParserFactory.getRDFFormat().equals(RDFFormat.RDFXML)) {
-			// System.out.println("FIXME: SES-879: RDFXML Parser does not preserve literals starting or ending in newline character");
+			// System.out.println("FIXME: SES-879: RDFXML Parser does not
+			// preserve literals starting or ending in newline character");
 		}
 		else {
 			potentialObjects.add(litWithNewlineAtEnd);
@@ -213,7 +245,8 @@ public abstract class RDFWriterTest {
 		potentialPredicates = new ArrayList<IRI>();
 		// In particular, the following fuzz tests the ability of the parser to
 		// cater for rdf:type predicates with literal endings, in unknown
-		// situations. All parsers/writers should preserve these statements, even
+		// situations. All parsers/writers should preserve these statements,
+		// even
 		// if they have shortcuts for URIs
 		potentialPredicates.add(RDF.TYPE);
 		potentialPredicates.add(RDF.NIL);
@@ -260,6 +293,25 @@ public abstract class RDFWriterTest {
 	protected void setupParserConfig(ParserConfig config) {
 		config.set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);
 		config.set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);
+	}
+
+	protected void write(Model model, OutputStream writer)
+		throws RDFHandlerException
+	{
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(writer);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		Rio.write(model, rdfWriter);
+	}
+
+	protected Model parse(InputStream reader, String baseURI)
+		throws RDFParseException, RDFHandlerException, IOException
+	{
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model result = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(result));
+		rdfParser.parse(reader, baseURI);
+		return result;
 	}
 
 	@Test
@@ -312,6 +364,18 @@ public abstract class RDFWriterTest {
 		Statement st18 = vf.createStatement(uri1, uri2, uri3);
 		Statement st19 = vf.createStatement(uri2, uri3, uri1);
 		Statement st20 = vf.createStatement(uri3, uri1, uri2);
+		Statement st21 = vf.createStatement(bnodeSingleUseSubject, uri4, uri5);
+		Statement st22 = vf.createStatement(uri4, uri5, bnodeSingleUseObject);
+		// Blank node use across contexts, which is unique to TriG-1.1 in
+		// interpretation
+		Statement st23 = vf.createStatement(bnodeUseAcrossContextsSubject, uri4, uri3, uri1);
+		Statement st24 = vf.createStatement(bnodeUseAcrossContextsSubject, uri4, uri3, uri2);
+		Statement st25 = vf.createStatement(bnodeUseAcrossContextsSubjectAndObject, uri5, uri4, uri1);
+		Statement st26 = vf.createStatement(uri4, uri3, bnodeUseAcrossContextsSubjectAndObject, uri3);
+		Statement st27 = vf.createStatement(uri3, uri4, bnodeUseAcrossContextsObject, uri1);
+		Statement st28 = vf.createStatement(uri3, uri4, bnodeUseAcrossContextsObject, uri2);
+		Statement st29 = vf.createStatement(uri5, uri4, uri1, bnodeSpecialChars);
+		Statement st30 = vf.createStatement(uri5, uri4, uri2, bnodeSpecialChars);
 
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
@@ -338,6 +402,16 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleStatement(st18);
 		rdfWriter.handleStatement(st19);
 		rdfWriter.handleStatement(st20);
+		rdfWriter.handleStatement(st21);
+		rdfWriter.handleStatement(st22);
+		rdfWriter.handleStatement(st23);
+		rdfWriter.handleStatement(st24);
+		rdfWriter.handleStatement(st25);
+		rdfWriter.handleStatement(st26);
+		rdfWriter.handleStatement(st27);
+		rdfWriter.handleStatement(st28);
+		rdfWriter.handleStatement(st29);
+		rdfWriter.handleStatement(st30);
 		rdfWriter.endRDF();
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
@@ -352,7 +426,14 @@ public abstract class RDFWriterTest {
 
 		rdfParser.parse(in, "foo:bar");
 
-		assertEquals("Unexpected number of statements, found " + model.size(), 20, model.size());
+		if (rdfParser.getRDFFormat().supportsContexts()) {
+			assertEquals("Unexpected number of statements, found " + model.size(), 30, model.size());
+		}
+		else {
+			// Two sets of two statements, st23/st24 and st27/st28 in the input set differ only on context
+			// which isn't preserved by this format
+			assertEquals("Unexpected number of statements, found " + model.size(), 28, model.size());
+		}
 
 		if (rdfParser.getRDFFormat().supportsNamespaces()) {
 			assertTrue("Expected at least one namespace, found" + model.getNamespaces().size(),
@@ -361,31 +442,92 @@ public abstract class RDFWriterTest {
 		}
 
 		// Test for four unique statements for blank nodes in subject position
-		assertEquals(5, model.filter(null, uri1, plainLit).size());
+		assertEquals("Unexpected number of statements with blank node subjects", 5,
+				model.filter(null, uri1, plainLit).size());
 		// Test for four unique statements for blank nodes in object position
-		assertEquals(5, model.filter(uri2, uri1, null).size());
+		assertEquals("Unexpected number of statements with blank node objects", 5,
+				model.filter(uri2, uri1, null).size());
 		if (rdfParser.getRDFFormat().supportsContexts()) {
-			assertTrue("missing statement with language literal and context", model.contains(st11));
+			assertTrue("missing statement with language literal and context: st11", model.contains(st11));
 		}
 		else {
-			assertTrue("missing statement with language literal",
+			assertTrue("missing statement with language literal: st11",
 					model.contains(vf.createStatement(uri1, uri2, langLit)));
 		}
-		assertTrue("missing statement with datatype", model.contains(st12));
+		assertTrue("missing statement with datatype: st12", model.contains(st12));
 		if (rdfParser.getRDFFormat().equals(RDFFormat.RDFXML)) {
 			System.out.println(
 					"FIXME: SES-879: RDFXML Parser does not preserve literals starting or ending in newline character");
 		}
 		else {
-			assertTrue("missing statement with literal ending with newline", model.contains(st13));
-			assertTrue("missing statement with literal starting with newline", model.contains(st14));
-			assertTrue("missing statement with literal containing multiple newlines", model.contains(st15));
+			assertTrue("missing statement with literal ending with newline: st13", model.contains(st13));
+			assertTrue("missing statement with literal starting with newline: st14", model.contains(st14));
+			assertTrue("missing statement with literal containing multiple newlines: st15",
+					model.contains(st15));
 		}
-		assertTrue("missing statement with single quotes", model.contains(st16));
-		assertTrue("missing statement with double quotes", model.contains(st17));
-		assertTrue("missing statement with object URI ending in period", model.contains(st18));
-		assertTrue("missing statement with predicate URI ending in period", model.contains(st19));
-		assertTrue("missing statement with subject URI ending in period", model.contains(st20));
+		assertTrue("missing statement with single quotes: st16", model.contains(st16));
+		assertTrue("missing statement with double quotes: st17", model.contains(st17));
+		assertTrue("missing statement with object URI ending in period: st18", model.contains(st18));
+		assertTrue("missing statement with predicate URI ending in period: st19", model.contains(st19));
+		assertTrue("missing statement with subject URI ending in period: st20", model.contains(st20));
+
+		assertEquals("missing statement with blank node single use subject: st21", 1,
+				model.filter(null, uri4, uri5).size());
+
+		assertEquals("missing statement with blank node single use object: st22", 1,
+				model.filter(uri4, uri5, null).size());
+
+		Model st23Statements = model.filter(null, uri4, uri3);
+		if (rdfParser.getRDFFormat().supportsContexts()) {
+			assertEquals("missing statement with blank node use: st23/st24", 2, st23Statements.size());
+			Set<Resource> st23Contexts = st23Statements.contexts();
+			assertTrue(st23Contexts.contains(uri1));
+			assertTrue(st23Contexts.contains(uri2));
+		}
+		else {
+			assertEquals("missing statement with blank node use: st23/st24", 1, st23Statements.size());
+		}
+		assertEquals("missing statement with blank node use subject and object: st25", 1,
+				model.filter(null, uri5, uri4).size());
+		assertEquals("missing statement with blank node use subject and object: st26", 1,
+				model.filter(uri4, uri3, null).size());
+		Model st27Statements = model.filter(uri3, uri4, null);
+		if (rdfParser.getRDFFormat().supportsContexts()) {
+			assertEquals("missing statement with blank node use: object: st27/st28", 2,
+					st27Statements.size());
+			Set<Resource> st27Contexts = st27Statements.contexts();
+			assertTrue(st27Contexts.contains(uri1));
+			assertTrue(st27Contexts.contains(uri2));
+		}
+		else {
+			assertEquals("missing statement with blank node use: object: st27/st28", 1,
+					st27Statements.size());
+		}
+		if (rdfParser.getRDFFormat().supportsContexts()) {
+			Set<Resource> st29Contexts = model.filter(uri5, uri4, uri1).contexts();
+			assertEquals("Unexpected number of contexts containing blank node context statement", 1,
+					st29Contexts.size());
+			assertNotNull("missing statements with blank node context: st29", st29Contexts.iterator().next());
+
+			Set<Resource> st30Contexts = model.filter(uri5, uri4, uri2).contexts();
+			assertEquals("Unexpected number of contexts containing blank node context statement", 1,
+					st30Contexts.size());
+			assertNotNull("missing statements with blank node context: st30", st30Contexts.iterator().next());
+
+			assertEquals("Context for two blank node statements was not the same",
+					st29Contexts.iterator().next(), st30Contexts.iterator().next());
+
+			assertEquals("Unexpected number of statements in the blank node context", 2,
+					model.filter(null, null, null, st29Contexts.iterator().next()).size());
+			assertEquals("Unexpected number of statements in the blank node context", 2,
+					model.filter(null, null, null, st30Contexts.iterator().next()).size());
+		}
+		else {
+			assertEquals("missing statement with blank node context in non-quads format: st29", 1,
+					model.filter(uri5, uri4, uri1).size());
+			assertEquals("missing statement with blank node context in non-quads format: st30", 1,
+					model.filter(uri5, uri4, uri2).size());
+		}
 	}
 
 	@Test
@@ -564,7 +706,7 @@ public abstract class RDFWriterTest {
 	{
 		Model model = new LinkedHashModel();
 
-		for (int i = 0; i < 100000; i++) {
+		for (int i = 0; i < 10000; i++) {
 
 			Value obj = potentialObjects.get(prng.nextInt(potentialObjects.size()));
 			if (obj == litBigPlaceholder) {
@@ -657,5 +799,865 @@ public abstract class RDFWriterTest {
 		finally {
 			in.close();
 		}
+	}
+
+	@Test
+	public void testWriteSingleStatementNoBNodesNoContext()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(uri1, uri1, uri1));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1)));
+	}
+
+	@Test
+	public void testWriteSingleStatementNoBNodesSingleContextIRI()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(uri1, uri1, uri1, uri1));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1, uri1)));
+		}
+		else {
+			assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1)));
+		}
+	}
+
+	@Test
+	public void testWriteSingleStatementNoBNodesSingleContextBnode()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(uri1, uri1, uri1, bnode));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(uri1, uri1, uri1).size());
+		assertEquals(1, parsedOutput.contexts().size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
+	}
+
+	@Test
+	public void testWriteSingleStatementSubjectBNodeNoContext()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testWriteSingleStatementSubjectBNodeSingleContextIRI()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, uri1));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1, uri1).size());
+		}
+		else {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		}
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testWriteSingleStatementSubjectBNodeSingleContextBNode()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, bnode));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		assertEquals(1, parsedOutput.contexts().size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testWriteTwoStatementsSubjectBNodeSinglePredicateNoContext()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1));
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri2).size());
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testWriteTwoStatementsSubjectBNodeSinglePredicateSingleContextIRI()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, uri1));
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2, uri1));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1, uri1).size());
+			assertEquals(1, parsedOutput.filter(null, uri1, uri2, uri1).size());
+		}
+		else {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+			assertEquals(1, parsedOutput.filter(null, uri1, uri2).size());
+		}
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testWriteTwoStatementsSubjectBNodeSinglePredicateSingleContextBNode()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, bnode));
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2, bnode));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri2).size());
+		assertEquals(1, parsedOutput.contexts().size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testWriteSingleStatementNoBNodesNoContextWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(uri1, uri1, uri1));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1)));
+	}
+
+	@Test
+	public void testWriteSingleStatementNoBNodesSingleContextIRIWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(uri1, uri1, uri1, uri1));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1, uri1)));
+		}
+		else {
+			assertTrue(parsedOutput.contains(vf.createStatement(uri1, uri1, uri1)));
+		}
+	}
+
+	@Test
+	public void testWriteSingleStatementNoBNodesSingleContextBnodeWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(uri1, uri1, uri1, bnode));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(uri1, uri1, uri1).size());
+		assertEquals(1, parsedOutput.contexts().size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
+	}
+
+	@Test
+	public void testWriteSingleStatementSubjectBNodeNoContextWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testWriteSingleStatementSubjectBNodeSingleContextIRIWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, uri1));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1, uri1).size());
+		}
+		else {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		}
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testWriteSingleStatementSubjectBNodeSingleContextBNodeWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, bnode));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		assertEquals(1, parsedOutput.contexts().size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testWriteTwoStatementsSubjectBNodeSinglePredicateNoContextWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1));
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri2).size());
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testWriteTwoStatementsSubjectBNodeSinglePredicateSingleContextIRIWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, uri1));
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2, uri1));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1, uri1).size());
+			assertEquals(1, parsedOutput.filter(null, uri1, uri2, uri1).size());
+		}
+		else {
+			assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+			assertEquals(1, parsedOutput.filter(null, uri1, uri2).size());
+		}
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testWriteTwoStatementsSubjectBNodeSinglePredicateSingleContextBNodeWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri1, bnode));
+		input.add(vf.createStatement(bnodeSingleUseSubject, uri1, uri2, bnode));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri1).size());
+		assertEquals(1, parsedOutput.filter(null, uri1, uri2).size());
+		assertEquals(1, parsedOutput.contexts().size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
+		assertEquals(1, parsedOutput.subjects().size());
+		assertTrue(parsedOutput.subjects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(uri1, uri1, bnodeSingleUseObject, bnode));
+		input.add(vf.createStatement(uri1, uri2, bnodeSingleUseObject, bnode));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		assertEquals(1, parsedOutput.filter(uri1, uri1, null).size());
+		assertEquals(1, parsedOutput.filter(uri1, uri2, null).size());
+		assertEquals(1, parsedOutput.contexts().size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
+		assertEquals(1, parsedOutput.objects().size());
+		assertTrue(parsedOutput.objects().iterator().next() instanceof BNode);
+	}
+
+	@Test
+	public void testWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeReusedWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(uri1, uri1, bnodeSingleUseObject, bnode));
+		input.add(vf.createStatement(bnode, uri2, bnodeSingleUseObject, bnode));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		Model doubleBNodeStatement = parsedOutput.filter(uri1, uri1, null);
+		assertEquals(1, doubleBNodeStatement.size());
+		Model tripleBNodeStatement = parsedOutput.filter(null, uri2, null);
+		assertEquals(1, tripleBNodeStatement.size());
+		assertEquals(1, parsedOutput.contexts().size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
+		assertEquals(1, parsedOutput.objects().size());
+		assertTrue(parsedOutput.objects().iterator().next() instanceof BNode);
+		assertTrue(tripleBNodeStatement.subjects().iterator().next() instanceof BNode);
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertEquals(tripleBNodeStatement.subjects().iterator().next(),
+					doubleBNodeStatement.contexts().iterator().next());
+		}
+	}
+
+	@Test
+	public void testWriteOneStatementsObjectBNodeSinglePredicateSingleContextBNodeReusedWithNamespace()
+		throws Exception
+	{
+		Model input = new LinkedHashModel();
+		input.setNamespace("ex", exNs);
+		input.add(vf.createStatement(uri1, uri1, bnode, bnode));
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		write(input, outputWriter);
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		Model parsedOutput = parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		Model doubleBNodeStatement = parsedOutput.filter(uri1, uri1, null);
+		assertEquals(1, doubleBNodeStatement.size());
+		assertEquals(1, parsedOutput.contexts().size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contexts().iterator().next() instanceof BNode);
+		}
+		assertEquals(1, parsedOutput.objects().size());
+		assertTrue(parsedOutput.objects().iterator().next() instanceof BNode);
+		assertTrue(doubleBNodeStatement.objects().iterator().next() instanceof BNode);
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertEquals(doubleBNodeStatement.objects().iterator().next(),
+					doubleBNodeStatement.contexts().iterator().next());
+		}
+	}
+
+	@Test
+	public void testWriteCommentURIContext()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.endRDF();
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+		}
+	}
+
+	@Test
+	public void testWriteCommentURIContextURI()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, uri1));
+		rdfWriter.endRDF();
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2));
+		}
+	}
+
+	@Test
+	public void testWriteCommentBNodeContext()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.endRDF();
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+	}
+
+	@Test
+	public void testWriteCommentBNodeContextBNode()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, bnode));
+		rdfWriter.endRDF();
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+		assertTrue(parsedOutput.contains(uri1, uri1, uri2));
+		assertEquals(1, parsedOutput.contexts().size());
+	}
+
+	@Test
+	public void testWriteCommentURIContextWithNamespace()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.endRDF();
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+		}
+	}
+
+	@Test
+	public void testWriteCommentURIContextURIWithNamespace()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, uri1));
+		rdfWriter.endRDF();
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2));
+		}
+	}
+
+	@Test
+	public void testWriteCommentBNodeContextWithNamespace()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.endRDF();
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+	}
+
+	@Test
+	public void testWriteCommentBNodeContextBNodeWithNamespace()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, bnode));
+		rdfWriter.endRDF();
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+		assertTrue(parsedOutput.contains(uri1, uri1, uri2));
+		assertEquals(1, parsedOutput.contexts().size());
+	}
+
+	@Test
+	public void testWriteCommentURIContextBeforeNamespace()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleNamespace("ex1", exNs);
+		rdfWriter.endRDF();
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+		}
+	}
+
+	@Test
+	public void testWriteCommentURIContextURIBeforeNamespace()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleNamespace("ex1", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, uri1));
+		rdfWriter.endRDF();
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2));
+		}
+	}
+
+	@Test
+	public void testWriteCommentBNodeContextBeforeNamespace()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleNamespace("ex1", exNs);
+		rdfWriter.endRDF();
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+	}
+
+	@Test
+	public void testWriteCommentBNodeContextBNodeBeforeNamespace()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleNamespace("ex1", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, bnode));
+		rdfWriter.endRDF();
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+		assertTrue(parsedOutput.contains(uri1, uri1, uri2));
+		assertEquals(1, parsedOutput.contexts().size());
+	}
+
+	@Test
+	public void testWriteCommentURIContextWithNamespaceBeforeNamespace()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleNamespace("ex1", exNs);
+		rdfWriter.endRDF();
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+		}
+	}
+
+	@Test
+	public void testWriteCommentURIContextURIWithNamespaceBeforeNamespace()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, uri1));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleNamespace("ex1", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, uri1));
+		rdfWriter.endRDF();
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2, uri1));
+		}
+		else {
+			assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+			assertTrue(parsedOutput.contains(uri1, uri1, uri2));
+		}
+	}
+
+	@Test
+	public void testWriteCommentBNodeContextWithNamespaceBeforeNamespace()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleNamespace("ex1", exNs);
+		rdfWriter.endRDF();
+		System.out.println(outputWriter.toString());
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+	}
+
+	@Test
+	public void testWriteCommentBNodeContextBNodeWithNamespaceBeforeNamespace()
+		throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleNamespace("ex", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
+		rdfWriter.handleComment("This comment should not screw up parsing");
+		rdfWriter.handleNamespace("ex1", exNs);
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, bnode));
+		rdfWriter.endRDF();
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(2, parsedOutput.size());
+		assertTrue(parsedOutput.contains(uri1, uri1, uri1));
+		assertTrue(parsedOutput.contains(uri1, uri1, uri2));
+		assertEquals(1, parsedOutput.contexts().size());
 	}
 }

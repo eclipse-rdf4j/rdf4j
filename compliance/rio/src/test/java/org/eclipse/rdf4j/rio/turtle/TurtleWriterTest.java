@@ -8,6 +8,8 @@
 package org.eclipse.rdf4j.rio.turtle;
 
 import org.eclipse.rdf4j.rio.RDFWriterTest;
+import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.turtle.TurtleParserFactory;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriterFactory;
 
@@ -18,5 +20,10 @@ public class TurtleWriterTest extends RDFWriterTest {
 
 	public TurtleWriterTest() {
 		super(new TurtleWriterFactory(), new TurtleParserFactory());
+	}
+
+	@Override
+	protected void setupWriterConfig(WriterConfig config) {
+		config.set(BasicWriterSettings.PRETTY_PRINT, false);
 	}
 }

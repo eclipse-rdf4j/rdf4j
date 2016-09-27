@@ -163,6 +163,7 @@ class SAXFilter implements ContentHandler {
 	 * Methods from interface ContentHandler *
 	 *---------------------------------------*/
 
+	@Override
 	public void setDocumentLocator(Locator loc) {
 		locator = loc;
 
@@ -172,6 +173,7 @@ class SAXFilter implements ContentHandler {
 		}
 	}
 
+	@Override
 	public void startDocument()
 		throws SAXException
 	{
@@ -186,6 +188,7 @@ class SAXFilter implements ContentHandler {
 		}
 	}
 
+	@Override
 	public void endDocument()
 		throws SAXException
 	{
@@ -200,6 +203,7 @@ class SAXFilter implements ContentHandler {
 		}
 	}
 
+	@Override
 	public void startPrefixMapping(String prefix, String uri)
 		throws SAXException
 	{
@@ -228,12 +232,14 @@ class SAXFilter implements ContentHandler {
 		}
 	}
 
+	@Override
 	public void endPrefixMapping(String prefix) {
 		if (parseLiteralMode) {
 			xmlLiteralPrefixes.remove(prefix);
 		}
 	}
 
+	@Override
 	public void startElement(String namespaceURI, String localName, String qName, Attributes attributes)
 		throws SAXException
 	{
@@ -323,6 +329,7 @@ class SAXFilter implements ContentHandler {
 		deferredElement = null;
 	}
 
+	@Override
 	public void endElement(String namespaceURI, String localName, String qName)
 		throws SAXException
 	{
@@ -420,6 +427,7 @@ class SAXFilter implements ContentHandler {
 		}
 	}
 
+	@Override
 	public void characters(char[] ch, int start, int length)
 		throws SAXException
 	{
@@ -463,16 +471,19 @@ class SAXFilter implements ContentHandler {
 		}
 	}
 
+	@Override
 	public void ignorableWhitespace(char[] ch, int start, int length) {
 		if (parseLiteralMode) {
 			charBuf.append(ch, start, length);
 		}
 	}
 
+	@Override
 	public void processingInstruction(String target, String data) {
 		// ignore
 	}
 
+	@Override
 	public void skippedEntity(String name) {
 		// ignore
 	}
