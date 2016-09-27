@@ -3,13 +3,11 @@
 
 	<appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
 		<encoder>
-			<pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %msg%n</pattern>
+			<pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) %logger{10}: %msg%n</pattern>
 		</encoder>
 	</appender>
 	
-        <logger name="org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchSailTest">
-            <level value="debug"/>
-        </logger>
+        <logger name="org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchSailTest" level="debug"/>
         
 	<root>
 		<level value="info" />
