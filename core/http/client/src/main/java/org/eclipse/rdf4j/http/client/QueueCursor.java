@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -27,13 +28,13 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  */
 public class QueueCursor<E> extends LookAheadIteration<E, QueryEvaluationException> {
 
-	private volatile boolean done;
+	private final AtomicBoolean done = new AtomicBoolean(false);
 
-	private BlockingQueue<E> queue;
+	private final BlockingQueue<E> queue;
 
-	private E afterLast = createAfterLast();
+	private final E afterLast = createAfterLast();
 
-	private volatile Queue<Throwable> exceptions = new LinkedList<Throwable>();
+	private final Queue<Throwable> exceptions = new LinkedList<Throwable>();
 
 	/**
 	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and default access policy.
@@ -55,6 +56,7 @@ public class QueueCursor<E> extends LookAheadIteration<E, QueryEvaluationExcepti
 	 *        in FIFO order; if <tt>false</tt> the access order is unspecified.
 	 */
 	public QueueCursor(int capacity, boolean fair) {
+		super();
 		this.queue = new ArrayBlockingQueue<E>(capacity, fair);
 	}
 
@@ -74,7 +76,7 @@ public class QueueCursor<E> extends LookAheadIteration<E, QueryEvaluationExcepti
 	public void put(E item)
 		throws InterruptedException
 	{
-		if (!done) {
+		if (!done.get()) {
 			queue.put(item);
 		}
 	}
@@ -83,7 +85,8 @@ public class QueueCursor<E> extends LookAheadIteration<E, QueryEvaluationExcepti
 	 * Indicates the method {@link #put(Object)} will not be called in the queue anymore.
 	 */
 	public void done() {
-		done = true;
+		// Lazily set here, and then come back in handleClose and use set if necessary
+		done.lazySet(true);
 		try {
 			queue.add(afterLast);
 		}
@@ -102,12 +105,12 @@ public class QueueCursor<E> extends LookAheadIteration<E, QueryEvaluationExcepti
 		try {
 			checkException();
 			E take;
-			if (done) {
+			if (done.get()) {
 				take = queue.poll();
 			}
 			else {
 				take = queue.take();
-				if (done) {
+				if (done.get()) {
 					done(); // in case the queue was full before
 				}
 			}
@@ -128,12 +131,17 @@ public class QueueCursor<E> extends LookAheadIteration<E, QueryEvaluationExcepti
 	public void handleClose()
 		throws QueryEvaluationException
 	{
-		done = true;
-		do {
-			queue.clear(); // ensure extra room is available
+		try {
+			super.handleClose();
 		}
-		while (!queue.offer(afterLast));
-		checkException();
+		finally {
+			done.set(true);
+			do {
+				queue.clear(); // ensure extra room is available
+			}
+			while (!queue.offer(afterLast));
+			checkException();
+		}
 	}
 
 	public void checkException()

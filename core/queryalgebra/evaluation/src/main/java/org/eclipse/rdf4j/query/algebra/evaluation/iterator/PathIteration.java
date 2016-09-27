@@ -204,8 +204,13 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	protected void handleClose()
 		throws QueryEvaluationException
 	{
-		Iterations.closeCloseable(currentIter);
-		super.handleClose();
+		try {
+			super.handleClose();
+		}
+		finally {
+			Iterations.closeCloseable(currentIter);
+		}
+
 	}
 
 	/**

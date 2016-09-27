@@ -26,7 +26,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	 * Variables *
 	 *-----------*/
 
-	private EvaluationStrategy strategy;
+	private final EvaluationStrategy strategy;
 
 	private final LeftJoin join;
 
@@ -66,19 +66,20 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 		throws QueryEvaluationException
 	{
 		try {
-			while (rightIter.hasNext() || leftIter.hasNext()) {
+			CloseableIteration<BindingSet, QueryEvaluationException> nextRightIter = rightIter;
+			while (nextRightIter.hasNext() || leftIter.hasNext()) {
 				BindingSet leftBindings = null;
 
-				if (!rightIter.hasNext()) {
+				if (!nextRightIter.hasNext()) {
 					// Use left arg's bindings in case join fails
 					leftBindings = leftIter.next();
 
-					rightIter.close();
-					rightIter = strategy.evaluate(join.getRightArg(), leftBindings);
+					nextRightIter.close();
+					nextRightIter = rightIter = strategy.evaluate(join.getRightArg(), leftBindings);
 				}
 
-				while (rightIter.hasNext()) {
-					BindingSet rightBindings = rightIter.next();
+				while (nextRightIter.hasNext()) {
+					BindingSet rightBindings = nextRightIter.next();
 
 					try {
 						if (join.getCondition() == null) {
@@ -118,9 +119,16 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	protected void handleClose()
 		throws QueryEvaluationException
 	{
-		super.handleClose();
-
-		leftIter.close();
-		rightIter.close();
+		try {
+			super.handleClose();
+		}
+		finally {
+			try {
+				leftIter.close();
+			}
+			finally {
+				rightIter.close();
+			}
+		}
 	}
 }

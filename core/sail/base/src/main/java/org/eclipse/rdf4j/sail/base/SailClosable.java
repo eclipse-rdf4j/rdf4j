@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.sail.SailException;
  * 
  * @author James Leigh
  */
-public interface SailClosable {
+public interface SailClosable extends AutoCloseable {
 
 	/**
 	 * Closes this resource, relinquishing any underlying resources.

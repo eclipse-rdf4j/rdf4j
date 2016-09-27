@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.datastore;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -22,7 +23,7 @@ import org.eclipse.rdf4j.common.io.NioFile;
  * 
  * @author Arjohn Kampman
  */
-public class HashFile {
+public class HashFile implements Closeable {
 
 	/*-----------*
 	 * Constants *
@@ -277,6 +278,7 @@ public class HashFile {
 		}
 	}
 
+	@Override
 	public void close()
 		throws IOException
 	{

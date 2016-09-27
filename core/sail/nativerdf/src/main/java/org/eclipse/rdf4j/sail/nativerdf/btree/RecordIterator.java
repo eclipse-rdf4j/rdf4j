@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.btree;
 
+import java.io.Closeable;
 import java.io.IOException;
 
 /**
@@ -15,7 +16,7 @@ import java.io.IOException;
  * @see BTree
  * @author Arjohn Kampman
  */
-public interface RecordIterator {
+public interface RecordIterator extends Closeable {
 
 	/**
 	 * Returns the next record in the BTree.

@@ -14,9 +14,9 @@ import java.util.Map;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -34,8 +34,8 @@ import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
-import org.eclipse.rdf4j.query.impl.GraphQueryResultImpl;
-import org.eclipse.rdf4j.query.impl.TupleQueryResultImpl;
+import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
@@ -102,24 +102,34 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 		public boolean evaluate()
 			throws QueryEvaluationException
 		{
-			ParsedBooleanQuery parsedBooleanQuery = getParsedQuery();
-			TupleExpr tupleExpr = parsedBooleanQuery.getTupleExpr();
-			Dataset dataset = getDataset();
-			if (dataset == null) {
-				// No external dataset specified, use query's own dataset (if any)
-				dataset = parsedBooleanQuery.getDataset();
-			}
-
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter;
-			bindingsIter = AbstractQueryPreparer.this.evaluate(tupleExpr, dataset, getBindings(),
-					getIncludeInferred(), getMaxExecutionTime());
-			bindingsIter = enforceMaxQueryTime(bindingsIter);
-
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter2 = null;
 			try {
-				return bindingsIter.hasNext();
+				ParsedBooleanQuery parsedBooleanQuery = getParsedQuery();
+				TupleExpr tupleExpr = parsedBooleanQuery.getTupleExpr();
+				Dataset dataset = getDataset();
+				if (dataset == null) {
+					// No external dataset specified, use query's own dataset (if any)
+					dataset = parsedBooleanQuery.getDataset();
+				}
+
+				bindingsIter1 = AbstractQueryPreparer.this.evaluate(tupleExpr, dataset, getBindings(),
+						getIncludeInferred(), getMaxExecutionTime());
+				bindingsIter2 = enforceMaxQueryTime(bindingsIter1);
+
+				return bindingsIter2.hasNext();
 			}
 			finally {
-				bindingsIter.close();
+				try {
+					if (bindingsIter2 != null) {
+						bindingsIter2.close();
+					}
+				}
+				finally {
+					if (bindingsIter1 != null) {
+						bindingsIter1.close();
+					}
+				}
 			}
 		}
 	}
@@ -139,12 +149,41 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 		public TupleQueryResult evaluate()
 			throws QueryEvaluationException
 		{
-			TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter;
-			bindingsIter = AbstractQueryPreparer.this.evaluate(tupleExpr, getActiveDataset(), getBindings(),
-					getIncludeInferred(), getMaxExecutionTime());
-			bindingsIter = enforceMaxQueryTime(bindingsIter);
-			return new TupleQueryResultImpl(new ArrayList<String>(tupleExpr.getBindingNames()), bindingsIter);
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter2 = null;
+			IteratingTupleQueryResult result = null;
+			boolean allGood = false;
+			try {
+				TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
+				bindingsIter1 = AbstractQueryPreparer.this.evaluate(tupleExpr, getActiveDataset(),
+						getBindings(), getIncludeInferred(), getMaxExecutionTime());
+				bindingsIter2 = enforceMaxQueryTime(bindingsIter1);
+				result = new IteratingTupleQueryResult(new ArrayList<>(tupleExpr.getBindingNames()),
+						bindingsIter2);
+				allGood = true;
+				return result;
+			}
+			finally {
+				if (!allGood) {
+					try {
+						if (result != null) {
+							result.close();
+						}
+					}
+					finally {
+						try {
+							if (bindingsIter2 != null) {
+								bindingsIter2.close();
+							}
+						}
+						finally {
+							if (bindingsIter1 != null) {
+								bindingsIter1.close();
+							}
+						}
+					}
+				}
+			}
 		}
 
 		@Override
@@ -171,50 +210,96 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 		public GraphQueryResult evaluate()
 			throws QueryEvaluationException
 		{
-			TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter;
-			bindingsIter = AbstractQueryPreparer.this.evaluate(tupleExpr, getActiveDataset(), getBindings(),
-					getIncludeInferred(), getMaxExecutionTime());
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter2 = null;
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter3 = null;
+			CloseableIteration<? extends Statement, QueryEvaluationException> stIter = null;
+			IteratingGraphQueryResult result = null;
 
-			// Filters out all partial and invalid matches
-			bindingsIter = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter) {
+			boolean allGood = false;
+			try {
+				TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
+				bindingsIter1 = AbstractQueryPreparer.this.evaluate(tupleExpr, getActiveDataset(),
+						getBindings(), getIncludeInferred(), getMaxExecutionTime());
 
-				@Override
-				protected boolean accept(BindingSet bindingSet) {
-					Value context = bindingSet.getValue("context");
+				// Filters out all partial and invalid matches
+				bindingsIter2 = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter1) {
 
-					return bindingSet.getValue("subject") instanceof Resource
-							&& bindingSet.getValue("predicate") instanceof URI
-							&& bindingSet.getValue("object") instanceof Value
-							&& (context == null || context instanceof Resource);
-				}
-			};
+					@Override
+					protected boolean accept(BindingSet bindingSet) {
+						Value context = bindingSet.getValue("context");
 
-			bindingsIter = enforceMaxQueryTime(bindingsIter);
-
-			// Convert the BindingSet objects to actual RDF statements
-			CloseableIteration<Statement, QueryEvaluationException> stIter;
-			stIter = new ConvertingIteration<BindingSet, Statement, QueryEvaluationException>(bindingsIter) {
-
-				private final ValueFactory vf = tripleSource.getValueFactory();
-
-				@Override
-				protected Statement convert(BindingSet bindingSet) {
-					Resource subject = (Resource)bindingSet.getValue("subject");
-					URI predicate = (URI)bindingSet.getValue("predicate");
-					Value object = bindingSet.getValue("object");
-					Resource context = (Resource)bindingSet.getValue("context");
-
-					if (context == null) {
-						return vf.createStatement(subject, predicate, object);
+						return bindingSet.getValue("subject") instanceof Resource
+								&& bindingSet.getValue("predicate") instanceof IRI
+								&& bindingSet.getValue("object") instanceof Value
+								&& (context == null || context instanceof Resource);
 					}
-					else {
-						return vf.createStatement(subject, predicate, object, context);
+				};
+
+				bindingsIter3 = enforceMaxQueryTime(bindingsIter2);
+
+				// Convert the BindingSet objects to actual RDF statements
+				stIter = new ConvertingIteration<BindingSet, Statement, QueryEvaluationException>(
+						bindingsIter3)
+				{
+
+					private final ValueFactory vf = tripleSource.getValueFactory();
+
+					@Override
+					protected Statement convert(BindingSet bindingSet) {
+						Resource subject = (Resource)bindingSet.getValue("subject");
+						IRI predicate = (IRI)bindingSet.getValue("predicate");
+						Value object = bindingSet.getValue("object");
+						Resource context = (Resource)bindingSet.getValue("context");
+
+						if (context == null) {
+							return vf.createStatement(subject, predicate, object);
+						}
+						else {
+							return vf.createStatement(subject, predicate, object, context);
+						}
+					}
+				};
+
+				result = new IteratingGraphQueryResult(getParsedQuery().getQueryNamespaces(), stIter);
+				allGood = true;
+				return result;
+			}
+			finally {
+				if (!allGood) {
+					try {
+						if (result != null) {
+							result.close();
+						}
+					}
+					finally {
+						try {
+							if (stIter != null) {
+								stIter.close();
+							}
+						}
+						finally {
+							try {
+								if (bindingsIter3 != null) {
+									bindingsIter3.close();
+								}
+							}
+							finally {
+								try {
+									if (bindingsIter2 != null) {
+										bindingsIter2.close();
+									}
+								}
+								finally {
+									if (bindingsIter1 != null) {
+										bindingsIter1.close();
+									}
+								}
+							}
+						}
 					}
 				}
-			};
-
-			return new GraphQueryResultImpl(getParsedQuery().getQueryNamespaces(), stIter);
+			}
 		}
 
 		@Override

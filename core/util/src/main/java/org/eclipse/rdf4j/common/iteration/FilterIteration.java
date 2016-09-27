@@ -20,7 +20,7 @@ public abstract class FilterIteration<E, X extends Exception> extends IterationW
 	 * Variables *
 	 *-----------*/
 
-	private E nextElement;
+	private volatile E nextElement;
 
 	/*--------------*
 	 * Constructors *
@@ -41,15 +41,25 @@ public abstract class FilterIteration<E, X extends Exception> extends IterationW
 	public boolean hasNext()
 		throws X
 	{
+		if (isClosed()) {
+			return false;
+		}
 		findNextElement();
 
-		return nextElement != null;
+		boolean result = nextElement != null;
+		if (!result) {
+			close();
+		}
+		return result;
 	}
 
 	@Override
 	public E next()
 		throws X
 	{
+		if (isClosed()) {
+			throw new NoSuchElementException("The iteration has been closed.");
+		}
 		findNextElement();
 
 		E result = nextElement;
@@ -59,18 +69,26 @@ public abstract class FilterIteration<E, X extends Exception> extends IterationW
 			return result;
 		}
 		else {
-			throw new NoSuchElementException();
+			close();
+			throw new NoSuchElementException("The iteration has been closed.");
 		}
 	}
 
 	private void findNextElement()
 		throws X
 	{
-		while (nextElement == null && super.hasNext()) {
-			E candidate = super.next();
+		try {
+			while (!isClosed() && nextElement == null && super.hasNext()) {
+				E candidate = super.next();
 
-			if (accept(candidate)) {
-				nextElement = candidate;
+				if (accept(candidate)) {
+					nextElement = candidate;
+				}
+			}
+		}
+		finally {
+			if (isClosed()) {
+				nextElement = null;
 			}
 		}
 	}
@@ -92,7 +110,11 @@ public abstract class FilterIteration<E, X extends Exception> extends IterationW
 	protected void handleClose()
 		throws X
 	{
-		super.handleClose();
-		nextElement = null;
+		try {
+			super.handleClose();
+		}
+		finally {
+			nextElement = null;
+		}
 	}
 }

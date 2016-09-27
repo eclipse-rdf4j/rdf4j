@@ -36,9 +36,9 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 
 	private final boolean distinct;
 
-	private boolean initialized;
+	private volatile boolean initialized;
 
-	private Set<BindingSet> excludeSet;
+	private volatile Set<BindingSet> excludeSet;
 
 	/*--------------*
 	 * Constructors *
@@ -89,9 +89,13 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 		throws X
 	{
 		if (!initialized) {
-			// Build set of elements-to-exclude from right argument
-			excludeSet = makeSet(getRightArg());
-			initialized = true;
+			synchronized(this) {
+				if (!initialized) {
+					// Build set of elements-to-exclude from right argument
+					excludeSet = makeSet(getRightArg());
+					initialized = true;
+				}
+			}
 		}
 
 		boolean compatible = false;
@@ -143,8 +147,12 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	protected void handleClose()
 		throws X
 	{
-		super.handleClose();
-		Iterations.closeCloseable(getRightArg());
+		try {
+			super.handleClose();
+		}
+		finally {
+			Iterations.closeCloseable(getRightArg());
+		}
 	}
 
 	/**
