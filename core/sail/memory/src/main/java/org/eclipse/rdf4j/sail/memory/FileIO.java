@@ -136,32 +136,28 @@ class FileIO {
 	private void write(SailDataset explicit, SailDataset inferred, File dataFile)
 		throws IOException, SailException
 	{
-		OutputStream out = new FileOutputStream(dataFile);
-		try {
+
+		try (OutputStream out = new FileOutputStream(dataFile);) {
 			// Write header
 			out.write(MAGIC_NUMBER);
 			out.write(BMSF_VERSION);
-
+			out.flush();
 			// The rest of the data is GZIP-compressed
-			DataOutputStream dataOut = new DataOutputStream(new GZIPOutputStream(out));
-			out = dataOut;
+			try (DataOutputStream dataOut = new DataOutputStream(new GZIPOutputStream(out));) {
 
-			writeNamespaces(explicit, dataOut);
+				writeNamespaces(explicit, dataOut);
 
-			writeStatements(explicit, inferred, dataOut);
+				writeStatements(explicit, inferred, dataOut);
 
-			dataOut.writeByte(EOF_MARKER);
-		}
-		finally {
-			out.close();
+				dataOut.writeByte(EOF_MARKER);
+			}
 		}
 	}
 
 	public synchronized void read(File dataFile, SailSink explicit, SailSink inferred)
 		throws IOException, SailException
 	{
-		InputStream in = new FileInputStream(dataFile);
-		try {
+		try (InputStream in = new FileInputStream(dataFile);) {
 			byte[] magicNumber = IOUtil.readBytes(in, MAGIC_NUMBER.length);
 			if (!Arrays.equals(magicNumber, MAGIC_NUMBER)) {
 				throw new IOException("File is not a binary MemoryStore file");
@@ -173,52 +169,43 @@ class FileIO {
 			}
 
 			// The rest of the data is GZIP-compressed
-			DataInputStream dataIn = new DataInputStream(new GZIPInputStream(in));
-			in = dataIn;
-
-			int recordTypeMarker;
-			while ((recordTypeMarker = dataIn.readByte()) != EOF_MARKER) {
-				switch (recordTypeMarker) {
-					case NAMESPACE_MARKER:
-						readNamespace(dataIn, explicit);
-						break;
-					case EXPL_TRIPLE_MARKER:
-						readStatement(false, true, dataIn, explicit, inferred);
-						break;
-					case EXPL_QUAD_MARKER:
-						readStatement(true, true, dataIn, explicit, inferred);
-						break;
-					case INF_TRIPLE_MARKER:
-						readStatement(false, false, dataIn, explicit, inferred);
-						break;
-					case INF_QUAD_MARKER:
-						readStatement(true, false, dataIn, explicit, inferred);
-						break;
-					default:
-						throw new IOException("Invalid record type marker: " + recordTypeMarker);
+			try (DataInputStream dataIn = new DataInputStream(new GZIPInputStream(in));) {
+				int recordTypeMarker;
+				while ((recordTypeMarker = dataIn.readByte()) != EOF_MARKER) {
+					switch (recordTypeMarker) {
+						case NAMESPACE_MARKER:
+							readNamespace(dataIn, explicit);
+							break;
+						case EXPL_TRIPLE_MARKER:
+							readStatement(false, true, dataIn, explicit, inferred);
+							break;
+						case EXPL_QUAD_MARKER:
+							readStatement(true, true, dataIn, explicit, inferred);
+							break;
+						case INF_TRIPLE_MARKER:
+							readStatement(false, false, dataIn, explicit, inferred);
+							break;
+						case INF_QUAD_MARKER:
+							readStatement(true, false, dataIn, explicit, inferred);
+							break;
+						default:
+							throw new IOException("Invalid record type marker: " + recordTypeMarker);
+					}
 				}
 			}
-		}
-		finally {
-			in.close();
 		}
 	}
 
 	private void writeNamespaces(SailDataset store, DataOutputStream dataOut)
 		throws IOException, SailException
 	{
-		CloseableIteration<? extends Namespace, SailException> iter;
-		iter = store.getNamespaces();
-		try {
+		try (CloseableIteration<? extends Namespace, SailException> iter = store.getNamespaces();) {
 			while (iter.hasNext()) {
 				Namespace ns = iter.next();
 				dataOut.writeByte(NAMESPACE_MARKER);
 				writeString(ns.getPrefix(), dataOut);
 				writeString(ns.getName(), dataOut);
 			}
-		}
-		finally {
-			iter.close();
 		}
 	}
 

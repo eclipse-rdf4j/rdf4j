@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.datastore;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
@@ -20,7 +21,7 @@ import org.eclipse.rdf4j.common.io.NioFile;
  * 
  * @author Arjohn Kampman
  */
-public class IDFile {
+public class IDFile implements Closeable {
 
 	/*-----------*
 	 * Constants *
@@ -191,6 +192,7 @@ public class IDFile {
 	 * 
 	 * @throws IOException
 	 */
+	@Override
 	public void close()
 		throws IOException
 	{

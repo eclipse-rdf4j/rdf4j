@@ -455,154 +455,193 @@ public class SimpleEvaluationStrategy implements EvaluationStrategy, UUIDable {
 		final Value objValue = getVarValue(objVar, bindings);
 		final Value contextValue = getVarValue(conVar, bindings);
 
-		CloseableIteration<? extends Statement, QueryEvaluationException> stIter = null;
+		CloseableIteration<? extends Statement, QueryEvaluationException> stIter1 = null;
+		CloseableIteration<? extends Statement, QueryEvaluationException> stIter2 = null;
+		CloseableIteration<? extends Statement, QueryEvaluationException> stIter3 = null;
+		ConvertingIteration<Statement, BindingSet, QueryEvaluationException> result = null;
 
+		boolean allGood = false;
 		try {
-			Resource[] contexts;
+			try {
+				Resource[] contexts;
 
-			Set<IRI> graphs = null;
-			boolean emptyGraph = false;
+				Set<IRI> graphs = null;
+				boolean emptyGraph = false;
 
-			if (dataset != null) {
-				if (sp.getScope() == Scope.DEFAULT_CONTEXTS) {
-					graphs = dataset.getDefaultGraphs();
-					emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
+				if (dataset != null) {
+					if (sp.getScope() == Scope.DEFAULT_CONTEXTS) {
+						graphs = dataset.getDefaultGraphs();
+						emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
+					}
+					else {
+						graphs = dataset.getNamedGraphs();
+						emptyGraph = graphs.isEmpty() && !dataset.getDefaultGraphs().isEmpty();
+					}
 				}
-				else {
-					graphs = dataset.getNamedGraphs();
-					emptyGraph = graphs.isEmpty() && !dataset.getDefaultGraphs().isEmpty();
-				}
-			}
 
-			if (emptyGraph) {
-				// Search zero contexts
-				return new EmptyIteration<BindingSet, QueryEvaluationException>();
-			}
-			else if (graphs == null || graphs.isEmpty()) {
-				// store default behaivour
-				if (contextValue != null) {
-					contexts = new Resource[] { (Resource)contextValue };
-				}
-				/*
-				 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the
-				 * default graph in SPARQL querying. else if (sp.getScope() == Scope.DEFAULT_CONTEXTS ) {
-				 * contexts = new Resource[] { (Resource)null }; }
-				 */
-				else {
-					contexts = new Resource[0];
-				}
-			}
-			else if (contextValue != null) {
-				if (graphs.contains(contextValue)) {
-					contexts = new Resource[] { (Resource)contextValue };
-				}
-				else {
-					// Statement pattern specifies a context that is not part of
-					// the dataset
+				if (emptyGraph) {
+					// Search zero contexts
 					return new EmptyIteration<BindingSet, QueryEvaluationException>();
 				}
-			}
-			else {
-				contexts = new Resource[graphs.size()];
-				int i = 0;
-				for (IRI graph : graphs) {
-					IRI context = null;
-					if (!SESAME.NIL.equals(graph)) {
-						context = graph;
+				else if (graphs == null || graphs.isEmpty()) {
+					// store default behaivour
+					if (contextValue != null) {
+						contexts = new Resource[] { (Resource)contextValue };
 					}
-					contexts[i++] = context;
+					/*
+					 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the
+					 * default graph in SPARQL querying. else if (sp.getScope() == Scope.DEFAULT_CONTEXTS ) {
+					 * contexts = new Resource[] { (Resource)null }; }
+					 */
+					else {
+						contexts = new Resource[0];
+					}
+				}
+				else if (contextValue != null) {
+					if (graphs.contains(contextValue)) {
+						contexts = new Resource[] { (Resource)contextValue };
+					}
+					else {
+						// Statement pattern specifies a context that is not part of
+						// the dataset
+						return new EmptyIteration<BindingSet, QueryEvaluationException>();
+					}
+				}
+				else {
+					contexts = new Resource[graphs.size()];
+					int i = 0;
+					for (IRI graph : graphs) {
+						IRI context = null;
+						if (!SESAME.NIL.equals(graph)) {
+							context = graph;
+						}
+						contexts[i++] = context;
+					}
+				}
+
+				stIter1 = tripleSource.getStatements((Resource)subjValue, (IRI)predValue, objValue, contexts);
+
+				if (contexts.length == 0 && sp.getScope() == Scope.NAMED_CONTEXTS) {
+					// Named contexts are matched by retrieving all statements from
+					// the store and filtering out the statements that do not have a
+					// context.
+					stIter2 = new FilterIteration<Statement, QueryEvaluationException>(stIter1) {
+
+						@Override
+						protected boolean accept(Statement st) {
+							return st.getContext() != null;
+						}
+
+					}; // end anonymous class
+				}
+				else {
+					stIter2 = stIter1;
 				}
 			}
+			catch (ClassCastException e) {
+				// Invalid value type for subject, predicate and/or context
+				return new EmptyIteration<BindingSet, QueryEvaluationException>();
+			}
 
-			stIter = tripleSource.getStatements((Resource)subjValue, (IRI)predValue, objValue, contexts);
+			// The same variable might have been used multiple times in this
+			// StatementPattern, verify value equality in those cases.
+			// TODO: skip this filter if not necessary
+			stIter3 = new FilterIteration<Statement, QueryEvaluationException>(stIter2) {
 
-			if (contexts.length == 0 && sp.getScope() == Scope.NAMED_CONTEXTS) {
-				// Named contexts are matched by retrieving all statements from
-				// the store and filtering out the statements that do not have a
-				// context.
-				stIter = new FilterIteration<Statement, QueryEvaluationException>(stIter) {
+				@Override
+				protected boolean accept(Statement st) {
+					Resource subj = st.getSubject();
+					IRI pred = st.getPredicate();
+					Value obj = st.getObject();
+					Resource context = st.getContext();
 
-					@Override
-					protected boolean accept(Statement st) {
-						return st.getContext() != null;
+					if (subjVar != null && subjValue == null) {
+						if (subjVar.equals(predVar) && !subj.equals(pred)) {
+							return false;
+						}
+						if (subjVar.equals(objVar) && !subj.equals(obj)) {
+							return false;
+						}
+						if (subjVar.equals(conVar) && !subj.equals(context)) {
+							return false;
+						}
 					}
 
-				}; // end anonymous class
+					if (predVar != null && predValue == null) {
+						if (predVar.equals(objVar) && !pred.equals(obj)) {
+							return false;
+						}
+						if (predVar.equals(conVar) && !pred.equals(context)) {
+							return false;
+						}
+					}
+
+					if (objVar != null && objValue == null) {
+						if (objVar.equals(conVar) && !obj.equals(context)) {
+							return false;
+						}
+					}
+
+					return true;
+				}
+			};
+
+			// Return an iterator that converts the statements to var bindings
+			result = new ConvertingIteration<Statement, BindingSet, QueryEvaluationException>(stIter3) {
+
+				@Override
+				protected BindingSet convert(Statement st) {
+					QueryBindingSet result = new QueryBindingSet(bindings);
+
+					if (subjVar != null && !subjVar.isConstant() && !result.hasBinding(subjVar.getName())) {
+						result.addBinding(subjVar.getName(), st.getSubject());
+					}
+					if (predVar != null && !predVar.isConstant() && !result.hasBinding(predVar.getName())) {
+						result.addBinding(predVar.getName(), st.getPredicate());
+					}
+					if (objVar != null && !objVar.isConstant() && !result.hasBinding(objVar.getName())) {
+						result.addBinding(objVar.getName(), st.getObject());
+					}
+					if (conVar != null && !conVar.isConstant() && !result.hasBinding(conVar.getName())
+							&& st.getContext() != null)
+					{
+						result.addBinding(conVar.getName(), st.getContext());
+					}
+
+					return result;
+				}
+			};
+			allGood = true;
+			return result;
+		}
+		finally {
+			if (!allGood) {
+				try {
+					if (result != null) {
+						result.close();
+					}
+				}
+				finally {
+					try {
+						if (stIter3 != null) {
+							stIter3.close();
+						}
+					}
+					finally {
+						try {
+							if (stIter2 != null) {
+								stIter2.close();
+							}
+						}
+						finally {
+							if (stIter1 != null) {
+								stIter1.close();
+							}
+						}
+					}
+				}
 			}
 		}
-		catch (ClassCastException e) {
-			// Invalid value type for subject, predicate and/or context
-			return new EmptyIteration<BindingSet, QueryEvaluationException>();
-		}
-
-		// The same variable might have been used multiple times in this
-		// StatementPattern, verify value equality in those cases.
-		// TODO: skip this filter if not necessary
-		stIter = new FilterIteration<Statement, QueryEvaluationException>(stIter) {
-
-			@Override
-			protected boolean accept(Statement st) {
-				Resource subj = st.getSubject();
-				IRI pred = st.getPredicate();
-				Value obj = st.getObject();
-				Resource context = st.getContext();
-
-				if (subjVar != null && subjValue == null) {
-					if (subjVar.equals(predVar) && !subj.equals(pred)) {
-						return false;
-					}
-					if (subjVar.equals(objVar) && !subj.equals(obj)) {
-						return false;
-					}
-					if (subjVar.equals(conVar) && !subj.equals(context)) {
-						return false;
-					}
-				}
-
-				if (predVar != null && predValue == null) {
-					if (predVar.equals(objVar) && !pred.equals(obj)) {
-						return false;
-					}
-					if (predVar.equals(conVar) && !pred.equals(context)) {
-						return false;
-					}
-				}
-
-				if (objVar != null && objValue == null) {
-					if (objVar.equals(conVar) && !obj.equals(context)) {
-						return false;
-					}
-				}
-
-				return true;
-			}
-		};
-
-		// Return an iterator that converts the statements to var bindings
-		return new ConvertingIteration<Statement, BindingSet, QueryEvaluationException>(stIter) {
-
-			@Override
-			protected BindingSet convert(Statement st) {
-				QueryBindingSet result = new QueryBindingSet(bindings);
-
-				if (subjVar != null && !subjVar.isConstant() && !result.hasBinding(subjVar.getName())) {
-					result.addBinding(subjVar.getName(), st.getSubject());
-				}
-				if (predVar != null && !predVar.isConstant() && !result.hasBinding(predVar.getName())) {
-					result.addBinding(predVar.getName(), st.getPredicate());
-				}
-				if (objVar != null && !objVar.isConstant() && !result.hasBinding(objVar.getName())) {
-					result.addBinding(objVar.getName(), st.getObject());
-				}
-				if (conVar != null && !conVar.isConstant() && !result.hasBinding(conVar.getName())
-						&& st.getContext() != null)
-				{
-					result.addBinding(conVar.getName(), st.getContext());
-				}
-
-				return result;
-			}
-		};
 	}
 
 	protected Value getVarValue(Var var, BindingSet bindings) {

@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -97,24 +96,37 @@ class NativeSailStore implements SailStore {
 		}
 	}
 
+	@Override
 	public ValueFactory getValueFactory() {
 		return valueStore;
 	}
 
-	public void close() {
-		if (namespaceStore != null) {
-			namespaceStore.close();
-		}
+	@Override
+	public void close()
+		throws SailException
+	{
 		try {
-			if (valueStore != null) {
-				valueStore.close();
+			try {
+				if (namespaceStore != null) {
+					namespaceStore.close();
+				}
 			}
-			if (tripleStore != null) {
-				tripleStore.close();
+			finally {
+				try {
+					if (valueStore != null) {
+						valueStore.close();
+					}
+				}
+				finally {
+					if (tripleStore != null) {
+						tripleStore.close();
+					}
+				}
 			}
 		}
 		catch (IOException e) {
 			logger.warn("Failed to close store", e);
+			throw new SailException(e);
 		}
 	}
 
@@ -123,10 +135,12 @@ class NativeSailStore implements SailStore {
 		return new NativeEvaluationStatistics(valueStore, tripleStore);
 	}
 
+	@Override
 	public SailSource getExplicitSailSource() {
 		return new NativeSailSource(true);
 	}
 
+	@Override
 	public SailSource getInferredSailSource() {
 		return new NativeSailSource(false);
 	}
@@ -172,7 +186,7 @@ class NativeSailStore implements SailStore {
 	 * @return A StatementIterator that can be used to iterate over the statements that match the specified
 	 *         pattern.
 	 */
-	CloseableIteration<? extends Statement, SailException> createStatementIterator(Resource subj, URI pred,
+	CloseableIteration<? extends Statement, SailException> createStatementIterator(Resource subj, IRI pred,
 			Value obj, boolean explicit, Resource... contexts)
 		throws IOException
 	{
@@ -237,7 +251,7 @@ class NativeSailStore implements SailStore {
 		}
 	}
 
-	double cardinality(Resource subj, URI pred, Value obj, Resource context)
+	double cardinality(Resource subj, IRI pred, Value obj, Resource context)
 		throws IOException
 	{
 		int subjID = NativeValue.UNKNOWN_ID;
@@ -306,7 +320,7 @@ class NativeSailStore implements SailStore {
 
 	private final class NativeSailSink implements SailSink {
 
-		private boolean explicit;
+		private final boolean explicit;
 
 		/**
 		 * The exclusive transaction lock held by this connection during transactions.
@@ -321,9 +335,10 @@ class NativeSailStore implements SailStore {
 
 		@Override
 		public synchronized void close() {
-			if (txnLockAcquired) {
+			boolean nextTxnLockAcquired = txnLockAcquired;
+			txnLockAcquired = false;
+			if (nextTxnLockAcquired) {
 				txnLockManager.unlock();
-				txnLockAcquired = false;
 			}
 		}
 
@@ -342,12 +357,21 @@ class NativeSailStore implements SailStore {
 			// messing up concurrent transactions
 			if (txnLockAcquired && txnLockManager.getHoldCount() == 1) {
 				try {
-					valueStore.sync();
-					namespaceStore.sync();
-					tripleStore.commit();
+					try {
+						valueStore.sync();
+					}
+					finally {
+						try {
+							namespaceStore.sync();
+						}
+						finally {
+							tripleStore.commit();
+						}
+					}
 				}
 				catch (IOException e) {
 					logger.error("Encountered an unexpected problem while trying to commit", e);
+					throw new SailException(e);
 				}
 				catch (RuntimeException e) {
 					logger.error("Encountered an unexpected problem while trying to commit", e);
@@ -411,20 +435,21 @@ class NativeSailStore implements SailStore {
 		private synchronized void acquireExclusiveTransactionLock()
 			throws SailException
 		{
-			if (!txnLockAcquired) {
+			boolean nextTxnLockAcquired = txnLockAcquired;
+			if (!nextTxnLockAcquired) {
 				txnLockManager.lock();
 				try {
 					if (txnLockManager.getHoldCount() == 1) {
 						// first object
 						tripleStore.startTransaction();
 					}
-					txnLockAcquired = true;
+					nextTxnLockAcquired = txnLockAcquired = true;
 				}
 				catch (IOException e) {
 					throw new SailException(e);
 				}
 				finally {
-					if (!txnLockAcquired) {
+					if (!nextTxnLockAcquired) {
 						txnLockManager.unlock();
 					}
 				}
@@ -471,7 +496,7 @@ class NativeSailStore implements SailStore {
 			return result;
 		}
 
-		private int removeStatements(Resource subj, URI pred, Value obj, boolean explicit,
+		private int removeStatements(Resource subj, IRI pred, Value obj, boolean explicit,
 				Resource... contexts)
 			throws SailException
 		{
@@ -574,22 +599,26 @@ class NativeSailStore implements SailStore {
 		public CloseableIteration<? extends Resource, SailException> getContextIDs()
 			throws SailException
 		{
+			RecordIterator btreeIter = null;
+			CloseableIteration<? extends Statement, SailException> stIter1 = null;
+			CloseableIteration<? extends Statement, SailException> stIter2 = null;
+			CloseableIteration<Resource, SailException> ctxIter1 = null;
+			CloseableIteration<Resource, SailException> ctxIter2 = null;
+			ExceptionConvertingIteration<Resource, SailException> result = null;
+			boolean allGood = false;
 			// Which resources are used as context identifiers is not stored
 			// separately. Iterate over all statements and extract their context.
 			try {
-				CloseableIteration<? extends Statement, SailException> stIter;
-				CloseableIteration<Resource, SailException> ctxIter;
-				RecordIterator btreeIter;
 				btreeIter = tripleStore.getAllTriplesSortedByContext(false);
 				if (btreeIter == null) {
 					// Iterator over all statements
-					stIter = createStatementIterator(null, null, null, explicit);
+					stIter1 = createStatementIterator(null, null, null, explicit);
 				}
 				else {
-					stIter = new NativeStatementIterator(btreeIter, valueStore);
+					stIter1 = new NativeStatementIterator(btreeIter, valueStore);
 				}
 				// Filter statements without context resource
-				stIter = new FilterIteration<Statement, SailException>(stIter) {
+				stIter2 = new FilterIteration<Statement, SailException>(stIter1) {
 
 					@Override
 					protected boolean accept(Statement st) {
@@ -597,7 +626,7 @@ class NativeSailStore implements SailStore {
 					}
 				};
 				// Return the contexts of the statements
-				ctxIter = new ConvertingIteration<Statement, Resource, SailException>(stIter) {
+				ctxIter1 = new ConvertingIteration<Statement, Resource, SailException>(stIter2) {
 
 					@Override
 					protected Resource convert(Statement st) {
@@ -606,14 +635,14 @@ class NativeSailStore implements SailStore {
 				};
 				if (btreeIter == null) {
 					// Filtering any duplicates
-					ctxIter = new DistinctIteration<Resource, SailException>(ctxIter);
+					ctxIter2 = new DistinctIteration<Resource, SailException>(ctxIter1);
 				}
 				else {
 					// Filtering sorted duplicates
-					ctxIter = new ReducedIteration<Resource, SailException>(ctxIter);
+					ctxIter2 = new ReducedIteration<Resource, SailException>(ctxIter1);
 				}
 
-				return new ExceptionConvertingIteration<Resource, SailException>(ctxIter) {
+				result = new ExceptionConvertingIteration<Resource, SailException>(ctxIter2) {
 
 					@Override
 					protected SailException convert(Exception e) {
@@ -631,9 +660,59 @@ class NativeSailStore implements SailStore {
 						}
 					}
 				};
+				allGood = true;
+				return result;
 			}
 			catch (IOException e) {
 				throw new SailException(e);
+			}
+			finally {
+				if (!allGood) {
+					try {
+						if (result != null) {
+							result.close();
+						}
+					}
+					finally {
+						try {
+							if (ctxIter2 != null) {
+								ctxIter2.close();
+							}
+						}
+						finally {
+							try {
+								if (ctxIter1 != null) {
+									ctxIter1.close();
+								}
+							}
+							finally {
+								try {
+									if (stIter2 != null) {
+										stIter2.close();
+									}
+								}
+								finally {
+									try {
+										if (stIter1 != null) {
+											stIter1.close();
+										}
+									}
+									finally {
+										if (btreeIter != null) {
+											try {
+												btreeIter.close();
+											}
+											catch (IOException e) {
+												throw new SailException(e);
+											}
+										}
+									}
+								}
+							}
+						}
+
+					}
+				}
 			}
 		}
 

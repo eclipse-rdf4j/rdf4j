@@ -42,6 +42,7 @@ class UnionSailSource implements SailSource {
 		this.additional = additional;
 	}
 
+	@Override
 	public String toString() {
 		return primary.toString() + "\n" + additional.toString();
 	}
@@ -59,6 +60,7 @@ class UnionSailSource implements SailSource {
 		return new UnionSailSource(primary.fork(), additional.fork());
 	}
 
+	@Override
 	public void prepare()
 		throws SailException
 	{
@@ -66,6 +68,7 @@ class UnionSailSource implements SailSource {
 		additional.prepare();
 	}
 
+	@Override
 	public void flush()
 		throws SailException
 	{

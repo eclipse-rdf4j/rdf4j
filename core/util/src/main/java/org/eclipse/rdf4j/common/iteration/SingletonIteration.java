@@ -37,18 +37,24 @@ public class SingletonIteration<E, X extends Exception> extends AbstractCloseabl
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public boolean hasNext() {
 		return value.get() != null;
 	}
 
-	public E next() {
+	@Override
+	public E next()
+		throws X
+	{
 		E result = value.getAndSet(null);
 		if (result == null) {
+			close();
 			throw new NoSuchElementException();
 		}
 		return result;
 	}
 
+	@Override
 	public void remove() {
 		throw new UnsupportedOperationException();
 	}
@@ -57,7 +63,11 @@ public class SingletonIteration<E, X extends Exception> extends AbstractCloseabl
 	protected void handleClose()
 		throws X
 	{
-		super.handleClose();
-		value.set(null);
+		try {
+			super.handleClose();
+		}
+		finally {
+			value.set(null);
+		}
 	}
 }

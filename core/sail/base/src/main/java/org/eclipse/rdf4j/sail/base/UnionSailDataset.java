@@ -39,6 +39,7 @@ class UnionSailDataset implements SailDataset {
 		this.datasets = datasets;
 	}
 
+	@Override
 	public String toString() {
 		return Arrays.asList(datasets).toString();
 	}

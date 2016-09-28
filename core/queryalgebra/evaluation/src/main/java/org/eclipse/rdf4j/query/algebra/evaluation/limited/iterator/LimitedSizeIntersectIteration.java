@@ -73,10 +73,13 @@ public class LimitedSizeIntersectIteration extends IntersectIteration<BindingSet
 	protected void handleClose()
 		throws QueryEvaluationException
 	{
-
-		long size = clearIncludeSet();
-		used.addAndGet(-size);
-		super.handleClose();
+		try {
+			super.handleClose();
+		}
+		finally {
+			long size = clearIncludeSet();
+			used.addAndGet(-size);
+		}
 	}
 
 }

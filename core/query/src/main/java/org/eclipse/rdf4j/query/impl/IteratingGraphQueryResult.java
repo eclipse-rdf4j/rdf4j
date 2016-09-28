@@ -61,6 +61,7 @@ public class IteratingGraphQueryResult extends IterationWrapper<Statement, Query
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public Map<String, String> getNamespaces() {
 		return namespaces;
 	}

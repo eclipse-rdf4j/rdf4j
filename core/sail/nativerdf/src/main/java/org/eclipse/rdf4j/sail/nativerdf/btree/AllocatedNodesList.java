@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.btree;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
@@ -20,7 +21,7 @@ import org.eclipse.rdf4j.common.io.NioFile;
  * 
  * @author Arjohn Kampman
  */
-class AllocatedNodesList {
+class AllocatedNodesList implements Closeable {
 
 	/*-----------*
 	 * Constants *
@@ -95,6 +96,7 @@ class AllocatedNodesList {
 		return nioFile.getFile();
 	}
 
+	@Override
 	public synchronized void close()
 		throws IOException
 	{

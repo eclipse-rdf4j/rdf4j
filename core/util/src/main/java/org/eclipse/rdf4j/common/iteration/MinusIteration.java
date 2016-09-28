@@ -29,9 +29,9 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 
 	private final boolean distinct;
 
-	private boolean initialized;
+	private volatile boolean initialized;
 
-	private Set<E> excludeSet;
+	private volatile Set<E> excludeSet;
 
 	/*--------------*
 	 * Constructors *
@@ -82,9 +82,13 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 		throws X
 	{
 		if (!initialized) {
-			// Build set of elements-to-exclude from right argument
-			excludeSet = Iterations.addAll(rightArg, new HashSet<E>());
-			initialized = true;
+			synchronized (this) {
+				if (!initialized) {
+					// Build set of elements-to-exclude from right argument
+					excludeSet = Iterations.addAll(rightArg, new HashSet<E>());
+					initialized = true;
+				}
+			}
 		}
 
 		if (!excludeSet.contains(object)) {
@@ -106,7 +110,11 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 	protected void handleClose()
 		throws X
 	{
-		super.handleClose();
-		Iterations.closeCloseable(rightArg);
+		try {
+			super.handleClose();
+		}
+		finally {
+			Iterations.closeCloseable(rightArg);
+		}
 	}
 }

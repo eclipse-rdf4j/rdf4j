@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.btree;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -43,7 +44,7 @@ import org.slf4j.LoggerFactory;
  * @author Arjohn Kampman
  * @author Enrico Minack
  */
-public class BTree {
+public class BTree implements Closeable {
 
 	/*-----------*
 	 * Constants *
@@ -185,7 +186,7 @@ public class BTree {
 	/**
 	 * Flag indicating whether this BTree has been closed.
 	 */
-	private volatile boolean closed = false;
+	private final AtomicBoolean closed = new AtomicBoolean(false);
 
 	/*--------------*
 	 * Constructors *
@@ -407,21 +408,27 @@ public class BTree {
 	public boolean delete()
 		throws IOException
 	{
-		close(false);
+		if (closed.compareAndSet(false, true)) {
+			close(false);
 
-		boolean success = allocatedNodesList.delete();
-		success &= nioFile.delete();
-		return success;
+			boolean success = allocatedNodesList.delete();
+			success &= nioFile.delete();
+			return success;
+		}
+		return false;
 	}
 
 	/**
 	 * Closes any opened files and release any resources used by this B-Tree. Any pending changes will be
 	 * synchronized to disk before closing. Once the B-Tree has been closed, it can no longer be used.
 	 */
+	@Override
 	public void close()
 		throws IOException
 	{
-		close(true);
+		if (closed.compareAndSet(false, true)) {
+			close(true);
+		}
 	}
 
 	/**
@@ -437,26 +444,30 @@ public class BTree {
 	{
 		btreeLock.writeLock().lock();
 		try {
-			if (closed) {
-				return;
-			}
-
-			if (syncChanges) {
-				sync();
-			}
-
-			closed = true;
-
-			synchronized (nodeCache) {
-				nodeCache.clear();
-				mruNodes.clear();
-			}
-
 			try {
-				nioFile.close();
+				if (syncChanges) {
+					sync();
+				}
 			}
 			finally {
-				allocatedNodesList.close(syncChanges);
+				try {
+					synchronized (nodeCache) {
+						try {
+							nodeCache.clear();
+						}
+						finally {
+							mruNodes.clear();
+						}
+					}
+				}
+				finally {
+					try {
+						nioFile.close();
+					}
+					finally {
+						allocatedNodesList.close(syncChanges);
+					}
+				}
 			}
 		}
 		finally {
@@ -1337,6 +1348,7 @@ public class BTree {
 			return id;
 		}
 
+		@Override
 		public String toString() {
 			return "node " + getID();
 		}
@@ -1992,9 +2004,9 @@ public class BTree {
 
 		private final byte[] maxValue;
 
-		private boolean started;
+		private volatile boolean started;
 
-		private Node currentNode;
+		private volatile Node currentNode;
 
 		private final AtomicBoolean revisitValue = new AtomicBoolean();
 
@@ -2008,7 +2020,7 @@ public class BTree {
 		 */
 		private final LinkedList<Integer> parentIndexStack = new LinkedList<Integer>();
 
-		private int currentIdx;
+		private volatile int currentIdx;
 
 		public RangeIterator(byte[] searchKey, byte[] searchMask, byte[] minValue, byte[] maxValue) {
 			this.searchKey = searchKey;
@@ -2018,6 +2030,7 @@ public class BTree {
 			this.started = false;
 		}
 
+		@Override
 		public byte[] next()
 			throws IOException
 		{
@@ -2061,21 +2074,21 @@ public class BTree {
 		private void findMinimum()
 			throws IOException
 		{
-			currentNode = readRootNode();
+			Node nextCurrentNode = currentNode = readRootNode();
 
-			if (currentNode == null) {
+			if (nextCurrentNode == null) {
 				// Empty BTree
 				return;
 			}
 
-			currentNode.register(this);
+			nextCurrentNode.register(this);
 			currentIdx = 0;
 
 			// Search first value >= minValue, or the left-most value in case
 			// minValue is null
 			while (true) {
 				if (minValue != null) {
-					currentIdx = currentNode.search(minValue);
+					currentIdx = nextCurrentNode.search(minValue);
 
 					if (currentIdx >= 0) {
 						// Found exact match with minimum value
@@ -2088,13 +2101,15 @@ public class BTree {
 					}
 				}
 
-				if (currentNode.isLeaf()) {
+				if (nextCurrentNode.isLeaf()) {
 					break;
 				}
 				else {
 					// [SES-725] must change stacks after node loading has succeeded
-					Node childNode = currentNode.getChildNode(currentIdx);
+					Node childNode = nextCurrentNode.getChildNode(currentIdx);
 					pushStacks(childNode);
+					// pushStacks updates the current node
+					nextCurrentNode = currentNode;
 				}
 			}
 		}
@@ -2102,49 +2117,54 @@ public class BTree {
 		private byte[] findNext(boolean returnedFromRecursion)
 			throws IOException
 		{
-			if (currentNode == null) {
+			Node nextCurrentNode = currentNode;
+			if (nextCurrentNode == null) {
 				return null;
 			}
 
-			if (returnedFromRecursion || currentNode.isLeaf()) {
-				if (currentIdx >= currentNode.getValueCount()) {
+			if (returnedFromRecursion || nextCurrentNode.isLeaf()) {
+				if (currentIdx >= nextCurrentNode.getValueCount()) {
 					// No more values in this node, continue with parent node
 					popStacks();
 					return findNext(true);
 				}
 				else {
-					return currentNode.getValue(currentIdx++);
+					return nextCurrentNode.getValue(currentIdx++);
 				}
 			}
 			else {
 				// [SES-725] must change stacks after node loading has succeeded
-				Node childNode = currentNode.getChildNode(currentIdx);
+				Node childNode = nextCurrentNode.getChildNode(currentIdx);
 				pushStacks(childNode);
 				return findNext(false);
 			}
 		}
 
+		@Override
 		public void set(byte[] value) {
 			btreeLock.readLock().lock();
 			try {
-				if (currentNode == null || currentIdx > currentNode.getValueCount()) {
+				Node nextCurrentNode = currentNode;
+				if (nextCurrentNode == null || currentIdx > nextCurrentNode.getValueCount()) {
 					throw new IllegalStateException();
 				}
 
-				currentNode.setValue(currentIdx - 1, value);
+				nextCurrentNode.setValue(currentIdx - 1, value);
 			}
 			finally {
 				btreeLock.readLock().unlock();
 			}
 		}
 
+		@Override
 		public void close()
 			throws IOException
 		{
 			btreeLock.readLock().lock();
 			try {
-				while (popStacks())
+				while (popStacks()) {
 					;
+				}
 
 				assert parentNodeStack.isEmpty();
 				assert parentIndexStack.isEmpty();
@@ -2165,13 +2185,14 @@ public class BTree {
 		private boolean popStacks()
 			throws IOException
 		{
-			if (currentNode == null) {
+			Node nextCurrentNode = currentNode;
+			if (nextCurrentNode == null) {
 				// There's nothing to pop
 				return false;
 			}
 
-			currentNode.deregister(this);
-			currentNode.release();
+			nextCurrentNode.deregister(this);
+			nextCurrentNode.release();
 
 			if (!parentNodeStack.isEmpty()) {
 				currentNode = parentNodeStack.removeLast();
@@ -2185,6 +2206,7 @@ public class BTree {
 			}
 		}
 
+		@Override
 		public boolean valueAdded(Node node, int addedIndex) {
 			assert btreeLock.isWriteLockedByCurrentThread();
 
@@ -2209,6 +2231,7 @@ public class BTree {
 			return false;
 		}
 
+		@Override
 		public boolean valueRemoved(Node node, int removedIndex) {
 			assert btreeLock.isWriteLockedByCurrentThread();
 
@@ -2233,10 +2256,12 @@ public class BTree {
 			return false;
 		}
 
+		@Override
 		public boolean rotatedLeft(Node node, int valueIndex, Node leftChildNode, Node rightChildNode)
 			throws IOException
 		{
-			if (currentNode == node) {
+			Node nextCurrentNode = currentNode;
+			if (nextCurrentNode == node) {
 				if (valueIndex == currentIdx - 1) {
 					// the value that was removed had just been visited
 					currentIdx = valueIndex;
@@ -2248,7 +2273,7 @@ public class BTree {
 					}
 				}
 			}
-			else if (currentNode == rightChildNode) {
+			else if (nextCurrentNode == rightChildNode) {
 				if (currentIdx == 0) {
 					// the value that would be visited next has been moved to the
 					// parent node
@@ -2285,6 +2310,7 @@ public class BTree {
 			return false;
 		}
 
+		@Override
 		public boolean rotatedRight(Node node, int valueIndex, Node leftChildNode, Node rightChildNode)
 			throws IOException
 		{
@@ -2314,6 +2340,7 @@ public class BTree {
 			return false;
 		}
 
+		@Override
 		public boolean nodeSplit(Node node, Node newNode, int medianIdx)
 			throws IOException
 		{
@@ -2321,9 +2348,10 @@ public class BTree {
 
 			boolean deregister = false;
 
-			if (node == currentNode) {
+			Node nextCurrentNode = currentNode;
+			if (node == nextCurrentNode) {
 				if (currentIdx > medianIdx) {
-					currentNode.release();
+					nextCurrentNode.release();
 					deregister = true;
 
 					newNode.use();
@@ -2359,6 +2387,7 @@ public class BTree {
 			return deregister;
 		}
 
+		@Override
 		public boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx)
 			throws IOException
 		{
@@ -2366,8 +2395,9 @@ public class BTree {
 
 			boolean deregister = false;
 
-			if (sourceNode == currentNode) {
-				currentNode.release();
+			Node nextCurrentNode = currentNode;
+			if (sourceNode == nextCurrentNode) {
+				nextCurrentNode.release();
 				deregister = true;
 
 				targetNode.use();
@@ -2423,48 +2453,49 @@ public class BTree {
 		String filenamePrefix = args[1];
 		int valueCount = Integer.parseInt(args[2]);
 		RecordComparator comparator = new DefaultRecordComparator();
-		BTree btree = new BTree(dataDir, filenamePrefix, 501, 13, comparator);
+		try (BTree btree = new BTree(dataDir, filenamePrefix, 501, 13, comparator);) {
 
-		java.util.Random random = new java.util.Random(0L);
-		byte[] value = new byte[13];
+			java.util.Random random = new java.util.Random(0L);
+			byte[] value = new byte[13];
 
-		long startTime = System.currentTimeMillis();
-		for (int i = 1; i <= valueCount; i++) {
-			random.nextBytes(value);
-			btree.insert(value);
-			if (i % 50000 == 0) {
-				System.out.println(
-						"Inserted " + i + " values in " + (System.currentTimeMillis() - startTime) + " ms");
+			long startTime = System.currentTimeMillis();
+			for (int i = 1; i <= valueCount; i++) {
+				random.nextBytes(value);
+				btree.insert(value);
+				if (i % 50000 == 0) {
+					System.out.println("Inserted " + i + " values in "
+							+ (System.currentTimeMillis() - startTime) + " ms");
+				}
 			}
-		}
 
-		System.out.println("Iterating over all values in sequential order...");
-		startTime = System.currentTimeMillis();
-		RecordIterator iter = btree.iterateAll();
-		value = iter.next();
-		int count = 0;
-		while (value != null) {
-			count++;
+			System.out.println("Iterating over all values in sequential order...");
+			startTime = System.currentTimeMillis();
+			RecordIterator iter = btree.iterateAll();
 			value = iter.next();
-		}
-		iter.close();
-		System.out.println("Iteration over " + count + " items finished in "
-				+ (System.currentTimeMillis() - startTime) + " ms");
+			int count = 0;
+			while (value != null) {
+				count++;
+				value = iter.next();
+			}
+			iter.close();
+			System.out.println("Iteration over " + count + " items finished in "
+					+ (System.currentTimeMillis() - startTime) + " ms");
 
-		// byte[][] values = new byte[count][13];
-		//
-		// iter = btree.iterateAll();
-		// for (int i = 0; i < values.length; i++) {
-		// values[i] = iter.next();
-		// }
-		// iter.close();
-		//
-		// startTime = System.currentTimeMillis();
-		// for (int i = values.length - 1; i >= 0; i--) {
-		// btree.remove(values[i]);
-		// }
-		// System.out.println("Removed all item in " + (System.currentTimeMillis()
-		// - startTime) + " ms");
+			// byte[][] values = new byte[count][13];
+			//
+			// iter = btree.iterateAll();
+			// for (int i = 0; i < values.length; i++) {
+			// values[i] = iter.next();
+			// }
+			// iter.close();
+			//
+			// startTime = System.currentTimeMillis();
+			// for (int i = values.length - 1; i >= 0; i--) {
+			// btree.remove(values[i]);
+			// }
+			// System.out.println("Removed all item in " + (System.currentTimeMillis()
+			// - startTime) + " ms");
+		}
 	}
 
 	public static void runDebugTest(String[] args)
@@ -2472,29 +2503,30 @@ public class BTree {
 	{
 		File dataDir = new File(args[0]);
 		String filenamePrefix = args[1];
-		BTree btree = new BTree(dataDir, filenamePrefix, 28, 1);
+		try (BTree btree = new BTree(dataDir, filenamePrefix, 28, 1);) {
 
-		btree.print(System.out);
+			btree.print(System.out);
 
-		/*
-		 * System.out.println("Adding values..."); btree.startTransaction(); btree.insert("C".getBytes());
-		 * btree.insert("N".getBytes()); btree.insert("G".getBytes()); btree.insert("A".getBytes());
-		 * btree.insert("H".getBytes()); btree.insert("E".getBytes()); btree.insert("K".getBytes());
-		 * btree.insert("Q".getBytes()); btree.insert("M".getBytes()); btree.insert("F".getBytes());
-		 * btree.insert("W".getBytes()); btree.insert("L".getBytes()); btree.insert("T".getBytes());
-		 * btree.insert("Z".getBytes()); btree.insert("D".getBytes()); btree.insert("P".getBytes());
-		 * btree.insert("R".getBytes()); btree.insert("X".getBytes()); btree.insert("Y".getBytes());
-		 * btree.insert("S".getBytes()); btree.commitTransaction(); btree.print(System.out);
-		 * System.out.println("Removing values..."); System.out.println("Removing H..."); btree.remove("
-		 * H".getBytes()); btree.commitTransaction(); btree.print(System.out); System.out.println(
-		 * "Removing T..."); btree.remove("T".getBytes()); btree.commitTransaction(); btree.print(System.out);
-		 * System.out.println("Removing R..."); btree.remove("R".getBytes()); btree.commitTransaction();
-		 * btree.print(System.out); System.out.println("Removing E..."); btree.remove("E".getBytes());
-		 * btree.commitTransaction(); btree.print(System.out); System.out.println("Values from I to U:");
-		 * RecordIterator iter = btree.iterateRange("I".getBytes(), "V".getBytes()); byte[] value =
-		 * iter.next(); while (value != null) { System.out.print(new String(value) + " "); value =
-		 * iter.next(); } System.out.println();
-		 */
+			/*
+			 * System.out.println("Adding values..."); btree.startTransaction(); btree.insert("C".getBytes());
+			 * btree.insert("N".getBytes()); btree.insert("G".getBytes()); btree.insert("A".getBytes());
+			 * btree.insert("H".getBytes()); btree.insert("E".getBytes()); btree.insert("K".getBytes());
+			 * btree.insert("Q".getBytes()); btree.insert("M".getBytes()); btree.insert("F".getBytes());
+			 * btree.insert("W".getBytes()); btree.insert("L".getBytes()); btree.insert("T".getBytes());
+			 * btree.insert("Z".getBytes()); btree.insert("D".getBytes()); btree.insert("P".getBytes());
+			 * btree.insert("R".getBytes()); btree.insert("X".getBytes()); btree.insert("Y".getBytes());
+			 * btree.insert("S".getBytes()); btree.commitTransaction(); btree.print(System.out);
+			 * System.out.println("Removing values..."); System.out.println("Removing H..."); btree.remove("
+			 * H".getBytes()); btree.commitTransaction(); btree.print(System.out); System.out.println(
+			 * "Removing T..."); btree.remove("T".getBytes()); btree.commitTransaction();
+			 * btree.print(System.out); System.out.println("Removing R..."); btree.remove("R".getBytes());
+			 * btree.commitTransaction(); btree.print(System.out); System.out.println("Removing E...");
+			 * btree.remove("E".getBytes()); btree.commitTransaction(); btree.print(System.out);
+			 * System.out.println("Values from I to U:"); RecordIterator iter =
+			 * btree.iterateRange("I".getBytes(), "V".getBytes()); byte[] value = iter.next(); while (value !=
+			 * null) { System.out.print(new String(value) + " "); value = iter.next(); } System.out.println();
+			 */
+		}
 	}
 
 	public void print(PrintStream out)
