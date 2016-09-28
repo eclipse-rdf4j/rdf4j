@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.OpenRDFUtil;
@@ -63,29 +64,32 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	private volatile ParserConfig parserConfig = new ParserConfig();
 
-	private volatile boolean isOpen;
+	private final AtomicBoolean isOpen = new AtomicBoolean(true);
 
-	private IsolationLevel isolationLevel;
+	private volatile IsolationLevel isolationLevel;
 
 	// private volatile boolean active;
 
 	protected AbstractRepositoryConnection(Repository repository) {
 		this.repository = repository;
-		this.isOpen = true;
 	}
 
+	@Override
 	public void setParserConfig(ParserConfig parserConfig) {
 		this.parserConfig = parserConfig;
 	}
 
+	@Override
 	public ParserConfig getParserConfig() {
 		return parserConfig;
 	}
 
+	@Override
 	public Repository getRepository() {
 		return repository;
 	}
 
+	@Override
 	public ValueFactory getValueFactory() {
 		return getRepository().getValueFactory();
 	}
@@ -125,73 +129,80 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		return this.isolationLevel;
 	}
 
+	@Override
 	public boolean isOpen()
 		throws RepositoryException
 	{
-		return isOpen;
+		return isOpen.get();
 	}
 
+	@Override
 	public void close()
 		throws RepositoryException
 	{
-		isOpen = false;
+		isOpen.set(false);
 	}
 
+	@Override
 	public Query prepareQuery(QueryLanguage ql, String query)
 		throws MalformedQueryException, RepositoryException
 	{
 		return prepareQuery(ql, query, null);
 	}
 
+	@Override
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query)
 		throws MalformedQueryException, RepositoryException
 	{
 		return prepareTupleQuery(ql, query, null);
 	}
 
+	@Override
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query)
 		throws MalformedQueryException, RepositoryException
 	{
 		return prepareGraphQuery(ql, query, null);
 	}
 
+	@Override
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query)
 		throws MalformedQueryException, RepositoryException
 	{
 		return prepareBooleanQuery(ql, query, null);
 	}
 
+	@Override
 	public Update prepareUpdate(QueryLanguage ql, String update)
 		throws MalformedQueryException, RepositoryException
 	{
 		return prepareUpdate(ql, update, null);
 	}
 
+	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts)
 		throws RepositoryException
 	{
-		RepositoryResult<Statement> stIter = getStatements(subj, pred, obj, includeInferred, contexts);
-		try {
+		try (RepositoryResult<Statement> stIter = getStatements(subj, pred, obj, includeInferred, contexts);) {
 			return stIter.hasNext();
-		}
-		finally {
-			stIter.close();
 		}
 	}
 
+	@Override
 	public boolean hasStatement(Statement st, boolean includeInferred, Resource... contexts)
 		throws RepositoryException
 	{
 		return hasStatement(st.getSubject(), st.getPredicate(), st.getObject(), includeInferred, contexts);
 	}
 
+	@Override
 	public boolean isEmpty()
 		throws RepositoryException
 	{
 		return size() == 0;
 	}
 
+	@Override
 	public void export(RDFHandler handler, Resource... contexts)
 		throws RepositoryException, RDFHandlerException
 	{
@@ -221,12 +232,14 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	 * @deprecated since 2.7.0. Use {@link #isActive()} instead.
 	 */
 	@Deprecated
+	@Override
 	public boolean isAutoCommit()
 		throws RepositoryException
 	{
 		return !isActive();
 	}
 
+	@Override
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
 		throws IOException, RDFParseException, RepositoryException
 	{
@@ -263,6 +276,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		}
 	}
 
+	@Override
 	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
 		throws IOException, RDFParseException, RepositoryException
 	{
@@ -299,6 +313,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		}
 	}
 
+	@Override
 	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
 		throws IOException, RDFParseException, RepositoryException
 	{
@@ -382,6 +397,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		}
 	}
 
+	@Override
 	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
 		throws IOException, RDFParseException, RepositoryException
 	{
@@ -418,6 +434,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		}
 	}
 
+	@Override
 	public void add(Iterable<? extends Statement> statements, Resource... contexts)
 		throws RepositoryException
 	{
@@ -440,6 +457,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		}
 	}
 
+	@Override
 	public <E extends Exception> void add(Iteration<? extends Statement, E> statements, Resource... contexts)
 		throws RepositoryException, E
 	{
@@ -469,6 +487,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		}
 	}
 
+	@Override
 	public void add(Statement st, Resource... contexts)
 		throws RepositoryException
 	{
@@ -480,6 +499,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		conditionalCommit(localTransaction);
 	}
 
+	@Override
 	public void add(Resource subject, IRI predicate, Value object, Resource... contexts)
 		throws RepositoryException
 	{
@@ -491,6 +511,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		conditionalCommit(localTransaction);
 	}
 
+	@Override
 	public void remove(Iterable<? extends Statement> statements, Resource... contexts)
 		throws RepositoryException
 	{
@@ -515,6 +536,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		}
 	}
 
+	@Override
 	public <E extends Exception> void remove(Iteration<? extends Statement, E> statements,
 			Resource... contexts)
 		throws RepositoryException, E
@@ -543,6 +565,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		}
 	}
 
+	@Override
 	public void remove(Statement st, Resource... contexts)
 		throws RepositoryException
 	{
@@ -554,6 +577,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		conditionalCommit(localTransaction);
 	}
 
+	@Override
 	public void remove(Resource subject, IRI predicate, Value object, Resource... contexts)
 		throws RepositoryException
 	{
@@ -565,6 +589,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		conditionalCommit(localTransaction);
 	}
 
+	@Override
 	public void clear(Resource... contexts)
 		throws RepositoryException
 	{

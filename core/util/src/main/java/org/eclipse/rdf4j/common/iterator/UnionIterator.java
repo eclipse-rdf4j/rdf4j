@@ -77,10 +77,13 @@ public class UnionIterator<E> extends LookAheadIterator<E> {
 	protected void handleClose()
 		throws IOException
 	{
-		// Close this iteration, this will prevent lookAhead() from calling
-		// getNextElement() again
-		super.handleClose();
-
-		Iterators.close(currentIter);
+		try {
+			// Close this iteration, this will prevent lookAhead() from calling
+			// getNextElement() again
+			super.handleClose();
+		}
+		finally {
+			Iterators.close(currentIter);
+		}
 	}
 }

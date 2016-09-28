@@ -190,11 +190,13 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		throws RepositoryException
 	{
 		try {
-			sailConnection.close();
 			super.close();
 		}
 		catch (SailException e) {
 			throw new RepositoryException(e);
+		}
+		finally {
+			sailConnection.close();
 		}
 	}
 

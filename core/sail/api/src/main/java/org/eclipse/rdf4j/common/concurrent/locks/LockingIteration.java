@@ -83,7 +83,7 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 		throws X
 	{
 		if (isClosed()) {
-			throw new IllegalStateException();
+			throw new IllegalStateException("Iteration has been closed");
 		}
 
 		super.remove();

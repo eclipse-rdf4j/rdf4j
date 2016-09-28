@@ -28,9 +28,9 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 
 	private final boolean distinct;
 
-	private boolean initialized;
+	private volatile boolean initialized;
 
-	private Set<E> includeSet;
+	private volatile Set<E> includeSet;
 
 	/*--------------*
 	 * Constructors *
@@ -84,9 +84,13 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 		throws X
 	{
 		if (!initialized) {
-			// Build set of elements-to-include from second argument
-			includeSet = addSecondSet(arg2, makeSet());
-			initialized = true;
+			synchronized(this) {
+				if (!initialized) {
+					// Build set of elements-to-include from second argument
+					includeSet = addSecondSet(arg2, makeSet());
+					initialized = true;
+				}
+			}
 		}
 
 		if (inIncludeSet(object)) {
@@ -126,8 +130,12 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	protected void handleClose()
 		throws X
 	{
-		super.handleClose();
-		Iterations.closeCloseable(arg2);
+		try {
+			super.handleClose();
+		}
+		finally {
+			Iterations.closeCloseable(arg2);
+		}
 	}
 
 	protected long clearIncludeSet() {

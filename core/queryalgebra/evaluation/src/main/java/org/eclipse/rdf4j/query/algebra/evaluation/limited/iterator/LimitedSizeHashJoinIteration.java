@@ -27,9 +27,9 @@ public class LimitedSizeHashJoinIteration extends HashJoinIteration {
 
 	private static final String SIZE_LIMIT_REACHED = "Size limited reached inside bottom up join operator, max size is:";
 
-	private AtomicLong used;
+	private final AtomicLong used;
 
-	private long maxSize;
+	private final long maxSize;
 
 	public LimitedSizeHashJoinIteration(EvaluationStrategy limitedSizeEvaluationStrategy, Join join,
 			BindingSet bindings, AtomicLong used, long maxSize)

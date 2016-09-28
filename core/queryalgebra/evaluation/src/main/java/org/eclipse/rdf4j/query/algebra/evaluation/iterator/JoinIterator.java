@@ -81,9 +81,16 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	protected void handleClose()
 		throws QueryEvaluationException
 	{
-		super.handleClose();
-
-		leftIter.close();
-		rightIter.close();
+		try {
+			super.handleClose();
+		}
+		finally {
+			try {
+				leftIter.close();
+			}
+			finally {
+				rightIter.close();
+			}
+		}
 	}
 }

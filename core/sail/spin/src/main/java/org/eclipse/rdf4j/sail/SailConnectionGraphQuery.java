@@ -10,9 +10,9 @@ package org.eclipse.rdf4j.sail;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.impl.GraphQueryResultImpl;
+import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -49,37 +49,41 @@ public class SailConnectionGraphQuery extends SailConnectionQuery implements Gra
 	{
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
-		try {
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter;
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter2 = null;
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter3 = null;
+		CloseableIteration<Statement, QueryEvaluationException> stIter = null;
+		IteratingGraphQueryResult result = null;
 
+		boolean allGood = false;
+		try {
 			SailConnection sailCon = getSailConnection();
-			bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(),
+			bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(),
 					getIncludeInferred());
 
 			// Filters out all partial and invalid matches
-			bindingsIter = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter) {
+			bindingsIter2 = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter1) {
 
 				@Override
 				protected boolean accept(BindingSet bindingSet) {
 					Value context = bindingSet.getValue("context");
 
 					return bindingSet.getValue("subject") instanceof Resource
-							&& bindingSet.getValue("predicate") instanceof URI
+							&& bindingSet.getValue("predicate") instanceof IRI
 							&& bindingSet.getValue("object") instanceof Value
 							&& (context == null || context instanceof Resource);
 				}
 			};
 
-			bindingsIter = enforceMaxQueryTime(bindingsIter);
+			bindingsIter3 = enforceMaxQueryTime(bindingsIter2);
 
 			// Convert the BindingSet objects to actual RDF statements
-			CloseableIteration<Statement, QueryEvaluationException> stIter;
-			stIter = new ConvertingIteration<BindingSet, Statement, QueryEvaluationException>(bindingsIter) {
+			stIter = new ConvertingIteration<BindingSet, Statement, QueryEvaluationException>(bindingsIter3) {
 
 				@Override
 				protected Statement convert(BindingSet bindingSet) {
 					Resource subject = (Resource)bindingSet.getValue("subject");
-					URI predicate = (URI)bindingSet.getValue("predicate");
+					IRI predicate = (IRI)bindingSet.getValue("predicate");
 					Value object = bindingSet.getValue("object");
 					Resource context = (Resource)bindingSet.getValue("context");
 
@@ -92,10 +96,47 @@ public class SailConnectionGraphQuery extends SailConnectionQuery implements Gra
 				}
 			};
 
-			return new GraphQueryResultImpl(getParsedQuery().getQueryNamespaces(), stIter);
+			result = new IteratingGraphQueryResult(getParsedQuery().getQueryNamespaces(), stIter);
+			allGood = true;
+			return result;
 		}
 		catch (SailException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
+		}
+		finally {
+			if (!allGood) {
+				try {
+					if (result != null) {
+						result.close();
+					}
+				}
+				finally {
+					try {
+						if (stIter != null) {
+							stIter.close();
+						}
+					}
+					finally {
+						try {
+							if (bindingsIter3 != null) {
+								bindingsIter3.close();
+							}
+						}
+						finally {
+							try {
+								if (bindingsIter2 != null) {
+									bindingsIter2.close();
+								}
+							}
+							finally {
+								if (bindingsIter1 != null) {
+									bindingsIter1.close();
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 

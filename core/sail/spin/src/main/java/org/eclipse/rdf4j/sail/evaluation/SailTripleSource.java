@@ -5,11 +5,10 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.base;
+package org.eclipse.rdf4j.sail.evaluation;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -17,25 +16,21 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 
-/**
- * Implementation of the TripleSource interface using {@link SailDataset}
- */
-class SailDatasetTripleSource implements TripleSource {
+public class SailTripleSource implements TripleSource {
+
+	private final SailConnection conn;
+
+	private final boolean includeInferred;
 
 	private final ValueFactory vf;
 
-	private final SailDataset dataset;
-
-	public SailDatasetTripleSource(ValueFactory vf, SailDataset dataset) {
-		this.vf = vf;
-		this.dataset = dataset;
-	}
-
-	@Override
-	public String toString() {
-		return dataset.toString();
+	public SailTripleSource(SailConnection conn, boolean includeInferred, ValueFactory valueFactory) {
+		this.conn = conn;
+		this.includeInferred = includeInferred;
+		this.vf = valueFactory;
 	}
 
 	@Override
@@ -43,28 +38,43 @@ class SailDatasetTripleSource implements TripleSource {
 			IRI pred, Value obj, Resource... contexts)
 		throws QueryEvaluationException
 	{
+		CloseableIteration<? extends Statement, SailException> iter = null;
+		CloseableIteration<? extends Statement, QueryEvaluationException> result = null;
+		
+		boolean allGood = false;
 		try {
-			return new Eval(dataset.getStatements(subj, pred, obj, contexts));
+			iter = conn.getStatements(subj, pred, obj, includeInferred, contexts);
+			result = new ExceptionConvertingIteration<Statement, QueryEvaluationException>(iter) {
+
+				@Override
+				protected QueryEvaluationException convert(Exception e) {
+					return new QueryEvaluationException(e);
+				}
+			};
+			allGood = true;
+			return result;
 		}
 		catch (SailException e) {
 			throw new QueryEvaluationException(e);
+		}
+		finally {
+			if(!allGood) {
+				try {
+					if(result != null) {
+						result.close();
+					}
+				}
+				finally {
+					if(iter != null) {
+						iter.close();
+					}
+				}
+			}
 		}
 	}
 
 	@Override
 	public ValueFactory getValueFactory() {
 		return vf;
-	}
-
-	public static class Eval extends ExceptionConvertingIteration<Statement, QueryEvaluationException> {
-
-		public Eval(Iteration<? extends Statement, ? extends Exception> iter) {
-			super(iter);
-		}
-
-		protected QueryEvaluationException convert(Exception e) {
-			return new QueryEvaluationException(e);
-		}
-
 	}
 }

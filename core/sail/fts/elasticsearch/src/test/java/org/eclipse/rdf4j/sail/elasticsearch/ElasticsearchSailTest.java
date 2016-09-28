@@ -14,10 +14,14 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailTest;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.elasticsearch.common.io.FileSystemUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ElasticsearchSailTest extends AbstractLuceneSailTest {
 
 	private static final String DATA_DIR = "target/test-data";
+
+        private Logger log = LoggerFactory.getLogger(getClass());
 
 	@Override
 	protected void configure(LuceneSail sail) {
@@ -25,6 +29,7 @@ public class ElasticsearchSailTest extends AbstractLuceneSailTest {
 		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, DATA_DIR);
 		sail.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
 		sail.setParameter(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
+		log.debug("******* \t Data dir: {}", DATA_DIR);
 	}
 
 	@Override

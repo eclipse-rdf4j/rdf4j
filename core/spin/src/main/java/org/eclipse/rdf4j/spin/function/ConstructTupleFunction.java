@@ -9,8 +9,10 @@ package org.eclipse.rdf4j.spin.function;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -75,7 +77,7 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 	}
 
 	static class GraphQueryResultIteration
-			implements CloseableIteration<List<Value>, QueryEvaluationException>
+			extends AbstractCloseableIteration<List<Value>, QueryEvaluationException>
 	{
 
 		private final GraphQueryResult queryResult;
@@ -88,20 +90,36 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 		public boolean hasNext()
 			throws QueryEvaluationException
 		{
-			return queryResult.hasNext();
+			if (isClosed()) {
+				return false;
+			}
+			boolean result = queryResult.hasNext();
+			if(!result) {
+				close();
+			}
+			return result;
 		}
 
 		@Override
 		public List<Value> next()
 			throws QueryEvaluationException
 		{
-			Statement stmt = queryResult.next();
-			Resource ctx = stmt.getContext();
-			if (ctx != null) {
-				return Arrays.asList(stmt.getSubject(), stmt.getPredicate(), stmt.getObject(), ctx);
+			if (isClosed()) {
+				throw new NoSuchElementException("The iteration has been closed.");
 			}
-			else {
-				return Arrays.asList(stmt.getSubject(), stmt.getPredicate(), stmt.getObject());
+			try {
+				Statement stmt = queryResult.next();
+				Resource ctx = stmt.getContext();
+				if (ctx != null) {
+					return Arrays.asList(stmt.getSubject(), stmt.getPredicate(), stmt.getObject(), ctx);
+				}
+				else {
+					return Arrays.asList(stmt.getSubject(), stmt.getPredicate(), stmt.getObject());
+				}
+			}
+			catch (NoSuchElementException e) {
+				close();
+				throw e;
 			}
 		}
 
@@ -109,14 +127,28 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 		public void remove()
 			throws QueryEvaluationException
 		{
-			queryResult.remove();
+			if (isClosed()) {
+				throw new IllegalStateException("The iteration has been closed.");
+			}
+			try {
+				queryResult.remove();
+			}
+			catch (IllegalStateException e) {
+				close();
+				throw e;
+			}
 		}
 
 		@Override
-		public void close()
+		public void handleClose()
 			throws QueryEvaluationException
 		{
-			queryResult.close();
+			try {
+				super.handleClose();
+			}
+			finally {
+				queryResult.close();
+			}
 		}
 	}
 }

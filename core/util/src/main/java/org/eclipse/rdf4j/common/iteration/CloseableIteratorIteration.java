@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.common.iteration;
 
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 
 /**
  * An Iteration that can convert an {@link Iterator} to a {@link CloseableIteration}.
@@ -20,7 +21,7 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 	 * Variables *
 	 *-----------*/
 
-	private Iterator<? extends E> iter;
+	private volatile Iterator<? extends E> iter;
 
 	/*--------------*
 	 * Constructors *
@@ -45,15 +46,25 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 	 *---------*/
 
 	protected void setIterator(Iterator<? extends E> iter) {
-		this.iter = iter;
+		this.iter = Objects.requireNonNull(iter, "Iterator was null");
 	}
 
+	@Override
 	public boolean hasNext()
 		throws X
 	{
-		return !isClosed() && iter.hasNext();
+		if (isClosed()) {
+			return false;
+		}
+
+		boolean result = iter.hasNext();
+		if (!result) {
+			close();
+		}
+		return result;
 	}
 
+	@Override
 	public E next()
 		throws X
 	{
@@ -64,6 +75,7 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 		return iter.next();
 	}
 
+	@Override
 	public void remove()
 		throws X
 	{

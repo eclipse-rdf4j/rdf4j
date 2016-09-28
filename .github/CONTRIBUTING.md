@@ -1,16 +1,16 @@
 # How to contribute
 
-So you want to help out making RDF4J better. That's great! Here's some things you need
-to know and do before you dive in.
+So you want to help out making RDF4J better. That's great, we welcome all contributions! 
+Before you dive in, here are some things you need to know.
 
 **Table of Contents**  
 
 - [Legal stuff](#legal-stuff)
-- [Developer Workflow: Which Branch?](#developer-workflow-which-branch)
- - [A note on the 1.0.x release branch and Java 7 compatibility](#a-note-on-the-10x-release-branch-and-java-7-compatibility)
-- [Code formatting](#code-formatting)
 - [Creating your contribution](#creating-your-contribution)
-- [Submitting your changes](#submitting-your-changes)
+- [Workflow](#workflow) 
+ - [Releases](#releases)
+  - [Release branches](#release-branches)
+- [Code formatting](#code-formatting)
 	
 ## Legal stuff
 
@@ -28,40 +28,83 @@ To sign the Eclipse CLA you need to:
 
 2. Add your github username in your Eclipse Foundation account settings. Log in it to Eclipse and go to account settings.
 
-2. "Sign-off" your commits
+3. "Sign-off" your commits
 
 Every commit you make in your patch or pull request MUST be "signed off".
 You do this by adding the `-s` flag when you make the commit(s).
 
-## Developer Workflow: Which Branch?
+## Creating your contribution
 
-RDF4J feature development takes place against the `master` branch. In addition,
-each minor release has its own release branch (e.g. `releases/1.0.x`, and
-`releases/2.0.x`), on which hotfixes/patches are done.
+Once the legalities are out of the way you can dig in. Here's how:
 
-Every issue, no matter how small, gets its own branch. New features and enhancements are usually
-developed on branches from the master branch. Patches or hotfixes for bugs in existing
-releases are developed on a branch split off from the releveant release branch.
+1. Create an issue in the [RDF4J GitHub issue tracker](https://github.com/eclipse/rdf4j/issues) that describes your improvement, new feature, or bug fix. Alternatively, comment on an existing issue to indicate you're keen to help solve it.
+2. Fork the repository on GitHub.
+3. Create a new branch for your changes starting from the `master` branch. See [Workflow](#workflow) for details.
+4. Make your changes. Apply [RDF4J code formatting guidelines](#code-formatting)
+5. Make sure you include tests.
+6. Make sure the test suite passes after your changes.
+7. Commit your changes into the branch. Use meaningful commit messages. Reference the issue number in the commit message (for example "issue #276: added null check").
+8. **Sign off** every commit you do (as explained in the [legal stuff](#legal-stuff).
+9. Optionally squash your commits (not necessary, but if you want to clean your commit history a bit, _this_ is the point to do it).
+10. Push your changes to your branch in your forked repository.
+11. If your contribution is complete, use GitHub to submit a pull request (PR)
+	for your contribution back to `master` in the central RDF4J repository.
+	Once you have submitted your PR, do not use your branch for any other
+	development (unless asked to do so by the reviewers of your PR). 
+
+Once you've put up a PR, we will review your contribution, possibly make some
+suggestions for improvements, and once everything is complete it will be merged
+into the `master` branch, to be included in the next minor or major release. If
+your contribution is a bug fix in an existing release, we will also schedule it
+for inclusion in a patch release.
+
+## Workflow
+
+The short-short version for contributors: work from the `master` branch. 
+
+The more complete version: RDF4J uses a git branching model where feature
+development takes place on branches from the `master` branch. This is where all
+development for the next (minor or major) release happens.
+
+Every issue, no matter how small, gets its own branch while under development.
 Issue branch names are always prefixed with `issues/`, followed by the issue
 number in the [GitHub issue tracker](https://github.com/eclipse/rdf4j/issues),
 followed by one or two dash-separated keywords for the issue. 
 
-For example (fictional): `issues/#6-sparql-npe` is the branch for a fix for
-GitHub issue #6, which has to do with SPARQL and a NullPointerException.
+For example: `issues/#276-rdfxml-sax` is the branch for a fix for
+GitHub issue #276, which has to do with RDF/XML and the SAX parser.
 
-If you're unsure on which branch a contribution should be made, please ask!
+Once a feature/fix is complete, tested, and reviewed (via a Pull Request), it
+is merged into master, and the issue branch is closed.
 
-### A note on the 1.0.x release branch and Java 7 compatibility ###
+### Releases
 
-RDF4J 1.0 is a **backport** of RDF4J 2.0, to be executable on a Java 7 Runtime Environment. This means that we do not accept any fixes or feature development directly against the `releases/1.0.x` branch, and we never merge this branch back into either `master`, or the `releases/2.0.x` branch. 
+RDF4J is on an 8-week release cycle for minor and major releases. See the [Milestone overview](https://github.com/eclipse/rdf4j/milestones) in the [issue tracker](https://github.com/eclipse/rdf4j/issues) for an overview of planned releases.
 
-Instead, new features are developed against the `master` branch, and these are never merged into either release branch (they are instead scheduled for inclusion in the next minor or major release: 2.1, or 3.0). Bug fixes and minor improvements (which are sufficiently minor that they can be considered part of a patch release) are developed against the `releases/2.0.x` branch, which can then be merged back into `releases/1.0.x` branch. 
+In order to guarantee stability of the release and to ensure we have enough
+time to complete release review, we use a feature cutoff date. This date is
+typically three weeks before the release date. The feature cutoff date does not
+mean that each feature needs to be complete, but it does mean that we ask every
+contributor to make a commitment to have their feature complete and stable in
+time for final review and release. If a contributor cannot make that
+commitment, the feature is not included in the release and is simply
+"postponed" to the next release cycle.
 
-Since `releases/1.0.x` is to be kept compatible with Java 7, it is inevitable that it will occassionally become unstable when merging the `releases/2.0.x` branch into it: the build process verifies that the branch is Java 7-compatible, so it will fail with a compilation error when this happens. These compilation failures can be fixed by branching a hotfix branch directly directly off the `releases/1.0.x` branch.
+We occasionally also schedule *patch releases*, which only include (backward
+compatible) bug fixes. These releases are typically planned on short notice and
+can be done without much in the way of formal review.
+
+#### Release branches
+
+A few days before release of a minor or major version, we create a *release
+branch* from the current head of the master branch. The purpose of this release
+branch is to perform last-minute tweaks and little fixes. Once we are ready to
+release, the latest commit of the release branch is tagged with the version number, and
+the release branch is merged back to master, then closed.
 
 ## Code formatting
 
-RDF4J uses custom code formatting settings and a few code templates as well, and we expect _every_ contributor to apply these settings before submitting a contribution.
+RDF4J uses custom code formatting settings and a few code templates as well, and we expect every contributor to apply these settings before submitting a contribution.
 
 The simplest way to do apply code formatting is as follows:
 
@@ -76,28 +119,13 @@ Similarly, to apply templates:
 2. Click 'Import...' and find the file `eclipse-settings/codetemplates.xml`, located in the git repository root.
 3. Click OK. The templates will be automatically applied when necessary. 
 
-## Creating your contribution
+By the way: if you do not use Eclipse IDE, we still welcome your contributions
+of course. We appreciate it if you make an effort to format your code to at least these
+principles:
 
-Once the legalities are out of the way and you're up-to-date on our workflow and code formatting, you can 
-start coding. Here's how:
+1. Use tabs only for indentation
+2. Use unix newlines consistently
+3. Use UTF-8 file encoding
+4. Set line width to 110 characters 
+5. Make sure every new source file starts with the Eclipse copyright license header
 
-1. Create an issue in the [RDF4J GitHub issue tracker](https://github.com/eclipse/rdf4j/issues) that describes your improvement, new feature, or bug fix. Alternatively, comment on an existing issue to indicate you're keen to help solve it.
-2. Fork the repository on GitHub
-3. Create a new branch for your changes (see the Developer Guidelines above for details - please make sure you pick the correct and up-to-date starting branch!)
-4. Make your changes
-5. Make sure you include tests
-6. Make sure the test suite passes after your changes
-7. Commit your changes into the branch. Please use descriptive and meaningful commit messages. Reference the issue number in the commit message (for example " #6 added null check")
-8. Sign off every commit you do, as explained above.
-9. Optionally squash your commits (not necessary, but if you want to clean your commit history a bit, _this_ is the point to do it).
-10. Push your changes to your branch in your forked repository
-
-## Submitting your changes
-
-Once you are satisfied your changes are in good shape, you can use GitHub to
-submit a pull request (PR) for your contribution back to the central RDF4J
-repository. Again, please make sure you submit your PR against the correct branch (the appropriate release branch if you fixed a bug, or the master branch if you developed a new feature). 
- 
-Once you have submitted your PR, do not use your branch for any other
-development (unless asked to do so by the reviewers of your PR). If you do, any
-further changes that you make will be visible in the PR.

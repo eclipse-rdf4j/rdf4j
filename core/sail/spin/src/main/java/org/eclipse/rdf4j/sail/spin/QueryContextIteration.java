@@ -7,13 +7,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.spin;
 
+import java.util.NoSuchElementException;
+
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryPreparer;
 import org.eclipse.rdf4j.spin.QueryContext;
 
-public class QueryContextIteration implements CloseableIteration<BindingSet, QueryEvaluationException> {
+public class QueryContextIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
 
 	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
 
@@ -30,6 +33,9 @@ public class QueryContextIteration implements CloseableIteration<BindingSet, Que
 	public boolean hasNext()
 		throws QueryEvaluationException
 	{
+		if (isClosed()) {
+			return false;
+		}
 		QueryContext qctx = QueryContext.begin(queryPreparer);
 		try {
 			return iter.hasNext();
@@ -43,6 +49,9 @@ public class QueryContextIteration implements CloseableIteration<BindingSet, Que
 	public BindingSet next()
 		throws QueryEvaluationException
 	{
+		if (isClosed()) {
+			throw new NoSuchElementException("The iteration has been closed.");
+		}
 		QueryContext qctx = QueryContext.begin(queryPreparer);
 		try {
 			return iter.next();
@@ -56,6 +65,9 @@ public class QueryContextIteration implements CloseableIteration<BindingSet, Que
 	public void remove()
 		throws QueryEvaluationException
 	{
+		if (isClosed()) {
+			throw new IllegalStateException("The iteration has been closed.");
+		}
 		QueryContext qctx = QueryContext.begin(queryPreparer);
 		try {
 			iter.remove();
@@ -66,15 +78,20 @@ public class QueryContextIteration implements CloseableIteration<BindingSet, Que
 	}
 
 	@Override
-	public void close()
+	public void handleClose()
 		throws QueryEvaluationException
 	{
-		QueryContext qctx = QueryContext.begin(queryPreparer);
 		try {
-			iter.close();
+			super.handleClose();
 		}
 		finally {
-			qctx.end();
+			QueryContext qctx = QueryContext.begin(queryPreparer);
+			try {
+				iter.close();
+			}
+			finally {
+				qctx.end();
+			}
 		}
 	}
 }
