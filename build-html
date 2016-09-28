@@ -1,0 +1,2 @@
+#!/bin/bash
+asciidoctor -n -D html doc/programming/programming.adoc
