@@ -38,19 +38,38 @@ public class SailTripleSource implements TripleSource {
 			IRI pred, Value obj, Resource... contexts)
 		throws QueryEvaluationException
 	{
-		CloseableIteration<? extends Statement, SailException> iter;
+		CloseableIteration<? extends Statement, SailException> iter = null;
+		CloseableIteration<? extends Statement, QueryEvaluationException> result = null;
+		
+		boolean allGood = false;
 		try {
 			iter = conn.getStatements(subj, pred, obj, includeInferred, contexts);
-			return new ExceptionConvertingIteration<Statement, QueryEvaluationException>(iter) {
+			result = new ExceptionConvertingIteration<Statement, QueryEvaluationException>(iter) {
 
 				@Override
 				protected QueryEvaluationException convert(Exception e) {
 					return new QueryEvaluationException(e);
 				}
 			};
+			allGood = true;
+			return result;
 		}
 		catch (SailException e) {
 			throw new QueryEvaluationException(e);
+		}
+		finally {
+			if(!allGood) {
+				try {
+					if(result != null) {
+						result.close();
+					}
+				}
+				finally {
+					if(iter != null) {
+						iter.close();
+					}
+				}
+			}
 		}
 	}
 
