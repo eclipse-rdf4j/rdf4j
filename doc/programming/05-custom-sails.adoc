@@ -1,0 +1,156 @@
+= Customization SAILs
+
+In addition to some of the SAIL implementations we have already seen, RDF4J offers a number of additional SAILs that allow customization of of your RDF database in various ways. For example they allow improved full-text search, or custom rule-based inference and validation. In this chapter, we discuss these customization SAILs in more detail.
+
+== Full text indexing with the Lucene SAIL
+
+The LuceneSail enables you to add full text search of RDF literals to find subject resources to any Sail stack. It provides querying support for the following statement patterns:
+
+ PREFIX search: <http://www.openrdf.org/contrib/lucenesail#>
+ 
+ ?subj search:matches [
+               search:query "search terms..."; 
+               search:property my:property;
+
+               search:score ?score;
+               search:snippet ?snippet ] .
+
+The ‘virtual’ properties in the search: namespace have the following meaning:
+
+- search:matches – links the resource to be found with the following query statements (required)
+- search:query – specifies the Lucene query (required)
+- search:property – specifies the property to search. If omitted all properties are searched (optional)
+- search:score – specifies a variable for the score (optional)
+- search:snippet – specifies a variable for a highlighted snippet (optional)
+
+=== Configuration
+
+The LuceneSail is a stacked Sail: To use it, simply wrap your base SAIL with it:
+
+    LuceneSail lucenesail = new LuceneSail();
+    // set any parameters
+    lucenesail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true");
+    ...
+    // wrap base sail
+    lucenesail.setBaseSail(baseSail);
+
+=== SearchIndex implementations
+
+The LuceneSail can currently be used with five SearchIndex implementations:
+
+[options="header"]
+|=========================================================================================
+|                 | SearchIndex implementation                | Maven module
+| Apache Lucene 5 | org.eclipse.rdf4j.sail.lucene.LuceneIndex | org.eclipse.rdf4j:rdf4j-sail-lucene
+| ElasticSearch   | org.eclipse.rdf4j.sail.elasticsearch.ElasticSearchIndex | org.eclipse.rdf4j:rdf4j-sail-elasticsearch
+| Apache Solr     | org.eclipse.rdf4j.sail.solr.SolrIndex     | org.eclipse.rdf4j:rdf4j-sail-solr
+|=========================================================================================
+
+Each SearchIndex implementation can easily be extended if you need to add extra features or store/access data with a different schema.
+
+== Reasoning and Validation suport with SPIN
+
+The SPARQL Inferencing Notation (SPIN) is a way to represent a wide range of business rules on top of an RDF dataset. These rules can be anything from constraint validation to inferred property value calculation.
+Configuration
+
+The SpinSail (currently in beta) is a StackedSail component that adds a forward-chaining SPIN rule engine on top of any store. In its most basic form it can be used directly on top of a Sail, like so:
+
+    // create a basic Sail Stack with a simple Memory Store and SPIN inferencing support
+    SpinSail spinSail = new SpinSail();
+    spinSail.setBaseSail(new MemoryStore());
+    // create a repository with the Sail stack:
+    Repository rep = new SailRepository(spinSail);
+    rep.initialize();
+
+Alternatively, a SpinSail can be configured via the RepositoryManager, like so:
+
+    // create the config for the sail stack
+    SailImplConfig spinSailConfig = new SpinSailConfig(new MemoryStoreConfig());
+    RepositoryImplConfig repositoryTypeSpec = new SailRepositoryConfig(spinSailConfig);
+    // create the config for the actual repository
+    String repositoryId = "spin-test";
+    RepositoryConfig repConfig = new RepositoryConfig(repositoryId, repositoryTypeSpec);
+    manager.addRepositoryConfig(repConfig);
+     
+    // get the Repository from the manager
+    Repository repository = manager.getRepository(repositoryId);
+
+While this configuration already allows you to do many useful things, it does not do complete SPIN reasoning: the SpinSail relies on basic RDFS inferencing to be supplied by the underlying Sail stack. This means that for use cases where you need to rely on things like transitivity of rdfs:subClassOf relations, you should configure a Sail stack that includes the ForwardChainingRDFSInferencer. In addition, a DedupingInferencer is supplied which is a small optimization for both reasoners: it takes care to filter out potential duplicate results – though at the cost of an increase in memory usage. The full configuration with both additional inferencers looks like this:
+
+    // create a basic Sail Stack with a simple Memory Store, full RDFS reasoning,
+    // and SPIN inferencing support
+    SpinSail spinSail = new SpinSail();
+    spinSail.setBaseSail(
+            new ForwardChainingRDFSInferencer(
+                   new DedupingInferencr(new MemoryStore())
+            )
+    );
+    // create a repository with the Sail stack:
+    Repository rep = new SailRepository(spinSail);
+    rep.init();
+
+or using configuration via the RepositoryManager:
+
+    // create the config for the sail stack
+    SailImplConfig spinSailConfig = new SpinSailConfig(
+               new ForwardChainingRDFSInferencerConfig(
+                     new DedupingInferencerConfig(new MemoryStoreConfig())
+               )
+    );
+    RepositoryImplConfig repositoryTypeSpec = new SailRepositoryConfig(spinSailConfig);
+    // create the config for the actual repository
+    String repositoryId = "spin-test";
+    RepositoryConfig repConfig = new RepositoryConfig(repositoryId, repositoryTypeSpec);
+    manager.addRepositoryConfig(repConfig);
+     
+    // get the Repository from the manager
+    Repository repository = manager.getRepository(repositoryId);
+
+=== Adding rules
+
+Once your repository is set up with SPIN support, you can add rules by simply uploading an RDF document contain SPIN rules (which are expressed in RDF using the SPIN vocabulary).  The SpinSail will automatically execute these rules on the data.
+
+As an example, consider the following data:
+
+ @prefix ex: <http://example.org/>.
+ 
+ ex:John a ex:Father ;
+         ex:parentOf ex:Lucy .
+ 
+ ex:Lucy a ex:Person .
+
+Now assume we wish to introduce a rule that defines persons who are the object of the ex:parentOf relation to be subject of an ex:childOf relation (in other words, we want to infer the inverse relationship for the parent-child relation). In SPIN, this could be done with the following rule:
+
+ @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+ @prefix sp: <http://spinrdf.org/sp#>.
+ @prefix spin: <http://spinrdf.org/spin#>.
+ @prefix ex: <http://example.org/>.
+
+ // every person who has a parent is a child of that parent.
+ ex:Person a rdfs:Class ;
+ 	spin:rule [
+ 		a sp:Construct ;
+		sp:text """PREFIX ex: <http://example.org/> 
+		           CONSTRUCT { ?this ex:childOf ?parent . }
+		           WHERE { ?parent ex:parentOf ?this . }"""
+	] .
+
+To get the SpinSail to execute this rule, all you need to do is upload both above RDF datasets to the Repository. The relation will be automatically inferred at data upload time, so the query:
+
+ SELECT ?child WHERE { ?child ex:childOf ?parent }
+
+will give this result:
+
+[options="header"]
+|========
+|child
+| ex:Lucy
+|========
+
+=== Further reading
+
+Here are some useful links to learn more about SPIN:
+
+- http://spinrdf.org/spinsquare.html[SPIN Primer]
+- http://www.topquadrant.com/spin/tutorial/[Getting Started with SPIN] (by Topquadrant)
+
