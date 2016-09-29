@@ -269,17 +269,17 @@ public class RDFFormat extends FileFormat {
 				qValue -= 4;
 			}
 
-			// if the qValue did not go negative, we add this format to the accept params.
-			if (qValue > 0) { 
-				for (String mimeType : format.getMIMETypes()) {
-					String acceptParam = mimeType;
+			// ensure q-value does not go below 0.1.
+			qValue = Math.max(1, qValue);
+			
+			for (String mimeType : format.getMIMETypes()) {
+				String acceptParam = mimeType;
 
-					if (qValue < 10) {
-						acceptParam += ";q=0." + qValue;
-					}
-
-					acceptParams.add(acceptParam);
+				if (qValue < 10) {
+					acceptParam += ";q=0." + qValue;
 				}
+
+				acceptParams.add(acceptParam);
 			}
 		}
 
