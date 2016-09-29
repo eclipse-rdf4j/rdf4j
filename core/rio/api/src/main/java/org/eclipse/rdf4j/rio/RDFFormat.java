@@ -264,14 +264,22 @@ public class RDFFormat extends FileFormat {
 				qValue -= 1;
 			}
 
-			for (String mimeType : format.getMIMETypes()) {
-				String acceptParam = mimeType;
+			if (RDFXML.equals(format)) {
+				// We explicitly dislike RDF/XML as it has limitations in what it can serialize. See #299.
+				qValue -= 4;
+			}
 
-				if (qValue < 10) {
-					acceptParam += ";q=0." + qValue;
+			// if the qValue did not go negative, we add this format to the accept params.
+			if (qValue > 0) { 
+				for (String mimeType : format.getMIMETypes()) {
+					String acceptParam = mimeType;
+
+					if (qValue < 10) {
+						acceptParam += ";q=0." + qValue;
+					}
+
+					acceptParams.add(acceptParam);
 				}
-
-				acceptParams.add(acceptParam);
 			}
 		}
 
