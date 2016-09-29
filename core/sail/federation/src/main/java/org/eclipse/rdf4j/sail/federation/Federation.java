@@ -11,7 +11,10 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -33,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.filters.RepositoryBloomFilter;
 import org.eclipse.rdf4j.repository.sail.config.RepositoryResolver;
 import org.eclipse.rdf4j.repository.sail.config.RepositoryResolverClient;
 import org.eclipse.rdf4j.sail.Sail;
@@ -55,6 +59,8 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	private static final Logger LOGGER = LoggerFactory.getLogger(Federation.class);
 
 	private final List<Repository> members = new ArrayList<Repository>();
+
+	private final Map<Repository, RepositoryBloomFilter> bloomFilters = new HashMap<>();
 
 	private final ExecutorService executor = Executors.newCachedThreadPool();
 
@@ -92,6 +98,36 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 
 	public void addMember(Repository member) {
 		members.add(member);
+	}
+
+	/**
+	 * Returns the members of this federation.
+	 * 
+	 * @return unmodifiable list of federation members.
+	 */
+	protected List<Repository> getMembers() {
+		// unmodifiable to ensure no back-door changes
+		return Collections.unmodifiableList(members);
+	}
+
+	/**
+	 * Sets an optional {@link RepositoryBloomFilter} to use with the given {@link Repository}.
+	 * 
+	 * @param filter
+	 *        the filter to use or null to not use a filter.
+	 */
+	public void setBloomFilter(Repository member, RepositoryBloomFilter filter) {
+		bloomFilters.put(member, filter);
+	}
+
+	/**
+	 * Returns the configured {@link RepositoryBloomFilter}s (if any).
+	 * 
+	 * @return unmodifiable map of repositories to bloom filters.
+	 */
+	protected Map<Repository, RepositoryBloomFilter> getBloomFilters() {
+		// unmodifiable to ensure no back-door changes
+		return Collections.unmodifiableMap(bloomFilters);
 	}
 
 	/**
