@@ -60,13 +60,13 @@ public class RDFFormat extends FileFormat {
 	 * Several file extensions are accepted for RDF/XML documents, including <code>.rdf</code>,
 	 * <code>.rdfs</code> (for RDF Schema files), <code>.owl</code> (for OWL ontologies), and
 	 * <code>.xml</code>. The media type is <code>application/rdf+xml</code>, but <code>application/xml</code>
-	 * is also accepted. The character encoding is UTF-8.
+	 * and <code>text/xml</code> are also accepted. The character encoding is UTF-8.
 	 * </p>
 	 * 
 	 * @see <a href="http://www.w3.org/TR/rdf-syntax-grammar/">RDF/XML Syntax Specification (Revised)</a>
 	 */
 	public static final RDFFormat RDFXML = new RDFFormat("RDF/XML",
-			Arrays.asList("application/rdf+xml", "application/xml"), Charset.forName("UTF-8"),
+			Arrays.asList("application/rdf+xml", "application/xml", "text/xml"), Charset.forName("UTF-8"),
 			Arrays.asList("rdf", "rdfs", "owl", "xml"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/RDF_XML"),
 			SUPPORTS_NAMESPACES, NO_CONTEXTS);
