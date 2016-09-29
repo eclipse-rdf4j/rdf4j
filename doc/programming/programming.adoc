@@ -1,6 +1,7 @@
 Programming with RDF4J
 ======================
 :source-highlighter: prettify
+:icons: font
 :imagesdir: images
 :sectnums:
 :toc: left
