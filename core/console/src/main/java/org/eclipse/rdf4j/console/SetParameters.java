@@ -7,10 +7,31 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+
 /**
  * @author dale
  */
 public class SetParameters implements Command {
+
+	private static final Map<String, Level> LOG_LEVELS;
+
+	static {
+		Map<String, Level> logLevels = new LinkedHashMap<String, Level>();
+		logLevels.put("none", Level.OFF);
+		logLevels.put("error", Level.ERROR);
+		logLevels.put("warning", Level.WARN);
+		logLevels.put("info", Level.INFO);
+		logLevels.put("debug", Level.DEBUG);
+		LOG_LEVELS = Collections.unmodifiableMap(logLevels);
+	}
 
 	private final ConsoleIO consoleIO;
 
@@ -51,7 +72,10 @@ public class SetParameters implements Command {
 	}
 
 	private void setParameter(final String key, final String value) {
-		if ("width".equalsIgnoreCase(key)) {
+		if ("log".equalsIgnoreCase(key)) {
+			setLog(value);
+		}
+		else if ("width".equalsIgnoreCase(key)) {
 			setWidth(value);
 		}
 		else if ("showprefix".equalsIgnoreCase(key)) {
@@ -62,6 +86,35 @@ public class SetParameters implements Command {
 		}
 		else {
 			consoleIO.writeError("unknown parameter: " + key);
+		}
+	}
+
+	private void setLog(final String value) {
+		// Assume Logback
+		Logger logbackRootLogger = (Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+
+		if (value == null) {
+			Level currentLevel = logbackRootLogger.getLevel();
+			String levelString = currentLevel.levelStr;
+
+			for (Map.Entry<String, Level> entry : LOG_LEVELS.entrySet()) {
+				if (entry.getValue().equals(currentLevel)) {
+					levelString = entry.getKey();
+					break;
+				}
+			}
+
+			consoleIO.writeln("log: " + levelString);
+
+		}
+		else {
+			Level logLevel = LOG_LEVELS.get(value.toLowerCase());
+			if (logLevel != null) {
+				logbackRootLogger.setLevel(logLevel);
+			}
+			else {
+				consoleIO.writeError("unknown logging level: " + value);
+			}
 		}
 	}
 

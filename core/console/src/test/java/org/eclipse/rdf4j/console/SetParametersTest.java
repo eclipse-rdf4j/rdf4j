@@ -63,8 +63,28 @@ public class SetParametersTest {
 		Logger logger = (Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
 		logger.setLevel(Level.DEBUG);
 
-		setParameters.execute("set", "log", "warning");
+		setParameters.execute("set", "log=warning");
 
 		assertEquals(Level.WARN, logger.getLevel());
 	}
+
+	@Test
+	public void settingUnknownLevelIsLoggedAsError() {
+		setParameters.execute("set", "log=chatty");
+
+		verify(consoleIo).writeError("unknown logging level: chatty");
+		verifyNoMoreInteractions(consoleIo);
+	}
+
+	@Test
+	public void levelsThatDoNotMatchSlf4jAreMapped() {
+		Logger logger = (Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+		logger.setLevel(Level.WARN);
+
+		setParameters.execute("set", "log");
+
+		verify(consoleIo).writeln("log: warning");
+		verifyNoMoreInteractions(consoleIo);
+	}
+
 }
