@@ -7,11 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Map;
-
 import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.BiMap;
+import com.google.common.collect.ImmutableBiMap;
+import com.google.common.collect.ImmutableBiMap.Builder;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -21,16 +21,17 @@ import ch.qos.logback.classic.Logger;
  */
 public class SetParameters implements Command {
 
-	private static final Map<String, Level> LOG_LEVELS;
+	private static final BiMap<String, Level> LOG_LEVELS;
 
 	static {
-		Map<String, Level> logLevels = new LinkedHashMap<String, Level>();
+		Builder<String, Level> logLevels = ImmutableBiMap.<String, Level> builder();
+
 		logLevels.put("none", Level.OFF);
 		logLevels.put("error", Level.ERROR);
 		logLevels.put("warning", Level.WARN);
 		logLevels.put("info", Level.INFO);
 		logLevels.put("debug", Level.DEBUG);
-		LOG_LEVELS = Collections.unmodifiableMap(logLevels);
+		LOG_LEVELS = logLevels.build();
 	}
 
 	private final ConsoleIO consoleIO;
@@ -95,14 +96,8 @@ public class SetParameters implements Command {
 
 		if (value == null) {
 			Level currentLevel = logbackRootLogger.getLevel();
-			String levelString = currentLevel.levelStr;
 
-			for (Map.Entry<String, Level> entry : LOG_LEVELS.entrySet()) {
-				if (entry.getValue().equals(currentLevel)) {
-					levelString = entry.getKey();
-					break;
-				}
-			}
+			String levelString = LOG_LEVELS.inverse().getOrDefault(currentLevel, currentLevel.levelStr);
 
 			consoleIO.writeln("log: " + levelString);
 
