@@ -22,7 +22,7 @@ import org.springframework.web.servlet.handler.HandlerInterceptorAdapter;
  */
 public abstract class ServerInterceptor extends HandlerInterceptorAdapter {
 
-	private String origThreadName;
+	private volatile String origThreadName;
 
 	@Override
 	public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
@@ -41,8 +41,12 @@ public abstract class ServerInterceptor extends HandlerInterceptorAdapter {
 			Exception exception)
 		throws Exception
 	{
-		cleanUpResources();
-		Thread.currentThread().setName(origThreadName);
+		try {
+			cleanUpResources();
+		}
+		finally {
+			Thread.currentThread().setName(origThreadName);
+		}
 	}
 
 	/**

@@ -159,31 +159,8 @@ public class URIUtil {
 				/*
 				 * NOTE we use java.net.URI parsing to check compliance to the RFC, which is almost, but not
 				 * completely, in alignment with RFC 2396, and has not been updated for compatibility with RFC
-				 * 3986. From the java.net.URI Javadoc: "This constructor parses the given string exactly as
-				 * specified by the grammar in RFC 2396, Appendix A, except for the following deviations: - An
-				 * empty authority component is permitted as long as it is followed by a non-empty path, a
-				 * query component, or a fragment component. This allows the parsing of URIs such as
-				 * "file:///foo/bar", which seems to be the intent of RFC 2396 although the grammar does not
-				 * permit it. If the authority component is empty then the user-information, host, and port
-				 * components are undefined. - Empty relative paths are permitted; this seems to be the intent
-				 * of RFC 2396 although the grammar does not permit it. The primary consequence of this
-				 * deviation is that a standalone fragment such as "#foo" parses as a relative URI with an
-				 * empty path and the given fragment, and can be usefully resolved against a base URI. - IPv4
-				 * addresses in host components are parsed rigorously, as specified by RFC 2732: Each element
-				 * of a dotted-quad address must contain no more than three decimal digits. Each element is
-				 * further constrained to have a value no greater than 255. - Hostnames in host components
-				 * that comprise only a single domain label are permitted to start with an alphanum character.
-				 * This seems to be the intent of RFC 2396 section 3.2.2 although the grammar does not permit
-				 * it. The consequence of this deviation is that the authority component of a hierarchical URI
-				 * such as s://123, will parse as a server-based authority. - IPv6 addresses are permitted for
-				 * the host component. An IPv6 address must be enclosed in square brackets ('[' and ']') as
-				 * specified by RFC 2732. The IPv6 address itself must parse according to RFC 2373. IPv6
-				 * addresses are further constrained to describe no more than sixteen bytes of address
-				 * information, a constraint implicit in RFC 2373 but not expressible in the grammar. -
-				 * Characters in the /other/ category are permitted wherever RFC 2396 permits escaped octets,
-				 * that is, in the user-information, path, query, and fragment components, as well as in the
-				 * authority component if the authority is registry-based. This allows URIs to contain Unicode
-				 * characters beyond those in the US-ASCII character set."
+				 * 3986. See the java.net.URI javadoc (
+				 * https://docs.oracle.com/javase/8/docs/api/java/net/URI.html ) for details."
 				 */
 				final java.net.URI uri = new java.net.URI(escaped);
 				valid = uri.isAbsolute();

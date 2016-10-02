@@ -38,9 +38,13 @@ public class EmptySuccessView implements View {
 	public void render(Map model, HttpServletRequest request, HttpServletResponse response)
 		throws Exception
 	{
-		// Indicate success with a 204 NO CONTENT response
-		response.setStatus(SC_NO_CONTENT);
-		response.getOutputStream().close();
+		try {
+			// Indicate success with a 204 NO CONTENT response
+			response.setStatus(SC_NO_CONTENT);
+		}
+		finally {
+			response.getOutputStream().close();
+		}
 	}
 
 }

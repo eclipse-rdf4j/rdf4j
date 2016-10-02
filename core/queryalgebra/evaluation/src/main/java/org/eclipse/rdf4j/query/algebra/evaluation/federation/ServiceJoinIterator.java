@@ -58,7 +58,7 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 			// case 2: the service ref is not defined beforehand
 			// => use a fallback to the naive evaluation.
 			// exceptions occurring here must NOT be silenced!
-			while (!closed && leftIter.hasNext()) {
+			while (!isClosed() && leftIter.hasNext()) {
 				addResult(strategy.evaluate(service, leftIter.next()));
 			}
 			return;

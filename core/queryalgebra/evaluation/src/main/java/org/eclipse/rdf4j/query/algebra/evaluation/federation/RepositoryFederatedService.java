@@ -82,7 +82,7 @@ public class RepositoryFederatedService implements FederatedService {
 		protected void handleBindings()
 			throws Exception
 		{
-			while (!closed && leftIter.hasNext()) {
+			while (!isClosed() && leftIter.hasNext()) {
 
 				ArrayList<BindingSet> blockBindings = new ArrayList<BindingSet>(blockSize);
 				for (int i = 0; i < blockSize; i++) {

@@ -46,10 +46,18 @@ class ObservingSailDataset extends DelegatingSailDataset {
 	public void close()
 		throws SailException
 	{
-		super.close();
-		// flush observer regardless of consistency
-		observer.flush();
-		observer.close();
+		try {
+			super.close();
+		}
+		finally {
+			try {
+				// flush observer regardless of consistency
+				observer.flush();
+			}
+			finally {
+				observer.close();
+			}
+		}
 	}
 
 	@Override

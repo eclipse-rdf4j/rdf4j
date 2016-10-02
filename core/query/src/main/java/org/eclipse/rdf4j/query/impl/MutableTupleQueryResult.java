@@ -34,20 +34,20 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 	 * Variables *
 	 *-----------*/
 
-	private Set<String> bindingNames = new LinkedHashSet<String>();
+	private final Set<String> bindingNames = new LinkedHashSet<String>();
 
-	private List<BindingSet> bindingSets = new ArrayList<BindingSet>();
+	private final List<BindingSet> bindingSets = new ArrayList<BindingSet>();
 
 	/**
 	 * The index of the next element that will be returned by a call to {@link #next()}.
 	 */
-	private int currentIndex = 0;
+	private volatile int currentIndex = 0;
 
 	/**
 	 * The index of the last element that was returned by a call to {@link #next()} or {@link #previous()}.
 	 * Equal to -1 if there is no such element.
 	 */
-	private int lastReturned = -1;
+	private volatile int lastReturned = -1;
 
 	/*--------------*
 	 * Constructors *
@@ -92,6 +92,7 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public List<String> getBindingNames() {
 		return new ArrayList<String>(bindingNames);
 	}
@@ -116,10 +117,12 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 		this.currentIndex = index;
 	}
 
+	@Override
 	public boolean hasNext() {
 		return currentIndex < bindingSets.size();
 	}
 
+	@Override
 	public BindingSet next() {
 		if (hasNext()) {
 			BindingSet result = get(currentIndex);
@@ -236,8 +239,9 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 		lastReturned = -1;
 	}
 
+	@Override
 	public void close() {
-		// no-opp
+		// no-op because we support multiple iterations
 	}
 
 	@Override
@@ -245,8 +249,8 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 		throws CloneNotSupportedException
 	{
 		MutableTupleQueryResult clone = (MutableTupleQueryResult)super.clone();
-		clone.bindingNames = new LinkedHashSet<String>(bindingNames);
-		clone.bindingSets = new ArrayList<BindingSet>(bindingSets);
+		clone.bindingNames.addAll(bindingNames);
+		clone.bindingSets.addAll(bindingSets);
 		return clone;
 	}
 

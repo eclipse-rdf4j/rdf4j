@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -121,7 +122,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	/**
 	 * To remember if the iterator was already closed and only free resources once
 	 */
-	private boolean mustclose = false;
+	private final AtomicBoolean closed = new AtomicBoolean(false);
 
 	public LuceneSailConnection(NotifyingSailConnection wrappedConnection, SearchIndex luceneIndex,
 			LuceneSail sail)
@@ -148,19 +149,21 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	public void close()
 		throws SailException
 	{
-		// remember if you were closed before, some sloppy programmers
-		// may call close() twice.
-		if (mustclose) {
-			mustclose = false;
+		if (closed.compareAndSet(false, true)) {
 			try {
-				luceneIndex.endReading();
+				super.close();
 			}
-			catch (IOException e) {
-				logger.warn("could not close IndexReader or IndexSearcher " + e, e);
+			finally {
+				try {
+					luceneIndex.endReading();
+				}
+				catch (IOException e) {
+					logger.warn("could not close IndexReader or IndexSearcher " + e, e);
+				}
+				// remember if you were closed before, some sloppy programmers
+				// may call close() twice.
 			}
 		}
-
-		super.close();
 	}
 
 	// //////////////////////////////// Methods related to indexing
@@ -277,8 +280,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	// //////////////////////////////// Methods related to querying
 
 	@Override
-	public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
-			Dataset dataset, BindingSet bindings, boolean includeInferred)
+	public synchronized CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(
+			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
 		throws SailException
 	{
 		// Don't modify the original tuple expression
@@ -319,6 +322,10 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		// - multiple different property constraints can be put into the lucene
 		// query string (escape colons here)
 
+		if (closed.get()) {
+			throw new SailException("Sail has been closed already");
+		}
+
 		// mark that reading is in progress
 		try {
 			this.luceneIndex.beginReading();
@@ -326,7 +333,6 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		catch (IOException e) {
 			throw new SailException(e);
 		}
-		this.mustclose = true;
 
 		// evaluate queries, generate binding sets, and remove queries
 		for (SearchQueryEvaluator query : queries) {

@@ -29,7 +29,7 @@ public class LimitIteration<E, X extends Exception> extends IterationWrapper<E, 
 	/**
 	 * The number of elements that have been returned so far.
 	 */
-	private long returnCount;
+	private volatile long returnCount;
 
 	/*--------------*
 	 * Constructors *
@@ -61,14 +61,26 @@ public class LimitIteration<E, X extends Exception> extends IterationWrapper<E, 
 	public boolean hasNext()
 		throws X
 	{
-		return returnCount < limit && super.hasNext();
+		if (isClosed()) {
+			return false;
+		}
+		boolean underLimit = returnCount < limit;
+		if (!underLimit) {
+			close();
+			return false;
+		}
+		return super.hasNext();
 	}
 
 	@Override
 	public E next()
 		throws X
 	{
+		if (isClosed()) {
+			throw new NoSuchElementException("The iteration has been closed.");
+		}
 		if (returnCount >= limit) {
+			close();
 			throw new NoSuchElementException("limit reached");
 		}
 

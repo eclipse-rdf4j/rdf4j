@@ -23,7 +23,7 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	 * Variables *
 	 *-----------*/
 
-	private Iteration<? extends E, ? extends X> iter;
+	private volatile Iteration<? extends E, ? extends X> iter;
 
 	/*--------------*
 	 * Constructors *
@@ -50,56 +50,67 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	/**
 	 * Calls the <tt>hasNext</tt> method of the underlying iteration.
 	 */
+	@Override
 	public boolean hasNext()
 		throws X
 	{
-		if (iter == null) {
+		if (isClosed()) {
+			return false;
+		}
+		Iteration<? extends E, ? extends X> resultIter = iter;
+		if (resultIter == null) {
 			// Underlying iterator has not yet been initialized
 			synchronized (this) {
-				if (isClosed()) {
-					return false;
-				}
-				else {
-					iter = createIteration();
+				resultIter = iter;
+				if (resultIter == null) {
+					resultIter = iter = createIteration();
 				}
 			}
 		}
 
-		return iter.hasNext();
+		return resultIter.hasNext();
 	}
 
 	/**
 	 * Calls the <tt>next</tt> method of the underlying iteration.
 	 */
+	@Override
 	public E next()
 		throws X
 	{
-		if (iter == null) {
+		if (isClosed()) {
+			throw new NoSuchElementException("Iteration has been closed");
+		}
+		Iteration<? extends E, ? extends X> resultIter = iter;
+		if (resultIter == null) {
 			// Underlying iterator has not yet been initialized
 			synchronized (this) {
-				if (isClosed()) {
-					throw new NoSuchElementException("Iteration has been closed");
-				}
-				else {
-					iter = createIteration();
+				resultIter = iter;
+				if (resultIter == null) {
+					resultIter = iter = createIteration();
 				}
 			}
 		}
 
-		return iter.next();
+		return resultIter.next();
 	}
 
 	/**
 	 * Calls the <tt>remove</tt> method of the underlying iteration.
 	 */
+	@Override
 	public void remove()
 		throws X
 	{
-		if (iter == null || isClosed()) {
-			throw new IllegalStateException();
+		if (isClosed()) {
+			throw new IllegalStateException("The iteration has been closed.");
+		}
+		Iteration<? extends E, ? extends X> resultIter = iter;
+		if (resultIter == null) {
+			throw new IllegalStateException("Underlying iteration was null");
 		}
 
-		iter.remove();
+		resultIter.remove();
 	}
 
 	/**
@@ -110,10 +121,14 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	protected void handleClose()
 		throws X
 	{
-		super.handleClose();
-
-		synchronized (this) {
-			Iterations.closeCloseable(iter);
+		try {
+			super.handleClose();
+		}
+		finally {
+			Iteration<? extends E, ? extends X> toClose = iter;
+			if (toClose != null) {
+				Iterations.closeCloseable(toClose);
+			}
 		}
 	}
 }

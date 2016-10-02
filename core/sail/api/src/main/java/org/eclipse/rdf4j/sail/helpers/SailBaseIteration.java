@@ -41,22 +41,29 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T, E> {
 	public boolean hasNext()
 		throws E
 	{
+		if (isClosed()) {
+			return false;
+		}
+
 		if (super.hasNext()) {
 			return true;
 		}
-		else {
-			// auto-close when exhausted
-			close();
-			return false;
-		}
+		
+		// auto-close when exhausted
+		close();
+		return false;
 	}
 
 	@Override
 	protected void handleClose()
 		throws E
 	{
-		super.handleClose();
-		connection.iterationClosed(this);
+		try {
+			super.handleClose();
+		}
+		finally {
+			connection.iterationClosed(this);
+		}
 	}
 
 	@Deprecated

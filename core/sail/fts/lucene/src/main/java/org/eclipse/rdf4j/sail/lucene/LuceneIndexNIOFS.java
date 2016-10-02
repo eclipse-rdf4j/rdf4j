@@ -13,7 +13,6 @@ import java.util.Properties;
 
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.NIOFSDirectory;
-import org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement;
 
 /**
  * LuceneIndex which uses a NIOFSDirectory instead of MMapDirectory to avoid the JVM crash (see
@@ -25,9 +24,6 @@ import org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement;
 public class LuceneIndexNIOFS extends LuceneIndex {
 
 	@Override
-	// this method uses java.nio.Path which is a Java 7 feature. We ignore this as the Lucene modules 
-	// are marked as an exception to the rule that we are Java 6-compatible.
-	@IgnoreJRERequirement
 	protected Directory createDirectory(Properties parameters)
 		throws IOException
 	{

@@ -7,11 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.helpers;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.List;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 
@@ -33,41 +39,43 @@ public class TupleExprs {
 	 *         <code>false</code> otherwise.
 	 */
 	public static boolean containsProjection(TupleExpr t) {
-		@SuppressWarnings("serial")
-		class VisitException extends Exception {
-
-			VisitException() {
-				super(null, null, false, false);
+		Deque<TupleExpr> queue = new ArrayDeque<>();
+		queue.add(t);
+		while (!queue.isEmpty()) {
+			TupleExpr n = queue.removeFirst();
+			if (n instanceof Projection) {
+				return true;
+			}
+			else if (n instanceof Join) {
+				// projections already inside a Join need not be
+				// taken into account
+				return false;
+			}
+			else {
+				queue.addAll(getChildren(n));
 			}
 		}
-		final boolean[] result = new boolean[1];
-		try {
-			t.visit(new AbstractQueryModelVisitor<VisitException>() {
+		return false;
+	}
 
-				@Override
-				public void meet(Projection node)
-					throws VisitException
-				{
-					result[0] = true;
-					throw new VisitException();
-				}
+	/**
+	 * Returns {@link TupleExpr} children of the given node.
+	 * 
+	 * @param t
+	 *        a tuple expression.
+	 * @return a list of TupleExpr children.
+	 */
+	public static List<TupleExpr> getChildren(TupleExpr t) {
+		final List<TupleExpr> children = new ArrayList<>(4);
+		t.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
 
-				@Override
-				public void meet(Join node)
-					throws VisitException
-				{
-					// projections already inside a Join need not be
-					// taken into account
-					result[0] = false;
-					throw new VisitException();
+			public void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr) {
+					children.add((TupleExpr)node);
 				}
-			});
-		}
-		catch (VisitException ex) {
-			// Do nothing. We have thrown this exception on the first
-			// meeting of Projection or Join.
-		}
-		return result[0];
+			}
+		});
+		return children;
 	}
 
 	/**

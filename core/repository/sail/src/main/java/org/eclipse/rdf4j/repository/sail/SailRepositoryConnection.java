@@ -190,11 +190,13 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		throws RepositoryException
 	{
 		try {
-			sailConnection.close();
 			super.close();
 		}
 		catch (SailException e) {
 			throw new RepositoryException(e);
+		}
+		finally {
+			sailConnection.close();
 		}
 	}
 
@@ -373,7 +375,12 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		throws RepositoryException
 	{
 		try {
-			sailConnection.removeStatements(subject, predicate, object, contexts);
+			if (subject == null && predicate == null && object == null) {
+				sailConnection.clear(contexts);
+			}
+			else {
+				sailConnection.removeStatements(subject, predicate, object, contexts);
+			}
 		}
 		catch (SailReadOnlyException e) {
 			throw new RepositoryReadOnlyException(e.getMessage(), e);

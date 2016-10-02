@@ -35,7 +35,7 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 
 	private final BindingSet[] previousBindings;
 
-	private BindingSet currentBindings;
+	private volatile BindingSet currentBindings;
 
 	private volatile int nextProjectionIdx;
 
@@ -53,7 +53,7 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 
 		// initialize out-of-range to enforce a fetch of the first result upon
 		// first use
-		nextProjectionIdx = projections.size();
+		nextProjectionIdx = -1;
 	}
 
 	/*---------*
@@ -65,9 +65,13 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 		throws QueryEvaluationException
 	{
 		while (true) {
+			if (isClosed()) {
+				return null;
+			}
+
 			int projIdx = nextProjectionIdx;
 
-			if (projIdx < projections.size()) {
+			if (projIdx >= 0 && projIdx < projections.size()) {
 				// Apply next projection in the list
 				ProjectionElemList projection = projections.get(projIdx);
 				BindingSet result = ProjectionIterator.project(projection, currentBindings, parentBindings);
@@ -96,9 +100,17 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 	protected void handleClose()
 		throws QueryEvaluationException
 	{
-		super.handleClose();
-		iter.close();
-		nextProjectionIdx = projections.size();
-		Arrays.fill(previousBindings, null);
+		try {
+			super.handleClose();
+		}
+		finally {
+			try {
+				iter.close();
+			}
+			finally {
+				nextProjectionIdx = -1;
+				Arrays.fill(previousBindings, null);
+			}
+		}
 	}
 }
