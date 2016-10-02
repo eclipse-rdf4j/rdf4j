@@ -388,13 +388,16 @@ public class LuceneSail extends NotifyingSailWrapper {
 		}
 
 		try {
-			if (parameters.containsKey(REINDEX_QUERY_KEY))
+			if (parameters.containsKey(REINDEX_QUERY_KEY)) {
 				setReindexQuery(parameters.getProperty(REINDEX_QUERY_KEY));
-			if (parameters.containsKey(INCOMPLETE_QUERY_FAIL_KEY))
+			}
+			if (parameters.containsKey(INCOMPLETE_QUERY_FAIL_KEY)) {
 				setIncompleteQueryFails(
 						Boolean.parseBoolean(parameters.getProperty(INCOMPLETE_QUERY_FAIL_KEY)));
-			if (parameters.containsKey(EVALUATION_MODE_KEY))
+			}
+			if (parameters.containsKey(EVALUATION_MODE_KEY)) {
 				setEvaluationMode(parameters.getProperty(EVALUATION_MODE_KEY));
+			}
 			if (luceneIndex == null) {
 				initializeLuceneIndex();
 			}
