@@ -62,22 +62,30 @@ public class QuerySpec implements SearchQueryEvaluator {
 		this.subject = subject;
 		this.queryString = queryString;
 		this.propertyURI = propertyURI;
-		if (matchesPattern != null)
+		if (matchesPattern != null) {
 			this.matchesVarName = matchesPattern.getSubjectVar().getName();
-		else
+		}
+		else {
 			this.matchesVarName = null;
-		if (propertyPattern != null)
+		}
+		if (propertyPattern != null) {
 			this.propertyVarName = propertyPattern.getObjectVar().getName();
-		else
+		}
+		else {
 			this.propertyVarName = null;
-		if (scorePattern != null)
+		}
+		if (scorePattern != null) {
 			this.scoreVarName = scorePattern.getObjectVar().getName();
-		else
+		}
+		else {
 			this.scoreVarName = null;
-		if (snippetPattern != null)
+		}
+		if (snippetPattern != null) {
 			this.snippetVarName = snippetPattern.getObjectVar().getName();
-		else
+		}
+		else {
 			this.snippetVarName = null;
+		}
 	}
 
 	public QuerySpec(String matchesVarName, String propertyVarName, String scoreVarName,
