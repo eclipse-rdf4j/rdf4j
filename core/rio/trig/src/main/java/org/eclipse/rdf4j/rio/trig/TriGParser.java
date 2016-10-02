@@ -22,14 +22,12 @@ import org.eclipse.rdf4j.rio.turtle.TurtleParser;
 import org.eclipse.rdf4j.rio.turtle.TurtleUtil;
 
 /**
- * RDF parser for <a href="http://www.wiwiss.fu-berlin.de/suhl/bizer/TriG/Spec/">TriG</a> files. This parser
- * is not thread-safe, therefore its public methods are synchronized.
- * <p>
- * This implementation is based on the 2005/06/06 version of the TriG specification, but implemented as an
- * extension of the <a href="http://www.dajobe.org/2004/01/turtle/">Turtle</a> specification of 2006/01/02.
+ * RDF parser for <a href="https://www.w3.org/TR/trig/">RDF-1.1 TriG</a> files. This parser is not
+ * thread-safe, therefore its public methods are synchronized.
  * 
- * @see TurtleParser
  * @author Arjohn Kampman
+ * @author Peter Ansell
+ * @see TurtleParser
  */
 public class TriGParser extends TurtleParser {
 
@@ -100,6 +98,14 @@ public class TriGParser extends TurtleParser {
 			parseDirective(directive);
 			skipWSC();
 			// SPARQL BASE and PREFIX lines do not end in .
+		}
+		else if (directive.length() >= 6 && directive.substring(0, 5).equalsIgnoreCase("GRAPH")
+				&& directive.substring(5, 6).equals(":"))
+		{
+			// If there was a colon immediately after the graph keyword then
+			// assume it was a pname and not the SPARQL GRAPH keyword
+			unread(directive);
+			parseGraph();
 		}
 		else if (directive.length() >= 5 && directive.substring(0, 5).equalsIgnoreCase("GRAPH")) {
 			// Do not unread the directive if it was SPARQL GRAPH
@@ -190,7 +196,8 @@ public class TriGParser extends TurtleParser {
 		else {
 			setContext(null);
 
-			// Did not turn out to be a graph, so assign it to subject instead and
+			// Did not turn out to be a graph, so assign it to subject instead
+			// and
 			// parse from here to triples
 			if (foundContextOrSubject) {
 				subject = contextOrSubject;
@@ -233,7 +240,8 @@ public class TriGParser extends TurtleParser {
 			c = peekCodePoint();
 
 			// if this is not the end of the statement, recurse into the list of
-			// predicate and objects, using the subject parsed above as the subject
+			// predicate and objects, using the subject parsed above as the
+			// subject
 			// of the statement.
 			if (c != '.' && c != '}') {
 				parsePredicateObjectList();

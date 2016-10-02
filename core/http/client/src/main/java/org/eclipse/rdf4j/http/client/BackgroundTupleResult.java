@@ -10,9 +10,11 @@ package org.eclipse.rdf4j.http.client;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.UndeclaredThrowableException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -32,17 +34,15 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 		implements Runnable, TupleQueryResultHandler
 {
 
-	private volatile boolean closed;
+	private final TupleQueryResultParser parser;
 
-	private TupleQueryResultParser parser;
+	private final InputStream in;
 
-	private InputStream in;
+	private final QueueCursor<BindingSet> queue;
 
-	private QueueCursor<BindingSet> queue;
+	private final List<String> bindingNames = new ArrayList<>();
 
-	private List<String> bindingNames;
-
-	private CountDownLatch bindingNamesReady = new CountDownLatch(1);
+	private final CountDownLatch bindingNamesReady = new CountDownLatch(1);
 
 	public BackgroundTupleResult(TupleQueryResultParser parser, InputStream in) {
 		this(new QueueCursor<BindingSet>(10), parser, in);
@@ -63,15 +63,27 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 	{
 		try {
 			try {
-				closed = true;
 				super.handleClose();
 			}
 			finally {
-				in.close();
+				try {
+					// After checking that we ourselves cannot possibly be generating an NPE ourselves, 
+					// attempt to close the input stream we were given
+					InputStream toClose = in;
+					if (toClose != null) {
+						toClose.close();
+					}
+				}
+				catch (NullPointerException e) {
+					// Swallow NullPointerException that Apache HTTPClient is hiding behind a NotThreadSafe annotation
+				}
 			}
 		}
 		catch (IOException e) {
 			throw new QueryEvaluationException(e);
+		}
+		finally {
+			queue.close();
 		}
 	}
 
@@ -115,7 +127,7 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 	public void startQueryResult(List<String> bindingNames)
 		throws TupleQueryResultHandlerException
 	{
-		this.bindingNames = bindingNames;
+		this.bindingNames.addAll(bindingNames);
 		bindingNamesReady.countDown();
 	}
 
@@ -129,8 +141,9 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 		catch (InterruptedException e) {
 			throw new TupleQueryResultHandlerException(e);
 		}
-		if (closed)
+		if (isClosed()) {
 			throw new TupleQueryResultHandlerException("Result closed");
+		}
 	}
 
 	@Override

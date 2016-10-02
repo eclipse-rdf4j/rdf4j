@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 
 public class RepositoryTripleSource implements TripleSource {
 
@@ -40,20 +39,39 @@ public class RepositoryTripleSource implements TripleSource {
 			IRI pred, Value obj, Resource... contexts)
 		throws QueryEvaluationException
 	{
-		RepositoryResult<Statement> result;
+		CloseableIteration<? extends Statement, RepositoryException> iter = null;
+		CloseableIteration<? extends Statement, QueryEvaluationException> result = null;
+
+		boolean allGood = false;
 		try {
-			result = repo.getStatements(subj, pred, obj, includeInferred, contexts);
+			iter = repo.getStatements(subj, pred, obj, includeInferred, contexts);
+			result = new ExceptionConvertingIteration<Statement, QueryEvaluationException>(iter) {
+
+				@Override
+				protected QueryEvaluationException convert(Exception exception) {
+					return new QueryEvaluationException(exception);
+				}
+			};
+			allGood = true;
+			return result;
 		}
 		catch (RepositoryException e) {
 			throw new QueryEvaluationException(e);
 		}
-		return new ExceptionConvertingIteration<Statement, QueryEvaluationException>(result) {
-
-			@Override
-			protected QueryEvaluationException convert(Exception exception) {
-				return new QueryEvaluationException(exception);
+		finally {
+			if (!allGood) {
+				try {
+					if (result != null) {
+						result.close();
+					}
+				}
+				finally {
+					if (iter != null) {
+						iter.close();
+					}
+				}
 			}
-		};
+		}
 	}
 
 	@Override

@@ -20,9 +20,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.SPARQLMinusIteration;
  */
 public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryEvaluationException> {
 
-	private AtomicLong used;
+	private final AtomicLong used;
 
-	private long maxSize;
+	private final long maxSize;
 
 	/**
 	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the
@@ -82,9 +82,13 @@ public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryE
 	protected void handleClose()
 		throws QueryEvaluationException
 	{
-		long size = clearExcludeSet();
-		super.handleClose();
-		used.addAndGet(-size);
+		try {
+			super.handleClose();
+		}
+		finally {
+			long size = clearExcludeSet();
+			used.addAndGet(-size);
+		}
 	}
 
 }

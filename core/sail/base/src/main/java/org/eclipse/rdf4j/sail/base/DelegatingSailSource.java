@@ -36,10 +36,12 @@ class DelegatingSailSource implements SailSource {
 		this.releasing = closing;
 	}
 
+	@Override
 	public String toString() {
 		return delegate.toString();
 	}
 
+	@Override
 	public void close()
 		throws SailException
 	{
@@ -48,28 +50,33 @@ class DelegatingSailSource implements SailSource {
 		}
 	}
 
+	@Override
 	public SailSource fork() {
 		return delegate.fork();
 	}
 
+	@Override
 	public void prepare()
 		throws SailException
 	{
 		delegate.prepare();
 	}
 
+	@Override
 	public void flush()
 		throws SailException
 	{
 		delegate.flush();
 	}
 
+	@Override
 	public SailSink sink(IsolationLevel level)
 		throws SailException
 	{
 		return delegate.sink(level);
 	}
 
+	@Override
 	public SailDataset dataset(IsolationLevel level)
 		throws SailException
 	{

@@ -22,10 +22,10 @@ public abstract class AbstractReaderMonitor {
 
 	private final AtomicInteger readingCount = new AtomicInteger(0);
 
-	private boolean doClose = false;
+	private final AtomicBoolean doClose = new AtomicBoolean(false);
 
 	// Remember index to be able to remove itself from the index list
-	final private AbstractLuceneIndex index;
+	private final AbstractLuceneIndex index;
 
 	private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -33,14 +33,22 @@ public abstract class AbstractReaderMonitor {
 		this.index = index;
 	}
 
-	public int getReadingCount() {
+	public final int getReadingCount() {
 		return readingCount.get();
 	}
 
 	/**
 	 * 
 	 */
-	public void beginReading() {
+	public final synchronized void beginReading() {
+		if (closed.get()) {
+			throw new IllegalStateException("Cannot begin reading as we have been closed.");
+		}
+		// We cannot allow any more readers to be open at this stage, as any
+		// decrements towards zero on readingCount could trigger closure/removal
+		if (doClose.get()) {
+			throw new IllegalStateException("Cannot begin reading as we have moved into closing stages.");
+		}
 		readingCount.incrementAndGet();
 	}
 
@@ -49,16 +57,17 @@ public abstract class AbstractReaderMonitor {
 	 * 
 	 * @throws IOException
 	 */
-	public void endReading()
+	public final synchronized void endReading()
 		throws IOException
 	{
-		if (readingCount.decrementAndGet() == 0 && doClose) {
-			// when endReading is called on CurrentMonitor and it should be closed,
-			// close it
-			close();// close Lucene index remove them self from Lucene index
+		if (readingCount.decrementAndGet() <= 0 && doClose.get()) {
+			// when endReading is called on CurrentMonitor and it should be
+			// closed, close it
+			close();
+			// close Lucene index remove them self from Lucene index
 			synchronized (index.oldmonitors) {
-				index.oldmonitors.remove(this); // if its not in the list, then this
-												// is a no-operation
+				// if its not in the list, then this is a no-operation
+				index.oldmonitors.remove(this);
 			}
 		}
 	}
@@ -69,25 +78,27 @@ public abstract class AbstractReaderMonitor {
 	 * @return <code>true</code> if the close succeeded, <code>false</code> otherwise.
 	 * @throws IOException
 	 */
-	public boolean closeWhenPossible()
+	public final synchronized boolean closeWhenPossible()
 		throws IOException
 	{
-		doClose = true;
+		doClose.set(true);
 		if (readingCount.get() == 0) {
 			close();
 		}
 		return closed.get();
 	}
 
-	public void close()
+	public final void close()
 		throws IOException
 	{
-		if (!closed.getAndSet(true)) {
+		if (closed.compareAndSet(false, true)) {
 			handleClose();
 		}
 	}
 
 	/**
+	 * This method is thread-safe (i.e. it is not called concurrently).
+	 * 
 	 * @throws IOException
 	 */
 	protected abstract void handleClose()

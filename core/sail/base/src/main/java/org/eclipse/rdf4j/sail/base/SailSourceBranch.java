@@ -124,22 +124,20 @@ class SailSourceBranch implements SailSource {
 	public void close()
 		throws SailException
 	{
+		semaphore.lock();
 		try {
-			semaphore.lock();
-			if (snapshot != null) {
-				try {
-					snapshot.close();
-				}
-				finally {
-					snapshot = null;
+			try {
+				SailDataset toCloseSnapshot = snapshot;
+				snapshot = null;
+				if (toCloseSnapshot != null) {
+					toCloseSnapshot.close();
 				}
 			}
-			if (serializable != null) {
-				try {
-					serializable.close();
-				}
-				finally {
-					serializable = null;
+			finally {
+				SailSink toCloseSerializable = serializable;
+				serializable = null;
+				if (toCloseSerializable != null) {
+					toCloseSerializable.close();
 				}
 			}
 		}

@@ -42,6 +42,7 @@ public abstract class AbstractCloseableIteration<E, X extends Exception> impleme
 	/**
 	 * Calls {@link #handleClose()} upon first call and makes sure this method gets called only once.
 	 */
+	@Override
 	public final void close()
 		throws X
 	{

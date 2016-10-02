@@ -22,14 +22,17 @@ public class IteratorIteration<E, X extends Exception> implements Iteration<E, X
 		this.iter = iter;
 	}
 
+	@Override
 	public boolean hasNext() {
 		return iter.hasNext();
 	}
 
+	@Override
 	public E next() {
 		return iter.next();
 	}
 
+	@Override
 	public void remove() {
 		iter.remove();
 	}

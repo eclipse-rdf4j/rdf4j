@@ -80,6 +80,9 @@ public class DCAT {
 	
 	/** dcat:record */	
 	public static final IRI HAS_RECORD;
+
+	/** dcat:theme */
+	public static final IRI THEME;
 	
 	/** dcat:themeTaxonomy */
 	public static final IRI THEME_TAXONOMY;
@@ -102,6 +105,7 @@ public class DCAT {
 		LANDING_PAGE = factory.createIRI(NAMESPACE, "landingPage");
 		MEDIA_TYPE = factory.createIRI(NAMESPACE, "mediaType");
 		HAS_RECORD = factory.createIRI(NAMESPACE, "record");
+		THEME = factory.createIRI(NAMESPACE, "theme");
 		THEME_TAXONOMY = factory.createIRI(NAMESPACE, "themeTaxonomy");
 	}
 }

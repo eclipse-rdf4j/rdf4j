@@ -554,7 +554,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * 
 	 * @param msg
 	 *        The message to use for {@link ParseErrorListener#error(String, long, long)} and for
-	 *        {@link RDFParseException#RDFParseException(String, long, long)}.
+	 *        {@link RDFParseException#RDFParseException(String, long, long)} .
 	 * @param relevantSetting
 	 *        The boolean setting that will be checked to determine if this is an issue that we need to look
 	 *        at at all. If this setting is true, then the error listener will receive the error, and if
@@ -578,15 +578,15 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * 
 	 * @param msg
 	 *        The message to use for {@link ParseErrorListener#error(String, long, long)} and for
-	 *        {@link RDFParseException#RDFParseException(String, long, long)}.
+	 *        {@link RDFParseException#RDFParseException(String, long, long)} .
 	 * @param lineNo
 	 *        Optional line number, should default to setting this as -1 if not known. Used for
 	 *        {@link ParseErrorListener#error(String, long, long)} and for
-	 *        {@link RDFParseException#RDFParseException(String, long, long)}.
+	 *        {@link RDFParseException#RDFParseException(String, long, long)} .
 	 * @param columnNo
 	 *        Optional column number, should default to setting this as -1 if not known. Used for
 	 *        {@link ParseErrorListener#error(String, long, long)} and for
-	 *        {@link RDFParseException#RDFParseException(String, long, long)}.
+	 *        {@link RDFParseException#RDFParseException(String, long, long)} .
 	 * @param relevantSetting
 	 *        The boolean setting that will be checked to determine if this is an issue that we need to look
 	 *        at at all. If this setting is true, then the error listener will receive the error, and if
@@ -612,15 +612,40 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * @param e
 	 *        The exception whose message will be used for
 	 *        {@link ParseErrorListener#error(String, long, long)} and for
-	 *        {@link RDFParseException#RDFParseException(String, long, long)}.
+	 *        {@link RDFParseException#RDFParseException(String, long, long)} .
+	 * @param relevantSetting
+	 *        The boolean setting that will be checked to determine if this is an issue that we need to look
+	 *        at at all. If this setting is true, then the error listener will receive the error, and if
+	 *        {@link ParserConfig#isNonFatalError(RioSetting)} returns true an exception will be thrown.
+	 * @throws RDFParseException
+	 *         If {@link ParserConfig#get(RioSetting)} returns true, and
+	 *         {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
+	 */
+	protected void reportError(Exception e, RioSetting<Boolean> relevantSetting)
+		throws RDFParseException
+	{
+		RDFParserHelper.reportError(e, -1, -1, relevantSetting, getParserConfig(), getParseErrorListener());
+	}
+
+	/**
+	 * Reports an error with associated line- and column number to the registered ParseErrorListener, if the
+	 * given setting has been set to true.
+	 * <p>
+	 * This method also throws an {@link RDFParseException} when the given setting has been set to
+	 * <tt>true</tt> and it is not a nonFatalError.
+	 * 
+	 * @param e
+	 *        The exception whose message will be used for
+	 *        {@link ParseErrorListener#error(String, long, long)} and for
+	 *        {@link RDFParseException#RDFParseException(String, long, long)} .
 	 * @param lineNo
 	 *        Optional line number, should default to setting this as -1 if not known. Used for
 	 *        {@link ParseErrorListener#error(String, long, long)} and for
-	 *        {@link RDFParseException#RDFParseException(String, long, long)}.
+	 *        {@link RDFParseException#RDFParseException(String, long, long)} .
 	 * @param columnNo
 	 *        Optional column number, should default to setting this as -1 if not known. Used for
 	 *        {@link ParseErrorListener#error(String, long, long)} and for
-	 *        {@link RDFParseException#RDFParseException(String, long, long)}.
+	 *        {@link RDFParseException#RDFParseException(String, long, long)} .
 	 * @param relevantSetting
 	 *        The boolean setting that will be checked to determine if this is an issue that we need to look
 	 *        at at all. If this setting is true, then the error listener will receive the error, and if

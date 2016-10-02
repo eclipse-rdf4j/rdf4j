@@ -24,6 +24,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.rdfxml.RDFXMLParserFactory;
 import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriterTestCase;
 import org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLPrettyWriterFactory;
@@ -35,6 +37,11 @@ public class RDFXMLPrettyWriterTest extends RDFXMLWriterTestCase {
 
 	public RDFXMLPrettyWriterTest() {
 		super(new RDFXMLPrettyWriterFactory(), new RDFXMLParserFactory());
+	}
+
+	@Override
+	protected void setupWriterConfig(WriterConfig config) {
+		config.set(BasicWriterSettings.PRETTY_PRINT, true);
 	}
 
 	/**

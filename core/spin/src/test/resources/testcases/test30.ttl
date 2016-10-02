@@ -1,0 +1,42 @@
+@prefix sp: <http://spinrdf.org/sp#>.
+
+[ a       sp:Construct ;
+	sp:text """
+CONSTRUCT {
+	?class rdfs:comment "CONSTRUCT with sub-query test".
+}
+WHERE {
+	?class a rdfs:Class .
+    {
+        SELECT ?s
+        WHERE {
+            ?s ?p ?o .
+        }
+        LIMIT 1
+    } .
+}
+""";
+      	sp:templates ([ sp:object "CONSTRUCT with sub-query test" ;
+		                sp:predicate rdfs:comment ;
+	    	            sp:subject _:b1
+		             ]) ;
+        sp:where ([ sp:object rdfs:Class ;
+                    sp:predicate rdf:type ;
+                    sp:subject _:b1
+                  ] [ a       sp:SubQuery ;
+                    sp:query
+                            [ a       sp:Select ;
+                              sp:resultVariables (_:b2) ;
+                              sp:where ([ sp:object _:b4 ;
+                                          sp:predicate _:b3 ;
+                                          sp:subject _:b2
+                                        ]) ;
+                              sp:limit 1
+                            ] ;
+                  ]) ;
+      ].
+
+_:b1 sp:varName "class" .
+_:b2 sp:varName "s" .
+_:b3 sp:varName "p" .
+_:b4 sp:varName "o" .
