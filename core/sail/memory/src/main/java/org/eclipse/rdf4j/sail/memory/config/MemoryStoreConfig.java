@@ -16,13 +16,13 @@ import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
-import org.eclipse.rdf4j.sail.config.AbstractSailImplConfig;
+import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 
 /**
  * @author Arjohn Kampman
  */
-public class MemoryStoreConfig extends AbstractSailImplConfig {
+public class MemoryStoreConfig extends BaseSailConfig {
 
 	private boolean persist = false;
 
