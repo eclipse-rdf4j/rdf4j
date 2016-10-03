@@ -264,6 +264,14 @@ public class RDFFormat extends FileFormat {
 				qValue -= 1;
 			}
 
+			if (RDFXML.equals(format)) {
+				// We explicitly dislike RDF/XML as it has limitations in what it can serialize. See #299.
+				qValue -= 4;
+			}
+
+			// ensure q-value does not go below 0.1.
+			qValue = Math.max(1, qValue);
+			
 			for (String mimeType : format.getMIMETypes()) {
 				String acceptParam = mimeType;
 
