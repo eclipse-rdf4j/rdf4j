@@ -14,6 +14,7 @@ import java.util.StringTokenizer;
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeConstants;
 import javax.xml.datatype.DatatypeFactory;
+import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
 import javax.xml.namespace.QName;
 
@@ -1902,6 +1903,25 @@ public class XMLDatatypeUtil {
 	 */
 	public static XMLGregorianCalendar parseCalendar(String s) {
 		return dtFactory.newXMLGregorianCalendar(s);
+	}
+
+	/**
+	 * Parses the supplied xsd:duration value string and returns its value.
+	 * 
+	 * @param s
+	 *        A string representation of an xsd:duration value.
+	 * @return The {@link Duration} value represented by the supplied string argument.
+	 * @throws IllegalArgumentException
+	 *         If the supplied string is not a valid xsd:duration value.
+	 * @throws UnsupportedOperationException
+	 *         If implementation cannot support requested values. The XML Schema specification states that
+	 *         values can be of an arbitrary size. Implementations may chose not to or be incapable of
+	 *         supporting arbitrarily large and/or small values. An UnsupportedOperationException will be
+	 *         thrown with a message indicating implementation limits if implementation capacities are
+	 *         exceeded.
+	 */
+	public static Duration parseDuration(String s) {
+		return dtFactory.newDuration(s);
 	}
 
 	/**
