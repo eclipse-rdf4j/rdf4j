@@ -20,13 +20,13 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
-import org.eclipse.rdf4j.sail.config.AbstractSailImplConfig;
+import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 
 /**
  * @author Arjohn Kampman
  */
-public class NativeStoreConfig extends AbstractSailImplConfig {
+public class NativeStoreConfig extends BaseSailConfig {
 
 	/*-----------*
 	 * Variables *
