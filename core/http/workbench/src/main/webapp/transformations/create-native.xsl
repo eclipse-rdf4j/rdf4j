@@ -64,8 +64,13 @@
 						</th>
 						<td>
 							<select id="evalStratFactory" name="EvaluationStrategyFactory">
-								<option value="org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategyFactory">
-								Strict
+								<option selected="selected"
+									value="org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory">
+									Strict
+								</option>
+								<option
+									value="org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategyFactory">
+									Extended
 								</option>
 							</select>
 						</td>

@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
@@ -178,7 +178,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 */
 	public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
 		if (evalStratFactory == null) {
-			evalStratFactory = new SimpleEvaluationStrategyFactory(getFederatedServiceResolver());
+			evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());
 		}
 		return evalStratFactory;
 	}

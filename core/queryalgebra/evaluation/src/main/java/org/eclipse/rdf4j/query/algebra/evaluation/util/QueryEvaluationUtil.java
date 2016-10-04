@@ -101,9 +101,15 @@ public class QueryEvaluationUtil {
 	public static boolean compare(Value leftVal, Value rightVal, CompareOp operator)
 		throws ValueExprEvaluationException
 	{
+		return compare(leftVal, rightVal, operator, true);
+	}
+
+	public static boolean compare(Value leftVal, Value rightVal, CompareOp operator, boolean strict)
+		throws ValueExprEvaluationException
+	{
 		if (leftVal instanceof Literal && rightVal instanceof Literal) {
 			// Both left and right argument is a Literal
-			return compareLiterals((Literal)leftVal, (Literal)rightVal, operator);
+			return compareLiterals((Literal)leftVal, (Literal)rightVal, operator, strict);
 		}
 		else {
 			// All other value combinations
@@ -123,7 +129,46 @@ public class QueryEvaluationUtil {
 		return leftVal != null && rightVal != null && leftVal.equals(rightVal);
 	}
 
+	/**
+	 * Compares the supplied {@link Literal} arguments using the supplied operator, using strict
+	 * (minimally-conforming) SPARQL 1.1 operator behavior.
+	 * 
+	 * @param leftLit
+	 *        the left literal argument of the comparison.
+	 * @param rightLit
+	 *        the right literal argument of the comparison.
+	 * @param operator
+	 *        the comparison operator to use.
+	 * @return {@code true} if execution of the supplied operator on the supplied arguments succeeds,
+	 *         {@code false} otherwise.
+	 * @throws ValueExprEvaluationException
+	 *         if a type error occurred.
+	 */
 	public static boolean compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator)
+		throws ValueExprEvaluationException
+	{
+		return compareLiterals(leftLit, rightLit, operator, true);
+	}
+
+	/**
+	 * Compares the supplied {@link Literal} arguments using the supplied operator.
+	 * 
+	 * @param leftLit
+	 *        the left literal argument of the comparison.
+	 * @param rightLit
+	 *        the right literal argument of the comparison.
+	 * @param operator
+	 *        the comparison operator to use.
+	 * @param strict
+	 *        boolean indicating whether comparison should use strict (minimally-conforming) SPARQL 1.1
+	 *        operator behavior, or extended behavior.
+	 * @return {@code true} if execution of the supplied operator on the supplied arguments succeeds,
+	 *         {@code false} otherwise.
+	 * @throws ValueExprEvaluationException
+	 *         if a type error occurred.
+	 */
+	public static boolean compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator,
+			boolean strict)
 		throws ValueExprEvaluationException
 	{
 		// type precendence:
@@ -141,8 +186,7 @@ public class QueryEvaluationUtil {
 		boolean rightLangLit = Literals.isLanguageLiteral(rightLit);
 
 		// for purposes of query evaluation in SPARQL, simple literals and
-		// string-typed literals with the same
-		// lexical value are considered equal.
+		// string-typed literals with the same lexical value are considered equal.
 		IRI commonDatatype = null;
 		if (QueryEvaluationUtil.isSimpleLiteral(leftLit) && QueryEvaluationUtil.isSimpleLiteral(rightLit)) {
 			commonDatatype = XMLSchema.STRING;
@@ -179,10 +223,10 @@ public class QueryEvaluationUtil {
 						commonDatatype = XMLSchema.INTEGER;
 					}
 				}
-				else if (XMLDatatypeUtil.isCalendarDatatype(leftDatatype)
+				else if (!strict && XMLDatatypeUtil.isCalendarDatatype(leftDatatype)
 						&& XMLDatatypeUtil.isCalendarDatatype(rightDatatype))
 				{
-					//We set the most general datatype
+					// We're not running in strict eval mode so we use extended datatype comparsion.
 					commonDatatype = XMLSchema.DATETIME;
 				}
 			}
@@ -217,7 +261,9 @@ public class QueryEvaluationUtil {
 						// (-1, 0, 1) but INDETERMINATE needs special treatment
 						if (compareResult == DatatypeConstants.INDETERMINATE) {
 							// If we compare two xsd:dateTime we should use the specific comparison specified in SPARQL 1.1
-							if (leftDatatype.equals(XMLSchema.DATETIME) && rightDatatype.equals(XMLSchema.DATETIME)) {
+							if (leftDatatype.equals(XMLSchema.DATETIME)
+									&& rightDatatype.equals(XMLSchema.DATETIME))
+							{
 								throw new ValueExprEvaluationException(
 										"Indeterminate result for date/time comparison");
 							}

@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
 
 /**
@@ -38,7 +38,7 @@ public class LimitedSizePathIterator extends PathIteration {
 	 * @param bindings
 	 * @throws QueryEvaluationException
 	 */
-	public LimitedSizePathIterator(SimpleEvaluationStrategy evaluationStrategyImpl, Scope scope, Var startVar,
+	public LimitedSizePathIterator(StrictEvaluationStrategy evaluationStrategyImpl, Scope scope, Var startVar,
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings,
 			AtomicLong used, long maxSize)
 		throws QueryEvaluationException

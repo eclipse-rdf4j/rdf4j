@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry
 /**
  * An {@link EvaluationStrategy} that has support for {@link TupleFunction}s.
  */
-public class TupleFunctionEvaluationStrategy extends SimpleEvaluationStrategy {
+public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
 
