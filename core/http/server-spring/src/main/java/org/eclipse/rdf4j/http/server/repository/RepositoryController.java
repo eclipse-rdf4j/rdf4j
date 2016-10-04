@@ -44,7 +44,9 @@ import org.eclipse.rdf4j.http.server.HTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
@@ -58,6 +60,8 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterRegistry;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
@@ -208,12 +212,9 @@ public class RepositoryController extends AbstractController {
 							boolean distinct = ProtocolUtil.parseBooleanParam(request,
 									Protocol.DISTINCT_PARAM_NAME, false);
 
-							QueryResult<?> tqr = tQuery.evaluate();
-							if (distinct) {
-								tqr = distinct(tqr);
-							}
-
-							queryResult = paginated(tqr, limit, offset);
+							final TupleQueryResult tqr = distinct
+									? QueryResults.distinctResults(tQuery.evaluate()) : tQuery.evaluate();
+							queryResult = QueryResults.limitResults(tqr, limit, offset);
 						}
 						registry = TupleQueryResultWriterRegistry.getInstance();
 						view = TupleQueryResultView.getInstance();
@@ -223,16 +224,12 @@ public class RepositoryController extends AbstractController {
 							GraphQuery gQuery = (GraphQuery)query;
 							long limit = ProtocolUtil.parseLongParam(request, Protocol.LIMIT_PARAM_NAME, 0);
 							long offset = ProtocolUtil.parseLongParam(request, Protocol.OFFSET_PARAM_NAME, 0);
-
 							boolean distinct = ProtocolUtil.parseBooleanParam(request,
 									Protocol.DISTINCT_PARAM_NAME, false);
 
-							QueryResult<?> gqr = gQuery.evaluate();
-							if (distinct) {
-								gqr = distinct(gqr);
-							}
-
-							queryResult = paginated(gqr, limit, offset);
+							final GraphQueryResult qqr = distinct
+									? QueryResults.distinctResults(gQuery.evaluate()) : gQuery.evaluate();
+							queryResult = QueryResults.limitResults(qqr, limit, offset);
 						}
 						registry = RDFWriterRegistry.getInstance();
 						view = GraphQueryResultView.getInstance();
@@ -409,17 +406,4 @@ public class RepositoryController extends AbstractController {
 		}
 	}
 
-	private static <T> CloseableIteration<T, QueryEvaluationException> paginated(QueryResult<T> qr,
-			long limit, long offset)
-	{
-		CloseableIteration<T, QueryEvaluationException> result = qr;
-		if (offset > 0) {
-			result = new OffsetIteration<>(result, offset);
-		}
-		if (limit > 0) {
-			result = new LimitIteration<>(result, limit);
-		}
-
-		return result;
-	}
 }
