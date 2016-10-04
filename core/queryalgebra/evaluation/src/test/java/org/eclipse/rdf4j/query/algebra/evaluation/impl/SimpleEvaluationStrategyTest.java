@@ -31,7 +31,7 @@ public class SimpleEvaluationStrategyTest {
 	public void setUp()
 		throws Exception
 	{
-		strategy = new SimpleEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
 	}
 
 	/**

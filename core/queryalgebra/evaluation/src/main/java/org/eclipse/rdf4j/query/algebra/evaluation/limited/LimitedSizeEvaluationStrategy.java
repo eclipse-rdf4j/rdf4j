@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.limited.iterator.LimitedSizeDistinctIteration;
@@ -46,7 +46,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 /**
  * @author Jerven Bolleman, SIB Swiss Institute of Bioinformatics
  */
-public class LimitedSizeEvaluationStrategy extends SimpleEvaluationStrategy {
+public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 
 	private final AtomicLong used = new AtomicLong();
 

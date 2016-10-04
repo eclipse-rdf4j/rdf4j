@@ -272,7 +272,7 @@ public class QueryEvaluationUtilTest {
 
 	@Test
 	public void testCompareLT()
-			throws Exception
+		throws Exception
 	{
 		assertCompareFalse(arg1simple, arg1simple, LT);
 		assertCompareException(arg1en, arg1en, LT);
@@ -314,7 +314,13 @@ public class QueryEvaluationUtilTest {
 		assertCompareException(arg1year, arg2string, LT);
 		assertCompareException(arg1year, arg2int, LT);
 		assertCompareTrue(arg1year, arg2year, LT);
-		assertCompareTrue(arg1year, arg1dateTime, LT);
+
+		// comparison between xsd:gYear and xsd:dateTime should raise type error in strict mode
+		assertCompareException(arg1year, arg1dateTime, LT);
+		
+		// ... but should succeed in extended mode.
+		assertCompareTrue(arg1year, arg1dateTime, LT, false);
+		
 		assertCompareException(arg1year, arg2dateTime, LT);
 		assertCompareException(arg1year, arg2unknown, LT);
 
@@ -322,7 +328,7 @@ public class QueryEvaluationUtilTest {
 		assertCompareException(arg1dateTime, arg2en, LT);
 		assertCompareException(arg1dateTime, arg2string, LT);
 		assertCompareException(arg1dateTime, arg2int, LT);
-		assertCompareFalse(arg1dateTime, arg1year, LT);
+		assertCompareFalse(arg1dateTime, arg1year, LT, false);
 		assertCompareException(arg1dateTime, arg2year, LT);
 		assertCompareFalse(arg1dateTime, arg2dateTime, LT);
 		assertCompareException(arg1dateTime, arg2unknown, LT);
@@ -351,6 +357,12 @@ public class QueryEvaluationUtilTest {
 		}
 	}
 
+	private void assertCompareFalse(Literal lit1, Literal lit2, CompareOp op)
+		throws Exception
+	{
+		assertCompareFalse(lit1, lit2, op, true);
+	}
+
 	/**
 	 * Assert that there is no exception as a result of comparing the two literals with the given operator and
 	 * it returns false.
@@ -362,11 +374,17 @@ public class QueryEvaluationUtilTest {
 	 * @param op
 	 *        The operator for the comparison
 	 */
-	private void assertCompareFalse(Literal lit1, Literal lit2, CompareOp op)
+	private void assertCompareFalse(Literal lit1, Literal lit2, CompareOp op, boolean strict)
 		throws Exception
 	{
 		assertFalse("Compare did not return false for " + lit1.toString() + op.getSymbol() + lit2.toString(),
-				QueryEvaluationUtil.compareLiterals(lit1, lit2, op));
+				QueryEvaluationUtil.compareLiterals(lit1, lit2, op, strict));
+	}
+
+	private void assertCompareTrue(Literal lit1, Literal lit2, CompareOp op)
+		throws Exception
+	{
+		assertCompareTrue(lit1, lit2, op, true);
 	}
 
 	/**
@@ -379,12 +397,14 @@ public class QueryEvaluationUtilTest {
 	 *        The right literal
 	 * @param op
 	 *        The operator for the comparison
+	 * @param strict
+	 *        boolean switch between strict and extended comparison
 	 */
-	private void assertCompareTrue(Literal lit1, Literal lit2, CompareOp op)
+	private void assertCompareTrue(Literal lit1, Literal lit2, CompareOp op, boolean strict)
 		throws Exception
 	{
 		assertTrue("Compare did not return true for " + lit1.toString() + op.getSymbol() + lit2.toString(),
-				QueryEvaluationUtil.compareLiterals(lit1, lit2, op));
+				QueryEvaluationUtil.compareLiterals(lit1, lit2, op, strict));
 	}
 
 }

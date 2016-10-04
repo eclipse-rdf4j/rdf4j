@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.Test;
 
@@ -33,7 +33,7 @@ public class JoinIteratorTest {
 
 	private final ValueFactory vf = ValueFactoryImpl.getInstance();
 
-	private final EvaluationStrategy evaluator = new SimpleEvaluationStrategy(null, null);
+	private final EvaluationStrategy evaluator = new StrictEvaluationStrategy(null, null);
 
 	/**
 	 * Tests joins between two different BindingSetAssignments with the same BindingSets but ordered

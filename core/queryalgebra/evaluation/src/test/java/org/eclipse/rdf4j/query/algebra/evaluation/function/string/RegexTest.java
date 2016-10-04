@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.After;
 import org.junit.Before;
@@ -160,7 +160,7 @@ public class RegexTest {
 	private Literal evaluate(Value... args)
 		throws ValueExprEvaluationException, QueryEvaluationException
 	{
-		SimpleEvaluationStrategy strategy = new SimpleEvaluationStrategy(new EmptyTripleSource(vf),
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(new EmptyTripleSource(vf),
 				serviceResolver);
 		ValueExpr expr = new Var("expr", args[0]);
 		ValueExpr pattern = new Var("pattern", args[1]);

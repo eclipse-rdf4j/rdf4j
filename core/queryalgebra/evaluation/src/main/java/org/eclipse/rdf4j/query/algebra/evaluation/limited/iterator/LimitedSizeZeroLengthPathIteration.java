@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 
 /**
@@ -35,7 +35,7 @@ public class LimitedSizeZeroLengthPathIteration extends ZeroLengthPathIteration 
 	 * @param contextVar
 	 * @param bindings
 	 */
-	public LimitedSizeZeroLengthPathIteration(SimpleEvaluationStrategy evaluationStrategyImpl, Var subjectVar,
+	public LimitedSizeZeroLengthPathIteration(StrictEvaluationStrategy evaluationStrategyImpl, Var subjectVar,
 			Var objVar, Value subj, Value obj, Var contextVar, BindingSet bindings, AtomicLong used,
 			long maxSize)
 	{
