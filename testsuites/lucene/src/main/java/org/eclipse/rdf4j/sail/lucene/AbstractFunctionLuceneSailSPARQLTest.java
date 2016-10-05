@@ -57,14 +57,10 @@ public abstract class AbstractFunctionLuceneSailSPARQLTest {
 	 * <ul>
 	 * <li>{@link MemoryStore}
 	 * <li>{@link LuceneSail}
-	 * <li>{@link SpinSail}
+	 * <li>{@link SailRepository}
 	 * </ul>
 	 * First item on the list is the most base whereas the last one is the abstraction provider. The SPARQL
-	 * request is evaluated by <code>SpinSail</code> so that class is the abstraction provider. <br/>
-	 * <p>
-	 * TODO: SPIN's property function support should be provided by the {@code LuceneSail}. In the final
-	 * version it is expected that {@code SpinSail} work will be done within {@code LuceneSail}.
-	 * </p>
+	 * request is evaluated by <code>LuceneSail</code> so that class is the abstraction provider. <br/>
 	 *
 	 * @throws Exception
 	 */
@@ -75,13 +71,12 @@ public abstract class AbstractFunctionLuceneSailSPARQLTest {
 		// load data into memory store
 		MemoryStore store = new MemoryStore();
 
+                // activate Lucene index
 		LuceneSail lucene = new LuceneSail();
 		configure(lucene);
 		lucene.setBaseSail(store);
 
-		// add support of spin functions
-		SpinSail spin = new SpinSail(lucene);
-		repository = new SailRepository(spin);
+		repository = new SailRepository(lucene);
 		repository.initialize();
 
 		connection = repository.getConnection();
@@ -112,7 +107,6 @@ public abstract class AbstractFunctionLuceneSailSPARQLTest {
 	 * @throws Exception
 	 */
 	@Test
-	@Ignore
 	public void simpleTest()
 		throws Exception
 	{
@@ -140,7 +134,7 @@ public abstract class AbstractFunctionLuceneSailSPARQLTest {
 	/**
 	 * Valid search query. SPRQL query: <code>
 	 * select ?pred ?score ?id where {
-	 *    (?pred ?score) search:search("Abf1" search:allMatches search:score) .
+	 *    ("Hap1" search:allMatches search:score) search:search  (?pred ?score) .
 	 *    ?pred <urn:raw:yeastract#Yeast_id> ?id . }
 	 * </code>
 	 *
@@ -152,7 +146,8 @@ public abstract class AbstractFunctionLuceneSailSPARQLTest {
 	{
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select * where {\n");
-		buffer.append("  (?a ?b) <" + SEARCH + "> (\"Abf1\" <" + ALL_MATCHES + ">) . \n");
+		buffer.append(
+				"(\"Abf1\" <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + ">  (?pred ?score) . \n");
 		//buffer.append("  ?pred <urn:raw:yeastract#Yeast_id> ?id .\n");
 		buffer.append("}\n");
 		log.info("Request query: \n====================\n{}\n======================\n", buffer.toString());
@@ -185,14 +180,13 @@ public abstract class AbstractFunctionLuceneSailSPARQLTest {
 	 * #220 exmaple was reproduced with query: <code>
 	 * select ?pred ?score ?query ?id where {
 	 *   bind(str("Abf1") as ?query) .
-	 *   (?pred ?score) search:search(?query search:allMatches search:score) .
+	 *   (?query search:allMatches search:score) search:search (?pred ?score) .
 	 *   ?pred <urn:raw:yeastract#Yeast_id> ?id . }
 	 * </code>
 	 *
 	 * @throws Exception
 	 */
 	@Test
-	@Ignore
 	public void test220Issue()
 		throws Exception
 	{
@@ -200,7 +194,7 @@ public abstract class AbstractFunctionLuceneSailSPARQLTest {
 		buffer.append("select ?pred ?score ?query ?id where {\n");
 		buffer.append("  bind(str(\"Abf1\") as ?query) .\n");
 		buffer.append(
-				"  (?pred ?score) <" + SEARCH + "> (?query <" + ALL_MATCHES + "> <" + SCORE + ">) . \n");
+				"  (?query <" + ALL_MATCHES + "> <" + SCORE + "> ) <" + SEARCH + ">  (?pred ?score) . \n");
 		buffer.append("  ?pred <urn:raw:yeastract#Yeast_id> ?id .\n");
 		buffer.append("}\n");
 		log.info("Request query: \n====================\n{}\n======================\n", buffer.toString());
@@ -229,15 +223,18 @@ public abstract class AbstractFunctionLuceneSailSPARQLTest {
 	/**
 	 * Reproduce #235 with following query: <code>
 	 * construct {
-	 *   ?pred a <urn:ontology/Gene> . ?pred <urn:ontology/id> ?id2 . } where {
-	 * (?pred ?score) search:search(?query search:allMatches search:score) .
-	 * ?pred <urn:raw:yeastract#Yeast_id> ?id . bind(str(?id) as ?id2) }
+	 *   ?pred a <urn:ontology/Gene> . 
+	 *   ?pred <urn:ontology/id> ?id2 . 
+	 * } where {
+	 *   (?query search:allMatches search:score) search:search (?pred ?score) .
+	 *   ?pred <urn:raw:yeastract#Yeast_id> ?id . 
+	 *   bind(str(?id) as ?id2) ,
+	 * }
 	 * </code>
 	 *
 	 * @throws Exception
 	 */
 	@Test
-	@Ignore
 	public void test235Issue()
 		throws Exception
 	{
@@ -248,7 +245,7 @@ public abstract class AbstractFunctionLuceneSailSPARQLTest {
 		buffer.append(" } where {\n");
 		//buffer.append("select * where {\n");
 		buffer.append(
-				"  (?pred ?score) <" + SEARCH + "> (?query <" + ALL_MATCHES + "> <" + SCORE + ">) . \n");
+				"  (?query <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + "> (?pred ?score) . \n");
 		buffer.append("  ?pred <urn:raw:yeastract#Yeast_id> ?id .\n");
 		buffer.append("  bind(str(?id) as ?id2)\n");
 		buffer.append(" }");
