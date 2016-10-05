@@ -1,0 +1,14 @@
+RDF4J Server, Workbench, and Console
+====================================
+:source-highlighter: prettify
+:icons: font
+:imagesdir: images
+:sectnums:
+:toc: left
+:toclevels: 3
+
+include::01-install.adoc[leveloffset=+1]
+
+include::02-console.adoc[leveloffset=+1]
+
+include::03-workbench.adoc[leveloffset=+1]

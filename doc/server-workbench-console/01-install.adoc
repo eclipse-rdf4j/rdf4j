@@ -1,0 +1,57 @@
+= Installing RDF4J Server and RDF4J Workbench
+
+In this chapter, we explain how you can install RDF4J Server (the actual database server and SPARQL endpoint service) and RDF4J Workbench (a web-based client UI for managing databases and executing queries).
+
+== Required software
+
+RDF4J Server requires the following software:
+
+- Java 8 Runtime Environment
+- A Java Servlet Container that supports Java Servlet API 2.5 and Java Server Pages (JSP) 2.0, or newer. We recommend using a recent, stable version of Apache Tomcat.
+
+== RDF4J Server and RDF4J Workbench
+
+RDF4J Server is a database management application: it provides HTTP access to RDF4J repositories, exposing them as SPARQL endpoints. RDF4J Server is meant to be accessed by other applications. Apart from some functionality to view the server’s log messages, it doesn’t provide any user oriented functionality. Instead, the user oriented functionality is part of RDF4J Workbench. The Workbench provides a web interface for querying, updating and exploring the repositories of an RDF4J Server.
+
+If you have not done so already, you will first need to download the RDF4J SDK. Both RDF4J Server and RDF4J Workbench can be found in the war directory of the SDK. The war-files in this directory need to be deployed in a Java Servlet Container. The deployment process is container-specific, please consult the documentation for your container on how to deploy a web application.
+
+After you have deployed the RDF4J Server webapp, you should be able to access it, by default, at path /rdf4j-server. You can point your browser at this location to verify that the deployment succeeded.
+
+=== Configuring RDF4J Workbench for UTF-8 Support
+
+==== UTF-8 in the Request URI (GET)
+
+There is a known issue (SES-1768) affecting the proper exploring of resources that use an extended character set. Workbench client-side code generates URI’s assuming an ISO-8859-1 character encoding, and often Tomcat comes pre-configured to expect UTF-8 encoded URI’s. It will be necessary to change the HTTP Connector configuration, or to add a separate HTTP Connector that uses ISO-8859-1. For details, see here for Tomcat 6 or here for Tomcat 7.
+
+==== UTF-8 in the Request Body (POST)
+
+To resolve issues where the request body is not getting properly interpreted as UTF-8, it is necessary to configure Tomcat to use its built in SetCharacterEncodingFilter. Some details are at https://wiki.apache.org/tomcat/FAQ/CharacterEncoding#Q3. With Tomcat 6, version 6.0.36 or later is required. On Tomcat 7, un-commenting the <filter> and <filter-mapping> elements for setCharacterEncodingFilter in $CATALINA_BASE/conf/web.xml, and restarting the server, were the only necessary steps.
+
+=== Logging Configuration
+
+Both RDF4J Server and RDF$J Workbench use the Logback logging framework. In its default configuration, all RDF4J Server log messages are sent to the log file [RDF4J_DATA]/Server/logs/main.log (and log messages for the Workbench to the same file in [RDF4J_DATA]/Workbench ).
+
+The default log level is INFO, indicating that only important status messages, warnings and errors are logged. The log level and -behaviour can be adjusted by modifying the [RDF4J_DATA]/Server/conf/logback.xml file. This file will be generated when the server is first run. Please consult the logback manual for configuration instructions.
+
+=== Repository Configuration
+
+A clean installation of RDF4J Server has a single repository by default: the SYSTEM repository. This SYSTEM repository contains all configuration data for the server, including data on which other repositories exists and (in future releases) the access rights on these repositories. This SYSTEM repository should not be used to store data that is not related to the server configuration.
+
+The best way to create and manage repositories in a SYSTEM repository is to use the RDF$J Console or RDF4J Workbench. The RDF$J Console is a command-line application for interacting with RDF4J Server (see the following chapter for details).
+
+=== Setting up Users and Permissions
+
+It is possible to set up your RDF4J Server to authenticate named users and restrict their permissions. See the blog post at http://rivuli-development.com/further-reading/sesame-cookbook/basic-security-with-http-authentication/ for a  tutorial on how to do so when using Tomcat as the application container. [TODO add permission tutorial here]
+
+== Application directory configuration
+
+RDF4J  Server, Workbench, and Console all store configuration files and repository data in a single directory (with subdirectories). On Windows machines, this directory is %APPDATA%\RDF4J\ by default, where %APPDATA% is the application data directory of the user that runs the application. For example, in case the application runs under the ‘LocalService’ user account on Windows XP, the directory is C:\Documents and Settings\LocalService\Application Data\RDF4J\. On Linux/UNIX, the default location is $HOME/.rdf4j/, for example /home/tomcat/.rdf4j/. We will refer to this data directory as [RDF4J_DATA] in the rest of this manual.
+
+The location of this data directory can be reconfigured using the Java system property org.eclipse.rdf4j.appdata.basedir. When you are using Tomcat as the servlet container then you can set this property using the JAVA_OPTS parameter, for example:
+
+    set JAVA_OPTS=-Dorg.eclipse.rdf4j.appdata.basedir=\path\to\other\dir\ (on Windows)
+    export JAVA_OPTS='-Dorg.eclipse.rdf4j.appdata.basedir=/path/to/other/dir/' (on Linux/UNIX)
+
+If you are using Apache Tomcat as a Windows Service you should use the Windows Services configuration tool to set this property. Other users can either edit the Tomcat startup script or set the property some other way.
+
+One easy way to find out what the directory is in a running instance of the RDF4J Server, is to go to http://localhost:8080/rdf4j-server/home/overview.view in your browser and click on ‘System’ in the navigation menu on the left. The data directory will be listed as one of the configuration settings of the current server.

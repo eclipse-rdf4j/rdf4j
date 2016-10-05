@@ -1,2 +1,2 @@
 #!/bin/bash
-asciidoctor -n -D html doc/migration-guide.adoc doc/programming/programming.adoc
+asciidoctor -n -D html doc/server-workbench-console/server-workbench-console.adoc doc/migration-guide.adoc doc/programming/programming.adoc
