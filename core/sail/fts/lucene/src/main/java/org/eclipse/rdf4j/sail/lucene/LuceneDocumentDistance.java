@@ -16,8 +16,8 @@ import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.sail.lucene.util.GeoUnits;
 
 import com.google.common.collect.Sets;
-import com.spatial4j.core.shape.Point;
-import com.spatial4j.core.shape.Shape;
+import org.locationtech.spatial4j.core.shape.Point;
+import org.locationtech.spatial4j.core.shape.Shape;
 
 public class LuceneDocumentDistance extends LuceneDocumentResult implements DocumentDistance {
 

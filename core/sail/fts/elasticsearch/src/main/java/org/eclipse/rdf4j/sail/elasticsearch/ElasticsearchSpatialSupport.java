@@ -11,7 +11,7 @@ import java.util.Map;
 
 import org.elasticsearch.common.geo.builders.ShapeBuilder;
 
-import com.spatial4j.core.shape.Shape;
+import org.locationtech.spatial4j.core.shape.Shape;
 
 /**
  * This class will try to load a subclass of itself called

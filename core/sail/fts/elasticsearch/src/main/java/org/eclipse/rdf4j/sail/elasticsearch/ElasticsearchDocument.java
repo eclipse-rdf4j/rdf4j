@@ -21,9 +21,9 @@ import org.elasticsearch.common.geo.GeoHashUtils;
 import org.elasticsearch.search.SearchHit;
 
 import com.google.common.base.Function;
-import com.spatial4j.core.context.SpatialContext;
-import com.spatial4j.core.shape.Point;
-import com.spatial4j.core.shape.Shape;
+import org.locationtech.spatial4j.core.context.SpatialContext;
+import org.locationtech.spatial4j.core.shape.Point;
+import org.locationtech.spatial4j.core.shape.Shape;
 
 public class ElasticsearchDocument implements SearchDocument {
 

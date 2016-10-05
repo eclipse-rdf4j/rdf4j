@@ -18,7 +18,7 @@ import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.spatial.SpatialStrategy;
 
 import com.google.common.base.Function;
-import com.spatial4j.core.shape.Shape;
+import org.locationtech.spatial4j.core.shape.Shape;
 
 public class LuceneDocument implements SearchDocument {
 
