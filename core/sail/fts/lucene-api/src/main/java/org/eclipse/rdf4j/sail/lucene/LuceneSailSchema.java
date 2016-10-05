@@ -30,6 +30,15 @@ public class LuceneSailSchema {
 
 	public static final IRI MATCHES;
 
+	/**
+	 * "Magic property" (TupleFunction) IRI.
+	 */
+	public static final IRI SEARCH;
+
+	public static final IRI ALL_MATCHES;
+
+	public static final IRI ALL_PROPERTIES;
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance(); // compatible with beta4:
 																	// creating a new factory
@@ -39,5 +48,9 @@ public class LuceneSailSchema {
 		PROPERTY = factory.createIRI(NAMESPACE + "property");
 		SNIPPET = factory.createIRI(NAMESPACE + "snippet");
 		MATCHES = factory.createIRI(NAMESPACE + "matches");
+
+		SEARCH = factory.createIRI(NAMESPACE + "search");
+		ALL_MATCHES = factory.createIRI(NAMESPACE + "allMatches");
+		ALL_PROPERTIES = factory.createIRI(NAMESPACE + "allProperties");
 	}
 }

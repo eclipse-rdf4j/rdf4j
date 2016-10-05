@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -31,6 +32,10 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -252,6 +257,38 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public static final String INCOMPLETE_QUERY_FAIL_KEY = "incompletequeryfail";
 
 	/**
+	 * Set this key to "eager" to disable late evaluation of search queries. Can be one of "tripleSource" (the
+	 * base SAIL is treated as a simple triple source and all the query evaluation is performed by this SAIL),
+	 * "service" (uses the base SAIL along with an embedded SERVICE to perform query evaluation. The SERVICE
+	 * is used to evaluate extended query algebra nodes such as {@link TupleFunction}s), "native" (assumes the
+	 * base SAIL supports {@link TupleFunction}s and uses it to perform all query evaluation), "eager" (search
+	 * queries are performed first before other query evaluation). Default is "tripleSource".
+	 */
+	public static final String EVALUATION_MODE_KEY = "evaluationMode";
+
+	/**
+	 * Eagerly evaluates any search queries and then delegates to the base SAIL.
+	 */
+	public static final String EAGER_EVALUATION_MODE = "eager";
+
+	/**
+	 * Uses the base SAIL along with an embedded SERVICE to perform query evaluation. The SERVICE is used to
+	 * evaluate extended query algebra nodes such as {@link TupleFunction}s.
+	 */
+	public static final String SERVICE_EVALUATION_MODE = "service";
+
+	/**
+	 * Assumes the base SAIL supports an extended query algebra (e.g. {@link TupleFunction}s) and use it to
+	 * perform all query evaluation.
+	 */
+	public static final String NATIVE_EVALUATION_MODE = "native";
+
+	/**
+	 * Treats the base SAIL as a simple triple source and all the query evaluation is performed by this SAIL.
+	 */
+	public static final String TRIPLE_SOURCE_EVALUATION_MODE = "tripleSource";
+
+	/**
 	 * The LuceneIndex holding the indexed literals.
 	 */
 	private volatile SearchIndex luceneIndex;
@@ -261,6 +298,12 @@ public class LuceneSail extends NotifyingSailWrapper {
 	private volatile String reindexQuery = "SELECT ?s ?p ?o ?c WHERE {{?s ?p ?o} UNION {GRAPH ?c {?s ?p ?o.}}} ORDER BY ?s";
 
 	private volatile boolean incompleteQueryFails = true;
+
+	private volatile String evaluationMode = TRIPLE_SOURCE_EVALUATION_MODE;
+
+	private TupleFunctionRegistry tupleFunctionRegistry = TupleFunctionRegistry.getInstance();
+
+	private FederatedServiceResolver serviceResolver = new FederatedServiceResolverImpl();
 
 	private Set<IRI> indexedFields;
 
@@ -345,11 +388,16 @@ public class LuceneSail extends NotifyingSailWrapper {
 		}
 
 		try {
-			if (parameters.containsKey(REINDEX_QUERY_KEY))
+			if (parameters.containsKey(REINDEX_QUERY_KEY)) {
 				setReindexQuery(parameters.getProperty(REINDEX_QUERY_KEY));
-			if (parameters.containsKey(INCOMPLETE_QUERY_FAIL_KEY))
+			}
+			if (parameters.containsKey(INCOMPLETE_QUERY_FAIL_KEY)) {
 				setIncompleteQueryFails(
 						Boolean.parseBoolean(parameters.getProperty(INCOMPLETE_QUERY_FAIL_KEY)));
+			}
+			if (parameters.containsKey(EVALUATION_MODE_KEY)) {
+				setEvaluationMode(parameters.getProperty(EVALUATION_MODE_KEY));
+			}
 			if (luceneIndex == null) {
 				initializeLuceneIndex();
 			}
@@ -416,6 +464,40 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public void setIncompleteQueryFails(boolean incompleteQueryFails) {
 		this.setParameter(INCOMPLETE_QUERY_FAIL_KEY, Boolean.toString(incompleteQueryFails));
 		this.incompleteQueryFails = incompleteQueryFails;
+	}
+
+	/**
+	 * See EVALUATION_MODE_KEY parameter.
+	 */
+	public String getEvaluationMode() {
+		return evaluationMode;
+	}
+
+	/**
+	 * See EVALUATION_MODE_KEY parameter.
+	 */
+	public void setEvaluationMode(String mode) {
+		Objects.requireNonNull(mode);
+		this.setParameter(EVALUATION_MODE_KEY, mode);
+		this.evaluationMode = mode;
+	}
+
+	public TupleFunctionRegistry getTupleFunctionRegistry() {
+		return tupleFunctionRegistry;
+	}
+
+	public void setTupleFunctionRegistry(TupleFunctionRegistry registry) {
+		this.tupleFunctionRegistry = registry;
+	}
+
+	public FederatedServiceResolver getFederatedServiceResolver() {
+		return serviceResolver;
+	}
+
+	@Override
+	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+		serviceResolver = resolver;
+		super.setFederatedServiceResolver(resolver);
 	}
 
 	/**
@@ -529,7 +611,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	protected Collection<SearchQueryInterpreter> getSearchQueryInterpreters() {
-		return Arrays.<SearchQueryInterpreter> asList(new QuerySpecBuilder(incompleteQueryFails),
+		return Arrays.<SearchQueryInterpreter> asList(
+				new QuerySpecBuilder(incompleteQueryFails, evaluationMode),
 				new DistanceQuerySpecBuilder(luceneIndex), new GeoRelationQuerySpecBuilder(luceneIndex));
 	}
 }
