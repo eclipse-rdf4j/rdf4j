@@ -25,8 +25,11 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.sail.SailException;
@@ -47,6 +50,8 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 
 	private final boolean incompleteQueryFails;
 
+	private final String evaluationMode;
+
 	/**
 	 * Initialize a new QuerySpecBuilder
 	 * 
@@ -54,7 +59,12 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 	 *        see {@link LuceneSail#isIncompleteQueryFails()}
 	 */
 	public QuerySpecBuilder(boolean incompleteQueryFails) {
+		this(incompleteQueryFails, LuceneSail.EAGER_EVALUATION_MODE);
+	}
+
+	public QuerySpecBuilder(boolean incompleteQueryFails, String evaluationMode) {
 		this.incompleteQueryFails = incompleteQueryFails;
+		this.evaluationMode = evaluationMode;
 	}
 
 	/**
@@ -176,9 +186,57 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 				logger.debug("Query variable '{}' has not rdf:type, assuming {}", subject, LUCENE_QUERY);
 			}
 
-			// register a QuerySpec with these details
-			result.add(new QuerySpec(matchesPattern, queryPattern, propertyPattern, scorePattern,
-					snippetPattern, typePattern, subject, queryString, propertyURI));
+			QuerySpec querySpec = new QuerySpec(matchesPattern, queryPattern, propertyPattern, scorePattern,
+					snippetPattern, typePattern, subject, queryString, propertyURI);
+
+			switch (evaluationMode) {
+				case LuceneSail.NATIVE_EVALUATION_MODE:
+				case LuceneSail.TRIPLE_SOURCE_EVALUATION_MODE: {
+					TupleFunctionCall funcCall = new TupleFunctionCall();
+					funcCall.setURI(LuceneSailSchema.SEARCH.toString());
+					funcCall.addArg(queryPattern.getObjectVar());
+					if (subject != null) {
+						funcCall.addArg(matchesPattern.getSubjectVar());
+					}
+					else {
+						funcCall.addArg(new ValueConstant(LuceneSailSchema.ALL_MATCHES));
+						funcCall.addResultVar(matchesPattern.getSubjectVar());
+					}
+					if (propertyPattern != null) {
+						funcCall.addArg(new ValueConstant(LuceneSailSchema.PROPERTY));
+						if (propertyURI != null) {
+							funcCall.addArg(propertyPattern.getObjectVar());
+						}
+						else {
+							funcCall.addArg(new ValueConstant(LuceneSailSchema.ALL_PROPERTIES));
+							funcCall.addResultVar(propertyPattern.getObjectVar());
+						}
+					}
+					if (scoreVar != null) {
+						funcCall.addArg(new ValueConstant(LuceneSailSchema.SCORE));
+						funcCall.addResultVar(scoreVar);
+					}
+					if (snippetVar != null) {
+						funcCall.addArg(new ValueConstant(LuceneSailSchema.SNIPPET));
+						funcCall.addResultVar(snippetVar);
+					}
+
+					Join join = new Join();
+					matchesPattern.replaceWith(join);
+					join.setLeftArg(matchesPattern);
+					join.setRightArg(funcCall);
+					querySpec.updateQueryModelNodes(true);
+					break;
+				}
+				case LuceneSail.SERVICE_EVALUATION_MODE: {
+					throw new UnsupportedOperationException("TO DO");
+				}
+				case LuceneSail.EAGER_EVALUATION_MODE:
+				default: {
+					// register a QuerySpec with these details
+					result.add(querySpec);
+				}
+			}
 		}
 
 		// fail on superflous typePattern, query, score, or snippet patterns.
