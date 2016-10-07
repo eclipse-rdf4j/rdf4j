@@ -169,6 +169,7 @@ public abstract class AbstractSail implements Sail {
 		throws SailException
 	{
 		initializationLock.writeLock().lock();
+		logger.trace("is initialized: {}", isInitialized());
 		try {
 			if (isInitialized()) {
 				throw new IllegalStateException(
@@ -198,6 +199,7 @@ public abstract class AbstractSail implements Sail {
 		throws SailException
 	{
 		initializationLock.writeLock().lock();
+		logger.debug("shutdown ...");
 		try {
 			if (!isInitialized()) {
 				return;
