@@ -571,6 +571,17 @@ public abstract class ComplexSPARQLQueryTest {
 		assertTrue(result.contains(urn4, blank, null));
 	}
 
+	
+	@Test 
+	public void testGroupByEmpty() throws Exception {
+		// see issue https://github.com/eclipse/rdf4j/issues/573
+		String query = "select ?x where {?x ?p ?o} group by ?x";
+		
+		TupleQueryResult result = conn.prepareTupleQuery(query).evaluate();
+		assertNotNull(result);
+		assertFalse(result.hasNext());
+	}
+	
 	@Test
 	public void testGroupConcatDistinct()
 		throws Exception
