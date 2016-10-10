@@ -166,7 +166,6 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 		throws RepositoryException
 	{
 		try {
-			logger.debug("Sail: {}", sail);
 			sail.shutDown();
 		}
 		catch (SailException e) {

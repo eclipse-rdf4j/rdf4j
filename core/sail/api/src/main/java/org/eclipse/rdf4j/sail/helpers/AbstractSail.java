@@ -199,7 +199,6 @@ public abstract class AbstractSail implements Sail {
 		throws SailException
 	{
 		initializationLock.writeLock().lock();
-		logger.debug("shutdown ...");
 		try {
 			if (!isInitialized()) {
 				return;

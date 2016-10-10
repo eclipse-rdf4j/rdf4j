@@ -286,7 +286,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 			return new LuceneSailConnection(super.getConnection(), luceneIndex, this);
 		}
 		else {
-			throw new SailException("Connection cannot be taken from shutdown sail");
+			throw new SailException("Sail is shut down or not initialized");
 		}
 	}
 
@@ -294,7 +294,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public void shutDown()
 		throws SailException
 	{
-		logger.debug("shutdown");
+		logger.debug("LuceneSail shutdown");
 		if (closed.compareAndSet(false, true)) {
 			try {
 				SearchIndex toShutDownLuceneIndex = luceneIndex;
