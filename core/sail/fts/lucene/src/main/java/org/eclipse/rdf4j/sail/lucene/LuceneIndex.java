@@ -210,7 +210,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 		// do some initialization for new indices
 		if (!DirectoryReader.indexExists(directory)) {
-			logger.info("creating new Lucene index in directory {}", directory);
+			logger.debug("creating new Lucene index in directory {}", directory);
 			IndexWriterConfig indexWriterConfig = new IndexWriterConfig(analyzer);
 			indexWriterConfig.setOpenMode(OpenMode.CREATE);
 			IndexWriter writer = new IndexWriter(directory, indexWriterConfig);
