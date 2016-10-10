@@ -73,10 +73,10 @@ import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailConnectionQueryPreparer;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.evaluation.SailTripleSource;
+import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.inferencer.fc.AbstractForwardChainingInferencerConnection;
 import org.eclipse.rdf4j.sail.inferencer.util.RDFInferencerInserter;
-import org.eclipse.rdf4j.sail.spin.SpinSail.EvaluationMode;
 import org.eclipse.rdf4j.spin.ConstraintViolation;
 import org.eclipse.rdf4j.spin.QueryContext;
 import org.eclipse.rdf4j.spin.RuleProperty;
@@ -99,7 +99,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 	private static final String CONSTRAINT_VIOLATION_MESSAGE = "Constraint violation: {}: {} {} {}";
 
-	private final EvaluationMode evaluationMode;
+	private final TupleFunctionEvaluationMode evaluationMode;
 
 	private final boolean axiomClosureNeeded;
 
@@ -136,7 +136,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		this.tripleSource = new SailTripleSource(getWrappedConnection(), true, vf);
 		this.queryPreparer = new SailConnectionQueryPreparer(this, true, tripleSource);
 
-		if (evaluationMode == EvaluationMode.SERVICE) {
+		if (evaluationMode == TupleFunctionEvaluationMode.SERVICE) {
 			FederatedServiceResolver resolver = sail.getFederatedServiceResolver();
 			if (!(resolver instanceof AbstractFederatedServiceResolver)) {
 				throw new IllegalArgumentException(
@@ -203,7 +203,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 		logger.trace("SPIN query model:\n{}", tupleExpr);
 
-		if (evaluationMode == EvaluationMode.TRIPLE_SOURCE) {
+		if (evaluationMode == TupleFunctionEvaluationMode.TRIPLE_SOURCE) {
 			EvaluationStrategy strategy = new TupleFunctionEvaluationStrategy(
 					new SailTripleSource(this, includeInferred, vf), dataset, serviceResolver,
 					tupleFunctionRegistry);

@@ -34,12 +34,12 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -257,36 +257,9 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public static final String INCOMPLETE_QUERY_FAIL_KEY = "incompletequeryfail";
 
 	/**
-	 * Set this key to "eager" to disable late evaluation of search queries. Can be one of "tripleSource" (the
-	 * base SAIL is treated as a simple triple source and all the query evaluation is performed by this SAIL),
-	 * "service" (uses the base SAIL along with an embedded SERVICE to perform query evaluation. The SERVICE
-	 * is used to evaluate extended query algebra nodes such as {@link TupleFunction}s), "native" (assumes the
-	 * base SAIL supports {@link TupleFunction}s and uses it to perform all query evaluation), "eager" (search
-	 * queries are performed first before other query evaluation). Default is "tripleSource".
+	 * See {@link TupleFunctionEvaluationMode}.
 	 */
 	public static final String EVALUATION_MODE_KEY = "evaluationMode";
-
-	/**
-	 * Eagerly evaluates any search queries and then delegates to the base SAIL.
-	 */
-	public static final String EAGER_EVALUATION_MODE = "eager";
-
-	/**
-	 * Uses the base SAIL along with an embedded SERVICE to perform query evaluation. The SERVICE is used to
-	 * evaluate extended query algebra nodes such as {@link TupleFunction}s.
-	 */
-	public static final String SERVICE_EVALUATION_MODE = "service";
-
-	/**
-	 * Assumes the base SAIL supports an extended query algebra (e.g. {@link TupleFunction}s) and use it to
-	 * perform all query evaluation.
-	 */
-	public static final String NATIVE_EVALUATION_MODE = "native";
-
-	/**
-	 * Treats the base SAIL as a simple triple source and all the query evaluation is performed by this SAIL.
-	 */
-	public static final String TRIPLE_SOURCE_EVALUATION_MODE = "tripleSource";
 
 	/**
 	 * The LuceneIndex holding the indexed literals.
@@ -299,7 +272,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	private volatile boolean incompleteQueryFails = true;
 
-	private volatile String evaluationMode = TRIPLE_SOURCE_EVALUATION_MODE;
+	private volatile TupleFunctionEvaluationMode evaluationMode = TupleFunctionEvaluationMode.TRIPLE_SOURCE;
 
 	private TupleFunctionRegistry tupleFunctionRegistry = TupleFunctionRegistry.getInstance();
 
@@ -396,7 +369,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 						Boolean.parseBoolean(parameters.getProperty(INCOMPLETE_QUERY_FAIL_KEY)));
 			}
 			if (parameters.containsKey(EVALUATION_MODE_KEY)) {
-				setEvaluationMode(parameters.getProperty(EVALUATION_MODE_KEY));
+				setEvaluationMode(
+						TupleFunctionEvaluationMode.valueOf(parameters.getProperty(EVALUATION_MODE_KEY)));
 			}
 			if (luceneIndex == null) {
 				initializeLuceneIndex();
@@ -469,16 +443,16 @@ public class LuceneSail extends NotifyingSailWrapper {
 	/**
 	 * See EVALUATION_MODE_KEY parameter.
 	 */
-	public String getEvaluationMode() {
+	public TupleFunctionEvaluationMode getEvaluationMode() {
 		return evaluationMode;
 	}
 
 	/**
 	 * See EVALUATION_MODE_KEY parameter.
 	 */
-	public void setEvaluationMode(String mode) {
+	public void setEvaluationMode(TupleFunctionEvaluationMode mode) {
 		Objects.requireNonNull(mode);
-		this.setParameter(EVALUATION_MODE_KEY, mode);
+		this.setParameter(EVALUATION_MODE_KEY, mode.name());
 		this.evaluationMode = mode;
 	}
 
