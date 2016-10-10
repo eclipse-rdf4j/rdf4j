@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.InjectMocks;
@@ -34,9 +35,16 @@ public class SetParametersTest {
 	@InjectMocks
 	SetParameters setParameters;
 
+	private Level originalLevel;
+
+	@Before
+	public void storeOriginalLogLevel() {
+		originalLevel = ((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).getLevel();
+	}
+
 	@After
-	public void setLogLevelBackToDebug() {
-		((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).setLevel(Level.DEBUG);
+	public void setLogLevelBackToOriginalLevel() {
+		((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).setLevel(originalLevel);
 	}
 
 	@Test
