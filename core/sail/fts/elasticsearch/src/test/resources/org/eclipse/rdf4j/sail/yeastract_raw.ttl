@@ -1,0 +1,1436 @@
+
+<urn:raw:yeastract#Yeast_id> <http://www.w3.org/2000/01/rdf-schema#label> "yeast_id" ;
+	<http://vocab.sindice.net/csv/columnPosition> "0"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#Mock> <http://www.w3.org/2000/01/rdf-schema#label> "mock" ;
+	<http://vocab.sindice.net/csv/columnPosition> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#row/0> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Abf1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/0> .
+
+<urn:raw:yeastract#row/0> <http://vocab.sindice.net/csv/rowPosition> "0" .
+
+<urn:raw:yeastract#row/1> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Abf2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/1> .
+
+<urn:raw:yeastract#row/1> <http://vocab.sindice.net/csv/rowPosition> "1" .
+
+<urn:raw:yeastract#row/2> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Aca1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/2> .
+
+<urn:raw:yeastract#row/2> <http://vocab.sindice.net/csv/rowPosition> "2" .
+
+<urn:raw:yeastract#row/3> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Ace2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/3> .
+
+<urn:raw:yeastract#row/3> <http://vocab.sindice.net/csv/rowPosition> "3" .
+
+<urn:raw:yeastract#row/4> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Adr1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/4> .
+
+<urn:raw:yeastract#row/4> <http://vocab.sindice.net/csv/rowPosition> "4" .
+
+<urn:raw:yeastract#row/5> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Aft1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/5> .
+
+<urn:raw:yeastract#row/5> <http://vocab.sindice.net/csv/rowPosition> "5" .
+
+<urn:raw:yeastract#row/6> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Aft2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/6> .
+
+<urn:raw:yeastract#row/6> <http://vocab.sindice.net/csv/rowPosition> "6" .
+
+<urn:raw:yeastract#row/7> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Arg80"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/7> .
+
+<urn:raw:yeastract#row/7> <http://vocab.sindice.net/csv/rowPosition> "7" .
+
+<urn:raw:yeastract#row/8> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Arg81"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/8> .
+
+<urn:raw:yeastract#row/8> <http://vocab.sindice.net/csv/rowPosition> "8" .
+
+<urn:raw:yeastract#row/9> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Aro80"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/9> .
+
+<urn:raw:yeastract#row/9> <http://vocab.sindice.net/csv/rowPosition> "9" .
+
+<urn:raw:yeastract#row/10> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Arr1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/10> .
+
+<urn:raw:yeastract#row/10> <http://vocab.sindice.net/csv/rowPosition> "10" .
+
+<urn:raw:yeastract#row/11> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Asg1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/11> .
+
+<urn:raw:yeastract#row/11> <http://vocab.sindice.net/csv/rowPosition> "11" .
+
+<urn:raw:yeastract#row/12> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Ash1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/12> .
+
+<urn:raw:yeastract#row/12> <http://vocab.sindice.net/csv/rowPosition> "12" .
+
+<urn:raw:yeastract#row/13> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Azf1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/13> .
+
+<urn:raw:yeastract#row/13> <http://vocab.sindice.net/csv/rowPosition> "13" .
+
+<urn:raw:yeastract#row/14> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Bas1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/14> .
+
+<urn:raw:yeastract#row/14> <http://vocab.sindice.net/csv/rowPosition> "14" .
+
+<urn:raw:yeastract#row/15> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Cad1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/15> .
+
+<urn:raw:yeastract#row/15> <http://vocab.sindice.net/csv/rowPosition> "15" .
+
+<urn:raw:yeastract#row/16> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Cat8"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/16> .
+
+<urn:raw:yeastract#row/16> <http://vocab.sindice.net/csv/rowPosition> "16" .
+
+<urn:raw:yeastract#row/17> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Cbf1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/17> .
+
+<urn:raw:yeastract#row/17> <http://vocab.sindice.net/csv/rowPosition> "17" .
+
+<urn:raw:yeastract#row/18> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Cep3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/18> .
+
+<urn:raw:yeastract#row/18> <http://vocab.sindice.net/csv/rowPosition> "18" .
+
+<urn:raw:yeastract#row/19> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Cha4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/19> .
+
+<urn:raw:yeastract#row/19> <http://vocab.sindice.net/csv/rowPosition> "19" .
+
+<urn:raw:yeastract#row/20> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Cin5"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/20> .
+
+<urn:raw:yeastract#row/20> <http://vocab.sindice.net/csv/rowPosition> "20" .
+
+<urn:raw:yeastract#row/21> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Crz1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/21> .
+
+<urn:raw:yeastract#row/21> <http://vocab.sindice.net/csv/rowPosition> "21" .
+
+<urn:raw:yeastract#row/22> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Cst6"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/22> .
+
+<urn:raw:yeastract#row/22> <http://vocab.sindice.net/csv/rowPosition> "22" .
+
+<urn:raw:yeastract#row/23> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Cup2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/23> .
+
+<urn:raw:yeastract#row/23> <http://vocab.sindice.net/csv/rowPosition> "23" .
+
+<urn:raw:yeastract#row/24> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Cup9"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/24> .
+
+<urn:raw:yeastract#row/24> <http://vocab.sindice.net/csv/rowPosition> "24" .
+
+<urn:raw:yeastract#row/25> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Dal80"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/25> .
+
+<urn:raw:yeastract#row/25> <http://vocab.sindice.net/csv/rowPosition> "25" .
+
+<urn:raw:yeastract#row/26> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Dal81"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/26> .
+
+<urn:raw:yeastract#row/26> <http://vocab.sindice.net/csv/rowPosition> "26" .
+
+<urn:raw:yeastract#row/27> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Dal82"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/27> .
+
+<urn:raw:yeastract#row/27> <http://vocab.sindice.net/csv/rowPosition> "27" .
+
+<urn:raw:yeastract#row/28> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Dot6"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/28> .
+
+<urn:raw:yeastract#row/28> <http://vocab.sindice.net/csv/rowPosition> "28" .
+
+<urn:raw:yeastract#row/29> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Ecm22"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/29> .
+
+<urn:raw:yeastract#row/29> <http://vocab.sindice.net/csv/rowPosition> "29" .
+
+<urn:raw:yeastract#row/30> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Ecm23"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/30> .
+
+<urn:raw:yeastract#row/30> <http://vocab.sindice.net/csv/rowPosition> "30" .
+
+<urn:raw:yeastract#row/31> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Eds1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/31> .
+
+<urn:raw:yeastract#row/31> <http://vocab.sindice.net/csv/rowPosition> "31" .
+
+<urn:raw:yeastract#row/32> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Ert1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/32> .
+
+<urn:raw:yeastract#row/32> <http://vocab.sindice.net/csv/rowPosition> "32" .
+
+<urn:raw:yeastract#row/33> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Fhl1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/33> .
+
+<urn:raw:yeastract#row/33> <http://vocab.sindice.net/csv/rowPosition> "33" .
+
+<urn:raw:yeastract#row/34> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Fkh1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/34> .
+
+<urn:raw:yeastract#row/34> <http://vocab.sindice.net/csv/rowPosition> "34" .
+
+<urn:raw:yeastract#row/35> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Fkh2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/35> .
+
+<urn:raw:yeastract#row/35> <http://vocab.sindice.net/csv/rowPosition> "35" .
+
+<urn:raw:yeastract#row/36> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Flo8"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/36> .
+
+<urn:raw:yeastract#row/36> <http://vocab.sindice.net/csv/rowPosition> "36" .
+
+<urn:raw:yeastract#row/37> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Fzf1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/37> .
+
+<urn:raw:yeastract#row/37> <http://vocab.sindice.net/csv/rowPosition> "37" .
+
+<urn:raw:yeastract#row/38> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Gal4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/38> .
+
+<urn:raw:yeastract#row/38> <http://vocab.sindice.net/csv/rowPosition> "38" .
+
+<urn:raw:yeastract#row/39> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Gat1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/39> .
+
+<urn:raw:yeastract#row/39> <http://vocab.sindice.net/csv/rowPosition> "39" .
+
+<urn:raw:yeastract#row/40> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Gat3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/40> .
+
+<urn:raw:yeastract#row/40> <http://vocab.sindice.net/csv/rowPosition> "40" .
+
+<urn:raw:yeastract#row/41> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Gat4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/41> .
+
+<urn:raw:yeastract#row/41> <http://vocab.sindice.net/csv/rowPosition> "41" .
+
+<urn:raw:yeastract#row/42> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Gcn4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/42> .
+
+<urn:raw:yeastract#row/42> <http://vocab.sindice.net/csv/rowPosition> "42" .
+
+<urn:raw:yeastract#row/43> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Gcr1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/43> .
+
+<urn:raw:yeastract#row/43> <http://vocab.sindice.net/csv/rowPosition> "43" .
+
+<urn:raw:yeastract#row/44> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Gis1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/44> .
+
+<urn:raw:yeastract#row/44> <http://vocab.sindice.net/csv/rowPosition> "44" .
+
+<urn:raw:yeastract#row/45> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Gln3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/45> .
+
+<urn:raw:yeastract#row/45> <http://vocab.sindice.net/csv/rowPosition> "45" .
+
+<urn:raw:yeastract#row/46> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Gsm1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/46> .
+
+<urn:raw:yeastract#row/46> <http://vocab.sindice.net/csv/rowPosition> "46" .
+
+<urn:raw:yeastract#row/47> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Gzf3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/47> .
+
+<urn:raw:yeastract#row/47> <http://vocab.sindice.net/csv/rowPosition> "47" .
+
+<urn:raw:yeastract#row/48> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Haa1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/48> .
+
+<urn:raw:yeastract#row/48> <http://vocab.sindice.net/csv/rowPosition> "48" .
+
+<urn:raw:yeastract#row/49> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Hac1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/49> .
+
+<urn:raw:yeastract#row/49> <http://vocab.sindice.net/csv/rowPosition> "49" .
+
+<urn:raw:yeastract#row/50> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Hal9"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/50> .
+
+<urn:raw:yeastract#row/50> <http://vocab.sindice.net/csv/rowPosition> "50" .
+
+<urn:raw:yeastract#row/51> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Hap1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/51> .
+
+<urn:raw:yeastract#row/51> <http://vocab.sindice.net/csv/rowPosition> "51" .
+
+<urn:raw:yeastract#row/52> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Hap2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/52> .
+
+<urn:raw:yeastract#row/52> <http://vocab.sindice.net/csv/rowPosition> "52" .
+
+<urn:raw:yeastract#row/53> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Hap3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/53> .
+
+<urn:raw:yeastract#row/53> <http://vocab.sindice.net/csv/rowPosition> "53" .
+
+<urn:raw:yeastract#row/54> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Hap4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/54> .
+
+<urn:raw:yeastract#row/54> <http://vocab.sindice.net/csv/rowPosition> "54" .
+
+<urn:raw:yeastract#row/55> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Hap5"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/55> .
+
+<urn:raw:yeastract#row/55> <http://vocab.sindice.net/csv/rowPosition> "55" .
+
+<urn:raw:yeastract#row/56> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Hcm1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/56> .
+
+<urn:raw:yeastract#row/56> <http://vocab.sindice.net/csv/rowPosition> "56" .
+
+<urn:raw:yeastract#row/57> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Hmlalpha2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/57> .
+
+<urn:raw:yeastract#row/57> <http://vocab.sindice.net/csv/rowPosition> "57" .
+
+<urn:raw:yeastract#row/58> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Hmra2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/58> .
+
+<urn:raw:yeastract#row/58> <http://vocab.sindice.net/csv/rowPosition> "58" .
+
+<urn:raw:yeastract#row/59> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Hsf1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/59> .
+
+<urn:raw:yeastract#row/59> <http://vocab.sindice.net/csv/rowPosition> "59" .
+
+<urn:raw:yeastract#row/60> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Ime1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/60> .
+
+<urn:raw:yeastract#row/60> <http://vocab.sindice.net/csv/rowPosition> "60" .
+
+<urn:raw:yeastract#row/61> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Ino2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/61> .
+
+<urn:raw:yeastract#row/61> <http://vocab.sindice.net/csv/rowPosition> "61" .
+
+<urn:raw:yeastract#row/62> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Ino4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/62> .
+
+<urn:raw:yeastract#row/62> <http://vocab.sindice.net/csv/rowPosition> "62" .
+
+<urn:raw:yeastract#row/63> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Ixr1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/63> .
+
+<urn:raw:yeastract#row/63> <http://vocab.sindice.net/csv/rowPosition> "63" .
+
+<urn:raw:yeastract#row/64> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Kar4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/64> .
+
+<urn:raw:yeastract#row/64> <http://vocab.sindice.net/csv/rowPosition> "64" .
+
+<urn:raw:yeastract#row/65> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Leu3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/65> .
+
+<urn:raw:yeastract#row/65> <http://vocab.sindice.net/csv/rowPosition> "65" .
+
+<urn:raw:yeastract#row/66> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Lys14"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/66> .
+
+<urn:raw:yeastract#row/66> <http://vocab.sindice.net/csv/rowPosition> "66" .
+
+<urn:raw:yeastract#row/67> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Mac1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/67> .
+
+<urn:raw:yeastract#row/67> <http://vocab.sindice.net/csv/rowPosition> "67" .
+
+<urn:raw:yeastract#row/68> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Mal63"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/68> .
+
+<urn:raw:yeastract#row/68> <http://vocab.sindice.net/csv/rowPosition> "68" .
+
+<urn:raw:yeastract#row/69> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Matalpha2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/69> .
+
+<urn:raw:yeastract#row/69> <http://vocab.sindice.net/csv/rowPosition> "69" .
+
+<urn:raw:yeastract#row/70> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Mbp1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/70> .
+
+<urn:raw:yeastract#row/70> <http://vocab.sindice.net/csv/rowPosition> "70" .
+
+<urn:raw:yeastract#row/71> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Mcm1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/71> .
+
+<urn:raw:yeastract#row/71> <http://vocab.sindice.net/csv/rowPosition> "71" .
+
+<urn:raw:yeastract#row/72> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Met31"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/72> .
+
+<urn:raw:yeastract#row/72> <http://vocab.sindice.net/csv/rowPosition> "72" .
+
+<urn:raw:yeastract#row/73> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Met32"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/73> .
+
+<urn:raw:yeastract#row/73> <http://vocab.sindice.net/csv/rowPosition> "73" .
+
+<urn:raw:yeastract#row/74> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Met4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/74> .
+
+<urn:raw:yeastract#row/74> <http://vocab.sindice.net/csv/rowPosition> "74" .
+
+<urn:raw:yeastract#row/75> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Mga1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/75> .
+
+<urn:raw:yeastract#row/75> <http://vocab.sindice.net/csv/rowPosition> "75" .
+
+<urn:raw:yeastract#row/76> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Mig1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/76> .
+
+<urn:raw:yeastract#row/76> <http://vocab.sindice.net/csv/rowPosition> "76" .
+
+<urn:raw:yeastract#row/77> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Mig2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/77> .
+
+<urn:raw:yeastract#row/77> <http://vocab.sindice.net/csv/rowPosition> "77" .
+
+<urn:raw:yeastract#row/78> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Mig3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/78> .
+
+<urn:raw:yeastract#row/78> <http://vocab.sindice.net/csv/rowPosition> "78" .
+
+<urn:raw:yeastract#row/79> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Mot2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/79> .
+
+<urn:raw:yeastract#row/79> <http://vocab.sindice.net/csv/rowPosition> "79" .
+
+<urn:raw:yeastract#row/80> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Mot3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/80> .
+
+<urn:raw:yeastract#row/80> <http://vocab.sindice.net/csv/rowPosition> "80" .
+
+<urn:raw:yeastract#row/81> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Msn1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/81> .
+
+<urn:raw:yeastract#row/81> <http://vocab.sindice.net/csv/rowPosition> "81" .
+
+<urn:raw:yeastract#row/82> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Msn2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/82> .
+
+<urn:raw:yeastract#row/82> <http://vocab.sindice.net/csv/rowPosition> "82" .
+
+<urn:raw:yeastract#row/83> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Msn4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/83> .
+
+<urn:raw:yeastract#row/83> <http://vocab.sindice.net/csv/rowPosition> "83" .
+
+<urn:raw:yeastract#row/84> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Mss11"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/84> .
+
+<urn:raw:yeastract#row/84> <http://vocab.sindice.net/csv/rowPosition> "84" .
+
+<urn:raw:yeastract#row/85> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Ndt80"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/85> .
+
+<urn:raw:yeastract#row/85> <http://vocab.sindice.net/csv/rowPosition> "85" .
+
+<urn:raw:yeastract#row/86> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Nhp10"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/86> .
+
+<urn:raw:yeastract#row/86> <http://vocab.sindice.net/csv/rowPosition> "86" .
+
+<urn:raw:yeastract#row/87> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Nhp6a"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/87> .
+
+<urn:raw:yeastract#row/87> <http://vocab.sindice.net/csv/rowPosition> "87" .
+
+<urn:raw:yeastract#row/88> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Nhp6b"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/88> .
+
+<urn:raw:yeastract#row/88> <http://vocab.sindice.net/csv/rowPosition> "88" .
+
+<urn:raw:yeastract#row/89> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Nrg1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/89> .
+
+<urn:raw:yeastract#row/89> <http://vocab.sindice.net/csv/rowPosition> "89" .
+
+<urn:raw:yeastract#row/90> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Nrg2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/90> .
+
+<urn:raw:yeastract#row/90> <http://vocab.sindice.net/csv/rowPosition> "90" .
+
+<urn:raw:yeastract#row/91> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Oaf1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/91> .
+
+<urn:raw:yeastract#row/91> <http://vocab.sindice.net/csv/rowPosition> "91" .
+
+<urn:raw:yeastract#row/92> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Pdr1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/92> .
+
+<urn:raw:yeastract#row/92> <http://vocab.sindice.net/csv/rowPosition> "92" .
+
+<urn:raw:yeastract#row/93> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Pdr3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/93> .
+
+<urn:raw:yeastract#row/93> <http://vocab.sindice.net/csv/rowPosition> "93" .
+
+<urn:raw:yeastract#row/94> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Pdr8"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/94> .
+
+<urn:raw:yeastract#row/94> <http://vocab.sindice.net/csv/rowPosition> "94" .
+
+<urn:raw:yeastract#row/95> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Phd1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/95> .
+
+<urn:raw:yeastract#row/95> <http://vocab.sindice.net/csv/rowPosition> "95" .
+
+<urn:raw:yeastract#row/96> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Pho2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/96> .
+
+<urn:raw:yeastract#row/96> <http://vocab.sindice.net/csv/rowPosition> "96" .
+
+<urn:raw:yeastract#row/97> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Pho4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/97> .
+
+<urn:raw:yeastract#row/97> <http://vocab.sindice.net/csv/rowPosition> "97" .
+
+<urn:raw:yeastract#row/98> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Pip2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/98> .
+
+<urn:raw:yeastract#row/98> <http://vocab.sindice.net/csv/rowPosition> "98" .
+
+<urn:raw:yeastract#row/99> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Ppr1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/99> .
+
+<urn:raw:yeastract#row/99> <http://vocab.sindice.net/csv/rowPosition> "99" .
+
+<urn:raw:yeastract#row/100> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Put3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/100> .
+
+<urn:raw:yeastract#row/100> <http://vocab.sindice.net/csv/rowPosition> "100" .
+
+<urn:raw:yeastract#row/101> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rap1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/101> .
+
+<urn:raw:yeastract#row/101> <http://vocab.sindice.net/csv/rowPosition> "101" .
+
+<urn:raw:yeastract#row/102> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rdr1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/102> .
+
+<urn:raw:yeastract#row/102> <http://vocab.sindice.net/csv/rowPosition> "102" .
+
+<urn:raw:yeastract#row/103> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rds1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/103> .
+
+<urn:raw:yeastract#row/103> <http://vocab.sindice.net/csv/rowPosition> "103" .
+
+<urn:raw:yeastract#row/104> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rds2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/104> .
+
+<urn:raw:yeastract#row/104> <http://vocab.sindice.net/csv/rowPosition> "104" .
+
+<urn:raw:yeastract#row/105> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Reb1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/105> .
+
+<urn:raw:yeastract#row/105> <http://vocab.sindice.net/csv/rowPosition> "105" .
+
+<urn:raw:yeastract#row/106> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rei1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/106> .
+
+<urn:raw:yeastract#row/106> <http://vocab.sindice.net/csv/rowPosition> "106" .
+
+<urn:raw:yeastract#row/107> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rfx1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/107> .
+
+<urn:raw:yeastract#row/107> <http://vocab.sindice.net/csv/rowPosition> "107" .
+
+<urn:raw:yeastract#row/108> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rgm1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/108> .
+
+<urn:raw:yeastract#row/108> <http://vocab.sindice.net/csv/rowPosition> "108" .
+
+<urn:raw:yeastract#row/109> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rgt1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/109> .
+
+<urn:raw:yeastract#row/109> <http://vocab.sindice.net/csv/rowPosition> "109" .
+
+<urn:raw:yeastract#row/110> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rim101"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/110> .
+
+<urn:raw:yeastract#row/110> <http://vocab.sindice.net/csv/rowPosition> "110" .
+
+<urn:raw:yeastract#row/111> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rlm1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/111> .
+
+<urn:raw:yeastract#row/111> <http://vocab.sindice.net/csv/rowPosition> "111" .
+
+<urn:raw:yeastract#row/112> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rme1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/112> .
+
+<urn:raw:yeastract#row/112> <http://vocab.sindice.net/csv/rowPosition> "112" .
+
+<urn:raw:yeastract#row/113> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rox1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/113> .
+
+<urn:raw:yeastract#row/113> <http://vocab.sindice.net/csv/rowPosition> "113" .
+
+<urn:raw:yeastract#row/114> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rph1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/114> .
+
+<urn:raw:yeastract#row/114> <http://vocab.sindice.net/csv/rowPosition> "114" .
+
+<urn:raw:yeastract#row/115> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rpn4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/115> .
+
+<urn:raw:yeastract#row/115> <http://vocab.sindice.net/csv/rowPosition> "115" .
+
+<urn:raw:yeastract#row/116> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rsc30"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/116> .
+
+<urn:raw:yeastract#row/116> <http://vocab.sindice.net/csv/rowPosition> "116" .
+
+<urn:raw:yeastract#row/117> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rsc3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/117> .
+
+<urn:raw:yeastract#row/117> <http://vocab.sindice.net/csv/rowPosition> "117" .
+
+<urn:raw:yeastract#row/118> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rsf2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/118> .
+
+<urn:raw:yeastract#row/118> <http://vocab.sindice.net/csv/rowPosition> "118" .
+
+<urn:raw:yeastract#row/119> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rtg1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/119> .
+
+<urn:raw:yeastract#row/119> <http://vocab.sindice.net/csv/rowPosition> "119" .
+
+<urn:raw:yeastract#row/120> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Rtg3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/120> .
+
+<urn:raw:yeastract#row/120> <http://vocab.sindice.net/csv/rowPosition> "120" .
+
+<urn:raw:yeastract#row/121> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Sfl1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/121> .
+
+<urn:raw:yeastract#row/121> <http://vocab.sindice.net/csv/rowPosition> "121" .
+
+<urn:raw:yeastract#row/122> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Sfp1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/122> .
+
+<urn:raw:yeastract#row/122> <http://vocab.sindice.net/csv/rowPosition> "122" .
+
+<urn:raw:yeastract#row/123> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Sip4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/123> .
+
+<urn:raw:yeastract#row/123> <http://vocab.sindice.net/csv/rowPosition> "123" .
+
+<urn:raw:yeastract#row/124> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Skn7"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/124> .
+
+<urn:raw:yeastract#row/124> <http://vocab.sindice.net/csv/rowPosition> "124" .
+
+<urn:raw:yeastract#row/125> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Sko1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/125> .
+
+<urn:raw:yeastract#row/125> <http://vocab.sindice.net/csv/rowPosition> "125" .
+
+<urn:raw:yeastract#row/126> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Smp1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/126> .
+
+<urn:raw:yeastract#row/126> <http://vocab.sindice.net/csv/rowPosition> "126" .
+
+<urn:raw:yeastract#row/127> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Sok2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/127> .
+
+<urn:raw:yeastract#row/127> <http://vocab.sindice.net/csv/rowPosition> "127" .
+
+<urn:raw:yeastract#row/128> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Spt15"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/128> .
+
+<urn:raw:yeastract#row/128> <http://vocab.sindice.net/csv/rowPosition> "128" .
+
+<urn:raw:yeastract#row/129> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Srd1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/129> .
+
+<urn:raw:yeastract#row/129> <http://vocab.sindice.net/csv/rowPosition> "129" .
+
+<urn:raw:yeastract#row/130> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Stb3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/130> .
+
+<urn:raw:yeastract#row/130> <http://vocab.sindice.net/csv/rowPosition> "130" .
+
+<urn:raw:yeastract#row/131> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Stb4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/131> .
+
+<urn:raw:yeastract#row/131> <http://vocab.sindice.net/csv/rowPosition> "131" .
+
+<urn:raw:yeastract#row/132> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Stb5"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/132> .
+
+<urn:raw:yeastract#row/132> <http://vocab.sindice.net/csv/rowPosition> "132" .
+
+<urn:raw:yeastract#row/133> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Ste12"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/133> .
+
+<urn:raw:yeastract#row/133> <http://vocab.sindice.net/csv/rowPosition> "133" .
+
+<urn:raw:yeastract#row/134> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Stp1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/134> .
+
+<urn:raw:yeastract#row/134> <http://vocab.sindice.net/csv/rowPosition> "134" .
+
+<urn:raw:yeastract#row/135> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Stp2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/135> .
+
+<urn:raw:yeastract#row/135> <http://vocab.sindice.net/csv/rowPosition> "135" .
+
+<urn:raw:yeastract#row/136> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Stp3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/136> .
+
+<urn:raw:yeastract#row/136> <http://vocab.sindice.net/csv/rowPosition> "136" .
+
+<urn:raw:yeastract#row/137> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Stp4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/137> .
+
+<urn:raw:yeastract#row/137> <http://vocab.sindice.net/csv/rowPosition> "137" .
+
+<urn:raw:yeastract#row/138> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Sum1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/138> .
+
+<urn:raw:yeastract#row/138> <http://vocab.sindice.net/csv/rowPosition> "138" .
+
+<urn:raw:yeastract#row/139> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Sut1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/139> .
+
+<urn:raw:yeastract#row/139> <http://vocab.sindice.net/csv/rowPosition> "139" .
+
+<urn:raw:yeastract#row/140> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Sut2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/140> .
+
+<urn:raw:yeastract#row/140> <http://vocab.sindice.net/csv/rowPosition> "140" .
+
+<urn:raw:yeastract#row/141> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Swi4"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/141> .
+
+<urn:raw:yeastract#row/141> <http://vocab.sindice.net/csv/rowPosition> "141" .
+
+<urn:raw:yeastract#row/142> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Swi5"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/142> .
+
+<urn:raw:yeastract#row/142> <http://vocab.sindice.net/csv/rowPosition> "142" .
+
+<urn:raw:yeastract#row/143> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Tbf1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/143> .
+
+<urn:raw:yeastract#row/143> <http://vocab.sindice.net/csv/rowPosition> "143" .
+
+<urn:raw:yeastract#row/144> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Tbs1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/144> .
+
+<urn:raw:yeastract#row/144> <http://vocab.sindice.net/csv/rowPosition> "144" .
+
+<urn:raw:yeastract#row/145> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Tea1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/145> .
+
+<urn:raw:yeastract#row/145> <http://vocab.sindice.net/csv/rowPosition> "145" .
+
+<urn:raw:yeastract#row/146> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Tec1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/146> .
+
+<urn:raw:yeastract#row/146> <http://vocab.sindice.net/csv/rowPosition> "146" .
+
+<urn:raw:yeastract#row/147> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Tod6"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/147> .
+
+<urn:raw:yeastract#row/147> <http://vocab.sindice.net/csv/rowPosition> "147" .
+
+<urn:raw:yeastract#row/148> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Tos8"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/148> .
+
+<urn:raw:yeastract#row/148> <http://vocab.sindice.net/csv/rowPosition> "148" .
+
+<urn:raw:yeastract#row/149> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Tye7"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/149> .
+
+<urn:raw:yeastract#row/149> <http://vocab.sindice.net/csv/rowPosition> "149" .
+
+<urn:raw:yeastract#row/150> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Uga3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/150> .
+
+<urn:raw:yeastract#row/150> <http://vocab.sindice.net/csv/rowPosition> "150" .
+
+<urn:raw:yeastract#row/151> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Ume6"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/151> .
+
+<urn:raw:yeastract#row/151> <http://vocab.sindice.net/csv/rowPosition> "151" .
+
+<urn:raw:yeastract#row/152> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Upc2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/152> .
+
+<urn:raw:yeastract#row/152> <http://vocab.sindice.net/csv/rowPosition> "152" .
+
+<urn:raw:yeastract#row/153> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Urc2"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/153> .
+
+<urn:raw:yeastract#row/153> <http://vocab.sindice.net/csv/rowPosition> "153" .
+
+<urn:raw:yeastract#row/154> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Usv1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/154> .
+
+<urn:raw:yeastract#row/154> <http://vocab.sindice.net/csv/rowPosition> "154" .
+
+<urn:raw:yeastract#row/155> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Vhr1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/155> .
+
+<urn:raw:yeastract#row/155> <http://vocab.sindice.net/csv/rowPosition> "155" .
+
+<urn:raw:yeastract#row/156> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "War1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/156> .
+
+<urn:raw:yeastract#row/156> <http://vocab.sindice.net/csv/rowPosition> "156" .
+
+<urn:raw:yeastract#row/157> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Xbp1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/157> .
+
+<urn:raw:yeastract#row/157> <http://vocab.sindice.net/csv/rowPosition> "157" .
+
+<urn:raw:yeastract#row/158> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Yap1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/158> .
+
+<urn:raw:yeastract#row/158> <http://vocab.sindice.net/csv/rowPosition> "158" .
+
+<urn:raw:yeastract#row/159> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Yap3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/159> .
+
+<urn:raw:yeastract#row/159> <http://vocab.sindice.net/csv/rowPosition> "159" .
+
+<urn:raw:yeastract#row/160> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Yap5"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/160> .
+
+<urn:raw:yeastract#row/160> <http://vocab.sindice.net/csv/rowPosition> "160" .
+
+<urn:raw:yeastract#row/161> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Yap6"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/161> .
+
+<urn:raw:yeastract#row/161> <http://vocab.sindice.net/csv/rowPosition> "161" .
+
+<urn:raw:yeastract#row/162> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Yap7"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/162> .
+
+<urn:raw:yeastract#row/162> <http://vocab.sindice.net/csv/rowPosition> "162" .
+
+<urn:raw:yeastract#row/163> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "YER064C"^^<http://www.w3.org/2001/XMLSchema#string> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/163> .
+
+<urn:raw:yeastract#row/163> <http://vocab.sindice.net/csv/rowPosition> "163" .
+
+<urn:raw:yeastract#row/164> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "YER130C"^^<http://www.w3.org/2001/XMLSchema#string> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/164> .
+
+<urn:raw:yeastract#row/164> <http://vocab.sindice.net/csv/rowPosition> "164" .
+
+<urn:raw:yeastract#row/165> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "YER184C"^^<http://www.w3.org/2001/XMLSchema#string> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/165> .
+
+<urn:raw:yeastract#row/165> <http://vocab.sindice.net/csv/rowPosition> "165" .
+
+<urn:raw:yeastract#row/166> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "YGR067C"^^<http://www.w3.org/2001/XMLSchema#string> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/166> .
+
+<urn:raw:yeastract#row/166> <http://vocab.sindice.net/csv/rowPosition> "166" .
+
+<urn:raw:yeastract#row/167> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "YKL222C"^^<http://www.w3.org/2001/XMLSchema#string> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/167> .
+
+<urn:raw:yeastract#row/167> <http://vocab.sindice.net/csv/rowPosition> "167" .
+
+<urn:raw:yeastract#row/168> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "YLL054C"^^<http://www.w3.org/2001/XMLSchema#string> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/168> .
+
+<urn:raw:yeastract#row/168> <http://vocab.sindice.net/csv/rowPosition> "168" .
+
+<urn:raw:yeastract#row/169> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "YLR278C"^^<http://www.w3.org/2001/XMLSchema#string> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/169> .
+
+<urn:raw:yeastract#row/169> <http://vocab.sindice.net/csv/rowPosition> "169" .
+
+<urn:raw:yeastract#row/170> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "YML081W"^^<http://www.w3.org/2001/XMLSchema#string> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/170> .
+
+<urn:raw:yeastract#row/170> <http://vocab.sindice.net/csv/rowPosition> "170" .
+
+<urn:raw:yeastract#row/171> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "YNR063W"^^<http://www.w3.org/2001/XMLSchema#string> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/171> .
+
+<urn:raw:yeastract#row/171> <http://vocab.sindice.net/csv/rowPosition> "171" .
+
+<urn:raw:yeastract#row/172> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Yox1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/172> .
+
+<urn:raw:yeastract#row/172> <http://vocab.sindice.net/csv/rowPosition> "172" .
+
+<urn:raw:yeastract#row/173> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "YPR013C"^^<http://www.w3.org/2001/XMLSchema#string> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/173> .
+
+<urn:raw:yeastract#row/173> <http://vocab.sindice.net/csv/rowPosition> "173" .
+
+<urn:raw:yeastract#row/174> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "YPR015C"^^<http://www.w3.org/2001/XMLSchema#string> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/174> .
+
+<urn:raw:yeastract#row/174> <http://vocab.sindice.net/csv/rowPosition> "174" .
+
+<urn:raw:yeastract#row/175> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "YPR022C"^^<http://www.w3.org/2001/XMLSchema#string> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/175> .
+
+<urn:raw:yeastract#row/175> <http://vocab.sindice.net/csv/rowPosition> "175" .
+
+<urn:raw:yeastract#row/176> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "YPR196W"^^<http://www.w3.org/2001/XMLSchema#string> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/176> .
+
+<urn:raw:yeastract#row/176> <http://vocab.sindice.net/csv/rowPosition> "176" .
+
+<urn:raw:yeastract#row/177> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Yrm1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/177> .
+
+<urn:raw:yeastract#row/177> <http://vocab.sindice.net/csv/rowPosition> "177" .
+
+<urn:raw:yeastract#row/178> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Yrr1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/178> .
+
+<urn:raw:yeastract#row/178> <http://vocab.sindice.net/csv/rowPosition> "178" .
+
+<urn:raw:yeastract#row/179> a <http://vocab.sindice.net/csv/Row> ;
+	<urn:raw:yeastract#Yeast_id> "Zap1"^^<http://www.w3.org/2001/XMLSchema#string> ;
+	<urn:raw:yeastract#Mock> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/row> <urn:raw:yeastract#row/179> .
+
+<urn:raw:yeastract#row/179> <http://vocab.sindice.net/csv/rowPosition> "179" .
+
+<urn:raw:yeastract#> <http://vocab.sindice.net/csv/numberOfRows> "180"^^<http://www.w3.org/2001/XMLSchema#integer> ;
+	<http://vocab.sindice.net/csv/numberOfColumns> "2"^^<http://www.w3.org/2001/XMLSchema#integer> .
