@@ -8,7 +8,9 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
@@ -27,6 +29,11 @@ public class FOAF {
 	 * The recommended prefix for the FOAF namespace: "foaf"
 	 */
 	public static final String PREFIX = "foaf";
+
+	/**
+	 * An immutable {@link Namespace} constant that represents the FOAF namespace.
+	 */
+	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
 
 	// ----- Classes ------
 	public final static IRI AGENT;

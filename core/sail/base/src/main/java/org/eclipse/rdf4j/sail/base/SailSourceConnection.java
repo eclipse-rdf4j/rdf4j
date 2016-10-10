@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -41,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -119,6 +121,11 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	private volatile SailSource includeInferredBranch;
 
 	/**
+	 * {@link EvaluationStrategyFactory} to use.
+	 */
+	private final EvaluationStrategyFactory evalStratFactory;
+
+	/**
 	 * Connection specific resolver.
 	 */
 	private volatile FederatedServiceResolver federatedServiceResolver;
@@ -133,30 +140,61 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	 * @param sail
 	 * @param store
 	 * @param resolver
+	 *        the FederatedServiceResolver to use with the {@link SimpleEvaluationStrategy default
+	 *        EvaluationStrategy}.
 	 */
 	protected SailSourceConnection(AbstractSail sail, SailStore store, FederatedServiceResolver resolver) {
+		this(sail, store, new SimpleEvaluationStrategyFactory(resolver));
+	}
+
+	/**
+	 * Creates a new {@link SailConnection}, using the given {@link SailStore} to manage the state.
+	 *
+	 * @param sail
+	 * @param store
+	 * @param evalStratFactory
+	 *        the {@link EvaluationStrategyFactory} to use.
+	 */
+	protected SailSourceConnection(AbstractSail sail, SailStore store,
+			EvaluationStrategyFactory evalStratFactory)
+	{
 		super(sail);
 		this.vf = sail.getValueFactory();
 		this.store = store;
 		this.defaultIsolationLevel = sail.getDefaultIsolationLevel();
-		this.federatedServiceResolver = resolver;
+		this.evalStratFactory = evalStratFactory;
+		this.federatedServiceResolver = (evalStratFactory instanceof SimpleEvaluationStrategyFactory)
+				? ((SimpleEvaluationStrategyFactory)evalStratFactory).getFederatedServiceResolver() : null;
 	}
 
 	/*---------*
 	 * Methods *
 	 *---------*/
 
+	/**
+	 * Returns the {@link FederatedServiceResolver} being used.
+	 * 
+	 * @return null if a custom {@link EvaluationStrategyFactory} is being used.
+	 */
 	public FederatedServiceResolver getFederatedServiceResolver() {
 		return federatedServiceResolver;
 	}
 
+	/**
+	 * Sets the {@link FederatedServiceResolver} to use. If a custom {@link EvaluationStrategyFactory} is
+	 * being used then this only has an effect if it implements {@link FederatedServiceResolverClient}.
+	 */
 	@Override
 	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
 		this.federatedServiceResolver = resolver;
 	}
 
 	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
-		return new SimpleEvaluationStrategy(tripleSource, dataset, getFederatedServiceResolver());
+		EvaluationStrategy evalStrat = evalStratFactory.createEvaluationStrategy(dataset, tripleSource);
+		if (federatedServiceResolver != null && evalStrat instanceof FederatedServiceResolverClient) {
+			((FederatedServiceResolverClient)evalStrat).setFederatedServiceResolver(federatedServiceResolver);
+		}
+		return evalStrat;
 	}
 
 	@Override

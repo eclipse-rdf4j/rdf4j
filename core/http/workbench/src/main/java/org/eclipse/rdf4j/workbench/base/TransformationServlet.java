@@ -99,7 +99,7 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 				service(wreq, resp, xslPath);
 			}
 		}
-		catch (RuntimeException e) {
+		catch (RuntimeException | ServletException | IOException e) {
 			throw e;
 		}
 		catch (Exception e) {

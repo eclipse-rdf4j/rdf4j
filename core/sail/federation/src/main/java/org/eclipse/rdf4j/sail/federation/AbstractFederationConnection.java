@@ -49,9 +49,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
+import org.eclipse.rdf4j.repository.filters.AccurateRepositoryBloomFilter;
+import org.eclipse.rdf4j.repository.filters.RepositoryBloomFilter;
 import org.eclipse.rdf4j.repository.sail.config.RepositoryResolver;
 import org.eclipse.rdf4j.repository.sail.config.RepositoryResolverClient;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -372,7 +375,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 		TripleSource tripleSource = new FederationTripleSource(inf);
 		EvaluationStrategy strategy = federation.createEvaluationStrategy(tripleSource, dataset,
 				getFederatedServiceResolver());
-		TupleExpr qry = optimize(query, dataset, bindings, strategy);
+		TupleExpr qry = optimize(query, dataset, bindings, inf, strategy);
 		try {
 			return strategy.evaluate(qry, EmptyBindingSet.getInstance());
 		}
@@ -415,7 +418,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	}
 
 	private TupleExpr optimize(TupleExpr parsed, Dataset dataset, BindingSet bindings,
-			EvaluationStrategy strategy)
+			boolean includeInferred, EvaluationStrategy strategy)
 		throws SailException
 	{
 		LOGGER.trace("Incoming query model:\n{}", parsed);
@@ -434,10 +437,18 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 		new QueryMultiJoinOptimizer().optimize(query, dataset, bindings);
 		// new FilterOptimizer().optimize(query, dataset, bindings);
 
-		new EmptyPatternOptimizer(members).optimize(query, dataset, bindings);
+		// prepare bloom filters
+		RepositoryBloomFilter defaultBloomFilter = new AccurateRepositoryBloomFilter(includeInferred);
+		Map<Repository, RepositoryBloomFilter> bloomFilters = federation.getBloomFilters();
+		java.util.function.Function<Repository, RepositoryBloomFilter> bloomFilterFunction = c -> bloomFilters.getOrDefault(
+				c, defaultBloomFilter);
+
+		new EmptyPatternOptimizer(members, bloomFilterFunction).optimize(query, dataset,
+				bindings);
 		boolean distinct = federation.isDistinct();
 		PrefixHashSet local = federation.getLocalPropertySpace();
-		new FederationJoinOptimizer(members, distinct, local).optimize(query, dataset, bindings);
+		new FederationJoinOptimizer(members, distinct, local, bloomFilterFunction).optimize(query, dataset,
+				bindings);
 		new OwnedTupleExprPruner().optimize(query, dataset, bindings);
 		new QueryModelPruner().optimize(query, dataset, bindings);
 		new QueryMultiJoinOptimizer().optimize(query, dataset, bindings);

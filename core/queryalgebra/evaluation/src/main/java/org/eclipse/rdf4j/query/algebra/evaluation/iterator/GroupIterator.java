@@ -214,9 +214,13 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			Map<Key, Entry> entries = new LinkedHashMap<Key, Entry>();
 
 			if (!iter.hasNext()) {
-				// no solutions, still need to process aggregates to produce a
+				// no solutions, but if aggregates are present we still need to process them to produce a
 				// zero-result.
-				entries.put(new Key(EmptyBindingSet.getInstance()), new Entry(EmptyBindingSet.getInstance()));
+				final Entry entry = new Entry(null);
+				if (!entry.getAggregates().isEmpty()) {
+					entry.addSolution(EmptyBindingSet.getInstance());
+					entries.put(new Key(EmptyBindingSet.getInstance()), entry);
+				}
 			}
 
 			// long count = 0;

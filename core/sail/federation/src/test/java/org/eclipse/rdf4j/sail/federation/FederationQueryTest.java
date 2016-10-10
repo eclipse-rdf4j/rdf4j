@@ -128,11 +128,17 @@ public class FederationQueryTest {
 		Federation federation = new Federation();
 		SailRepository repo = new SailRepository(federation);
 		repo.initialize();
+		configure(federation);
+		con = repo.getConnection();
+	}
+
+	protected void configure(Federation federation)
+		throws Exception
+	{
 		federation.addMember(createMember("1"));
 		federation.addMember(createMember("2"));
 		federation.addMember(createMember("3"));
 		federation.setLocalPropertySpace(Arrays.asList("urn:schema:b:", "urn:schema:d:"));
-		con = repo.getConnection();
 	}
 
 	private Repository createMember(String memberID)

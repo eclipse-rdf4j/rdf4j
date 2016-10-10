@@ -169,6 +169,7 @@
 	<variable name="repository-persist.label">Persist</variable>
 	<variable name="repository-sync-delay.label">Sync delay</variable>
 	<variable name="repository-indexes.label">Triple indexes</variable>
+	<variable name="repository-evaluation-mode.label">Evaluation mode</variable>
 	<variable name="remote-repository-server.label">
 		RDF4J Server locations
 	</variable>

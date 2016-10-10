@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -34,12 +35,17 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
+import org.eclipse.rdf4j.repository.filters.AccurateRepositoryBloomFilter;
+import org.eclipse.rdf4j.repository.filters.RepositoryBloomFilter;
 import org.eclipse.rdf4j.sail.federation.PrefixHashSet;
 import org.eclipse.rdf4j.sail.federation.algebra.NaryJoin;
 import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
+
+import com.google.common.base.MoreObjects;
 
 /**
  * Search for Join, LeftJoin, and Union arguments that can be evaluated in a single member.
@@ -52,6 +58,8 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 
 	private final Collection<? extends RepositoryConnection> members;
 
+	private final Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters;
+
 	private Map<Resource, List<RepositoryConnection>> contextToMemberMap;
 
 	private final PrefixHashSet localSpace;
@@ -63,9 +71,16 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	public FederationJoinOptimizer(Collection<? extends RepositoryConnection> members, boolean distinct,
 			PrefixHashSet localSpace)
 	{
-		super();
+		this(members, distinct, localSpace, c -> AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
+	}
+
+	public FederationJoinOptimizer(Collection<? extends RepositoryConnection> members, boolean distinct,
+			PrefixHashSet localSpace,
+			Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters)
+	{
 		this.members = members;
 		this.localSpace = localSpace;
+		this.bloomFilters = bloomFilters;
 		this.distinct = distinct;
 	}
 
@@ -356,7 +371,10 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 				// fallback to using hasStatement()
 				// but hopefully we narrowed it down to results
 				for (RepositoryConnection member : results) {
-					if (member.hasStatement(subj, pred, obj, true, ctx)) {
+					RepositoryBloomFilter bloomFilter = MoreObjects.firstNonNull(
+							bloomFilters.apply(member.getRepository()),
+							AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
+					if (bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
 						if (result == null) {
 							result = member;
 						}
