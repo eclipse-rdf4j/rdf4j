@@ -235,6 +235,10 @@ public class QuerySpec implements SearchQueryEvaluator {
 		return propertyURI;
 	}
 
+	public boolean isEvaluable() {
+		return queryString != null;
+	}
+
 	@Override
 	public String toString() {
 		StringBuilder buffer = new StringBuilder();

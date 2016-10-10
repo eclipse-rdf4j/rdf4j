@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.evaluation.SailTripleSource;
+import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.AddRemoveOperation;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.ClearContextOperation;
@@ -330,16 +331,12 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			interpreter.process(tupleExpr, bindings, queries);
 		}
 
-		if (LuceneSail.EAGER_EVALUATION_MODE.equals(sail.getEvaluationMode())) {
-			// evaluate lucene queries
-			if (!queries.isEmpty()) {
-				evaluateLuceneQueries(queries, tupleExpr);
-			}
-
-			// let the lower sail evaluate the remaining query
-			return super.evaluate(tupleExpr, dataset, bindings, includeInferred);
+		// constant optimizer - evaluate lucene queries
+		if (!queries.isEmpty()) {
+			evaluateLuceneQueries(queries, tupleExpr);
 		}
-		else if (LuceneSail.TRIPLE_SOURCE_EVALUATION_MODE.equals(sail.getEvaluationMode())) {
+
+		if (sail.getEvaluationMode() == TupleFunctionEvaluationMode.TRIPLE_SOURCE) {
 			ValueFactory vf = sail.getValueFactory();
 			EvaluationStrategy strategy = new TupleFunctionEvaluationStrategy(
 					new SailTripleSource(this, includeInferred, vf), dataset,

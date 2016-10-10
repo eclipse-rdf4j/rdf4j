@@ -24,8 +24,8 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.spin.SpinSail.EvaluationMode;
 import org.junit.Test;
 
 public class EvaluationModeTest {
@@ -34,17 +34,17 @@ public class EvaluationModeTest {
 	public void testServiceEvaluationMode()
 		throws RDFParseException, RepositoryException, IOException
 	{
-		testEvaluationMode(EvaluationMode.SERVICE);
+		testEvaluationMode(TupleFunctionEvaluationMode.SERVICE);
 	}
 
 	@Test
 	public void testTripleSourceEvaluationMode()
 		throws RDFParseException, RepositoryException, IOException
 	{
-		testEvaluationMode(EvaluationMode.TRIPLE_SOURCE);
+		testEvaluationMode(TupleFunctionEvaluationMode.TRIPLE_SOURCE);
 	}
 
-	private void testEvaluationMode(EvaluationMode mode)
+	private void testEvaluationMode(TupleFunctionEvaluationMode mode)
 		throws RDFParseException, RepositoryException, IOException
 	{
 		NotifyingSail baseSail = new MemoryStore();
