@@ -51,7 +51,7 @@ public class NativeStoreConnection extends SailSourceConnection {
 	protected NativeStoreConnection(NativeStore sail)
 		throws IOException
 	{
-		super(sail, sail.getSailStore(), sail.getFederatedServiceResolver());
+		super(sail, sail.getSailStore(), sail.getEvaluationStrategyFactory());
 		this.nativeStore = sail;
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
 	}

@@ -18,8 +18,10 @@ import java.util.GregorianCalendar;
 
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
+import javax.xml.datatype.Duration;
 
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.junit.Ignore;
@@ -31,6 +33,9 @@ import org.junit.Test;
  * @author Peter Ansell
  */
 public class LiteralsTest {
+
+	private static final ValueFactory vf = SimpleValueFactory.getInstance();
+
 
 	/**
 	 * Test method for
@@ -303,6 +308,21 @@ public class LiteralsTest {
 		throws Exception
 	{
 		fail("Not yet implemented"); // TODO
+	}
+
+	@Test
+	public final void testGetDurationValueLiteralDuration()
+		throws Exception
+	{
+		DatatypeFactory dtFactory = DatatypeFactory.newInstance();
+		
+		Duration fallback = dtFactory.newDuration(true, 1, 1, 1, 1, 1, 1);
+		
+		Duration result = Literals.getDurationValue(vf.createLiteral("P5Y"), fallback);
+		
+		assertNotNull(result);
+		assertFalse(result.equals(fallback));
+		assertEquals(5, result.getYears());
 	}
 
 	/**

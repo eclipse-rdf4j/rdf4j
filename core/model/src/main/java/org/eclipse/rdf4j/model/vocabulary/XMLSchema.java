@@ -180,6 +180,9 @@ public class XMLSchema {
 	/** <tt>http://www.w3.org/2001/XMLSchema#unsignedByte</tt> */
 	public final static IRI UNSIGNED_BYTE;
 
+	/** <tt>http://www.w3.org/2001/XMLSchema#yearMonthDuration</tt> */
+	public static final IRI YEARMONTHDURATION;
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 
@@ -272,5 +275,7 @@ public class XMLSchema {
 		UNSIGNED_SHORT = factory.createIRI(XMLSchema.NAMESPACE, "unsignedShort");
 
 		UNSIGNED_BYTE = factory.createIRI(XMLSchema.NAMESPACE, "unsignedByte");
+
+		YEARMONTHDURATION = factory.createIRI(NAMESPACE, "yearMonthDuration");
 	}
 }

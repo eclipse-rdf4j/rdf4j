@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.config;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailFactory;
@@ -55,6 +56,11 @@ public class MemoryStoreFactory implements SailFactory {
 
 			if (memConfig.getIterationCacheSyncThreshold() > 0) {
 				memoryStore.setIterationCacheSyncThreshold(memConfig.getIterationCacheSyncThreshold());
+			}
+
+			EvaluationStrategyFactory evalStratFactory = memConfig.getEvaluationStrategyFactory();
+			if (evalStratFactory != null) {
+				memoryStore.setEvaluationStrategyFactory(evalStratFactory);
 			}
 		}
 

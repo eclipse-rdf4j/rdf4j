@@ -59,6 +59,19 @@
 						<td></td>
 					</tr>
 					<tr>
+						<th>
+							<xsl:value-of select="$repository-evaluation-mode.label" />
+						</th>
+						<td>
+							<select id="evalStratFactory" name="EvaluationStrategyFactory">
+								<option value="org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategyFactory">
+								Strict
+								</option>
+							</select>
+						</td>
+						<td></td>
+					</tr>
+					<tr>
 						<td></td>
 						<td>
 							<input type="button" value="{$cancel.label}" style="float:right"

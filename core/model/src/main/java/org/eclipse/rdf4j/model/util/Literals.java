@@ -15,10 +15,12 @@ import java.util.Objects;
 import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
+import javax.xml.datatype.Duration;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.language.LanguageTag;
 import org.eclipse.rdf4j.model.util.language.LanguageTagSyntaxException;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
@@ -356,6 +358,25 @@ public class Literals {
 			return l.calendarValue();
 		}
 		catch (IllegalArgumentException e) {
+			return fallback;
+		}
+	}
+
+	/**
+	 * Gets the {@link Duration} value of the supplied literal. The fallback value is returned in case
+	 * {@link XMLDatatypeUtil#parseDuration(String)} throws an exception.
+	 * 
+	 * @param l
+	 *        The literal to get the {@link Duration} value for.
+	 * @param fallback
+	 *        The value to fall back to in case no Duration value could gotten from the literal.
+	 * @return Either the literal's Duration value, or the fallback value.
+	 */
+	public static Duration getDurationValue(Literal l, Duration fallback) {
+		try {
+			return XMLDatatypeUtil.parseDuration(l.getLabel());
+		}
+		catch (IllegalArgumentException | UnsupportedOperationException e) {
 			return fallback;
 		}
 	}
