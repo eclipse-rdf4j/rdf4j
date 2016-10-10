@@ -120,6 +120,24 @@ public class ProtocolUtil {
 		}
 	}
 
+	public static long parseLongParam(HttpServletRequest request, String paramName, long defaultValue)
+		throws ClientHTTPException
+	{
+		String paramValue = request.getParameter(paramName);
+		if (paramValue == null) {
+			return defaultValue;
+		}
+		else {
+			try {
+				return Long.parseLong(paramValue);
+			}
+			catch (IllegalArgumentException e) {
+				throw new ClientHTTPException(SC_BAD_REQUEST,
+						"Invalid value for parameter '" + paramName + "': " + e.getMessage());
+			}
+		}
+	}
+
 	/**
 	 * Logs all request parameters of the supplied request.
 	 */

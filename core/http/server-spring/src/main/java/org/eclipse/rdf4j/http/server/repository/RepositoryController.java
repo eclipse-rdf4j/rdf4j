@@ -29,6 +29,9 @@ import javax.servlet.http.HttpServletResponse;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpStatus;
 import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.LimitIteration;
+import org.eclipse.rdf4j.common.iteration.OffsetIteration;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
@@ -41,7 +44,9 @@ import org.eclipse.rdf4j.http.server.HTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
@@ -55,6 +60,8 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterRegistry;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
@@ -193,21 +200,37 @@ public class RepositoryController extends AbstractController {
 				Query query = getQuery(repository, repositoryCon, queryStr, request, response);
 
 				View view;
-				Object queryResult;
+				Object queryResult = null;
 				FileFormatServiceRegistry<? extends FileFormat, ?> registry;
 
 				try {
 					if (query instanceof TupleQuery) {
-						TupleQuery tQuery = (TupleQuery)query;
+						if (!headersOnly) {
+							TupleQuery tQuery = (TupleQuery)query;
+							long limit = ProtocolUtil.parseLongParam(request, Protocol.LIMIT_PARAM_NAME, 0);
+							long offset = ProtocolUtil.parseLongParam(request, Protocol.OFFSET_PARAM_NAME, 0);
+							boolean distinct = ProtocolUtil.parseBooleanParam(request,
+									Protocol.DISTINCT_PARAM_NAME, false);
 
-						queryResult = headersOnly ? null : tQuery.evaluate();
+							final TupleQueryResult tqr = distinct
+									? QueryResults.distinctResults(tQuery.evaluate()) : tQuery.evaluate();
+							queryResult = QueryResults.limitResults(tqr, limit, offset);
+						}
 						registry = TupleQueryResultWriterRegistry.getInstance();
 						view = TupleQueryResultView.getInstance();
 					}
 					else if (query instanceof GraphQuery) {
-						GraphQuery gQuery = (GraphQuery)query;
+						if (!headersOnly) {
+							GraphQuery gQuery = (GraphQuery)query;
+							long limit = ProtocolUtil.parseLongParam(request, Protocol.LIMIT_PARAM_NAME, 0);
+							long offset = ProtocolUtil.parseLongParam(request, Protocol.OFFSET_PARAM_NAME, 0);
+							boolean distinct = ProtocolUtil.parseBooleanParam(request,
+									Protocol.DISTINCT_PARAM_NAME, false);
 
-						queryResult = headersOnly ? null : gQuery.evaluate();
+							final GraphQueryResult qqr = distinct
+									? QueryResults.distinctResults(gQuery.evaluate()) : gQuery.evaluate();
+							queryResult = QueryResults.limitResults(qqr, limit, offset);
+						}
 						registry = RDFWriterRegistry.getInstance();
 						view = GraphQueryResultView.getInstance();
 					}
@@ -236,14 +259,6 @@ public class RepositoryController extends AbstractController {
 					}
 					else {
 						throw new ServerHTTPException("Query evaluation error: " + e.getMessage());
-					}
-				}
-
-				if (queryResult instanceof QueryResult<?>) {
-					boolean distinct = ProtocolUtil.parseBooleanParam(request, Protocol.DISTINCT_PARAM_NAME,
-							false);
-					if (distinct) {
-						queryResult = distinct((QueryResult<?>)queryResult);
 					}
 				}
 
@@ -379,7 +394,7 @@ public class RepositoryController extends AbstractController {
 
 	private static QueryResult<?> distinct(QueryResult<?> qr) {
 		if (qr instanceof TupleQueryResult) {
-			TupleQueryResult tqr = (TupleQueryResult) qr;
+			TupleQueryResult tqr = (TupleQueryResult)qr;
 			return QueryResults.distinctResults(tqr);
 		}
 		else if (qr instanceof GraphQueryResult) {
@@ -390,4 +405,5 @@ public class RepositoryController extends AbstractController {
 			return qr;
 		}
 	}
+
 }
