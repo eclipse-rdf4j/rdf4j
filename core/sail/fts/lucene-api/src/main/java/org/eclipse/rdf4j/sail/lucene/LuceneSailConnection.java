@@ -29,11 +29,13 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingAssigner;
@@ -62,6 +64,8 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.Operation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.collect.Sets;
+
 /**
  * <h2><a name="whySailConnectionListener">Sail Connection Listener instead of implementing add/remove</a>
  * </h2> Using SailConnectionListener, see <a href="#whySailConnectionListener">above</a> The LuceneIndex is
@@ -87,6 +91,11 @@ import org.slf4j.LoggerFactory;
  * @author christian.huetter
  */
 public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
+
+	@SuppressWarnings("unchecked")
+	private static final Set<Class<? extends QueryModelNode>> PROJECTION_TYPES = Sets.newHashSet(
+			Projection.class,
+			MultiProjection.class);
 
 	final private Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -437,7 +446,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 		// find projection for the given query
 		QueryModelNode principalNode = query.getParentQueryModelNode();
-		final Projection projection = (Projection)getParentNodeOfType(principalNode, Projection.class);
+		final UnaryTupleOperator projection = (UnaryTupleOperator)getParentNodeOfTypes(principalNode,
+				PROJECTION_TYPES);
 		if (projection == null) {
 			logger.error(
 					"Could not add bindings to the query tree because no projection was found for the query node: {}",
@@ -454,7 +464,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 				throws RuntimeException
 			{
 				// does the node belong to the same (sub-)query?
-				QueryModelNode parent = getParentNodeOfType(node, Projection.class);
+				QueryModelNode parent = getParentNodeOfTypes(node, PROJECTION_TYPES);
 				if (parent != null && parent.equals(projection))
 					assignments.add(node);
 			}
@@ -494,14 +504,19 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	/**
 	 * Returns the closest parent node of the given type.
 	 */
-	private QueryModelNode getParentNodeOfType(QueryModelNode node, Class<? extends QueryModelNode> type) {
+	private QueryModelNode getParentNodeOfTypes(QueryModelNode node,
+			Set<Class<? extends QueryModelNode>> types)
+	{
 		QueryModelNode parent = node.getParentNode();
-		if (parent == null)
+		if (parent == null) {
 			return null;
-		else if (parent.getClass().equals(type))
+		}
+		else if (types.contains(parent.getClass())) {
 			return parent;
-		else
-			return getParentNodeOfType(parent, type);
+		}
+		else {
+			return getParentNodeOfTypes(parent, types);
+		}
 	}
 
 	/**
