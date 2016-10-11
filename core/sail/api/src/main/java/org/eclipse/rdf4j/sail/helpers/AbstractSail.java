@@ -169,8 +169,8 @@ public abstract class AbstractSail implements Sail {
 		throws SailException
 	{
 		initializationLock.writeLock().lock();
-		logger.trace("is initialized: {}", isInitialized());
 		try {
+			logger.trace("is initialized: {}", isInitialized());
 			if (isInitialized()) {
 				throw new IllegalStateException(
 						"Sail has already been intialized. Ensure this Sail is being used via a Repository.");
