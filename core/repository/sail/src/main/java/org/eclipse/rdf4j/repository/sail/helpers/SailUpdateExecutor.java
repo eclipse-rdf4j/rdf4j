@@ -645,22 +645,28 @@ public class SailUpdateExecutor {
 		if (deleteClause != null) {
 			List<StatementPattern> deletePatterns = StatementPatternCollector.process(deleteClause);
 
+			Value patternValue;
 			for (StatementPattern deletePattern : deletePatterns) {
 
-				Resource subject = (Resource)getValueForVar(deletePattern.getSubjectVar(), whereBinding);
-				IRI predicate = (IRI)getValueForVar(deletePattern.getPredicateVar(), whereBinding);
+				patternValue = getValueForVar(deletePattern.getSubjectVar(), whereBinding);
+				Resource subject = patternValue instanceof Resource ? (Resource)patternValue : null;
+
+				patternValue = getValueForVar(deletePattern.getPredicateVar(), whereBinding);
+				IRI predicate = patternValue instanceof IRI ? (IRI)patternValue : null;
+
 				Value object = getValueForVar(deletePattern.getObjectVar(), whereBinding);
 
 				Resource context = null;
 				if (deletePattern.getContextVar() != null) {
-					context = (Resource)getValueForVar(deletePattern.getContextVar(), whereBinding);
+					patternValue = getValueForVar(deletePattern.getContextVar(), whereBinding);
+					context = patternValue instanceof Resource ? (Resource)patternValue : null;
 				}
 
 				if (subject == null || predicate == null || object == null) {
-					// skip removal of triple if any variable is unbound (may
-					// happen
-					// with optional patterns)
-					// See SES-1047.
+					/*
+					 * skip removal of triple if any variable is unbound (may happen with optional patterns or
+					 * if triple pattern forms illegal triple). See SES-1047 and #610.
+					 */
 					continue;
 				}
 
@@ -722,17 +728,27 @@ public class SailUpdateExecutor {
 		Value object = null;
 		Resource context = null;
 
+		Value patternValue;
 		if (pattern.getSubjectVar().hasValue()) {
-			subject = (Resource)pattern.getSubjectVar().getValue();
+			patternValue = pattern.getSubjectVar().getValue();
+			if (patternValue instanceof Resource) {
+				subject = (Resource)patternValue;
+			}
 		}
 		else {
-			subject = (Resource)sourceBinding.getValue(pattern.getSubjectVar().getName());
+			patternValue = sourceBinding.getValue(pattern.getSubjectVar().getName());
+			if (patternValue instanceof Resource) {
+				subject = (Resource)patternValue;
+			}
 
 			if (subject == null && pattern.getSubjectVar().isAnonymous()) {
 				Binding mappedSubject = bnodeMapping.getBinding(pattern.getSubjectVar().getName());
 
 				if (mappedSubject != null) {
-					subject = (Resource)mappedSubject.getValue();
+					patternValue = mappedSubject.getValue();
+					if (patternValue instanceof Resource) {
+						subject = (Resource)patternValue;
+					}
 				}
 				else {
 					subject = vf.createBNode();
@@ -741,11 +757,25 @@ public class SailUpdateExecutor {
 			}
 		}
 
+		if (subject == null) {
+			return null;
+		}
+
 		if (pattern.getPredicateVar().hasValue()) {
-			predicate = (IRI)pattern.getPredicateVar().getValue();
+			patternValue = pattern.getPredicateVar().getValue();
+			if (patternValue instanceof IRI) {
+				predicate = (IRI)patternValue;
+			}
 		}
 		else {
-			predicate = (IRI)sourceBinding.getValue(pattern.getPredicateVar().getName());
+			patternValue = sourceBinding.getValue(pattern.getPredicateVar().getName());
+			if (patternValue instanceof IRI) {
+				predicate = (IRI)patternValue;
+			}
+		}
+
+		if (predicate == null) {
+			return null;
 		}
 
 		if (pattern.getObjectVar().hasValue()) {
@@ -758,7 +788,10 @@ public class SailUpdateExecutor {
 				Binding mappedObject = bnodeMapping.getBinding(pattern.getObjectVar().getName());
 
 				if (mappedObject != null) {
-					object = (Resource)mappedObject.getValue();
+					patternValue = mappedObject.getValue();
+					if (patternValue instanceof Resource) {
+						object = (Resource)patternValue;
+					}
 				}
 				else {
 					object = vf.createBNode();
@@ -767,12 +800,22 @@ public class SailUpdateExecutor {
 			}
 		}
 
+		if (object == null) {
+			return null;
+		}
+
 		if (pattern.getContextVar() != null) {
 			if (pattern.getContextVar().hasValue()) {
-				context = (Resource)pattern.getContextVar().getValue();
+				patternValue = pattern.getContextVar().getValue();
+				if (patternValue instanceof Resource) {
+					context = (Resource)patternValue;
+				}
 			}
 			else {
-				context = (Resource)sourceBinding.getValue(pattern.getContextVar().getName());
+				patternValue = sourceBinding.getValue(pattern.getContextVar().getName());
+				if (patternValue instanceof Resource) {
+					context = (Resource)patternValue;
+				}
 			}
 		}
 
