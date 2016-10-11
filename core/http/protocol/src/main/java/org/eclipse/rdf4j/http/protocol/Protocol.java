@@ -96,6 +96,10 @@ public abstract class Protocol {
 	 */
 	public static final String QUERY_PARAM_NAME = "query";
 
+	public static final String LIMIT_PARAM_NAME = "limit";
+	
+	public static final String OFFSET_PARAM_NAME = "offset";
+	
 	/**
 	 * Parameter name for the query language parameter.
 	 */

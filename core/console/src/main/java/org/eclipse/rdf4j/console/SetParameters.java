@@ -7,10 +7,42 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
+import java.util.Objects;
+
+import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.BiMap;
+import com.google.common.collect.ImmutableBiMap;
+import com.google.common.collect.ImmutableBiMap.Builder;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+
 /**
  * @author dale
  */
 public class SetParameters implements Command {
+
+	private static final String QUERYPREFIX_COMMAND = "queryprefix";
+
+	private static final String SHOWPREFIX_COMMAND = "showprefix";
+
+	private static final String WIDTH_COMMAND = "width";
+
+	private static final String LOG_COMMAND = "log";
+
+	private static final BiMap<String, Level> LOG_LEVELS;
+
+	static {
+		Builder<String, Level> logLevels = ImmutableBiMap.<String, Level> builder();
+
+		logLevels.put("none", Level.OFF);
+		logLevels.put("error", Level.ERROR);
+		logLevels.put("warning", Level.WARN);
+		logLevels.put("info", Level.INFO);
+		logLevels.put("debug", Level.DEBUG);
+		LOG_LEVELS = logLevels.build();
+	}
 
 	private final ConsoleIO consoleIO;
 
@@ -23,41 +55,63 @@ public class SetParameters implements Command {
 
 	public void execute(String... tokens) {
 		if (tokens.length == 1) {
-			showParameters();
+			showAllParameters();
 		}
 		else if (tokens.length == 2) {
 			final String param = tokens[1];
-			String key, value;
 			final int eqIdx = param.indexOf('=');
-			if (eqIdx == -1) {
-				key = param;
-				value = null; // NOPMD
+			if (eqIdx < 0) {
+				showParameter(param);
 			}
 			else {
-				key = param.substring(0, eqIdx);
-				value = param.substring(eqIdx + 1);
+				final String key = param.substring(0, eqIdx);
+				final String value = param.substring(eqIdx + 1);
+				setParameter(key, value);
 			}
-			setParameter(key, value);
 		}
 		else {
 			consoleIO.writeln(PrintHelp.SET);
 		}
 	}
 
-	private void showParameters() {
-		setWidth(null);
-		setShowPrefix(null);
-		setQueryPrefix(null);
+	private void showAllParameters() {
+		showLogLevel();
+		showWidth();
+		showPrefix();
+		showQueryPrefix();
+	}
+
+	private void showParameter(String key) {
+		if (LOG_COMMAND.equalsIgnoreCase(key)) {
+			showLogLevel();
+		}
+		else if (WIDTH_COMMAND.equalsIgnoreCase(key)) {
+			showWidth();
+		}
+		else if (SHOWPREFIX_COMMAND.equalsIgnoreCase(key)) {
+			showPrefix();
+		}
+		else if (QUERYPREFIX_COMMAND.equalsIgnoreCase(key)) {
+			showQueryPrefix();
+		}
+		else {
+			consoleIO.writeError("unknown parameter: " + key);
+		}
 	}
 
 	private void setParameter(final String key, final String value) {
-		if ("width".equalsIgnoreCase(key)) {
+		Objects.requireNonNull(key, "parameter key was missing");
+		Objects.requireNonNull(value, "parameter value was missing");
+		if (LOG_COMMAND.equalsIgnoreCase(key)) {
+			setLog(value);
+		}
+		else if (WIDTH_COMMAND.equalsIgnoreCase(key)) {
 			setWidth(value);
 		}
-		else if ("showprefix".equalsIgnoreCase(key)) {
+		else if (SHOWPREFIX_COMMAND.equalsIgnoreCase(key)) {
 			setShowPrefix(value);
 		}
-		else if ("queryprefix".equalsIgnoreCase(key)) {
+		else if (QUERYPREFIX_COMMAND.equalsIgnoreCase(key)) {
 			setQueryPrefix(value);
 		}
 		else {
@@ -65,41 +119,59 @@ public class SetParameters implements Command {
 		}
 	}
 
-	private void setWidth(final String value) {
-		if (value == null) {
-			consoleIO.writeln("width: " + parameters.getWidth());
+	private void showLogLevel() {
+		Logger logbackRootLogger = (Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+		Level currentLevel = logbackRootLogger.getLevel();
+
+		String levelString = LOG_LEVELS.inverse().getOrDefault(currentLevel, currentLevel.levelStr);
+
+		consoleIO.writeln("log: " + levelString);
+	}
+
+	private void setLog(final String value) {
+		// Assume Logback
+		Level logLevel = LOG_LEVELS.get(value.toLowerCase());
+		if (logLevel != null) {
+			Logger logbackRootLogger = (Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+			logbackRootLogger.setLevel(logLevel);
 		}
 		else {
-			try {
-				final int width = Integer.parseInt(value);
-				if (width > 0) {
-					parameters.setWidth(width);
-				}
-				else {
-					consoleIO.writeError("Width must be larger than 0");
-				}
+			consoleIO.writeError("unknown logging level: " + value);
+		}
+	}
+
+	private void showWidth() {
+		consoleIO.writeln("width: " + parameters.getWidth());
+	}
+
+	private void setWidth(final String value) {
+		try {
+			final int width = Integer.parseInt(value);
+			if (width > 0) {
+				parameters.setWidth(width);
 			}
-			catch (NumberFormatException e) {
-				consoleIO.writeError("Width must be a positive number");
+			else {
+				consoleIO.writeError("Width must be larger than 0");
 			}
 		}
+		catch (NumberFormatException e) {
+			consoleIO.writeError("Width must be a positive number");
+		}
+	}
+
+	private void showPrefix() {
+		consoleIO.writeln("showPrefix: " + parameters.isShowPrefix());
 	}
 
 	private void setShowPrefix(final String value) {
-		if (value == null) {
-			consoleIO.writeln("showPrefix: " + parameters.isShowPrefix());
-		}
-		else {
-			parameters.setShowPrefix(Boolean.parseBoolean(value));
-		}
+		parameters.setShowPrefix(Boolean.parseBoolean(value));
+	}
+
+	private void showQueryPrefix() {
+		consoleIO.writeln("queryPrefix: " + parameters.isQueryPrefix());
 	}
 
 	private void setQueryPrefix(final String value) {
-		if (value == null) {
-			consoleIO.writeln("queryPrefix: " + parameters.isQueryPrefix());
-		}
-		else {
-			parameters.setQueryPrefix(Boolean.parseBoolean(value));
-		}
+		parameters.setQueryPrefix(Boolean.parseBoolean(value));
 	}
 }
