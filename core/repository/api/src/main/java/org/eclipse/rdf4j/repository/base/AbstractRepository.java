@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.repository.base;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Base class for {@link Repository} implementation, offering common functionality.
@@ -21,6 +23,8 @@ public abstract class AbstractRepository implements Repository {
 	private volatile boolean initialized = false;
 
 	private final Object initLock = new Object();
+
+	protected final Logger logger = LoggerFactory.getLogger(getClass());
 
 	public final void initialize()
 		throws RepositoryException
