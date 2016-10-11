@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import static org.mockito.Mockito.mock;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -34,15 +32,39 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+import org.junit.After;
+import org.junit.Rule;
+import org.mockito.Mock;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 /**
  * @author Dale Visser
  */
 public class AbstractCommandTest {
 
+	/*
+	 * Switch off .silent() to debug specific tests and reenable it afterwards.
+	 */
+	@Rule
+	public MockitoRule abstractCommandTestMockitoRule = MockitoJUnit.rule().silent();
+
 	protected RepositoryManager manager;
 
-	protected ConsoleIO streams = mock(ConsoleIO.class);
+	@Mock
+	protected ConsoleIO mockConsoleIO;
+
+	@Mock
+	protected ConsoleState mockConsoleState;
+
+	@After
+	public void tearDown()
+		throws Exception
+	{
+		if (manager != null) {
+			manager.shutDown();
+		}
+	}
 
 	protected final void addRepositories(String... identities)
 		throws UnsupportedEncodingException, IOException, RDF4JException

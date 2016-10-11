@@ -77,34 +77,32 @@ public class Federate implements Command {
 		if (LOGGER.isDebugEnabled()) {
 			logCallDetails(distinct, readonly, fedID, memberIDs);
 		}
-		else {
-			RepositoryManager manager = state.getManager();
-			try {
-				if (manager.hasRepositoryConfig(fedID)) {
-					cio.writeError(fedID + " already exists.");
-				}
-				else if (validateMembers(manager, readonly, memberIDs)) {
-					String description = cio.readln("Federation Description (optional):");
-					RepositoryManagerFederator rmf = new RepositoryManagerFederator(manager);
-					rmf.addFed(fedID, description, memberIDs, readonly, distinct);
-					cio.writeln("Federation created.");
-				}
+		RepositoryManager manager = state.getManager();
+		try {
+			if (manager.hasRepositoryConfig(fedID)) {
+				cio.writeError(fedID + " already exists.");
 			}
-			catch (RepositoryConfigException rce) {
-				cio.writeError(rce.getMessage());
+			else if (validateMembers(manager, readonly, memberIDs)) {
+				String description = cio.readln("Federation Description (optional):");
+				RepositoryManagerFederator rmf = new RepositoryManagerFederator(manager);
+				rmf.addFed(fedID, description, memberIDs, readonly, distinct);
+				cio.writeln("Federation created.");
 			}
-			catch (RepositoryException re) {
-				cio.writeError(re.getMessage());
-			}
-			catch (MalformedURLException mue) {
-				cio.writeError(mue.getMessage());
-			}
-			catch (RDF4JException ore) {
-				cio.writeError(ore.getMessage());
-			}
-			catch (IOException ioe) {
-				cio.writeError(ioe.getMessage());
-			}
+		}
+		catch (RepositoryConfigException rce) {
+			cio.writeError(rce.getMessage());
+		}
+		catch (RepositoryException re) {
+			cio.writeError(re.getMessage());
+		}
+		catch (MalformedURLException mue) {
+			cio.writeError(mue.getMessage());
+		}
+		catch (RDF4JException ore) {
+			cio.writeError(ore.getMessage());
+		}
+		catch (IOException ioe) {
+			cio.writeError(ioe.getMessage());
 		}
 	}
 
