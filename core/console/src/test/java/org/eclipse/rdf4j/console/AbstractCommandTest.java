@@ -45,9 +45,11 @@ public class AbstractCommandTest {
 
 	/*
 	 * Switch off .silent() to debug specific tests and reenable it afterwards.
+	 * 
+	 * Note, .silent() was added in Mockito 2, so has been removed until we update.
 	 */
 	@Rule
-	public MockitoRule abstractCommandTestMockitoRule = MockitoJUnit.rule().silent();
+	public MockitoRule abstractCommandTestMockitoRule = MockitoJUnit.rule(); //.silent();
 
 	protected RepositoryManager manager;
 
