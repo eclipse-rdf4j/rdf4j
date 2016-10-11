@@ -294,8 +294,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public void shutDown()
 		throws SailException
 	{
-		logger.debug("LuceneSail shutdown");
 		if (closed.compareAndSet(false, true)) {
+			logger.debug("LuceneSail shutdown");
 			try {
 				SearchIndex toShutDownLuceneIndex = luceneIndex;
 				luceneIndex = null;
