@@ -1,0 +1,9 @@
+:stylesdir: ../css/
+:stylesheet: rdf4j.css
+:linkcss:
+:source-highlighter: prettify
+:icons: font
+:imagesdir: images
+:sectnums:
+:toc: left
+:docinfo1:
