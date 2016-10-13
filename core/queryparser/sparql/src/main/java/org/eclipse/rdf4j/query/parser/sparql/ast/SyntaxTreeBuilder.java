@@ -62,6 +62,11 @@ public class SyntaxTreeBuilder/* @bgen(jjtree) */ implements SyntaxTreeBuilderTr
 		throws TokenMgrError, ParseException
 	{
 		SyntaxTreeBuilder stb = new SyntaxTreeBuilder(new StringReader(sequence));
+
+		// Set size of tab to 1 to force tokenmanager to report correct column
+		// index for substring splitting of service graph pattern.
+		stb.jj_input_stream.setTabSize(1);
+
 		ASTUpdateSequence seq = stb.UpdateSequence();
 		seq.setSourceString(sequence);
 		return seq;
