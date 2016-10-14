@@ -114,6 +114,54 @@ public abstract class SPARQLUpdateTest {
 	/* test methods */
 
 	@Test
+	public void testInsertWhereInvalidTriple() throws Exception {
+		StringBuilder update = new StringBuilder();
+		update.append(getNamespaceDeclarations());
+		update.append("INSERT {?name a foaf:Person. ?x a <urn:TestSubject>. } WHERE { ?x foaf:name ?name }");
+		
+		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
+		
+		try {
+			operation.execute();
+		} catch (ClassCastException e) {
+			fail("subject-literal triple pattern should be silently ignored");
+		}
+		
+		assertTrue(con.hasStatement((Resource)null, RDF.TYPE, con.getValueFactory().createIRI("urn:TestSubject"), true));
+	}
+	
+	@Test
+	public void testDeleteWhereInvalidTriple() throws Exception {
+		StringBuilder update = new StringBuilder();
+		update.append(getNamespaceDeclarations());
+		update.append("DELETE {?name a foaf:Person. ?x foaf:name ?name } WHERE { ?x foaf:name ?name }");
+		
+		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
+		
+		try {
+			operation.execute();
+		} catch (ClassCastException e) {
+			fail("subject-literal triple pattern should be silently ignored");
+		}
+		assertFalse(con.hasStatement(null, FOAF.NAME, null, true));
+	}
+	
+	@Test
+	public void testDeleteInsertWhereInvalidTriple() throws Exception {
+		StringBuilder update = new StringBuilder();
+		update.append(getNamespaceDeclarations());
+		update.append("DELETE {?name a foaf:Person} INSERT {?name a foaf:Agent} WHERE { ?x foaf:name ?name }");
+		
+		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
+		
+		try {
+			operation.execute();
+		} catch (ClassCastException e) {
+			fail("subject-literal triple pattern should be silently ignored");
+		}
+	}
+	
+	@Test
 	public void testInsertWhere()
 		throws Exception
 	{

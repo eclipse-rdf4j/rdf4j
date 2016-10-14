@@ -17,7 +17,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -211,7 +210,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 		// do some initialization for new indices
 		if (!DirectoryReader.indexExists(directory)) {
-			logger.info("creating new Lucene index in directory {}", directory);
+			logger.debug("creating new Lucene index in directory {}", directory);
 			IndexWriterConfig indexWriterConfig = new IndexWriterConfig(analyzer);
 			indexWriterConfig.setOpenMode(OpenMode.CREATE);
 			IndexWriter writer = new IndexWriter(directory, indexWriterConfig);
