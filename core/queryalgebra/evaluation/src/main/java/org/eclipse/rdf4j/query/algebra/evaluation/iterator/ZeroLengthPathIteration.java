@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 
 public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
@@ -60,7 +59,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	private final EvaluationStrategy evaluationStrategy;
 
-	public ZeroLengthPathIteration(StrictEvaluationStrategy evaluationStrategyImpl, Var subjectVar,
+	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar,
 			Var objVar, Value subj, Value obj, Var contextVar, BindingSet bindings)
 	{
 		this.evaluationStrategy = evaluationStrategyImpl;
