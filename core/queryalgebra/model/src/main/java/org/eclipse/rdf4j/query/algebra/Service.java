@@ -240,7 +240,7 @@ public class Service extends UnaryTupleOperator {
 		else {
 			sb.append("SELECT %PROJECTION_VARS% WHERE { ");
 			sb.append(serviceExpressionString);
-			sb.append(" }");
+			sb.append("\n}");
 		}
 		preparedSelectQueryString = sb.toString();
 
