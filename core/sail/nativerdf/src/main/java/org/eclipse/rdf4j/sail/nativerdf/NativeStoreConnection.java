@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
@@ -150,7 +150,7 @@ public class NativeStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
-		return new SimpleEvaluationStrategy(tripleSource, dataset, getFederatedServiceResolver(),
+		return new StrictEvaluationStrategy(tripleSource, dataset, getFederatedServiceResolver(),
 				nativeStore.getIterationCacheSyncThreshold());
 	}
 
