@@ -56,7 +56,7 @@ public class ConstantOptimizerTest {
 		constants.addBinding("a", BooleanLiteral.TRUE);
 		constants.addBinding("b", BooleanLiteral.FALSE);
 
-		EvaluationStrategy strategy = new SimpleEvaluationStrategy(new EmptyTripleSource(), null);
+		EvaluationStrategy strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
 		TupleExpr optimized = optimize(pq.getTupleExpr().clone(), constants, strategy);
 
 		optimized.visit(finder);
@@ -80,7 +80,7 @@ public class ConstantOptimizerTest {
 				+ " bind(concat(?a, ?b) as ?c) \n" + "}";
 
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
-		EvaluationStrategy strategy = new SimpleEvaluationStrategy(new EmptyTripleSource(), null);
+		EvaluationStrategy strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
 		TupleExpr original = pq.getTupleExpr();
 
 		final AlgebraFinder finder = new AlgebraFinder();

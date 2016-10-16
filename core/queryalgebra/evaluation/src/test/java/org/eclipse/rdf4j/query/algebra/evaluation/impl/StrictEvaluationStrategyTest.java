@@ -12,7 +12,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -23,7 +24,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.Before;
 import org.junit.Test;
 
-public class SimpleEvaluationStrategyTest {
+public class StrictEvaluationStrategyTest {
 
 	private EvaluationStrategy strategy;
 
@@ -31,7 +32,7 @@ public class SimpleEvaluationStrategyTest {
 	public void setUp()
 		throws Exception
 	{
-		strategy = new SimpleEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
 	}
 
 	/**
@@ -45,11 +46,12 @@ public class SimpleEvaluationStrategyTest {
 		String query = "SELECT ?a ?b WHERE {}";
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 
+		final ValueFactory vf = SimpleValueFactory.getInstance();
 		QueryBindingSet constants = new QueryBindingSet();
-		constants.addBinding("a", ValueFactoryImpl.getInstance().createLiteral("foo"));
-		constants.addBinding("b", ValueFactoryImpl.getInstance().createLiteral("bar"));
-		constants.addBinding("x", ValueFactoryImpl.getInstance().createLiteral("X"));
-		constants.addBinding("y", ValueFactoryImpl.getInstance().createLiteral("Y"));
+		constants.addBinding("a", vf.createLiteral("foo"));
+		constants.addBinding("b", vf.createLiteral("bar"));
+		constants.addBinding("x", vf.createLiteral("X"));
+		constants.addBinding("y", vf.createLiteral("Y"));
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(pq.getTupleExpr(),
 				constants);
