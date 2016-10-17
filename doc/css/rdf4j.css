@@ -304,7 +304,6 @@ b.button:after { content: "]"; padding: 0 2px 0 3px; }
 
 #header, #content, #footnotes, #footer { width: 100%; margin-left: auto; margin-right: auto; margin-top: 0; margin-bottom: 0; max-width: 62.5em; *zoom: 1; position: relative; padding-left: 0.9375em; padding-right: 0.9375em; }
 #header:before, #header:after, #content:before, #content:after, #footnotes:before, #footnotes:after, #footer:before, #footer:after { content: " "; display: table; }
-#header:before { content: "boo" }
 #header:after, #content:after, #footnotes:after, #footer:after { clear: both; }
 
 #content { margin-top: 1.25em; }
