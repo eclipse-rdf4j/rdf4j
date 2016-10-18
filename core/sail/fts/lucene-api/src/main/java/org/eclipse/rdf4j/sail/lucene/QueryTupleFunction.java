@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -76,7 +77,7 @@ public class QueryTupleFunction implements TupleFunction {
 
 		final QuerySpec query = new QuerySpec(matchesVarName, propertyVarName, scoreVarName, snippetVarName,
 				subject, queryString, propertyURI);
-		SearchIndex luceneIndex = QueryContext.getSearchIndex();
+		SearchIndex luceneIndex = QueryContext.getQueryContext().getAttribute(SearchIndex.class.getName());
 		// mark that reading is in progress
 		try {
 			luceneIndex.beginReading();

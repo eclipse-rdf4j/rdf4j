@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.spin;
+package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.NoSuchElementException;
 
@@ -13,20 +13,19 @@ import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryPreparer;
-import org.eclipse.rdf4j.spin.QueryContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
 
 public class QueryContextIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
 
 	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
 
-	private final QueryPreparer queryPreparer;
+	private final QueryContext queryContext;
 
 	public QueryContextIteration(CloseableIteration<? extends BindingSet, QueryEvaluationException> iter,
-			QueryPreparer queryPreparer)
+			QueryContext queryContext)
 	{
 		this.iter = iter;
-		this.queryPreparer = queryPreparer;
+		this.queryContext = queryContext;
 	}
 
 	@Override
@@ -36,12 +35,12 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 		if (isClosed()) {
 			return false;
 		}
-		QueryContext qctx = QueryContext.begin(queryPreparer);
+		queryContext.begin();
 		try {
 			return iter.hasNext();
 		}
 		finally {
-			qctx.end();
+			queryContext.end();
 		}
 	}
 
@@ -52,12 +51,12 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
-		QueryContext qctx = QueryContext.begin(queryPreparer);
+		queryContext.begin();
 		try {
 			return iter.next();
 		}
 		finally {
-			qctx.end();
+			queryContext.end();
 		}
 	}
 
@@ -68,12 +67,12 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
 		}
-		QueryContext qctx = QueryContext.begin(queryPreparer);
+		queryContext.begin();
 		try {
 			iter.remove();
 		}
 		finally {
-			qctx.end();
+			queryContext.end();
 		}
 	}
 
@@ -85,12 +84,12 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 			super.handleClose();
 		}
 		finally {
-			QueryContext qctx = QueryContext.begin(queryPreparer);
+			queryContext.begin();
 			try {
 				iter.close();
 			}
 			finally {
-				qctx.end();
+				queryContext.end();
 			}
 		}
 	}
