@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.AbstractFederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
@@ -64,6 +65,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.QueryContextIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -78,7 +80,6 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.inferencer.fc.AbstractForwardChainingInferencerConnection;
 import org.eclipse.rdf4j.sail.inferencer.util.RDFInferencerInserter;
 import org.eclipse.rdf4j.spin.ConstraintViolation;
-import org.eclipse.rdf4j.spin.QueryContext;
 import org.eclipse.rdf4j.spin.RuleProperty;
 import org.eclipse.rdf4j.spin.SpinParser;
 import org.eclipse.rdf4j.spin.function.TransientFunction;
@@ -168,7 +169,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		throws SailException
 	{
 		final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
-		QueryContext qctx = QueryContext.begin(queryPreparer);
+		QueryContext qctx = new QueryContext(queryPreparer);
+		qctx.begin();
 		try {
 			iter = evaluateInternal(tupleExpr, dataset, bindings, includeInferred);
 		}
@@ -178,7 +180,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 		// NB: Iteration methods may do on-demand evaluation hence need to wrap
 		// these too
-		return new QueryContextIteration(iter, queryPreparer);
+		return new QueryContextIteration(iter, qctx);
 	}
 
 	private CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(

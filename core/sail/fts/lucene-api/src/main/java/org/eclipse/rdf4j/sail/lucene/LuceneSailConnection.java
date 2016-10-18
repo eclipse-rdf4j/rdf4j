@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingAssigner;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.CompareOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConjunctiveConstraintSplitter;
@@ -51,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.QueryContextIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
@@ -309,8 +311,11 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
 		throws SailException
 	{
+		QueryContext qctx = new QueryContext();
+		qctx.setAttribute(SearchIndex.class.getName(), luceneIndex);
+
 		final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
-		QueryContext qctx = QueryContext.begin(luceneIndex);
+		qctx.begin();
 		try {
 			iter = evaluateInternal(tupleExpr, dataset, bindings, includeInferred);
 		}
@@ -320,7 +325,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 		// NB: Iteration methods may do on-demand evaluation hence need to wrap
 		// these too
-		return new QueryContextIteration(iter, luceneIndex);
+		return new QueryContextIteration(iter, qctx);
 	}
 
 	private CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
