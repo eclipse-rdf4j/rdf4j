@@ -5,5 +5,5 @@
 :icons: font
 :imagesdir: ../images/
 :sectnums:
-:toc: left
+:toc: right
 :docinfo1:
