@@ -26,9 +26,13 @@
 .tocify-focus > a {
     color: #7a2518; 
 }
+
 </style>
 
 <script type="text/javascript">
+   $( document ).ready(function() {
+      $('#project-bar').insertBefore('#header');
+   });
     $(function () {
         // Add a new container for the tocify toc into the existing toc so we can re-use its
         // styling

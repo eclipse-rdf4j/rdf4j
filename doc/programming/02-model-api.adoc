@@ -1,5 +1,4 @@
 = The RDF Model API
-:imagesdir: images
 
 The RDF Model API is the core of the RDF4J framework. It provides the basic building blocks for manipulating RDF data in Java. In this chapter, we introduce these basic building blocks and show some example on hot to use them.
 
