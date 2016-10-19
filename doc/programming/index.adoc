@@ -1,0 +1,15 @@
+Programming with RDF4J
+======================
+include::../shared-settings.adoc[]
+:toclevels: 4
+
+include::01-setup.adoc[leveloffset=+1]
+
+include::02-model-api.adoc[leveloffset=+1]
+
+include::03-repository-api.adoc[leveloffset=+1]
+
+include::04-rio.adoc[leveloffset=+1]
+
+include::05-custom-sails.adoc[leveloffset=+1]
+

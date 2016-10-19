@@ -1,0 +1,7 @@
+#!/bin/bash
+asciidoctor -n -D html doc/index.adoc
+asciidoctor -n -D html/server-workbench-console doc/server-workbench-console/index.adoc
+# cp -r doc/server-workbench-console/images html/server-workbench-console
+asciidoctor -n -D html/migration doc/migration/index.adoc
+asciidoctor -n -D html/programming doc/programming/index.adoc
+cp -r doc/programming/images html/programming
