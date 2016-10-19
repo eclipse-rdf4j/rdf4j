@@ -58,6 +58,14 @@ public class QueryEvaluationUtilTest {
 
 	private Literal arg2dateTime;
 
+	private Literal arg1duration;
+
+	private Literal arg2duration;
+
+	private Literal arg1yearMonthDuration;
+
+	private Literal arg2yearMonthDuration;
+
 	private Literal arg1unknown;
 
 	private Literal arg2unknown;
@@ -86,6 +94,12 @@ public class QueryEvaluationUtilTest {
 
 		arg1int = f.createLiteral(10);
 		arg2int = f.createLiteral(1);
+
+		arg1duration = f.createLiteral("P1Y30DT1H1M1S", XMLSchema.DURATION);
+		arg2duration = f.createLiteral("P1Y31DT1H1M1S", XMLSchema.DURATION);
+
+		arg1yearMonthDuration = f.createLiteral("P1M", XMLSchema.YEARMONTHDURATION);
+		arg2yearMonthDuration = f.createLiteral("P1Y1M", XMLSchema.YEARMONTHDURATION);
 
 		arg1unknown = f.createLiteral("foo", f.createIRI("http://example.com/datatype"));
 		arg2unknown = f.createLiteral("bar", f.createIRI("http://example.com/datatype"));
@@ -141,6 +155,8 @@ public class QueryEvaluationUtilTest {
 		assertCompareTrue(arg1int, arg1int, EQ);
 		assertCompareTrue(arg1year, arg1year, EQ);
 		assertCompareTrue(arg1dateTime, arg1dateTime, EQ);
+		assertCompareTrue(arg1duration, arg1duration, EQ);
+		assertCompareTrue(arg1yearMonthDuration, arg1yearMonthDuration, EQ);
 		assertCompareException(arg1unknown, arg2unknown, EQ);
 
 		assertCompareFalse(arg1simple, arg2simple, EQ);
@@ -198,6 +214,18 @@ public class QueryEvaluationUtilTest {
 		assertCompareFalse(arg1dateTime, arg2year, EQ);
 		assertCompareFalse(arg1dateTime, arg2dateTime, EQ);
 		assertCompareException(arg1dateTime, arg2unknown, EQ);
+
+		assertCompareException(arg1duration, arg2simple, EQ);
+		assertCompareFalse(arg1duration, arg2en, EQ);
+		assertCompareException(arg1duration, arg2string, EQ);
+		assertCompareException(arg1duration, arg2int, EQ);
+		assertCompareException(arg1duration, arg2year, EQ);
+		assertCompareException(arg1duration, arg2dateTime, EQ);
+		assertCompareException(arg1duration, arg2duration, EQ);
+		assertCompareFalse(arg1duration, arg2duration, EQ, false);
+		assertCompareException(arg1duration, arg2yearMonthDuration, EQ);
+		assertCompareException(arg1duration, arg2yearMonthDuration, EQ, false);
+		assertCompareException(arg1duration, arg2unknown, EQ);
 	}
 
 	@Test
@@ -268,6 +296,18 @@ public class QueryEvaluationUtilTest {
 		assertCompareTrue(arg1dateTime, arg2year, NE);
 		assertCompareTrue(arg1dateTime, arg2dateTime, NE);
 		assertCompareException(arg1dateTime, arg2unknown, NE);
+
+		assertCompareException(arg1duration, arg2simple, NE);
+		assertCompareTrue(arg1duration, arg2en, NE);
+		assertCompareException(arg1duration, arg2string, NE);
+		assertCompareException(arg1duration, arg2int, NE);
+		assertCompareException(arg1duration, arg2year, NE);
+		assertCompareException(arg1duration, arg2dateTime, NE);
+		assertCompareException(arg1duration, arg2duration, NE);
+		assertCompareTrue(arg1duration, arg2duration, NE, false);
+		assertCompareException(arg1duration, arg2yearMonthDuration, NE);
+		assertCompareException(arg1duration, arg2yearMonthDuration, NE, false);
+		assertCompareException(arg1duration, arg2unknown, NE);
 	}
 
 	@Test
@@ -332,6 +372,46 @@ public class QueryEvaluationUtilTest {
 		assertCompareException(arg1dateTime, arg2year, LT);
 		assertCompareFalse(arg1dateTime, arg2dateTime, LT);
 		assertCompareException(arg1dateTime, arg2unknown, LT);
+
+		assertCompareException(arg1duration, arg2simple, LT);
+		assertCompareException(arg1duration, arg2en, LT);
+		assertCompareException(arg1duration, arg2string, LT);
+		assertCompareException(arg1duration, arg2int, LT);
+		assertCompareException(arg1duration, arg2year, LT);
+		assertCompareException(arg1duration, arg2dateTime, LT);
+		assertCompareException(arg1duration, arg2duration, LT);
+		assertCompareTrue(arg1duration, arg2duration, LT, false);
+		assertCompareException(arg1duration, arg2yearMonthDuration, LT);
+		assertCompareException(arg1duration, arg2yearMonthDuration, LT, false);
+		assertCompareException(arg1duration, arg2unknown, LT);
+
+		assertCompareException(arg1yearMonthDuration, arg2simple, LT);
+		assertCompareException(arg1yearMonthDuration, arg2en, LT);
+		assertCompareException(arg1yearMonthDuration, arg2string, LT);
+		assertCompareException(arg1yearMonthDuration, arg2int, LT);
+		assertCompareException(arg1yearMonthDuration, arg2year, LT);
+		assertCompareException(arg1yearMonthDuration, arg2dateTime, LT);
+		assertCompareException(arg1yearMonthDuration, arg2duration, LT);
+		assertCompareTrue(arg1yearMonthDuration, arg2duration, LT, false);
+		assertCompareException(arg1yearMonthDuration, arg2yearMonthDuration, LT);
+		assertCompareTrue(arg1yearMonthDuration, arg2yearMonthDuration, LT, false);
+		assertCompareException(arg1yearMonthDuration, arg2unknown, LT);
+	}
+
+	/**
+	 * Assert that there is an exception as a result of comparing the two literals with the given operator.
+	 *
+	 * @param lit1
+	 *        The left literal
+	 * @param lit2
+	 *        The right literal
+	 * @param op
+	 *        The operator for the comparison
+	 */
+	private void assertCompareException(Literal lit1, Literal lit2, CompareOp op)
+			throws Exception
+	{
+		assertCompareException(lit1, lit2, op, true);
 	}
 
 	/**
@@ -344,11 +424,11 @@ public class QueryEvaluationUtilTest {
 	 * @param op
 	 *        The operator for the comparison
 	 */
-	private void assertCompareException(Literal lit1, Literal lit2, CompareOp op)
+	private void assertCompareException(Literal lit1, Literal lit2, CompareOp op, boolean strict)
 		throws Exception
 	{
 		try {
-			boolean returnValue = QueryEvaluationUtil.compareLiterals(lit1, lit2, op);
+			boolean returnValue = QueryEvaluationUtil.compareLiterals(lit1, lit2, op, strict);
 			fail("Did not receive expected ValueExprEvaluationException (return value was " + returnValue
 					+ ") for " + lit1.toString() + op.getSymbol() + lit2.toString());
 		}

@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
 import javax.xml.datatype.DatatypeConstants;
+import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -229,6 +230,11 @@ public class QueryEvaluationUtil {
 					// We're not running in strict eval mode so we use extended datatype comparsion.
 					commonDatatype = XMLSchema.DATETIME;
 				}
+				else if (!strict && XMLDatatypeUtil.isDurationDatatype(leftDatatype)
+						&& XMLDatatypeUtil.isDurationDatatype(rightDatatype))
+				{
+					commonDatatype = XMLSchema.DURATION;
+				}
 			}
 
 			if (commonDatatype != null) {
@@ -272,6 +278,14 @@ public class QueryEvaluationUtil {
 								compareResult = null;
 							}
 
+						}
+					}
+					else if (!strict && XMLDatatypeUtil.isDurationDatatype(commonDatatype)) {
+						Duration left = XMLDatatypeUtil.parseDuration(leftLit.getLabel());
+						Duration right = XMLDatatypeUtil.parseDuration(rightLit.getLabel());
+						compareResult = left.compare(right);
+						if (compareResult == DatatypeConstants.INDETERMINATE) {
+							compareResult = null; //We fallback to regular term comparison
 						}
 					}
 					else if (commonDatatype.equals(XMLSchema.STRING)) {
