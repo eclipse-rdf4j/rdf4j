@@ -2,10 +2,10 @@ include::../shared-settings.adoc[]
 :toclevels: 4
 include::../header.adoc[]
 
+:numbered!:
 == Programming with RDF4J
 
-The RDF4J APIs are a highly flexible set of tools. In this manual, we look at how to use the core APIs.
-
+:numbered:
 include::01-setup.adoc[leveloffset=+1]
 
 include::02-model-api.adoc[leveloffset=+1]

@@ -2,8 +2,10 @@ include::../shared-settings.adoc[]
 :toclevels: 3
 include::../header.adoc[]
 
+:numbered!:
 == RDF4J Server, Workbench, and Console
 
+:numbered:
 include::01-install.adoc[leveloffset=+1]
 
 include::02-console.adoc[leveloffset=+1]
