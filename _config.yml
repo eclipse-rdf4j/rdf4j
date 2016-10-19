@@ -13,14 +13,16 @@
 # you will see them accessed via {{ site.title }}, {{ site.email }}, and so on.
 # You can create any custom variable you would like, and they will be accessible
 # in the templates via {{ site.myvariable }}.
-title: Eclipse RDF4J Documentation
-email: rdf4j-users@googlegroups.com
+title: Your awesome title
+email: your-email@domain.com
 description: > # this means to ignore newlines until "baseurl:"
-   Eclipse RDF4J (formerly known as Sesame) is a powerful Java framework for processing and handling RDF data. This includes creating, parsing, scalable storage, reasoning and querying with RDF and Linked Data. It offers an easy-to-use API that can be connected to all leading RDF database solutions.
+  Write an awesome description for your new site here. You can edit this
+  line in _config.yml. It will appear in your document head meta (for
+  Google search results) and in your feed.xml site description.
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
-#twitter_username: rdf4j
-#github_username:  jekyll
+twitter_username: jekyllrb
+github_username:  jekyll
 
 # Build settings
 markdown: kramdown
