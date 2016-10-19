@@ -2,6 +2,7 @@
 :stylesdir: css/
 :stylesheet: rdf4j.css
 :linkcss:
+:toc: right
 include::header.adoc[]
 
 :numbered!:
@@ -9,6 +10,23 @@ include::header.adoc[]
 
 Welcome to the Eclipse RDF4J documentation site. This is a work in progress.
 
+== Tutorials 
+
+- link:getting-started[Getting Started with RDF4J, Maven, and Eclipse]
+
+== Reference Documentation
+
 - link:migration[Sesame to RDF4J Migration Guide]
 - link:programming[Programming with RDF4J]
 - link:server-workbench-console[RDF4J Server, Workbench, and Console]
+
+== Javadoc
+
+- http://rdf4j.org/javadoc/latest[RDF4J API Javadoc]
+- older versions: [http://rdf4j.org/javadoc/1.0[1.0]]
+
+
+== Sesame Archives
+
+If you are looking for documentation belonging to the (now deprecated) Sesame project, you can go to the http://archive.rdf4j.org/[archive website].
+
