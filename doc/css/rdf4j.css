@@ -304,14 +304,43 @@ b.button:after { content: "]"; padding: 0 2px 0 3px; }
 
 #header, #content, #footnotes, #footer { width: 100%; margin-left: auto; margin-right: auto; margin-top: 0; margin-bottom: 0; max-width: 62.5em; *zoom: 1; position: relative; padding-left: 0.9375em; padding-right: 0.9375em; }
 #header:before, #header:after, #content:before, #content:after, #footnotes:before, #footnotes:after, #footer:before, #footer:after { content: " "; display: table; }
-#header:before { content: "boo" }
 #header:after, #content:after, #footnotes:after, #footer:after { clear: both; }
-
-#content { margin-top: 1.25em; }
 
 #content:before { content: none; }
 
-#header > h1:first-child { color: black; margin-top: 2.25rem; margin-bottom: 0; }
+/* formatting for the header menu bar specifically */
+div#content>table:nth-child(2) {
+    border: none; 
+    border-collapse: collapse;
+}
+
+div#content>table:nth-child(2) td {
+    border: none;
+    background-color: #484848;
+}
+
+div#content>table:nth-child(2) p,
+div#content>table:nth-child(2) a:link,
+div#content>table:nth-child(2) a:visited {
+    display: block;
+    width: 100%;
+    color: white;
+}
+
+div#content>table:nth-child(2) td:hover:nth-child(2) {
+    background-color: #eaeaea;
+}
+
+div#content>table:nth-child(2) td:hover a:link,
+div#content>table:nth-child(2) td:hover a:hover,
+div#content>table:nth-child(2) td:hover a:visited {
+    color: black;
+    display: block;
+    text-decoration: none;
+    width: 100%;
+}
+
+#header > h1:first-child { color: black; padding-left: 140px; margin-top: 2.25rem; margin-bottom: 0; }
 #header > h1:first-child + #toc { margin-top: 8px; border-top: 1px solid #dddddd; }
 #header > h1:only-child, body.toc2 #header > h1:nth-last-child(2) { border-bottom: 1px solid #dddddd; padding-bottom: 8px; }
 #header .details { border-bottom: 1px solid #dddddd; line-height: 1.45; padding-top: 0.25em; padding-bottom: 0.25em; padding-left: 0.25em; color: #555555; display: -ms-flexbox; display: -webkit-flex; display: flex; -ms-flex-flow: row wrap; -webkit-flex-flow: row wrap; flex-flow: row wrap; }

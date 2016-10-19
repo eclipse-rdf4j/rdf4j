@@ -1,7 +1,8 @@
-RDF4J Server, Workbench, and Console
-====================================
 include::../shared-settings.adoc[]
 :toclevels: 3
+include::../header.adoc[]
+
+== RDF4J Server, Workbench, and Console
 
 include::01-install.adoc[leveloffset=+1]
 

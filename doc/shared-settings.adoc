@@ -3,7 +3,7 @@
 :linkcss:
 :source-highlighter: prettify
 :icons: font
-:imagesdir: images
+:imagesdir: ../images/
 :sectnums:
 :toc: left
 :docinfo1:

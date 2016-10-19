@@ -1,7 +1,10 @@
-= Eclipse RDF4J Documentation
+:imagesdir: images/
 :stylesdir: css/
 :stylesheet: rdf4j.css
 :linkcss:
+include::header.adoc[]
+
+== Eclipse RDF4J Documentation
 
 Welcome to the Eclipse RDF4J documentation site. This is a work in progress.
 
