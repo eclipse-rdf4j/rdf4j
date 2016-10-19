@@ -308,7 +308,7 @@ b.button:after { content: "]"; padding: 0 2px 0 3px; }
 
 #content:before { content: none; }
 
-/* formatting for the header menu bar specifically */
+/* formatting for the header menu bar (in header.adoc) specifically */
 div#content>table:nth-child(2) {
     border: none; 
     border-collapse: collapse;
@@ -325,10 +325,12 @@ div#content>table:nth-child(2) a:visited {
     display: block;
     width: 100%;
     color: white;
+    text-align: center;
 }
 
 div#content>table:nth-child(2) td:hover:nth-child(2) {
     background-color: #eaeaea;
+    text-align: center;
 }
 
 div#content>table:nth-child(2) td:hover a:link,
@@ -338,6 +340,15 @@ div#content>table:nth-child(2) td:hover a:visited {
     display: block;
     text-decoration: none;
     width: 100%;
+    text-align: center;
+}
+
+/* formatting for site title in header.adoc */
+div#content>div.paragraph:first-child p {
+    font-family: "DIN Condensed";
+    font-size: 40px;
+    font-weight: bold; 
+    text-align: right;
 }
 
 #header > h1:first-child { color: black; padding-left: 140px; margin-top: 2.25rem; margin-bottom: 0; }

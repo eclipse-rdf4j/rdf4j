@@ -1,4 +1,5 @@
 image:rdf4j-logo.png[role="left",link="http://rdf4j.org/"]
+Eclipse rdf4j: documentation
 [cols="1, 2, 2, 2, 2, 6"] 
 |================
 | | link:/[Home] | | | | 
