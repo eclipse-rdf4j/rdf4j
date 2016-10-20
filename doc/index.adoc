@@ -20,8 +20,8 @@ include::header.adoc[]
 
 == Javadoc
 
-- http://rdf4j.org/javadoc/latest[RDF4J API Javadoc]
-- older versions: [http://rdf4j.org/javadoc/1.0[1.0]]
+- link:/javadoc/latest[RDF4J API Javadoc]
+- older versions: [link:/javadoc/1.0[1.0]]
 
 
 == Sesame Archives
