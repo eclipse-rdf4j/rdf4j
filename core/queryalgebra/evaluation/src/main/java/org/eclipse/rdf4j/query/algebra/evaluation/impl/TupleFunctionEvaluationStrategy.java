@@ -37,14 +37,20 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver)
 	{
-		this(tripleSource, dataset, serviceResolver, TupleFunctionRegistry.getInstance());
+		this(tripleSource, dataset, serviceResolver, 0);
 	}
 
 	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-			FederatedServiceResolver serviceResolver,
-			TupleFunctionRegistry tupleFuncRegistry)
+			FederatedServiceResolver serviceResolver, long iterationCacheSyncThreshold)
 	{
-		super(tripleSource, dataset, serviceResolver);
+		this(tripleSource, dataset, serviceResolver, TupleFunctionRegistry.getInstance(), iterationCacheSyncThreshold);
+	}
+	
+	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+			FederatedServiceResolver serviceResolver,
+			TupleFunctionRegistry tupleFuncRegistry, long iterationCacheSyncThreshold)
+	{
+		super(tripleSource, dataset, serviceResolver, iterationCacheSyncThreshold);
 		this.tupleFuncRegistry = tupleFuncRegistry;
 	}
 

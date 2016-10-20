@@ -37,7 +37,15 @@ public class ExtendedEvaluationStrategyFactory
 	}
 
 	@Override
+	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+			long iterationCacheSyncThreshold)
+	{
+		return new ExtendedEvaluationStrategy(tripleSource, dataset, serviceResolver,
+				iterationCacheSyncThreshold);
+	}
+
+	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
-		return new ExtendedEvaluationStrategy(tripleSource, dataset, serviceResolver);
+		return createEvaluationStrategy(dataset, tripleSource, 0);
 	}
 }
