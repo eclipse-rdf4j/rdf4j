@@ -27,9 +27,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 public class ExtendedEvaluationStrategy extends TupleFunctionEvaluationStrategy {
 
 	public ExtendedEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-			FederatedServiceResolver serviceResolver)
+			FederatedServiceResolver serviceResolver, long iterationCacheSyncThreshold)
 	{
-		super(tripleSource, dataset, serviceResolver);
+		super(tripleSource, dataset, serviceResolver, iterationCacheSyncThreshold);
 	}
 
 	@Override
