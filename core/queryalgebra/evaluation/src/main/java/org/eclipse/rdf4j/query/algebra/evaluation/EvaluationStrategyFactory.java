@@ -15,6 +15,24 @@ import org.eclipse.rdf4j.query.Dataset;
 public interface EvaluationStrategyFactory {
 
 	/**
+	 * Set the number of query solutions the {@link EvaluationStrategy} will keep in main memory before it
+	 * attempts to sync to a temporary disk cache. If set to 0, no disk caching will occur.
+	 * EvaluationStrategies that provide no disk caching functionality are free to ignore this parameter.
+	 * 
+	 * @param threshold
+	 *        the number of query solutions that the EvaluationStrategy can cache in main memory before
+	 *        attempting disk sync.
+	 */
+	void setQuerySolutionCacheThreshold(long threshold);
+
+	/**
+	 * Get the number of query solutions the {@link EvaluationStrategy} will keep in main memory before it
+	 * attempts to sync to a temporary disk cache. If set to 0, no disk caching will occur.
+	 * EvaluationStrategies that provide no disk caching functionality are free to ignore this parameter.
+	 */
+	long getQuerySolutionCacheThreshold();
+
+	/**
 	 * Returns the {@link EvaluationStrategy} to use to evaluate queries for the given {@link Dataset} and
 	 * {@link TripleSource}.
 	 * 
@@ -25,4 +43,5 @@ public interface EvaluationStrategyFactory {
 	 * @return an EvaluationStrategy.
 	 */
 	EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource);
+
 }
