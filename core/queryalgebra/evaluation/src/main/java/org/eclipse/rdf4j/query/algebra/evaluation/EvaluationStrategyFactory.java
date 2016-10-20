@@ -25,4 +25,22 @@ public interface EvaluationStrategyFactory {
 	 * @return an EvaluationStrategy.
 	 */
 	EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource);
+
+	/**
+	 * Returns the {@link EvaluationStrategy} to use to evaluate queries for the given {@link Dataset} and
+	 * {@link TripleSource}.
+	 * 
+	 * @param dataset
+	 *        the DataSet to evaluate queries against.
+	 * @param tripleSource
+	 *        the TripleSource to evaluate queries against.
+	 * @param iterationCacheSyncThreshold
+	 *        the number of query solutions the {@link EvaluationStrategy} can keep in main memory before it
+	 *        should sync to a temporary disk cache. If set to 0, no disk caching occurs.
+	 *        {@link EvaluationStrategy} implementations that provide no disk caching are free to ignore this
+	 *        parameter.
+	 * @return an EvaluationStrategy.
+	 */
+	EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+			long iterationCacheSyncThreshold);
 }

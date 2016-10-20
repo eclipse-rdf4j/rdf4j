@@ -38,6 +38,14 @@ public class StrictEvaluationStrategyFactory
 
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
-		return new StrictEvaluationStrategy(tripleSource, dataset, serviceResolver);
+		return createEvaluationStrategy(dataset, tripleSource, 0);
+	}
+
+	@Override
+	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+			long iterationCacheSyncThreshold)
+	{
+		return new StrictEvaluationStrategy(tripleSource, dataset, serviceResolver,
+				iterationCacheSyncThreshold);
 	}
 }
