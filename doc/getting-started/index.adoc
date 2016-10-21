@@ -3,9 +3,9 @@ include::../header.adoc[]
 
 :numbered!:
 == Getting Started with RDF4J, Maven, and Eclipse
-The link:/doc/programming/[RDF4J programmer documentation] is pretty extensive, but also perhaps a bit daunting,  especially if you are relatively new to RDF4J, or indeed to tools like Eclipse IDE or Apache Maven. To help you get started, I will explain step by step how to use these tools to create a simple application.
+The link:/programming/[RDF4J programmer documentation] is pretty extensive, but also perhaps a bit daunting,  especially if you are relatively new to RDF4J, or indeed to tools like Eclipse IDE or Apache Maven. To help you get started, I will explain step by step how to use these tools to create a simple application.
 
-Note that using Maven or Eclipse is not required if you want to use RDF4J. These are simply very useful tools for quickly getting a project started. Maven is good because it allows you to just define which libraries you want to use and never worry about any further third-party libraries you might need, and Eclipse IDE is good because it has good integration with Maven, code completion features, and is just generally a great Java development environment.
+NOTE: using Maven or Eclipse is not required if you want to use RDF4J. These are simply very useful tools for quickly getting a Java project started. Maven is good because it allows you to just define which libraries you want to use and never worry about any further third-party libraries you might need, and Eclipse IDE is good because it has good integration with Maven, code completion features, and is just generally a great Java development environment.
 
 In this tutorial, I assume that you have a basic understanding of programming in Java, and have at least an inkling of what RDF is. However, I do not assume that you know how to use either RDF4J, Maven, or Eclipse, so we’ll go through it all one step at a time. If anything is already sufficiently familiar to you, you are of course free to skip ahead!
 
@@ -147,7 +147,7 @@ This is Eclipse telling you that there is something wrong with your code. In thi
 
 Now that we have created our repository, we need to initialize it. This is done by calling the `rep.initialize()` method. Notice how, when you start typing, Eclipse shows autocompletion candidates for the methods available and how each method is described in the box:
 
-image:eclipse-autocomplete.png[]
+image:eclipse-autocomplete-1.png[]
 
 Now that we have created and initialized our repository, we are going to put some data in it, and then get that data out again and print it to the console.
 
@@ -247,4 +247,4 @@ Add these lines to your code, directly after where you have created the model. T
 
 image:eclipse-app3.png[]
 
-That’s it! Obviously there is still loads to learn about how to use RDF4J effectively, but you’ve got the basics under control now: you can set up a new project using RDF4J,  and have seen some basic ways to add, write, and retrieve data. The rest is up to you. Good sources of further documentation are link:/programming/[Programming with RDF4J], and of course the http://rdf4j.org/javadoc/latest[API Javadoc].
+That’s it! Obviously there is still loads to learn about how to use RDF4J effectively, but you’ve got the basics under control now: you can set up a new project using RDF4J,  and have seen some basic ways to add, write, and retrieve data. The rest is up to you. Good sources of further documentation are link:/programming/[Programming with RDF4J], and of course the link:/javadoc/latest[API Javadoc].
