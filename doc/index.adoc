@@ -31,5 +31,5 @@ If you are looking for documentation belonging to the (now deprecated) Sesame pr
 
 == License
 
-All documentation text is licensed under the terms of the http://creativecommons.org/licenses/by/3.0/[Creative Commons Attribution 3.0 (Unported) license]. All example source code is licensed under the terms of th ehttps://www.eclipse.org/org/documents/edl-v10.php[Eclipse Distribution License (EDL), v1.0].
+All documentation text is licensed under the terms of the http://creativecommons.org/licenses/by/3.0/[Creative Commons Attribution 3.0 (Unported) license]. All example source code is licensed under the terms of the https://www.eclipse.org/org/documents/edl-v10.php[Eclipse Distribution License (EDL), v1.0].
 
