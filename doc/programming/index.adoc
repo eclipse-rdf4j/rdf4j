@@ -1,6 +1,7 @@
 include::../shared-settings.adoc[]
 :toclevels: 4
 include::../header.adoc[]
+:javadoc: http://docs.rdf4j.org/javadoc/latest?org/eclipse/rdf4j/
 
 :numbered!:
 == Programming with RDF4J

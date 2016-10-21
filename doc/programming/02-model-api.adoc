@@ -4,19 +4,22 @@ The RDF Model API is the core of the RDF4J framework. It provides the basic buil
 
 == RDF Building Blocks: IRIs, literals, blank nodes and statements
 
-The core of the RDF4J framework is the RDF Model API (see the link:/javadoc/latest/?org/eclipse/rdf4j/model/package-summary.html[Model API Javadoc]). This API defines how the building blocks of RDF (statements, IRIs, blank nodes, literals, and models) are represented.
+The core of the RDF4J framework is the RDF Model API (see the link:/javadoc/latest/?org/eclipse/rdf4j/model/package-summary.html[Model API Javadoc]), defined in package `org.eclipse.rdf4j.model`. This API defines how the building blocks of RDF (statements, IRIs, blank nodes, literals, and models) are represented.
 
-RDF statements are represented by the `org.eclipse.rdf4j.model.Statement` interface. Each `Statement` has a subject, predicate, object and (optionally) a context (more about contexts below, in the section about the Repository API).  Each of these 4 items is a `org.eclipse.rdf4j.model.Value`. The `Value` interface is further specialized into `org.eclipse.rdf4j.model.Resource`, and `org.eclipse.rdf4j.model.Literal`. `Resource` represents any RDF value that is either a blank node or a IRI (in fact, it specializes further into `org.eclipse.rdf4j.model.IRI` and `org.eclipse.rdf4j.model.BNode`).  `Literal`
+RDF statements are represented by the {javadoc}model/Statement.html[Statement] interface. Each `Statement` has a subject, predicate, object and (optionally) a context (more about contexts below, in the section about the Repository API).  Each of these 4 items is a {javadoc}model/Value.html[Value]. The `Value` interface is further specialized into {javadoc}model/Resource.html[Resource], and {javadoc}model/Literal.html.html[Literal]. `Resource` represents any RDF value that is either a blank node or a IRI (in fact, it specializes further into {javadoc}model/IRI.html[IRI] and {javadoc}model/BNode.html[BNode]).  `Literal`
 represents RDF literal values (strings, dates, integer numbers, and so on).
 
-To create new values and statements, we can use a `org.eclipse.rdf4j.model.ValueFactory`. You can use a default ValueFactory implementation called `org.eclipse.rdf4j.model.impl.SimpleValueFactory`:
+To create new values and statements, we can use a {javadoc}model/ValueFactory.html[ValueFactory]. You can use a default ValueFactory implementation called {javadoc}model/impl/SimpleValueFactory[SimpleValueFactory]:
 
 [source,java]
 ----
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+
 ValueFactory factory = SimpleValueFactory.getInstance();
 ----
 
-You can also obtain a `ValueFactory` from the `Repository` you are working with, and in fact, this is the recommend approach. More about that in the next section.
+You can also obtain a `ValueFactory` from the {javadoc}repository/Repository.html[Repository] you are working with, and in fact, this is the recommend approach. More about that in the next section.
 
 Regardless of how you obtain your `ValueFactory`, once you have it, you can use it to create new URIs, Literals, and Statements:
 
@@ -28,7 +31,7 @@ Literal bobsName = factory.createLiteral("Bob");
 Statement nameStatement = factory.createStatement(bob, name, bobsName);
 ----
 
-The Model API also provides pre-defined IRIs for several well-known vocabularies, such as RDF, RDFS, OWL, DC (Dublin Core), FOAF (Friend-of-a-Friend), and more. These constants can all be found in the `org.eclipse.rdf4j.model.vocabulary` package, and can be quite handy in quick creation of RDF statements (or in querying a Repository, as we shall see later):
+The Model API also provides pre-defined IRIs for several well-known vocabularies, such as RDF, RDFS, OWL, DC (Dublin Core), FOAF (Friend-of-a-Friend), and more. These constants can all be found in the {javadoc}model/vocabulary/package-summary.html[org.eclipse.rdf4j.model.vocabulary] package, and can be quite handy in quick creation of RDF statements (or in querying a Repository, as we shall see later):
 
 [source,java]
 ----
@@ -37,9 +40,9 @@ Statement typeStatement = factory.createStatement(bob, RDF.TYPE, FOAF.PERSON);
 
 == The Model interface
 
-The above interfaces and classes show how we can create the individual building blocks that make up an RDF model. However, an actual collection of RDF data is just that: a collection. In order to deal with collections of RDF statements, we can use the `org.eclipse.rdf4j.model.Model` interface.
+The above interfaces and classes show how we can create the individual building blocks that make up an RDF model. However, an actual collection of RDF data is just that: a collection. In order to deal with collections of RDF statements, we can use the {javadoc}model/Model[org.eclipse.rdf4j.model.Model] interface.
 
-`org.eclipse.rdf4j.model.Model` is an extension of the default Java Collection class `java.util.Set<Statement>`. This means that you can use a `Model` like any other Java collection in your code: 
+`Model` is an extension of the default Java Collection class `java.util.Set<Statement>`. This means that you can use a `Model` like any other Java collection in your code: 
 
 [source,java]
 ----
@@ -77,11 +80,11 @@ for (Resource person: model.filter(null, RDF.TYPE, FOAF.PERSON).subjects()) {
 
 The `filter()` method returns a `Model` again. However, the `Model` returned by this method is still backed by the original `Model`. Thus, changes that you make to this returned `Model` will automatically be reflected in the original `Model` as well.
 
-RDF4J provides two default implementations of the `Model` interface: `org.eclipse.rdf4j.model.impl.LinkedHashModel`, and `org.eclipse.rdf4j.model.impl.TreeModel`. The difference between the two is in their performance for different kinds of lookups and insertion patterns (see their respective javadoc entries for details). These differences are only really noticable when dealing with quite large collections of statements, however.  
+RDF4J provides two default implementations of the `Model` interface: {javdoc}model/impl/LinkedHashModel.html[org.eclipse.rdf4j.model.impl.LinkedHashModel], and {javadoc}model/impl/TreeModel.html[org.eclipse.rdf4j.model.impl.TreeModel]. The difference between the two is in their performance for different kinds of lookups and insertion patterns (see their respective javadoc entries for details). These differences are only really noticable when dealing with quite large collections of statements, however.  
 
 == Building RDF Models with the ModelBuilder
 
-Since version 2.1, RDF4J provides a `ModelBuilder` utility. The ModelBuilder provides a fluent API to quickly and efficiently create RDF models programmatically.
+Since version 2.1, RDF4J provides a {javadoc}model/util/ModelBuiler.html[ModelBuilder] utility. The ModelBuilder provides a fluent API to quickly and efficiently create RDF models programmatically.
 
 Here’s a simple code example that demonstrates how to quickly create an RDF graph with some FOAF data:
 
@@ -111,8 +114,6 @@ The ModelBuilder offers several conveniences:
  - you can add a literal object as a String, an int, or several other supported Java primitive types.
  - the subject() method make it easier to take a resource-centric view when building an RDF Model.
 
-For more details, see the link:/javadoc/latest/?org/eclipse/rdf4j/model/util/ModelBuilder.html[ModelBuilder API Javadoc].
-
 == RDF Collections
 
 To model closed lists of items, RDF provides a Collection vocabulary . RDF Collections are represented as a list of items using a Lisp-like structure.  The list starts with a head resource (typically a blank node), which is connected to the first collection member via the rdf:first relation. The head resource is then connected to the rest of the list via an rdf:rest relation.  The last resource in the list is marked using the rdf:nil node.
@@ -122,15 +123,15 @@ As an example, a list containing three values, “A”, “B”, and “C” loo
 [[img-collection]]
 image::rdf-collection.svg[title="An RDF Collection containing three items"]
 
-Here, the blank node _:n1 is the head resource of the list. In this example it is declared an instance of rdf:List, however this is not required for the collection to be considered well-formed. For each collection member, a new node is added (linked to the previous node via the rdf:rest property), and the actual member value is linked to to this node via the rdf:first property. The last member member of the list is marked by the fact that the value of its rdf:rest property is set to rdf:nil.
+Here, the blank node `_:n1` is the head resource of the list. In this example it is declared an instance of rdf:List, however this is not required for the collection to be considered well-formed. For each collection member, a new node is added (linked to the previous node via the `rdf:rest` property), and the actual member value is linked to to this node via the `rdf:first` property. The last member member of the list is marked by the fact that the value of its `rdf:rest` property is set to `rdf:ni`l.
 
 Working with this kind of structure directly is rather cumbersome. To make life a little easier, the RDF4J API provide several utilities to convert between Java Collections and RDF Collections.
 
 === Converting to/from Java Collections
 
-As an example, suppose we wish to add the above list of three string literals as a property value for the property ex:favoriteLetters of ex:John .
+As an example, suppose we wish to add the above list of three string literals as a property value for the property `ex:favoriteLetters` of `ex:John` .
 
-We could do this as follows:
+The {javadoc}model/util/RDFCollections.html[RDFCollections] utility allows us to do this, as follows:
 
 [source,java]
 ----
