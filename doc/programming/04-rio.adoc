@@ -110,7 +110,7 @@ int numberOfStatements = myCounter.getCountedStatements();
 
 In the examples sofar, we have always assumed that you know what the syntax format of your input file is: we assumed Turtle syntax and created a new parser using `RDFFormat.TURTLE`. However, you may not always know in advance what exact format the RDF file is in. What then? Fortunately, Rio has a couple of useful features to help you.
 
-The {javadoc}rio/helpers/Rio.html[Rio helper class] has a couple of utility methods for guessing the correct format, given either a filename or a MIME-type. For example, to get back the RDF format for our Turtle file, we could do the following:
+The {javadoc}rio/Rio.html[Rio utility class] has a couple of methods for guessing the correct format, given either a filename or a MIME-type. For example, to get back the RDF format for our Turtle file, we could do the following:
 
 [source,java]
 ----
