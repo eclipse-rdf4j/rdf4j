@@ -35,7 +35,7 @@ The following is an overview of the resources that are available from RDF4J Serv
 
 == Protocol version
 
-The version of the protocol that the server uses to communicate over HTTP is available at: <RDF4J_URL>/protocol. The version described by this chapter is “6”.
+The version of the protocol that the server uses to communicate over HTTP is available at: <RDF4J_URL>/protocol. The version described by this chapter is “8”.
 
 Supported methods on this URL are:
 
@@ -132,6 +132,9 @@ Parameters:
 - `infer` (optional): Specifies whether inferred statements should be included in the query evaluation. Inferred statements are included by default. Specifying any value other than “true” (ignoring case) restricts the query evluation to explicit statements only.
 - `$<varname>` (optional): specifies variable bindings. Variables appearing in the query can be bound to a specific value outside the actual query using this option. The value should be an N-Triples encoded RDF value.
 - `timeout` (optional): specifies a maximum query execution time, in whole seconds. The value should be an integer. A setting of 0 or a negative number indicates unlimited query time (the default).
+- `distinct` (optional): specifies if only distinct query solutions should be returned. The value should be `true` or `false`. If the supplied SPARQL query itself already has a `DISTINCT` modifier, this parameter will have no effect.
+- `limit` (optional): specifies the maximum number of query solutions to return. The value should be a positive integer. If the supplied SPARQL query itself already has a `LIMIT` modifier, this parameter will only have an effect if the supplied value is lower than the `LIMIT` value in the query.
+- `offset` (optional): specifies the number of query solutions to skip. The value should be a positive inteer. This parameter is cumulative with any `OFFSET` modifier in the supplied SPARQL query itself.
 
 Request headers:
 
