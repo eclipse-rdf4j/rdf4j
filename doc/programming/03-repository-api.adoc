@@ -14,7 +14,7 @@ The central interface of the repository API is the  {javadoc}repository/Reposito
 -  {javadoc}repository/http/HTTPRepository.html[HTTPRepository] is, as the name implies, a Repository implementation that acts as a proxy to a repository available on a remote RDF4J Server, accessible through HTTP.
 - {javadoc}repository/sparql/SPARQLRepository.html[SPARQLRepository] is a Repository implementation that acts as a proxy to any remote SPARQL endpoint (whether that endpoint is implemented using RDF4J or not).
 
-Creating Repository objects can be done in multiple ways. We will first show an easy way to quickly create such an object ‘on the fly’. In the section about <<the repositorymanager and repositoryprovider>>, we show some more advanced patterns, which are particularly useful in larger applications which have to handle and share references to multiple repositories.
+Creating Repository objects can be done in multiple ways. We will first show an easy way to quickly create such an object ‘on the fly’. In the section about <<_the_repositorymanager_and_repositoryprovider>>, we show some more advanced patterns, which are particularly useful in larger applications which have to handle and share references to multiple repositories.
 
 We will first take a look at the use of the SailRepository class in order to create and use a local repository.
 
