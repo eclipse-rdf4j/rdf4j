@@ -262,7 +262,8 @@ abstract class MemoryOverflowModel extends AbstractModel {
 			memory = new TreeModel(memory.getNamespaces());
 		}
 		catch (IOException | SailException e) {
-			logger.error("Error while writing to overflow directory " + dataDir.getAbsolutePath(), e);
+			String path = dataDir != null? dataDir.getAbsolutePath() : "(unknown)";
+			logger.error("Error while writing to overflow directory " + path, e);
 		}
 	}
 
