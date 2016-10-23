@@ -9,6 +9,8 @@
 @prefix ns: <http://www.openrdf.org/config/sail/native#>.
 @prefix cgqi: <http://www.openrdf.org/config/sail/customGraphQueryInferencer#>.
 @prefix sp: <http://spinrdf.org/sp#>.
+@prefix sb: <http://www.openrdf.org/config/sail/base#>.
+
 
 [] a rep:Repository ;
    rep:repositoryID "{%Repository ID|native-customrule%}" ;
