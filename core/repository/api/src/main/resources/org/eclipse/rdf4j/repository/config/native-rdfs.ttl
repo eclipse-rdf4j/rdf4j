@@ -7,6 +7,8 @@
 @prefix sr: <http://www.openrdf.org/config/repository/sail#>.
 @prefix sail: <http://www.openrdf.org/config/sail#>.
 @prefix ns: <http://www.openrdf.org/config/sail/native#>.
+@prefix sb: <http://www.openrdf.org/config/sail/base#>.
+
 
 [] a rep:Repository ;
    rep:repositoryID "{%Repository ID|native-rdfs%}" ;

@@ -10,6 +10,7 @@
 @prefix cgqi: <http://www.openrdf.org/config/sail/customGraphQueryInferencer#>.
 @prefix ms: <http://www.openrdf.org/config/sail/memory#>.
 @prefix sp: <http://spinrdf.org/sp#>.
+@prefix sb: <http://www.openrdf.org/config/sail/base#>.
 
 [] a rep:Repository ;
    rep:repositoryID "{%Repository ID|memory-spin%}" ;
