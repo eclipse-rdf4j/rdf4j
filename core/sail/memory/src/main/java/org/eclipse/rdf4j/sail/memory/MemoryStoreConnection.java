@@ -67,8 +67,8 @@ public class MemoryStoreConnection extends SailSourceConnection {
 	{
 		super.commitInternal();
 
-		sail.scheduleSyncTask();
 		sail.notifySailChanged(sailChangedEvent);
+		sail.scheduleSyncTask();
 
 		// create a fresh event object.
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
