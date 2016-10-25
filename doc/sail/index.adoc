@@ -66,8 +66,7 @@ Sail "1" *- "*" SailConnection
 
 ....
 
-In diagram <<figure-sail-main>> we see an overview of the two main interfaces: `Sail`, and `SailConnection`. Although SAIL is not a JDBC implementation, its design is inspired by it. 
-The `Sail` interface is the main access point for RDF storage. Roughly speaking, this is "the database". Each `Sail` object is composed of zero or more `SailConnection` objects. This is where all the actual database access functionality is concentrated. `SailConnection` provides methods to execute queries, retrieve and modify triples, and manage transactions.
+In diagram <<figure-sail-main>> we see an overview of the two main interfaces: `Sail`, and `SailConnection`. The `Sail` interface is the main access point for RDF storage. Roughly speaking, this is "the database". Each `Sail` object is composed of zero or more `SailConnection` objects. This is where all the actual database access functionality is concentrated. `SailConnection` provides methods to execute queries, retrieve and modify triples, and manage transactions.
 
 === AbstractSail and AbstractSailConnection
 
@@ -235,16 +234,28 @@ More fine-grained event data is available at the Connection level. The `Notifyin
 RDF4J also provides base implementation classes for these two interfaces. As can be seen in diagram <<figure-notifying-sail>>, these classes - `AbstractNotifyingSail` and `AbstractNotifyingSailConnection` - are extensions of the AbstractSail(Connection) classes that add 
 default implementations of the methods defined in the NotifyingSail(Connection) interfaces.
 
-=== StackableSail
+=== Stacking SAILs
 
-TODO
+.Stackable SAIL interface
+[[figure-stackable-sail]]
+[plantuml, diagram-stackable-sail, png]
+....
+interface Sail
+interface StackableSail {
+    + setBaseSail(Sail)
+    + getBaseSail()
+}
+
+Sail <|-- StackableSail
+....
+
+The SAIL API provides the `StackableSail` interface to allow SAIL implementations to "stack" on top of each other, providing a chain of responsility: each SAIL implementation in the stack implements a specific feature (reasoning, access control, data filtering, query expansion, etc. etc.). The last SAIL implementation in the stack is expected to _not_ implement `StackableSail`, and this Sail is responsible for the actual persistence of the data. RDF4J's `NativeStore` and `MemoryStore` are implementations of such a persistence SAIL, while the `ForwardChainingRDFSInferencer` (responsible for RDFS inferencing) and `LuceneSail` (responsible for full-text indexing) are examples of `StackableSail` implementations.
 
 == Querying
 
 The SAIL API has no knowledge of SPARQL queries. Instead, it operates on a query algebra, that is, an object representation of a (SPARQL) query as provided by the SPARQL query parser. 
 
-`SailConnection` has a single `evaluate()` method, which accepts a `TupleExpr` object. This is the object representation of the query as produced by the query parser. 
-
+`SailConnection` has a single `evaluate()` method, which accepts a `org.eclipse.rdf4j.queryalgebra.model.TupleExpr` object. This is the object representation of the query as produced by the query parser. 
 
 == Transactions
 
