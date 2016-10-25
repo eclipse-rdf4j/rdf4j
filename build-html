@@ -6,5 +6,6 @@ asciidoctor -n -D html/programming doc/programming/index.adoc
 asciidoctor -n -D html/getting-started doc/getting-started/index.adoc
 asciidoctor -n -D html/rest-api doc/rest-api/index.adoc
 asciidoctor -n -D html/rdf4j-binary doc/rdf4j-binary/index.adoc
+asciidoctor -n -r asciidoctor-diagram -D html/sail doc/sail/index.adoc
 cp -r doc/images html/
 cp -r doc/css html/

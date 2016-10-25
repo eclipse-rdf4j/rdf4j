@@ -19,6 +19,7 @@ include::header.adoc[]
 - link:server-workbench-console[RDF4J Server, Workbench, and Console]
 - link:rest-api[RDF4J Server REST API]
 - link:rdf4j-binary[RDF4J Binary RDF Format]
+- link:sail[The SAIL API] (draft)
 
 === Javadoc
 
