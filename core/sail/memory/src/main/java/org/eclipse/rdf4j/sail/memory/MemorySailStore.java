@@ -565,7 +565,7 @@ class MemorySailStore implements SailStore {
 			}
 		}
 
-		private synchronized void acquireExclusiveTransactionLock()
+		private void acquireExclusiveTransactionLock()
 			throws SailException
 		{
 			if (!txnLockManager.isHeldByCurrentThread()) {
