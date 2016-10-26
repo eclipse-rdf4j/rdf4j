@@ -384,8 +384,6 @@ class MemorySailStore implements SailStore {
 
 		private volatile Set<StatementPattern> observations;
 
-		private volatile boolean txnLock;
-
 		private boolean requireCleanup;
 
 		public MemorySailSink(boolean explicit, boolean serializable)
@@ -409,7 +407,7 @@ class MemorySailStore implements SailStore {
 			else {
 				sb.append("inferred ");
 			}
-			if (txnLock) {
+			if (txnLockManager.isHeldByCurrentThread()) {
 				sb.append("snapshot ").append(nextSnapshot);
 			}
 			else {
@@ -458,7 +456,7 @@ class MemorySailStore implements SailStore {
 		public synchronized void flush()
 			throws SailException
 		{
-			if (txnLock) {
+			if (txnLockManager.isHeldByCurrentThread()) {
 				currentSnapshot = Math.max(currentSnapshot, nextSnapshot);
 				if (requireCleanup) {
 					scheduleSnapshotCleanup();
@@ -469,9 +467,7 @@ class MemorySailStore implements SailStore {
 		@Override
 		public void close() {
 			try {
-				boolean toCloseTxnLock = txnLock;
-				txnLock = false;
-				if (toCloseTxnLock) {
+				if (txnLockManager.isHeldByCurrentThread()) {
 					txnLockManager.unlock();
 				}
 			}
@@ -569,13 +565,12 @@ class MemorySailStore implements SailStore {
 			}
 		}
 
-		private void acquireExclusiveTransactionLock()
+		private synchronized void acquireExclusiveTransactionLock()
 			throws SailException
 		{
-			if (!txnLock) {
+			if (!txnLockManager.isHeldByCurrentThread()) {
 				txnLockManager.lock();
 				nextSnapshot = currentSnapshot + 1;
-				txnLock = true;
 			}
 		}
 
