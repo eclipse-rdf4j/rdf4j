@@ -428,13 +428,20 @@ class NativeSailStore implements SailStore {
 		private synchronized void acquireExclusiveTransactionLock()
 			throws SailException
 		{
+			boolean txnStarted = false;
 			if (!txnLockManager.isHeldByCurrentThread()) {
 				try {
 					txnLockManager.lock();
 					tripleStore.startTransaction();
+					txnStarted = true;
 				}
 				catch (IOException e) {
 					throw new SailException(e);
+				}
+				finally {
+					if (!txnStarted) {
+						txnLockManager.unlock();
+					}
 				}
 			}
 		}
