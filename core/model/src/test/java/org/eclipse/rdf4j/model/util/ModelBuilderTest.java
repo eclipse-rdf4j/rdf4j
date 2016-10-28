@@ -81,6 +81,12 @@ public class ModelBuilderTest {
 	}
 	
 	@Test
+	public void testAddObjectStringIRI() {
+		testBuilder.subject(FOAF.PERSON).add("rdf:type", "rdfs:Class");
+		assertTrue(model.contains(FOAF.PERSON, RDF.TYPE, RDFS.CLASS));
+	}
+	
+	@Test
 	public void testAddNamedGraph() {
 		testBuilder.namedGraph(RDF.ALT).subject(FOAF.PERSON).add("rdf:type", RDFS.CLASS);
 		
