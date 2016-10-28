@@ -109,12 +109,15 @@ class Transaction {
 	void begin(IsolationLevel level)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> {
-			txnConnection.begin(level);
-			return true;
-		});
+		Future<Boolean> result;
+		synchronized (futures) {
+			result = executor.submit(() -> {
+				txnConnection.begin(level);
+				return true;
+			});
 
-		futures.add(result);
+			futures.add(result);
+		}
 		result.get();
 	}
 
@@ -127,12 +130,15 @@ class Transaction {
 	void rollback()
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> {
-			txnConnection.rollback();
-			return true;
-		});
+		Future<Boolean> result;
+		synchronized (futures) {
+			result = executor.submit(() -> {
+				txnConnection.rollback();
+				return true;
+			});
 
-		futures.add(result);
+			futures.add(result);
+		}
 		result.get();
 	}
 
@@ -143,13 +149,15 @@ class Transaction {
 	void commit()
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> {
-			txnConnection.commit();
-			return true;
-		});
+		Future<Boolean> result;
+		synchronized (futures) {
+			result = executor.submit(() -> {
+				txnConnection.commit();
+				return true;
+			});
 
-		futures.add(result);
-
+			futures.add(result);
+		}
 		result.get();
 	}
 
@@ -172,9 +180,11 @@ class Transaction {
 	Query prepareQuery(QueryLanguage queryLn, String queryStr, String baseURI)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Query> result = executor.submit(() -> txnConnection.prepareQuery(queryLn, queryStr, baseURI));
-
-		futures.add(result);
+		Future<Query> result;
+		synchronized (futures) {
+			result = executor.submit(() -> txnConnection.prepareQuery(queryLn, queryStr, baseURI));
+			futures.add(result);
+		}
 		return result.get();
 	}
 
@@ -192,8 +202,11 @@ class Transaction {
 	TupleQueryResult evaluate(TupleQuery tQuery)
 		throws InterruptedException, ExecutionException
 	{
-		Future<TupleQueryResult> result = executor.submit(() -> tQuery.evaluate());
-		futures.add(result);
+		Future<TupleQueryResult> result;
+		synchronized (futures) {
+			result = executor.submit(() -> tQuery.evaluate());
+			futures.add(result);
+		}
 		return result.get();
 	}
 
@@ -211,8 +224,11 @@ class Transaction {
 	GraphQueryResult evaluate(GraphQuery gQuery)
 		throws InterruptedException, ExecutionException
 	{
-		Future<GraphQueryResult> result = executor.submit(() -> gQuery.evaluate());
-		futures.add(result);
+		Future<GraphQueryResult> result;
+		synchronized (futures) {
+			result = executor.submit(() -> gQuery.evaluate());
+			futures.add(result);
+		}
 		return result.get();
 	}
 
@@ -230,8 +246,11 @@ class Transaction {
 	boolean evaluate(BooleanQuery bQuery)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> bQuery.evaluate());
-		futures.add(result);
+		Future<Boolean> result;
+		synchronized (futures) {
+			result = executor.submit(() -> bQuery.evaluate());
+			futures.add(result);
+		}
 		return result.get();
 	}
 
@@ -249,12 +268,14 @@ class Transaction {
 			Resource... contexts)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> {
-			txnConnection.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
-			return true;
-		});
-
-		futures.add(result);
+		Future<Boolean> result;
+		synchronized (futures) {
+			result = executor.submit(() -> {
+				txnConnection.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
+				return true;
+			});
+			futures.add(result);
+		}
 		result.get();
 	}
 
@@ -269,8 +290,11 @@ class Transaction {
 	long getSize(Resource[] contexts)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Long> result = executor.submit(() -> txnConnection.size(contexts));
-		futures.add(result);
+		Future<Long> result;
+		synchronized (futures) {
+			result = executor.submit(() -> txnConnection.size(contexts));
+			futures.add(result);
+		}
 		return result.get();
 	}
 
@@ -288,32 +312,34 @@ class Transaction {
 			Resource... contexts)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> {
-			try {
-				if (preserveBNodes) {
-					// create a reconfigured parser + inserter instead of relying on standard
-					// repositoryconn add method.
-					RDFParser parser = Rio.createParser(format);
-					parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-					RDFInserter inserter = new RDFInserter(txnConnection);
-					inserter.setPreserveBNodeIDs(true);
-					if (contexts.length > 0) {
-						inserter.enforceContext(contexts);
+		Future<Boolean> result;
+		synchronized (futures) {
+			result = executor.submit(() -> {
+				try {
+					if (preserveBNodes) {
+						// create a reconfigured parser + inserter instead of relying on standard
+						// repositoryconn add method.
+						RDFParser parser = Rio.createParser(format);
+						parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+						RDFInserter inserter = new RDFInserter(txnConnection);
+						inserter.setPreserveBNodeIDs(true);
+						if (contexts.length > 0) {
+							inserter.enforceContext(contexts);
+						}
+						parser.setRDFHandler(inserter);
+						parser.parse(inputStream, baseURI);
 					}
-					parser.setRDFHandler(inserter);
-					parser.parse(inputStream, baseURI);
+					else {
+						txnConnection.add(inputStream, baseURI, format, contexts);
+					}
+					return true;
 				}
-				else {
-					txnConnection.add(inputStream, baseURI, format, contexts);
+				catch (IOException e) {
+					throw new RuntimeException(e);
 				}
-				return true;
-			}
-			catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-		});
-
-		futures.add(result);
+			});
+			futures.add(result);
+		}
 		result.get();
 	}
 
@@ -327,23 +353,25 @@ class Transaction {
 	void delete(RDFFormat contentType, InputStream inputStream, String baseURI)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> exception = executor.submit(() -> {
-			RDFParser parser = Rio.createParser(contentType, txnConnection.getValueFactory());
+		Future<Boolean> result;
+		synchronized (futures) {
+			result = executor.submit(() -> {
+				RDFParser parser = Rio.createParser(contentType, txnConnection.getValueFactory());
 
-			parser.setRDFHandler(new WildcardRDFRemover(txnConnection));
-			parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-			try {
-				parser.parse(inputStream, baseURI);
-				return true;
-			}
-			catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-		});
+				parser.setRDFHandler(new WildcardRDFRemover(txnConnection));
+				parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+				try {
+					parser.parse(inputStream, baseURI);
+					return true;
+				}
+				catch (IOException e) {
+					throw new RuntimeException(e);
+				}
+			});
 
-		futures.add(exception);
-
-		exception.get();
+			futures.add(result);
+		}
+		result.get();
 	}
 
 	/**
@@ -360,28 +388,33 @@ class Transaction {
 			boolean includeInferred, Dataset dataset, Map<String, Value> bindings)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> {
-			Update update = txnConnection.prepareUpdate(queryLn, sparqlUpdateString);
-			update.setIncludeInferred(includeInferred);
-			if (dataset != null) {
-				update.setDataset(dataset);
-			}
-			for (String bindingName : bindings.keySet()) {
-				update.setBinding(bindingName, bindings.get(bindingName));
-			}
+		Future<Boolean> result;
+		synchronized (futures) {
+			result = executor.submit(() -> {
+				Update update = txnConnection.prepareUpdate(queryLn, sparqlUpdateString);
+				update.setIncludeInferred(includeInferred);
+				if (dataset != null) {
+					update.setDataset(dataset);
+				}
+				for (String bindingName : bindings.keySet()) {
+					update.setBinding(bindingName, bindings.get(bindingName));
+				}
 
-			update.execute();
-			return true;
-		});
+				update.execute();
+				return true;
+			});
 
-		futures.add(result);
+			futures.add(result);
+		}
 		result.get();
 	}
 
 	boolean hasActiveOperations() {
-		for (Future future : futures) {
-			if (!future.isDone()) {
-				return true;
+		synchronized (futures) {
+			for (Future future : futures) {
+				if (!future.isDone()) {
+					return true;
+				}
 			}
 		}
 		return false;
@@ -398,11 +431,14 @@ class Transaction {
 	{
 		if (isClosed.compareAndSet(false, true)) {
 			try {
-				Future<Boolean> result = executor.submit(() -> {
-					txnConnection.close();
-					return true;
-				});
-				futures.add(result);
+				Future<Boolean> result;
+				synchronized (futures) {
+					result = executor.submit(() -> {
+						txnConnection.close();
+						return true;
+					});
+					futures.add(result);
+				}
 				result.get();
 			}
 			finally {
@@ -415,17 +451,20 @@ class Transaction {
 		throws InterruptedException, ExecutionException
 	{
 		// create a new RepositoryConnection with correct parser settings
-		Future<RepositoryConnection> future = executor.submit(() -> {
-			RepositoryConnection conn = rep.getConnection();
-			ParserConfig config = conn.getParserConfig();
-			config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-			config.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
-			config.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
+		Future<RepositoryConnection> future;
+		synchronized (futures) {
+			future = executor.submit(() -> {
+				RepositoryConnection conn = rep.getConnection();
+				ParserConfig config = conn.getParserConfig();
+				config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+				config.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
+				config.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 
-			return conn;
-		});
+				return conn;
+			});
 
-		futures.add(future);
+			futures.add(future);
+		}
 		return future.get();
 	}
 
