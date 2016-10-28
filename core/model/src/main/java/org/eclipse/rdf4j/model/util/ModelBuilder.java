@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.model.util;
 
 import java.util.Date;
+import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
@@ -188,22 +189,33 @@ public class ModelBuilder {
 	 *        the statement's predicate
 	 * @param object
 	 *        the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
-	 *        {@link Literal}, the object is used directly. Otherwise this method creates a typed
-	 *        {@link Literal} out of the supplied object, mapping the runtime type of the object to the
-	 *        appropriate XML Schema type. If no mapping is available, the method creates a literal with the
-	 *        string representation of the supplied object as the value, and {@link XMLSchema#STRING} as the
-	 *        datatype. Recognized types are {@link Boolean} , {@link Byte}, {@link Double}, {@link Float},
-	 *        {@link Integer}, {@link Long}, {@link Short}, {@link XMLGregorianCalendar } , and {@link Date}.
+	 *        {@link Literal}, the object is used directly. If it is a prefixed name String with a known
+	 *        prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
+	 *        object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
+	 *        is available, the method creates a literal with the string representation of the supplied object
+	 *        as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
+	 *        , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *        {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
 	 * @see #namedGraph(Resource)
 	 * @see #defaultGraph()
 	 * @see Literals#createLiteral(ValueFactory, Object)
 	 */
 	public ModelBuilder add(Resource subject, IRI predicate, Object object) {
-		model.setNamespace(XMLSchema.NS);
 
-		final Value objectValue = (object instanceof Value) ? (Value)object
-				: Literals.createLiteral(SimpleValueFactory.getInstance(), object);
+		Value objectValue = null;
+		if (object instanceof Value) {
+			objectValue = (Value)object;
+		}
+		else if (object instanceof String) {
+			objectValue = convertPrefixedName((String)object);
+		}
+
+		if (objectValue == null) {
+			model.setNamespace(XMLSchema.NS);
+			objectValue = Literals.createLiteral(SimpleValueFactory.getInstance(), object);
+		}
+
 		if (currentNamedGraph != null) {
 			model.add(subject, predicate, objectValue, currentNamedGraph);
 		}
@@ -326,19 +338,26 @@ public class ModelBuilder {
 		return model;
 	}
 
-	private IRI mapToIRI(String prefixedNameOrIRI) {
-		if (prefixedNameOrIRI.indexOf(':') < 0) {
-			throw new ModelException("invalid prefixed name or IRI: " + prefixedNameOrIRI);
+	/**
+	 * Convert the given prefixed name string to an IRI if possible.
+	 * 
+	 * @param prefixedName
+	 *        a prefixed name string, e.g. "rdf:type"
+	 * @return the IRI corresponding to the prefixed name, or {@code null} if the supplied string couldn't be
+	 *         converted.
+	 */
+	private IRI convertPrefixedName(String prefixedName) {
+		if (prefixedName.indexOf(':') < 0) {
+			return null;
 		}
 
-		final String prefix = prefixedNameOrIRI.substring(0, prefixedNameOrIRI.indexOf(':'));
+		final String prefix = prefixedName.substring(0, prefixedName.indexOf(':'));
 
 		final ValueFactory vf = SimpleValueFactory.getInstance();
 
 		for (Namespace ns : model.getNamespaces()) {
 			if (prefix.equals(ns.getPrefix())) {
-				return vf.createIRI(ns.getName(),
-						prefixedNameOrIRI.substring(prefixedNameOrIRI.indexOf(':') + 1));
+				return vf.createIRI(ns.getName(), prefixedName.substring(prefixedName.indexOf(':') + 1));
 			}
 		}
 
@@ -346,11 +365,22 @@ public class ModelBuilder {
 		for (Namespace ns : getDefaultNamespaces()) {
 			if (prefix.equals(ns.getPrefix())) {
 				model.setNamespace(ns);
-				return vf.createIRI(ns.getName(),
-						prefixedNameOrIRI.substring(prefixedNameOrIRI.indexOf(':') + 1));
+				return vf.createIRI(ns.getName(), prefixedName.substring(prefixedName.indexOf(':') + 1));
 			}
 		}
-		return vf.createIRI(prefixedNameOrIRI);
+		return null;
+	}
+
+	private IRI mapToIRI(String prefixedNameOrIRI) {
+		if (prefixedNameOrIRI.indexOf(':') < 0) {
+			throw new ModelException("not a valid prefixed name or IRI: " + prefixedNameOrIRI);
+		}
+		
+		IRI iri = convertPrefixedName(prefixedNameOrIRI);
+		if (iri == null) {
+			iri = SimpleValueFactory.getInstance().createIRI(prefixedNameOrIRI);
+		}
+		return iri;
 	}
 
 	private Namespace[] getDefaultNamespaces() {
