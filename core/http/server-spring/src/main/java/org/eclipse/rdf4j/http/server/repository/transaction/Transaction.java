@@ -17,6 +17,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
@@ -56,6 +57,8 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
  */
 class Transaction {
 
+	private final AtomicBoolean isClosed = new AtomicBoolean(false);
+
 	private final UUID id;
 
 	private final Repository rep;
@@ -93,8 +96,6 @@ class Transaction {
 		return id;
 	}
 
-
-
 	/**
 	 * Start the transaction.
 	 * 
@@ -130,7 +131,7 @@ class Transaction {
 			txnConnection.rollback();
 			return true;
 		});
-	
+
 		futures.add(result);
 		result.get();
 	}
@@ -146,9 +147,9 @@ class Transaction {
 			txnConnection.commit();
 			return true;
 		});
-	
+
 		futures.add(result);
-	
+
 		result.get();
 	}
 
@@ -244,15 +245,15 @@ class Transaction {
 	 * @throws ExecutionException
 	 * @throws InterruptedException
 	 */
-	void exportStatements(Resource subj, IRI pred, Value obj, boolean useInferencing,
-			RDFWriter rdfWriter, Resource... contexts)
+	void exportStatements(Resource subj, IRI pred, Value obj, boolean useInferencing, RDFWriter rdfWriter,
+			Resource... contexts)
 		throws InterruptedException, ExecutionException
 	{
 		Future<Boolean> result = executor.submit(() -> {
 			txnConnection.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
 			return true;
 		});
-	
+
 		futures.add(result);
 		result.get();
 	}
@@ -395,47 +396,48 @@ class Transaction {
 	void close()
 		throws InterruptedException, ExecutionException
 	{
-		try {
-			Future<Boolean> result = executor.submit(() -> {
-				txnConnection.close();
-				return true;
-			});
-	
-			futures.add(result);
-			result.get();
-		}
-		finally {
-			executor.shutdown();
+		if (isClosed.compareAndSet(false, true)) {
+			try {
+				Future<Boolean> result = executor.submit(() -> {
+					txnConnection.close();
+					return true;
+				});
+				futures.add(result);
+				result.get();
+			}
+			finally {
+				executor.shutdown();
+			}
 		}
 	}
 
 	private RepositoryConnection getTransactionConnection()
-			throws InterruptedException, ExecutionException
-		{
-			// create a new RepositoryConnection with correct parser settings
-			Future<RepositoryConnection> future = executor.submit(() -> {
-				RepositoryConnection conn = rep.getConnection();
-				ParserConfig config = conn.getParserConfig();
-				config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-				config.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
-				config.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
+		throws InterruptedException, ExecutionException
+	{
+		// create a new RepositoryConnection with correct parser settings
+		Future<RepositoryConnection> future = executor.submit(() -> {
+			RepositoryConnection conn = rep.getConnection();
+			ParserConfig config = conn.getParserConfig();
+			config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+			config.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
+			config.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 
-				return conn;
-			});
+			return conn;
+		});
 
-			futures.add(future);
-			return future.get();
-		}
+		futures.add(future);
+		return future.get();
+	}
 
 	private static class WildcardRDFRemover extends AbstractRDFHandler {
-	
+
 		private final RepositoryConnection conn;
-	
+
 		public WildcardRDFRemover(RepositoryConnection conn) {
 			super();
 			this.conn = conn;
 		}
-	
+
 		@Override
 		public void handleStatement(Statement st)
 			throws RDFHandlerException
@@ -443,10 +445,10 @@ class Transaction {
 			Resource subject = SESAME.WILDCARD.equals(st.getSubject()) ? null : st.getSubject();
 			IRI predicate = SESAME.WILDCARD.equals(st.getPredicate()) ? null : st.getPredicate();
 			Value object = SESAME.WILDCARD.equals(st.getObject()) ? null : st.getObject();
-	
+
 			// use the RepositoryConnection.clear operation if we're removing all statements
 			final boolean clearAllTriples = subject == null && predicate == null && object == null;
-	
+
 			try {
 				Resource context = st.getContext();
 				if (context != null) {
@@ -470,6 +472,6 @@ class Transaction {
 				throw new RDFHandlerException(e);
 			}
 		}
-	
+
 	}
 }

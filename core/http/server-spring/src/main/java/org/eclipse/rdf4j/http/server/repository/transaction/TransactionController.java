@@ -172,7 +172,6 @@ public class TransactionController extends AbstractController {
 					}
 					finally {
 						ActiveTransactionRegistry.INSTANCE.deregister(transaction);
-						transaction.close();
 					}
 					result = new ModelAndView(EmptySuccessView.getInstance());
 					logger.info("transaction rollback request finished.");
@@ -256,9 +255,12 @@ public class TransactionController extends AbstractController {
 				case UPDATE:
 					return getSparqlUpdateResult(transaction, request, response);
 				case COMMIT:
-					transaction.commit();
-					transaction.close();
-					ActiveTransactionRegistry.INSTANCE.deregister(transaction);
+					try {
+						transaction.commit();
+					}
+					finally {
+						ActiveTransactionRegistry.INSTANCE.deregister(transaction);
+					}
 					break;
 				default:
 					logger.warn("transaction modification action '{}' not recognized", action);
