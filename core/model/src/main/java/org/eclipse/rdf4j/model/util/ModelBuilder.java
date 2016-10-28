@@ -236,11 +236,13 @@ public class ModelBuilder {
 	 * @param predicate
 	 *        the statement's predicate
 	 * @param object
-	 *        the statement's object. Creates a typed {@link Literal} out of the supplied object, mapping the
-	 *        runtime type of the object to the appropriate XML Schema type. If no mapping is available, the
-	 *        method creates a literal with the string representation of the supplied object as the value, and
-	 *        {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean} , {@link Byte},
-	 *        {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *        the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
+	 *        {@link Literal}, the object is used directly. If it is a prefixed name String with a known
+	 *        prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
+	 *        object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
+	 *        is available, the method creates a literal with the string representation of the supplied object
+	 *        as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
+	 *        , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
 	 *        {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
 	 * @see #namedGraph(Resource)
@@ -265,12 +267,13 @@ public class ModelBuilder {
 	 *        the {@link ModelBuilder} will need to have a namespace mapping for the prefix.
 	 * @param object
 	 *        the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
-	 *        {@link Literal}, the object is used directly. Otherwise, this method creates a typed
-	 *        {@link Literal} out of the supplied object, mapping the runtime type of the object to the
-	 *        appropriate XML Schema type. If no mapping is available, the method creates a literal with the
-	 *        string representation of the supplied object as the value, and {@link XMLSchema#STRING} as the
-	 *        datatype. Recognized types are {@link Boolean} , {@link Byte}, {@link Double}, {@link Float},
-	 *        {@link Integer}, {@link Long}, {@link Short}, {@link XMLGregorianCalendar } , and {@link Date}.
+	 *        {@link Literal}, the object is used directly. If it is a prefixed name String with a known
+	 *        prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
+	 *        object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
+	 *        is available, the method creates a literal with the string representation of the supplied object
+	 *        as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
+	 *        , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *        {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
 	 * @see #namedGraph(Resource)
 	 * @see #defaultGraph()
@@ -288,12 +291,13 @@ public class ModelBuilder {
 	 *        the statement's predicate.
 	 * @param object
 	 *        the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
-	 *        {@link Literal}, the object is used directly. Otherwise, this method creates a typed
-	 *        {@link Literal} out of the supplied object, mapping the runtime type of the object to the
-	 *        appropriate XML Schema type. If no mapping is available, the method creates a literal with the
-	 *        string representation of the supplied object as the value, and {@link XMLSchema#STRING} as the
-	 *        datatype. Recognized types are {@link Boolean} , {@link Byte}, {@link Double}, {@link Float},
-	 *        {@link Integer}, {@link Long}, {@link Short}, {@link XMLGregorianCalendar } , and {@link Date}.
+	 *        {@link Literal}, the object is used directly. If it is a prefixed name String with a known
+	 *        prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
+	 *        object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
+	 *        is available, the method creates a literal with the string representation of the supplied object
+	 *        as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
+	 *        , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *        {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
 	 * @throws ModelException
 	 *         if the current subject is not set using {@link #subject(Resource)} or {@link #subject(String)}.
@@ -315,12 +319,13 @@ public class ModelBuilder {
 	 *        the {@link ModelBuilder} will need to have a namespace mapping for the prefix.
 	 * @param object
 	 *        the statement's object. If the supplied object is a {@link BNode}, {@link IRI}, or
-	 *        {@link Literal}, the object is used directly. Otherwise this method creates a typed
-	 *        {@link Literal} out of the supplied object, mapping the runtime type of the object to the
-	 *        appropriate XML Schema type. If no mapping is available, the method creates a literal with the
-	 *        string representation of the supplied object as the value, and {@link XMLSchema#STRING} as the
-	 *        datatype. Recognized types are {@link Boolean} , {@link Byte}, {@link Double}, {@link Float},
-	 *        {@link Integer}, {@link Long}, {@link Short}, {@link XMLGregorianCalendar } , and {@link Date}.
+	 *        {@link Literal}, the object is used directly. If it is a prefixed name String with a known
+	 *        prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
+	 *        object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
+	 *        is available, the method creates a literal with the string representation of the supplied object
+	 *        as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
+	 *        , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *        {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
 	 * @throws ModelException
 	 *         if the current subject is not set using {@link #subject(Resource)} or {@link #subject(String)}.
