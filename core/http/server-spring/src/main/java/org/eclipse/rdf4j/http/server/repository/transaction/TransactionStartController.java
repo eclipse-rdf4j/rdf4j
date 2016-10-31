@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -98,16 +99,13 @@ public class TransactionStartController extends AbstractController {
 		}
 
 		try {
-			RepositoryConnection conn = repository.getConnection();
+			Transaction txn = new Transaction(repository);
+			txn.begin(isolationLevel);
 
-			ParserConfig config = conn.getParserConfig();
-			config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-			config.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
-			config.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
-			conn.begin(isolationLevel);
-			UUID txnId = UUID.randomUUID();
-
-			ActiveTransactionRegistry.INSTANCE.register(txnId, conn);
+			UUID txnId = txn.getID();
+					
+			ActiveTransactionRegistry.INSTANCE.register(txn);
+			
 			model.put(SimpleResponseView.SC_KEY, SC_CREATED);
 			final StringBuffer txnURL = request.getRequestURL();
 			txnURL.append("/" + txnId.toString());
@@ -116,7 +114,7 @@ public class TransactionStartController extends AbstractController {
 			model.put(SimpleResponseView.CUSTOM_HEADERS_KEY, customHeaders);
 			return new ModelAndView(SimpleResponseView.getInstance(), model);
 		}
-		catch (RepositoryException e) {
+		catch (RepositoryException | InterruptedException | ExecutionException e) {
 			throw new ServerHTTPException("Transaction start error: " + e.getMessage(), e);
 		}
 	}
