@@ -5,24 +5,23 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.http.server.repository.statements;
+package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import static javax.servlet.http.HttpServletResponse.SC_OK;
 
 import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
-import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -30,12 +29,13 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.springframework.web.servlet.View;
 
 /**
- * View used to export statements. Renders the statements as RDF using a serialization specified using a
- * parameter or Accept header.
+ * View used to export statements as part of a transaction. Renders the statements as RDF using a
+ * serialization specified using a parameter or Accept header.
  * 
  * @author Herko ter Horst
+ * @author Jeen Broekstra
  */
-public class ExportStatementsView implements View {
+public class TransactionExportStatementsView implements View {
 
 	public static final String SUBJECT_KEY = "subject";
 
@@ -47,21 +47,19 @@ public class ExportStatementsView implements View {
 
 	public static final String USE_INFERENCING_KEY = "useInferencing";
 
-	public static final String CONNECTION_KEY = "connection";
-
-	public static final String TRANSACTION_ID_KEY = "transactionID";
+	public static final String TRANSACTION_KEY = "transaction";
 
 	public static final String FACTORY_KEY = "factory";
 
 	public static final String HEADERS_ONLY = "headersOnly";
 
-	private static final ExportStatementsView INSTANCE = new ExportStatementsView();
+	private static final TransactionExportStatementsView INSTANCE = new TransactionExportStatementsView();
 
-	public static ExportStatementsView getInstance() {
+	public static TransactionExportStatementsView getInstance() {
 		return INSTANCE;
 	}
 
-	private ExportStatementsView() {
+	private TransactionExportStatementsView() {
 	}
 
 	public String getContentType() {
@@ -77,7 +75,7 @@ public class ExportStatementsView implements View {
 		Value obj = (Value)model.get(OBJECT_KEY);
 		Resource[] contexts = (Resource[])model.get(CONTEXTS_KEY);
 		boolean useInferencing = (Boolean)model.get(USE_INFERENCING_KEY);
-		RepositoryConnection conn = (RepositoryConnection)model.get(CONNECTION_KEY);
+		Transaction transaction = (Transaction)model.get(TRANSACTION_KEY);
 
 		boolean headersOnly = (Boolean)model.get(HEADERS_ONLY);
 
@@ -86,38 +84,33 @@ public class ExportStatementsView implements View {
 		RDFFormat rdfFormat = rdfWriterFactory.getRDFFormat();
 
 		try {
-			OutputStream out = response.getOutputStream();
-			RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
+			try (OutputStream out = response.getOutputStream()) {
+				RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
 
-			response.setStatus(SC_OK);
+				response.setStatus(SC_OK);
 
-			String mimeType = rdfFormat.getDefaultMIMEType();
-			if (rdfFormat.hasCharset()) {
-				Charset charset = rdfFormat.getCharset();
-				mimeType += "; charset=" + charset.name();
-			}
-			response.setContentType(mimeType);
-
-			String filename = "statements";
-			if (rdfFormat.getDefaultFileExtension() != null) {
-				filename += "." + rdfFormat.getDefaultFileExtension();
-			}
-			response.setHeader("Content-Disposition", "attachment; filename=" + filename);
-
-			if (!headersOnly) {
-				if (conn == null) {
-					conn = RepositoryInterceptor.getRepositoryConnection(request);
+				String mimeType = rdfFormat.getDefaultMIMEType();
+				if (rdfFormat.hasCharset()) {
+					Charset charset = rdfFormat.getCharset();
+					mimeType += "; charset=" + charset.name();
 				}
-				synchronized (conn) {
-					conn.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
+				response.setContentType(mimeType);
+
+				String filename = "statements";
+				if (rdfFormat.getDefaultFileExtension() != null) {
+					filename += "." + rdfFormat.getDefaultFileExtension();
+				}
+				response.setHeader("Content-Disposition", "attachment; filename=" + filename);
+
+				if (!headersOnly) {
+					transaction.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
 				}
 			}
-			out.close();
 		}
 		catch (RDFHandlerException e) {
 			throw new ServerHTTPException("Serialization error: " + e.getMessage(), e);
 		}
-		catch (RepositoryException e) {
+		catch (ExecutionException | InterruptedException e) {
 			throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 		}
 	}
