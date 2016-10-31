@@ -12,13 +12,11 @@ import static org.eclipse.rdf4j.http.protocol.Protocol.QUERY_PARAM_NAME;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.Map;
-import java.util.UUID;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.lang.FileFormat;
-import org.eclipse.rdf4j.http.server.repository.transaction.ActiveTransactionRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.servlet.View;
@@ -63,16 +61,7 @@ public abstract class QueryResultView implements View {
 	public final void render(Map model, HttpServletRequest request, HttpServletResponse response)
 		throws IOException
 	{
-		UUID txnId = null;
-		try {
-			txnId = (UUID)model.get(TRANSACTION_ID_KEY);
-			renderInternal(model, request, response);
-		}
-		finally {
-			if (txnId != null) {
-				ActiveTransactionRegistry.INSTANCE.returnTransactionConnection(txnId);
-			}
-		}
+		renderInternal(model, request, response);
 	}
 
 	@SuppressWarnings("rawtypes")
