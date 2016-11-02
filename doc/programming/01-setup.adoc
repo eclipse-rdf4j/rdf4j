@@ -12,7 +12,7 @@ RDF4J is available from the Central Repository, which means you don’t need to 
 
 === Maven Artifacts
 
-The groupId for all RDF4J core artifacts is org.eclipse.rdf4j. To include a maven dependency in your project that automatically gets you the entire RDF$J core framework, use artifactId rdf4j-runtime: 
+The groupId for all RDF4J core artifacts is org.eclipse.rdf4j. To include a maven dependency in your project that automatically gets you the entire RDF4J core framework, use artifactId rdf4j-runtime: 
 
 [source,xml]
 ----
