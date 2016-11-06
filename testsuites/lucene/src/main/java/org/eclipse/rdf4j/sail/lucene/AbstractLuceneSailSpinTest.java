@@ -12,9 +12,12 @@ import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SEARCH;
 
 import java.io.IOException;
+import java.net.URL;
+import java.util.Properties;
 
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.GraphQuery;
@@ -28,7 +31,10 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
+import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.spin.SpinSail;
 import org.junit.After;
@@ -46,11 +52,13 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class AbstractLuceneSailSpinTest {
 
+	private static final String DATA = "org/eclipse/rdf4j/sail/yeastract_raw.ttl";
+
+	private static Logger log = LoggerFactory.getLogger(AbstractLuceneSailSpinTest.class);
+
 	private Repository repository;
 
 	private RepositoryConnection connection;
-
-	private static Logger log = LoggerFactory.getLogger(AbstractLuceneSailSpinTest.class);
 
 	@Before
 	public void setUp()
@@ -61,16 +69,18 @@ public abstract class AbstractLuceneSailSpinTest {
 
 		// add Support for SPIN function
 		SpinSail spin = new SpinSail(store);
+		spin.setEvaluationMode(TupleFunctionEvaluationMode.TRIPLE_SOURCE);
 
-		// prepare sLucene wrapper
-		LuceneSail sail = new LuceneSail();
-		configure(sail);
-		sail.setBaseSail(spin);
-		repository = new SailRepository(sail);
+		// add Lucene support
+		Properties parameters = new Properties();
+		configure(parameters);
+		SearchIndex searchIndex = LuceneSail.createSearchIndex(parameters);
+		spin.addQueryContextInitializer(new SearchIndexQueryContextInitializer(searchIndex));
+		repository = new SailRepository(spin);
 		repository.initialize();
 
 		connection = repository.getConnection();
-		populate(connection);
+		populate(connection, searchIndex);
 
 		// validate population
 		int count = countStatements(connection);
@@ -86,10 +96,20 @@ public abstract class AbstractLuceneSailSpinTest {
 		repository.shutDown();
 	}
 
-	protected abstract void configure(LuceneSail sail);
+	protected abstract void configure(Properties parameters);
 
-	protected abstract void populate(RepositoryConnection connection)
-		throws Exception;
+	protected void populate(RepositoryConnection repoConn, SearchIndex searchIndex)
+		throws Exception
+	{
+		// load resources
+		URL resourceURL = AbstractLuceneSailSpinTest.class.getClassLoader().getResource(DATA);
+		log.info("Resource URL: {}", resourceURL.toString());
+		Model model = Rio.parse(resourceURL.openStream(), resourceURL.toString(), RDFFormat.TURTLE);
+		for (Statement stmt : model) {
+			repoConn.add(stmt);
+			searchIndex.addStatement(stmt);
+		}
+	}
 
 	/**
 	 * Positive control test: ie valid SPARQL query
@@ -216,6 +236,7 @@ public abstract class AbstractLuceneSailSpinTest {
 	 *   ?pred a <urn:ontology/Gene> . 
 	 *   ?pred <urn:ontology/id> ?id2 . 
 	 * } where {
+	 *   bind(str("Abf1") as ?query) .
 	 *   (?query search:allMatches search:score) search:search (?pred ?score) .
 	 *   ?pred <urn:raw:yeastract#Yeast_id> ?id . 
 	 *   bind(str(?id) as ?id2) ,
@@ -233,7 +254,7 @@ public abstract class AbstractLuceneSailSpinTest {
 		buffer.append("  ?pred a <urn:ontology/Gene> .\n");
 		buffer.append("  ?pred <urn:ontology/id> ?id2 .\n");
 		buffer.append(" } where {\n");
-		//buffer.append("select * where {\n");
+		buffer.append("  bind(str(\"Abf1\") as ?query) .\n");
 		buffer.append(
 				"  (?query <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + "> (?pred ?score) . \n");
 		buffer.append("  ?pred <urn:raw:yeastract#Yeast_id> ?id .\n");

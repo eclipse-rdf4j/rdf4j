@@ -77,7 +77,8 @@ public class QueryTupleFunction implements TupleFunction {
 
 		final QuerySpec query = new QuerySpec(matchesVarName, propertyVarName, scoreVarName, snippetVarName,
 				subject, queryString, propertyURI);
-		SearchIndex luceneIndex = QueryContext.getQueryContext().getAttribute(SearchIndex.class.getName());
+		SearchIndex luceneIndex = SearchIndexQueryContextInitializer.getSearchIndex(
+				QueryContext.getQueryContext());
 		// mark that reading is in progress
 		try {
 			luceneIndex.beginReading();

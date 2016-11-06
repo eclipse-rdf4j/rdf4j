@@ -312,7 +312,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		throws SailException
 	{
 		QueryContext qctx = new QueryContext();
-		qctx.setAttribute(SearchIndex.class.getName(), luceneIndex);
+		SearchIndexQueryContextInitializer.init(qctx, luceneIndex);
 
 		final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
 		qctx.begin();

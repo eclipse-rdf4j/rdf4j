@@ -7,12 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.spin;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryContextInitializer;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
@@ -37,6 +40,8 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 	private SpinParser parser = new SpinParser();
 
 	private TupleFunctionEvaluationMode evaluationMode = TupleFunctionEvaluationMode.SERVICE;
+
+	private List<QueryContextInitializer> queryContextInitializers = new ArrayList<>();
 
 	private boolean axiomClosureNeeded = true;
 
@@ -107,6 +112,14 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 	 */
 	public boolean isAxiomClosureNeeded() {
 		return this.axiomClosureNeeded;
+	}
+
+	public void addQueryContextInitializer(QueryContextInitializer initializer) {
+		this.queryContextInitializers.add(initializer);
+	}
+
+	protected List<QueryContextInitializer> getQueryContextInitializers() {
+		return this.queryContextInitializers;
 	}
 
 	public SpinParser getSpinParser() {
