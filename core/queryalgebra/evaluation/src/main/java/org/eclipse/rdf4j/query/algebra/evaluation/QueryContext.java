@@ -12,6 +12,8 @@ import java.util.Map;
 
 public class QueryContext {
 
+	private static final String QUERY_PREPARER_ATTRIBUTE = QueryPreparer.class.getName();
+
 	private static final ThreadLocal<QueryContext> queryContext = new ThreadLocal<QueryContext>();
 
 	public static QueryContext getQueryContext() {
@@ -26,7 +28,7 @@ public class QueryContext {
 	}
 
 	public QueryContext(QueryPreparer qp) {
-		setAttribute(QueryPreparer.class.getName(), qp);
+		setAttribute(QUERY_PREPARER_ATTRIBUTE, qp);
 	}
 
 	public void begin() {
@@ -35,7 +37,7 @@ public class QueryContext {
 	}
 
 	public QueryPreparer getQueryPreparer() {
-		return getAttribute(QueryPreparer.class.getName());
+		return getAttribute(QUERY_PREPARER_ATTRIBUTE);
 	}
 
 	public void setAttribute(String name, Object value) {

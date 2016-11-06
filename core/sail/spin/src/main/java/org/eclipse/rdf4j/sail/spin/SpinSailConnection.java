@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryContextInitializer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.AbstractFederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
@@ -114,6 +115,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 	private final TripleSource tripleSource;
 
+	private final List<QueryContextInitializer> queryContextInitializers;
+
 	private final SpinParser parser;
 
 	private List<IRI> orderedRuleProperties;
@@ -133,6 +136,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		this.functionRegistry = sail.getFunctionRegistry();
 		this.tupleFunctionRegistry = sail.getTupleFunctionRegistry();
 		this.vf = sail.getValueFactory();
+		this.queryContextInitializers = sail.getQueryContextInitializers();
 		this.parser = sail.getSpinParser();
 		this.tripleSource = new SailTripleSource(getWrappedConnection(), true, vf);
 		this.queryPreparer = new SailConnectionQueryPreparer(this, true, tripleSource);
@@ -172,15 +176,33 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		QueryContext qctx = new QueryContext(queryPreparer);
 		qctx.begin();
 		try {
+			initQueryContext(qctx);
 			iter = evaluateInternal(tupleExpr, dataset, bindings, includeInferred);
 		}
 		finally {
-			qctx.end();
+			try {
+				destroyQueryContext(qctx);
+			}
+			finally {
+				qctx.end();
+			}
 		}
 
 		// NB: Iteration methods may do on-demand evaluation hence need to wrap
 		// these too
 		return new QueryContextIteration(iter, qctx);
+	}
+
+	private void initQueryContext(QueryContext qctx) {
+		for (QueryContextInitializer initializer : queryContextInitializers) {
+			initializer.init(qctx);
+		}
+	}
+
+	private void destroyQueryContext(QueryContext qctx) {
+		for (QueryContextInitializer initializer : queryContextInitializers) {
+			initializer.destroy(qctx);
+		}
 	}
 
 	private CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(

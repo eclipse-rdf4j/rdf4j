@@ -381,12 +381,19 @@ public class LuceneSail extends NotifyingSailWrapper {
 		}
 	}
 
-	protected void initializeLuceneIndex()
+	protected static SearchIndex createSearchIndex(Properties parameters)
 		throws Exception
 	{
 		String indexClassName = parameters.getProperty(INDEX_CLASS_KEY, DEFAULT_INDEX_CLASS);
 		SearchIndex index = (SearchIndex)Class.forName(indexClassName).newInstance();
 		index.initialize(parameters);
+		return index;
+	}
+
+	protected void initializeLuceneIndex()
+		throws Exception
+	{
+		SearchIndex index = createSearchIndex(parameters);
 		setLuceneIndex(index);
 	}
 
