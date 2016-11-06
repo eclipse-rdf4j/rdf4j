@@ -49,7 +49,7 @@ public abstract class InferencingTest {
 		final String inputData = TEST_DIR_PREFIX + "/" + name + "-in.nt";
 		final String outputData = TEST_DIR_PREFIX + "/" + name + "-out.nt";
 
-		Collection<? extends Statement> entailedStatements = null;
+		Collection<? extends Statement> entailedStatements = new HashSet<>();
 		Collection<? extends Statement> expectedStatements = null;
 
 		Repository repository = new SailRepository(sailStack);
