@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
 import java.io.File;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * @author Håvard Mikkelsen Ottestad
@@ -102,7 +101,6 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
             finalConnection.addAxiomStatements();
 
-            List<Statement> schemaStatements = new ArrayList<>();
 
             if (schema != null) {
 
@@ -110,9 +108,9 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
                     schemaConnection.begin();
                     RepositoryResult<Statement> statements = schemaConnection.getStatements(null, null, null);
 
-                    schemaStatements = Iterations.stream(statements)
+                    Iterations.stream(statements)
                         .peek(finalConnection::statementCollector)
-                        .collect(Collectors.toList());
+                        .forEach(s -> finalConnection.addStatement(s.getSubject(), s.getPredicate(), s.getObject(), s.getContext()));
 
                     schemaConnection.commit();
                 }
@@ -120,7 +118,6 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
             finalConnection.calculateInferenceMaps();
 
-            schemaStatements.forEach(s -> finalConnection.addStatement(s.getSubject(), s.getPredicate(), s.getObject(), s.getContext()));
 
             finalConnection.commit();
         } finally {
