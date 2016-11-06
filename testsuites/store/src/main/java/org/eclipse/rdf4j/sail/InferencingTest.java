@@ -130,7 +130,9 @@ public abstract class InferencingTest {
 	{
 		// Dump results to tmp file for debugging
 		String tmpDir = System.getProperty("java.io.tmpdir");
+		name = name.replace("/", "_");
 		File tmpFile = new File(tmpDir, "junit-" + name + ".nt");
+		tmpFile.createNewFile();
 
 		OutputStream export = new FileOutputStream(tmpFile);
 		try {
