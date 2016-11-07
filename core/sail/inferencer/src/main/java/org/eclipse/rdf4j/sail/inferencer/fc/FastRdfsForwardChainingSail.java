@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
+import org.eclipse.rdf4j.sail.inferencer.fc.AbstractForwardChainingInferencer;
 
 import java.io.File;
 import java.util.*;
@@ -22,10 +23,10 @@ import java.util.*;
 
 public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferencer {
 
-    final NotifyingSail data;
-    final Repository schema;
+    NotifyingSail data;
+    Repository schema;
 
-    boolean sesameCompliant = false;
+    boolean useAllRdfsRules = true;
 
     List<Statement> subClassOfStatemenets = new ArrayList<>();
     List<Statement> propertyStatements = new ArrayList<>();
@@ -34,11 +35,11 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
     List<Statement> domainStatemenets = new ArrayList<>();
 
 
-    Map<Resource, HashSet<Resource>> calculatedTypes = new HashMap<>();
-    Map<IRI, HashSet<IRI>> calculatedProperties = new HashMap<>();
-    Map<IRI, HashSet<Resource>> calculatedRange = new HashMap<>();
-    Map<IRI, HashSet<Resource>> calculatedDomain = new HashMap<>();
-
+    Map<Resource, Set<Resource>> calculatedTypes = new HashMap<>();
+    Map<IRI, Set<IRI>> calculatedProperties = new HashMap<>();
+    Map<IRI, Set<Resource>> calculatedRange = new HashMap<>();
+    Map<IRI, Set<Resource>> calculatedDomain = new HashMap<>();
+    private boolean sharedSchema;
 
     void clearInferenceTables() {
         subClassOfStatemenets = new ArrayList<>();
@@ -50,8 +51,6 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
         calculatedProperties = new HashMap<>();
         calculatedRange = new HashMap<>();
         calculatedDomain = new HashMap<>();
-
-
     }
 
 
@@ -62,6 +61,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
     }
 
+
     public FastRdfsForwardChainingSail(NotifyingSail data, Repository schema) {
         super(data);
 
@@ -70,27 +70,32 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
     }
 
-    public FastRdfsForwardChainingSail(NotifyingSail data, boolean sesameCompliant) {
+    public FastRdfsForwardChainingSail(NotifyingSail data, boolean useAllRdfsRules) {
         super(data);
         schema = null;
 
         this.data = data;
-        this.sesameCompliant = sesameCompliant;
+        this.useAllRdfsRules = useAllRdfsRules;
 
     }
 
-    public FastRdfsForwardChainingSail(NotifyingSail data, Repository schema, boolean sesameCompliant) {
+    public FastRdfsForwardChainingSail(NotifyingSail data, Repository schema, boolean useAllRdfsRules) {
         super(data);
 
         this.data = data;
         this.schema = schema;
-        this.sesameCompliant = sesameCompliant;
+        this.useAllRdfsRules = useAllRdfsRules;
 
     }
 
 
     public void initialize() throws SailException {
         super.initialize();
+
+        if (sharedSchema) {
+            return;
+        }
+
 
         FastRdfsForwardChainingSailConnetion connection = null;
 
@@ -117,7 +122,6 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
             }
 
             finalConnection.calculateInferenceMaps();
-
 
             finalConnection.commit();
         } finally {
@@ -146,6 +150,59 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
     public ValueFactory getValueFactory() {
 
         return SimpleValueFactory.getInstance();
+    }
+
+    static public FastRdfsForwardChainingSail fastInstantiateFrom(FastRdfsForwardChainingSail baseSail, NotifyingSail store) {
+        return fastInstantiateFrom(baseSail, store, true);
+    }
+
+    static public FastRdfsForwardChainingSail fastInstantiateFrom(FastRdfsForwardChainingSail baseSail, NotifyingSail store, boolean useAllRdfsRules) {
+
+        baseSail.getConnection().close();
+
+        FastRdfsForwardChainingSail ret = new FastRdfsForwardChainingSail(store, baseSail.schema, useAllRdfsRules);
+
+        ret.sharedSchema = true;
+
+        baseSail.calculatedTypes.forEach((key, value) -> {
+            value.forEach(v -> {
+                if (!ret.calculatedTypes.containsKey(key)) {
+                    ret.calculatedTypes.put(key, new HashSet<>());
+                }
+                ret.calculatedTypes.get(key).add(v);
+            });
+        });
+
+        baseSail.calculatedProperties.forEach((key, value) -> {
+            value.forEach(v -> {
+                if (!ret.calculatedProperties.containsKey(key)) {
+                    ret.calculatedProperties.put(key, new HashSet<>());
+                }
+                ret.calculatedProperties.get(key).add(v);
+            });
+        });
+
+        baseSail.calculatedRange.forEach((key, value) -> {
+            value.forEach(v -> {
+                if (!ret.calculatedRange.containsKey(key)) {
+                    ret.calculatedRange.put(key, new HashSet<>());
+                }
+                ret.calculatedRange.get(key).add(v);
+            });
+        });
+
+        baseSail.calculatedDomain.forEach((key, value) -> {
+            value.forEach(v -> {
+                if (!ret.calculatedDomain.containsKey(key)) {
+                    ret.calculatedDomain.put(key, new HashSet<>());
+                }
+                ret.calculatedDomain.get(key).add(v);
+            });
+        });
+
+
+        return ret;
+
     }
 
 

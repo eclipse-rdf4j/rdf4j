@@ -4,13 +4,10 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.*;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.rio.*;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.util.*;
 
 /**
@@ -29,6 +26,7 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
         this.fastRdfsForwardChainingSail = fastRdfsForwardChainingSail;
         this.connection = e;
     }
+
 
     void statementCollector(Statement statement) {
         Value object = statement.getObject();
@@ -204,7 +202,7 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
         }
     }
 
-    private void calculateRangeDomain(List<Statement> rangeOrDomainStatements, Map<IRI, HashSet<Resource>> calculatedRangeOrDomain) {
+    private void calculateRangeDomain(List<Statement> rangeOrDomainStatements, Map<IRI, Set<Resource>> calculatedRangeOrDomain) {
 
         rangeOrDomainStatements.forEach(s -> {
             IRI predicate = (IRI) s.getSubject();
@@ -242,7 +240,7 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
             calculatedRangeOrDomain.forEach((key, value) -> {
                 List<Resource> resolvedBySubProperty = new ArrayList<>();
                 resolveProperties(key).forEach(newPredicate -> {
-                    HashSet<Resource> iris = calculatedRangeOrDomain.get(newPredicate);
+                    Set<Resource> iris = calculatedRangeOrDomain.get(newPredicate);
                     if (iris != null) {
                         resolvedBySubProperty.addAll(iris);
                     }
@@ -466,7 +464,7 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
         final boolean[] inferRdfTypeSubject = {false};
         final boolean[] inferRdfTypeObject = {false};
 
-        if (fastRdfsForwardChainingSail.sesameCompliant) {
+        if (fastRdfsForwardChainingSail.useAllRdfsRules) {
             addInferredStatement(subject, RDF.TYPE, RDFS.RESOURCE, resources);
 
             if (object instanceof Resource) {
@@ -505,7 +503,7 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
             resolveTypes((Resource) object)
                 .stream()
                 .peek(inferredType -> {
-                    if (fastRdfsForwardChainingSail.sesameCompliant && inferredType.equals(RDFS.CLASS)) {
+                    if (fastRdfsForwardChainingSail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
                         addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE, resources);
                     }
 
@@ -525,7 +523,7 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
             resolveRangeTypes(predicate)
                 .stream()
                 .peek(inferredType -> {
-                    if (fastRdfsForwardChainingSail.sesameCompliant && inferredType.equals(RDFS.CLASS)) {
+                    if (fastRdfsForwardChainingSail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
                         addInferredStatement(((Resource) object), RDFS.SUBCLASSOF, RDFS.RESOURCE, resources);
                     }
                     inferRdfTypeObject[0] = true;
@@ -538,7 +536,7 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
         resolveDomainTypes((IRI) predicate)
             .stream()
             .peek(inferredType -> {
-                if (fastRdfsForwardChainingSail.sesameCompliant && inferredType.equals(RDFS.CLASS)) {
+                if (fastRdfsForwardChainingSail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
                     addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE, resources);
                 }
                 inferRdfTypeSubject[0] = true;
@@ -564,173 +562,483 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
     }
 
     protected void addAxiomStatements() {
-        try {
+//        StringBuilder axioms = new StringBuilder();
+//
+//        try {
+//
+//
+//            RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
+//            parser.setRDFHandler(new RDFHandler() {
+//                @Override
+//                public void startRDF() throws RDFHandlerException {
+//
+//                }
+//
+//                @Override
+//                public void endRDF() throws RDFHandlerException {
+//
+//                }
+//
+//                @Override
+//                public void handleNamespace(String s11, String s1) throws RDFHandlerException {
+//
+//                }
+//
+//                @Override
+//                public void handleStatement(Statement statement) throws RDFHandlerException {
+//
+//                    SimpleValueFactory vf = SimpleValueFactory.getInstance();
+//
+//
+//                    axioms.append("statement = vf.createStatement(vf.createIRI(\"" + statement.getSubject() + "\"), vf.createIRI(\"" + statement.getPredicate() + "\"), vf.createIRI(\"" + statement.getObject() + "\"));\n");
+//                    axioms.append("statementCollector(statement);").append("\n");
+//                    axioms.append(" addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());").append("\n");
+//
+//                    statementCollector(statement);
+//                    addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+//                }
+//
+//                @Override
+//                public void handleComment(String s1) throws RDFHandlerException {
+//
+//                }
+//            });
+//
+//            parser.parse(new ByteArrayInputStream(baseRDFS.getBytes("UTF-8")), "");
+//
+//
+//        } catch (IOException ignored) {
+//        }
 
 
-            RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
-            parser.setRDFHandler(new RDFHandler() {
-                @Override
-                public void startRDF() throws RDFHandlerException {
+        ValueFactory vf = fastRdfsForwardChainingSail.getValueFactory();
 
-                }
+        Statement statement = vf.createStatement(RDF.ALT, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.ALT, RDF.TYPE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.ALT, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.ALT, RDFS.SUBCLASSOF, RDFS.CONTAINER);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.ALT, RDFS.SUBCLASSOF, RDF.ALT);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.BAG, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.BAG, RDF.TYPE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.BAG, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.BAG, RDFS.SUBCLASSOF, RDFS.CONTAINER);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.BAG, RDFS.SUBCLASSOF, RDF.BAG);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.LIST, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.LIST, RDF.TYPE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.LIST, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.LIST, RDFS.SUBCLASSOF, RDF.LIST);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.PROPERTY, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.PROPERTY, RDF.TYPE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.PROPERTY, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.PROPERTY, RDFS.SUBCLASSOF, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.SEQ, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.SEQ, RDF.TYPE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.SEQ, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.SEQ, RDFS.SUBCLASSOF, RDFS.CONTAINER);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.SEQ, RDFS.SUBCLASSOF, RDF.SEQ);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.STATEMENT, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.STATEMENT, RDF.TYPE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.STATEMENT, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.STATEMENT, RDFS.SUBCLASSOF, RDF.STATEMENT);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.XMLLITERAL, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.XMLLITERAL, RDF.TYPE, RDFS.DATATYPE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.XMLLITERAL, RDF.TYPE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.XMLLITERAL, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.XMLLITERAL, RDFS.SUBCLASSOF, RDFS.LITERAL);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.XMLLITERAL, RDFS.SUBCLASSOF, RDF.XMLLITERAL);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.FIRST, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.FIRST, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.FIRST, RDFS.DOMAIN, RDF.LIST);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.FIRST, RDFS.RANGE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.FIRST, RDFS.SUBPROPERTYOF, RDF.FIRST);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.NIL, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.NIL, RDF.TYPE, RDF.LIST);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.OBJECT, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.OBJECT, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.OBJECT, RDFS.DOMAIN, RDF.STATEMENT);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.OBJECT, RDFS.RANGE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.OBJECT, RDFS.SUBPROPERTYOF, RDF.OBJECT);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.PREDICATE, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.PREDICATE, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.PREDICATE, RDFS.DOMAIN, RDF.STATEMENT);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.PREDICATE, RDFS.RANGE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.PREDICATE, RDFS.SUBPROPERTYOF, RDF.PREDICATE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.REST, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.REST, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.REST, RDFS.DOMAIN, RDF.LIST);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.REST, RDFS.RANGE, RDF.LIST);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.REST, RDFS.SUBPROPERTYOF, RDF.REST);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.SUBJECT, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.SUBJECT, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.SUBJECT, RDFS.DOMAIN, RDF.STATEMENT);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.SUBJECT, RDFS.RANGE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.SUBJECT, RDFS.SUBPROPERTYOF, RDF.SUBJECT);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.TYPE, RDFS.DOMAIN, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.TYPE, RDFS.RANGE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.TYPE, RDFS.SUBPROPERTYOF, RDF.TYPE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.VALUE, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.VALUE, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.VALUE, RDFS.DOMAIN, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.VALUE, RDFS.RANGE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDF.VALUE, RDFS.SUBPROPERTYOF, RDF.VALUE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.CLASS, RDF.TYPE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.CLASS, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.CLASS, RDFS.SUBCLASSOF, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.CONTAINER, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.CONTAINER, RDF.TYPE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.CONTAINER, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.CONTAINER, RDFS.SUBCLASSOF, RDFS.CONTAINER);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDF.TYPE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDFS.SUBCLASSOF, RDFS.CONTAINERMEMBERSHIPPROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDFS.SUBCLASSOF, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.DATATYPE, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.DATATYPE, RDF.TYPE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.DATATYPE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.DATATYPE, RDFS.SUBCLASSOF, RDFS.DATATYPE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.DATATYPE, RDFS.SUBCLASSOF, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.LITERAL, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.LITERAL, RDF.TYPE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.LITERAL, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.LITERAL, RDFS.SUBCLASSOF, RDFS.LITERAL);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.RESOURCE, RDF.TYPE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.COMMENT, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.COMMENT, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.COMMENT, RDFS.DOMAIN, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.COMMENT, RDFS.RANGE, RDFS.LITERAL);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.COMMENT, RDFS.SUBPROPERTYOF, RDFS.COMMENT);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.DOMAIN, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.DOMAIN, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.DOMAIN, RDFS.DOMAIN, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.DOMAIN, RDFS.RANGE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.DOMAIN, RDFS.SUBPROPERTYOF, RDFS.DOMAIN);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.ISDEFINEDBY, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.ISDEFINEDBY, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.ISDEFINEDBY, RDFS.DOMAIN, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.ISDEFINEDBY, RDFS.RANGE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.ISDEFINEDBY, RDFS.SUBPROPERTYOF, RDFS.SEEALSO);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.ISDEFINEDBY, RDFS.SUBPROPERTYOF, RDFS.ISDEFINEDBY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.LABEL, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.LABEL, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.LABEL, RDFS.DOMAIN, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.LABEL, RDFS.RANGE, RDFS.LITERAL);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.LABEL, RDFS.SUBPROPERTYOF, RDFS.LABEL);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.MEMBER, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.MEMBER, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.MEMBER, RDFS.DOMAIN, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.MEMBER, RDFS.RANGE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.MEMBER, RDFS.SUBPROPERTYOF, RDFS.MEMBER);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.RANGE, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.RANGE, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.RANGE, RDFS.DOMAIN, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.RANGE, RDFS.RANGE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.RANGE, RDFS.SUBPROPERTYOF, RDFS.RANGE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SEEALSO, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SEEALSO, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SEEALSO, RDFS.DOMAIN, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SEEALSO, RDFS.RANGE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SEEALSO, RDFS.SUBPROPERTYOF, RDFS.SEEALSO);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SUBCLASSOF, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SUBCLASSOF, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SUBCLASSOF, RDFS.DOMAIN, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SUBCLASSOF, RDFS.RANGE, RDFS.CLASS);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SUBCLASSOF, RDFS.SUBPROPERTYOF, RDFS.SUBCLASSOF);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SUBPROPERTYOF, RDF.TYPE, RDFS.RESOURCE);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SUBPROPERTYOF, RDF.TYPE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SUBPROPERTYOF, RDFS.DOMAIN, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SUBPROPERTYOF, RDFS.RANGE, RDF.PROPERTY);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+        statement = vf.createStatement(RDFS.SUBPROPERTYOF, RDFS.SUBPROPERTYOF, RDFS.SUBPROPERTYOF);
+        statementCollector(statement);
+        addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
 
-                @Override
-                public void endRDF() throws RDFHandlerException {
 
-                }
-
-                @Override
-                public void handleNamespace(String s11, String s1) throws RDFHandlerException {
-
-                }
-
-                @Override
-                public void handleStatement(Statement statement) throws RDFHandlerException {
-                    statementCollector(statement);
-                    addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
-                }
-
-                @Override
-                public void handleComment(String s1) throws RDFHandlerException {
-
-                }
-            });
-
-            parser.parse(new ByteArrayInputStream(baseRDFS.getBytes("UTF-8")), "");
-
-
-        } catch (IOException ignored) {
-        }
     }
-
-
-    static final String baseRDFS =
-        "@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
-            "@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .\n" +
-            "@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .\n" +
-            "\n" +
-            "rdf:Alt  a               rdfs:Resource , rdfs:Class ;\n" +
-            "        rdfs:subClassOf  rdfs:Resource , rdfs:Container , rdf:Alt .\n" +
-            "\n" +
-            "rdf:Bag  a               rdfs:Resource , rdfs:Class ;\n" +
-            "        rdfs:subClassOf  rdfs:Resource , rdfs:Container , rdf:Bag .\n" +
-            "\n" +
-            "rdf:List  a              rdfs:Resource , rdfs:Class ;\n" +
-            "        rdfs:subClassOf  rdfs:Resource , rdf:List .\n" +
-            "\n" +
-            "rdf:Property  a          rdfs:Resource , rdfs:Class ;\n" +
-            "        rdfs:subClassOf  rdfs:Resource , rdf:Property .\n" +
-            "\n" +
-            "rdf:Seq  a               rdfs:Resource , rdfs:Class ;\n" +
-            "        rdfs:subClassOf  rdfs:Resource , rdfs:Container , rdf:Seq .\n" +
-            "\n" +
-            "\n" +
-            "rdf:Statement  a         rdfs:Resource , rdfs:Class ;\n" +
-            "        rdfs:subClassOf  rdfs:Resource , rdf:Statement .\n" +
-            "\n" +
-            "rdf:XMLLiteral  a        rdfs:Resource , rdfs:Datatype , rdfs:Class ;\n" +
-            "        rdfs:subClassOf  rdfs:Resource , rdfs:Literal , rdf:XMLLiteral .\n" +
-            "\n" +
-            "rdf:first  a                rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdf:List ;\n" +
-            "        rdfs:range          rdfs:Resource ;\n" +
-            "        rdfs:subPropertyOf  rdf:first .\n" +
-            "\n" +
-            "rdf:nil  a      rdfs:Resource , rdf:List .\n" +
-            "\n" +
-            "rdf:object  a               rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdf:Statement ;\n" +
-            "        rdfs:range          rdfs:Resource ;\n" +
-            "        rdfs:subPropertyOf  rdf:object .\n" +
-            "\n" +
-            "rdf:predicate  a            rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdf:Statement ;\n" +
-            "        rdfs:range          rdfs:Resource ;\n" +
-            "        rdfs:subPropertyOf  rdf:predicate .\n" +
-            "\n" +
-            "rdf:rest  a                 rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdf:List ;\n" +
-            "        rdfs:range          rdf:List ;\n" +
-            "        rdfs:subPropertyOf  rdf:rest .\n" +
-            "\n" +
-            "rdf:subject  a              rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdf:Statement ;\n" +
-            "        rdfs:range          rdfs:Resource ;\n" +
-            "        rdfs:subPropertyOf  rdf:subject .\n" +
-            "\n" +
-            "rdf:type  a                 rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdfs:Resource ;\n" +
-            "        rdfs:range          rdfs:Class ;\n" +
-            "        rdfs:subPropertyOf  rdf:type .\n" +
-            "\n" +
-            "rdf:value  a                rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdfs:Resource ;\n" +
-            "        rdfs:range          rdfs:Resource ;\n" +
-            "        rdfs:subPropertyOf  rdf:value .\n" +
-            "\n" +
-            "rdfs:Class  a            rdfs:Resource , rdfs:Class ;\n" +
-            "        rdfs:subClassOf  rdfs:Resource , rdfs:Class .\n" +
-            "\n" +
-            "rdfs:Container  a        rdfs:Resource , rdfs:Class ;\n" +
-            "        rdfs:subClassOf  rdfs:Resource , rdfs:Container .\n" +
-            "\n" +
-            "rdfs:ContainerMembershipProperty\n" +
-            "        a                rdfs:Resource , rdfs:Class ;\n" +
-            "        rdfs:subClassOf  rdfs:Resource , rdfs:ContainerMembershipProperty , rdf:Property .\n" +
-            "\n" +
-            "rdfs:Datatype  a         rdfs:Resource , rdfs:Class ;\n" +
-            "        rdfs:subClassOf  rdfs:Resource , rdfs:Datatype , rdfs:Class .\n" +
-            "\n" +
-            "rdfs:Literal  a          rdfs:Resource , rdfs:Class ;\n" +
-            "        rdfs:subClassOf  rdfs:Resource , rdfs:Literal .\n" +
-            "\n" +
-            "rdfs:Resource  a         rdfs:Resource , rdfs:Class ;\n" +
-            "        rdfs:subClassOf  rdfs:Resource .\n" +
-            "\n" +
-            "rdfs:comment  a             rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdfs:Resource ;\n" +
-            "        rdfs:range          rdfs:Literal ;\n" +
-            "        rdfs:subPropertyOf  rdfs:comment .\n" +
-            "\n" +
-            "rdfs:domain  a              rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdf:Property ;\n" +
-            "        rdfs:range          rdfs:Class ;\n" +
-            "        rdfs:subPropertyOf  rdfs:domain .\n" +
-            "\n" +
-            "rdfs:isDefinedBy  a         rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdfs:Resource ;\n" +
-            "        rdfs:range          rdfs:Resource ;\n" +
-            "        rdfs:subPropertyOf  rdfs:seeAlso , rdfs:isDefinedBy .\n" +
-            "\n" +
-            "rdfs:label  a               rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdfs:Resource ;\n" +
-            "        rdfs:range          rdfs:Literal ;\n" +
-            "        rdfs:subPropertyOf  rdfs:label .\n" +
-            "\n" +
-            "rdfs:member  a              rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdfs:Resource ;\n" +
-            "        rdfs:range          rdfs:Resource ;\n" +
-            "        rdfs:subPropertyOf  rdfs:member .\n" +
-            "\n" +
-            "rdfs:range  a               rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdf:Property ;\n" +
-            "        rdfs:range          rdfs:Class ;\n" +
-            "        rdfs:subPropertyOf  rdfs:range .\n" +
-            "\n" +
-            "rdfs:seeAlso  a             rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdfs:Resource ;\n" +
-            "        rdfs:range          rdfs:Resource ;\n" +
-            "        rdfs:subPropertyOf  rdfs:seeAlso .\n" +
-            "\n" +
-            "rdfs:subClassOf  a          rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdfs:Class ;\n" +
-            "        rdfs:range          rdfs:Class ;\n" +
-            "        rdfs:subPropertyOf  rdfs:subClassOf .\n" +
-            "\n" +
-            "rdfs:subPropertyOf  a       rdfs:Resource , rdf:Property ;\n" +
-            "        rdfs:domain         rdf:Property ;\n" +
-            "        rdfs:range          rdf:Property ;\n" +
-            "        rdfs:subPropertyOf  rdfs:subPropertyOf .";
 
 
 }
