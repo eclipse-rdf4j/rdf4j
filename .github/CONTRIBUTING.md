@@ -127,5 +127,14 @@ principles:
 2. Use unix newlines consistently
 3. Use UTF-8 file encoding
 4. Set line width to 110 characters 
-5. Make sure every new source file starts with the Eclipse copyright license header
-
+5. Make sure every new source file starts with the correct Eclipse copyright license header. The license header to use is:
+```
+/*******************************************************************************
+ * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+ ```
+ **NB** for older existing source code, RDF4J uses a slightly different copyright header, mentioning 'Aduna' as additional copyright holder . Please make sure you do not use that different header for any new contributions. 
