@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
-import org.eclipse.rdf4j.sail.inferencer.fc.AbstractForwardChainingInferencer;
 
 import java.io.File;
 import java.util.*;
@@ -34,11 +33,11 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
     boolean useAllRdfsRules = true;
 
-    List<Statement> subClassOfStatemenets = new ArrayList<>();
-    List<Statement> propertyStatements = new ArrayList<>();
-    List<Statement> subPropertyOfStatemenets = new ArrayList<>();
-    List<Statement> rangeStatemenets = new ArrayList<>();
-    List<Statement> domainStatemenets = new ArrayList<>();
+    List<Statement> subClassOfStatements = new ArrayList<>();
+    Set<IRI> properties = new HashSet<>();
+    List<Statement> subPropertyOfStatements = new ArrayList<>();
+    List<Statement> rangeStatements = new ArrayList<>();
+    List<Statement> domainStatements = new ArrayList<>();
 
 
     Map<Resource, Set<Resource>> calculatedTypes = new HashMap<>();
@@ -48,11 +47,11 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
     private boolean sharedSchema;
 
     void clearInferenceTables() {
-        subClassOfStatemenets = new ArrayList<>();
-        propertyStatements = new ArrayList<>();
-        subPropertyOfStatemenets = new ArrayList<>();
-        rangeStatemenets = new ArrayList<>();
-        domainStatemenets = new ArrayList<>();
+        subClassOfStatements = new ArrayList<>();
+        properties = new HashSet<>();
+        subPropertyOfStatements = new ArrayList<>();
+        rangeStatements = new ArrayList<>();
+        domainStatements = new ArrayList<>();
         calculatedTypes = new HashMap<>();
         calculatedProperties = new HashMap<>();
         calculatedRange = new HashMap<>();
