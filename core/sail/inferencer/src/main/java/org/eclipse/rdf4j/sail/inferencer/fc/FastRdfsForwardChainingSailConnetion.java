@@ -42,38 +42,34 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
         Resource subject = statement.getSubject();
 
         if (predicate.equals(RDFS.SUBCLASSOF)) {
-            fastRdfsForwardChainingSail.subClassOfStatemenets.add(statement);
+            fastRdfsForwardChainingSail.subClassOfStatements.add(statement);
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDF.PROPERTY)) {
-            fastRdfsForwardChainingSail.propertyStatements.add(statement);
+            fastRdfsForwardChainingSail.properties.add((IRI) statement.getSubject());
         } else if (predicate.equals(RDFS.SUBPROPERTYOF)) {
-            fastRdfsForwardChainingSail.subPropertyOfStatemenets.add(statement);
+            fastRdfsForwardChainingSail.subPropertyOfStatements.add(statement);
         } else if (predicate.equals(RDFS.RANGE)) {
-            fastRdfsForwardChainingSail.rangeStatemenets.add(statement);
+            fastRdfsForwardChainingSail.rangeStatements.add(statement);
         } else if (predicate.equals(RDFS.DOMAIN)) {
-            fastRdfsForwardChainingSail.domainStatemenets.add(statement);
+            fastRdfsForwardChainingSail.domainStatements.add(statement);
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CLASS)) {
-            fastRdfsForwardChainingSail.subClassOfStatemenets.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE));
+            fastRdfsForwardChainingSail.subClassOfStatements.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE));
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.DATATYPE)) {
-            fastRdfsForwardChainingSail.subClassOfStatemenets.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
+            fastRdfsForwardChainingSail.subClassOfStatements.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CONTAINERMEMBERSHIPPROPERTY)) {
-            fastRdfsForwardChainingSail.subPropertyOfStatemenets.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBPROPERTYOF, RDFS.MEMBER));
+            fastRdfsForwardChainingSail.subPropertyOfStatements.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBPROPERTYOF, RDFS.MEMBER));
         }
 
-        Statement statement1 = fastRdfsForwardChainingSail.getValueFactory().createStatement(predicate, RDF.TYPE, RDF.PROPERTY, statement.getContext());
-        fastRdfsForwardChainingSail.propertyStatements.add(statement1);
-        Statement statement2 = fastRdfsForwardChainingSail.getValueFactory().createStatement(predicate, RDFS.SUBPROPERTYOF, predicate, statement.getContext());
-        fastRdfsForwardChainingSail.subPropertyOfStatemenets.add(statement2);
-
+        fastRdfsForwardChainingSail.properties.add(predicate);
 
     }
 
     void calculateInferenceMaps() {
-        calculateSubClassOf(fastRdfsForwardChainingSail.subClassOfStatemenets);
-        findProperties(fastRdfsForwardChainingSail.propertyStatements);
-        calculateSubPropertyOf(fastRdfsForwardChainingSail.subPropertyOfStatemenets);
+        calculateSubClassOf(fastRdfsForwardChainingSail.subClassOfStatements);
+        findProperties(fastRdfsForwardChainingSail.properties);
+        calculateSubPropertyOf(fastRdfsForwardChainingSail.subPropertyOfStatements);
 
-        calculateRangeDomain(fastRdfsForwardChainingSail.rangeStatemenets, fastRdfsForwardChainingSail.calculatedRange);
-        calculateRangeDomain(fastRdfsForwardChainingSail.domainStatemenets, fastRdfsForwardChainingSail.calculatedDomain);
+        calculateRangeDomain(fastRdfsForwardChainingSail.rangeStatements, fastRdfsForwardChainingSail.calculatedRange);
+        calculateRangeDomain(fastRdfsForwardChainingSail.domainStatements, fastRdfsForwardChainingSail.calculatedDomain);
 
 
         fastRdfsForwardChainingSail.calculatedTypes.forEach((subClass, superClasses) -> {
@@ -158,14 +154,10 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
         }
     }
 
-    private void findProperties(List<Statement> propertyStatements) {
-        propertyStatements.forEach(statement -> {
-            IRI predicate = (IRI) statement.getSubject();
-            if (!fastRdfsForwardChainingSail.calculatedProperties.containsKey(predicate)) {
-                addInferredStatement(predicate, RDF.TYPE, RDF.PROPERTY, statement.getContext());
-                fastRdfsForwardChainingSail.calculatedProperties.put(predicate, new HashSet<>());
-            }
-
+    private void findProperties(Set<IRI> predicates) {
+        predicates.forEach(predicate -> {
+            addInferredStatement(predicate, RDF.TYPE, RDF.PROPERTY);
+            fastRdfsForwardChainingSail.calculatedProperties.put(predicate, new HashSet<>());
         });
     }
 
@@ -186,7 +178,6 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
             fastRdfsForwardChainingSail.calculatedProperties.get(subClass).add((IRI) s.getObject());
 
         });
-
 
         long prevSize = 0;
         final long[] newSize = {-1};
