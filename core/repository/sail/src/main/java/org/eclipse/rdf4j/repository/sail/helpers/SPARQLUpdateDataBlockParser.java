@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.rio.trig.TriGParser;
 public class SPARQLUpdateDataBlockParser extends TriGParser {
 
 	private boolean allowBlankNodes = true;
+	private int lineNumberOffset;
 
 	/*--------------*
 	 * Constructors *
@@ -117,6 +118,11 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 		this.allowBlankNodes = allowBlankNodes;
 	}
 
+	@Override
+	protected int getLineNumber() {
+		return super.getLineNumber() - this.lineNumberOffset; 
+	}
+	
 	private void skipOptionalPeriod()
 		throws RDFHandlerException, IOException
 	{
@@ -125,5 +131,12 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 		if (c == '.') {
 			readCodePoint();
 		}
+	}
+
+	/**
+	 * @param lineNumberOffset
+	 */
+	public void setLineNumberOffset(int lineNumberOffset) {
+			this.lineNumberOffset = lineNumberOffset;
 	}
 }
