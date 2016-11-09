@@ -4,7 +4,7 @@ This is the main code repository for the Eclipse RDF4J project. Please see
 [RDF4J.org](http://rdf4j.org) for detailed information about RDF4J, including
 user documentation and download links.
 
-[![Visit our IRC channel](https://kiwiirc.com/buttons/irc.freenode.net/rdf4j.png)](https://kiwiirc.com/client/irc.freenode.net/#rdf4j)
+[![Visit our IRC channel](https://kiwiirc.com/buttons/irc.freenode.net/rdf4j.png)](https://kiwiirc.com/client/irc.freenode.net/?nick=rdf4j-user|?#rdf4j)
 
 ## Keen to contribute?
 
