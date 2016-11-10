@@ -71,12 +71,12 @@ public class PrefixDeclProcessor {
 		}
 
 		// insert some default prefixes (if not explicitly defined in the query)
-		insertDefaultPrefix(prefixMap, "rdf", RDF.NAMESPACE);
-		insertDefaultPrefix(prefixMap, "rdfs", RDFS.NAMESPACE);
-		insertDefaultPrefix(prefixMap, "sesame", SESAME.NAMESPACE);
-		insertDefaultPrefix(prefixMap, "owl", OWL.NAMESPACE);
-		insertDefaultPrefix(prefixMap, "xsd", XMLSchema.NAMESPACE);
-		insertDefaultPrefix(prefixMap, "fn", FN.NAMESPACE);
+		final int defaultPrefixesAdded = insertDefaultPrefix(prefixMap, "rdf", RDF.NAMESPACE)
+				+ insertDefaultPrefix(prefixMap, "rdfs", RDFS.NAMESPACE)
+				+ insertDefaultPrefix(prefixMap, "sesame", SESAME.NAMESPACE)
+				+ insertDefaultPrefix(prefixMap, "owl", OWL.NAMESPACE)
+				+ insertDefaultPrefix(prefixMap, "xsd", XMLSchema.NAMESPACE)
+				+ insertDefaultPrefix(prefixMap, "fn", FN.NAMESPACE);
 
 		ASTUnparsedQuadDataBlock dataBlock = null;
 		if (qc.getOperation() instanceof ASTInsertData) {
@@ -91,6 +91,7 @@ public class PrefixDeclProcessor {
 
 		if (dataBlock != null) {
 			String prefixes = createPrefixesInSPARQLFormat(prefixMap);
+			dataBlock.setAddedDefaultPrefixes(defaultPrefixesAdded);
 			// TODO optimize string concat?
 			dataBlock.setDataBlock(prefixes + dataBlock.getDataBlock());
 		}
@@ -107,10 +108,12 @@ public class PrefixDeclProcessor {
 		return prefixMap;
 	}
 
-	private static void insertDefaultPrefix(Map<String, String> prefixMap, String prefix, String namespace) {
+	private static int insertDefaultPrefix(Map<String, String> prefixMap, String prefix, String namespace) {
 		if (!prefixMap.containsKey(prefix) && !prefixMap.containsValue(namespace)) {
 			prefixMap.put(prefix, namespace);
+			return 1;
 		}
+		return 0;
 	}
 
 	private static String createPrefixesInSPARQLFormat(Map<String, String> prefixMap) {
