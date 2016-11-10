@@ -439,6 +439,7 @@ public class SailUpdateExecutor {
 			handler = new TimeLimitRDFHandler(handler, 1000L * maxExecutionTime);
 		}
 		parser.setRDFHandler(handler);
+		parser.setLineNumberOffset(insertDataExpr.getLineNumberOffset());
 		parser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 		parser.getParserConfig().addNonFatalError(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES);
 		try {
@@ -466,8 +467,8 @@ public class SailUpdateExecutor {
 	{
 
 		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser(vf);
-		parser.setAllowBlankNodes(false); // no blank nodes allowed in DELETE
-											// DATA.
+		parser.setLineNumberOffset(deleteDataExpr.getLineNumberOffset());
+		parser.setAllowBlankNodes(false); // no blank nodes allowed in DELETE DATA.
 		RDFHandler handler = new RDFSailRemover(con, vf, uc);
 		if (maxExecutionTime > 0) {
 			handler = new TimeLimitRDFHandler(handler, 1000L * maxExecutionTime);
