@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra;
 public class DeleteData extends AbstractQueryModelNode implements UpdateExpr {
 
 	private final String dataBlock;
+	private int lineNumberOffset;
 
 	public DeleteData(String dataBlock) {
 		this.dataBlock = dataBlock;
@@ -53,4 +54,14 @@ public class DeleteData extends AbstractQueryModelNode implements UpdateExpr {
 		return false;
 	}
 
+	/**
+	 * @return the lineNumberCorrection
+	 */
+	public int getLineNumberOffset() {
+		return lineNumberOffset;
+	}
+	
+	public void setLineNumberOffset(int lineNumberOffset) {
+		this.lineNumberOffset = lineNumberOffset;
+	}
 }

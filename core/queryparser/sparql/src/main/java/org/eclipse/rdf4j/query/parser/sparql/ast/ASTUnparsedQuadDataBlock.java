@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.query.parser.sparql.ast;
 public class ASTUnparsedQuadDataBlock extends SimpleNode {
 
 	private String dataBlock;
+	private int addedDefaultPrefixes;
 
 	public ASTUnparsedQuadDataBlock(int id) {
 		super(id);
@@ -34,6 +35,17 @@ public class ASTUnparsedQuadDataBlock extends SimpleNode {
 		throws VisitorException
 	{
 		return visitor.visit(this, data);
+	}
+
+	/**
+	 * @param defaultPrefixesAdded
+	 */
+	public void setAddedDefaultPrefixes(int defaultPrefixesAdded) {
+		this.addedDefaultPrefixes = defaultPrefixesAdded;
+	}
+	
+	public int getAddedDefaultPrefixes() {
+		return addedDefaultPrefixes;
 	}
 }
 /* JavaCC - OriginalChecksum=0f8443c5fea151a421f76d4230035cd9 (do not edit this line) */
