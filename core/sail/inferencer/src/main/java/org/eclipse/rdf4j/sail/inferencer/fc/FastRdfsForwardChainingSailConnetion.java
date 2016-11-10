@@ -8,12 +8,14 @@
 
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
+import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.*;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
 import java.util.*;
@@ -262,7 +264,7 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
     }
 
 
-    boolean inferredCleared = true;
+    boolean inferredCleared = false;
 
     @Override
     public void clearInferred(Resource... contexts) throws SailException {
@@ -270,11 +272,38 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
         inferredCleared = true;
     }
 
+    long origianlTboxCount = -1;
+
+
+    @Override
+    public void begin() throws SailException {
+        super.begin();
+        origianlTboxCount = getTboxCount();
+
+
+    }
+
+    @Override
+    public void begin(IsolationLevel level) throws UnknownSailTransactionStateException {
+        super.begin(level);
+        origianlTboxCount = getTboxCount();
+    }
+
+    private long getTboxCount() {
+        long count = 0;
+        count = fastRdfsForwardChainingSail.subClassOfStatements.size();
+        count += fastRdfsForwardChainingSail.properties.size();
+        count += fastRdfsForwardChainingSail.subPropertyOfStatements.size();
+        count += fastRdfsForwardChainingSail.rangeStatements.size();
+        count += fastRdfsForwardChainingSail.domainStatements.size();
+        return count;
+    }
+
     @Override
     protected void doInferencing() throws SailException {
         prepareIteration();
 
-        if (fastRdfsForwardChainingSail.schema == null) {
+        if (fastRdfsForwardChainingSail.schema == null && origianlTboxCount != getTboxCount()) {
 
             fastRdfsForwardChainingSail.clearInferenceTables();
 
@@ -301,6 +330,7 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
             }
         }
         inferredCleared = false;
+
 
     }
 
@@ -462,6 +492,10 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
 
         final boolean[] inferRdfTypeSubject = {false};
         final boolean[] inferRdfTypeObject = {false};
+
+        if (fastRdfsForwardChainingSail.schema == null) {
+            statementCollector(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, predicate, object));
+        }
 
         if (fastRdfsForwardChainingSail.useAllRdfsRules) {
             addInferredStatement(subject, RDF.TYPE, RDFS.RESOURCE, resources);
