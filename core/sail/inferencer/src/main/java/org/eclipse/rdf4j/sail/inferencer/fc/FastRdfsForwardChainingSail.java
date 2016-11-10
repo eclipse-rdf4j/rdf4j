@@ -1,4 +1,3 @@
-package org.eclipse.rdf4j.sail.inferencer.fc;
 /*******************************************************************************
  * Copyright (c) 2016 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
@@ -6,6 +5,9 @@ package org.eclipse.rdf4j.sail.inferencer.fc;
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
+
+package org.eclipse.rdf4j.sail.inferencer.fc;
+
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -21,6 +23,7 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
 import java.io.File;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * @author Håvard Mikkelsen Ottestad
@@ -112,21 +115,26 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
             finalConnection.addAxiomStatements();
 
 
+            List<Statement> tboxStatments = new ArrayList<>();
+
             if (schema != null) {
 
                 try (RepositoryConnection schemaConnection = schema.getConnection()) {
                     schemaConnection.begin();
                     RepositoryResult<Statement> statements = schemaConnection.getStatements(null, null, null);
 
-                    Iterations.stream(statements)
+                    tboxStatments = Iterations.stream(statements)
                         .peek(finalConnection::statementCollector)
-                        .forEach(s -> finalConnection.addStatement(s.getSubject(), s.getPredicate(), s.getObject(), s.getContext()));
-
+                        .collect(Collectors.toList());
                     schemaConnection.commit();
                 }
             }
 
             finalConnection.calculateInferenceMaps();
+
+            if (schema != null) {
+                tboxStatments.forEach(statement -> finalConnection.addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext()));
+            }
 
             finalConnection.commit();
         } finally {
