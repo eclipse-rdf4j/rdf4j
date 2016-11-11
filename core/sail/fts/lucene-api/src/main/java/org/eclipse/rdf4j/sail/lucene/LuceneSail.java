@@ -459,6 +459,9 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 */
 	public void setEvaluationMode(TupleFunctionEvaluationMode mode) {
 		Objects.requireNonNull(mode);
+		if (mode == TupleFunctionEvaluationMode.SERVICE) {
+			throw new IllegalArgumentException("Service evaluation mode is not currently supported");
+		}
 		this.setParameter(EVALUATION_MODE_KEY, mode.name());
 		this.evaluationMode = mode;
 	}
@@ -593,7 +596,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	protected Collection<SearchQueryInterpreter> getSearchQueryInterpreters() {
 		return Arrays.<SearchQueryInterpreter> asList(
-				new QuerySpecBuilder(incompleteQueryFails, evaluationMode),
+				new QuerySpecBuilder(incompleteQueryFails),
 				new DistanceQuerySpecBuilder(luceneIndex), new GeoRelationQuerySpecBuilder(luceneIndex));
 	}
 }
