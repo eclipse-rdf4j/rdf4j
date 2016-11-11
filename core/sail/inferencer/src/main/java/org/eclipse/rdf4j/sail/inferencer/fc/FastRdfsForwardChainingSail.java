@@ -22,7 +22,12 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
 import java.io.File;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -105,11 +110,11 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
         }
 
 
-        FastRdfsForwardChainingSailConnetion connection = null;
+        FastRdfsForwardChainingSailConnection connection = null;
 
         try {
             connection = getConnection();
-            final FastRdfsForwardChainingSailConnetion finalConnection = connection;
+            final FastRdfsForwardChainingSailConnection finalConnection = connection;
             finalConnection.begin();
 
             finalConnection.addAxiomStatements();
@@ -155,9 +160,9 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
     }
 
 
-    public FastRdfsForwardChainingSailConnetion getConnection() throws SailException {
+    public FastRdfsForwardChainingSailConnection getConnection() throws SailException {
         InferencerConnection e = (InferencerConnection) super.getConnection();
-        return new FastRdfsForwardChainingSailConnetion(this, e);
+        return new FastRdfsForwardChainingSailConnection(this, e);
     }
 
     public ValueFactory getValueFactory() {
