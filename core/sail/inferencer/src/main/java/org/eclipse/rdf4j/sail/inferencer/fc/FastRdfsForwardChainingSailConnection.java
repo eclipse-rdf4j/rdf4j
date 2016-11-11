@@ -10,7 +10,13 @@ package org.eclipse.rdf4j.sail.inferencer.fc;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -18,20 +24,28 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
 
-public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainingInferencerConnection {
+public class FastRdfsForwardChainingSailConnection extends AbstractForwardChainingInferencerConnection {
 
 
     private final FastRdfsForwardChainingSail fastRdfsForwardChainingSail;
     private final NotifyingSailConnection connection;
 
 
-    public FastRdfsForwardChainingSailConnetion(FastRdfsForwardChainingSail fastRdfsForwardChainingSail, InferencerConnection e) {
+    public FastRdfsForwardChainingSailConnection(FastRdfsForwardChainingSail fastRdfsForwardChainingSail, InferencerConnection e) {
         super(fastRdfsForwardChainingSail, e);
         this.fastRdfsForwardChainingSail = fastRdfsForwardChainingSail;
         this.connection = e;
@@ -483,8 +497,8 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
     }
 
 
-    public void addStatement(Resource subject, IRI predicate, Value object, Resource... resources) throws SailException {
-        addStatement(true, subject, predicate, object, resources);
+    public void addStatement(Resource subject, IRI predicate, Value object, Resource... contexts) throws SailException {
+        addStatement(true, subject, predicate, object, contexts);
     }
 
 
@@ -498,10 +512,10 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
         }
 
         if (fastRdfsForwardChainingSail.useAllRdfsRules) {
-            addInferredStatement(subject, RDF.TYPE, RDFS.RESOURCE, resources);
+            addInferredStatement(subject, RDF.TYPE, RDFS.RESOURCE);
 
             if (object instanceof Resource) {
-                addInferredStatement((Resource) object, RDF.TYPE, RDFS.RESOURCE, resources);
+                addInferredStatement((Resource) object, RDF.TYPE, RDFS.RESOURCE);
             }
         }
 
@@ -511,13 +525,13 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
             try {
                 int i = Integer.parseInt(predicate.getLocalName().substring(1));
                 if (i >= 1) {
-                    addInferredStatement(subject, RDFS.MEMBER, object, resources);
+                    addInferredStatement(subject, RDFS.MEMBER, object);
 
-                    addInferredStatement(predicate, RDF.TYPE, RDFS.RESOURCE, resources);
-                    addInferredStatement(predicate, RDF.TYPE, RDFS.CONTAINERMEMBERSHIPPROPERTY, resources);
-                    addInferredStatement(predicate, RDF.TYPE, RDF.PROPERTY, resources);
-                    addInferredStatement(predicate, RDFS.SUBPROPERTYOF, predicate, resources);
-                    addInferredStatement(predicate, RDFS.SUBPROPERTYOF, RDFS.MEMBER, resources);
+                    addInferredStatement(predicate, RDF.TYPE, RDFS.RESOURCE);
+                    addInferredStatement(predicate, RDF.TYPE, RDFS.CONTAINERMEMBERSHIPPROPERTY);
+                    addInferredStatement(predicate, RDF.TYPE, RDF.PROPERTY);
+                    addInferredStatement(predicate, RDFS.SUBPROPERTYOF, predicate);
+                    addInferredStatement(predicate, RDFS.SUBPROPERTYOF, RDFS.MEMBER);
 
                 }
             } catch (NumberFormatException e) {
@@ -537,19 +551,19 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
                 .stream()
                 .peek(inferredType -> {
                     if (fastRdfsForwardChainingSail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
-                        addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE, resources);
+                        addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE);
                     }
 
                     inferRdfTypeSubject[0] = true;
                 })
                 .filter(inferredType -> !inferredType.equals(object))
-                .forEach(inferredType -> addInferredStatement(subject, RDF.TYPE, inferredType, resources));
+                .forEach(inferredType -> addInferredStatement(subject, RDF.TYPE, inferredType));
         }
 
         resolveProperties(predicate)
             .stream()
             .filter(inferredProperty -> !inferredProperty.equals(predicate))
-            .forEach(inferredProperty -> addInferredStatement(subject, inferredProperty, object, resources));
+            .forEach(inferredProperty -> addInferredStatement(subject, inferredProperty, object));
 
 
         if (object instanceof Resource) {
@@ -557,93 +571,28 @@ public class FastRdfsForwardChainingSailConnetion extends AbstractForwardChainin
                 .stream()
                 .peek(inferredType -> {
                     if (fastRdfsForwardChainingSail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
-                        addInferredStatement(((Resource) object), RDFS.SUBCLASSOF, RDFS.RESOURCE, resources);
+                        addInferredStatement(((Resource) object), RDFS.SUBCLASSOF, RDFS.RESOURCE);
                     }
                     inferRdfTypeObject[0] = true;
 
                 })
-                .forEach(inferredType -> addInferredStatement(((Resource) object), RDF.TYPE, inferredType, resources));
+                .forEach(inferredType -> addInferredStatement(((Resource) object), RDF.TYPE, inferredType));
         }
 
 
-        resolveDomainTypes((IRI) predicate)
+        resolveDomainTypes(predicate)
             .stream()
             .peek(inferredType -> {
                 if (fastRdfsForwardChainingSail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
-                    addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE, resources);
+                    addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE);
                 }
-                inferRdfTypeSubject[0] = true;
-
             })
-            .forEach(inferredType -> addInferredStatement((subject), RDF.TYPE, inferredType, resources));
-
-        if (inferRdfTypeSubject[0]) {
-            addInferredStatement(subject, RDF.TYPE, RDFS.RESOURCE, resources);
-
-        }
-
-        if (inferRdfTypeObject[0]) {
-            addInferredStatement(((Resource) object), RDF.TYPE, RDFS.RESOURCE, resources);
-
-        }
+            .forEach(inferredType -> addInferredStatement((subject), RDF.TYPE, inferredType));
 
     }
 
-    @Override
-    public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-        return super.addInferredStatement(subj, pred, obj);
-    }
 
     protected void addAxiomStatements() {
-//        StringBuilder axioms = new StringBuilder();
-//
-//        try {
-//
-//
-//            RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
-//            parser.setRDFHandler(new RDFHandler() {
-//                @Override
-//                public void startRDF() throws RDFHandlerException {
-//
-//                }
-//
-//                @Override
-//                public void endRDF() throws RDFHandlerException {
-//
-//                }
-//
-//                @Override
-//                public void handleNamespace(String s11, String s1) throws RDFHandlerException {
-//
-//                }
-//
-//                @Override
-//                public void handleStatement(Statement statement) throws RDFHandlerException {
-//
-//                    SimpleValueFactory vf = SimpleValueFactory.getInstance();
-//
-//
-//                    axioms.append("statement = vf.createStatement(vf.createIRI(\"" + statement.getSubject() + "\"), vf.createIRI(\"" + statement.getPredicate() + "\"), vf.createIRI(\"" + statement.getObject() + "\"));\n");
-//                    axioms.append("statementCollector(statement);").append("\n");
-//                    axioms.append(" addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());").append("\n");
-//
-//                    statementCollector(statement);
-//                    addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
-//                }
-//
-//                @Override
-//                public void handleComment(String s1) throws RDFHandlerException {
-//
-//                }
-//            });
-//
-//            parser.parse(new ByteArrayInputStream(baseRDFS.getBytes("UTF-8")), "");
-//
-//
-//        } catch (IOException ignored) {
-//        }
-
-
         ValueFactory vf = fastRdfsForwardChainingSail.getValueFactory();
 
         Statement statement = vf.createStatement(RDF.ALT, RDF.TYPE, RDFS.RESOURCE);
