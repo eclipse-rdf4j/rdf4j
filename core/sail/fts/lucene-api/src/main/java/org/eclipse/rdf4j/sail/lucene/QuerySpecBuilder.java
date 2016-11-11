@@ -33,7 +33,6 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,8 +50,6 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 
 	private final boolean incompleteQueryFails;
 
-	private final TupleFunctionEvaluationMode evaluationMode;
-
 	/**
 	 * Initialize a new QuerySpecBuilder
 	 * 
@@ -60,12 +57,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 	 *        see {@link LuceneSail#isIncompleteQueryFails()}
 	 */
 	public QuerySpecBuilder(boolean incompleteQueryFails) {
-		this(incompleteQueryFails, null);
-	}
-
-	public QuerySpecBuilder(boolean incompleteQueryFails, TupleFunctionEvaluationMode evaluationMode) {
 		this.incompleteQueryFails = incompleteQueryFails;
-		this.evaluationMode = evaluationMode;
 	}
 
 	/**
@@ -191,49 +183,40 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 			}
 			else {
 				// evaluate later
-				switch (evaluationMode) {
-					case NATIVE:
-					case TRIPLE_SOURCE: {
-						TupleFunctionCall funcCall = new TupleFunctionCall();
-						funcCall.setURI(LuceneSailSchema.SEARCH.toString());
-						funcCall.addArg(queryPattern.getObjectVar());
-						if (subject != null) {
-							funcCall.addArg(matchesPattern.getSubjectVar());
-						}
-						else {
-							funcCall.addArg(new ValueConstant(LuceneSailSchema.ALL_MATCHES));
-							funcCall.addResultVar(matchesPattern.getSubjectVar());
-						}
-						if (propertyPattern != null) {
-							funcCall.addArg(new ValueConstant(LuceneSailSchema.PROPERTY));
-							if (propertyURI != null) {
-								funcCall.addArg(propertyPattern.getObjectVar());
-							}
-							else {
-								funcCall.addArg(new ValueConstant(LuceneSailSchema.ALL_PROPERTIES));
-								funcCall.addResultVar(propertyPattern.getObjectVar());
-							}
-						}
-						if (scoreVar != null) {
-							funcCall.addArg(new ValueConstant(LuceneSailSchema.SCORE));
-							funcCall.addResultVar(scoreVar);
-						}
-						if (snippetVar != null) {
-							funcCall.addArg(new ValueConstant(LuceneSailSchema.SNIPPET));
-							funcCall.addResultVar(snippetVar);
-						}
-
-						Join join = new Join();
-						matchesPattern.replaceWith(join);
-						join.setLeftArg(matchesPattern);
-						join.setRightArg(funcCall);
-						querySpec.updateQueryModelNodes(true);
-						break;
+				TupleFunctionCall funcCall = new TupleFunctionCall();
+				funcCall.setURI(LuceneSailSchema.SEARCH.toString());
+				funcCall.addArg(queryPattern.getObjectVar());
+				if (subject != null) {
+					funcCall.addArg(matchesPattern.getSubjectVar());
+				}
+				else {
+					funcCall.addArg(new ValueConstant(LuceneSailSchema.ALL_MATCHES));
+					funcCall.addResultVar(matchesPattern.getSubjectVar());
+				}
+				if (propertyPattern != null) {
+					funcCall.addArg(new ValueConstant(LuceneSailSchema.PROPERTY));
+					if (propertyURI != null) {
+						funcCall.addArg(propertyPattern.getObjectVar());
 					}
-					case SERVICE: {
-						throw new UnsupportedOperationException("TO DO");
+					else {
+						funcCall.addArg(new ValueConstant(LuceneSailSchema.ALL_PROPERTIES));
+						funcCall.addResultVar(propertyPattern.getObjectVar());
 					}
 				}
+				if (scoreVar != null) {
+					funcCall.addArg(new ValueConstant(LuceneSailSchema.SCORE));
+					funcCall.addResultVar(scoreVar);
+				}
+				if (snippetVar != null) {
+					funcCall.addArg(new ValueConstant(LuceneSailSchema.SNIPPET));
+					funcCall.addResultVar(snippetVar);
+				}
+
+				Join join = new Join();
+				matchesPattern.replaceWith(join);
+				join.setLeftArg(matchesPattern);
+				join.setRightArg(funcCall);
+				querySpec.updateQueryModelNodes(true);
 			}
 		}
 
