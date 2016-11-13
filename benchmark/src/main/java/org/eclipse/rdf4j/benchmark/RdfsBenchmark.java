@@ -38,13 +38,13 @@ abstract public class RdfsBenchmark {
 
     abstract Class getSailClass();
 
-//    @Benchmark
-//    @BenchmarkMode(Mode.AverageTime)
-//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-//    public void initialize() {
-//
-//        getSail(null).initialize();
-//    }
+    @Benchmark
+    @BenchmarkMode(Mode.AverageTime)
+    @OutputTimeUnit(TimeUnit.MILLISECONDS)
+    public void initialize() {
+
+        getSail(null).initialize();
+    }
 
 
     @Benchmark
