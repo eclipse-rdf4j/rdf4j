@@ -41,8 +41,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -140,11 +140,11 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	 * @param sail
 	 * @param store
 	 * @param resolver
-	 *        the FederatedServiceResolver to use with the {@link SimpleEvaluationStrategy default
+	 *        the FederatedServiceResolver to use with the {@link StrictEvaluationStrategy default
 	 *        EvaluationStrategy}.
 	 */
 	protected SailSourceConnection(AbstractSail sail, SailStore store, FederatedServiceResolver resolver) {
-		this(sail, store, new SimpleEvaluationStrategyFactory(resolver));
+		this(sail, store, new StrictEvaluationStrategyFactory(resolver));
 	}
 
 	/**
@@ -163,8 +163,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		this.store = store;
 		this.defaultIsolationLevel = sail.getDefaultIsolationLevel();
 		this.evalStratFactory = evalStratFactory;
-		this.federatedServiceResolver = (evalStratFactory instanceof SimpleEvaluationStrategyFactory)
-				? ((SimpleEvaluationStrategyFactory)evalStratFactory).getFederatedServiceResolver() : null;
+		this.federatedServiceResolver = (evalStratFactory instanceof StrictEvaluationStrategyFactory)
+				? ((StrictEvaluationStrategyFactory)evalStratFactory).getFederatedServiceResolver() : null;
 	}
 
 	/*---------*

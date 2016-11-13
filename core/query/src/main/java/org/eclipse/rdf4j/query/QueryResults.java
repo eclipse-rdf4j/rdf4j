@@ -22,6 +22,8 @@ import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.iteration.LimitIteration;
+import org.eclipse.rdf4j.common.iteration.OffsetIteration;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -32,6 +34,8 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 
@@ -115,6 +119,62 @@ public class QueryResults extends Iterations {
 	 */
 	public static TupleQueryResult distinctResults(TupleQueryResult queryResult) {
 		return new TupleQueryResultFilter(queryResult);
+	}
+
+	/**
+	 * Returns a {@link TupleQueryResult} that returns at most the specified maximum number of solutions,
+	 * starting at the supplied offset.
+	 * 
+	 * @param queryResult
+	 *        a query result possibly containing more solutions than the specified maximum.
+	 * @param limit
+	 *        the maximum number of solutions to return. If set to 0 or lower, no limit will be applied.
+	 * @param offset
+	 *        the number of solutions to skip at the beginning. If set to 0 or lower, no offset will be applied.
+	 * @return A {@link TupleQueryResult} that will at return at most the specified maximum number of
+	 *         solutions. If neither {@code limit} nor {@code offset} are applied, this returns the original {@code queryResult}.
+	 */
+	public static TupleQueryResult limitResults(TupleQueryResult queryResult, long limit, long offset) {
+		CloseableIteration<BindingSet, QueryEvaluationException> iter = queryResult;
+		if (offset > 0) {
+			iter = new OffsetIteration<>(iter, offset);
+		}
+		if (limit > 0) {
+			iter = new LimitIteration<>(iter, limit);
+		}
+
+		if (!(iter instanceof TupleQueryResult)) {
+			return new IteratingTupleQueryResult(queryResult.getBindingNames(), iter);
+		}
+		return (TupleQueryResult)iter;
+	}
+
+	/**
+	 * Returns a {@link GraphQueryResult} that returns at most the specified maximum number of solutions,
+	 * starting at the supplied offset.
+	 * 
+	 * @param queryResult
+	 *        a query result possibly containing more solutions than the specified maximum.
+	 * @param limit
+	 *        the maximum number of solutions to return. If set to 0 or lower, no limit will be applied.
+	 * @param offset
+	 *        the number of solutions to skip at the beginning. If set to 0 or lower, no offset will be applied.
+	 * @return A {@link GraphQueryResult} that will at return at most the specified maximum number of
+	 *         solutions. If neither {@code limit} nor {@code offset} are applied, this returns the original {@code queryResult}.
+	 */
+	public static GraphQueryResult limitResults(GraphQueryResult queryResult, long limit, long offset) {
+		CloseableIteration<Statement, QueryEvaluationException> iter = queryResult;
+		if (offset > 0) {
+			iter = new OffsetIteration<>(iter, offset);
+		}
+		if (limit > 0) {
+			iter = new LimitIteration<>(iter, limit);
+		}
+
+		if (!(iter instanceof GraphQueryResult)) {
+			return new IteratingGraphQueryResult(queryResult.getNamespaces(), iter);
+		}
+		return (GraphQueryResult)iter;
 	}
 
 	/**
@@ -446,7 +506,7 @@ public class QueryResults extends Iterations {
 			if (isClosed()) {
 				return false;
 			}
-			
+
 			boolean result = filter.hasNext();
 			if (!result) {
 				close();
@@ -461,7 +521,7 @@ public class QueryResults extends Iterations {
 			if (isClosed()) {
 				throw new NoSuchElementException("The iteration has been closed.");
 			}
-			
+
 			try {
 				return filter.next();
 			}
@@ -478,7 +538,7 @@ public class QueryResults extends Iterations {
 			if (isClosed()) {
 				throw new IllegalStateException("The iteration has been closed.");
 			}
-			
+
 			try {
 				filter.remove();
 			}
@@ -543,7 +603,7 @@ public class QueryResults extends Iterations {
 			if (isClosed()) {
 				throw new NoSuchElementException("The iteration has been closed.");
 			}
-			
+
 			try {
 				return filter.next();
 			}
@@ -560,7 +620,7 @@ public class QueryResults extends Iterations {
 			if (isClosed()) {
 				throw new IllegalStateException("The iteration has been closed.");
 			}
-			
+
 			try {
 				filter.remove();
 			}

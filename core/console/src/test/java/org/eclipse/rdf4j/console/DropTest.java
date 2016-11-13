@@ -56,13 +56,14 @@ public class DropTest extends AbstractCommandTest {
 				new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(MEMORY_MEMBER_ID1)));
 		ConsoleState state = mock(ConsoleState.class);
 		when(state.getManager()).thenReturn(manager);
-		drop = new Drop(streams, state, new Close(streams, state), new LockRemover(streams));
+		drop = new Drop(mockConsoleIO, state, new Close(mockConsoleIO, state),
+				new LockRemover(mockConsoleIO));
 	}
 
 	private void setUserDropConfirm(boolean confirm)
 		throws IOException
 	{
-		when(streams.askProceed(startsWith("WARNING: you are about to drop repository '"),
+		when(mockConsoleIO.askProceed(startsWith("WARNING: you are about to drop repository '"),
 				anyBoolean())).thenReturn(confirm);
 	}
 
@@ -80,10 +81,10 @@ public class DropTest extends AbstractCommandTest {
 		setUserDropConfirm(true);
 		assertThat(manager.isSafeToRemove(PROXY_ID), is(equalTo(true)));
 		drop.execute("drop", PROXY_ID);
-		verify(streams).writeln("Dropped repository '" + PROXY_ID + "'");
+		verify(mockConsoleIO).writeln("Dropped repository '" + PROXY_ID + "'");
 		assertThat(manager.isSafeToRemove(MEMORY_MEMBER_ID1), is(equalTo(true)));
 		drop.execute("drop", MEMORY_MEMBER_ID1);
-		verify(streams).writeln("Dropped repository '" + MEMORY_MEMBER_ID1 + "'");
+		verify(mockConsoleIO).writeln("Dropped repository '" + MEMORY_MEMBER_ID1 + "'");
 	}
 
 	@Test
@@ -92,10 +93,10 @@ public class DropTest extends AbstractCommandTest {
 	{
 		setUserDropConfirm(true);
 		assertThat(manager.isSafeToRemove(MEMORY_MEMBER_ID1), is(equalTo(false)));
-		when(streams.askProceed(startsWith("WARNING: dropping this repository may break"),
+		when(mockConsoleIO.askProceed(startsWith("WARNING: dropping this repository may break"),
 				anyBoolean())).thenReturn(false);
 		drop.execute("drop", MEMORY_MEMBER_ID1);
-		verify(streams).writeln("Drop aborted");
+		verify(mockConsoleIO).writeln("Drop aborted");
 	}
 
 	@Test
@@ -104,8 +105,8 @@ public class DropTest extends AbstractCommandTest {
 	{
 		setUserDropConfirm(false);
 		drop.execute("drop", MEMORY_MEMBER_ID1);
-		verify(streams, never()).askProceed(startsWith("WARNING: dropping this repository may break"),
+		verify(mockConsoleIO, never()).askProceed(startsWith("WARNING: dropping this repository may break"),
 				anyBoolean());
-		verify(streams).writeln("Drop aborted");
+		verify(mockConsoleIO).writeln("Drop aborted");
 	}
 }

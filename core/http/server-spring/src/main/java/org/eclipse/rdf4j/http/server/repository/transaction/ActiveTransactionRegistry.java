@@ -1,20 +1,17 @@
-/*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+/**
+ * Copyright (c) 2016 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
+ */
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,16 +23,12 @@ import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 
 /**
- * Registry keeping track of active transactions identified by a {@link UUID} and the
- * {@link RepositoryConnection} that corresponds to the given transaction.
+ * Registry keeping track of active transactions identified by a {@link UUID}.
  * 
  * @author Jeen Broekstra
  */
 public enum ActiveTransactionRegistry {
 
-	/**
-	 * Singleton instance
-	 */
 	INSTANCE;
 
 	private final Logger logger = LoggerFactory.getLogger(ActiveTransactionRegistry.class);
@@ -55,43 +48,17 @@ public enum ActiveTransactionRegistry {
 	 * primary cache for transactions, accessible via transaction ID. Cache entries are kept until a
 	 * transaction signals it has ended, or until the secondary cache finds an "orphaned" transaction entry.
 	 */
-	private final Cache<UUID, CacheEntry> primaryCache;
+	private final Cache<UUID, Transaction> primaryCache;
 
 	/**
 	 * The secondary cache does automatic cleanup of its entries based on the configured timeout. If an
-	 * expired entry is no longer locked by any thread, it is considered "orphaned" and discarded from the
-	 * primary cache.
+	 * expired transaction is no longer active, it is considered "orphaned" and discarded from the primary
+	 * cache.
 	 */
-	private final Cache<UUID, CacheEntry> secondaryCache;
-
-	static class CacheEntry {
-
-		private final RepositoryConnection connection;
-
-		private final ReentrantLock lock = new ReentrantLock();
-
-		public CacheEntry(RepositoryConnection connection) {
-			this.connection = connection;
-		}
-
-		/**
-		 * @return Returns the connection.
-		 */
-		public RepositoryConnection getConnection() {
-			return connection;
-		}
-
-		/**
-		 * @return Returns the lock.
-		 */
-		public ReentrantLock getLock() {
-			return lock;
-		}
-
-	}
+	private final Cache<UUID, Transaction> secondaryCache;
 
 	/**
-	 * private constructor. Access via {@link ActiveTransactionRegistry#INSTANCE}
+	 * private constructor.
 	 */
 	private ActiveTransactionRegistry() {
 		int timeout = DEFAULT_TIMEOUT;
@@ -107,29 +74,29 @@ public enum ActiveTransactionRegistry {
 			}
 		}
 
-		primaryCache = CacheBuilder.newBuilder().removalListener(new RemovalListener<UUID, CacheEntry>() {
+		primaryCache = CacheBuilder.newBuilder().removalListener(new RemovalListener<UUID, Transaction>() {
 
 			@Override
-			public void onRemoval(RemovalNotification<UUID, CacheEntry> notification) {
-				CacheEntry entry = notification.getValue();
+			public void onRemoval(RemovalNotification<UUID, Transaction> notification) {
+				Transaction entry = notification.getValue();
 				try {
-					entry.getConnection().close();
+					entry.close();
 				}
-				catch (RepositoryException e) {
+				catch (RepositoryException | InterruptedException | ExecutionException e) {
 					// fall through
 				}
 			}
 		}).build();
 
-		secondaryCache = CacheBuilder.newBuilder().removalListener(new RemovalListener<UUID, CacheEntry>() {
+		secondaryCache = CacheBuilder.newBuilder().removalListener(new RemovalListener<UUID, Transaction>() {
 
 			@Override
-			public void onRemoval(RemovalNotification<UUID, CacheEntry> notification) {
+			public void onRemoval(RemovalNotification<UUID, Transaction> notification) {
 				if (RemovalCause.EXPIRED.equals(notification.getCause())) {
 					final UUID transactionId = notification.getKey();
-					final CacheEntry entry = notification.getValue();
+					final Transaction entry = notification.getValue();
 					synchronized (primaryCache) {
-						if (!entry.getLock().isLocked()) {
+						if (!entry.hasActiveOperations()) {
 							// no operation active, we can decommission this entry
 							primaryCache.invalidate(transactionId);
 							logger.warn("deregistered expired transaction {}", transactionId);
@@ -146,110 +113,51 @@ public enum ActiveTransactionRegistry {
 	}
 
 	/**
-	 * Register a new transaction with the given id and connection.
-	 * 
-	 * @param transactionId
-	 *        the transaction id
-	 * @param conn
-	 *        the {@link RepositoryConnection} to use for handling the transaction.
-	 * @throws RepositoryException
-	 *         if a transaction is already registered with the given transaction id.
+	 * @param txnId
+	 * @param txn
 	 */
-	public void register(UUID transactionId, RepositoryConnection conn)
-		throws RepositoryException
-	{
+	public void register(Transaction txn) {
 		synchronized (primaryCache) {
-			if (primaryCache.getIfPresent(transactionId) == null) {
-				final CacheEntry cacheEntry = new CacheEntry(conn);
-				primaryCache.put(transactionId, cacheEntry);
-				secondaryCache.put(transactionId, cacheEntry);
-				logger.debug("registered transaction {} ", transactionId);
+			Transaction existingTxn = primaryCache.getIfPresent(txn.getID());
+			if (existingTxn == null) {
+				primaryCache.put(txn.getID(), txn);
+				secondaryCache.put(txn.getID(), txn);
+				logger.debug("registered transaction {} ", txn.getID());
 			}
 			else {
-				logger.error("transaction already registered: {}", transactionId);
+				logger.error("transaction already registered: {}", txn.getID());
 				throw new RepositoryException(
-						"transaction with id " + transactionId.toString() + " already registered.");
+						"transaction with id " + txn.getID().toString() + " already registered.");
 			}
 		}
 	}
 
-	/**
-	 * Remove the given transaction from the registry
-	 * 
-	 * @param transactionId
-	 *        the transaction id
-	 * @throws RepositoryException
-	 *         if no registered transaction with the given id could be found.
-	 */
-	public void deregister(UUID transactionId)
-		throws RepositoryException
-	{
+	public Transaction getTransaction(UUID id) {
 		synchronized (primaryCache) {
-			CacheEntry entry = primaryCache.getIfPresent(transactionId);
+			Transaction entry = primaryCache.getIfPresent(id);
+			if (entry == null) {
+				throw new RepositoryException("transaction with id " + id.toString() + " not registered.");
+			}
+			updateSecondaryCache(entry);
+			return entry;
+		}
+	}
+
+	/**
+	 * @param transaction
+	 */
+	public void deregister(Transaction transaction) {
+
+		synchronized (primaryCache) {
+			Transaction entry = primaryCache.getIfPresent(transaction.getID());
 			if (entry == null) {
 				throw new RepositoryException(
-						"transaction with id " + transactionId.toString() + " not registered.");
+						"transaction with id " + transaction.getID().toString() + " not registered.");
 			}
 			else {
-				primaryCache.invalidate(transactionId);
-				secondaryCache.invalidate(transactionId);
-				logger.debug("deregistered transaction {}", transactionId);
-			}
-		}
-	}
-
-	/**
-	 * Obtain the {@link RepositoryConnection} associated with the given transaction. This method will block
-	 * if another thread currently has access to the connection.
-	 * 
-	 * @param transactionId
-	 *        a transaction ID
-	 * @return the RepositoryConnection belonging to this transaction.
-	 * @throws RepositoryException
-	 *         if no transaction with the given id is registered.
-	 * @throws InterruptedException
-	 *         if the thread is interrupted while acquiring a lock on the transaction.
-	 */
-	public RepositoryConnection getTransactionConnection(UUID transactionId)
-		throws RepositoryException, InterruptedException
-	{
-		Lock txnLock = null;
-		synchronized (primaryCache) {
-			CacheEntry entry = primaryCache.getIfPresent(transactionId);
-			if (entry == null) {
-				throw new RepositoryException(
-						"transaction with id " + transactionId.toString() + " not registered.");
-			}
-
-			txnLock = entry.getLock();
-		}
-
-		txnLock.lockInterruptibly();
-		/* Another thread might have deregistered the transaction while we were acquiring the lock */
-		final CacheEntry entry = primaryCache.getIfPresent(transactionId);
-		if (entry == null) {
-			throw new RepositoryException(
-					"transaction with id " + transactionId + " is no longer registered!");
-		}
-		updateSecondaryCache(transactionId, entry);
-
-		return entry.getConnection();
-	}
-
-	/**
-	 * Unlocks the {@link RepositoryConnection} associated with the given transaction for use by other
-	 * threads. If the transaction is no longer registered, this will method will exit silently.
-	 * 
-	 * @param transactionId
-	 *        a transaction identifier.
-	 */
-	public void returnTransactionConnection(UUID transactionId) {
-		final CacheEntry entry = primaryCache.getIfPresent(transactionId);
-		if (entry != null) {
-			updateSecondaryCache(transactionId, entry);
-			final ReentrantLock txnLock = entry.getLock();
-			if (txnLock.isHeldByCurrentThread()) {
-				txnLock.unlock();
+				primaryCache.invalidate(transaction.getID());
+				secondaryCache.invalidate(transaction.getID());
+				logger.debug("deregistered transaction {}", transaction.getID());
 			}
 		}
 	}
@@ -258,20 +166,18 @@ public enum ActiveTransactionRegistry {
 	 * Checks if the given transaction entry is still in the secondary cache (resetting its last access time
 	 * in the process) and if not reinserts it.
 	 * 
-	 * @param transactionId
-	 *        the id for the transaction to check
-	 * @param entry
-	 *        the cache entry to insert if necessary.
+	 * @param transaction
+	 *        the transaction to check
 	 */
-	private void updateSecondaryCache(UUID transactionId, final CacheEntry entry) {
+	private void updateSecondaryCache(final Transaction transaction) {
 		try {
-			secondaryCache.get(transactionId, new Callable<CacheEntry>() {
+			secondaryCache.get(transaction.getID(), new Callable<Transaction>() {
 
 				@Override
-				public CacheEntry call()
+				public Transaction call()
 					throws Exception
 				{
-					return entry;
+					return transaction;
 				}
 			});
 		}

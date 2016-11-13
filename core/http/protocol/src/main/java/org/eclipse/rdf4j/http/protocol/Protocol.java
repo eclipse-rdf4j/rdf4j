@@ -44,7 +44,7 @@ public abstract class Protocol {
 	/**
 	 * Protocol version.
 	 */
-	public static final String VERSION = "7";
+	public static final String VERSION = "8";
 
 	/**
 	 * Parameter name for the 'subject' parameter of a statement query.
@@ -96,6 +96,10 @@ public abstract class Protocol {
 	 */
 	public static final String QUERY_PARAM_NAME = "query";
 
+	public static final String LIMIT_PARAM_NAME = "limit";
+	
+	public static final String OFFSET_PARAM_NAME = "offset";
+	
 	/**
 	 * Parameter name for the query language parameter.
 	 */

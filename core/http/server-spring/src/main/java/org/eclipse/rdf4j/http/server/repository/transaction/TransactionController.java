@@ -30,6 +30,7 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -52,13 +53,11 @@ import org.eclipse.rdf4j.http.server.repository.GraphQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.QueryResultView;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
 import org.eclipse.rdf4j.http.server.repository.TupleQueryResultView;
-import org.eclipse.rdf4j.http.server.repository.statements.ExportStatementsView;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.SESAME;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -68,23 +67,16 @@ import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
-import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterRegistry;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.RDFHandlerException;
-import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.eclipse.rdf4j.rio.RDFWriterRegistry;
 import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
-import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContextException;
@@ -117,13 +109,13 @@ public class TransactionController extends AbstractController {
 		UUID transactionId = getTransactionID(request);
 		logger.debug("transaction id: {}", transactionId);
 		logger.debug("request content type: {}", request.getContentType());
-		RepositoryConnection connection = ActiveTransactionRegistry.INSTANCE.getTransactionConnection(
-				transactionId);
 
-		if (connection == null) {
-			logger.warn("could not find connection for transaction id {}", transactionId);
+		Transaction transaction = ActiveTransactionRegistry.INSTANCE.getTransaction(transactionId);
+
+		if (transaction == null) {
+			logger.warn("could not find transaction for transaction id {}", transactionId);
 			throw new ClientHTTPException(SC_BAD_REQUEST,
-					"unable to find registerd connection for transaction id '" + transactionId + "'");
+					"unable to find registerd transaction for transaction id '" + transactionId + "'");
 		}
 
 		// if no action is specified in the request, it's a rollback (since it's
@@ -138,7 +130,7 @@ public class TransactionController extends AbstractController {
 				// PUT is allowed.
 				if ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)) {
 					logger.info("{} txn query request", reqMethod);
-					result = processQuery(connection, transactionId, request, response);
+					result = processQuery(transaction, request, response);
 					logger.info("{} txn query request finished", reqMethod);
 				}
 				else {
@@ -149,7 +141,7 @@ public class TransactionController extends AbstractController {
 			case GET:
 				if ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)) {
 					logger.info("{} txn get/export statements request", reqMethod);
-					result = getExportStatementsResult(connection, transactionId, request, response);
+					result = getExportStatementsResult(transaction, request, response);
 					logger.info("{} txn get/export statements request finished", reqMethod);
 				}
 				else {
@@ -160,7 +152,7 @@ public class TransactionController extends AbstractController {
 			case SIZE:
 				if ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)) {
 					logger.info("{} txn size request", reqMethod);
-					result = getSize(connection, transactionId, request, response);
+					result = getSize(transaction, request, response);
 					logger.info("{} txn size request finished", reqMethod);
 				}
 				else {
@@ -169,38 +161,30 @@ public class TransactionController extends AbstractController {
 				}
 				break;
 			default:
-				// modification operations - we can process these and then
-				// immediately release the connection back to the registry.
-				try {
-					// TODO Action.ROLLBACK check is for backward compatibility with
-					// older 2.8.x releases only. It's not in the protocol spec.
-					if ("DELETE".equals(reqMethod) || (action.equals(Action.ROLLBACK)
-							&& ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod))))
-					{
-						logger.info("transaction rollback");
-						try {
-							connection.rollback();
-						}
-						finally {
-							ActiveTransactionRegistry.INSTANCE.deregister(transactionId);
-							connection.close();
-						}
-						result = new ModelAndView(EmptySuccessView.getInstance());
-						logger.info("transaction rollback request finished.");
+				// TODO Action.ROLLBACK check is for backward compatibility with
+				// older 2.8.x releases only. It's not in the protocol spec.
+				if ("DELETE".equals(reqMethod) || (action.equals(Action.ROLLBACK)
+						&& ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod))))
+				{
+					logger.info("transaction rollback");
+					try {
+						transaction.rollback();
 					}
-					else if ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)) {
-						// TODO filter for appropriate PUT operations
-						logger.info("{} txn operation", reqMethod);
-						result = processModificationOperation(connection, action, request, response);
-						logger.info("PUT txn operation request finished.");
+					finally {
+						ActiveTransactionRegistry.INSTANCE.deregister(transaction);
 					}
-					else {
-						throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
-								"Method not allowed: " + reqMethod);
-					}
+					result = new ModelAndView(EmptySuccessView.getInstance());
+					logger.info("transaction rollback request finished.");
 				}
-				finally {
-					ActiveTransactionRegistry.INSTANCE.returnTransactionConnection(transactionId);
+				else if ("PUT".equals(reqMethod) || METHOD_POST.equals(reqMethod)) {
+					// TODO filter for appropriate PUT operations
+					logger.info("{} txn operation", reqMethod);
+					result = processModificationOperation(transaction, action, request, response);
+					logger.info("PUT txn operation request finished.");
+				}
+				else {
+					throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
+							"Method not allowed: " + reqMethod);
 				}
 				break;
 		}
@@ -235,7 +219,7 @@ public class TransactionController extends AbstractController {
 		return txnID;
 	}
 
-	private ModelAndView processModificationOperation(RepositoryConnection conn, Action action,
+	private ModelAndView processModificationOperation(Transaction transaction, Action action,
 			HttpServletRequest request, HttpServletResponse response)
 		throws IOException, HTTPException
 	{
@@ -249,50 +233,34 @@ public class TransactionController extends AbstractController {
 		}
 
 		final Resource[] contexts = ProtocolUtil.parseContextParam(request, CONTEXT_PARAM_NAME,
-				conn.getValueFactory());
+				SimpleValueFactory.getInstance());
 
 		final boolean preserveNodeIds = ProtocolUtil.parseBooleanParam(request,
 				Protocol.PRESERVE_BNODE_ID_PARAM_NAME, false);
 
 		try {
+			RDFFormat format = null;
 			switch (action) {
 				case ADD:
-					final RDFFormat format = Rio.getParserFormatForMIMEType(
-							request.getContentType()).orElseThrow(
-									Rio.unsupportedFormat(request.getContentType()));
-
-					if (preserveNodeIds) {
-						// create a reconfigured parser + inserter instead of relying on standard
-						// repositoryconn add method.
-						RDFParser parser = Rio.createParser(format);
-						parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-						RDFInserter inserter = new RDFInserter(conn);
-						inserter.setPreserveBNodeIDs(true);
-						if (contexts.length > 0) {
-							inserter.enforceContext(contexts);
-						}
-						parser.setRDFHandler(inserter);
-						parser.parse(request.getInputStream(), baseURI);
-					}
-					else {
-						conn.add(request.getInputStream(), baseURI, format, contexts);
-					}
+					format = Rio.getParserFormatForMIMEType(request.getContentType()).orElseThrow(
+							Rio.unsupportedFormat(request.getContentType()));
+					transaction.add(request.getInputStream(), baseURI, format, preserveNodeIds, contexts);
 					break;
 				case DELETE:
-					RDFParser parser = Rio.createParser(
-							Rio.getParserFormatForMIMEType(request.getContentType()).orElseThrow(
-									Rio.unsupportedFormat(request.getContentType())),
-							conn.getValueFactory());
-					parser.setRDFHandler(new WildcardRDFRemover(conn));
-					parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-					parser.parse(request.getInputStream(), baseURI);
+					format = Rio.getParserFormatForMIMEType(request.getContentType()).orElseThrow(
+							Rio.unsupportedFormat(request.getContentType()));
+					transaction.delete(format, request.getInputStream(), baseURI);
+
 					break;
 				case UPDATE:
-					return getSparqlUpdateResult(conn, request, response);
+					return getSparqlUpdateResult(transaction, request, response);
 				case COMMIT:
-					conn.commit();
-					conn.close();
-					ActiveTransactionRegistry.INSTANCE.deregister(getTransactionID(request));
+					try {
+						transaction.commit();
+					}
+					finally {
+						ActiveTransactionRegistry.INSTANCE.deregister(transaction);
+					}
 					break;
 				default:
 					logger.warn("transaction modification action '{}' not recognized", action);
@@ -313,39 +281,33 @@ public class TransactionController extends AbstractController {
 		}
 	}
 
-	private ModelAndView getSize(RepositoryConnection conn, UUID txnId, HttpServletRequest request,
+	private ModelAndView getSize(Transaction transaction, HttpServletRequest request,
 			HttpServletResponse response)
 		throws HTTPException
 	{
-		try {
-			ProtocolUtil.logRequestParameters(request);
+		ProtocolUtil.logRequestParameters(request);
 
-			Map<String, Object> model = new HashMap<String, Object>();
-			final boolean headersOnly = METHOD_HEAD.equals(request.getMethod());
+		Map<String, Object> model = new HashMap<String, Object>();
+		final boolean headersOnly = METHOD_HEAD.equals(request.getMethod());
 
-			if (!headersOnly) {
-				Repository repository = RepositoryInterceptor.getRepository(request);
+		if (!headersOnly) {
+			Repository repository = RepositoryInterceptor.getRepository(request);
 
-				ValueFactory vf = repository.getValueFactory();
-				Resource[] contexts = ProtocolUtil.parseContextParam(request, Protocol.CONTEXT_PARAM_NAME,
-						vf);
+			ValueFactory vf = repository.getValueFactory();
+			Resource[] contexts = ProtocolUtil.parseContextParam(request, Protocol.CONTEXT_PARAM_NAME, vf);
 
-				long size = -1;
+			long size = -1;
 
-				try {
-					size = conn.size(contexts);
-				}
-				catch (RepositoryException e) {
-					throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
-				}
-				model.put(SimpleResponseView.CONTENT_KEY, String.valueOf(size));
+			try {
+				size = transaction.getSize(contexts);
 			}
+			catch (RepositoryException | InterruptedException | ExecutionException e) {
+				throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
+			}
+			model.put(SimpleResponseView.CONTENT_KEY, String.valueOf(size));
+		}
 
-			return new ModelAndView(SimpleResponseView.getInstance(), model);
-		}
-		finally {
-			ActiveTransactionRegistry.INSTANCE.returnTransactionConnection(txnId);
-		}
+		return new ModelAndView(SimpleResponseView.getInstance(), model);
 	}
 
 	/**
@@ -353,13 +315,13 @@ public class TransactionController extends AbstractController {
 	 * 
 	 * @return a model and view for exporting the statements.
 	 */
-	private ModelAndView getExportStatementsResult(RepositoryConnection conn, UUID txnId,
-			HttpServletRequest request, HttpServletResponse response)
+	private ModelAndView getExportStatementsResult(Transaction transaction, HttpServletRequest request,
+			HttpServletResponse response)
 		throws ClientHTTPException
 	{
 		ProtocolUtil.logRequestParameters(request);
 
-		ValueFactory vf = conn.getValueFactory();
+		ValueFactory vf = SimpleValueFactory.getInstance();
 
 		Resource subj = ProtocolUtil.parseResourceParam(request, SUBJECT_PARAM_NAME, vf);
 		IRI pred = ProtocolUtil.parseURIParam(request, PREDICATE_PARAM_NAME, vf);
@@ -371,16 +333,16 @@ public class TransactionController extends AbstractController {
 				RDFWriterRegistry.getInstance());
 
 		Map<String, Object> model = new HashMap<String, Object>();
-		model.put(ExportStatementsView.SUBJECT_KEY, subj);
-		model.put(ExportStatementsView.PREDICATE_KEY, pred);
-		model.put(ExportStatementsView.OBJECT_KEY, obj);
-		model.put(ExportStatementsView.CONTEXTS_KEY, contexts);
-		model.put(ExportStatementsView.USE_INFERENCING_KEY, Boolean.valueOf(useInferencing));
-		model.put(ExportStatementsView.FACTORY_KEY, rdfWriterFactory);
-		model.put(ExportStatementsView.HEADERS_ONLY, METHOD_HEAD.equals(request.getMethod()));
-		model.put(ExportStatementsView.CONNECTION_KEY, conn);
-		model.put(ExportStatementsView.TRANSACTION_ID_KEY, txnId);
-		return new ModelAndView(ExportStatementsView.getInstance(), model);
+		model.put(TransactionExportStatementsView.SUBJECT_KEY, subj);
+		model.put(TransactionExportStatementsView.PREDICATE_KEY, pred);
+		model.put(TransactionExportStatementsView.OBJECT_KEY, obj);
+		model.put(TransactionExportStatementsView.CONTEXTS_KEY, contexts);
+		model.put(TransactionExportStatementsView.USE_INFERENCING_KEY, Boolean.valueOf(useInferencing));
+		model.put(TransactionExportStatementsView.FACTORY_KEY, rdfWriterFactory);
+		model.put(TransactionExportStatementsView.HEADERS_ONLY, METHOD_HEAD.equals(request.getMethod()));
+
+		model.put(TransactionExportStatementsView.TRANSACTION_KEY, transaction);
+		return new ModelAndView(TransactionExportStatementsView.getInstance(), model);
 	}
 
 	/**
@@ -388,7 +350,7 @@ public class TransactionController extends AbstractController {
 	 * {@link QueryResultView} will take care of correctly releasing the connection back to the
 	 * {@link ActiveTransactionRegistry}, after fully rendering the query result for sending over the wire.
 	 */
-	private ModelAndView processQuery(RepositoryConnection conn, UUID txnId, HttpServletRequest request,
+	private ModelAndView processQuery(Transaction txn, HttpServletRequest request,
 			HttpServletResponse response)
 		throws IOException, HTTPException
 	{
@@ -403,31 +365,31 @@ public class TransactionController extends AbstractController {
 			queryStr = request.getParameter(QUERY_PARAM_NAME);
 		}
 
-		Query query = getQuery(conn, queryStr, request, response);
-
 		View view;
 		Object queryResult;
 		FileFormatServiceRegistry<? extends FileFormat, ?> registry;
 
 		try {
+			Query query = getQuery(txn, queryStr, request, response);
+
 			if (query instanceof TupleQuery) {
 				TupleQuery tQuery = (TupleQuery)query;
 
-				queryResult = tQuery.evaluate();
+				queryResult = txn.evaluate(tQuery);
 				registry = TupleQueryResultWriterRegistry.getInstance();
 				view = TupleQueryResultView.getInstance();
 			}
 			else if (query instanceof GraphQuery) {
 				GraphQuery gQuery = (GraphQuery)query;
 
-				queryResult = gQuery.evaluate();
+				queryResult = txn.evaluate(gQuery);
 				registry = RDFWriterRegistry.getInstance();
 				view = GraphQueryResultView.getInstance();
 			}
 			else if (query instanceof BooleanQuery) {
 				BooleanQuery bQuery = (BooleanQuery)query;
 
-				queryResult = bQuery.evaluate();
+				queryResult = txn.evaluate(bQuery);
 				registry = BooleanQueryResultWriterRegistry.getInstance();
 				view = BooleanQueryResultView.getInstance();
 			}
@@ -436,14 +398,12 @@ public class TransactionController extends AbstractController {
 						"Unsupported query type: " + query.getClass().getName());
 			}
 		}
-		catch (QueryInterruptedException e) {
+		catch (QueryInterruptedException | InterruptedException | ExecutionException e) {
 			logger.info("Query interrupted", e);
-			ActiveTransactionRegistry.INSTANCE.returnTransactionConnection(txnId);
-			throw new ServerHTTPException(SC_SERVICE_UNAVAILABLE, "Query evaluation took too long");
+			throw new ServerHTTPException(SC_SERVICE_UNAVAILABLE, "Query execution interrupted");
 		}
 		catch (QueryEvaluationException e) {
 			logger.info("Query evaluation error", e);
-			ActiveTransactionRegistry.INSTANCE.returnTransactionConnection(txnId);
 			if (e.getCause() != null && e.getCause() instanceof HTTPException) {
 				// custom signal from the backend, throw as HTTPException
 				// directly (see SES-1016).
@@ -461,13 +421,13 @@ public class TransactionController extends AbstractController {
 		model.put(QueryResultView.FACTORY_KEY, factory);
 		model.put(QueryResultView.HEADERS_ONLY, false); // TODO needed for HEAD
 														// requests.
-		model.put(QueryResultView.TRANSACTION_ID_KEY, txnId);
+		model.put(QueryResultView.TRANSACTION_ID_KEY, txn.getID());
 		return new ModelAndView(view, model);
 	}
 
-	private Query getQuery(RepositoryConnection repositoryCon, String queryStr, HttpServletRequest request,
+	private Query getQuery(Transaction txn, String queryStr, HttpServletRequest request,
 			HttpServletResponse response)
-		throws IOException, ClientHTTPException
+		throws IOException, ClientHTTPException, InterruptedException, ExecutionException
 	{
 		Query result = null;
 
@@ -514,7 +474,7 @@ public class TransactionController extends AbstractController {
 					try {
 						IRI uri = null;
 						if (!"null".equals(defaultGraphURI)) {
-							uri = repositoryCon.getValueFactory().createIRI(defaultGraphURI);
+							uri = SimpleValueFactory.getInstance().createIRI(defaultGraphURI);
 						}
 						dataset.addDefaultGraph(uri);
 					}
@@ -530,7 +490,7 @@ public class TransactionController extends AbstractController {
 					try {
 						IRI uri = null;
 						if (!"null".equals(namedGraphURI)) {
-							uri = repositoryCon.getValueFactory().createIRI(namedGraphURI);
+							uri = SimpleValueFactory.getInstance().createIRI(namedGraphURI);
 						}
 						dataset.addNamedGraph(uri);
 					}
@@ -543,12 +503,11 @@ public class TransactionController extends AbstractController {
 		}
 
 		try {
-			result = repositoryCon.prepareQuery(queryLn, queryStr, baseURI);
-
+			result = txn.prepareQuery(queryLn, queryStr, baseURI);
 			result.setIncludeInferred(includeInferred);
 
 			if (maxQueryTime > 0) {
-				result.setMaxQueryTime(maxQueryTime);
+				result.setMaxExecutionTime(maxQueryTime);
 			}
 
 			if (dataset != null) {
@@ -567,7 +526,7 @@ public class TransactionController extends AbstractController {
 				{
 					String bindingName = parameterName.substring(BINDING_PREFIX.length());
 					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,
-							repositoryCon.getValueFactory());
+							SimpleValueFactory.getInstance());
 					result.setBinding(bindingName, bindingValue);
 				}
 			}
@@ -588,7 +547,7 @@ public class TransactionController extends AbstractController {
 		return result;
 	}
 
-	private ModelAndView getSparqlUpdateResult(RepositoryConnection conn, HttpServletRequest request,
+	private ModelAndView getSparqlUpdateResult(Transaction transaction, HttpServletRequest request,
 			HttpServletResponse response)
 		throws ServerHTTPException, ClientHTTPException, HTTPException
 	{
@@ -644,7 +603,7 @@ public class TransactionController extends AbstractController {
 				try {
 					IRI uri = null;
 					if (!"null".equals(graphURI)) {
-						uri = conn.getValueFactory().createIRI(graphURI);
+						uri = SimpleValueFactory.getInstance().createIRI(graphURI);
 					}
 					dataset.addDefaultRemoveGraph(uri);
 				}
@@ -660,7 +619,7 @@ public class TransactionController extends AbstractController {
 			try {
 				IRI uri = null;
 				if (!"null".equals(graphURI)) {
-					uri = conn.getValueFactory().createIRI(graphURI);
+					uri = SimpleValueFactory.getInstance().createIRI(graphURI);
 				}
 				dataset.setDefaultInsertGraph(uri);
 			}
@@ -675,7 +634,7 @@ public class TransactionController extends AbstractController {
 				try {
 					IRI uri = null;
 					if (!"null".equals(defaultGraphURI)) {
-						uri = conn.getValueFactory().createIRI(defaultGraphURI);
+						uri = SimpleValueFactory.getInstance().createIRI(defaultGraphURI);
 					}
 					dataset.addDefaultGraph(uri);
 				}
@@ -691,7 +650,7 @@ public class TransactionController extends AbstractController {
 				try {
 					IRI uri = null;
 					if (!"null".equals(namedGraphURI)) {
-						uri = conn.getValueFactory().createIRI(namedGraphURI);
+						uri = SimpleValueFactory.getInstance().createIRI(namedGraphURI);
 					}
 					dataset.addNamedGraph(uri);
 				}
@@ -703,18 +662,11 @@ public class TransactionController extends AbstractController {
 		}
 
 		try {
-			Update update = conn.prepareUpdate(queryLn, sparqlUpdateString, baseURI);
-
-			update.setIncludeInferred(includeInferred);
-
-			if (dataset != null) {
-				update.setDataset(dataset);
-			}
-
 			// determine if any variable bindings have been set on this update.
 			@SuppressWarnings("unchecked")
 			Enumeration<String> parameterNames = request.getParameterNames();
 
+			Map<String, Value> bindings = new HashMap<>();
 			while (parameterNames.hasMoreElements()) {
 				String parameterName = parameterNames.nextElement();
 
@@ -723,16 +675,17 @@ public class TransactionController extends AbstractController {
 				{
 					String bindingName = parameterName.substring(BINDING_PREFIX.length());
 					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,
-							conn.getValueFactory());
-					update.setBinding(bindingName, bindingValue);
+							SimpleValueFactory.getInstance());
+					bindings.put(bindingName, bindingValue);
 				}
 			}
 
-			update.execute();
+			transaction.executeUpdate(queryLn, sparqlUpdateString, baseURI, includeInferred, dataset,
+					bindings);
 
 			return new ModelAndView(EmptySuccessView.getInstance());
 		}
-		catch (UpdateExecutionException e) {
+		catch (UpdateExecutionException | InterruptedException | ExecutionException e) {
 			if (e.getCause() != null && e.getCause() instanceof HTTPException) {
 				// custom signal from the backend, throw as HTTPException directly
 				// (see SES-1016).
@@ -758,49 +711,4 @@ public class TransactionController extends AbstractController {
 		}
 	}
 
-	private static class WildcardRDFRemover extends AbstractRDFHandler {
-
-		private final RepositoryConnection conn;
-
-		public WildcardRDFRemover(RepositoryConnection conn) {
-			super();
-			this.conn = conn;
-		}
-
-		@Override
-		public void handleStatement(Statement st)
-			throws RDFHandlerException
-		{
-			Resource subject = SESAME.WILDCARD.equals(st.getSubject()) ? null : st.getSubject();
-			IRI predicate = SESAME.WILDCARD.equals(st.getPredicate()) ? null : st.getPredicate();
-			Value object = SESAME.WILDCARD.equals(st.getObject()) ? null : st.getObject();
-
-			// use the RepositoryConnection.clear operation if we're removing all statements
-			final boolean clearAllTriples = subject == null && predicate == null && object == null;
-
-			try {
-				Resource context = st.getContext();
-				if (context != null) {
-					if (clearAllTriples) {
-						conn.clear(context);
-					}
-					else {
-						conn.remove(subject, predicate, object, context);
-					}
-				}
-				else {
-					if (clearAllTriples) {
-						conn.clear();
-					}
-					else {
-						conn.remove(subject, predicate, object);
-					}
-				}
-			}
-			catch (RepositoryException e) {
-				throw new RDFHandlerException(e);
-			}
-		}
-
-	}
 }

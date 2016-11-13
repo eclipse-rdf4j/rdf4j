@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.Test;
 
@@ -30,7 +30,7 @@ public class HashJoinIterationTest {
 
 	private final ValueFactory vf = ValueFactoryImpl.getInstance();
 
-	private final EvaluationStrategy evaluator = new SimpleEvaluationStrategy(null, null);
+	private final EvaluationStrategy evaluator = new StrictEvaluationStrategy(null, null);
 
 	@Test
 	public void testCartesianJoin()

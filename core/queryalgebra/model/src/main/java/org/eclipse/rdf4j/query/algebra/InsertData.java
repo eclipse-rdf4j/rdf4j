@@ -14,6 +14,8 @@ public class InsertData extends AbstractQueryModelNode implements UpdateExpr {
 
 	private final String dataBlock;
 
+	private int lineNumberCorrection;
+	
 	public InsertData(String dataBlock) {
 		this.dataBlock = dataBlock;
 	}
@@ -51,6 +53,17 @@ public class InsertData extends AbstractQueryModelNode implements UpdateExpr {
 	@Override
 	public boolean isSilent() {
 		return false;
+	}
+
+	/**
+	 * @return the lineNumberCorrection
+	 */
+	public int getLineNumberOffset() {
+		return lineNumberCorrection;
+	}
+	
+	public void setLineNumberOffset(int lineNumberOffset) {
+		this.lineNumberCorrection = lineNumberOffset;
 	}
 
 }
