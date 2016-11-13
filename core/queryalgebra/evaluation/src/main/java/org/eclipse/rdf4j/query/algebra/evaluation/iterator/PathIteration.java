@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
@@ -33,7 +33,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	/**
 	 * 
 	 */
-	private final SimpleEvaluationStrategy evaluationStrategyImpl;
+	private final StrictEvaluationStrategy evaluationStrategyImpl;
 
 	private long currentLength;
 
@@ -65,7 +65,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	private static final String JOINVAR_PREFIX = "intermediate-join-";
 
-	public PathIteration(SimpleEvaluationStrategy evaluationStrategyImpl, Scope scope, Var startVar,
+	public PathIteration(StrictEvaluationStrategy evaluationStrategyImpl, Scope scope, Var startVar,
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings)
 		throws QueryEvaluationException
 	{

@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.SimpleEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -38,7 +38,7 @@ import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
  * @see ParallelLeftJoinCursor
  * @author James Leigh
  */
-public class FederationStrategy extends SimpleEvaluationStrategy {
+public class FederationStrategy extends StrictEvaluationStrategy {
 
 	private final Executor executor;
 

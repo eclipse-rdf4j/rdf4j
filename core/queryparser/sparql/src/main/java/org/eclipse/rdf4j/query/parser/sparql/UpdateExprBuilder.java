@@ -82,7 +82,10 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 		throws VisitorException
 	{
 		ASTUnparsedQuadDataBlock dataBlock = node.jjtGetChild(ASTUnparsedQuadDataBlock.class);
-		return new InsertData(dataBlock.getDataBlock());
+		InsertData insertData = new InsertData(dataBlock.getDataBlock());
+		
+		insertData.setLineNumberOffset(dataBlock.getAddedDefaultPrefixes());
+		return insertData;
 	}
 
 	@Override
@@ -91,7 +94,10 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	{
 
 		ASTUnparsedQuadDataBlock dataBlock = node.jjtGetChild(ASTUnparsedQuadDataBlock.class);
-		return new DeleteData(dataBlock.getDataBlock());
+		DeleteData deleteData = new DeleteData(dataBlock.getDataBlock());
+		
+		deleteData.setLineNumberOffset(dataBlock.getAddedDefaultPrefixes());
+		return deleteData;
 
 	}
 

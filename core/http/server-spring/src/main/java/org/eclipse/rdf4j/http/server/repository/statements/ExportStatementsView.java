@@ -12,14 +12,12 @@ import static javax.servlet.http.HttpServletResponse.SC_OK;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.util.Map;
-import java.util.UUID;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
-import org.eclipse.rdf4j.http.server.repository.transaction.ActiveTransactionRegistry;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -74,62 +72,53 @@ public class ExportStatementsView implements View {
 	public void render(Map model, HttpServletRequest request, HttpServletResponse response)
 		throws Exception
 	{
-		UUID txnId = null;
+		Resource subj = (Resource)model.get(SUBJECT_KEY);
+		IRI pred = (IRI)model.get(PREDICATE_KEY);
+		Value obj = (Value)model.get(OBJECT_KEY);
+		Resource[] contexts = (Resource[])model.get(CONTEXTS_KEY);
+		boolean useInferencing = (Boolean)model.get(USE_INFERENCING_KEY);
+		RepositoryConnection conn = (RepositoryConnection)model.get(CONNECTION_KEY);
+
+		boolean headersOnly = (Boolean)model.get(HEADERS_ONLY);
+
+		RDFWriterFactory rdfWriterFactory = (RDFWriterFactory)model.get(FACTORY_KEY);
+
+		RDFFormat rdfFormat = rdfWriterFactory.getRDFFormat();
+
 		try {
-			txnId = (UUID)model.get(TRANSACTION_ID_KEY);
-			Resource subj = (Resource)model.get(SUBJECT_KEY);
-			IRI pred = (IRI)model.get(PREDICATE_KEY);
-			Value obj = (Value)model.get(OBJECT_KEY);
-			Resource[] contexts = (Resource[])model.get(CONTEXTS_KEY);
-			boolean useInferencing = (Boolean)model.get(USE_INFERENCING_KEY);
-			RepositoryConnection conn = (RepositoryConnection)model.get(CONNECTION_KEY);
+			OutputStream out = response.getOutputStream();
+			RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
 
-			boolean headersOnly = (Boolean)model.get(HEADERS_ONLY);
+			response.setStatus(SC_OK);
 
-			RDFWriterFactory rdfWriterFactory = (RDFWriterFactory)model.get(FACTORY_KEY);
-
-			RDFFormat rdfFormat = rdfWriterFactory.getRDFFormat();
-
-			try {
-				OutputStream out = response.getOutputStream();
-				RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
-
-				response.setStatus(SC_OK);
-
-				String mimeType = rdfFormat.getDefaultMIMEType();
-				if (rdfFormat.hasCharset()) {
-					Charset charset = rdfFormat.getCharset();
-					mimeType += "; charset=" + charset.name();
-				}
-				response.setContentType(mimeType);
-
-				String filename = "statements";
-				if (rdfFormat.getDefaultFileExtension() != null) {
-					filename += "." + rdfFormat.getDefaultFileExtension();
-				}
-				response.setHeader("Content-Disposition", "attachment; filename=" + filename);
-
-				if (!headersOnly) {
-					if (conn == null) {
-						conn = RepositoryInterceptor.getRepositoryConnection(request);
-					}
-					synchronized (conn) {
-						conn.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
-					}
-				}
-				out.close();
+			String mimeType = rdfFormat.getDefaultMIMEType();
+			if (rdfFormat.hasCharset()) {
+				Charset charset = rdfFormat.getCharset();
+				mimeType += "; charset=" + charset.name();
 			}
-			catch (RDFHandlerException e) {
-				throw new ServerHTTPException("Serialization error: " + e.getMessage(), e);
+			response.setContentType(mimeType);
+
+			String filename = "statements";
+			if (rdfFormat.getDefaultFileExtension() != null) {
+				filename += "." + rdfFormat.getDefaultFileExtension();
 			}
-			catch (RepositoryException e) {
-				throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
+			response.setHeader("Content-Disposition", "attachment; filename=" + filename);
+
+			if (!headersOnly) {
+				if (conn == null) {
+					conn = RepositoryInterceptor.getRepositoryConnection(request);
+				}
+				synchronized (conn) {
+					conn.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
+				}
 			}
+			out.close();
 		}
-		finally {
-			if (txnId != null) {
-				ActiveTransactionRegistry.INSTANCE.returnTransactionConnection(txnId);
-			}
+		catch (RDFHandlerException e) {
+			throw new ServerHTTPException("Serialization error: " + e.getMessage(), e);
+		}
+		catch (RepositoryException e) {
+			throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 		}
 	}
 

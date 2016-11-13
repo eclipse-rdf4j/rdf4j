@@ -12,22 +12,16 @@ import static org.hamcrest.core.IsEqual.equalTo;
 import static org.hamcrest.core.IsInstanceOf.instanceOf;
 import static org.junit.Assert.assertThat;
 import static org.mockito.Matchers.anyString;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.http.config.HTTPRepositoryConfig;
 import org.eclipse.rdf4j.repository.http.config.HTTPRepositoryFactory;
@@ -43,6 +37,11 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.mockito.InjectMocks;
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
 
 /**
  * Unit tests for {@link Federate}.
@@ -67,34 +66,45 @@ public class FederateTest extends AbstractCommandTest {
 
 	private static final String FED_DESCRIPTION = "Test Federation Title";
 
+	@Rule
+	public TemporaryFolder tempDir = new TemporaryFolder();
+
+	@InjectMocks
 	private Federate federate;
 
-	@Rule
-	public final TemporaryFolder LOCATION = new TemporaryFolder();
+	private Level originalLevel;
 
 	@Before
-	public void prepareManager()
-		throws UnsupportedEncodingException, IOException, RDF4JException
+	public void setUp()
+		throws Exception
 	{
-		manager = new LocalRepositoryManager(LOCATION.getRoot());
+		originalLevel = ((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).getLevel();
+
+		// Start all tests assuming a base of Debug logging, then revert after the test
+		((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).setLevel(Level.DEBUG);
+
+		manager = new LocalRepositoryManager(tempDir.newFolder("federate-test-repository-manager"));
 		manager.initialize();
 		addRepositories(MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID2, HTTP_MEMBER_ID, HTTP2_MEMBER_ID,
 				SPARQL_MEMBER_ID, SPARQL2_MEMBER_ID);
-		ConsoleState state = mock(ConsoleState.class);
-		when(state.getManager()).thenReturn(manager);
-		when(streams.readln("Federation Description (optional):")).thenReturn(FED_DESCRIPTION);
-		federate = new Federate(streams, state);
+		when(mockConsoleState.getManager()).thenReturn(manager);
+		when(mockConsoleIO.readln("Federation Description (optional):")).thenReturn(FED_DESCRIPTION);
 	}
 
 	@After
 	public void tearDown()
-		throws RDF4JException
+		throws Exception
 	{
-		manager.shutDown();
+		try {
+			super.tearDown();
+		}
+		finally {
+			((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).setLevel(originalLevel);
+		}
 	}
 
 	private void execute(String... args)
-		throws IOException
+		throws Exception
 	{
 		List<String> execArgs = new ArrayList<String>(args.length + 1);
 		execArgs.add("federate");
@@ -103,56 +113,56 @@ public class FederateTest extends AbstractCommandTest {
 	}
 
 	@Test
-	public void noArgumentsPrintsHelp()
-		throws IOException, RDF4JException
+	public void testNoArgumentsPrintsHelp()
+		throws Exception
 	{
 		execute();
-		verify(streams).writeln(PrintHelp.FEDERATE);
+		verify(mockConsoleIO).writeln(PrintHelp.FEDERATE);
 	}
 
 	@Test
-	public void oneArgumentPrintsHelp()
-		throws IOException, RDF4JException
+	public void testOneArgumentPrintsHelp()
+		throws Exception
 	{
 		execute(FED_ID);
-		verify(streams).writeln(PrintHelp.FEDERATE);
+		verify(mockConsoleIO).writeln(PrintHelp.FEDERATE);
 	}
 
 	@Test
-	public void twoArgumentsPrintsHelp()
-		throws IOException, RDF4JException
+	public void testTwoArgumentsPrintsHelp()
+		throws Exception
 	{
 		execute(FED_ID, MEMORY_MEMBER_ID1);
-		verify(streams).writeln(PrintHelp.FEDERATE);
+		verify(mockConsoleIO).writeln(PrintHelp.FEDERATE);
 	}
 
 	@Test
-	public void invalidArgumentPrintsError()
-		throws IOException, RDF4JException
+	public void testInvalidArgumentPrintsError()
+		throws Exception
 	{
 		execute("type=memory", FED_ID, MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID2);
 		verifyFailure();
 	}
 
 	@Test
-	public void duplicateMembersPrintsError()
-		throws IOException, RDF4JException
+	public void testDuplicateMembersPrintsError()
+		throws Exception
 	{
 		execute(FED_ID, MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID1);
 		verifyFailure();
 	}
 
 	@Test
-	public void fedSameAsMemberPrintsError()
-		throws IOException, RDF4JException
+	public void testFedSameAsMemberPrintsError()
+		throws Exception
 	{
 		execute(FED_ID, MEMORY_MEMBER_ID1, FED_ID, MEMORY_MEMBER_ID1);
 		verifyFailure();
 	}
 
 	@Test
-	public void sparqlAndNotReadOnlyPrintsError()
-		throws IOException, RDF4JException
+	public void testSparqlAndNotReadOnlyPrintsError()
+		throws Exception
 	{
 		execute("readonly=false", FED_ID, SPARQL_MEMBER_ID, SPARQL2_MEMBER_ID);
 		verifyFailure(SPARQL_MEMBER_ID + " is read-only.");
@@ -160,24 +170,24 @@ public class FederateTest extends AbstractCommandTest {
 	}
 
 	@Test
-	public void fedAlreadyExistsPrintsSpecificError()
-		throws IOException, RDF4JException
+	public void testFedAlreadyExistsPrintsSpecificError()
+		throws Exception
 	{
 		execute(MEMORY_MEMBER_ID1, FED_ID, MEMORY_MEMBER_ID2);
 		verifyFailure(MEMORY_MEMBER_ID1 + " already exists.");
 	}
 
 	@Test
-	public void nonexistentMemberPrintsSpecificError()
-		throws IOException, RDF4JException
+	public void testNonexistentMemberPrintsSpecificError()
+		throws Exception
 	{
 		execute(FED_ID, MEMORY_MEMBER_ID1, "FreeLunch");
 		verifyFailure("FreeLunch does not exist.");
 	}
 
 	@Test
-	public void federateMemoryMembersSuccess()
-		throws UnsupportedEncodingException, IOException, RepositoryException, RepositoryConfigException
+	public void testFederateMemoryMembersSuccess()
+		throws Exception
 	{
 		execute(FED_ID, MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID2);
 		verifySuccess(ProxyRepositoryFactory.REPOSITORY_TYPE, ProxyRepositoryFactory.REPOSITORY_TYPE);
@@ -186,7 +196,7 @@ public class FederateTest extends AbstractCommandTest {
 	}
 
 	private long getSize(String memberID)
-		throws RepositoryException, RepositoryConfigException
+		throws Exception
 	{
 		RepositoryConnection connection = manager.getRepository(memberID).getConnection();
 		try {
@@ -198,32 +208,32 @@ public class FederateTest extends AbstractCommandTest {
 	}
 
 	@Test
-	public void federateSucceedsWithHTTPandSPARQLmembers()
-		throws UnsupportedEncodingException, IOException, RDF4JException
+	public void testFederateSucceedsWithHTTPandSPARQLmembers()
+		throws Exception
 	{
 		execute(FED_ID, HTTP_MEMBER_ID, SPARQL_MEMBER_ID);
 		verifySuccess(HTTPRepositoryFactory.REPOSITORY_TYPE, SPARQLRepositoryFactory.REPOSITORY_TYPE);
 	}
 
 	@Test
-	public void federateHTTPtypeSucceeds()
-		throws IOException, RDF4JException
+	public void testFederateHTTPtypeSucceeds()
+		throws Exception
 	{
 		execute(FED_ID, HTTP_MEMBER_ID, HTTP2_MEMBER_ID);
 		verifySuccess(HTTPRepositoryFactory.REPOSITORY_TYPE, HTTPRepositoryFactory.REPOSITORY_TYPE);
 	}
 
 	@Test
-	public void federateSPARQLtypeSucceeds()
-		throws IOException, RDF4JException
+	public void testFederateSPARQLtypeSucceeds()
+		throws Exception
 	{
 		execute(FED_ID, SPARQL_MEMBER_ID, SPARQL2_MEMBER_ID);
 		verifySuccess(SPARQLRepositoryFactory.REPOSITORY_TYPE, SPARQLRepositoryFactory.REPOSITORY_TYPE);
 	}
 
 	@Test
-	public void successWithNonDefaultReadonlyAndDistinct()
-		throws IOException, RepositoryException, RepositoryConfigException
+	public void testSuccessWithNonDefaultReadonlyAndDistinct()
+		throws Exception
 	{
 		execute(FED_ID, "distinct=true", "readonly=false", MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID2);
 		verifySuccess(false, true, ProxyRepositoryFactory.REPOSITORY_TYPE,
@@ -233,8 +243,8 @@ public class FederateTest extends AbstractCommandTest {
 	}
 
 	@Test
-	public void fullyHeterogeneousSuccess()
-		throws IOException, RepositoryException, RepositoryConfigException
+	public void testFullyHeterogeneousSuccess()
+		throws Exception
 	{
 		execute(FED_ID, SPARQL_MEMBER_ID, MEMORY_MEMBER_ID1, HTTP_MEMBER_ID);
 		verifySuccess(SPARQLRepositoryFactory.REPOSITORY_TYPE, ProxyRepositoryFactory.REPOSITORY_TYPE,
@@ -242,18 +252,18 @@ public class FederateTest extends AbstractCommandTest {
 	}
 
 	private void verifySuccess(String... memberTypes)
-		throws RepositoryException, RepositoryConfigException, IOException
+		throws Exception
 	{
 		verifySuccess(true, false, memberTypes);
 	}
 
 	private void verifySuccess(boolean readonly, boolean distinct, String... memberTypes)
-		throws RepositoryException, RepositoryConfigException, IOException
+		throws Exception
 	{
 		assertThat(manager.hasRepositoryConfig(FED_ID), is(equalTo(true)));
-		verify(streams, times(1)).writeln("Federation created.");
-		verify(streams, never()).writeError(anyString());
-		verify(streams, times(1)).readln("Federation Description (optional):");
+		verify(mockConsoleIO, times(1)).readln("Federation Description (optional):");
+		verify(mockConsoleIO, times(1)).writeln("Federation created.");
+		verify(mockConsoleIO, never()).writeError(anyString());
 		assertThat(manager.getRepositoryInfo(FED_ID).getDescription(), is(equalTo(FED_DESCRIPTION)));
 		SailRepositoryConfig sailRepoConfig = (SailRepositoryConfig)manager.getRepositoryConfig(
 				FED_ID).getRepositoryImplConfig();
@@ -282,13 +292,13 @@ public class FederateTest extends AbstractCommandTest {
 	}
 
 	private void verifyFailure(String... error)
-		throws RepositoryException, RepositoryConfigException
+		throws Exception
 	{
 		if (error.length > 0) {
-			verify(streams).writeError(error[0]);
+			verify(mockConsoleIO).writeError(error[0]);
 		}
 		else {
-			verify(streams).writeError(anyString());
+			verify(mockConsoleIO).writeError(anyString());
 		}
 		assertThat(manager.hasRepositoryConfig(FED_ID), is(equalTo(false)));
 	}
