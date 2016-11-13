@@ -5,6 +5,7 @@
     <groupId>org.eclipse.rdf4j</groupId>
     <artifactId>rdf4j-benchmark</artifactId>
     <version>2.2-SNAPSHOT</version>
+    <packaging>jar</packaging>
 
     <dependencies>
         <dependency>
@@ -31,6 +32,11 @@
         <dependency>
             <groupId>org.eclipse.rdf4j</groupId>
             <artifactId>rdf4j-sail-memory</artifactId>
+            <version>2.2-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.rdf4j</groupId>
+            <artifactId>rdf4j-rio-turtle</artifactId>
             <version>2.2-SNAPSHOT</version>
         </dependency>
     </dependencies>
