@@ -269,7 +269,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	private IndexableStatementFilter filter = null;
 
 	private final AtomicBoolean closed = new AtomicBoolean(false);
-	
+
 	public void setLuceneIndex(SearchIndex luceneIndex) {
 		this.luceneIndex = luceneIndex;
 	}
@@ -282,14 +282,20 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public NotifyingSailConnection getConnection()
 		throws SailException
 	{
-		return new LuceneSailConnection(super.getConnection(), luceneIndex, this);
+		if (!closed.get()) {
+			return new LuceneSailConnection(super.getConnection(), luceneIndex, this);
+		}
+		else {
+			throw new SailException("Sail is shut down or not initialized");
+		}
 	}
 
 	@Override
 	public void shutDown()
 		throws SailException
 	{
-		if(closed.compareAndSet(false, true)) {
+		if (closed.compareAndSet(false, true)) {
+			logger.debug("LuceneSail shutdown");
 			try {
 				SearchIndex toShutDownLuceneIndex = luceneIndex;
 				luceneIndex = null;

@@ -51,14 +51,59 @@ public class SimpleLiteralTest {
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#hashCode()}.
+	 * Test method for {@link SimpleLiteral#hashCode()} and {@link SimpleLiteral#equals(Object)}.
 	 */
-	@Ignore("TODO: Implement me!")
 	@Test
-	public final void testHashCode()
+	public final void testHashCodeEquals()
 		throws Exception
 	{
-		fail("Not yet implemented"); // TODO
+		// the base contract for hashCode is simply that it returns the same value for two objects for which equals() returns true. Note
+		// that the inverse does not hold: there is no absolute guarantee that hashCode will return different values for objects whose equals
+		// is _not_ true. Though of course we make a best effort to have a good hash distribution.
+
+		// plain literals 
+		SimpleLiteral lit1 = new SimpleLiteral("a");
+		SimpleLiteral lit2 = new SimpleLiteral("a");
+
+		assertEquals(lit1, lit2);
+		assertEquals("hashCode() should return identical values for literals for which equals() is true",
+				lit1.hashCode(), lit2.hashCode());
+
+		// datatyped literals
+		SimpleLiteral lit3 = new SimpleLiteral("10.0", XMLSchema.DECIMAL);
+		SimpleLiteral lit4 = new SimpleLiteral("10.0", XMLSchema.DECIMAL);
+
+		assertEquals(lit3, lit4);
+		assertEquals("hashCode() should return identical values for literals for which equals() is true",
+				lit3.hashCode(), lit4.hashCode());
+
+		// language-tagged literals
+		SimpleLiteral lit5 = new SimpleLiteral("duck", "en");
+		SimpleLiteral lit6 = new SimpleLiteral("duck", "en");
+
+		assertEquals(lit5, lit6);
+		assertEquals("hashCode() should return identical values for literals for which equals() is true",
+				lit5.hashCode(), lit6.hashCode());
+
+		SimpleLiteral lit1en = new SimpleLiteral("a", "en");
+		assertFalse(lit1.equals(lit1en));
+
+		// The below assertions are not guaranteed in the general case. However in these specific cases it means our hashCode
+		// implementation is too weak: these two literals should definitely be distinguished.
+		assertFalse("unexpected equal hashcode for unequal literals", lit1.hashCode() == lit1en.hashCode());
+
+		SimpleLiteral lit1dt = new SimpleLiteral("a", XMLSchema.DECIMAL);
+		assertFalse("unexpected equal hashcode for unequal literal", lit1.hashCode() == lit1dt.hashCode());
+	}
+	
+	@Test 
+	public final void testStringLiteralEqualsHashCode() {
+		// in RDF 1.1, there is no distinction between plain and string-typed literals.
+		SimpleLiteral lit1 = new SimpleLiteral("a");
+		SimpleLiteral lit2 = new SimpleLiteral("a", XMLSchema.STRING);
+		
+		assertEquals(lit1, lit2);
+		assertEquals(lit1.hashCode(), lit2.hashCode());
 	}
 
 	/**
@@ -298,17 +343,6 @@ public class SimpleLiteralTest {
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#equals(java.lang.Object)}.
-	 */
-	@Ignore("TODO: Implement me!")
-	@Test
-	public final void testEqualsObject()
-		throws Exception
-	{
-		fail("Not yet implemented"); // TODO
-	}
-
-	/**
 	 * Test method for {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#toString()}.
 	 */
 	@Ignore("TODO: Implement me!")
@@ -435,17 +469,6 @@ public class SimpleLiteralTest {
 	@Ignore("TODO: Implement me!")
 	@Test
 	public final void testCalendarValue()
-		throws Exception
-	{
-		fail("Not yet implemented"); // TODO
-	}
-
-	/**
-	 * Test method for {@link java.lang.Object#equals(java.lang.Object)}.
-	 */
-	@Ignore("TODO: Implement me!")
-	@Test
-	public final void testEqualsObject1()
 		throws Exception
 	{
 		fail("Not yet implemented"); // TODO
