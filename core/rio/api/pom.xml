@@ -5,11 +5,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-rio</artifactId>
-<<<<<<< HEAD
 		<version>2.2-SNAPSHOT</version>
-=======
-		<version>2.1.2</version>
->>>>>>> releases/2.1.2
 	</parent>
 
 	<artifactId>rdf4j-rio-api</artifactId>
