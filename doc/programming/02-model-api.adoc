@@ -1,6 +1,6 @@
 = The RDF Model API
 
-The RDF Model API is the core of the RDF4J framework. It provides the basic building blocks for manipulating RDF data in Java. In this chapter, we introduce these basic building blocks and show some example on hot to use them.
+The RDF Model API is the core of the RDF4J framework. It provides the basic building blocks for manipulating RDF data in Java. In this chapter, we introduce these basic building blocks and show some examples on how to use them.
 
 == RDF Building Blocks: IRIs, literals, blank nodes and statements
 
