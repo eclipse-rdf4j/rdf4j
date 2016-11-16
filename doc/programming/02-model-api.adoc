@@ -80,7 +80,7 @@ for (Resource person: model.filter(null, RDF.TYPE, FOAF.PERSON).subjects()) {
 
 The `filter()` method returns a `Model` again. However, the `Model` returned by this method is still backed by the original `Model`. Thus, changes that you make to this returned `Model` will automatically be reflected in the original `Model` as well.
 
-RDF4J provides two default implementations of the `Model` interface: {javdoc}model/impl/LinkedHashModel.html[org.eclipse.rdf4j.model.impl.LinkedHashModel], and {javadoc}model/impl/TreeModel.html[org.eclipse.rdf4j.model.impl.TreeModel]. The difference between the two is in their performance for different kinds of lookups and insertion patterns (see their respective javadoc entries for details). These differences are only really noticable when dealing with quite large collections of statements, however.  
+RDF4J provides two default implementations of the `Model` interface: {javadoc}model/impl/LinkedHashModel.html[org.eclipse.rdf4j.model.impl.LinkedHashModel], and {javadoc}model/impl/TreeModel.html[org.eclipse.rdf4j.model.impl.TreeModel]. The difference between the two is in their performance for different kinds of lookups and insertion patterns (see their respective javadoc entries for details). These differences are only really noticable when dealing with quite large collections of statements, however.  
 
 == Building RDF Models with the ModelBuilder
 
