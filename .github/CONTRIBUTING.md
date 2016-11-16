@@ -14,20 +14,14 @@ RDF4J is a project governed by the [Eclipse Foundation](http://www.eclipse.org/)
 
 In order for any contributions to the RDF4J documentation to be accepted, you MUST do the following things:
 
-1. Digitally sign the [Eclipse Foundation Contributor License Agreement](http://www.eclipse.org/legal/CLA.php).
-To sign the Eclipse CLA you need to:
+1. Digitally sign the [Eclipse Contributor Agreement (ECA)](https://www.eclipse.org/legal/ECA.php). You can do this as follows: 
 
-  * Obtain an Eclipse Foundation userid. If you already use Eclipse Bugzilla or Gerrit you already have one of those. If you don’t, you need to
-[register](https://dev.eclipse.org/site_login/createaccount.php).
+  * If you haven't done so already, [register an Eclipse account](https://dev.eclipse.org/site_login/createaccount.php). Use the same email address when you register for the account that you intend to use on Git commit records. 
+  * Log into the [Eclipse projects forge](http://www.eclipse.org/contribute/cla); click on the "Eclipse Contributor Agreement" tab; and complete the form. See the [ECA FAQ](https://www.eclipse.org/legal/ecafaq.php) for more info. 
 
-  * Login into the [projects portal](https://projects.eclipse.org/), select “My Account”, and then the “Contributor License Agreement” tab. Read through, then sign.
+2. Add your github username in your [Eclipse account settings](https://dev.eclipse.org/site_login/#open_tab_accountsettings).
 
-2. Add your github username in your Eclipse Foundation account settings. Log in it to Eclipse and go to account settings.
-
-3. "Sign-off" your commits
-
-Every commit you make in your patch or pull request MUST be "signed off".
-You do this by adding the `-s` flag when you make the commit(s).
+3. "Sign-off" your commits. Every commit you make in your patch or pull request MUST be "signed off". You do this by adding the `-s` flag when you make the commit(s).
 
 ## Creating your contribution
 
