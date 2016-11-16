@@ -36,8 +36,6 @@ module workbench {
             var istext = (selected == 'text');
             $('#text').prop('disabled', !istext);
             var contentType = $('#Content-Type');
-            var firstType = contentType.find('option:first');
-            firstType.prop('disabled', true);
             $('#source-' + selected).prop('checked', true);
             var isfile = (selected == 'file');
             var file = $('#file');
@@ -45,7 +43,9 @@ module workbench {
             var isurl = (selected == 'url');
             var url = $('#url');
             url.prop('disabled', !isurl);
+            var autodetect = contentType.find("option[value='autodetect']");
             if (istext) {
+                autodetect.prop('disabled', true);
                 var turtle = contentType.find("option[value='application/x-turtle']");
                 if (turtle.length == 0) {
                     turtle = contentType.find("option[value='text/turtle']");
@@ -55,7 +55,8 @@ module workbench {
                 }
             }
             else {
-                firstType.prop('selected', true);
+                autodetect.prop('disabled', false);
+                autodetect.prop('selected', true);
                 var baseURI = $('#baseURI');
                 var checked = $('#useForContext').prop('checked');
                 if (isfile) {
