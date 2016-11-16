@@ -10,7 +10,7 @@ If you are looking for the RDF4J source code repository: it's located at https:/
 == Contribute to the Documentation
 Spotted a typo? Have something else to improve or fix in the documentation? Great! We love to receive your fixes and improvements! Before you start editing, please make sure that:
 
-1. you have signed the [Eclipse Contributor Agreement (ECA)](https://www.eclipse.org/legal/ECA.php) (see the [ECA FAQ](https://www.eclipse.org/legal/ecafaq.php) for more info);
+1. you have signed the https://www.eclipse.org/legal/ECA.php[Eclipse Contributor Agreement (ECA)] (see the https://www.eclipse.org/legal/ecafaq.php[ECA FAQ] for more info);
 2. you know how to 'sign off' every commit do;
 3. you know what http://asciidoctor.org/docs/asciidoc-syntax-quick-reference/[AsciiDoc syntax] is. 
 
