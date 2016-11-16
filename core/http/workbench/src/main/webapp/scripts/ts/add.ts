@@ -13,18 +13,22 @@ module workbench {
             if (selected == 'application/x-trig' || selected == 'application/trix'
                 || selected == 'text/x-nquads') {
                 $('#useForContext').prop('checked', false);
-                $('#context').val('').prop('readonly', false);
+                $('#context').val('').prop('readOnly', false);
             }
         }
 
         function setContextFromBaseURI() {
             var baseURI = $('#baseURI').val();
+            $('#context').prop('readOnly', true);
             $('#context').val(baseURI == '' ? '' : '<' + baseURI + '>');
         }
 
         export function handleBaseURIUse() {
             if ($('#useForContext').prop('checked')) {
                 setContextFromBaseURI();
+            }
+            else {
+                $('#context').prop('readOnly', false); 
             }
         }
 
