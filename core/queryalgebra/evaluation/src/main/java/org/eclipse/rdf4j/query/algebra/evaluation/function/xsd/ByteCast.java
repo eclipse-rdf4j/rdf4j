@@ -18,27 +18,28 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * A {@link Function} that tries to cast its argument to an <tt>xsd:int</tt> .
+ * A {@link Function} that tries to cast its argument to an <tt>xsd:byte</tt> .
  * 
  * @author Jeen Broekstra
+ * @see XMLSchema#BYTE
  */
-public class IntCast extends IntegerDatatypeCast {
+public class ByteCast extends IntegerDatatypeCast {
 
 	@Override
 	protected IRI getIntegerDatatype() {
-		return XMLSchema.INT;
+		return XMLSchema.BYTE;
+	}
+
+	@Override
+	protected boolean isValidForDatatype(String lexicalValue) {
+		return XMLDatatypeUtil.isValidByte(lexicalValue);
 	}
 
 	@Override
 	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
 		throws ArithmeticException
 	{
-		return Optional.of(vf.createLiteral(integerValue.intValueExact()));
-	}
-
-	@Override
-	protected boolean isValidForDatatype(String lexicalValue) {
-		return XMLDatatypeUtil.isValidInt(lexicalValue);
+		return Optional.of(vf.createLiteral(integerValue.byteValueExact()));
 	}
 
 }

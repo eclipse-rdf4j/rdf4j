@@ -18,22 +18,24 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * A {@link Function} that tries to cast its argument to an <tt>xsd:int</tt> .
+ * A {@link Function} that tries to cast its argument to an <tt>xsd:integer</tt> .
  * 
  * @author Jeen Broekstra
  */
-public class IntCast extends IntegerDatatypeCast {
+// TODO the Service Registry currently still uses the (deprecated) IntegerCast function in the parent package. This needs to be updated in the next 
+// minor release (we're avoiding this in the patch for compatibility reasons)
+public class IntegerCast extends IntegerDatatypeCast {
 
 	@Override
 	protected IRI getIntegerDatatype() {
-		return XMLSchema.INT;
+		return XMLSchema.INTEGER;
 	}
 
 	@Override
 	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
 		throws ArithmeticException
 	{
-		return Optional.of(vf.createLiteral(integerValue.intValueExact()));
+		return Optional.of(vf.createLiteral(integerValue.toString(), getIntegerDatatype()));
 	}
 
 	@Override
