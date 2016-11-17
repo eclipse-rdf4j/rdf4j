@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.Test;
 
-public abstract class TestIntegerDatatypeCast<T extends IntegerDatatypeCast> {
+public abstract class TestIntegerDatatypeCast<T extends IntegerCastFunction> {
 
 	protected final ValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -87,7 +87,7 @@ public abstract class TestIntegerDatatypeCast<T extends IntegerDatatypeCast> {
 		try {
 			Literal result = getCastFunction().evaluate(vf, dbl);
 			assertNotNull(result);
-			assertEquals(getCastFunction().getIntegerDatatype(), result.getDatatype());
+			assertEquals(getCastFunction().getXsdDatatype(), result.getDatatype());
 			assertEquals(100, result.intValue());
 		}
 		catch (ValueExprEvaluationException e) {
@@ -104,7 +104,7 @@ public abstract class TestIntegerDatatypeCast<T extends IntegerDatatypeCast> {
 		try {
 			Literal result = getCastFunction().evaluate(vf, dbl);
 			assertNotNull(result);
-			assertEquals(getCastFunction().getIntegerDatatype(), result.getDatatype());
+			assertEquals(getCastFunction().getXsdDatatype(), result.getDatatype());
 			assertEquals(100, result.intValue());
 		}
 		catch (ValueExprEvaluationException e) {

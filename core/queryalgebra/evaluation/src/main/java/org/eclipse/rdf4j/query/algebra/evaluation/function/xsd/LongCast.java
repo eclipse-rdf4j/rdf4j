@@ -17,14 +17,14 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
- * A {@link IntegerDatatypeCast} that tries to cast its argument to an <tt>xsd:long</tt> .
+ * A {@link IntegerCastFunction} that tries to cast its argument to an <tt>xsd:long</tt> .
  * 
  * @author Jeen Broekstra
  */
-public class LongCast extends IntegerDatatypeCast {
+public class LongCast extends IntegerCastFunction {
 
 	@Override
-	protected IRI getIntegerDatatype() {
+	protected IRI getXsdDatatype() {
 		return XMLSchema.LONG;
 	}
 

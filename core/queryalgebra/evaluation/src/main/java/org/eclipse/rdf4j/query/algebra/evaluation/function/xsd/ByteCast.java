@@ -23,10 +23,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
  * @author Jeen Broekstra
  * @see XMLSchema#BYTE
  */
-public class ByteCast extends IntegerDatatypeCast {
+public class ByteCast extends IntegerCastFunction {
 
 	@Override
-	protected IRI getIntegerDatatype() {
+	protected IRI getXsdDatatype() {
 		return XMLSchema.BYTE;
 	}
 
