@@ -22,12 +22,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
  * 
  * @author Jeen Broekstra
  */
-// TODO the Service Registry currently still uses the (deprecated) IntegerCast function in the parent package. This needs to be updated in the next 
-// minor release (we're avoiding this in the patch for compatibility reasons)
-public class IntegerCast extends IntegerDatatypeCast {
+public class IntegerCast extends IntegerCastFunction {
 
 	@Override
-	protected IRI getIntegerDatatype() {
+	protected IRI getXsdDatatype() {
 		return XMLSchema.INTEGER;
 	}
 
@@ -35,7 +33,7 @@ public class IntegerCast extends IntegerDatatypeCast {
 	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
 		throws ArithmeticException
 	{
-		return Optional.of(vf.createLiteral(integerValue.toString(), getIntegerDatatype()));
+		return Optional.of(vf.createLiteral(integerValue.toString(), getXsdDatatype()));
 	}
 
 	@Override

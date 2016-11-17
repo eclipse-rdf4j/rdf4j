@@ -17,14 +17,14 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
- * A {@link IntegerDatatypeCast} that tries to cast its argument to an <tt>xsd:unsignedShort</tt> .
+ * A {@link IntegerCastFunction} that tries to cast its argument to an <tt>xsd:unsignedShort</tt> .
  * 
  * @author Jeen Broekstra
  */
-public class UnsignedShortCast extends IntegerDatatypeCast {
+public class UnsignedShortCast extends IntegerCastFunction {
 
 	@Override
-	protected IRI getIntegerDatatype() {
+	protected IRI getXsdDatatype() {
 		return XMLSchema.UNSIGNED_SHORT;
 	}
 
@@ -38,7 +38,7 @@ public class UnsignedShortCast extends IntegerDatatypeCast {
 		throws ArithmeticException
 	{
 		if (integerValue.compareTo(BigInteger.ZERO) >= 0) {
-			return Optional.of(vf.createLiteral(String.valueOf(integerValue.shortValueExact()), getIntegerDatatype()));
+			return Optional.of(vf.createLiteral(String.valueOf(integerValue.shortValueExact()), getXsdDatatype()));
 		}
 		return Optional.empty();
 	}

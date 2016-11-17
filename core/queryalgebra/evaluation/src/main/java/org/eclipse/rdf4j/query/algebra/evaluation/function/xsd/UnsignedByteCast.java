@@ -17,14 +17,14 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
- * A {@link IntegerDatatypeCast} that tries to cast its argument to an <tt>xsd:unsignedByte</tt> .
+ * A {@link IntegerCastFunction} that tries to cast its argument to an <tt>xsd:unsignedByte</tt> .
  * 
  * @author Jeen Broekstra
  */
-public class UnsignedByteCast extends IntegerDatatypeCast {
+public class UnsignedByteCast extends IntegerCastFunction {
 
 	@Override
-	protected IRI getIntegerDatatype() {
+	protected IRI getXsdDatatype() {
 		return XMLSchema.UNSIGNED_BYTE;
 	}
 
@@ -38,7 +38,7 @@ public class UnsignedByteCast extends IntegerDatatypeCast {
 		throws ArithmeticException
 	{
 		if (integerValue.compareTo(BigInteger.ZERO) >= 0) {
-			return Optional.of(vf.createLiteral(String.valueOf(integerValue.byteValueExact()), getIntegerDatatype()));
+			return Optional.of(vf.createLiteral(String.valueOf(integerValue.byteValueExact()), getXsdDatatype()));
 		}
 		return Optional.empty();
 	}

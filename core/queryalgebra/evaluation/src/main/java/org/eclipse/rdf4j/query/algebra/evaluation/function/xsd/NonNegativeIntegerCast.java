@@ -22,10 +22,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
  * 
  * @author Jeen Broekstra
  */
-public class NonNegativeIntegerCast extends IntegerDatatypeCast {
+public class NonNegativeIntegerCast extends IntegerCastFunction {
 
 	@Override
-	protected IRI getIntegerDatatype() {
+	protected IRI getXsdDatatype() {
 		return XMLSchema.NON_NEGATIVE_INTEGER;
 	}
 
@@ -38,7 +38,7 @@ public class NonNegativeIntegerCast extends IntegerDatatypeCast {
 	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
 	{
 		if (integerValue.compareTo(BigInteger.ZERO) >= 0) {
-			return Optional.of(vf.createLiteral(integerValue.toString(), getIntegerDatatype()));
+			return Optional.of(vf.createLiteral(integerValue.toString(), getXsdDatatype()));
 		}
 		return Optional.empty();
 	}

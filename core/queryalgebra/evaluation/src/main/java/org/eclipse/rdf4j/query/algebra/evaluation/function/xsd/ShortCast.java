@@ -22,10 +22,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
  * 
  * @author Jeen Broekstra
  */
-public class ShortCast extends IntegerDatatypeCast {
+public class ShortCast extends IntegerCastFunction {
 
 	@Override
-	protected IRI getIntegerDatatype() {
+	protected IRI getXsdDatatype() {
 		return XMLSchema.SHORT;
 	}
 
