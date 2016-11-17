@@ -28,6 +28,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 /**
@@ -38,6 +39,8 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
     NotifyingSail data;
     Repository schema;
+
+    ReentrantLock inferenceLock = new ReentrantLock();
 
     boolean useAllRdfsRules = true;
 
