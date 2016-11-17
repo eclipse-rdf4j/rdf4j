@@ -18,27 +18,26 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * A {@link Function} that tries to cast its argument to an <tt>xsd:int</tt> .
+ * A {@link Function} that tries to cast its argument to an <tt>xsd:short</tt> .
  * 
  * @author Jeen Broekstra
  */
-public class IntCast extends IntegerDatatypeCast {
+public class ShortCast extends IntegerDatatypeCast {
 
 	@Override
 	protected IRI getIntegerDatatype() {
-		return XMLSchema.INT;
+		return XMLSchema.SHORT;
+	}
+
+	@Override
+	protected boolean isValidForDatatype(String lexicalValue) {
+		return XMLDatatypeUtil.isValidShort(lexicalValue);
 	}
 
 	@Override
 	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
 		throws ArithmeticException
 	{
-		return Optional.of(vf.createLiteral(integerValue.intValueExact()));
+		return Optional.of(vf.createLiteral(integerValue.shortValueExact()));
 	}
-
-	@Override
-	protected boolean isValidForDatatype(String lexicalValue) {
-		return XMLDatatypeUtil.isValidInt(lexicalValue);
-	}
-
 }

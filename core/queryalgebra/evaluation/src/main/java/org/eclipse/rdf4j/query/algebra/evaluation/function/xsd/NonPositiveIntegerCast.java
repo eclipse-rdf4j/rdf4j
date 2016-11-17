@@ -8,93 +8,47 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
 
 import java.math.BigInteger;
+import java.util.Optional;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
-import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
  * A {@link Function} that tries to cast its argument to an <tt>xsd:nonPositiveInteger</tt> .
  * 
  * @author Jeen Broekstra
  */
-public class NonPositiveIntegerCast implements Function {
+public class NonPositiveIntegerCast extends IntegerDatatypeCast {
 
-	public String getURI() {
-		return XMLSchema.NON_POSITIVE_INTEGER.toString();
+	@Override
+	protected IRI getIntegerDatatype() {
+		return XMLSchema.NON_POSITIVE_INTEGER;
 	}
 
-	public Literal evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
+	@Override
+	protected boolean isValidForDatatype(String lexicalValue) {
+		return XMLDatatypeUtil.isValidNonPositiveInteger(lexicalValue);
+	}
+
+	@Override
+	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
 	{
-		if (args.length != 1) {
-			throw new ValueExprEvaluationException(
-					"xsd:xsd:nonPositiveInteger cast requires exactly 1 argument, got " + args.length);
+		if (integerValue.compareTo(BigInteger.ZERO) <= 0) {
+			return Optional.of(vf.createLiteral(integerValue.toString(), getIntegerDatatype()));
 		}
+		return Optional.empty();
+	}
 
-		if (args[0] instanceof Literal) {
-			Literal literal = (Literal)args[0];
-			IRI datatype = literal.getDatatype();
-
-			if (QueryEvaluationUtil.isStringLiteral(literal)) {
-				String integerValue = XMLDatatypeUtil.collapseWhiteSpace(literal.getLabel());
-				if (XMLDatatypeUtil.isValidNonPositiveInteger(integerValue)) {
-					return valueFactory.createLiteral(integerValue, XMLSchema.NON_POSITIVE_INTEGER);
-				}
-			}
-			else if (datatype != null) {
-				if (datatype.equals(XMLSchema.NON_POSITIVE_INTEGER)) {
-					return literal;
-				}
-				else if (XMLDatatypeUtil.isNumericDatatype(datatype)) {
-					 if (XMLDatatypeUtil.isIntegerDatatype(datatype)) {
-							String lexicalValue = XMLDatatypeUtil.collapseWhiteSpace(literal.getLabel());
-							if (XMLDatatypeUtil.isValidNonPositiveInteger(lexicalValue)) {
-								return valueFactory.createLiteral(lexicalValue, XMLSchema.NON_POSITIVE_INTEGER);
-							}
-					 }
-					// decimals, floats and doubles must be processed
-					// separately, see
-					// http://www.w3.org/TR/xpath-functions/#casting-from-primitive-to-primitive
-					BigInteger integerValue = null;
-					if (XMLSchema.DECIMAL.equals(datatype)
-							|| XMLDatatypeUtil.isFloatingPointDatatype(datatype))
-					{
-						integerValue = literal.decimalValue().toBigInteger();
-					}
-					else {
-						integerValue = literal.integerValue();
-					}
-					if (integerValue.compareTo(BigInteger.ZERO) <= 0) {
-						try {
-							return valueFactory.createLiteral(integerValue.toString(),
-									XMLSchema.NON_POSITIVE_INTEGER);
-						}
-						catch (NumberFormatException e) {
-							throw new ValueExprEvaluationException(e.getMessage(), e);
-						}
-					}
-				}
-				else if (datatype.equals(XMLSchema.BOOLEAN)) {
-					try {
-						if (!literal.booleanValue()) {
-							return valueFactory.createLiteral("0", XMLSchema.NON_POSITIVE_INTEGER);
-						}
-					}
-					catch (IllegalArgumentException e) {
-						throw new ValueExprEvaluationException(e.getMessage(), e);
-					}
-				}
-			}
+	@Override
+	protected Optional<Literal> createTypedLiteral(ValueFactory vf, boolean booleanValue) {
+		Literal result = null;
+		if (!booleanValue) {
+			result = vf.createLiteral("0", getIntegerDatatype());
 		}
-
-		throw new ValueExprEvaluationException(
-				"Invalid argument for xsd:nonPositiveInteger cast: " + args[0]);
+		return Optional.ofNullable(result);
 	}
 }

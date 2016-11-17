@@ -18,27 +18,37 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * A {@link Function} that tries to cast its argument to an <tt>xsd:int</tt> .
+ * A {@link Function} that tries to cast its argument to an <tt>xsd:positiveInteger</tt> .
  * 
  * @author Jeen Broekstra
  */
-public class IntCast extends IntegerDatatypeCast {
+public class PositiveIntegerCast extends IntegerDatatypeCast {
 
 	@Override
 	protected IRI getIntegerDatatype() {
-		return XMLSchema.INT;
-	}
-
-	@Override
-	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
-		throws ArithmeticException
-	{
-		return Optional.of(vf.createLiteral(integerValue.intValueExact()));
+		return XMLSchema.POSITIVE_INTEGER;
 	}
 
 	@Override
 	protected boolean isValidForDatatype(String lexicalValue) {
-		return XMLDatatypeUtil.isValidInt(lexicalValue);
+		return XMLDatatypeUtil.isValidPositiveInteger(lexicalValue);
 	}
 
+	@Override
+	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
+	{
+		if (integerValue.compareTo(BigInteger.ZERO) > 0) {
+			return Optional.of(vf.createLiteral(integerValue.toString(), getIntegerDatatype()));
+		}
+		return Optional.empty();
+	}
+
+	@Override
+	protected Optional<Literal> createTypedLiteral(ValueFactory vf, boolean booleanValue) {
+		Literal result = null;
+		if (booleanValue) {
+			result = vf.createLiteral("1", getIntegerDatatype());
+		}
+		return Optional.ofNullable(result);
+	}
 }

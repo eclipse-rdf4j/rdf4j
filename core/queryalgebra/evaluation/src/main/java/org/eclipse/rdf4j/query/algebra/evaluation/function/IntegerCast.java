@@ -22,7 +22,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
  * A {@link Function} that tries to cast its argument to an <tt>xsd:integer</tt> .
  * 
  * @author Arjohn Kampman
+ * @deprecated use {@link org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.IntegerCast} instead
  */
+@Deprecated
 public class IntegerCast implements Function {
 
 	public String getURI() {

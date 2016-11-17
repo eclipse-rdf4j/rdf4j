@@ -15,30 +15,32 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * A {@link Function} that tries to cast its argument to an <tt>xsd:int</tt> .
+ * A {@link IntegerDatatypeCast} that tries to cast its argument to an <tt>xsd:unsignedByte</tt> .
  * 
  * @author Jeen Broekstra
  */
-public class IntCast extends IntegerDatatypeCast {
+public class UnsignedByteCast extends IntegerDatatypeCast {
 
 	@Override
 	protected IRI getIntegerDatatype() {
-		return XMLSchema.INT;
+		return XMLSchema.UNSIGNED_BYTE;
+	}
+
+	@Override
+	protected boolean isValidForDatatype(String lexicalValue) {
+		return XMLDatatypeUtil.isValidUnsignedByte(lexicalValue);
 	}
 
 	@Override
 	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
 		throws ArithmeticException
 	{
-		return Optional.of(vf.createLiteral(integerValue.intValueExact()));
-	}
-
-	@Override
-	protected boolean isValidForDatatype(String lexicalValue) {
-		return XMLDatatypeUtil.isValidInt(lexicalValue);
+		if (integerValue.compareTo(BigInteger.ZERO) >= 0) {
+			return Optional.of(vf.createLiteral(String.valueOf(integerValue.byteValueExact()), getIntegerDatatype()));
+		}
+		return Optional.empty();
 	}
 
 }
