@@ -53,6 +53,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
 
     void statementCollector(Statement statement) {
+        fastRdfsForwardChainingSail.inferenceLock.lock();
         Value object = statement.getObject();
         IRI predicate = statement.getPredicate();
         Resource subject = statement.getSubject();
@@ -76,10 +77,14 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         }
 
         fastRdfsForwardChainingSail.properties.add(predicate);
+        fastRdfsForwardChainingSail.inferenceLock.unlock();
+
 
     }
 
     void calculateInferenceMaps() {
+        fastRdfsForwardChainingSail.inferenceLock.lock();
+
         calculateSubClassOf(fastRdfsForwardChainingSail.subClassOfStatements);
         findProperties(fastRdfsForwardChainingSail.properties);
         calculateSubPropertyOf(fastRdfsForwardChainingSail.subPropertyOfStatements);
@@ -107,6 +112,9 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
             });
         });
+
+        fastRdfsForwardChainingSail.inferenceLock.unlock();
+
 
     }
 
