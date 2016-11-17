@@ -504,9 +504,6 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
     public void addStatement(boolean actuallyAdd, Resource subject, IRI predicate, Value object, Resource... resources) throws SailException {
 
-        final boolean[] inferRdfTypeSubject = {false};
-        final boolean[] inferRdfTypeObject = {false};
-
         if (fastRdfsForwardChainingSail.schema == null) {
             statementCollector(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, predicate, object));
         }
@@ -553,8 +550,6 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
                     if (fastRdfsForwardChainingSail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
                         addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE);
                     }
-
-                    inferRdfTypeSubject[0] = true;
                 })
                 .filter(inferredType -> !inferredType.equals(object))
                 .forEach(inferredType -> addInferredStatement(subject, RDF.TYPE, inferredType));
@@ -573,8 +568,6 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
                     if (fastRdfsForwardChainingSail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
                         addInferredStatement(((Resource) object), RDFS.SUBCLASSOF, RDFS.RESOURCE);
                     }
-                    inferRdfTypeObject[0] = true;
-
                 })
                 .forEach(inferredType -> addInferredStatement(((Resource) object), RDF.TYPE, inferredType));
         }
