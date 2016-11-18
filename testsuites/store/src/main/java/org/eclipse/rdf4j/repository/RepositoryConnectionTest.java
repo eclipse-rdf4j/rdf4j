@@ -1618,7 +1618,6 @@ public abstract class RepositoryConnectionTest {
 
 		for (Statement st : deserializedGraph) {
 			assertThat(graph, hasItem(st));
-			System.out.println(st);
 			assertThat(testCon.hasStatement(st, true), is(equalTo(true)));
 		}
 	}
@@ -2071,8 +2070,6 @@ public abstract class RepositoryConnectionTest {
 		final String expected = "设备";
 		while (result.hasNext()) {
 			Value o = result.next().getValue("o");
-
-			System.out.println("o = " + o);
 
 			assertEquals(expected, o.stringValue());
 		}

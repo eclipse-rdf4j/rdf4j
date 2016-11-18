@@ -39,9 +39,9 @@ public class HTTPMemServer {
 
 	private static final String TEST_INFERENCE_REPO_ID = "Test-RDFS";
 
-	private static final String OPENRDF_CONTEXT = "/openrdf";
+	private static final String RDF4J_CONTEXT = "/rdf4j";
 
-	private static final String SERVER_URL = "http://" + HOST + ":" + PORT + OPENRDF_CONTEXT;
+	private static final String SERVER_URL = "http://" + HOST + ":" + PORT + RDF4J_CONTEXT;
 
 	public static final String REPOSITORY_URL = Protocol.getRepositoryLocation(SERVER_URL, TEST_REPO_ID);
 
@@ -64,9 +64,9 @@ public class HTTPMemServer {
 		// TODO temporarily disabled so the integration test server shows server-side logging.
 		//		webapp.addSystemClass("org.slf4j.");
 		//		webapp.addSystemClass("ch.qos.logback.");
-		webapp.setContextPath(OPENRDF_CONTEXT);
+		webapp.setContextPath(RDF4J_CONTEXT);
 		// warPath configured in pom.xml maven-war-plugin configuration
-		webapp.setWar("./target/openrdf-sesame");
+		webapp.setWar("./target/rdf4j-server");
 		jetty.setHandler(webapp);
 	}
 
@@ -75,7 +75,7 @@ public class HTTPMemServer {
 	{
 		File dataDir = new File(System.getProperty("user.dir") + "/target/datadir");
 		dataDir.mkdirs();
-		System.setProperty("info.aduna.platform.appdata.basedir", dataDir.getAbsolutePath());
+		System.setProperty("org.eclipse.rdf4j.appdata.basedir", dataDir.getAbsolutePath());
 
 		jetty.start();
 
