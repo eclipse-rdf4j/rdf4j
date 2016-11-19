@@ -55,7 +55,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     @Override
     public void rollback() throws SailException {
         super.rollback();
-        if(lockStamp != 0){
+        if (lockStamp != 0) {
             fastRdfsForwardChainingSail.releaseLock(this);
         }
         //@TODO Do I need to clean up the tbox cache and lookup maps after rolling back? Probably if the connection has a write lock.
@@ -73,7 +73,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDF.PROPERTY)) {
             fastRdfsForwardChainingSail.upgradeLock(this);
 
-            fastRdfsForwardChainingSail.properties.add((IRI) statement.getSubject());
+            fastRdfsForwardChainingSail.properties.add(statement.getSubject());
         } else if (predicate.equals(RDFS.SUBPROPERTYOF)) {
             fastRdfsForwardChainingSail.upgradeLock(this);
 
@@ -216,8 +216,8 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     private void calculateSubPropertyOf(List<Statement> subPropertyOfStatemenets) {
 
         subPropertyOfStatemenets.forEach(s -> {
-            IRI subClass = (IRI) s.getSubject();
-            IRI superClass = (IRI) s.getObject();
+            Resource subClass = s.getSubject();
+            Resource superClass = (Resource) s.getObject();
             if (!fastRdfsForwardChainingSail.calculatedProperties.containsKey(subClass)) {
                 fastRdfsForwardChainingSail.calculatedProperties.put(subClass, new HashSet<>());
             }
@@ -226,7 +226,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
                 fastRdfsForwardChainingSail.calculatedProperties.put(superClass, new HashSet<>());
             }
 
-            fastRdfsForwardChainingSail.calculatedProperties.get(subClass).add((IRI) s.getObject());
+            fastRdfsForwardChainingSail.calculatedProperties.get(subClass).add((Resource) s.getObject());
 
         });
 
@@ -259,7 +259,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     private void calculateRangeDomain(List<Statement> rangeOrDomainStatements, Map<Resource, Set<Resource>> calculatedRangeOrDomain) {
 
         rangeOrDomainStatements.forEach(s -> {
-            IRI predicate = (IRI) s.getSubject();
+            Resource predicate = s.getSubject();
             if (!fastRdfsForwardChainingSail.calculatedProperties.containsKey(predicate)) {
                 fastRdfsForwardChainingSail.calculatedProperties.put(predicate, new HashSet<>());
             }
@@ -621,7 +621,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         resolveProperties(predicate)
             .stream()
             .filter(inferredProperty -> !inferredProperty.equals(predicate))
-            .filter(inferredPropery -> !(inferredPropery instanceof IRI))
+            .filter(inferredPropery -> inferredPropery instanceof IRI)
             .map(inferredPropery -> ((IRI) inferredPropery))
             .forEach(inferredProperty -> addInferredStatement(subject, inferredProperty, object));
 
