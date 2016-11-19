@@ -24,7 +24,7 @@ import org.junit.Test;
 
 import java.io.IOException;
 
-//@Ignore("#58 - disabled spin compliance tests due to being slow and unstable. Manually execute when modifying SPIN functionality")
+@Ignore("#58 - disabled spin compliance tests due to being slow and unstable. Manually execute when modifying SPIN functionality")
 public class SpinFastRDFSMemoryRepositoryConnectionTest extends RepositoryConnectionTest {
 
 	public SpinFastRDFSMemoryRepositoryConnectionTest(IsolationLevel level) {
