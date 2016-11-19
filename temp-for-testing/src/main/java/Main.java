@@ -1,3 +1,5 @@
+import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -12,9 +14,14 @@ import java.util.Random;
 public class Main {
 
     static SailRepository sail = new SailRepository(new FastRdfsForwardChainingSail(new MemoryStore()));
-
+    static BNode left;
     static {
         sail.initialize();
+        SimpleValueFactory vf = SimpleValueFactory.getInstance();
+
+
+        left = vf.createBNode();
+
     }
 
 
@@ -23,7 +30,7 @@ public class Main {
     public static void main(String[] args) {
 
         try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
+            connection.begin(IsolationLevels.NONE);
             SimpleValueFactory vf = SimpleValueFactory.getInstance();
             for (int i = 0; i < 10; i++) {
                 connection.add(vf.createStatement(vf.createBNode(), RDF.TYPE, vf.createBNode()));
@@ -31,10 +38,10 @@ public class Main {
             connection.commit();
         }
 
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 100; i++) {
             new TempThreadAbox().start();
         }
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 2; i++) {
 
             new TempThreadTbox().start();
         }
@@ -56,10 +63,10 @@ public class Main {
 
 
                 try (SailRepositoryConnection connection = sail.getConnection()) {
-                    connection.begin();
+                    connection.begin(IsolationLevels.NONE);
                     SimpleValueFactory vf = SimpleValueFactory.getInstance();
                     for (int i = 0; i < 10; i++) {
-                        connection.add(vf.createStatement(vf.createBNode(), RDF.TYPE, vf.createBNode()));
+                        connection.add(vf.createStatement(vf.createBNode(), RDF.TYPE, left));
                     }
                     connection.commit();
                 }
@@ -82,10 +89,12 @@ public class Main {
             for (int j = 0; j < 10; j++) {
 
                 try (SailRepositoryConnection connection = sail.getConnection()) {
-                    connection.begin();
+                    connection.begin(IsolationLevels.NONE);
                     SimpleValueFactory vf = SimpleValueFactory.getInstance();
                     for (int i = 0; i < 10; i++) {
                         connection.add(vf.createStatement(vf.createBNode(), RDFS.SUBCLASSOF, vf.createBNode()));
+//                        connection.add(vf.createStatement(vf.createBNode(), RDFS.SUBCLASSOF, left));
+
                     }
                     connection.commit();
                     System.err.println("TBOX COMMIT WAS OK!");

@@ -52,6 +52,13 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         this.connection = e;
     }
 
+    @Override
+    public void rollback() throws SailException {
+        super.rollback();
+        if(lockStamp != 0){
+            fastRdfsForwardChainingSail.releaseLock(this);
+        }
+    }
 
     void statementCollector(Statement statement) {
         Value object = statement.getObject();
@@ -319,8 +326,9 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
     @Override
     public void begin(IsolationLevel level) throws UnknownSailTransactionStateException {
-        fastRdfsForwardChainingSail.readLock(this);
         super.begin(level);
+        fastRdfsForwardChainingSail.readLock(this);
+
         origianlTboxCount = getTboxCount();
 
     }
