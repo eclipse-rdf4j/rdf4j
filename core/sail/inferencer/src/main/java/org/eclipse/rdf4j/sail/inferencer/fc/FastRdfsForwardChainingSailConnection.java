@@ -176,6 +176,12 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
         });
 
+
+        // Fixed point approach to finding all sub-classes.
+        // prevSize is the size of the previous application of the function
+        // newSize is the size of the current application of the function
+        // Fixed point is reached when they are the same.
+        // Eg. Two consecutive applications return the same number of subclasses
         long prevSize = 0;
         final long[] newSize = {-1};
         while (prevSize != newSize[0]) {
@@ -224,6 +230,10 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
         });
 
+        // Fixed point approach to finding all sub-properties.
+        // prevSize is the size of the previous application of the function
+        // newSize is the size of the current application of the function
+        // Fixed point is reached when they are the same.
         long prevSize = 0;
         final long[] newSize = {-1};
         while (prevSize != newSize[0]) {
@@ -273,6 +283,10 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
             .filter(key -> !calculatedRangeOrDomain.containsKey(key))
             .forEach(key -> calculatedRangeOrDomain.put(key, new HashSet<>()));
 
+        // Fixed point approach to finding all ranges or domains.
+        // prevSize is the size of the previous application of the function
+        // newSize is the size of the current application of the function
+        // Fixed point is reached when they are the same.
         long prevSize = 0;
         final long[] newSize = {-1};
         while (prevSize != newSize[0]) {
