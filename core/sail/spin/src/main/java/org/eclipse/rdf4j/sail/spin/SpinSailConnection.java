@@ -109,7 +109,9 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 	private final TupleFunctionRegistry tupleFunctionRegistry;
 
-	private final AbstractFederatedServiceResolver serviceResolver;
+	private final FederatedServiceResolver serviceResolver;
+
+	private final AbstractFederatedServiceResolver tupleFunctionServiceResolver;
 
 	private final ValueFactory vf;
 
@@ -141,17 +143,17 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		this.tripleSource = new SailTripleSource(getWrappedConnection(), true, vf);
 		this.queryPreparer = new SailConnectionQueryPreparer(this, true, tripleSource);
 
+		this.serviceResolver = sail.getFederatedServiceResolver();
 		if (evaluationMode == TupleFunctionEvaluationMode.SERVICE) {
-			FederatedServiceResolver resolver = sail.getFederatedServiceResolver();
-			if (!(resolver instanceof AbstractFederatedServiceResolver)) {
+			if (!(serviceResolver instanceof AbstractFederatedServiceResolver)) {
 				throw new IllegalArgumentException(
 						"SERVICE EvaluationMode requires a FederatedServiceResolver that is an instance of "
 								+ AbstractFederatedServiceResolver.class.getName());
 			}
-			this.serviceResolver = (AbstractFederatedServiceResolver)resolver;
+			this.tupleFunctionServiceResolver = (AbstractFederatedServiceResolver)serviceResolver;
 		}
 		else {
-			this.serviceResolver = null;
+			this.tupleFunctionServiceResolver = null;
 		}
 
 		con.addConnectionListener(new SubclassListener());
@@ -223,7 +225,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		new SpinFunctionInterpreter(parser, tripleSource, functionRegistry).optimize(tupleExpr, dataset,
 				bindings);
 		new SpinMagicPropertyInterpreter(parser, tripleSource, tupleFunctionRegistry,
-				serviceResolver).optimize(tupleExpr, dataset, bindings);
+				tupleFunctionServiceResolver).optimize(tupleExpr, dataset, bindings);
 
 		logger.trace("SPIN query model:\n{}", tupleExpr);
 

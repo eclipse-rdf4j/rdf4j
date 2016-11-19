@@ -12,24 +12,24 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.URI;
-import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.helpers.QueryModelVisitorBase;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.sail.SailException;
 
 public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
@@ -46,7 +46,7 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 		throws SailException
 	{
 
-		tupleExpr.visit(new QueryModelVisitorBase<SailException>() {
+		tupleExpr.visit(new AbstractQueryModelVisitor<SailException>() {
 
 			final Map<String, DistanceQuerySpec> specs = new HashMap<String, DistanceQuerySpec>();
 
@@ -60,16 +60,8 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 						return;
 					}
 
-					Literal from = getLiteral(args.get(0));
-					String to = getVarName(args.get(1));
-					URI units = getURI(args.get(2));
-
-					if (from == null || to == null || units == null) {
-						return;
-					}
-
 					Filter filter = null;
-					Literal dist = null;
+					ValueExpr dist = null;
 					String distanceVar = null;
 					QueryModelNode parent = f.getParentNode();
 					if (parent instanceof ExtensionElem) {
@@ -80,38 +72,29 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 							return;
 						}
 						filter = (Filter)rv[0];
-						dist = (Literal)rv[1];
+						dist = (ValueExpr)rv[1];
 					}
 					else if (parent instanceof Compare) {
 						filter = (Filter)parent.getParentNode();
 						Compare compare = (Compare)parent;
 						CompareOp op = compare.getOperator();
 						if (op == CompareOp.LT && compare.getLeftArg() == f) {
-							dist = getLiteral(compare.getRightArg());
+							dist = compare.getRightArg();
 						}
 						else if (op == CompareOp.GT && compare.getRightArg() == f) {
-							dist = getLiteral(compare.getLeftArg());
+							dist = compare.getLeftArg();
 						}
 					}
 
-					if (dist == null || !XMLSchema.DOUBLE.equals(dist.getDatatype())) {
-						return;
-					}
-
-					DistanceQuerySpec spec = new DistanceQuerySpec();
-					spec.setFunctionParent(parent);
-					spec.setFrom(from);
-					spec.setUnits(units);
-					spec.setDistance(dist.doubleValue());
-					spec.setDistanceVar(distanceVar);
-					spec.setFilter(filter);
-					specs.put(to, spec);
+					DistanceQuerySpec spec = new DistanceQuerySpec(f, dist,
+							distanceVar, filter);
+					specs.put(spec.getGeoVar(), spec);
 				}
 			}
 
 			@Override
 			public void meet(StatementPattern sp) {
-				URI propertyName = (URI)sp.getPredicateVar().getValue();
+				IRI propertyName = (IRI)sp.getPredicateVar().getValue();
 				if (propertyName != null && index.isGeoField(SearchFields.getPropertyField(propertyName))
 						&& !sp.getObjectVar().hasValue())
 				{
@@ -119,7 +102,43 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 					DistanceQuerySpec spec = specs.remove(objectVarName);
 					if (spec != null && isChildOf(sp, spec.getFilter())) {
 						spec.setGeometryPattern(sp);
-						results.add(spec);
+						if (spec.isEvaluable()) {
+							// constant optimizer
+							results.add(spec);
+						}
+						else {
+							// evaluate later
+							TupleFunctionCall funcCall = new TupleFunctionCall();
+							funcCall.setURI(LuceneSailSchema.WITHIN_DISTANCE.toString());
+							FunctionCall df = spec.getDistanceFunctionCall();
+							List<ValueExpr> dfArgs = df.getArgs();
+							funcCall.addArg(dfArgs.get(0));
+							funcCall.addArg(spec.getDistanceExpr());
+							funcCall.addArg(dfArgs.get(2));
+							funcCall.addArg(new ValueConstant(spec.getGeoProperty()));
+							funcCall.addResultVar(sp.getSubjectVar());
+							funcCall.addResultVar(sp.getObjectVar());
+							if (spec.getDistanceVar() != null) {
+								funcCall.addArg(new ValueConstant(LuceneSailSchema.DISTANCE));
+								funcCall.addResultVar(new Var(spec.getDistanceVar()));
+							}
+							if (spec.getContextVar() != null) {
+								Resource context = (Resource)spec.getContextVar().getValue();
+								if (context != null) {
+									funcCall.addArg(new ValueConstant(context));
+								}
+								else {
+									funcCall.addArg(new ValueConstant(LuceneSailSchema.CONTEXT));
+									funcCall.addResultVar(spec.getContextVar());
+								}
+							}
+
+							Join join = new Join();
+							sp.replaceWith(join);
+							join.setLeftArg(sp);
+							join.setRightArg(funcCall);
+							spec.updateQueryModelNodes(true);
+						}
 					}
 				}
 			}
@@ -141,12 +160,16 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 			if (condition instanceof Compare) {
 				Compare compare = (Compare)condition;
 				CompareOp op = compare.getOperator();
-				Literal dist = null;
-				if (op == CompareOp.LT && compareArgVarName.equals(getVarName(compare.getLeftArg()))) {
-					dist = getLiteral(compare.getRightArg());
+				ValueExpr dist = null;
+				if (op == CompareOp.LT
+						&& compareArgVarName.equals(DistanceQuerySpec.getVarName(compare.getLeftArg())))
+				{
+					dist = compare.getRightArg();
 				}
-				else if (op == CompareOp.GT && compareArgVarName.equals(getVarName(compare.getRightArg()))) {
-					dist = getLiteral(compare.getLeftArg());
+				else if (op == CompareOp.GT
+						&& compareArgVarName.equals(DistanceQuerySpec.getVarName(compare.getRightArg())))
+				{
+					dist = compare.getLeftArg();
 				}
 				rv = new Object[] { f, dist };
 			}
@@ -155,42 +178,5 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 			rv = getFilterAndDistance(node.getParentNode(), compareArgVarName);
 		}
 		return rv;
-	}
-
-	private static Literal getLiteral(ValueExpr v) {
-		Value value = getValue(v);
-		if (value instanceof Literal) {
-			return (Literal)value;
-		}
-		return null;
-	}
-
-	private static URI getURI(ValueExpr v) {
-		Value value = getValue(v);
-		if (value instanceof URI) {
-			return (URI)value;
-		}
-		return null;
-	}
-
-	private static Value getValue(ValueExpr v) {
-		Value value = null;
-		if (v instanceof ValueConstant) {
-			value = ((ValueConstant)v).getValue();
-		}
-		else if (v instanceof Var) {
-			value = ((Var)v).getValue();
-		}
-		return value;
-	}
-
-	private static String getVarName(ValueExpr v) {
-		if (v instanceof Var) {
-			Var var = (Var)v;
-			if (!var.isConstant()) {
-				return var.getName();
-			}
-		}
-		return null;
 	}
 }

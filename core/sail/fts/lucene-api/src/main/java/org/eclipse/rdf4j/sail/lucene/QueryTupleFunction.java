@@ -25,6 +25,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.sail.SailException;
 
+/**
+ * Arguments: query is the query string. subject is the query subject or the constant search:allMatches.
+ * propertyPredicate is the constant search:property or not present. property is present if only
+ * propertyPredicate is present and is the property to query or the constant search:allProperties.
+ * scorePredicate is the constant search:score or not present. snippetPredicate is the constant search:snippet
+ * or not present. Results: subject is included if the subject parameter is search:allMatches else omitted.
+ * property included if the propertyPredicate parameter is present and the property parameter is
+ * search:allProperties else omitted. score is included if the scorePredicate is search:score else omitted.
+ * snippet is included if the snippetPredicate is search:snippet else omitted.
+ */
 public class QueryTupleFunction implements TupleFunction {
 
 	@Override

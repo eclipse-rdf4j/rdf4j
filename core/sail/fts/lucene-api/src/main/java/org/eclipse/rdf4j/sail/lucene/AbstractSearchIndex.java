@@ -20,6 +20,7 @@ import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -635,8 +636,8 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 
 		Literal from = query.getFrom();
 		double distance = query.getDistance();
-		URI units = query.getUnits();
-		URI geoProperty = query.getGeoProperty();
+		IRI units = query.getUnits();
+		IRI geoProperty = query.getGeoProperty();
 		try {
 			if (!GEO.WKT_LITERAL.equals(from.getDatatype())) {
 				throw new MalformedQueryException("Unsupported datatype: " + from.getDatatype());
@@ -656,7 +657,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		return hits;
 	}
 
-	private static String getUnitSymbol(URI units) {
+	private static String getUnitSymbol(IRI units) {
 		if (GEOF.UOM_METRE.equals(units)) {
 			return "m";
 		}
@@ -753,7 +754,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		Iterable<? extends DocumentResult> hits = null;
 
 		Literal qgeom = query.getQueryGeometry();
-		URI geoProperty = query.getGeoProperty();
+		IRI geoProperty = query.getGeoProperty();
 		try {
 			if (!GEO.WKT_LITERAL.equals(qgeom.getDatatype())) {
 				throw new MalformedQueryException("Unsupported datatype: " + qgeom.getDatatype());
