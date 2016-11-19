@@ -43,6 +43,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
     private final FastRdfsForwardChainingSail fastRdfsForwardChainingSail;
     private final NotifyingSailConnection connection;
+    long lockStamp = 0;
 
 
     public FastRdfsForwardChainingSailConnection(FastRdfsForwardChainingSail fastRdfsForwardChainingSail, InferencerConnection e) {
@@ -53,37 +54,51 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
 
     void statementCollector(Statement statement) {
-        fastRdfsForwardChainingSail.inferenceLock.lock();
         Value object = statement.getObject();
         IRI predicate = statement.getPredicate();
         Resource subject = statement.getSubject();
 
         if (predicate.equals(RDFS.SUBCLASSOF)) {
+            fastRdfsForwardChainingSail.upgradeLock(this);
+
             fastRdfsForwardChainingSail.subClassOfStatements.add(statement);
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDF.PROPERTY)) {
+            fastRdfsForwardChainingSail.upgradeLock(this);
+
             fastRdfsForwardChainingSail.properties.add((IRI) statement.getSubject());
         } else if (predicate.equals(RDFS.SUBPROPERTYOF)) {
+            fastRdfsForwardChainingSail.upgradeLock(this);
+
             fastRdfsForwardChainingSail.subPropertyOfStatements.add(statement);
         } else if (predicate.equals(RDFS.RANGE)) {
+            fastRdfsForwardChainingSail.upgradeLock(this);
+
             fastRdfsForwardChainingSail.rangeStatements.add(statement);
         } else if (predicate.equals(RDFS.DOMAIN)) {
+            fastRdfsForwardChainingSail.upgradeLock(this);
+
             fastRdfsForwardChainingSail.domainStatements.add(statement);
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CLASS)) {
+            fastRdfsForwardChainingSail.upgradeLock(this);
             fastRdfsForwardChainingSail.subClassOfStatements.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE));
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.DATATYPE)) {
+            fastRdfsForwardChainingSail.upgradeLock(this);
             fastRdfsForwardChainingSail.subClassOfStatements.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CONTAINERMEMBERSHIPPROPERTY)) {
+            fastRdfsForwardChainingSail.upgradeLock(this);
             fastRdfsForwardChainingSail.subPropertyOfStatements.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBPROPERTYOF, RDFS.MEMBER));
         }
 
-        fastRdfsForwardChainingSail.properties.add(predicate);
-        fastRdfsForwardChainingSail.inferenceLock.unlock();
+        if (!fastRdfsForwardChainingSail.properties.contains(predicate)) {
+            fastRdfsForwardChainingSail.upgradeLock(this);
+            fastRdfsForwardChainingSail.properties.add(predicate);
+        }
 
 
     }
 
     void calculateInferenceMaps() {
-        fastRdfsForwardChainingSail.inferenceLock.lock();
+        fastRdfsForwardChainingSail.upgradeLock(this);
 
         calculateSubClassOf(fastRdfsForwardChainingSail.subClassOfStatements);
         findProperties(fastRdfsForwardChainingSail.properties);
@@ -112,8 +127,6 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
             });
         });
-
-        fastRdfsForwardChainingSail.inferenceLock.unlock();
 
 
     }
@@ -300,15 +313,22 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     @Override
     public void begin() throws SailException {
         super.begin();
-        origianlTboxCount = getTboxCount();
 
 
     }
 
     @Override
     public void begin(IsolationLevel level) throws UnknownSailTransactionStateException {
+        fastRdfsForwardChainingSail.readLock(this);
         super.begin(level);
         origianlTboxCount = getTboxCount();
+
+    }
+
+    @Override
+    public void commit() throws SailException {
+        super.commit();
+        fastRdfsForwardChainingSail.releaseLock(this);
     }
 
     private long getTboxCount() {
@@ -326,6 +346,8 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         prepareIteration();
 
         if (fastRdfsForwardChainingSail.schema == null && origianlTboxCount != getTboxCount()) {
+
+            fastRdfsForwardChainingSail.upgradeLock(this);
 
             fastRdfsForwardChainingSail.clearInferenceTables();
 
@@ -510,7 +532,8 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     }
 
 
-    public void addStatement(boolean actuallyAdd, Resource subject, IRI predicate, Value object, Resource... resources) throws SailException {
+    // actuallyAdd
+    private void addStatement(boolean actuallyAdd, Resource subject, IRI predicate, Value object, Resource... resources) throws SailException {
 
         if (fastRdfsForwardChainingSail.schema == null) {
             statementCollector(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, predicate, object));

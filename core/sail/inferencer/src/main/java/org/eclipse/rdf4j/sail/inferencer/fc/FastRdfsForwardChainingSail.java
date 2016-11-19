@@ -27,8 +27,10 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.StampedLock;
 import java.util.stream.Collectors;
 
 /**
@@ -40,7 +42,9 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
     NotifyingSail data;
     Repository schema;
 
-    ReentrantLock inferenceLock = new ReentrantLock();
+    static final Random random = new Random();
+
+    private StampedLock readWriteLock = new StampedLock();
 
     boolean useAllRdfsRules = true;
 
@@ -67,6 +71,76 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
         calculatedProperties = new HashMap<>();
         calculatedRange = new HashMap<>();
         calculatedDomain = new HashMap<>();
+    }
+
+    void readLock(FastRdfsForwardChainingSailConnection connection) {
+
+        if (starveReads.get() > 0) {
+            System.err.println("starveReads");
+        }
+
+        while (starveReads.get() > 0) {
+            Thread.yield();
+        }
+
+        if (connection.lockStamp != 0) {
+            throw new IllegalStateException("Connection already have a lock!");
+        }
+        connection.lockStamp = readWriteLock.readLock();
+        System.err.println("readLock: " + connection.lockStamp);
+
+    }
+
+    void releaseLock(FastRdfsForwardChainingSailConnection connection) {
+        readWriteLock.unlock(connection.lockStamp);
+        System.err.println("Released lock: " + connection.lockStamp);
+
+        connection.lockStamp = 0;
+    }
+
+    AtomicInteger starveReads = new AtomicInteger(0);
+
+    void upgradeLock(FastRdfsForwardChainingSailConnection connection) {
+
+//        System.err.println("Attempt writelock: "+connection.lockStamp);
+
+        starveReads.incrementAndGet();
+
+        try {
+            for (int i = 0; i < random.nextInt(100) + 50; i++) {
+                long l = readWriteLock.tryConvertToWriteLock(connection.lockStamp);
+
+                if (l != 0) {
+                    long temp = connection.lockStamp;
+                    connection.lockStamp = l;
+                    if (temp != l) {
+                        System.err.println("readLock: " + temp + " writeLock: " + connection.lockStamp);
+                    }
+
+
+                    return;
+                }
+
+                try {
+                    Thread.sleep(1);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+            }
+
+            System.err.println("isReadLocked: " + readWriteLock.isReadLocked());
+            System.err.println("isWriteLocked(): " + readWriteLock.isWriteLocked());
+            System.err.println("read lock count: " + readWriteLock.getReadLockCount());
+
+            releaseLock(connection);
+            throw new IllegalStateException("Could not acquire Tbox write lock");
+        } finally {
+
+
+            starveReads.decrementAndGet();
+        }
+
     }
 
 
