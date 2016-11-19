@@ -137,8 +137,8 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         return iris != null ? iris : Collections.emptySet();
     }
 
-    private Set<IRI> resolveProperties(IRI predicate) {
-        Set<IRI> iris = fastRdfsForwardChainingSail.calculatedProperties.get(predicate);
+    private Set<Resource> resolveProperties(Resource predicate) {
+        Set<Resource> iris = fastRdfsForwardChainingSail.calculatedProperties.get(predicate);
 
         return iris != null ? iris : Collections.emptySet();
     }
@@ -191,7 +191,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         }
     }
 
-    private void findProperties(Set<IRI> predicates) {
+    private void findProperties(Set<Resource> predicates) {
         predicates.forEach(predicate -> {
             addInferredStatement(predicate, RDF.TYPE, RDF.PROPERTY);
             fastRdfsForwardChainingSail.calculatedProperties.put(predicate, new HashSet<>());
@@ -225,7 +225,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
             newSize[0] = 0;
 
             fastRdfsForwardChainingSail.calculatedProperties.forEach((key, value) -> {
-                List<IRI> temp = new ArrayList<IRI>();
+                List<Resource> temp = new ArrayList<>();
                 value.forEach(superProperty -> {
                     temp.addAll(resolveProperties(superProperty));
                 });
@@ -238,7 +238,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         }
     }
 
-    private void calculateRangeDomain(List<Statement> rangeOrDomainStatements, Map<IRI, Set<Resource>> calculatedRangeOrDomain) {
+    private void calculateRangeDomain(List<Statement> rangeOrDomainStatements, Map<Resource, Set<Resource>> calculatedRangeOrDomain) {
 
         rangeOrDomainStatements.forEach(s -> {
             IRI predicate = (IRI) s.getSubject();
@@ -589,6 +589,8 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         resolveProperties(predicate)
             .stream()
             .filter(inferredProperty -> !inferredProperty.equals(predicate))
+            .filter(inferredPropery -> !(inferredPropery instanceof IRI))
+            .map(inferredPropery -> ((IRI) inferredPropery))
             .forEach(inferredProperty -> addInferredStatement(subject, inferredProperty, object));
 
 

@@ -6,5 +6,4 @@
 # Author: Arjohn Kampman (arjohn.kampman@aidministrator.nl)
 <http://example.org/prop> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2000/01/rdf-schema#ContainerMembershipProperty>.
 
-# this entails that _:prop must be allowed as a predicate, but that is not legal in RDF
-#_:prop <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2000/01/rdf-schema#ContainerMembershipProperty>.
+_:prop <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2000/01/rdf-schema#ContainerMembershipProperty>.

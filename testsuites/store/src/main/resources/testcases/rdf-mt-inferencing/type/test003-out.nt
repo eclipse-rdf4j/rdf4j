@@ -2,5 +2,4 @@
 # The inferred triples should at least contain the following triple(s):
 <http://example.org/prop> <http://www.w3.org/2000/01/rdf-schema#subPropertyOf> <http://www.w3.org/2000/01/rdf-schema#member>.
 
-# this entails that _:prop must be allowed as a predicate, but that is not legal in RDF
-# _:prop <http://www.w3.org/2000/01/rdf-schema#subPropertyOf> <http://www.w3.org/2000/01/rdf-schema#member>.
+ _:prop <http://www.w3.org/2000/01/rdf-schema#subPropertyOf> <http://www.w3.org/2000/01/rdf-schema#member>.
