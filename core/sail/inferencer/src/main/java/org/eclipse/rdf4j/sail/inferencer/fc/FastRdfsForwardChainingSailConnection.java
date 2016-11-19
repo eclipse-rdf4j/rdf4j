@@ -58,6 +58,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         if(lockStamp != 0){
             fastRdfsForwardChainingSail.releaseLock(this);
         }
+        //@TODO Do I need to clean up the tbox cache and lookup maps after rolling back? Probably if the connection has a write lock.
     }
 
     void statementCollector(Statement statement) {
