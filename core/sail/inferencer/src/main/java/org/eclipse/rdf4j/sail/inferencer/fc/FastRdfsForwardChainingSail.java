@@ -49,16 +49,16 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
     boolean useAllRdfsRules = true;
 
     List<Statement> subClassOfStatements = new ArrayList<>();
-    Set<IRI> properties = new HashSet<>();
+    Set<Resource> properties = new HashSet<>();
     List<Statement> subPropertyOfStatements = new ArrayList<>();
     List<Statement> rangeStatements = new ArrayList<>();
     List<Statement> domainStatements = new ArrayList<>();
 
 
     Map<Resource, Set<Resource>> calculatedTypes = new HashMap<>();
-    Map<IRI, Set<IRI>> calculatedProperties = new HashMap<>();
-    Map<IRI, Set<Resource>> calculatedRange = new HashMap<>();
-    Map<IRI, Set<Resource>> calculatedDomain = new HashMap<>();
+    Map<Resource, Set<Resource>> calculatedProperties = new HashMap<>();
+    Map<Resource, Set<Resource>> calculatedRange = new HashMap<>();
+    Map<Resource, Set<Resource>> calculatedDomain = new HashMap<>();
     private boolean sharedSchema;
 
     void clearInferenceTables() {
@@ -84,7 +84,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
         }
 
         if (connection.lockStamp != 0) {
-            throw new IllegalStateException("Connection already have a lock!");
+            throw new IllegalStateException("Connection already has a lock!");
         }
         connection.lockStamp = readWriteLock.readLock();
         System.err.println("readLock: " + connection.lockStamp);
