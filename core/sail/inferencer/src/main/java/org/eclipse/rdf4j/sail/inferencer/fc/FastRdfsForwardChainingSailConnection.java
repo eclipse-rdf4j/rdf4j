@@ -528,9 +528,13 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         };
     }
 
-
+    @Override
     protected int applyRules(Model model) throws SailException {
 
+        // Required by extended class
+
+        // Not used here because rules are usually applied while adding data
+        // and not at the end of a transaction
 
         return 0;
     }
@@ -573,6 +577,11 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
                 }
             } catch (NumberFormatException e) {
                 // Ignore exception.
+
+                // Means that the predicate started with rdf:_ but does not
+                // comply with the container membership format of rdf:_nnn
+                // and we can safely ignore this exception since it just means
+                // that we didn't need to infer anything about container membership
             }
 
         }
@@ -629,6 +638,10 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
     protected void addAxiomStatements() {
         ValueFactory vf = fastRdfsForwardChainingSail.getValueFactory();
+
+        // This is http://www.w3.org/2000/01/rdf-schema# forward chained
+        // Eg. all axioms in RDFS forward chained w.r.t. RDFS.
+        // All those axioms are simply listed here
 
         Statement statement = vf.createStatement(RDF.ALT, RDF.TYPE, RDFS.RESOURCE);
         statementCollector(statement);
