@@ -15,6 +15,7 @@ public class Main {
 
     static SailRepository sail = new SailRepository(new FastRdfsForwardChainingSail(new MemoryStore()));
     static BNode left;
+
     static {
         sail.initialize();
         SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -30,7 +31,7 @@ public class Main {
     public static void main(String[] args) {
 
         try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin(IsolationLevels.NONE);
+            connection.begin(IsolationLevels.SERIALIZABLE);
             SimpleValueFactory vf = SimpleValueFactory.getInstance();
             for (int i = 0; i < 10; i++) {
                 connection.add(vf.createStatement(vf.createBNode(), RDF.TYPE, vf.createBNode()));
@@ -41,7 +42,7 @@ public class Main {
         for (int i = 0; i < 100; i++) {
             new TempThreadAbox().start();
         }
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < 10; i++) {
 
             new TempThreadTbox().start();
         }
@@ -63,12 +64,18 @@ public class Main {
 
 
                 try (SailRepositoryConnection connection = sail.getConnection()) {
-                    connection.begin(IsolationLevels.NONE);
+                    connection.begin(IsolationLevels.SERIALIZABLE);
                     SimpleValueFactory vf = SimpleValueFactory.getInstance();
                     for (int i = 0; i < 10; i++) {
                         connection.add(vf.createStatement(vf.createBNode(), RDF.TYPE, left));
                     }
-                    connection.commit();
+                    try {
+                        connection.commit();
+
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        connection.rollback();
+                    }
                 }
             }
 
@@ -89,14 +96,20 @@ public class Main {
             for (int j = 0; j < 10; j++) {
 
                 try (SailRepositoryConnection connection = sail.getConnection()) {
-                    connection.begin(IsolationLevels.NONE);
+                    connection.begin(IsolationLevels.SERIALIZABLE);
                     SimpleValueFactory vf = SimpleValueFactory.getInstance();
                     for (int i = 0; i < 10; i++) {
                         connection.add(vf.createStatement(vf.createBNode(), RDFS.SUBCLASSOF, vf.createBNode()));
 //                        connection.add(vf.createStatement(vf.createBNode(), RDFS.SUBCLASSOF, left));
 
                     }
-                    connection.commit();
+                    try {
+                        connection.commit();
+
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        connection.rollback();
+                    }
                     System.err.println("TBOX COMMIT WAS OK!");
                 } catch (Exception e) {
                     e.printStackTrace();
