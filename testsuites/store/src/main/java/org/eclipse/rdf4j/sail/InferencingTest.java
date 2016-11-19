@@ -76,6 +76,7 @@ public abstract class InferencingTest {
 			if (con.isActive()) {
 				con.rollback();
 			}
+			e.printStackTrace();
 		}
 		finally {
 			stream.close();
@@ -100,6 +101,7 @@ public abstract class InferencingTest {
 			if (con.isActive()) {
 				con.rollback();
 			}
+			e.printStackTrace();
 		}
 		finally {
 			stream.close();

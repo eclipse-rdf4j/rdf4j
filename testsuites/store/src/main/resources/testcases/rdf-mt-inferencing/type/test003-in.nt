@@ -5,5 +5,4 @@
 # Relevant inferencing rules: rdfs10
 # Author: Arjohn Kampman (arjohn.kampman@aidministrator.nl)
 <http://example.org/prop> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2000/01/rdf-schema#ContainerMembershipProperty>.
-
 _:prop <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2000/01/rdf-schema#ContainerMembershipProperty>.
