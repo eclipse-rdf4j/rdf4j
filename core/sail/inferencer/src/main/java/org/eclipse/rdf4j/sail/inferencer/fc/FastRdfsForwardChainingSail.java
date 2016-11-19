@@ -75,11 +75,11 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
     void readLock(FastRdfsForwardChainingSailConnection connection) {
 
-        if (starveReads.get() > 0) {
-            System.err.println("starveReads");
+        if (numberOfThreadsWaitingForWriteLock.get() > 0) {
+            System.err.println("starve reads");
         }
 
-        while (starveReads.get() > 0) {
+        while (numberOfThreadsWaitingForWriteLock.get() > 0) {
             Thread.yield();
         }
 
@@ -98,16 +98,17 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
         connection.lockStamp = 0;
     }
 
-    AtomicInteger starveReads = new AtomicInteger(0);
+
+    AtomicInteger numberOfThreadsWaitingForWriteLock = new AtomicInteger(0);
 
     void upgradeLock(FastRdfsForwardChainingSailConnection connection) {
 
 //        System.err.println("Attempt writelock: "+connection.lockStamp);
 
-        starveReads.incrementAndGet();
+        numberOfThreadsWaitingForWriteLock.incrementAndGet();
 
         try {
-            for (int i = 0; i < random.nextInt(100) + 50; i++) {
+           while(true) {
                 long l = readWriteLock.tryConvertToWriteLock(connection.lockStamp);
 
                 if (l != 0) {
@@ -122,9 +123,16 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
                 }
 
                 try {
-                    Thread.sleep(1);
+                    Thread.sleep(random.nextInt(2));
                 } catch (InterruptedException e) {
                     e.printStackTrace();
+                }
+
+                // detect potential deadlock scenario
+                if(numberOfThreadsWaitingForWriteLock.get() > 1  //More than 1 connection waiting for a write lock
+                    && numberOfThreadsWaitingForWriteLock.get() <= readWriteLock.getReadLockCount() // no connection only wants a read lock
+                    && random.nextBoolean()){ // randomly kick this conection out
+                    break;
                 }
 
             }
@@ -137,8 +145,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
             throw new IllegalStateException("Could not acquire Tbox write lock");
         } finally {
 
-
-            starveReads.decrementAndGet();
+            numberOfThreadsWaitingForWriteLock.decrementAndGet();
         }
 
     }
