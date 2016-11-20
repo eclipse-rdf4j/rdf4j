@@ -101,6 +101,3 @@ ex:a ex:b1 ex:c .
 [] ex:b1 [] .
 [] ex:b1 [] .
 [] ex:b1 [] .
-
-ex:b1 rdfs:subPropertyOf ex:b2 .
-
