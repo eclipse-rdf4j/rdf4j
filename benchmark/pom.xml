@@ -2,10 +2,19 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.eclipse.rdf4j</groupId>
+
+    <parent>
+        <groupId>org.eclipse.rdf4j</groupId>
+        <artifactId>rdf4j</artifactId>
+        <version>2.2-SNAPSHOT</version>
+    </parent>
+
     <artifactId>rdf4j-benchmark</artifactId>
-    <version>2.2-SNAPSHOT</version>
-    <packaging>jar</packaging>
+
+    <name>RDF4J: benchmarks</name>
+    <description></description>
+
+
 
     <dependencies>
         <dependency>
@@ -17,49 +26,36 @@
             <groupId>org.openjdk.jmh</groupId>
             <artifactId>jmh-generator-annprocess</artifactId>
             <version>${jmhVersion}</version>
-            <scope>provided</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
-            <groupId>org.eclipse.rdf4j</groupId>
+            <groupId>${project.groupId}</groupId>
             <artifactId>rdf4j-repository-sail</artifactId>
-            <version>2.2-SNAPSHOT</version>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.eclipse.rdf4j</groupId>
+            <groupId>${project.groupId}</groupId>
             <artifactId>rdf4j-sail-inferencer</artifactId>
-            <version>2.2-SNAPSHOT</version>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.eclipse.rdf4j</groupId>
+            <groupId>${project.groupId}</groupId>
             <artifactId>rdf4j-sail-memory</artifactId>
-            <version>2.2-SNAPSHOT</version>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.eclipse.rdf4j</groupId>
+            <groupId>${project.groupId}</groupId>
             <artifactId>rdf4j-rio-turtle</artifactId>
-            <version>2.2-SNAPSHOT</version>
+            <version>${project.version}</version>
         </dependency>
     </dependencies>
 
     <properties>
         <jmhVersion>0.9.3</jmhVersion>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <javac.target>1.8</javac.target>
     </properties>
 
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.1</version>
-                <configuration>
-                    <compilerVersion>${javac.target}</compilerVersion>
-                    <source>${javac.target}</source>
-                    <target>${javac.target}</target>
-                </configuration>
-            </plugin>
-
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
