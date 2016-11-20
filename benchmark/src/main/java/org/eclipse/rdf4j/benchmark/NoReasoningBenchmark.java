@@ -6,19 +6,15 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-
 package org.eclipse.rdf4j.benchmark;
 
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-public class NoReasoningBenchmark extends RdfsBenchmark {
-
-
+public class NoReasoningBenchmark extends InitializationBenchmark {
 
     @Override
     SailRepository getSail(SailRepository schema) {

@@ -53,7 +53,6 @@ public class ReasoningBenchmark {
         }
     }
 
-
     @Benchmark
     @BenchmarkMode(Mode.AverageTime)
     @OutputTimeUnit(TimeUnit.MILLISECONDS)
@@ -140,8 +139,6 @@ public class ReasoningBenchmark {
             addAllDataMultipleTransactions(connection);
 
         }
-
-
     }
 
     @Benchmark
@@ -157,7 +154,6 @@ public class ReasoningBenchmark {
             connection.commit();
         }
     }
-
 
     @Benchmark
     @BenchmarkMode(Mode.AverageTime)
@@ -183,7 +179,6 @@ public class ReasoningBenchmark {
         return schema;
     }
 
-
     private void addAllDataSingleTransaction(SailRepositoryConnection connection) throws IOException {
         InputStream data = resourceAsStream("data.ttl");
 
@@ -199,9 +194,7 @@ public class ReasoningBenchmark {
             }
             connection.add(data, "", RDFFormat.TURTLE);
         }
-
     }
-
 
     private void addAllDataMultipleTransactions(SailRepositoryConnection connection) throws IOException {
         InputStream data = resourceAsStream("data.ttl");
@@ -222,7 +215,6 @@ public class ReasoningBenchmark {
             connection.add(data, "", RDFFormat.TURTLE);
             connection.commit();
         }
-
     }
 
     private InputStream resourceAsStream(String resourceName) {
