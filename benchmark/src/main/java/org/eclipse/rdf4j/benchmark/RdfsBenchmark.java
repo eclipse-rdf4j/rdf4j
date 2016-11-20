@@ -37,267 +37,267 @@ abstract public class RdfsBenchmark {
     abstract SailRepository getSail(SailRepository schema);
 
     abstract Class getSailClass();
-
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void initialize() {
-
-        getSail(null).initialize();
-    }
-
-
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void simple() throws IOException {
-        SailRepository sail = getSail(null);
-        sail.initialize();
-
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
-
-            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("simple/mixed.ttl"), "", RDFFormat.TURTLE);
-
-
-            connection.commit();
-        }
-    }
-
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void medium() throws IOException {
-        SailRepository sail = getSail(null);
-        sail.initialize();
-
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
-
-            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("medium/mixed.ttl"), "", RDFFormat.TURTLE);
-
-
-            connection.commit();
-        }
-    }
-
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void moreRdfs() throws IOException {
-        SailRepository sail = getSail(null);
-        sail.initialize();
-
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
-
-            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/mixed.ttl"), "", RDFFormat.TURTLE);
-
-
-            connection.commit();
-        }
-    }
-
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void moreRdfsLoop() throws IOException {
-        SailRepository sail = getSail(null);
-        sail.initialize();
-
-
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
-            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/mixed.ttl"), "", RDFFormat.TURTLE);
-            connection.commit();
-        }
-
-
-        for (int i = 0; i < 10; i++) {
-            try (SailRepositoryConnection connection = sail.getConnection()) {
-                connection.begin();
-                connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/data" + i + ".ttl"), "", RDFFormat.TURTLE);
-                connection.commit();
-            }
-        }
-
-
-    }
-
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void moreRdfsLoopTwoTransactions() throws IOException {
-        SailRepository sail = getSail(null);
-        sail.initialize();
-
-
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
-            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/mixed.ttl"), "", RDFFormat.TURTLE);
-            connection.commit();
-        }
-
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
-            for (int i = 0; i < 10; i++) {
-                connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/data" + i + ".ttl"), "", RDFFormat.TURTLE);
-            }
-            connection.commit();
-        }
-
-
-    }
-
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void moreRdfsLoopSchema() throws IOException {
-        SailRepository schema = null;
-        if (getSailClass() == FastRdfsForwardChainingSail.class) {
-            schema = new SailRepository(new MemoryStore());
-            schema.initialize();
-            try (SailRepositoryConnection schemaConnection = schema.getConnection()) {
-                schemaConnection.begin();
-
-                schemaConnection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/schema.ttl"), "", RDFFormat.TURTLE);
-
-
-                schemaConnection.commit();
-            }
-        }
-
-
-        SailRepository sail = getSail(schema);
-        sail.initialize();
-        if (getSailClass() != FastRdfsForwardChainingSail.class) {
-
-            try (SailRepositoryConnection connection = sail.getConnection()) {
-                connection.begin();
-                connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/schema.ttl"), "", RDFFormat.TURTLE);
-                connection.commit();
-            }
-        }
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
-            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/schema.ttl"), "", RDFFormat.TURTLE);
-            connection.commit();
-        }
-
-        for (int i = 0; i < 10; i++) {
-            try (SailRepositoryConnection connection = sail.getConnection()) {
-                connection.begin();
-                connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/data" + i + ".ttl"), "", RDFFormat.TURTLE);
-                connection.commit();
-            }
-        }
-
-
-    }
-
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void moreRdfsLoopTwoTransactionsSchema() throws IOException {
-        SailRepository schema = null;
-        if (getSailClass() == FastRdfsForwardChainingSail.class) {
-            schema = new SailRepository(new MemoryStore());
-            schema.initialize();
-            try (SailRepositoryConnection schemaConnection = schema.getConnection()) {
-                schemaConnection.begin();
-
-                schemaConnection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/schema.ttl"), "", RDFFormat.TURTLE);
-
-
-                schemaConnection.commit();
-            }
-        }
-
-
-        SailRepository sail = getSail(schema);
-        sail.initialize();
-        if (getSailClass() != FastRdfsForwardChainingSail.class) {
-
-            try (SailRepositoryConnection connection = sail.getConnection()) {
-                connection.begin();
-                connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/schema.ttl"), "", RDFFormat.TURTLE);
-                connection.commit();
-            }
-        }
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
-            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/schema.ttl"), "", RDFFormat.TURTLE);
-            connection.commit();
-        }
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
-            for (int i = 0; i < 10; i++) {
-
-                connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/data" + i + ".ttl"), "", RDFFormat.TURTLE);
-
-            }
-            connection.commit();
-        }
-
-
-    }
-
-
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void longSubClassOfChain() throws IOException {
-        SailRepository sail = getSail(null);
-        sail.initialize();
-
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
-
-            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("longChain/mixed.ttl"), "", RDFFormat.TURTLE);
-
-
-            connection.commit();
-        }
-    }
-
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void longSubClassOfChainSchema() throws IOException {
-        SailRepository schema = null;
-        if (getSailClass() == FastRdfsForwardChainingSail.class) {
-            schema = new SailRepository(new MemoryStore());
-            schema.initialize();
-            try (SailRepositoryConnection schemaConnection = schema.getConnection()) {
-                schemaConnection.begin();
-
-                schemaConnection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("longChain/schema.ttl"), "", RDFFormat.TURTLE);
-
-
-                schemaConnection.commit();
-            }
-        }
-
-        SailRepository sail = getSail(schema);
-        sail.initialize();
-
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
-            if (getSailClass() != FastRdfsForwardChainingSail.class) {
-                connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("longChain/schema.ttl"), "", RDFFormat.TURTLE);
-            }
-
-            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("longChain/data.ttl"), "", RDFFormat.TURTLE);
-
-            connection.commit();
-        }
-
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
-            long count = Iterations.stream(connection.getStatements(null, null, null, true)).count();
-            System.out.println("COUNT: " + count);
-            connection.commit();
-        }
-    }
+//
+//    @Benchmark
+//    @BenchmarkMode(Mode.AverageTime)
+//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
+//    public void initialize() {
+//
+//        getSail(null).initialize();
+//    }
+//
+//
+//    @Benchmark
+//    @BenchmarkMode(Mode.AverageTime)
+//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
+//    public void simple() throws IOException {
+//        SailRepository sail = getSail(null);
+//        sail.initialize();
+//
+//        try (SailRepositoryConnection connection = sail.getConnection()) {
+//            connection.begin();
+//
+//            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("simple/mixed.ttl"), "", RDFFormat.TURTLE);
+//
+//
+//            connection.commit();
+//        }
+//    }
+//
+//    @Benchmark
+//    @BenchmarkMode(Mode.AverageTime)
+//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
+//    public void medium() throws IOException {
+//        SailRepository sail = getSail(null);
+//        sail.initialize();
+//
+//        try (SailRepositoryConnection connection = sail.getConnection()) {
+//            connection.begin();
+//
+//            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("medium/mixed.ttl"), "", RDFFormat.TURTLE);
+//
+//
+//            connection.commit();
+//        }
+//    }
+//
+//    @Benchmark
+//    @BenchmarkMode(Mode.AverageTime)
+//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
+//    public void moreRdfs() throws IOException {
+//        SailRepository sail = getSail(null);
+//        sail.initialize();
+//
+//        try (SailRepositoryConnection connection = sail.getConnection()) {
+//            connection.begin();
+//
+//            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/mixed.ttl"), "", RDFFormat.TURTLE);
+//
+//
+//            connection.commit();
+//        }
+//    }
+//
+//    @Benchmark
+//    @BenchmarkMode(Mode.AverageTime)
+//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
+//    public void moreRdfsLoop() throws IOException {
+//        SailRepository sail = getSail(null);
+//        sail.initialize();
+//
+//
+//        try (SailRepositoryConnection connection = sail.getConnection()) {
+//            connection.begin();
+//            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/mixed.ttl"), "", RDFFormat.TURTLE);
+//            connection.commit();
+//        }
+//
+//
+//        for (int i = 0; i < 10; i++) {
+//            try (SailRepositoryConnection connection = sail.getConnection()) {
+//                connection.begin();
+//                connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/data" + i + ".ttl"), "", RDFFormat.TURTLE);
+//                connection.commit();
+//            }
+//        }
+//
+//
+//    }
+//
+//    @Benchmark
+//    @BenchmarkMode(Mode.AverageTime)
+//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
+//    public void moreRdfsLoopTwoTransactions() throws IOException {
+//        SailRepository sail = getSail(null);
+//        sail.initialize();
+//
+//
+//        try (SailRepositoryConnection connection = sail.getConnection()) {
+//            connection.begin();
+//            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/mixed.ttl"), "", RDFFormat.TURTLE);
+//            connection.commit();
+//        }
+//
+//        try (SailRepositoryConnection connection = sail.getConnection()) {
+//            connection.begin();
+//            for (int i = 0; i < 10; i++) {
+//                connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/data" + i + ".ttl"), "", RDFFormat.TURTLE);
+//            }
+//            connection.commit();
+//        }
+//
+//
+//    }
+//
+//    @Benchmark
+//    @BenchmarkMode(Mode.AverageTime)
+//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
+//    public void moreRdfsLoopSchema() throws IOException {
+//        SailRepository schema = null;
+//        if (getSailClass() == FastRdfsForwardChainingSail.class) {
+//            schema = new SailRepository(new MemoryStore());
+//            schema.initialize();
+//            try (SailRepositoryConnection schemaConnection = schema.getConnection()) {
+//                schemaConnection.begin();
+//
+//                schemaConnection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/schema.ttl"), "", RDFFormat.TURTLE);
+//
+//
+//                schemaConnection.commit();
+//            }
+//        }
+//
+//
+//        SailRepository sail = getSail(schema);
+//        sail.initialize();
+//        if (getSailClass() != FastRdfsForwardChainingSail.class) {
+//
+//            try (SailRepositoryConnection connection = sail.getConnection()) {
+//                connection.begin();
+//                connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/schema.ttl"), "", RDFFormat.TURTLE);
+//                connection.commit();
+//            }
+//        }
+//        try (SailRepositoryConnection connection = sail.getConnection()) {
+//            connection.begin();
+//            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/schema.ttl"), "", RDFFormat.TURTLE);
+//            connection.commit();
+//        }
+//
+//        for (int i = 0; i < 10; i++) {
+//            try (SailRepositoryConnection connection = sail.getConnection()) {
+//                connection.begin();
+//                connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/data" + i + ".ttl"), "", RDFFormat.TURTLE);
+//                connection.commit();
+//            }
+//        }
+//
+//
+//    }
+//
+//    @Benchmark
+//    @BenchmarkMode(Mode.AverageTime)
+//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
+//    public void moreRdfsLoopTwoTransactionsSchema() throws IOException {
+//        SailRepository schema = null;
+//        if (getSailClass() == FastRdfsForwardChainingSail.class) {
+//            schema = new SailRepository(new MemoryStore());
+//            schema.initialize();
+//            try (SailRepositoryConnection schemaConnection = schema.getConnection()) {
+//                schemaConnection.begin();
+//
+//                schemaConnection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/schema.ttl"), "", RDFFormat.TURTLE);
+//
+//
+//                schemaConnection.commit();
+//            }
+//        }
+//
+//
+//        SailRepository sail = getSail(schema);
+//        sail.initialize();
+//        if (getSailClass() != FastRdfsForwardChainingSail.class) {
+//
+//            try (SailRepositoryConnection connection = sail.getConnection()) {
+//                connection.begin();
+//                connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/schema.ttl"), "", RDFFormat.TURTLE);
+//                connection.commit();
+//            }
+//        }
+//        try (SailRepositoryConnection connection = sail.getConnection()) {
+//            connection.begin();
+//            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/schema.ttl"), "", RDFFormat.TURTLE);
+//            connection.commit();
+//        }
+//        try (SailRepositoryConnection connection = sail.getConnection()) {
+//            connection.begin();
+//            for (int i = 0; i < 10; i++) {
+//
+//                connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("moreRdfs/data" + i + ".ttl"), "", RDFFormat.TURTLE);
+//
+//            }
+//            connection.commit();
+//        }
+//
+//
+//    }
+//
+//
+//    @Benchmark
+//    @BenchmarkMode(Mode.AverageTime)
+//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
+//    public void longSubClassOfChain() throws IOException {
+//        SailRepository sail = getSail(null);
+//        sail.initialize();
+//
+//        try (SailRepositoryConnection connection = sail.getConnection()) {
+//            connection.begin();
+//
+//            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("longChain/mixed.ttl"), "", RDFFormat.TURTLE);
+//
+//
+//            connection.commit();
+//        }
+//    }
+//
+//    @Benchmark
+//    @BenchmarkMode(Mode.AverageTime)
+//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
+//    public void longSubClassOfChainSchema() throws IOException {
+//        SailRepository schema = null;
+//        if (getSailClass() == FastRdfsForwardChainingSail.class) {
+//            schema = new SailRepository(new MemoryStore());
+//            schema.initialize();
+//            try (SailRepositoryConnection schemaConnection = schema.getConnection()) {
+//                schemaConnection.begin();
+//
+//                schemaConnection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("longChain/schema.ttl"), "", RDFFormat.TURTLE);
+//
+//
+//                schemaConnection.commit();
+//            }
+//        }
+//
+//        SailRepository sail = getSail(schema);
+//        sail.initialize();
+//
+//        try (SailRepositoryConnection connection = sail.getConnection()) {
+//            connection.begin();
+//            if (getSailClass() != FastRdfsForwardChainingSail.class) {
+//                connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("longChain/schema.ttl"), "", RDFFormat.TURTLE);
+//            }
+//
+//            connection.add(RdfsBenchmark.class.getClassLoader().getResourceAsStream("longChain/data.ttl"), "", RDFFormat.TURTLE);
+//
+//            connection.commit();
+//        }
+//
+//        try (SailRepositoryConnection connection = sail.getConnection()) {
+//            connection.begin();
+//            long count = Iterations.stream(connection.getStatements(null, null, null, true)).count();
+//            System.out.println("COUNT: " + count);
+//            connection.commit();
+//        }
+//    }
 
 }

@@ -76,7 +76,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
     void readLock(FastRdfsForwardChainingSailConnection connection) {
 
         if (numberOfThreadsWaitingForWriteLock.get() > 0) {
-            System.err.println("starve reads");
+//            System.err.println("starve reads");
         }
 
         while (numberOfThreadsWaitingForWriteLock.get() > 0) {
@@ -87,13 +87,13 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
             throw new IllegalStateException("Connection already has a lock!");
         }
         connection.lockStamp = readWriteLock.readLock();
-        System.err.println("readLock: " + connection.lockStamp);
+//        System.err.println("readLock: " + connection.lockStamp);
 
     }
 
     void releaseLock(FastRdfsForwardChainingSailConnection connection) {
         readWriteLock.unlock(connection.lockStamp);
-        System.err.println("Released lock: " + connection.lockStamp);
+//        System.err.println("Released lock: " + connection.lockStamp);
 
         connection.lockStamp = 0;
     }
@@ -103,7 +103,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
     void upgradeLock(FastRdfsForwardChainingSailConnection connection) {
 
-//        System.err.println("Attempt writelock: "+connection.lockStamp);
+////        System.err.println("Attempt writelock: "+connection.lockStamp);
 
         numberOfThreadsWaitingForWriteLock.incrementAndGet();
 
@@ -115,7 +115,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
                     long temp = connection.lockStamp;
                     connection.lockStamp = l;
                     if (temp != l) {
-                        System.err.println("readLock: " + temp + " writeLock: " + connection.lockStamp);
+//                        System.err.println("readLock: " + temp + " writeLock: " + connection.lockStamp);
                     }
 
 
@@ -137,9 +137,9 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
             }
 
-            System.err.println("isReadLocked: " + readWriteLock.isReadLocked());
-            System.err.println("isWriteLocked(): " + readWriteLock.isWriteLocked());
-            System.err.println("read lock count: " + readWriteLock.getReadLockCount());
+//            System.err.println("isReadLocked: " + readWriteLock.isReadLocked());
+//            System.err.println("isWriteLocked(): " + readWriteLock.isWriteLocked());
+//            System.err.println("read lock count: " + readWriteLock.getReadLockCount());
 
             releaseLock(connection);
             throw new IllegalStateException("Could not acquire Tbox write lock");
