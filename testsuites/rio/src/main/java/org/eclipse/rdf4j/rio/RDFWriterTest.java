@@ -1301,7 +1301,6 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.endRDF();
-		System.out.println(outputWriter.toString());
 		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
@@ -1324,7 +1323,6 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, bnode));
 		rdfWriter.endRDF();
-		System.out.println(outputWriter.toString());
 		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
@@ -1377,7 +1375,6 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, uri1));
 		rdfWriter.endRDF();
-		System.out.println(outputWriter.toString());
 		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
@@ -1407,7 +1404,6 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri1, bnode));
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.endRDF();
-		System.out.println(outputWriter.toString());
 		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
@@ -1431,7 +1427,6 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, bnode));
 		rdfWriter.endRDF();
-		System.out.println(outputWriter.toString());
 		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
@@ -1484,7 +1479,6 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleNamespace("ex1", exNs);
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, uri1));
 		rdfWriter.endRDF();
-		System.out.println(outputWriter.toString());
 		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
@@ -1514,7 +1508,6 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.handleNamespace("ex1", exNs);
 		rdfWriter.endRDF();
-		System.out.println(outputWriter.toString());
 		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
@@ -1538,7 +1531,6 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleNamespace("ex1", exNs);
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, bnode));
 		rdfWriter.endRDF();
-		System.out.println(outputWriter.toString());
 		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
@@ -1593,7 +1585,6 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleNamespace("ex1", exNs);
 		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, uri2, uri1));
 		rdfWriter.endRDF();
-		System.out.println(outputWriter.toString());
 		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
@@ -1624,7 +1615,6 @@ public abstract class RDFWriterTest {
 		rdfWriter.handleComment("This comment should not screw up parsing");
 		rdfWriter.handleNamespace("ex1", exNs);
 		rdfWriter.endRDF();
-		System.out.println(outputWriter.toString());
 		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
