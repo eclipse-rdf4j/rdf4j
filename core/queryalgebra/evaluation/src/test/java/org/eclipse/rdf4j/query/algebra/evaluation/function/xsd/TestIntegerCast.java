@@ -5,15 +5,26 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.query.algebra.evaluation.function;
+package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
 
-/**
- * A {@link Function} that tries to cast its argument to an <tt>xsd:integer</tt> .
- * 
- * @author Arjohn Kampman
- * @deprecated use {@link org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.IntegerCast} instead
- */
-@Deprecated
-public class IntegerCast extends org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.IntegerCast {
+import java.math.BigInteger;
+import java.util.Optional;
+
+public class TestIntegerCast extends TestIntegerDatatypeCast<IntegerCast> {
+
+	@Override
+	protected IntegerCast getCastFunction() {
+		return new IntegerCast();
+	}
+
+	@Override
+	protected Optional<BigInteger> getMaxValue() {
+		return Optional.empty();
+	}
+
+	@Override
+	protected Optional<BigInteger> getMinValue() {
+		return Optional.empty();
+	}
 
 }
