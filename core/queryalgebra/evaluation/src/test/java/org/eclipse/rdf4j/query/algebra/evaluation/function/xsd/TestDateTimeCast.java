@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.query.algebra.evaluation.function;
+package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -25,9 +25,9 @@ import org.junit.Test;
 /**
  * @author jeen
  */
-public class TestStringCast {
+public class TestDateTimeCast {
 
-	private StringCast stringCast;
+	private DateTimeCast dtCast;
 
 	private ValueFactory f = SimpleValueFactory.getInstance();
 
@@ -38,7 +38,7 @@ public class TestStringCast {
 	public void setUp()
 		throws Exception
 	{
-		stringCast = new StringCast();
+		dtCast = new DateTimeCast();
 	}
 
 	/**
@@ -52,11 +52,11 @@ public class TestStringCast {
 
 	@Test
 	public void testCastPlainLiteral() {
-		Literal plainLit = f.createLiteral("foo");
+		Literal plainLit = f.createLiteral("1999-09-09T00:00:01");
 		try {
-			Literal result = stringCast.evaluate(f, plainLit);
+			Literal result = dtCast.evaluate(f, plainLit);
 			assertNotNull(result);
-			assertEquals(XMLSchema.STRING, result.getDatatype());
+			assertEquals(XMLSchema.DATETIME, result.getDatatype());
 		}
 		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
@@ -64,26 +64,13 @@ public class TestStringCast {
 	}
 
 	@Test
-	public void testCastLangtagLiteral() {
-		Literal langLit = f.createLiteral("foo", "en");
+	public void testCastDateLiteral() {
+		Literal dateLit = f.createLiteral("1999-09-09", XMLSchema.DATE);
 		try {
-			Literal result = stringCast.evaluate(f, langLit);
-			fail("casting of language-tagged literal to xsd:string should result in type error");
-		}
-		catch (ValueExprEvaluationException e) {
-			// do nothing, expected
-		}
-	}
-
-	@Test
-	public void testCastIntegerLiteral() {
-		Literal intLit = f.createLiteral(10);
-		try {
-			Literal result = stringCast.evaluate(f, intLit);
+			Literal result = dtCast.evaluate(f, dateLit);
 			assertNotNull(result);
-			assertEquals(XMLSchema.STRING, result.getDatatype());
-			assertFalse(result.getLanguage().isPresent());
-			assertEquals("10", result.getLabel());
+			assertEquals(XMLSchema.DATETIME, result.getDatatype());
+
 		}
 		catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
@@ -95,9 +82,9 @@ public class TestStringCast {
 		String lexVal = "2000-01-01T00:00:00";
 		Literal dtLit = f.createLiteral(XMLDatatypeUtil.parseCalendar(lexVal));
 		try {
-			Literal result = stringCast.evaluate(f, dtLit);
+			Literal result = dtCast.evaluate(f, dtLit);
 			assertNotNull(result);
-			assertEquals(XMLSchema.STRING, result.getDatatype());
+			assertEquals(XMLSchema.DATETIME, result.getDatatype());
 			assertFalse(result.getLanguage().isPresent());
 			assertEquals(lexVal, result.getLabel());
 		}
@@ -106,19 +93,4 @@ public class TestStringCast {
 		}
 	}
 
-	@Test
-	public void testCastUnknownDatatypedLiteral() {
-		String lexVal = "foobar";
-		Literal dtLit = f.createLiteral(lexVal, f.createIRI("foo:unknownDt"));
-		try {
-			Literal result = stringCast.evaluate(f, dtLit);
-			assertNotNull(result);
-			assertEquals(XMLSchema.STRING, result.getDatatype());
-			assertFalse(result.getLanguage().isPresent());
-			assertEquals(lexVal, result.getLabel());
-		}
-		catch (ValueExprEvaluationException e) {
-			fail(e.getMessage());
-		}
-	}
 }
