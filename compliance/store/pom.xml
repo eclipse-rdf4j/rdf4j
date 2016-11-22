@@ -152,7 +152,7 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-war-plugin</artifactId>
 				<configuration>
-					<webappDirectory>${project.build.directory}/openrdf-sesame</webappDirectory>
+					<webappDirectory>${project.build.directory}/rdf4j-server</webappDirectory>
 				</configuration>
 			</plugin>
 			<plugin>
