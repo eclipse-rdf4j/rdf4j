@@ -15,6 +15,9 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
 
+/**
+ * Makes a {@link QueryContext} available during iteration.
+ */
 public class QueryContextIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
 
 	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
