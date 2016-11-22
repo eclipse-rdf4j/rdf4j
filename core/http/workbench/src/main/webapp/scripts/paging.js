@@ -100,8 +100,8 @@ var workbench;
                 url += AMP + KT + '=' + getTotalResultCount();
             }
             if (!hasQueryParameter('query')) {
-                url += AMP + 'query=' + workbench.getCookie('query');
-                url += AMP + 'ref=' + workbench.getCookie('ref');
+                url += AMP + 'query=' + encodeURIComponent(workbench.getCookie('query'));
+                url += AMP + 'ref=' + encodeURIComponent(workbench.getCookie('ref'));
             }
             document.location.href = simplifyParameters(url);
         }
