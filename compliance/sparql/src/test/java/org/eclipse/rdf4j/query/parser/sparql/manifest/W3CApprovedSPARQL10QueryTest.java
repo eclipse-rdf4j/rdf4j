@@ -40,15 +40,7 @@ public class W3CApprovedSPARQL10QueryTest extends SPARQLQueryTest {
 					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality,
 					boolean checkOrder)
 			{
-				String[] ignoredTests = {
-						// test case incompatible with RDF 1.1 - see
-						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
-						"STRDT   TypeErrors",
-						// test case incompatible with RDF 1.1 - see
-						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
-						"STRLANG   TypeErrors",
-						// known issue: SES-937
-						"sq03 - Subquery within graph pattern, graph variable is not bound" };
+				String[] ignoredTests = {};
 
 				return new W3CApprovedSPARQL10QueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
 						laxCardinality, checkOrder, ignoredTests);
