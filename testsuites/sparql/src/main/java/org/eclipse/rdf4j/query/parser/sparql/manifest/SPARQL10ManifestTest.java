@@ -130,6 +130,7 @@ public class SPARQL10ManifestTest {
 	static void addTurtle(RepositoryConnection con, URL url, String baseURI, Resource... contexts)
 		throws IOException, RepositoryException, RDFParseException, RDFHandlerException
 	{
+		OpenRDFUtil.verifyContextNotNull(contexts);
 		if (baseURI == null) {
 			baseURI = url.toExternalForm();
 		}
@@ -137,7 +138,6 @@ public class SPARQL10ManifestTest {
 		InputStream in = url.openStream();
 
 		try {
-			OpenRDFUtil.verifyContextNotNull(contexts);
 			final ValueFactory vf = con.getRepository().getValueFactory();
 			RDFParser rdfParser = new TurtleParser();
 			rdfParser.setValueFactory(vf);
