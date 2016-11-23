@@ -39,10 +39,10 @@ import java.util.stream.Collectors;
 
 public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferencer {
 
-    NotifyingSail data;
+    private NotifyingSail data;
     Repository schema;
 
-    static final Random random = new Random();
+    private static final Random random = new Random();
 
     private StampedLock readWriteLock = new StampedLock();
 
@@ -99,7 +99,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
     }
 
 
-    AtomicInteger numberOfThreadsWaitingForWriteLock = new AtomicInteger(0);
+    private AtomicInteger numberOfThreadsWaitingForWriteLock = new AtomicInteger(0);
 
     void upgradeLock(FastRdfsForwardChainingSailConnection connection) {
 

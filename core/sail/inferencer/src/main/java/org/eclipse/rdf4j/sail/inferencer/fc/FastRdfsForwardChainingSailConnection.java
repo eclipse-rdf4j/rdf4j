@@ -46,7 +46,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     long lockStamp = 0;
 
 
-    public FastRdfsForwardChainingSailConnection(FastRdfsForwardChainingSail fastRdfsForwardChainingSail, InferencerConnection e) {
+    FastRdfsForwardChainingSailConnection(FastRdfsForwardChainingSail fastRdfsForwardChainingSail, InferencerConnection e) {
         super(fastRdfsForwardChainingSail, e);
         this.fastRdfsForwardChainingSail = fastRdfsForwardChainingSail;
         this.connection = e;
@@ -191,11 +191,9 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
             newSize[0] = 0;
 
             fastRdfsForwardChainingSail.calculatedTypes.forEach((key, value) -> {
-                List<Resource> temp = new ArrayList<Resource>();
-                value.forEach(superClass -> {
-                    temp
-                        .addAll(resolveTypes(superClass));
-                });
+                List<Resource> temp = new ArrayList<>();
+                value.forEach(superClass -> temp
+                    .addAll(resolveTypes(superClass)));
 
                 value.addAll(temp);
                 newSize[0] += value.size();
@@ -244,9 +242,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
             fastRdfsForwardChainingSail.calculatedProperties.forEach((key, value) -> {
                 List<Resource> temp = new ArrayList<>();
-                value.forEach(superProperty -> {
-                    temp.addAll(resolveProperties(superProperty));
-                });
+                value.forEach(superProperty -> temp.addAll(resolveProperties(superProperty)));
 
                 value.addAll(temp);
                 newSize[0] += value.size();
@@ -321,7 +317,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     }
 
 
-    boolean inferredCleared = false;
+    private boolean inferredCleared = false;
 
     @Override
     public void clearInferred(Resource... contexts) throws SailException {
@@ -329,7 +325,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         inferredCleared = true;
     }
 
-    long origianlTboxCount = -1;
+    private long origianlTboxCount = -1;
 
 
     @Override
@@ -355,7 +351,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     }
 
     private long getTboxCount() {
-        long count = 0;
+        long count;
         count = fastRdfsForwardChainingSail.subClassOfStatements.size();
         count += fastRdfsForwardChainingSail.properties.size();
         count += fastRdfsForwardChainingSail.subPropertyOfStatements.size();
@@ -606,6 +602,9 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         }
 
         if (predicate.equals(RDF.TYPE)) {
+            if(!(object instanceof Resource)){
+                throw new SailException("Expected object to a a Resource: "+object.toString());
+            }
 
             resolveTypes((Resource) object)
                 .stream()
