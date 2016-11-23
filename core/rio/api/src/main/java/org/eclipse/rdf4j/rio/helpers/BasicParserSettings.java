@@ -270,7 +270,7 @@ public class BasicParserSettings {
 		List<LanguageHandler> defaultLanguageHandlers = new ArrayList<LanguageHandler>(1);
 		try {
 			LanguageHandlerRegistry registry = LanguageHandlerRegistry.getInstance();
-			for (String nextHandler : Arrays.asList(LanguageHandler.RFC3066)) {
+			for (String nextHandler : Arrays.asList(LanguageHandler.BCP47)) {
 				Optional<LanguageHandler> nextlang = registry.get(nextHandler);
 				if (nextlang.isPresent()) {
 					defaultLanguageHandlers.add(nextlang.get());
