@@ -221,7 +221,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 					forceCloseActiveOperations();
 
 					if (txnActive) {
-						logger.warn("Rolling back transaction due to connection close", new Throwable());
+						logger.warn("Rolling back transaction due to connection close",
+								debugEnabled ? new Throwable() : null);
 						try {
 							// Use internal method to avoid deadlock: the public
 							// rollback method will try to obtain a connection lock
@@ -461,7 +462,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 				}
 				else {
 					logger.warn("Cannot rollback transaction on connection because transaction is not active",
-							new Throwable());
+							debugEnabled ? new Throwable() : null);
 				}
 			}
 			finally {
@@ -880,7 +881,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 			try {
 				if (creatorTrace != null) {
-					logger.warn("Forced closing of unclosed iteration that was created in:", creatorTrace);
+					logger.warn("Forced closing of unclosed iteration that was created in:",
+							debugEnabled ? creatorTrace : null);
+				}
+				else {
+					logger.warn("Forced closing of unclosed iteration, current stacktrace:",
+							debugEnabled ? new Throwable() : null);
 				}
 				ci.close();
 			}
