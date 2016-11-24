@@ -7,10 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.helpers;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -865,7 +867,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	private void forceCloseActiveOperations()
 		throws SailException
 	{
-		Map<SailBaseIteration, Throwable> activeIterationsCopy;
+		final Map<SailBaseIteration, Throwable> activeIterationsCopy;
 
 		synchronized (activeIterations) {
 			// Copy the current contents of the map so that we don't have to
@@ -875,6 +877,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 			activeIterations.clear();
 		}
 
+		final List<SailException> toThrowExceptions = new ArrayList<>();
+		
 		for (Map.Entry<SailBaseIteration, Throwable> entry : activeIterationsCopy.entrySet()) {
 			SailBaseIteration ci = entry.getKey();
 			Throwable creatorTrace = entry.getValue();
@@ -891,11 +895,15 @@ public abstract class AbstractSailConnection implements SailConnection {
 				ci.close();
 			}
 			catch (SailException e) {
-				throw e;
+				toThrowExceptions.add(e);
 			}
 			catch (Exception e) {
-				throw new SailException(e);
+				toThrowExceptions.add(new SailException(e));
 			}
+		}
+		
+		if(!toThrowExceptions.isEmpty()) {
+			throw toThrowExceptions.get(0);
 		}
 	}
 
