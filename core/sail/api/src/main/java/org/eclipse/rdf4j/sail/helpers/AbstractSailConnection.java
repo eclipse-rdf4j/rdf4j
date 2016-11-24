@@ -459,6 +459,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 						txnPrepared = false;
 					}
 				}
+				else {
+					logger.warn("Cannot rollback transaction on connection because transaction is not active",
+							new Throwable());
+				}
 			}
 			finally {
 				updateLock.unlock();
