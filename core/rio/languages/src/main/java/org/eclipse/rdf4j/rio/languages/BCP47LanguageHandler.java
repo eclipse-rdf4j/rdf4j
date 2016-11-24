@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.rio.languages;
 
 import java.util.IllformedLocaleException;
 import java.util.Locale;
-import java.util.regex.Pattern;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -35,9 +35,7 @@ public class BCP47LanguageHandler implements LanguageHandler {
 
 	@Override
 	public boolean isRecognizedLanguage(String languageTag) {
-		if (languageTag == null) {
-			throw new NullPointerException("Language tag cannot be null");
-		}
+		Objects.requireNonNull(languageTag, "Language tag cannot be null");
 
 		try {
 			parseAsBCP47(languageTag);
@@ -53,11 +51,10 @@ public class BCP47LanguageHandler implements LanguageHandler {
 	public boolean verifyLanguage(String literalValue, String languageTag)
 		throws LiteralUtilException
 	{
+		Objects.requireNonNull(languageTag, "Language tag cannot be null");
+		Objects.requireNonNull(literalValue, "Literal value cannot be null");
+		
 		if (isRecognizedLanguage(languageTag)) {
-			if (literalValue == null) {
-				throw new NullPointerException("Literal value cannot be null");
-			}
-
 			// Language tag syntax already checked in isRecognizedLanguage
 			return true;
 		}
@@ -69,17 +66,12 @@ public class BCP47LanguageHandler implements LanguageHandler {
 	public Literal normalizeLanguage(String literalValue, String languageTag, ValueFactory valueFactory)
 		throws LiteralUtilException
 	{
-		if (languageTag == null) {
-			throw new NullPointerException("Language tag cannot be null");
-		}
+		Objects.requireNonNull(languageTag, "Language tag cannot be null");
+		Objects.requireNonNull(literalValue, "Literal value cannot be null");
 
 		try {
 			Locale asBCP47 = parseAsBCP47(languageTag);
 			
-			if (literalValue == null) {
-				throw new NullPointerException("Literal value cannot be null");
-			}
-
 			return valueFactory.createLiteral(literalValue, asBCP47.toLanguageTag().intern());
 		}
 		catch (IllformedLocaleException e) {
