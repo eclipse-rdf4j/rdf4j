@@ -369,6 +369,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
             fastRdfsForwardChainingSail.upgradeLock(this);
 
             fastRdfsForwardChainingSail.clearInferenceTables();
+            addAxiomStatements();
 
             try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null, null, false)) {
                 while (statements.hasNext()) {
