@@ -24,10 +24,12 @@ import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -222,6 +224,32 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		}
 		finally {
 			server.stop();
+		}
+	}
+
+	@Test
+	public void testValuesBindClauseHandling()
+		throws Exception
+	{
+		String query = "select * { service <" + getRepositoryUrl(1)
+				+ "> { Bind(1 as ?val) . VALUES ?x {1 2} . } }";
+
+		try (RepositoryConnection conn = localRepository.getConnection()) {
+			TupleQuery tq = conn.prepareTupleQuery(query);
+			TupleQueryResult tqr = tq.evaluate();
+
+			assertNotNull(tqr);
+			assertTrue(tqr.hasNext());
+
+			List<BindingSet> result = QueryResults.asList(tqr);
+			assertEquals(2, result.size());
+			for (BindingSet bs : result) {
+				assertTrue(bs.hasBinding("val"));
+				assertEquals(1, Literals.getIntValue(bs.getValue("val"), 0));
+				assertTrue(bs.hasBinding("x"));
+				int x = Literals.getIntValue(bs.getValue("x"), 0);
+				assertTrue(x == 1 || x == 2);
+			}
 		}
 	}
 
