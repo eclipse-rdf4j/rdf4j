@@ -14,6 +14,7 @@ import static org.junit.Assert.fail;
 import java.io.InputStream;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Locale;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -114,15 +115,45 @@ public abstract class AbstractParserHandlingTest {
 	protected abstract InputStream getUnknownDatatypeStream(Model unknownDatatypeStatements)
 		throws Exception;
 
+	/**
+	 * Returns an {@link InputStream} containing the given RDF statements in a format that is recognised by
+	 * the RDFParser returned by {@link #getParser()}.
+	 * 
+	 * @param knownDatatypeStatements
+	 *        A {@link Model} containing statements which all contain known datatypes.
+	 * @return An InputStream based on the given parameters.
+	 */
 	protected abstract InputStream getKnownDatatypeStream(Model knownDatatypeStatements)
 		throws Exception;
 
+	/**
+	 * Returns an {@link InputStream} containing the given RDF statements in a format that is recognised by
+	 * the RDFParser returned by {@link #getParser()}.
+	 * 
+	 * @param unknownLanguageStatements
+	 *        A {@link Model} containing statements which all contain unknown language tags.
+	 * @return An InputStream based on the given parameters.
+	 */
 	protected abstract InputStream getUnknownLanguageStream(Model unknownLanguageStatements)
 		throws Exception;
 
+	/**
+	 * Returns an {@link InputStream} containing the given RDF statements in a format that is recognised by
+	 * the RDFParser returned by {@link #getParser()}.
+	 * 
+	 * @param knownLanguageStatements
+	 *        A {@link Model} containing statements which all contain known language tags.
+	 * @return An InputStream based on the given parameters.
+	 */
 	protected abstract InputStream getKnownLanguageStream(Model knownLanguageStatements)
 		throws Exception;
 
+	/**
+	 * Concrete test classes must override this to return a new instance of the RDFParser that is being
+	 * tested.
+	 * 
+	 * @return A new instance of the RDFParser that is being tested.
+	 */
 	protected abstract RDFParser getParser();
 
 	/**
@@ -839,6 +870,46 @@ public abstract class AbstractParserHandlingTest {
 		throws Exception
 	{
 		Model expectedModel = getTestModel(KNOWN_LANGUAGE_VALUE, KNOWN_LANGUAGE_TAG);
+		InputStream input = getKnownLanguageStream(expectedModel);
+
+		testParser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);
+
+		testParser.parse(input, BASE_URI);
+
+		assertErrorListener(0, 0, 0);
+		assertModel(expectedModel);
+	}
+
+	/**
+	 * Tests whether an known language with the message which generates a failure if the uppercased version of
+	 * the language is unknown.
+	 */
+	@Test
+	public final void testKnownLanguageWithMessageWhereUnknownWouldFailCase2()
+		throws Exception
+	{
+		Model expectedModel = getTestModel(KNOWN_LANGUAGE_VALUE,
+				KNOWN_LANGUAGE_TAG.toUpperCase(Locale.ENGLISH));
+		InputStream input = getKnownLanguageStream(expectedModel);
+
+		testParser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);
+
+		testParser.parse(input, BASE_URI);
+
+		assertErrorListener(0, 0, 0);
+		assertModel(expectedModel);
+	}
+
+	/**
+	 * Tests whether an known language with the message which generates a failure if the lowercased version of
+	 * the language is unknown.
+	 */
+	@Test
+	public final void testKnownLanguageWithMessageWhereUnknownWouldFailCase3()
+		throws Exception
+	{
+		Model expectedModel = getTestModel(KNOWN_LANGUAGE_VALUE,
+				KNOWN_LANGUAGE_TAG.toLowerCase(Locale.ENGLISH));
 		InputStream input = getKnownLanguageStream(expectedModel);
 
 		testParser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);
