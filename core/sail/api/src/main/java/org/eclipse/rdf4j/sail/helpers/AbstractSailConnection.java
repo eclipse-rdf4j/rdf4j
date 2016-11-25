@@ -7,10 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.helpers;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -221,7 +223,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 					forceCloseActiveOperations();
 
 					if (txnActive) {
-						logger.warn("Rolling back transaction due to connection close", new Throwable());
+						logger.warn("Rolling back transaction due to connection close",
+								debugEnabled ? new Throwable() : null);
 						try {
 							// Use internal method to avoid deadlock: the public
 							// rollback method will try to obtain a connection lock
@@ -458,6 +461,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 						txnActive = false;
 						txnPrepared = false;
 					}
+				}
+				else {
+					logger.warn("Cannot rollback transaction on connection because transaction is not active",
+							debugEnabled ? new Throwable() : null);
 				}
 			}
 			finally {
@@ -860,7 +867,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	private void forceCloseActiveOperations()
 		throws SailException
 	{
-		Map<SailBaseIteration, Throwable> activeIterationsCopy;
+		final Map<SailBaseIteration, Throwable> activeIterationsCopy;
 
 		synchronized (activeIterations) {
 			// Copy the current contents of the map so that we don't have to
@@ -870,22 +877,29 @@ public abstract class AbstractSailConnection implements SailConnection {
 			activeIterations.clear();
 		}
 
+		final List<SailException> toThrowExceptions = new ArrayList<>();
+		
 		for (Map.Entry<SailBaseIteration, Throwable> entry : activeIterationsCopy.entrySet()) {
 			SailBaseIteration ci = entry.getKey();
 			Throwable creatorTrace = entry.getValue();
 
 			try {
 				if (creatorTrace != null) {
-					logger.warn("Forced closing of unclosed iteration that was created in:", creatorTrace);
+					logger.warn("Forced closing of unclosed iteration that was created in:",
+							debugEnabled ? creatorTrace : null);
 				}
 				ci.close();
 			}
 			catch (SailException e) {
-				throw e;
+				toThrowExceptions.add(e);
 			}
 			catch (Exception e) {
-				throw new SailException(e);
+				toThrowExceptions.add(new SailException(e));
 			}
+		}
+		
+		if(!toThrowExceptions.isEmpty()) {
+			throw toThrowExceptions.get(0);
 		}
 	}
 
