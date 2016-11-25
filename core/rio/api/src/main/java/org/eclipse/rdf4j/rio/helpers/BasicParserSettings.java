@@ -242,18 +242,18 @@ public class BasicParserSettings {
 			_DEFAULT_PREFIX);
 
 	static {
-		List<DatatypeHandler> defaultDatatypeHandlers = new ArrayList<DatatypeHandler>(5);
+		List<DatatypeHandler> defaultDatatypeHandlers = new ArrayList<>(5);
 		try {
 			DatatypeHandlerRegistry registry = DatatypeHandlerRegistry.getInstance();
-			for (String nextHandler : Arrays.asList(DatatypeHandler.XMLSCHEMA, DatatypeHandler.RDFDATATYPES,
+			for (String nextDatatype : Arrays.asList(DatatypeHandler.XMLSCHEMA, DatatypeHandler.RDFDATATYPES,
 					DatatypeHandler.DBPEDIA, DatatypeHandler.VIRTUOSOGEOMETRY, DatatypeHandler.GEOSPARQL))
 			{
-				Optional<DatatypeHandler> nextdt = registry.get(nextHandler);
-				if (nextdt.isPresent()) {
-					defaultDatatypeHandlers.add(nextdt.get());
+				Optional<DatatypeHandler> nextDatatypeHandler = registry.get(nextDatatype);
+				if (nextDatatypeHandler.isPresent()) {
+					defaultDatatypeHandlers.add(nextDatatypeHandler.get());
 				}
 				else {
-					log.warn("Could not find DatatypeHandler : {}", nextHandler);
+					log.warn("Could not find DatatypeHandler : {}", nextDatatype);
 				}
 			}
 		}
@@ -263,20 +263,20 @@ public class BasicParserSettings {
 			log.warn("Found an error loading DatatypeHandler services", e);
 		}
 
-		DATATYPE_HANDLERS = new RioSettingImpl<List<DatatypeHandler>>(
-				"org.eclipse.rdf4j.rio.datatypehandlers", "Datatype Handlers",
-				Collections.unmodifiableList(defaultDatatypeHandlers));
+		DATATYPE_HANDLERS = new RioSettingImpl<>("org.eclipse.rdf4j.rio.datatypehandlers",
+				"Datatype Handlers", Collections.unmodifiableList(defaultDatatypeHandlers));
 
-		List<LanguageHandler> defaultLanguageHandlers = new ArrayList<LanguageHandler>(1);
+		List<LanguageHandler> defaultLanguageHandlers = new ArrayList<>(1);
 		try {
 			LanguageHandlerRegistry registry = LanguageHandlerRegistry.getInstance();
-			for (String nextHandler : Arrays.asList(LanguageHandler.RFC3066)) {
-				Optional<LanguageHandler> nextlang = registry.get(nextHandler);
-				if (nextlang.isPresent()) {
-					defaultLanguageHandlers.add(nextlang.get());
+			String nextLanguageTagScheme = LanguageHandler.BCP47;
+			if (registry.has(nextLanguageTagScheme)) {
+				Optional<LanguageHandler> nextLanguageHandler = registry.get(nextLanguageTagScheme);
+				if (nextLanguageHandler.isPresent()) {
+					defaultLanguageHandlers.add(nextLanguageHandler.get());
 				}
 				else {
-					log.warn("Could not find LanguageHandler : {}", nextHandler);
+					log.warn("Could not find LanguageHandler : {}", nextLanguageTagScheme);
 				}
 			}
 		}
@@ -286,9 +286,8 @@ public class BasicParserSettings {
 			log.warn("Found an error loading LanguageHandler services", e);
 		}
 
-		LANGUAGE_HANDLERS = new RioSettingImpl<List<LanguageHandler>>(
-				"org.eclipse.rdf4j.rio.languagehandlers", "Language Handlers",
-				Collections.unmodifiableList(defaultLanguageHandlers));
+		LANGUAGE_HANDLERS = new RioSettingImpl<>("org.eclipse.rdf4j.rio.languagehandlers",
+				"Language Handlers", Collections.unmodifiableList(defaultLanguageHandlers));
 	}
 
 	/**
