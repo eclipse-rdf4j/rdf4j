@@ -888,10 +888,6 @@ public abstract class AbstractSailConnection implements SailConnection {
 					logger.warn("Forced closing of unclosed iteration that was created in:",
 							debugEnabled ? creatorTrace : null);
 				}
-				else {
-					logger.warn("Forced closing of unclosed iteration, current stacktrace:",
-							debugEnabled ? new Throwable() : null);
-				}
 				ci.close();
 			}
 			catch (SailException e) {
