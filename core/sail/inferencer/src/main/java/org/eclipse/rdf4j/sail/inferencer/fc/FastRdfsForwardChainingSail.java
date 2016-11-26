@@ -84,7 +84,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
         }
 
         if (connection.lockStamp != 0) {
-            throw new IllegalStateException("Connection already has a lock!");
+            throw new SailException("Connection already has a lock! Might be a begin() without a commit() or rollback() for previous transaction().");
         }
         connection.lockStamp = readWriteLock.readLock();
 //        System.err.println("readLock: " + connection.lockStamp);
@@ -92,6 +92,9 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
     }
 
     void releaseLock(FastRdfsForwardChainingSailConnection connection) {
+        if(connection.lockStamp == 0){
+            throw new SailException("Expected connection to have lock. Might be a commit() without a begin().");
+        }
         readWriteLock.unlock(connection.lockStamp);
 //        System.err.println("Released lock: " + connection.lockStamp);
 
@@ -125,13 +128,13 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
                 try {
                     Thread.sleep(random.nextInt(2));
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    // ignore interrupted exception
                 }
 
                 // detect potential deadlock scenario
                 if(numberOfThreadsWaitingForWriteLock.get() > 1  //More than 1 connection waiting for a write lock
-                    && numberOfThreadsWaitingForWriteLock.get() <= readWriteLock.getReadLockCount() // no connection only wants a read lock
-                    && random.nextBoolean()){ // randomly kick this conection out
+                    && numberOfThreadsWaitingForWriteLock.get() <= readWriteLock.getReadLockCount() // no connection only using a read lock
+                    && random.nextBoolean()){ // randomly kick this connection out
                     break;
                 }
 
@@ -142,7 +145,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 //            System.err.println("read lock count: " + readWriteLock.getReadLockCount());
 
             releaseLock(connection);
-            throw new IllegalStateException("Could not acquire Tbox write lock");
+            throw new SailException("Concurrent modification of schema, could not acquire the lock.");
         } finally {
 
             numberOfThreadsWaitingForWriteLock.decrementAndGet();
