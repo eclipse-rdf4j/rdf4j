@@ -398,6 +398,14 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
     }
 
+    @Override
+    public void close() throws SailException {
+        if(lockStamp != 0){
+            fastRdfsForwardChainingSail.releaseLock(this);
+        }
+        super.close();
+
+    }
 
     @Override
     protected Model createModel() {
