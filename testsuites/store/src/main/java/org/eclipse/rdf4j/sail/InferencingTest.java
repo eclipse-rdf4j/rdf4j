@@ -207,6 +207,13 @@ public abstract class InferencingTest {
 	}
 
 	@Test
+	public void testSubPropertyOf004()
+		throws Exception
+	{
+		runTest(createSail(), "subpropertyof", "test004", true);
+	}
+
+	@Test
 	public void testSubPropertyOfError001()
 		throws Exception
 	{
