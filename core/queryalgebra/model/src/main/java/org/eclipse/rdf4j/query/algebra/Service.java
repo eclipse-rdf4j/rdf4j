@@ -217,8 +217,19 @@ public class Service extends UnaryTupleOperator {
 				if (!node.hasValue() && !node.isAnonymous())
 					res.add(node.getName());
 			}
+			
+			@Override
+			public void meet(BindingSetAssignment bsa) {
+				res.addAll(bsa.getAssuredBindingNames());
+			}
+			
+			@Override
+			public void meet(Extension e) {
+				for (ExtensionElem elem: e.getElements()) {
+					res.add(elem.getName());
+				}
+			}
 			// TODO maybe stop tree traversal in nested SERVICE?
-			// TODO special case handling for BIND
 		});
 		return res;
 	}
