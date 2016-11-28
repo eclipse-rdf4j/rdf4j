@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
@@ -75,9 +76,9 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
     void readLock(FastRdfsForwardChainingSailConnection connection) {
 
-        if (numberOfThreadsWaitingForWriteLock.get() > 0) {
+//        if (numberOfThreadsWaitingForWriteLock.get() > 0) {
 //            System.err.println("starve reads");
-        }
+//        }
 
         while (numberOfThreadsWaitingForWriteLock.get() > 0) {
             Thread.yield();
@@ -106,7 +107,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
     void upgradeLock(FastRdfsForwardChainingSailConnection connection) {
 
-////        System.err.println("Attempt writelock: "+connection.lockStamp);
+//        System.err.println("Attempt writelock: "+connection.lockStamp);
 
         numberOfThreadsWaitingForWriteLock.incrementAndGet();
 
@@ -115,11 +116,11 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
                 long l = readWriteLock.tryConvertToWriteLock(connection.lockStamp);
 
                 if (l != 0) {
-                    long temp = connection.lockStamp;
+//                    long temp = connection.lockStamp;
                     connection.lockStamp = l;
-                    if (temp != l) {
+//                    if (temp != l) {
 //                        System.err.println("readLock: " + temp + " writeLock: " + connection.lockStamp);
-                    }
+//                    }
 
 
                     return;
@@ -145,7 +146,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 //            System.err.println("read lock count: " + readWriteLock.getReadLockCount());
 
             releaseLock(connection);
-            throw new SailException("Concurrent modification of schema, could not acquire the lock.");
+            throw new SailConflictException("Concurrent modification of schema, could not acquire the lock.");
         } finally {
 
             numberOfThreadsWaitingForWriteLock.decrementAndGet();
