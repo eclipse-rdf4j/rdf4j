@@ -949,20 +949,20 @@ public class LiteralsTest {
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#normaliseBCP47Tag(String)} .
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#normalizeLanguageTag(String)} .
 	 */
 	@Test
 	public void testNormaliseBCP47Tag()
 		throws Exception
 	{
-		assertEquals("en", Literals.normaliseBCP47Tag("en"));
-		assertEquals("en-AU", Literals.normaliseBCP47Tag("en-AU"));
-		assertEquals("en-AU", Literals.normaliseBCP47Tag("en-au"));
-		assertEquals("en-AU", Literals.normaliseBCP47Tag("EN-AU"));
-		assertEquals("en-AU", Literals.normaliseBCP47Tag("EN-au"));
-		assertEquals("fr-FR", Literals.normaliseBCP47Tag("fr-FR"));
-		assertEquals("fr-FR", Literals.normaliseBCP47Tag("fr-fr"));
-		assertEquals("fr-FR", Literals.normaliseBCP47Tag("FR-FR"));
-		assertEquals("fr-FR", Literals.normaliseBCP47Tag("FR-fr"));
+		assertEquals("en", Literals.normalizeLanguageTag("en"));
+		assertEquals("en-AU", Literals.normalizeLanguageTag("en-AU"));
+		assertEquals("en-AU", Literals.normalizeLanguageTag("en-au"));
+		assertEquals("en-AU", Literals.normalizeLanguageTag("EN-AU"));
+		assertEquals("en-AU", Literals.normalizeLanguageTag("EN-au"));
+		assertEquals("fr-FR", Literals.normalizeLanguageTag("fr-FR"));
+		assertEquals("fr-FR", Literals.normalizeLanguageTag("fr-fr"));
+		assertEquals("fr-FR", Literals.normalizeLanguageTag("FR-FR"));
+		assertEquals("fr-FR", Literals.normalizeLanguageTag("FR-fr"));
 	}
 }
