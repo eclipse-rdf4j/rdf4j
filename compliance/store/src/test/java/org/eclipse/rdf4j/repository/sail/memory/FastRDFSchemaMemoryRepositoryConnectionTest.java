@@ -8,13 +8,16 @@
 package org.eclipse.rdf4j.repository.sail.memory;
 
 import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.RDFSchemaRepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.inferencer.fc.FastRdfsForwardChainingSail;
@@ -35,23 +38,4 @@ public class FastRDFSchemaMemoryRepositoryConnectionTest extends RDFSchemaReposi
 		return new SailRepository(new FastRdfsForwardChainingSail(new MemoryStore(), true));
 	}
 
-	@Test
-	public void testBlankNodePredicateInference(){
-		Repository sailRepository = createRepository();
-		sailRepository.initialize();
-		ValueFactory vf = sailRepository.getValueFactory();
-
-		try (RepositoryConnection connection = sailRepository.getConnection()) {
-			BNode bNode = vf.createBNode();
-			connection.add(vf.createStatement(vf.createIRI("http://a"), RDFS.SUBPROPERTYOF, bNode)); // 1
-			connection.add(vf.createStatement(bNode, RDFS.DOMAIN, vf.createIRI("http://c"))); // 2
-			connection.add(vf.createStatement(vf.createIRI("http://d"), vf.createIRI("http://a"), vf.createIRI("http://e"))); // 3
-		}
-
-		try (RepositoryConnection connection = sailRepository.getConnection()) {
-			boolean correctInference = connection.hasStatement(vf.createIRI("http://d"), RDF.TYPE, vf.createIRI("http://c"), true);
-			assertTrue("d should be type c, because 3 and 1 entail 'd _:bNode e' with 2 entail 'd type c'", correctInference);
-		}
-
-	}
 }
