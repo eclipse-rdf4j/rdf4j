@@ -109,7 +109,7 @@ public class ReasoningBenchmark {
     @Benchmark
     @BenchmarkMode(Mode.AverageTime)
     @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void fastRdfsForwardChainingSail() throws IOException {
+    public void forwardChainingSchemaCachingRDFSInferencer() throws IOException {
         SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore()));
         sail.initialize();
 
@@ -126,7 +126,7 @@ public class ReasoningBenchmark {
     @Benchmark
     @BenchmarkMode(Mode.AverageTime)
     @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void fastRdfsForwardChainingSailMultipleTransactions() throws IOException {
+    public void forwardChainingSchemaCachingRDFSInferencerMultipleTransactions() throws IOException {
         SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore()));
         sail.initialize();
 
@@ -144,7 +144,7 @@ public class ReasoningBenchmark {
     @Benchmark
     @BenchmarkMode(Mode.AverageTime)
     @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void fastRdfsForwardChainingSailSchema() throws IOException {
+    public void forwardChainingSchemaCachingRDFSInferencerSchema() throws IOException {
         SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore(), createSchema()));
         sail.initialize();
 
@@ -158,7 +158,7 @@ public class ReasoningBenchmark {
     @Benchmark
     @BenchmarkMode(Mode.AverageTime)
     @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void fastRdfsForwardChainingSailMultipleTransactionsSchema() throws IOException {
+    public void forwardChainingSchemaCachingRDFSInferencerMultipleTransactionsSchema() throws IOException {
         SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore(), createSchema()));
         sail.initialize();
 

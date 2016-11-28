@@ -21,7 +21,7 @@ import org.junit.Test;
 
 import static junit.framework.TestCase.assertTrue;
 
-public class FastRdfsForwardChainingMemInferencingTest extends InferencingTest {
+public class ForwardChainingSchemaCachingRDFSInferencerMemInferencingTest extends InferencingTest {
 
 	@Override
 	protected Sail createSail() {

@@ -16,9 +16,9 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 import static junit.framework.TestCase.assertTrue;
 
-public class FastRDFSchemaMemoryRepositoryConnectionTest extends RDFSchemaRepositoryConnectionTest {
+public class ForwardChainingSchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest extends RDFSchemaRepositoryConnectionTest {
 
-	public FastRDFSchemaMemoryRepositoryConnectionTest(IsolationLevel level) {
+	public ForwardChainingSchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest(IsolationLevel level) {
 		super(level);
 	}
 
