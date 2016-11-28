@@ -5,7 +5,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.inferencer.fc.FastRdfsForwardChainingSail;
+import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 import java.util.Random;
@@ -13,7 +13,7 @@ import java.util.Random;
 
 public class Main {
 
-    static SailRepository sail = new SailRepository(new FastRdfsForwardChainingSail(new MemoryStore()));
+    static SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore()));
     static BNode left;
 
     static {

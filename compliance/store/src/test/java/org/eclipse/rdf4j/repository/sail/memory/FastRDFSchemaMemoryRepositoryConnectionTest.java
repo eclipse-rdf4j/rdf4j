@@ -8,22 +8,11 @@
 package org.eclipse.rdf4j.repository.sail.memory;
 
 import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.RDFSchemaRepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.inferencer.fc.FastRdfsForwardChainingSail;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.Test;
 
 import static junit.framework.TestCase.assertTrue;
 
@@ -35,7 +24,7 @@ public class FastRDFSchemaMemoryRepositoryConnectionTest extends RDFSchemaReposi
 
 	@Override
 	protected Repository createRepository() {
-		return new SailRepository(new FastRdfsForwardChainingSail(new MemoryStore(), true));
+		return new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore(), true));
 	}
 
 }

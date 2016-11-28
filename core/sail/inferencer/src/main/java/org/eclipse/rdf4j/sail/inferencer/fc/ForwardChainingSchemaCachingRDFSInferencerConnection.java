@@ -38,17 +38,17 @@ import java.util.Set;
  * @author Håvard Mikkelsen Ottestad
  */
 
-public class FastRdfsForwardChainingSailConnection extends AbstractForwardChainingInferencerConnection {
+public class ForwardChainingSchemaCachingRDFSInferencerConnection extends AbstractForwardChainingInferencerConnection {
 
 
-    private final FastRdfsForwardChainingSail fastRdfsForwardChainingSail;
+    private final ForwardChainingSchemaCachingRDFSInferencer forwardChainingSchemaCachingRDFSInferencer;
     private final NotifyingSailConnection connection;
     long lockStamp = 0;
 
 
-    FastRdfsForwardChainingSailConnection(FastRdfsForwardChainingSail fastRdfsForwardChainingSail, InferencerConnection e) {
-        super(fastRdfsForwardChainingSail, e);
-        this.fastRdfsForwardChainingSail = fastRdfsForwardChainingSail;
+    ForwardChainingSchemaCachingRDFSInferencerConnection(ForwardChainingSchemaCachingRDFSInferencer forwardChainingSchemaCachingRDFSInferencer, InferencerConnection e) {
+        super(forwardChainingSchemaCachingRDFSInferencer, e);
+        this.forwardChainingSchemaCachingRDFSInferencer = forwardChainingSchemaCachingRDFSInferencer;
         this.connection = e;
     }
 
@@ -56,7 +56,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     public void rollback() throws SailException {
         super.rollback();
         if (lockStamp != 0) {
-            fastRdfsForwardChainingSail.releaseLock(this);
+            forwardChainingSchemaCachingRDFSInferencer.releaseLock(this);
         }
         //@TODO Do I need to clean up the tbox cache and lookup maps after rolling back? Probably if the connection has a write lock.
     }
@@ -67,62 +67,62 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         Resource subject = statement.getSubject();
 
         if (predicate.equals(RDFS.SUBCLASSOF)) {
-            fastRdfsForwardChainingSail.upgradeLock(this);
-            fastRdfsForwardChainingSail.subClassOfStatements.add(statement);
+            forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
+            forwardChainingSchemaCachingRDFSInferencer.subClassOfStatements.add(statement);
 
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDF.PROPERTY)) {
-            fastRdfsForwardChainingSail.upgradeLock(this);
-            fastRdfsForwardChainingSail.properties.add(statement.getSubject());
+            forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
+            forwardChainingSchemaCachingRDFSInferencer.properties.add(statement.getSubject());
 
         } else if (predicate.equals(RDFS.SUBPROPERTYOF)) {
-            fastRdfsForwardChainingSail.upgradeLock(this);
-            fastRdfsForwardChainingSail.subPropertyOfStatements.add(statement);
+            forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
+            forwardChainingSchemaCachingRDFSInferencer.subPropertyOfStatements.add(statement);
 
         } else if (predicate.equals(RDFS.RANGE)) {
-            fastRdfsForwardChainingSail.upgradeLock(this);
-            fastRdfsForwardChainingSail.rangeStatements.add(statement);
+            forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
+            forwardChainingSchemaCachingRDFSInferencer.rangeStatements.add(statement);
 
         } else if (predicate.equals(RDFS.DOMAIN)) {
-            fastRdfsForwardChainingSail.upgradeLock(this);
-            fastRdfsForwardChainingSail.domainStatements.add(statement);
+            forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
+            forwardChainingSchemaCachingRDFSInferencer.domainStatements.add(statement);
 
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CLASS)) {
-            fastRdfsForwardChainingSail.upgradeLock(this);
-            fastRdfsForwardChainingSail.subClassOfStatements.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE));
+            forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
+            forwardChainingSchemaCachingRDFSInferencer.subClassOfStatements.add(forwardChainingSchemaCachingRDFSInferencer.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE));
 
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.DATATYPE)) {
-            fastRdfsForwardChainingSail.upgradeLock(this);
-            fastRdfsForwardChainingSail.subClassOfStatements.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
+            forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
+            forwardChainingSchemaCachingRDFSInferencer.subClassOfStatements.add(forwardChainingSchemaCachingRDFSInferencer.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
 
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CONTAINERMEMBERSHIPPROPERTY)) {
-            fastRdfsForwardChainingSail.upgradeLock(this);
-            fastRdfsForwardChainingSail.subPropertyOfStatements.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBPROPERTYOF, RDFS.MEMBER));
+            forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
+            forwardChainingSchemaCachingRDFSInferencer.subPropertyOfStatements.add(forwardChainingSchemaCachingRDFSInferencer.getValueFactory().createStatement(subject, RDFS.SUBPROPERTYOF, RDFS.MEMBER));
 
         }else if(predicate.equals(RDF.TYPE)){
-            fastRdfsForwardChainingSail.upgradeLock(this);
-            fastRdfsForwardChainingSail.subClassOfStatements.add(fastRdfsForwardChainingSail.getValueFactory().createStatement((Resource) object, RDFS.SUBCLASSOF,object));
+            forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
+            forwardChainingSchemaCachingRDFSInferencer.subClassOfStatements.add(forwardChainingSchemaCachingRDFSInferencer.getValueFactory().createStatement((Resource) object, RDFS.SUBCLASSOF,object));
         }
 
-        if (!fastRdfsForwardChainingSail.properties.contains(predicate)) {
-            fastRdfsForwardChainingSail.upgradeLock(this);
-            fastRdfsForwardChainingSail.properties.add(predicate);
+        if (!forwardChainingSchemaCachingRDFSInferencer.properties.contains(predicate)) {
+            forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
+            forwardChainingSchemaCachingRDFSInferencer.properties.add(predicate);
         }
 
 
     }
 
     void calculateInferenceMaps() {
-        fastRdfsForwardChainingSail.upgradeLock(this);
+        forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
 
-        calculateSubClassOf(fastRdfsForwardChainingSail.subClassOfStatements);
-        findProperties(fastRdfsForwardChainingSail.properties);
-        calculateSubPropertyOf(fastRdfsForwardChainingSail.subPropertyOfStatements);
+        calculateSubClassOf(forwardChainingSchemaCachingRDFSInferencer.subClassOfStatements);
+        findProperties(forwardChainingSchemaCachingRDFSInferencer.properties);
+        calculateSubPropertyOf(forwardChainingSchemaCachingRDFSInferencer.subPropertyOfStatements);
 
-        calculateRangeDomain(fastRdfsForwardChainingSail.rangeStatements, fastRdfsForwardChainingSail.calculatedRange);
-        calculateRangeDomain(fastRdfsForwardChainingSail.domainStatements, fastRdfsForwardChainingSail.calculatedDomain);
+        calculateRangeDomain(forwardChainingSchemaCachingRDFSInferencer.rangeStatements, forwardChainingSchemaCachingRDFSInferencer.calculatedRange);
+        calculateRangeDomain(forwardChainingSchemaCachingRDFSInferencer.domainStatements, forwardChainingSchemaCachingRDFSInferencer.calculatedDomain);
 
 
-        fastRdfsForwardChainingSail.calculatedTypes.forEach((subClass, superClasses) -> {
+        forwardChainingSchemaCachingRDFSInferencer.calculatedTypes.forEach((subClass, superClasses) -> {
             addInferredStatement(subClass, RDFS.SUBCLASSOF, subClass);
 
             superClasses.forEach(superClass -> {
@@ -132,7 +132,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
             });
         });
 
-        fastRdfsForwardChainingSail.calculatedProperties.forEach((sub, sups) -> {
+        forwardChainingSchemaCachingRDFSInferencer.calculatedProperties.forEach((sub, sups) -> {
             addInferredStatement(sub, RDFS.SUBPROPERTYOF, sub);
 
             sups.forEach(sup -> {
@@ -146,26 +146,26 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     }
 
     private Set<Resource> resolveTypes(Resource value) {
-        Set<Resource> iris = fastRdfsForwardChainingSail.calculatedTypes.get(value);
+        Set<Resource> iris = forwardChainingSchemaCachingRDFSInferencer.calculatedTypes.get(value);
 
         return iris != null ? iris : Collections.emptySet();
     }
 
     private Set<Resource> resolveProperties(Resource predicate) {
-        Set<Resource> iris = fastRdfsForwardChainingSail.calculatedProperties.get(predicate);
+        Set<Resource> iris = forwardChainingSchemaCachingRDFSInferencer.calculatedProperties.get(predicate);
 
         return iris != null ? iris : Collections.emptySet();
     }
 
 
     private Set<Resource> resolveRangeTypes(IRI predicate) {
-        Set<Resource> iris = fastRdfsForwardChainingSail.calculatedRange.get(predicate);
+        Set<Resource> iris = forwardChainingSchemaCachingRDFSInferencer.calculatedRange.get(predicate);
 
         return iris != null ? iris : Collections.emptySet();
     }
 
     private Set<Resource> resolveDomainTypes(IRI predicate) {
-        Set<Resource> iris = fastRdfsForwardChainingSail.calculatedDomain.get(predicate);
+        Set<Resource> iris = forwardChainingSchemaCachingRDFSInferencer.calculatedDomain.get(predicate);
 
         return iris != null ? iris : Collections.emptySet();
     }
@@ -174,11 +174,11 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     private void calculateSubClassOf(Set<Statement> subClassOfStatements) {
         subClassOfStatements.forEach(s -> {
             Resource subClass = s.getSubject();
-            if (!fastRdfsForwardChainingSail.calculatedTypes.containsKey(subClass)) {
-                fastRdfsForwardChainingSail.calculatedTypes.put(subClass, new HashSet<>());
+            if (!forwardChainingSchemaCachingRDFSInferencer.calculatedTypes.containsKey(subClass)) {
+                forwardChainingSchemaCachingRDFSInferencer.calculatedTypes.put(subClass, new HashSet<>());
             }
 
-            fastRdfsForwardChainingSail.calculatedTypes.get(subClass).add((Resource) s.getObject());
+            forwardChainingSchemaCachingRDFSInferencer.calculatedTypes.get(subClass).add((Resource) s.getObject());
 
         });
 
@@ -196,7 +196,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
             newSize[0] = 0;
 
-            fastRdfsForwardChainingSail.calculatedTypes.forEach((key, value) -> {
+            forwardChainingSchemaCachingRDFSInferencer.calculatedTypes.forEach((key, value) -> {
                 List<Resource> temp = new ArrayList<>();
                 value.forEach(superClass -> temp
                     .addAll(resolveTypes(superClass)));
@@ -212,7 +212,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     private void findProperties(Set<Resource> predicates) {
         predicates.forEach(predicate -> {
             addInferredStatement(predicate, RDF.TYPE, RDF.PROPERTY);
-            fastRdfsForwardChainingSail.calculatedProperties.put(predicate, new HashSet<>());
+            forwardChainingSchemaCachingRDFSInferencer.calculatedProperties.put(predicate, new HashSet<>());
         });
     }
 
@@ -222,15 +222,15 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         subPropertyOfStatemenets.forEach(s -> {
             Resource subClass = s.getSubject();
             Resource superClass = (Resource) s.getObject();
-            if (!fastRdfsForwardChainingSail.calculatedProperties.containsKey(subClass)) {
-                fastRdfsForwardChainingSail.calculatedProperties.put(subClass, new HashSet<>());
+            if (!forwardChainingSchemaCachingRDFSInferencer.calculatedProperties.containsKey(subClass)) {
+                forwardChainingSchemaCachingRDFSInferencer.calculatedProperties.put(subClass, new HashSet<>());
             }
 
-            if (!fastRdfsForwardChainingSail.calculatedProperties.containsKey(superClass)) {
-                fastRdfsForwardChainingSail.calculatedProperties.put(superClass, new HashSet<>());
+            if (!forwardChainingSchemaCachingRDFSInferencer.calculatedProperties.containsKey(superClass)) {
+                forwardChainingSchemaCachingRDFSInferencer.calculatedProperties.put(superClass, new HashSet<>());
             }
 
-            fastRdfsForwardChainingSail.calculatedProperties.get(subClass).add((Resource) s.getObject());
+            forwardChainingSchemaCachingRDFSInferencer.calculatedProperties.get(subClass).add((Resource) s.getObject());
 
         });
 
@@ -246,7 +246,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
             newSize[0] = 0;
 
-            fastRdfsForwardChainingSail.calculatedProperties.forEach((key, value) -> {
+            forwardChainingSchemaCachingRDFSInferencer.calculatedProperties.forEach((key, value) -> {
                 List<Resource> temp = new ArrayList<>();
                 value.forEach(superProperty -> temp.addAll(resolveProperties(superProperty)));
 
@@ -262,8 +262,8 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
         rangeOrDomainStatements.forEach(s -> {
             Resource predicate = s.getSubject();
-            if (!fastRdfsForwardChainingSail.calculatedProperties.containsKey(predicate)) {
-                fastRdfsForwardChainingSail.calculatedProperties.put(predicate, new HashSet<>());
+            if (!forwardChainingSchemaCachingRDFSInferencer.calculatedProperties.containsKey(predicate)) {
+                forwardChainingSchemaCachingRDFSInferencer.calculatedProperties.put(predicate, new HashSet<>());
             }
 
             if (!calculatedRangeOrDomain.containsKey(predicate)) {
@@ -272,14 +272,14 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
             calculatedRangeOrDomain.get(predicate).add((Resource) s.getObject());
 
-            if (!fastRdfsForwardChainingSail.calculatedTypes.containsKey(s.getObject())) {
-                fastRdfsForwardChainingSail.calculatedTypes.put((Resource) s.getObject(), new HashSet<>());
+            if (!forwardChainingSchemaCachingRDFSInferencer.calculatedTypes.containsKey(s.getObject())) {
+                forwardChainingSchemaCachingRDFSInferencer.calculatedTypes.put((Resource) s.getObject(), new HashSet<>());
             }
 
         });
 
 
-        fastRdfsForwardChainingSail.calculatedProperties
+        forwardChainingSchemaCachingRDFSInferencer.calculatedProperties
             .keySet()
             .stream()
             .filter(key -> !calculatedRangeOrDomain.containsKey(key))
@@ -344,7 +344,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     @Override
     public void begin(IsolationLevel level) throws UnknownSailTransactionStateException {
         super.begin(level);
-        fastRdfsForwardChainingSail.readLock(this);
+        forwardChainingSchemaCachingRDFSInferencer.readLock(this);
 
         origianlTboxCount = getTboxCount();
 
@@ -353,16 +353,16 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     @Override
     public void commit() throws SailException {
         super.commit();
-        fastRdfsForwardChainingSail.releaseLock(this);
+        forwardChainingSchemaCachingRDFSInferencer.releaseLock(this);
     }
 
     private long getTboxCount() {
         long count;
-        count = fastRdfsForwardChainingSail.subClassOfStatements.size();
-        count += fastRdfsForwardChainingSail.properties.size();
-        count += fastRdfsForwardChainingSail.subPropertyOfStatements.size();
-        count += fastRdfsForwardChainingSail.rangeStatements.size();
-        count += fastRdfsForwardChainingSail.domainStatements.size();
+        count = forwardChainingSchemaCachingRDFSInferencer.subClassOfStatements.size();
+        count += forwardChainingSchemaCachingRDFSInferencer.properties.size();
+        count += forwardChainingSchemaCachingRDFSInferencer.subPropertyOfStatements.size();
+        count += forwardChainingSchemaCachingRDFSInferencer.rangeStatements.size();
+        count += forwardChainingSchemaCachingRDFSInferencer.domainStatements.size();
         return count;
     }
 
@@ -370,11 +370,11 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     protected void doInferencing() throws SailException {
         prepareIteration();
 
-        if (fastRdfsForwardChainingSail.schema == null && origianlTboxCount != getTboxCount()) {
+        if (forwardChainingSchemaCachingRDFSInferencer.schema == null && origianlTboxCount != getTboxCount()) {
 
-            fastRdfsForwardChainingSail.upgradeLock(this);
+            forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
 
-            fastRdfsForwardChainingSail.clearInferenceTables();
+            forwardChainingSchemaCachingRDFSInferencer.clearInferenceTables();
             addAxiomStatements();
 
             try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null, null, false)) {
@@ -407,7 +407,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     @Override
     public void close() throws SailException {
         if(lockStamp != 0){
-            fastRdfsForwardChainingSail.releaseLock(this);
+            forwardChainingSchemaCachingRDFSInferencer.releaseLock(this);
         }
         super.close();
 
@@ -577,11 +577,11 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     // actuallyAdd
     private void addStatement(boolean actuallyAdd, Resource subject, IRI predicate, Value object, Resource... resources) throws SailException {
 
-        if (fastRdfsForwardChainingSail.schema == null) {
-            statementCollector(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, predicate, object));
+        if (forwardChainingSchemaCachingRDFSInferencer.schema == null) {
+            statementCollector(forwardChainingSchemaCachingRDFSInferencer.getValueFactory().createStatement(subject, predicate, object));
         }
 
-        if (fastRdfsForwardChainingSail.useAllRdfsRules) {
+        if (forwardChainingSchemaCachingRDFSInferencer.useAllRdfsRules) {
             addInferredStatement(subject, RDF.TYPE, RDFS.RESOURCE);
 
             if (object instanceof Resource) {
@@ -628,7 +628,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
             resolveTypes((Resource) object)
                 .stream()
                 .peek(inferredType -> {
-                    if (fastRdfsForwardChainingSail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
+                    if (forwardChainingSchemaCachingRDFSInferencer.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
                         addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE);
                     }
                 })
@@ -648,7 +648,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
             resolveRangeTypes(predicate)
                 .stream()
                 .peek(inferredType -> {
-                    if (fastRdfsForwardChainingSail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
+                    if (forwardChainingSchemaCachingRDFSInferencer.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
                         addInferredStatement(((Resource) object), RDFS.SUBCLASSOF, RDFS.RESOURCE);
                     }
                 })
@@ -659,7 +659,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         resolveDomainTypes(predicate)
             .stream()
             .peek(inferredType -> {
-                if (fastRdfsForwardChainingSail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
+                if (forwardChainingSchemaCachingRDFSInferencer.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
                     addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE);
                 }
             })
@@ -669,7 +669,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
 
     protected void addAxiomStatements() {
-        ValueFactory vf = fastRdfsForwardChainingSail.getValueFactory();
+        ValueFactory vf = forwardChainingSchemaCachingRDFSInferencer.getValueFactory();
 
         // This is http://www.w3.org/2000/01/rdf-schema# forward chained
         // Eg. all axioms in RDFS forward chained w.r.t. RDFS.
