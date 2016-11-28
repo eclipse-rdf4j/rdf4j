@@ -1,3 +1,24 @@
+# Copyright (c) 2013 YEASTRACT http://yeastract.com/
+# This file was created from publicly available file:
+# http://yeastract.com/download/TFConsensusList_20130918.transfac.gz
+# produced by YEASTRACT project:
+# 
+# 1. Miguel C. Teixeira, Pedro T. Monteiro, Joana F. Guerreiro, Joana P. Gonçalves, Nuno P. Mira, Sandra C. dos Santos, Tânia R. Cabrito, Margarida Palma, Catarina Costa, Alexandre P. Francisco, Sara C. Madeira, Arlindo L. Oliveira, Ana T. Freitas, Isabel Sá-Correia (2014)
+# The YEASTRACT database: an upgraded information system for the analysis of gene and genomic transcription regulation in Saccharomyces cerevisiae
+# Nucl. Acids Res., 42: D161-D166, Oxford University Press
+#
+# 2. Dário Abdulrehman, Pedro T. Monteiro, Miguel C. Teixeira, Nuno P. Mira, Artur B. Lourenço, Sandra C. dos Santos, Tânia R. Cabrito, Alexandre P. Francisco, Sara C. Madeira, Ricardo S. Aires, Arlindo L. Oliveira, Isabel Sá-Correia, Ana T. Freitas (2011)
+# YEASTRACT: providing a programmatic access to curated transcriptional regulatory associations in Saccharomyces cerevisiae through a web services interface
+# Nucl. Acids Res., 39: D136-D140, Oxford University Press
+# 
+# 3. Pedro T. Monteiro, Nuno Mendes, Miguel C. Teixeira, Sofia d'Orey, Sandra Tenreiro, Nuno Mira, Hélio Pais, Alexandre P. Francisco, Alexandra M. Carvalho, Artur Lourenço and Isabel Sá-Correia, Arlindo L. Oliveira, Ana T. Freitas (2008)
+# YEASTRACT-DISCOVERER: new tools to improve the analysis of transcriptional regulatory associations in Saccharomyces cerevisiae
+# Nucl. Acids Res., 36: D132-D136, Oxford University Press
+# 
+# 4. Miguel C. Teixeira, Pedro Monteiro, Pooja Jain, Sandra Tenreiro, Alexandra R. Fernandes, Nuno P. Mira, Marta Alenquer, Ana T. Freitas, Arlindo L. Oliveira, and Isabel Sá-Correia (2006)
+# The YEASTRACT database: a tool for the analysis of transcription regulatory associations in Saccharomyces cerevisiae
+# Nucl. Acids Res., 34: D446-D451, Oxford University Press
+
 
 <urn:raw:yeastract#Yeast_id> <http://www.w3.org/2000/01/rdf-schema#label> "yeast_id" ;
 	<http://vocab.sindice.net/csv/columnPosition> "0"^^<http://www.w3.org/2001/XMLSchema#integer> .
