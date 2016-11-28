@@ -11,7 +11,7 @@ package org.eclipse.rdf4j.benchmark;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.inferencer.fc.FastRdfsForwardChainingSail;
+import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -110,7 +110,7 @@ public class ReasoningBenchmark {
     @BenchmarkMode(Mode.AverageTime)
     @OutputTimeUnit(TimeUnit.MILLISECONDS)
     public void fastRdfsForwardChainingSail() throws IOException {
-        SailRepository sail = new SailRepository(new FastRdfsForwardChainingSail(new MemoryStore()));
+        SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore()));
         sail.initialize();
 
         try (SailRepositoryConnection connection = sail.getConnection()) {
@@ -127,7 +127,7 @@ public class ReasoningBenchmark {
     @BenchmarkMode(Mode.AverageTime)
     @OutputTimeUnit(TimeUnit.MILLISECONDS)
     public void fastRdfsForwardChainingSailMultipleTransactions() throws IOException {
-        SailRepository sail = new SailRepository(new FastRdfsForwardChainingSail(new MemoryStore()));
+        SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore()));
         sail.initialize();
 
         try (SailRepositoryConnection connection = sail.getConnection()) {
@@ -145,7 +145,7 @@ public class ReasoningBenchmark {
     @BenchmarkMode(Mode.AverageTime)
     @OutputTimeUnit(TimeUnit.MILLISECONDS)
     public void fastRdfsForwardChainingSailSchema() throws IOException {
-        SailRepository sail = new SailRepository(new FastRdfsForwardChainingSail(new MemoryStore(), createSchema()));
+        SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore(), createSchema()));
         sail.initialize();
 
         try (SailRepositoryConnection connection = sail.getConnection()) {
@@ -159,7 +159,7 @@ public class ReasoningBenchmark {
     @BenchmarkMode(Mode.AverageTime)
     @OutputTimeUnit(TimeUnit.MILLISECONDS)
     public void fastRdfsForwardChainingSailMultipleTransactionsSchema() throws IOException {
-        SailRepository sail = new SailRepository(new FastRdfsForwardChainingSail(new MemoryStore(), createSchema()));
+        SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore(), createSchema()));
         sail.initialize();
 
         try (SailRepositoryConnection connection = sail.getConnection()) {

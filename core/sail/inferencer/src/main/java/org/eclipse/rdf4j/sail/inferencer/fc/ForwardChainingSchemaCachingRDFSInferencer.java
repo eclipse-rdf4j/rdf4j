@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -38,7 +37,7 @@ import java.util.stream.Collectors;
  * @author Håvard Mikkelsen Ottestad
  */
 
-public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferencer {
+public class ForwardChainingSchemaCachingRDFSInferencer extends AbstractForwardChainingInferencer {
 
     private NotifyingSail data;
     Repository schema;
@@ -74,7 +73,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
         calculatedDomain = new HashMap<>();
     }
 
-    void readLock(FastRdfsForwardChainingSailConnection connection) {
+    void readLock(ForwardChainingSchemaCachingRDFSInferencerConnection connection) {
 
 //        if (numberOfThreadsWaitingForWriteLock.get() > 0) {
 //            System.err.println("starve reads");
@@ -92,7 +91,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
     }
 
-    void releaseLock(FastRdfsForwardChainingSailConnection connection) {
+    void releaseLock(ForwardChainingSchemaCachingRDFSInferencerConnection connection) {
         if(connection.lockStamp == 0){
             throw new SailException("Expected connection to have lock. Might be a commit() without a begin().");
         }
@@ -105,7 +104,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
     private AtomicInteger numberOfThreadsWaitingForWriteLock = new AtomicInteger(0);
 
-    void upgradeLock(FastRdfsForwardChainingSailConnection connection) {
+    void upgradeLock(ForwardChainingSchemaCachingRDFSInferencerConnection connection) {
 
 //        System.err.println("Attempt writelock: "+connection.lockStamp);
 
@@ -155,7 +154,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
     }
 
 
-    public FastRdfsForwardChainingSail(NotifyingSail data) {
+    public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data) {
         super(data);
         schema = null;
         this.data = data;
@@ -163,7 +162,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
     }
 
 
-    public FastRdfsForwardChainingSail(NotifyingSail data, Repository schema) {
+    public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data, Repository schema) {
         super(data);
 
         this.data = data;
@@ -171,7 +170,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
     }
 
-    public FastRdfsForwardChainingSail(NotifyingSail data, boolean useAllRdfsRules) {
+    public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data, boolean useAllRdfsRules) {
         super(data);
         schema = null;
 
@@ -180,7 +179,7 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
     }
 
-    public FastRdfsForwardChainingSail(NotifyingSail data, Repository schema, boolean useAllRdfsRules) {
+    public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data, Repository schema, boolean useAllRdfsRules) {
         super(data);
 
         this.data = data;
@@ -198,11 +197,11 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
         }
 
 
-        FastRdfsForwardChainingSailConnection connection = null;
+        ForwardChainingSchemaCachingRDFSInferencerConnection connection = null;
 
         try {
             connection = getConnection();
-            final FastRdfsForwardChainingSailConnection finalConnection = connection;
+            final ForwardChainingSchemaCachingRDFSInferencerConnection finalConnection = connection;
             finalConnection.begin();
 
             finalConnection.addAxiomStatements();
@@ -248,9 +247,9 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
     }
 
 
-    public FastRdfsForwardChainingSailConnection getConnection() throws SailException {
+    public ForwardChainingSchemaCachingRDFSInferencerConnection getConnection() throws SailException {
         InferencerConnection e = (InferencerConnection) super.getConnection();
-        return new FastRdfsForwardChainingSailConnection(this, e);
+        return new ForwardChainingSchemaCachingRDFSInferencerConnection(this, e);
     }
 
     public ValueFactory getValueFactory() {
@@ -258,15 +257,15 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
         return SimpleValueFactory.getInstance();
     }
 
-    static public FastRdfsForwardChainingSail fastInstantiateFrom(FastRdfsForwardChainingSail baseSail, NotifyingSail store) {
+    static public ForwardChainingSchemaCachingRDFSInferencer fastInstantiateFrom(ForwardChainingSchemaCachingRDFSInferencer baseSail, NotifyingSail store) {
         return fastInstantiateFrom(baseSail, store, true);
     }
 
-    static public FastRdfsForwardChainingSail fastInstantiateFrom(FastRdfsForwardChainingSail baseSail, NotifyingSail store, boolean useAllRdfsRules) {
+    static public ForwardChainingSchemaCachingRDFSInferencer fastInstantiateFrom(ForwardChainingSchemaCachingRDFSInferencer baseSail, NotifyingSail store, boolean useAllRdfsRules) {
 
         baseSail.getConnection().close();
 
-        FastRdfsForwardChainingSail ret = new FastRdfsForwardChainingSail(store, baseSail.schema, useAllRdfsRules);
+        ForwardChainingSchemaCachingRDFSInferencer ret = new ForwardChainingSchemaCachingRDFSInferencer(store, baseSail.schema, useAllRdfsRules);
 
         ret.sharedSchema = true;
 
