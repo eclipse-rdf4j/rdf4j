@@ -57,9 +57,14 @@ public class SimpleLiteralTest {
 	public final void testHashCodeEquals()
 		throws Exception
 	{
-		// the base contract for hashCode is simply that it returns the same value for two objects for which equals() returns true. Note
-		// that the inverse does not hold: there is no absolute guarantee that hashCode will return different values for objects whose equals
-		// is _not_ true. Though of course we make a best effort to have a good hash distribution.
+		/*
+		 * The base contract for Object.hashCode is simply that it returns the same value for two objects for
+		 * which equals() returns true. Note that the inverse does not hold: there is no absolute guarantee
+		 * that hashCode will return different values for objects whose equals is _not_ true. Also note that
+		 * the Literal interface explicitly specifies that the hashCode method returns a value based on the
+		 * Literal's label only. Datatype and language tag are _not_ included in hashcode calculation. See
+		 * issue https://github.com/eclipse/rdf4j/issues/668.
+		 */
 
 		// plain literals 
 		SimpleLiteral lit1 = new SimpleLiteral("a");
@@ -88,20 +93,22 @@ public class SimpleLiteralTest {
 		SimpleLiteral lit1en = new SimpleLiteral("a", "en");
 		assertFalse(lit1.equals(lit1en));
 
-		// The below assertions are not guaranteed in the general case. However in these specific cases it means our hashCode
-		// implementation is too weak: these two literals should definitely be distinguished.
-		assertFalse("unexpected equal hashcode for unequal literals", lit1.hashCode() == lit1en.hashCode());
-
 		SimpleLiteral lit1dt = new SimpleLiteral("a", XMLSchema.DECIMAL);
-		assertFalse("unexpected equal hashcode for unequal literal", lit1.hashCode() == lit1dt.hashCode());
+		assertFalse(lit1.equals(lit1dt));
+
+		// language tags case sensitivity
+		SimpleLiteral lit7 = new SimpleLiteral("duck", "EN");
+		assertEquals(lit5, lit7);
+		assertEquals("hashCode() should return identical values for literals for which equals() is true",
+				lit5.hashCode(), lit7.hashCode());
 	}
-	
-	@Test 
+
+	@Test
 	public final void testStringLiteralEqualsHashCode() {
 		// in RDF 1.1, there is no distinction between plain and string-typed literals.
 		SimpleLiteral lit1 = new SimpleLiteral("a");
 		SimpleLiteral lit2 = new SimpleLiteral("a", XMLSchema.STRING);
-		
+
 		assertEquals(lit1, lit2);
 		assertEquals(lit1.hashCode(), lit2.hashCode());
 	}
