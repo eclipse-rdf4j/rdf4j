@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.model.util;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Date;
+import java.util.IllformedLocaleException;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
@@ -553,7 +554,8 @@ public class Literals {
 	public static boolean canCreateLiteral(Object object) {
 		if (object == null) {
 			// Cannot create a literal from a null
-			// Avoid throwing a NullPointerException here to enable universal usage
+			// Avoid throwing a NullPointerException here to enable universal
+			// usage
 			// of this method
 			return false;
 		}
@@ -578,6 +580,22 @@ public class Literals {
 	 */
 	public static boolean isLanguageLiteral(Literal literal) {
 		return Objects.requireNonNull(literal, "Literal cannot be null").getLanguage().isPresent();
+	}
+
+	/**
+	 * Normalises the given <a href="https://tools.ietf.org/html/bcp47">BCP47</a> language tag according to
+	 * the rules defined by the JDK in the {@link Locale} API.
+	 * 
+	 * @param languageTag
+	 *        An unnormalised, valid, language tag
+	 * @return A normalised version of the given language tag
+	 * @throws IllformedLocaleException
+	 *         If the given language tag is illformed according to the rules specified in BCP47.
+	 */
+	public static String normaliseBCP47Tag(String languageTag)
+		throws IllformedLocaleException
+	{
+		return new Locale.Builder().setLanguageTag(languageTag).build().toLanguageTag().intern();
 	}
 
 	protected Literals() {
