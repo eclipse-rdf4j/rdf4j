@@ -16,7 +16,7 @@ import org.junit.rules.TemporaryFolder;
 
 import java.io.IOException;
 
-public class NativeStoreInferencingTestFastRdfs extends InferencingTest {
+public class NativeStoreInferencingTestForwardChainingSchemaCachingRDFSInferencer extends InferencingTest {
 
 	@Rule
 	public TemporaryFolder tempDir = new TemporaryFolder();

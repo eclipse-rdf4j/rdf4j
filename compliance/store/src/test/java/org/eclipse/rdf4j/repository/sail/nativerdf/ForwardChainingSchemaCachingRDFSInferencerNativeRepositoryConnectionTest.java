@@ -18,11 +18,11 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import java.io.File;
 import java.io.IOException;
 
-public class FastRDFSchemaNativeRepositoryConnectionTest extends RDFSchemaRepositoryConnectionTest {
+public class ForwardChainingSchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends RDFSchemaRepositoryConnectionTest {
 
 	private File dataDir;
 
-	public FastRDFSchemaNativeRepositoryConnectionTest(IsolationLevel level) {
+	public ForwardChainingSchemaCachingRDFSInferencerNativeRepositoryConnectionTest(IsolationLevel level) {
 		super(level);
 	}
 
