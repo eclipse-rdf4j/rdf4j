@@ -48,11 +48,11 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
 
     boolean useAllRdfsRules = true;
 
-    List<Statement> subClassOfStatements = new ArrayList<>();
+    Set<Statement> subClassOfStatements = new HashSet<>();
     Set<Resource> properties = new HashSet<>();
-    List<Statement> subPropertyOfStatements = new ArrayList<>();
-    List<Statement> rangeStatements = new ArrayList<>();
-    List<Statement> domainStatements = new ArrayList<>();
+    Set<Statement> subPropertyOfStatements = new HashSet<>();
+    Set<Statement> rangeStatements = new HashSet<>();
+    Set<Statement> domainStatements = new HashSet<>();
 
 
     Map<Resource, Set<Resource>> calculatedTypes = new HashMap<>();
@@ -62,11 +62,11 @@ public class FastRdfsForwardChainingSail extends AbstractForwardChainingInferenc
     private boolean sharedSchema;
 
     void clearInferenceTables() {
-        subClassOfStatements = new ArrayList<>();
+        subClassOfStatements = new HashSet<>();
         properties = new HashSet<>();
-        subPropertyOfStatements = new ArrayList<>();
-        rangeStatements = new ArrayList<>();
-        domainStatements = new ArrayList<>();
+        subPropertyOfStatements = new HashSet<>();
+        rangeStatements = new HashSet<>();
+        domainStatements = new HashSet<>();
         calculatedTypes = new HashMap<>();
         calculatedProperties = new HashMap<>();
         calculatedRange = new HashMap<>();

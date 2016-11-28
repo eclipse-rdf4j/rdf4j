@@ -68,33 +68,39 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
 
         if (predicate.equals(RDFS.SUBCLASSOF)) {
             fastRdfsForwardChainingSail.upgradeLock(this);
-
             fastRdfsForwardChainingSail.subClassOfStatements.add(statement);
+
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDF.PROPERTY)) {
             fastRdfsForwardChainingSail.upgradeLock(this);
-
             fastRdfsForwardChainingSail.properties.add(statement.getSubject());
+
         } else if (predicate.equals(RDFS.SUBPROPERTYOF)) {
             fastRdfsForwardChainingSail.upgradeLock(this);
-
             fastRdfsForwardChainingSail.subPropertyOfStatements.add(statement);
+
         } else if (predicate.equals(RDFS.RANGE)) {
             fastRdfsForwardChainingSail.upgradeLock(this);
-
             fastRdfsForwardChainingSail.rangeStatements.add(statement);
+
         } else if (predicate.equals(RDFS.DOMAIN)) {
             fastRdfsForwardChainingSail.upgradeLock(this);
-
             fastRdfsForwardChainingSail.domainStatements.add(statement);
+
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CLASS)) {
             fastRdfsForwardChainingSail.upgradeLock(this);
             fastRdfsForwardChainingSail.subClassOfStatements.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE));
+
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.DATATYPE)) {
             fastRdfsForwardChainingSail.upgradeLock(this);
             fastRdfsForwardChainingSail.subClassOfStatements.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
+
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CONTAINERMEMBERSHIPPROPERTY)) {
             fastRdfsForwardChainingSail.upgradeLock(this);
             fastRdfsForwardChainingSail.subPropertyOfStatements.add(fastRdfsForwardChainingSail.getValueFactory().createStatement(subject, RDFS.SUBPROPERTYOF, RDFS.MEMBER));
+
+        }else if(predicate.equals(RDF.TYPE)){
+            fastRdfsForwardChainingSail.upgradeLock(this);
+            fastRdfsForwardChainingSail.subClassOfStatements.add(fastRdfsForwardChainingSail.getValueFactory().createStatement((Resource) object, RDFS.SUBCLASSOF,object));
         }
 
         if (!fastRdfsForwardChainingSail.properties.contains(predicate)) {
@@ -165,7 +171,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     }
 
 
-    private void calculateSubClassOf(List<Statement> subClassOfStatements) {
+    private void calculateSubClassOf(Set<Statement> subClassOfStatements) {
         subClassOfStatements.forEach(s -> {
             Resource subClass = s.getSubject();
             if (!fastRdfsForwardChainingSail.calculatedTypes.containsKey(subClass)) {
@@ -211,7 +217,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
     }
 
 
-    private void calculateSubPropertyOf(List<Statement> subPropertyOfStatemenets) {
+    private void calculateSubPropertyOf(Set<Statement> subPropertyOfStatemenets) {
 
         subPropertyOfStatemenets.forEach(s -> {
             Resource subClass = s.getSubject();
@@ -252,7 +258,7 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         }
     }
 
-    private void calculateRangeDomain(List<Statement> rangeOrDomainStatements, Map<Resource, Set<Resource>> calculatedRangeOrDomain) {
+    private void calculateRangeDomain(Set<Statement> rangeOrDomainStatements, Map<Resource, Set<Resource>> calculatedRangeOrDomain) {
 
         rangeOrDomainStatements.forEach(s -> {
             Resource predicate = s.getSubject();
@@ -563,6 +569,10 @@ public class FastRdfsForwardChainingSailConnection extends AbstractForwardChaini
         addStatement(true, subject, predicate, object, contexts);
     }
 
+    @Override
+    public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+        return super.addInferredStatement(subj, pred, obj, contexts);
+    }
 
     // actuallyAdd
     private void addStatement(boolean actuallyAdd, Resource subject, IRI predicate, Value object, Resource... resources) throws SailException {

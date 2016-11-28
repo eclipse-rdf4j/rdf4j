@@ -284,6 +284,13 @@ public abstract class InferencingTest {
 	}
 
 	@Test
+	public void testType006()
+		throws Exception
+	{
+		runTest(createSail(), "type", "test006", true);
+	}
+
+	@Test
 	public void testTypeError001()
 		throws Exception
 	{
@@ -296,6 +303,8 @@ public abstract class InferencingTest {
 	{
 		runTest(createSail(), "type", "error002", false);
 	}
+
+
 
 	/**
 	 * Gets an instance of the Sail that should be tested. The returned repository must not be initialized.
