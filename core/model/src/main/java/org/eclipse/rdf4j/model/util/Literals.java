@@ -583,16 +583,16 @@ public class Literals {
 	}
 
 	/**
-	 * Normalises the given <a href="https://tools.ietf.org/html/bcp47">BCP47</a> language tag according to
+	 * Normalizes the given <a href="https://tools.ietf.org/html/bcp47">BCP47</a> language tag according to
 	 * the rules defined by the JDK in the {@link Locale} API.
 	 * 
 	 * @param languageTag
-	 *        An unnormalised, valid, language tag
-	 * @return A normalised version of the given language tag
+	 *        An unnormalized, valid, language tag
+	 * @return A normalized version of the given language tag
 	 * @throws IllformedLocaleException
-	 *         If the given language tag is illformed according to the rules specified in BCP47.
+	 *         If the given language tag is ill-formed according to the rules specified in BCP47.
 	 */
-	public static String normaliseBCP47Tag(String languageTag)
+	public static String normalizeLanguageTag(String languageTag)
 		throws IllformedLocaleException
 	{
 		return new Locale.Builder().setLanguageTag(languageTag).build().toLanguageTag().intern();
