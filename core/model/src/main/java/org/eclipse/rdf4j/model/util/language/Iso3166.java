@@ -16,6 +16,8 @@ package org.eclipse.rdf4j.model.util.language;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.eclipse.rdf4j.model.util.Literals;
+
 /**
  * Country code names from ISO 3166.
  * <p>
@@ -24,7 +26,9 @@ import java.util.Map;
  * nabd/iso3166ma/codlstp1/db_en.html</a>
  * 
  * @author jjc
+ * @deprecated Use {@link Literals#normalizeLanguageTag(String) instead}
  */
+@Deprecated
 public class Iso3166 {
 
 	static final Map<String, Iso3166> all = new HashMap<String, Iso3166>();

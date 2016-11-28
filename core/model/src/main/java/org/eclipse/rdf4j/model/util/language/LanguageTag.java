@@ -17,11 +17,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import org.eclipse.rdf4j.model.util.Literals;
+
 /**
  * RFC 3066, "Tags for the Identification of Languages".
  * 
  * @author jjc
+ * 
+ * @deprecated Use {@link Literals#normalizeLanguageTag(String) instead}
  */
+@Deprecated
 public class LanguageTag implements LanguageTagCodes {
 
 	String subtags[];
