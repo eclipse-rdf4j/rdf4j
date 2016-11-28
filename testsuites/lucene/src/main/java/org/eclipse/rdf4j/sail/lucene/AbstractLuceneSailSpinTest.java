@@ -158,7 +158,7 @@ public abstract class AbstractLuceneSailSpinTest {
 		buffer.append("select * where {\n");
 		buffer.append(
 				"(\"Abf1\" <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + ">  (?pred ?score) . \n");
-		//buffer.append("  ?pred <urn:raw:yeastract#Yeast_id> ?id .\n");
+		buffer.append("  ?pred <urn:raw:yeastract#Yeast_id> ?id .\n");
 		buffer.append("}\n");
 		log.info("Request query: \n====================\n{}\n======================\n", buffer.toString());
 

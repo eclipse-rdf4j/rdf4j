@@ -12,6 +12,12 @@
             <level value="warn"/>
         </logger>
         
+
+        <logger name="org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailSpinTest">
+            <level value="warn"/>
+        </logger>
+
+        
 	<root>
 		<level value="warn" />
 		<appender-ref ref="STDOUT" />
