@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-public class FastRdfsForwardChainingSailBenchmark extends InitializationBenchmark {
+public class ForwardChainingSchemaCachingRDFSInferencerBenchmark extends InitializationBenchmark {
 
     @Override
     SailRepository getSail(SailRepository schema) {
