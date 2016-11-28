@@ -410,7 +410,9 @@ public class Literals {
 	 *        a fallback value for the locale
 	 * @return the Locale, or the fallback if a suitable Locale could not be constructed for the language tag.
 	 * @see <a href="http://www.ietf.org/rfc/rfc3066.txt">RFC 3066</a>
+	 * @deprecated Use {@link Literals#normalizeLanguageTag(String) instead}
 	 */
+	@Deprecated
 	public static Locale getLocale(Literal l, Locale fallback) {
 		Locale result = fallback;
 
