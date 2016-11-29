@@ -115,8 +115,11 @@ public abstract class InferencingTest {
 		boolean outputEntailed = Models.isSubset(expectedStatements, entailedStatements);
 
 		if (isPositiveTest && !outputEntailed) {
+			Collection<? extends Statement> difference = RepositoryUtil.difference(expectedStatements, entailedStatements);
+			difference.forEach(System.out::println);
+
 			File dumpFile = dumpStatements(name,
-					RepositoryUtil.difference(expectedStatements, entailedStatements));
+				difference);
 
 			fail("Incomplete entailment, difference between expected and entailed dumped to file "
 					+ dumpFile);
