@@ -111,7 +111,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Abstra
         }else if(predicate.equals(RDF.TYPE)){
             if(!forwardChainingSchemaCachingRDFSInferencer.types.contains(((Resource) object))){
                 forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
-                System.out.println(object);
                 forwardChainingSchemaCachingRDFSInferencer.types.add((Resource) object);
             }
 
