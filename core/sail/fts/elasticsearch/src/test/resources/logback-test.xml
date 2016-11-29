@@ -18,6 +18,10 @@
         </logger>
 
         
+        <logger name="org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailTupleFunctionTest">
+            <level value="warn"/>
+        </logger>
+        
 	<root>
 		<level value="warn" />
 		<appender-ref ref="STDOUT" />
