@@ -69,6 +69,8 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Abstra
         if (predicate.equals(RDFS.SUBCLASSOF)) {
             forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
             forwardChainingSchemaCachingRDFSInferencer.subClassOfStatements.add(statement);
+            forwardChainingSchemaCachingRDFSInferencer.types.add((Resource) object);
+            forwardChainingSchemaCachingRDFSInferencer.types.add(subject);
 
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDF.PROPERTY)) {
             forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
@@ -77,18 +79,25 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Abstra
         } else if (predicate.equals(RDFS.SUBPROPERTYOF)) {
             forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
             forwardChainingSchemaCachingRDFSInferencer.subPropertyOfStatements.add(statement);
+            forwardChainingSchemaCachingRDFSInferencer.properties.add(subject);
+            forwardChainingSchemaCachingRDFSInferencer.properties.add((Resource) object);
 
         } else if (predicate.equals(RDFS.RANGE)) {
             forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
             forwardChainingSchemaCachingRDFSInferencer.rangeStatements.add(statement);
+            forwardChainingSchemaCachingRDFSInferencer.properties.add(subject);
+            forwardChainingSchemaCachingRDFSInferencer.types.add((Resource) object);
 
         } else if (predicate.equals(RDFS.DOMAIN)) {
             forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
             forwardChainingSchemaCachingRDFSInferencer.domainStatements.add(statement);
+            forwardChainingSchemaCachingRDFSInferencer.properties.add(subject);
+            forwardChainingSchemaCachingRDFSInferencer.types.add((Resource) object);
 
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CLASS)) {
             forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
             forwardChainingSchemaCachingRDFSInferencer.subClassOfStatements.add(forwardChainingSchemaCachingRDFSInferencer.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE));
+            forwardChainingSchemaCachingRDFSInferencer.types.add(subject);
 
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.DATATYPE)) {
             forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
@@ -97,10 +106,15 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Abstra
         } else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CONTAINERMEMBERSHIPPROPERTY)) {
             forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
             forwardChainingSchemaCachingRDFSInferencer.subPropertyOfStatements.add(forwardChainingSchemaCachingRDFSInferencer.getValueFactory().createStatement(subject, RDFS.SUBPROPERTYOF, RDFS.MEMBER));
+            forwardChainingSchemaCachingRDFSInferencer.properties.add(subject);
 
         }else if(predicate.equals(RDF.TYPE)){
-            forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
-            forwardChainingSchemaCachingRDFSInferencer.subClassOfStatements.add(forwardChainingSchemaCachingRDFSInferencer.getValueFactory().createStatement((Resource) object, RDFS.SUBCLASSOF,object));
+            if(!forwardChainingSchemaCachingRDFSInferencer.types.contains(((Resource) object))){
+                forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
+                System.out.println(object);
+                forwardChainingSchemaCachingRDFSInferencer.types.add((Resource) object);
+            }
+
         }
 
         if (!forwardChainingSchemaCachingRDFSInferencer.properties.contains(predicate)) {
@@ -171,7 +185,17 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Abstra
     }
 
 
-    private void calculateSubClassOf(Set<Statement> subClassOfStatements) {
+    private void calculateSubClassOf(Collection<Statement> subClassOfStatements) {
+        forwardChainingSchemaCachingRDFSInferencer.types.forEach(type -> {
+            if (!forwardChainingSchemaCachingRDFSInferencer.calculatedTypes.containsKey(type)) {
+                forwardChainingSchemaCachingRDFSInferencer.calculatedTypes.put(type, new HashSet<>());
+            }
+
+            forwardChainingSchemaCachingRDFSInferencer.calculatedTypes.get(type).add(type);
+
+        });
+
+
         subClassOfStatements.forEach(s -> {
             Resource subClass = s.getSubject();
             if (!forwardChainingSchemaCachingRDFSInferencer.calculatedTypes.containsKey(subClass)) {
@@ -209,7 +233,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Abstra
         }
     }
 
-    private void findProperties(Set<Resource> predicates) {
+    private void findProperties(Collection<Resource> predicates) {
         predicates.forEach(predicate -> {
             addInferredStatement(predicate, RDF.TYPE, RDF.PROPERTY);
             forwardChainingSchemaCachingRDFSInferencer.calculatedProperties.put(predicate, new HashSet<>());
@@ -217,7 +241,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Abstra
     }
 
 
-    private void calculateSubPropertyOf(Set<Statement> subPropertyOfStatemenets) {
+    private void calculateSubPropertyOf(Collection<Statement> subPropertyOfStatemenets) {
 
         subPropertyOfStatemenets.forEach(s -> {
             Resource subClass = s.getSubject();
@@ -258,7 +282,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Abstra
         }
     }
 
-    private void calculateRangeDomain(Set<Statement> rangeOrDomainStatements, Map<Resource, Set<Resource>> calculatedRangeOrDomain) {
+    private void calculateRangeDomain(Collection<Statement> rangeOrDomainStatements, Map<Resource, Set<Resource>> calculatedRangeOrDomain) {
 
         rangeOrDomainStatements.forEach(s -> {
             Resource predicate = s.getSubject();
@@ -357,13 +381,12 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Abstra
     }
 
     private long getTboxCount() {
-        long count;
-        count = forwardChainingSchemaCachingRDFSInferencer.subClassOfStatements.size();
-        count += forwardChainingSchemaCachingRDFSInferencer.properties.size();
-        count += forwardChainingSchemaCachingRDFSInferencer.subPropertyOfStatements.size();
-        count += forwardChainingSchemaCachingRDFSInferencer.rangeStatements.size();
-        count += forwardChainingSchemaCachingRDFSInferencer.domainStatements.size();
-        return count;
+        return forwardChainingSchemaCachingRDFSInferencer.subClassOfStatements.size()
+        + forwardChainingSchemaCachingRDFSInferencer.properties.size()
+        + forwardChainingSchemaCachingRDFSInferencer.subPropertyOfStatements.size()
+        + forwardChainingSchemaCachingRDFSInferencer.rangeStatements.size()
+        + forwardChainingSchemaCachingRDFSInferencer.domainStatements.size()
+        + forwardChainingSchemaCachingRDFSInferencer.types.size();
     }
 
     @Override

@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -39,34 +40,41 @@ import java.util.stream.Collectors;
 
 public class ForwardChainingSchemaCachingRDFSInferencer extends AbstractForwardChainingInferencer {
 
-    private NotifyingSail data;
+    // The schema, or null
     Repository schema;
 
     private static final Random random = new Random();
 
     private StampedLock readWriteLock = new StampedLock();
 
+    // If false, the inferencer will skip some RDFS rules.
     boolean useAllRdfsRules = true;
 
-    Set<Statement> subClassOfStatements = new HashSet<>();
-    Set<Resource> properties = new HashSet<>();
-    Set<Statement> subPropertyOfStatements = new HashSet<>();
-    Set<Statement> rangeStatements = new HashSet<>();
-    Set<Statement> domainStatements = new HashSet<>();
+    // Tbox cache
+    Collection<Resource> properties = new HashSet<>();
+    Collection<Resource> types = new HashSet<>();
+    Collection<Statement> subClassOfStatements = new ArrayList<>();
+    Collection<Statement> subPropertyOfStatements = new ArrayList<>();
+    Collection<Statement> rangeStatements = new ArrayList<>();
+    Collection<Statement> domainStatements = new ArrayList<>();
 
-
+    // Forward chained Tbox cache as lookup tables
     Map<Resource, Set<Resource>> calculatedTypes = new HashMap<>();
     Map<Resource, Set<Resource>> calculatedProperties = new HashMap<>();
     Map<Resource, Set<Resource>> calculatedRange = new HashMap<>();
     Map<Resource, Set<Resource>> calculatedDomain = new HashMap<>();
+
+    // The inferencer has been instantiated from another inferencer and shares it's schema with that one
     private boolean sharedSchema;
 
     void clearInferenceTables() {
-        subClassOfStatements = new HashSet<>();
         properties = new HashSet<>();
-        subPropertyOfStatements = new HashSet<>();
-        rangeStatements = new HashSet<>();
-        domainStatements = new HashSet<>();
+        types = new HashSet<>();
+        subClassOfStatements = new ArrayList<>();
+        subPropertyOfStatements = new ArrayList<>();
+        rangeStatements = new ArrayList<>();
+        domainStatements = new ArrayList<>();
+
         calculatedTypes = new HashMap<>();
         calculatedProperties = new HashMap<>();
         calculatedRange = new HashMap<>();
@@ -157,7 +165,6 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends AbstractForwardC
     public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data) {
         super(data);
         schema = null;
-        this.data = data;
 
     }
 
@@ -165,7 +172,6 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends AbstractForwardC
     public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data, Repository schema) {
         super(data);
 
-        this.data = data;
         this.schema = schema;
 
     }
@@ -174,7 +180,6 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends AbstractForwardC
         super(data);
         schema = null;
 
-        this.data = data;
         this.useAllRdfsRules = useAllRdfsRules;
 
     }
@@ -182,7 +187,6 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends AbstractForwardC
     public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data, Repository schema, boolean useAllRdfsRules) {
         super(data);
 
-        this.data = data;
         this.schema = schema;
         this.useAllRdfsRules = useAllRdfsRules;
 
