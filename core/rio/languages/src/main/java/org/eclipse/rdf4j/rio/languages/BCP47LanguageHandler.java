@@ -14,6 +14,7 @@ import java.util.Objects;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.LiteralUtilException;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.rio.LanguageHandler;
 
 /**
@@ -38,7 +39,7 @@ public class BCP47LanguageHandler implements LanguageHandler {
 		Objects.requireNonNull(languageTag, "Language tag cannot be null");
 
 		try {
-			parseAsBCP47(languageTag);
+			Literals.normalizeLanguageTag(languageTag);
 		}
 		catch (IllformedLocaleException e) {
 			return false;
@@ -70,9 +71,7 @@ public class BCP47LanguageHandler implements LanguageHandler {
 		Objects.requireNonNull(literalValue, "Literal value cannot be null");
 
 		try {
-			Locale asBCP47 = parseAsBCP47(languageTag);
-			
-			return valueFactory.createLiteral(literalValue, asBCP47.toLanguageTag().intern());
+			return valueFactory.createLiteral(literalValue, Literals.normalizeLanguageTag(languageTag));
 		}
 		catch (IllformedLocaleException e) {
 			throw new LiteralUtilException("Could not normalize BCP47 language tag", e);
@@ -83,11 +82,4 @@ public class BCP47LanguageHandler implements LanguageHandler {
 	public String getKey() {
 		return LanguageHandler.BCP47;
 	}
-
-	private Locale parseAsBCP47(String languageTag)
-		throws IllformedLocaleException
-	{
-		return new Locale.Builder().setLanguageTag(languageTag).build();
-	}
-
 }

@@ -13,11 +13,15 @@
 
 package org.eclipse.rdf4j.model.util.language;
 
+import org.eclipse.rdf4j.model.util.Literals;
+
 /**
  * A LanguageTag did not conform to RFC3066. This exception is for the syntactic rules of RFC3066 section 2.1.
  * 
  * @author jjc
+ * @deprecated Use {@link Literals#normalizeLanguageTag(String) instead}
  */
+@Deprecated
 public class LanguageTagSyntaxException extends java.lang.Exception {
 
 	/**
