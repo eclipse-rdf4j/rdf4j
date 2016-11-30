@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.BindingSetTest;
 public class ListBindingSetTest extends BindingSetTest<ListBindingSet> {
 
 	@Override
-	protected ListBindingSet[] createEqualBindingSets() {
+	protected ListBindingSet[] createTwoEqualReorderedBindingSets() {
 
 		List<String> names1 = Arrays.asList(new String[] { "x", "y", "z" });
 		List<String> names2 = Arrays.asList(new String[] { "y", "z", "x" });

@@ -25,7 +25,7 @@ public abstract class BindingSetTest<T extends BindingSet> {
 	@Test
 	public void testEqualsHashcode() {
 
-		T[] bindingSets = createEqualBindingSets();
+		T[] bindingSets = createTwoEqualReorderedBindingSets();
 
 		T bs1 = bindingSets[0];
 		T bs2 = bindingSets[1];
@@ -40,5 +40,5 @@ public abstract class BindingSetTest<T extends BindingSet> {
 	 * 
 	 * @return an array of two equal but differently ordered BindingSets.
 	 */
-	protected abstract T[] createEqualBindingSets();
+	protected abstract T[] createTwoEqualReorderedBindingSets();
 }

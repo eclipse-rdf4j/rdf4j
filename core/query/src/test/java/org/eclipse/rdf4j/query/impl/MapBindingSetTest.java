@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.BindingSetTest;
 public class MapBindingSetTest extends BindingSetTest<MapBindingSet> {
 
 	@Override
-	protected MapBindingSet[] createEqualBindingSets() {
+	protected MapBindingSet[] createTwoEqualReorderedBindingSets() {
 
 		MapBindingSet bindingSet1 = new MapBindingSet();
 		MapBindingSet bindingSet2 = new MapBindingSet();
