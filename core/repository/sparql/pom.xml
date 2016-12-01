@@ -42,6 +42,11 @@ The SPARQL Repository provides a RDF4J Repository interface to any SPARQL end-po
 			<artifactId>rdf4j-queryresultio-sparqlxml</artifactId>
 			<version>${project.version}</version>
 		</dependency>
+		<dependency>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 	
 </project>
