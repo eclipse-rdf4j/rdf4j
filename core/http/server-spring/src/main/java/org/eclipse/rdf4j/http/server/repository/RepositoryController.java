@@ -148,14 +148,6 @@ public class RepositoryController extends AbstractController {
 			}
 
 			try {
-				//				// we need to forcibly close the default repository connection
-				//				// opened for this repository by
-				//				// the interceptor.
-				//				RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-				//				synchronized (repositoryCon) {
-				//					repositoryCon.close();
-				//				}
-
 				boolean success = repositoryManager.removeRepository(repId);
 				if (success) {
 					logger.info("DELETE request successfully completed");
@@ -274,6 +266,7 @@ public class RepositoryController extends AbstractController {
 				return new ModelAndView(view, model);
 			}
 			catch (Exception e) {
+				// only close the connection when an exception occurs. Otherwise, the QueryResultView will take care of closing it.
 				repositoryCon.close();
 				throw e;
 			}
