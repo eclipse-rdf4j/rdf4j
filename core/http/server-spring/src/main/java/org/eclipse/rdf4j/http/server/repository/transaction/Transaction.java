@@ -17,6 +17,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.IsolationLevel;
@@ -46,6 +47,8 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A transaction encapsulates a single {@link Thread} and a {@link RepositoryConnection}, to enable executing
@@ -57,6 +60,8 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
  */
 class Transaction {
 
+	private static final Logger logger = LoggerFactory.getLogger(Transaction.class);
+	
 	private final AtomicBoolean isClosed = new AtomicBoolean(false);
 
 	private final UUID id;
@@ -65,7 +70,19 @@ class Transaction {
 
 	private final RepositoryConnection txnConnection;
 
-	private final ExecutorService executor = Executors.newSingleThreadExecutor();
+	private final ExecutorService executor = Executors.newSingleThreadExecutor(new ThreadFactory() {
+		
+		int count = 0;
+		
+		@Override
+		public Thread newThread(Runnable r) {
+			count++;
+			if (count > 1) {
+				logger.warn("creating more than one thread for SingleThreadExecutor. Txn: {}", id);
+			}
+			return new Thread(r, "txn-" + id);
+		}
+	});
 
 	private final List<Future<?>> futures = new ArrayList<>();
 
@@ -315,6 +332,7 @@ class Transaction {
 		Future<Boolean> result;
 		synchronized (futures) {
 			result = executor.submit(() -> {
+				logger.debug("executing add operation");
 				try {
 					if (preserveBNodes) {
 						// create a reconfigured parser + inserter instead of relying on standard
@@ -356,6 +374,7 @@ class Transaction {
 		Future<Boolean> result;
 		synchronized (futures) {
 			result = executor.submit(() -> {
+				logger.debug("executing delete operation");
 				RDFParser parser = Rio.createParser(contentType, txnConnection.getValueFactory());
 
 				parser.setRDFHandler(new WildcardRDFRemover(txnConnection));
@@ -365,6 +384,7 @@ class Transaction {
 					return true;
 				}
 				catch (IOException e) {
+					logger.error("error during txn delete operation", e);
 					throw new RuntimeException(e);
 				}
 			});

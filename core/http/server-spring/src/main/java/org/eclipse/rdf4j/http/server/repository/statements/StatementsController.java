@@ -28,6 +28,7 @@ import java.io.InputStream;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -96,7 +97,7 @@ public class StatementsController extends AbstractController {
 		ModelAndView result;
 
 		Repository repository = RepositoryInterceptor.getRepository(request);
-
+		
 		String reqMethod = request.getMethod();
 
 		if (METHOD_GET.equals(reqMethod)) {
@@ -249,38 +250,35 @@ public class StatementsController extends AbstractController {
 		}
 
 		final int maxQueryTime = ProtocolUtil.parseTimeoutParam(request);
-		try {
-			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-			synchronized (repositoryCon) {
-				Update update = repositoryCon.prepareUpdate(queryLn, sparqlUpdateString, baseURI);
+		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
+			Update update = repositoryCon.prepareUpdate(queryLn, sparqlUpdateString, baseURI);
 
-				update.setIncludeInferred(includeInferred);
-				update.setMaxExecutionTime(maxQueryTime);
+			update.setIncludeInferred(includeInferred);
+			update.setMaxExecutionTime(maxQueryTime);
 
-				if (dataset != null) {
-					update.setDataset(dataset);
-				}
-
-				// determine if any variable bindings have been set on this
-				// update.
-				@SuppressWarnings("unchecked")
-				Enumeration<String> parameterNames = request.getParameterNames();
-
-				while (parameterNames.hasMoreElements()) {
-					String parameterName = parameterNames.nextElement();
-
-					if (parameterName.startsWith(BINDING_PREFIX)
-							&& parameterName.length() > BINDING_PREFIX.length())
-					{
-						String bindingName = parameterName.substring(BINDING_PREFIX.length());
-						Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,
-								repository.getValueFactory());
-						update.setBinding(bindingName, bindingValue);
-					}
-				}
-
-				update.execute();
+			if (dataset != null) {
+				update.setDataset(dataset);
 			}
+
+			// determine if any variable bindings have been set on this
+			// update.
+			@SuppressWarnings("unchecked")
+			Enumeration<String> parameterNames = request.getParameterNames();
+
+			while (parameterNames.hasMoreElements()) {
+				String parameterName = parameterNames.nextElement();
+
+				if (parameterName.startsWith(BINDING_PREFIX)
+						&& parameterName.length() > BINDING_PREFIX.length())
+				{
+					String bindingName = parameterName.substring(BINDING_PREFIX.length());
+					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,
+							repository.getValueFactory());
+					update.setBinding(bindingName, bindingValue);
+				}
+			}
+
+			update.execute();
 
 			return new ModelAndView(EmptySuccessView.getInstance());
 		}
@@ -362,22 +360,19 @@ public class StatementsController extends AbstractController {
 		throws IOException, ClientHTTPException, ServerHTTPException, HTTPException
 	{
 		InputStream in = request.getInputStream();
-		try {
+		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			logger.debug("Processing transaction...");
 
 			TransactionReader reader = new TransactionReader();
 			Iterable<? extends TransactionOperation> txn = reader.parse(in);
 
-			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-			synchronized (repositoryCon) {
-				repositoryCon.begin();
+			repositoryCon.begin();
 
-				for (TransactionOperation op : txn) {
-					op.execute(repositoryCon);
-				}
-
-				repositoryCon.commit();
+			for (TransactionOperation op : txn) {
+				op.execute(repositoryCon);
 			}
+
+			repositoryCon.commit();
 			logger.debug("Transaction processed ");
 
 			return new ModelAndView(EmptySuccessView.getInstance());
@@ -433,24 +428,19 @@ public class StatementsController extends AbstractController {
 		}
 
 		InputStream in = request.getInputStream();
-		try {
-			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-			synchronized (repositoryCon) {
-				if (!repositoryCon.isActive()) {
-					repositoryCon.begin();
-				}
+		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
+			repositoryCon.begin();
 
-				if (preserveNodeIds) {
-					repositoryCon.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-				}
-
-				if (replaceCurrent) {
-					repositoryCon.clear(contexts);
-				}
-				repositoryCon.add(in, baseURI.toString(), rdfFormat, contexts);
-
-				repositoryCon.commit();
+			if (preserveNodeIds) {
+				repositoryCon.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 			}
+
+			if (replaceCurrent) {
+				repositoryCon.clear(contexts);
+			}
+			repositoryCon.add(in, baseURI.toString(), rdfFormat, contexts);
+
+			repositoryCon.commit();
 
 			return new ModelAndView(EmptySuccessView.getInstance());
 		}
@@ -494,11 +484,8 @@ public class StatementsController extends AbstractController {
 		Value obj = ProtocolUtil.parseValueParam(request, OBJECT_PARAM_NAME, vf);
 		Resource[] contexts = ProtocolUtil.parseContextParam(request, CONTEXT_PARAM_NAME, vf);
 
-		try {
-			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-			synchronized (repositoryCon) {
-				repositoryCon.remove(subj, pred, obj, contexts);
-			}
+		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
+			repositoryCon.remove(subj, pred, obj, contexts);
 
 			return new ModelAndView(EmptySuccessView.getInstance());
 		}

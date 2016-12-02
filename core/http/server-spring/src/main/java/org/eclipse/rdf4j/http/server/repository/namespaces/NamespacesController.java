@@ -87,8 +87,9 @@ public class NamespacesController extends AbstractController {
 			List<String> columnNames = Arrays.asList("prefix", "namespace");
 			List<BindingSet> namespaces = new ArrayList<BindingSet>();
 
-			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-			synchronized (repositoryCon) {
+			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(
+					request))
+			{
 				final ValueFactory vf = repositoryCon.getValueFactory();
 				try {
 					CloseableIteration<? extends Namespace, RepositoryException> iter = repositoryCon.getNamespaces();
@@ -126,19 +127,19 @@ public class NamespacesController extends AbstractController {
 		return new ModelAndView(TupleQueryResultView.getInstance(), model);
 	}
 
+
 	private ModelAndView getClearNamespacesResult(HttpServletRequest request, HttpServletResponse response)
 		throws ServerHTTPException
 	{
-		RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-		synchronized (repositoryCon) {
+		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			try {
 				repositoryCon.clearNamespaces();
 			}
 			catch (RepositoryException e) {
 				throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 			}
-		}
 
-		return new ModelAndView(EmptySuccessView.getInstance());
+			return new ModelAndView(EmptySuccessView.getInstance());
+		}
 	}
 }

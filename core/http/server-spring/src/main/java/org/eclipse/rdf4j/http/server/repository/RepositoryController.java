@@ -148,13 +148,13 @@ public class RepositoryController extends AbstractController {
 			}
 
 			try {
-				// we need to forcibly close the default repository connection
-				// opened for this repository by
-				// the interceptor.
-				RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-				synchronized (repositoryCon) {
-					repositoryCon.close();
-				}
+				//				// we need to forcibly close the default repository connection
+				//				// opened for this repository by
+				//				// the interceptor.
+				//				RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
+				//				synchronized (repositoryCon) {
+				//					repositoryCon.close();
+				//				}
 
 				boolean success = repositoryManager.removeRepository(repId);
 				if (success) {
@@ -196,7 +196,7 @@ public class RepositoryController extends AbstractController {
 
 		if (queryStr != null) {
 			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-			synchronized (repositoryCon) {
+			try {
 				Query query = getQuery(repository, repositoryCon, queryStr, request, response);
 
 				View view;
@@ -269,8 +269,13 @@ public class RepositoryController extends AbstractController {
 				model.put(QueryResultView.QUERY_RESULT_KEY, queryResult);
 				model.put(QueryResultView.FACTORY_KEY, factory);
 				model.put(QueryResultView.HEADERS_ONLY, headersOnly);
+				model.put(QueryResultView.CONNECTION_KEY, repositoryCon);
 
 				return new ModelAndView(view, model);
+			}
+			catch (Exception e) {
+				repositoryCon.close();
+				throw e;
 			}
 		}
 		else {
