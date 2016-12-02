@@ -17,7 +17,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.IsolationLevel;
@@ -61,7 +60,7 @@ import org.slf4j.LoggerFactory;
 class Transaction {
 
 	private static final Logger logger = LoggerFactory.getLogger(Transaction.class);
-	
+
 	private final AtomicBoolean isClosed = new AtomicBoolean(false);
 
 	private final UUID id;
@@ -70,19 +69,7 @@ class Transaction {
 
 	private final RepositoryConnection txnConnection;
 
-	private final ExecutorService executor = Executors.newSingleThreadExecutor(new ThreadFactory() {
-		
-		int count = 0;
-		
-		@Override
-		public Thread newThread(Runnable r) {
-			count++;
-			if (count > 1) {
-				logger.warn("creating more than one thread for SingleThreadExecutor. Txn: {}", id);
-			}
-			return new Thread(r, "txn-" + id);
-		}
-	});
+	private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
 	private final List<Future<?>> futures = new ArrayList<>();
 

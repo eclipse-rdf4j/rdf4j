@@ -55,8 +55,6 @@ public class RepositoryInterceptor extends ServerInterceptor {
 
 	private volatile String repositoryID;
 
-	//	private volatile RepositoryConnection repositoryCon;
-
 	/*---------*
 	 * Methods *
 	 *---------*/
