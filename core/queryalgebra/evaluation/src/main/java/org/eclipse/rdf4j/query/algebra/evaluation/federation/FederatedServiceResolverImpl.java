@@ -33,20 +33,35 @@ public class FederatedServiceResolverImpl extends AbstractFederatedServiceResolv
 	}
 
 	/** independent life cycle */
-	private SesameClient client;
+	private volatile SesameClient client;
 
 	/** dependent life cycle */
-	private SesameClientImpl dependentClient;
+	private volatile SesameClientImpl dependentClient;
 
-	public synchronized SesameClient getSesameClient() {
-		if (client == null) {
-			client = dependentClient = new SesameClientImpl();
+	public SesameClient getSesameClient() {
+		SesameClient result = client;
+		if (result == null) {
+			synchronized (this) {
+				result = client;
+				if (result == null) {
+					result = client = dependentClient = new SesameClientImpl();
+				}
+			}
 		}
-		return client;
+		return result;
 	}
 
-	public synchronized void setSesameClient(SesameClient client) {
-		this.client = client;
+	public void setSesameClient(SesameClient client) {
+		synchronized (this) {
+			this.client = client;
+			// If they set a client, we need to check whether we need to
+			// shutdown any existing dependentClient
+			SesameClientImpl toCloseDependentClient = dependentClient;
+			dependentClient = null;
+			if (toCloseDependentClient != null) {
+				toCloseDependentClient.shutDown();
+			}
+		}
 	}
 
 	public HttpClient getHttpClient() {
@@ -54,10 +69,17 @@ public class FederatedServiceResolverImpl extends AbstractFederatedServiceResolv
 	}
 
 	public void setHttpClient(HttpClient httpClient) {
-		if (dependentClient == null) {
-			client = dependentClient = new SesameClientImpl();
+		SesameClientImpl toSetDependentClient = dependentClient;
+		if (toSetDependentClient == null) {
+			getSesameClient();
+			toSetDependentClient = dependentClient;
 		}
-		dependentClient.setHttpClient(httpClient);
+		// The strange lifecycle results in the possibility that the
+		// dependentClient will be null due to a call to setSesameClient, so add
+		// a null guard here for that possibility
+		if (toSetDependentClient != null) {
+			toSetDependentClient.setHttpClient(httpClient);
+		}
 	}
 
 	@Override

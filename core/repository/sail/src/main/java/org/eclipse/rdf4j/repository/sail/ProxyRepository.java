@@ -40,12 +40,12 @@ public class ProxyRepository extends AbstractRepository implements RepositoryRes
 
 	private File dataDir;
 
-	private Repository proxiedRepository;
+	private volatile Repository proxiedRepository;
 
 	private String proxiedID;
 
 	/** independent life cycle */
-	private RepositoryResolver resolver;
+	private volatile RepositoryResolver resolver;
 
 	public ProxyRepository() {
 		super();
@@ -96,17 +96,23 @@ public class ProxyRepository extends AbstractRepository implements RepositoryRes
 	}
 
 	private Repository getProxiedRepository() {
-		if (null == proxiedRepository) {
-			assert null != resolver : "Expected resolver to be set.";
-			assert null != proxiedID : "Expected proxiedID to be set.";
-			try {
-				proxiedRepository = resolver.getRepository(proxiedID);
-			}
-			catch (RDF4JException ore) {
-				throw new IllegalStateException(ore);
+		Repository result = proxiedRepository;
+		if (result == null) {
+			synchronized (this) {
+				result = proxiedRepository;
+				if (result == null) {
+					assert null != resolver : "Expected resolver to be set.";
+					assert null != proxiedID : "Expected proxiedID to be set.";
+					try {
+						result = proxiedRepository = resolver.getRepository(proxiedID);
+					}
+					catch (RDF4JException ore) {
+						throw new IllegalStateException(ore);
+					}
+				}
 			}
 		}
-		return proxiedRepository;
+		return result;
 	}
 
 	@Override

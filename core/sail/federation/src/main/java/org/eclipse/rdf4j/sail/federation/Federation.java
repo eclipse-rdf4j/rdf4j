@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.federation;
 
 import java.io.File;
+import java.lang.reflect.UndeclaredThrowableException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -18,10 +19,12 @@ import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.SesameClient;
 import org.eclipse.rdf4j.http.client.SesameClientDependent;
@@ -46,6 +49,8 @@ import org.eclipse.rdf4j.sail.federation.evaluation.FederationStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
 /**
  * Union multiple (possibly remote) Repositories into a single RDF store.
  * 
@@ -62,7 +67,8 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 
 	private final Map<Repository, RepositoryBloomFilter> bloomFilters = new HashMap<>();
 
-	private final ExecutorService executor = Executors.newCachedThreadPool();
+	private final ExecutorService executor = Executors.newCachedThreadPool(
+			new ThreadFactoryBuilder().setNameFormat("rdf4j-federation-%d").build());
 
 	private PrefixHashSet localPropertySpace; // NOPMD
 
@@ -73,23 +79,27 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	private File dataDir;
 
 	/** independent life cycle */
-	private FederatedServiceResolver serviceResolver;
+	private volatile FederatedServiceResolver serviceResolver;
 
 	/** dependent life cycle */
-	private FederatedServiceResolverImpl dependentServiceResolver;
+	private volatile FederatedServiceResolverImpl dependentServiceResolver;
 
+	@Override
 	public File getDataDir() {
 		return dataDir;
 	}
 
+	@Override
 	public void setDataDir(File dataDir) {
 		this.dataDir = dataDir;
 	}
 
+	@Override
 	public ValueFactory getValueFactory() {
 		return SimpleValueFactory.getInstance();
 	}
 
+	@Override
 	public boolean isWritable()
 		throws SailException
 	{
@@ -182,6 +192,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	 * @param reslover
 	 *        The SERVICE resolver to set.
 	 */
+	@Override
 	public synchronized void setFederatedServiceResolver(FederatedServiceResolver resolver) {
 		this.serviceResolver = resolver;
 		for (Repository member : members) {
@@ -258,49 +269,84 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 		}
 	}
 
+	@Override
 	public void shutDown()
 		throws SailException
 	{
-		for (Repository member : members) {
-			try {
-				member.shutDown();
-			}
-			catch (RepositoryException e) {
-				throw new SailException(e);
+		List<SailException> toThrowExceptions = new ArrayList<>();
+		try {
+			for (Repository member : members) {
+				try {
+					member.shutDown();
+				}
+				catch (SailException e) {
+					toThrowExceptions.add(e);
+				}
+				catch (RDF4JException e) {
+					toThrowExceptions.add(new SailException(e));
+				}
 			}
 		}
-		executor.shutdown();
-		if (dependentServiceResolver != null) {
-			dependentServiceResolver.shutDown();
+		finally {
+			try {
+				FederatedServiceResolverImpl toCloseServiceResolver = dependentServiceResolver;
+				dependentServiceResolver = null;
+				if (toCloseServiceResolver != null) {
+					toCloseServiceResolver.shutDown();
+				}
+			}
+			finally {
+				try {
+					executor.shutdown();
+					executor.awaitTermination(10, TimeUnit.SECONDS);
+				}
+				catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+				finally {
+					if (!executor.isShutdown()) {
+						executor.shutdownNow();
+					}
+				}
+			}
+		}
+		if (!toThrowExceptions.isEmpty()) {
+			throw toThrowExceptions.get(0);
 		}
 	}
 
 	/**
 	 * Required by {@link java.util.concurrent.Executor Executor} interface.
 	 */
+	@Override
 	public void execute(Runnable command) {
 		executor.execute(command);
 	}
 
+	@Override
 	public SailConnection getConnection()
 		throws SailException
 	{
 		List<RepositoryConnection> connections = new ArrayList<RepositoryConnection>(members.size());
+		boolean allGood = false;
 		try {
 			for (Repository member : members) {
 				connections.add(member.getConnection());
 			}
-			return readOnly ? new ReadOnlyConnection(this, connections)
+			SailConnection result = readOnly ? new ReadOnlyConnection(this, connections)
 					: new WritableConnection(this, connections);
+			allGood = true;
+			return result;
 		}
 		catch (RepositoryException e) {
-			closeAll(connections);
 			throw new SailException(e);
 		}
-		catch (RuntimeException e) {
-			closeAll(connections);
-			throw e;
+		finally {
+			if (!allGood) {
+				closeAll(connections);
+			}
 		}
+
 	}
 
 	protected EvaluationStrategy createEvaluationStrategy(TripleSource tripleSource, Dataset dataset,

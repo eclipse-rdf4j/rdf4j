@@ -17,6 +17,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.IsolationLevel;
@@ -49,6 +50,8 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
 /**
  * A transaction encapsulates a single {@link Thread} and a {@link RepositoryConnection}, to enable executing
  * all operations that are part of the transaction from a single, dedicated thread. This is necessary because
@@ -57,7 +60,7 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Jeen Broekstra
  */
-class Transaction {
+class Transaction implements AutoCloseable {
 
 	private static final Logger logger = LoggerFactory.getLogger(Transaction.class);
 
@@ -69,7 +72,8 @@ class Transaction {
 
 	private final RepositoryConnection txnConnection;
 
-	private final ExecutorService executor = Executors.newSingleThreadExecutor();
+	private final ExecutorService executor = Executors.newSingleThreadExecutor(
+			new ThreadFactoryBuilder().setNameFormat("rdf4j-transaction-%d").build());
 
 	private final List<Future<?>> futures = new ArrayList<>();
 
@@ -113,13 +117,12 @@ class Transaction {
 	void begin(IsolationLevel level)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
-		synchronized (futures) {
-			result = executor.submit(() -> {
-				txnConnection.begin(level);
-				return true;
-			});
+		Future<Boolean> result = executor.submit(() -> {
+			txnConnection.begin(level);
+			return true;
+		});
 
+		synchronized (futures) {
 			futures.add(result);
 		}
 		result.get();
@@ -134,13 +137,12 @@ class Transaction {
 	void rollback()
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
-		synchronized (futures) {
-			result = executor.submit(() -> {
-				txnConnection.rollback();
-				return true;
-			});
+		Future<Boolean> result = executor.submit(() -> {
+			txnConnection.rollback();
+			return true;
+		});
 
+		synchronized (futures) {
 			futures.add(result);
 		}
 		result.get();
@@ -153,13 +155,12 @@ class Transaction {
 	void commit()
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
-		synchronized (futures) {
-			result = executor.submit(() -> {
-				txnConnection.commit();
-				return true;
-			});
+		Future<Boolean> result = executor.submit(() -> {
+			txnConnection.commit();
+			return true;
+		});
 
+		synchronized (futures) {
 			futures.add(result);
 		}
 		result.get();
@@ -184,9 +185,8 @@ class Transaction {
 	Query prepareQuery(QueryLanguage queryLn, String queryStr, String baseURI)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Query> result;
+		Future<Query> result = executor.submit(() -> txnConnection.prepareQuery(queryLn, queryStr, baseURI));
 		synchronized (futures) {
-			result = executor.submit(() -> txnConnection.prepareQuery(queryLn, queryStr, baseURI));
 			futures.add(result);
 		}
 		return result.get();
@@ -206,9 +206,8 @@ class Transaction {
 	TupleQueryResult evaluate(TupleQuery tQuery)
 		throws InterruptedException, ExecutionException
 	{
-		Future<TupleQueryResult> result;
+		Future<TupleQueryResult> result = executor.submit(() -> tQuery.evaluate());
 		synchronized (futures) {
-			result = executor.submit(() -> tQuery.evaluate());
 			futures.add(result);
 		}
 		return result.get();
@@ -228,9 +227,8 @@ class Transaction {
 	GraphQueryResult evaluate(GraphQuery gQuery)
 		throws InterruptedException, ExecutionException
 	{
-		Future<GraphQueryResult> result;
+		Future<GraphQueryResult> result = executor.submit(() -> gQuery.evaluate());
 		synchronized (futures) {
-			result = executor.submit(() -> gQuery.evaluate());
 			futures.add(result);
 		}
 		return result.get();
@@ -250,9 +248,8 @@ class Transaction {
 	boolean evaluate(BooleanQuery bQuery)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
+		Future<Boolean> result = executor.submit(() -> bQuery.evaluate());
 		synchronized (futures) {
-			result = executor.submit(() -> bQuery.evaluate());
 			futures.add(result);
 		}
 		return result.get();
@@ -272,12 +269,11 @@ class Transaction {
 			Resource... contexts)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
+		Future<Boolean> result = executor.submit(() -> {
+			txnConnection.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
+			return true;
+		});
 		synchronized (futures) {
-			result = executor.submit(() -> {
-				txnConnection.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
-				return true;
-			});
 			futures.add(result);
 		}
 		result.get();
@@ -294,9 +290,8 @@ class Transaction {
 	long getSize(Resource[] contexts)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Long> result;
+		Future<Long> result = executor.submit(() -> txnConnection.size(contexts));
 		synchronized (futures) {
-			result = executor.submit(() -> txnConnection.size(contexts));
 			futures.add(result);
 		}
 		return result.get();
@@ -316,33 +311,33 @@ class Transaction {
 			Resource... contexts)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
+		Future<Boolean> result = executor.submit(() -> {
+			logger.debug("executing add operation");
+			try {
+				if (preserveBNodes) {
+					// create a reconfigured parser + inserter instead of
+					// relying on standard
+					// repositoryconn add method.
+					RDFParser parser = Rio.createParser(format);
+					parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+					RDFInserter inserter = new RDFInserter(txnConnection);
+					inserter.setPreserveBNodeIDs(true);
+					if (contexts.length > 0) {
+						inserter.enforceContext(contexts);
+					}
+					parser.setRDFHandler(inserter);
+					parser.parse(inputStream, baseURI);
+				}
+				else {
+					txnConnection.add(inputStream, baseURI, format, contexts);
+				}
+				return true;
+			}
+			catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+		});
 		synchronized (futures) {
-			result = executor.submit(() -> {
-				logger.debug("executing add operation");
-				try {
-					if (preserveBNodes) {
-						// create a reconfigured parser + inserter instead of relying on standard
-						// repositoryconn add method.
-						RDFParser parser = Rio.createParser(format);
-						parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-						RDFInserter inserter = new RDFInserter(txnConnection);
-						inserter.setPreserveBNodeIDs(true);
-						if (contexts.length > 0) {
-							inserter.enforceContext(contexts);
-						}
-						parser.setRDFHandler(inserter);
-						parser.parse(inputStream, baseURI);
-					}
-					else {
-						txnConnection.add(inputStream, baseURI, format, contexts);
-					}
-					return true;
-				}
-				catch (IOException e) {
-					throw new RuntimeException(e);
-				}
-			});
 			futures.add(result);
 		}
 		result.get();
@@ -358,24 +353,23 @@ class Transaction {
 	void delete(RDFFormat contentType, InputStream inputStream, String baseURI)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
+		Future<Boolean> result = executor.submit(() -> {
+			logger.debug("executing delete operation");
+			RDFParser parser = Rio.createParser(contentType, txnConnection.getValueFactory());
+
+			parser.setRDFHandler(new WildcardRDFRemover(txnConnection));
+			parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+			try {
+				parser.parse(inputStream, baseURI);
+				return true;
+			}
+			catch (IOException e) {
+				logger.error("error during txn delete operation", e);
+				throw new RuntimeException(e);
+			}
+		});
+
 		synchronized (futures) {
-			result = executor.submit(() -> {
-				logger.debug("executing delete operation");
-				RDFParser parser = Rio.createParser(contentType, txnConnection.getValueFactory());
-
-				parser.setRDFHandler(new WildcardRDFRemover(txnConnection));
-				parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-				try {
-					parser.parse(inputStream, baseURI);
-					return true;
-				}
-				catch (IOException e) {
-					logger.error("error during txn delete operation", e);
-					throw new RuntimeException(e);
-				}
-			});
-
 			futures.add(result);
 		}
 		result.get();
@@ -395,22 +389,21 @@ class Transaction {
 			boolean includeInferred, Dataset dataset, Map<String, Value> bindings)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
+		Future<Boolean> result = executor.submit(() -> {
+			Update update = txnConnection.prepareUpdate(queryLn, sparqlUpdateString);
+			update.setIncludeInferred(includeInferred);
+			if (dataset != null) {
+				update.setDataset(dataset);
+			}
+			for (String bindingName : bindings.keySet()) {
+				update.setBinding(bindingName, bindings.get(bindingName));
+			}
+
+			update.execute();
+			return true;
+		});
+
 		synchronized (futures) {
-			result = executor.submit(() -> {
-				Update update = txnConnection.prepareUpdate(queryLn, sparqlUpdateString);
-				update.setIncludeInferred(includeInferred);
-				if (dataset != null) {
-					update.setDataset(dataset);
-				}
-				for (String bindingName : bindings.keySet()) {
-					update.setBinding(bindingName, bindings.get(bindingName));
-				}
-
-				update.execute();
-				return true;
-			});
-
 			futures.add(result);
 		}
 		result.get();
@@ -418,7 +411,7 @@ class Transaction {
 
 	boolean hasActiveOperations() {
 		synchronized (futures) {
-			for (Future future : futures) {
+			for (Future<?> future : futures) {
 				if (!future.isDone()) {
 					return true;
 				}
@@ -433,23 +426,36 @@ class Transaction {
 	 * @throws InterruptedException
 	 * @throws ExecutionException
 	 */
-	void close()
+	@Override
+	public void close()
 		throws InterruptedException, ExecutionException
 	{
 		if (isClosed.compareAndSet(false, true)) {
 			try {
-				Future<Boolean> result;
+				Future<Boolean> result = executor.submit(() -> {
+					txnConnection.close();
+					return true;
+				});
+
+				// Stop new tasks being submitted to the executor from now
+				executor.shutdown();
+
 				synchronized (futures) {
-					result = executor.submit(() -> {
-						txnConnection.close();
-						return true;
-					});
 					futures.add(result);
 				}
+
+				// We want to allow time for at least the close to complete, plus awaitTermination below if necessary for other tasks
 				result.get();
 			}
 			finally {
-				executor.shutdown();
+				try {
+					executor.awaitTermination(10, TimeUnit.SECONDS);
+				}
+				finally {
+					if (!executor.isTerminated()) {
+						executor.shutdownNow();
+					}
+				}
 			}
 		}
 	}
@@ -458,18 +464,17 @@ class Transaction {
 		throws InterruptedException, ExecutionException
 	{
 		// create a new RepositoryConnection with correct parser settings
-		Future<RepositoryConnection> future;
+		Future<RepositoryConnection> future = executor.submit(() -> {
+			RepositoryConnection conn = rep.getConnection();
+			ParserConfig config = conn.getParserConfig();
+			config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+			config.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
+			config.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
+
+			return conn;
+		});
+
 		synchronized (futures) {
-			future = executor.submit(() -> {
-				RepositoryConnection conn = rep.getConnection();
-				ParserConfig config = conn.getParserConfig();
-				config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-				config.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
-				config.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
-
-				return conn;
-			});
-
 			futures.add(future);
 		}
 		return future.get();
@@ -492,7 +497,8 @@ class Transaction {
 			IRI predicate = SESAME.WILDCARD.equals(st.getPredicate()) ? null : st.getPredicate();
 			Value object = SESAME.WILDCARD.equals(st.getObject()) ? null : st.getObject();
 
-			// use the RepositoryConnection.clear operation if we're removing all statements
+			// use the RepositoryConnection.clear operation if we're removing
+			// all statements
 			final boolean clearAllTriples = subject == null && predicate == null && object == null;
 
 			try {
