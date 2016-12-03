@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
-import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 
 /**
@@ -72,6 +71,10 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 		if (isClosed()) {
 			return false;
 		}
+		if (Thread.currentThread().isInterrupted()) {
+			close();
+			return false;
+		}
 
 		boolean result = queue.hasNext();
 		if (!result) {
@@ -87,7 +90,11 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
-
+		if (Thread.currentThread().isInterrupted()) {
+			close();
+			throw new NoSuchElementException("The iteration has been closed.");
+		}
+		
 		try {
 			return queue.next();
 		}
@@ -102,6 +109,10 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 		throws QueryEvaluationException
 	{
 		if (isClosed()) {
+			throw new IllegalStateException("The iteration has been closed.");
+		}
+		if (Thread.currentThread().isInterrupted()) {
+			close();
 			throw new IllegalStateException("The iteration has been closed.");
 		}
 
@@ -157,12 +168,11 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 		}
 		catch (RDFHandlerException e) {
 			// parsing was cancelled or interrupted
+			close();
 		}
-		catch (RDFParseException e) {
+		catch (Exception e) {
 			queue.toss(e);
-		}
-		catch (IOException e) {
-			queue.toss(e);
+			close();
 		}
 		finally {
 			queue.done();
@@ -185,6 +195,8 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 			return Collections.unmodifiableMap(namespaces);
 		}
 		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			close();
 			throw new UndeclaredThrowableException(e);
 		}
 	}
@@ -212,6 +224,8 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 			queue.put(st);
 		}
 		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			close();
 			throw new RDFHandlerException(e);
 		}
 		if (isClosed()) {

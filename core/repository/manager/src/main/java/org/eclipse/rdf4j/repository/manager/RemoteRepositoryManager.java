@@ -72,12 +72,12 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	 *-----------*/
 
 	/** dependent life cycle */
-	private SesameClientImpl client;
+	private volatile SesameClientImpl client;
 
 	/**
 	 * The URL of the remote server, e.g. http://localhost:8080/openrdf-sesame/
 	 */
-	private String serverURL;
+	private final String serverURL;
 
 	private String username;
 
@@ -105,29 +105,33 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	/**
 	 * @return Returns the httpClient.
 	 */
-	protected synchronized SesameClient getSesameClient() {
-		if (client == null) {
-			client = new SesameClientImpl();
+	protected SesameClientImpl getSesameClient() {
+		SesameClientImpl result = client;
+		if (result == null) {
+			synchronized (this) {
+				result = client;
+				if (result == null) {
+					result = client = new SesameClientImpl();
+				}
+			}
 		}
-		return client;
+		return result;
 	}
 
 	@Override
 	public HttpClient getHttpClient() {
-		if (client == null) {
+		SesameClientImpl nextClient = client;
+		if (nextClient == null) {
 			return null;
 		}
 		else {
-			return client.getHttpClient();
+			return nextClient.getHttpClient();
 		}
 	}
 
 	@Override
-	public synchronized void setHttpClient(HttpClient httpClient) {
-		if (client == null) {
-			client = new SesameClientImpl();
-		}
-		client.setHttpClient(httpClient);
+	public void setHttpClient(HttpClient httpClient) {
+		getSesameClient().setHttpClient(httpClient);
 	}
 
 	@Override
@@ -139,10 +143,15 @@ public class RemoteRepositoryManager extends RepositoryManager {
 
 	@Override
 	public void shutDown() {
-		super.shutDown();
-		if (client != null) {
-			client.shutDown();
+		try {
+			super.shutDown();
+		}
+		finally {
+			SesameClientImpl toCloseClient = client;
 			client = null;
+			if (toCloseClient != null) {
+				toCloseClient.shutDown();
+			}
 		}
 	}
 

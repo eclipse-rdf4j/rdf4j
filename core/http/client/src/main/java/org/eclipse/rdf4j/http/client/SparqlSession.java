@@ -445,7 +445,7 @@ public class SparqlSession implements HttpClientDependent {
 		}
 		catch (RDFHandlerException e) {
 			// Found a bug in TupleQueryResultBuilder?
-			throw new RuntimeException(e);
+			throw new RepositoryException(e);
 		}
 	}
 
@@ -721,6 +721,7 @@ public class SparqlSession implements HttpClientDependent {
 			throw new RepositoryException("No tuple query result parsers have been registered");
 		}
 
+		BackgroundTupleResult tRes = null;
 		// send the tuple query
 		HttpResponse response = sendTupleQueryViaHttp(method, tqrFormats);
 		try {
@@ -731,14 +732,22 @@ public class SparqlSession implements HttpClientDependent {
 					() -> new RepositoryException(
 							"Server responded with an unsupported file format: " + mimeType));
 			TupleQueryResultParser parser = QueryResultIO.createTupleParser(format, getValueFactory());
-			BackgroundTupleResult tRes = new BackgroundTupleResult(parser, response.getEntity().getContent());
+			tRes = new BackgroundTupleResult(parser, response.getEntity().getContent());
 			execute(tRes);
 			submitted = true;
 			return tRes;
 		}
 		finally {
-			if (!submitted)
-				EntityUtils.consumeQuietly(response.getEntity());
+			if (!submitted) {
+				try {
+					if (tRes != null) {
+						tRes.close();
+					}
+				}
+				finally {
+					EntityUtils.consumeQuietly(response.getEntity());
+				}
+			}
 		}
 	}
 
@@ -855,6 +864,7 @@ public class SparqlSession implements HttpClientDependent {
 			throw new RepositoryException("No tuple RDF parsers have been registered");
 		}
 
+		BackgroundGraphResult gRes = null;
 		// send the tuple query
 		HttpResponse response = sendGraphQueryViaHttp(method, requireContext, rdfFormats);
 		try {
@@ -896,15 +906,21 @@ public class SparqlSession implements HttpClientDependent {
 			}
 
 			String baseURI = method.getURI().toASCIIString();
-			BackgroundGraphResult gRes = new BackgroundGraphResult(parser, entity.getContent(), charset,
-					baseURI);
+			gRes = new BackgroundGraphResult(parser, entity.getContent(), charset, baseURI);
 			execute(gRes);
 			submitted = true;
 			return gRes;
 		}
 		finally {
 			if (!submitted) {
-				EntityUtils.consumeQuietly(response.getEntity());
+				try {
+					if (gRes != null) {
+						gRes.close();
+					}
+				}
+				finally {
+					EntityUtils.consumeQuietly(response.getEntity());
+				}
 			}
 		}
 
