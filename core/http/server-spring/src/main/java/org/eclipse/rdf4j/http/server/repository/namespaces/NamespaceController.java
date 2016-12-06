@@ -85,9 +85,7 @@ public class NamespaceController extends AbstractController {
 		throws ServerHTTPException, ClientHTTPException
 	{
 		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
-			String namespace = null;
-
-			namespace = repositoryCon.getNamespace(prefix);
+			String namespace = repositoryCon.getNamespace(prefix);
 
 			if (namespace == null) {
 				throw new ClientHTTPException(SC_NOT_FOUND, "Undefined prefix: " + prefix);
