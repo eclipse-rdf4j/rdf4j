@@ -727,6 +727,7 @@ public abstract class RDFStoreTest {
 
 	@Test
 	@Ignore("test is fundamentelly flawed as it uses multithreaded access on the same connection")
+	@Deprecated
 	public void testMultiThreadedAccess() {
 
 		Runnable runnable = new Runnable() {
