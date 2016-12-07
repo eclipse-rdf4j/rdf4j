@@ -77,7 +77,6 @@ public class ExportStatementsView implements View {
 		Value obj = (Value)model.get(OBJECT_KEY);
 		Resource[] contexts = (Resource[])model.get(CONTEXTS_KEY);
 		boolean useInferencing = (Boolean)model.get(USE_INFERENCING_KEY);
-		RepositoryConnection conn = (RepositoryConnection)model.get(CONNECTION_KEY);
 
 		boolean headersOnly = (Boolean)model.get(HEADERS_ONLY);
 
@@ -105,10 +104,7 @@ public class ExportStatementsView implements View {
 			response.setHeader("Content-Disposition", "attachment; filename=" + filename);
 
 			if (!headersOnly) {
-				if (conn == null) {
-					conn = RepositoryInterceptor.getRepositoryConnection(request);
-				}
-				synchronized (conn) {
+				try (RepositoryConnection conn = RepositoryInterceptor.getRepositoryConnection(request)) {
 					conn.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
 				}
 			}

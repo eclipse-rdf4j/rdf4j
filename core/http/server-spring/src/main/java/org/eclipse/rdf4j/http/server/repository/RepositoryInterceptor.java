@@ -29,8 +29,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Interceptor for repository requests. Handles the opening and closing of connections to the repository
- * specified in the request. Should not be a singleton bean! Configure as inner bean in openrdf-servlet.xml
+ * Interceptor for repository requests. Should not be a singleton bean! Configure as inner bean in
+ * openrdf-servlet.xml
  * 
  * @author Herko ter Horst
  * @author Arjohn Kampman
@@ -47,8 +47,6 @@ public class RepositoryInterceptor extends ServerInterceptor {
 
 	private static final String REPOSITORY_KEY = "repository";
 
-	private static final String REPOSITORY_CONNECTION_KEY = "repositoryConnection";
-
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -56,8 +54,6 @@ public class RepositoryInterceptor extends ServerInterceptor {
 	private volatile RepositoryManager repositoryManager;
 
 	private volatile String repositoryID;
-
-	private volatile RepositoryConnection repositoryCon;
 
 	/*---------*
 	 * Methods *
@@ -114,54 +110,11 @@ public class RepositoryInterceptor extends ServerInterceptor {
 					throw new ClientHTTPException(SC_NOT_FOUND, "Unknown repository: " + nextRepositoryID);
 				}
 
-				RepositoryConnection nextRepositoryCon = repositoryCon;
-				if (nextRepositoryCon == null) {
-					synchronized (this) {
-						nextRepositoryCon = repositoryCon;
-						if (nextRepositoryCon == null) {
-							nextRepositoryCon = repositoryCon = repository.getConnection();
-							// SES-1834 by default, the Sesame server should not
-							// treat datatype or language value verification
-							// errors as fatal. This is to be graceful, by
-							// default, about accepting "dirty" data.
-							// FIXME SES-1833 this should be configurable by the
-							// user.
-							nextRepositoryCon.getParserConfig().addNonFatalError(
-									BasicParserSettings.VERIFY_DATATYPE_VALUES);
-							nextRepositoryCon.getParserConfig().addNonFatalError(
-									BasicParserSettings.VERIFY_LANGUAGE_TAGS);
-
-							// FIXME: hack for repositories that return
-							// connections that are not in auto-commit mode by
-							// default
-							if (!nextRepositoryCon.isAutoCommit()) {
-								nextRepositoryCon.setAutoCommit(true);
-							}
-						}
-					}
-				}
-
 				request.setAttribute(REPOSITORY_ID_KEY, nextRepositoryID);
 				request.setAttribute(REPOSITORY_KEY, repository);
-				request.setAttribute(REPOSITORY_CONNECTION_KEY, nextRepositoryCon);
 			}
 			catch (RepositoryConfigException e) {
 				throw new ServerHTTPException(e.getMessage(), e);
-			}
-			catch (RepositoryException e) {
-				throw new ServerHTTPException(e.getMessage(), e);
-			}
-		}
-	}
-
-	@Override
-	protected void cleanUpResources()
-		throws ServerHTTPException
-	{
-		RepositoryConnection nextRepositoryCon = repositoryCon;
-		if (nextRepositoryCon != null) {
-			try {
-				nextRepositoryCon.close();
 			}
 			catch (RepositoryException e) {
 				throw new ServerHTTPException(e.getMessage(), e);
@@ -177,7 +130,19 @@ public class RepositoryInterceptor extends ServerInterceptor {
 		return (Repository)request.getAttribute(REPOSITORY_KEY);
 	}
 
+	/**
+	 * Obtain a new {@link RepositoryConnection} with suitable parser/writer configuration for handling the
+	 * incoming HTTP request. The caller of this method is responsible for closing the connection.
+	 * 
+	 * @param request
+	 *        the {@link HttpServletRequest} for which a {@link RepositoryConnection} is to be returned
+	 * @return a configured {@link RepositoryConnection}
+	 */
 	public static RepositoryConnection getRepositoryConnection(HttpServletRequest request) {
-		return (RepositoryConnection)request.getAttribute(REPOSITORY_CONNECTION_KEY);
+		Repository repo = getRepository(request);
+		RepositoryConnection conn = repo.getConnection();
+		conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
+		conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
+		return conn;
 	}
 }
