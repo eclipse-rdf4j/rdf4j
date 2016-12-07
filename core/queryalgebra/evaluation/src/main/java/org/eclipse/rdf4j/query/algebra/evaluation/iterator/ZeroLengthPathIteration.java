@@ -98,7 +98,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 				Value v = bs.getValue(endpointVarName);
 
 				if (add(reportedValues, v)) {
-					QueryBindingSet next = new QueryBindingSet();
+					QueryBindingSet next = new QueryBindingSet(bindings);
 					next.addBinding(subjectVar.getName(), v);
 					next.addBinding(objVar.getName(), v);
 					if (contextVar != null) {
