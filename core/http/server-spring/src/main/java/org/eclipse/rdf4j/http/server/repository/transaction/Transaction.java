@@ -46,6 +46,8 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A transaction encapsulates a single {@link Thread} and a {@link RepositoryConnection}, to enable executing
@@ -56,6 +58,8 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
  * @author Jeen Broekstra
  */
 class Transaction {
+
+	private static final Logger logger = LoggerFactory.getLogger(Transaction.class);
 
 	private final AtomicBoolean isClosed = new AtomicBoolean(false);
 
@@ -315,6 +319,7 @@ class Transaction {
 		Future<Boolean> result;
 		synchronized (futures) {
 			result = executor.submit(() -> {
+				logger.debug("executing add operation");
 				try {
 					if (preserveBNodes) {
 						// create a reconfigured parser + inserter instead of relying on standard
@@ -356,6 +361,7 @@ class Transaction {
 		Future<Boolean> result;
 		synchronized (futures) {
 			result = executor.submit(() -> {
+				logger.debug("executing delete operation");
 				RDFParser parser = Rio.createParser(contentType, txnConnection.getValueFactory());
 
 				parser.setRDFHandler(new WildcardRDFRemover(txnConnection));
@@ -365,6 +371,7 @@ class Transaction {
 					return true;
 				}
 				catch (IOException e) {
+					logger.error("error during txn delete operation", e);
 					throw new RuntimeException(e);
 				}
 			});
