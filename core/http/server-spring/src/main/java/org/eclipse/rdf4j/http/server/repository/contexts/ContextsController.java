@@ -59,30 +59,32 @@ public class ContextsController extends AbstractController {
 			List<String> columnNames = Arrays.asList("contextID");
 			List<BindingSet> contexts = new ArrayList<BindingSet>();
 			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-			synchronized (repositoryCon) {
+			try {
+				CloseableIteration<? extends Resource, RepositoryException> contextIter = repositoryCon.getContextIDs();
+
 				try {
-					CloseableIteration<? extends Resource, RepositoryException> contextIter = repositoryCon.getContextIDs();
+					while (contextIter.hasNext()) {
+						BindingSet bindingSet = new ListBindingSet(columnNames, contextIter.next());
+						contexts.add(bindingSet);
+					}
+				}
+				finally {
+					contextIter.close();
+				}
+				model.put(QueryResultView.QUERY_RESULT_KEY,
+						new IteratingTupleQueryResult(columnNames, contexts));
+				model.put(QueryResultView.FILENAME_HINT_KEY, "contexts");
+				model.put(QueryResultView.FACTORY_KEY, factory);
+				model.put(QueryResultView.HEADERS_ONLY, METHOD_HEAD.equals(request.getMethod()));
+				model.put(QueryResultView.CONNECTION_KEY, repositoryCon);
 
-					try {
-						while (contextIter.hasNext()) {
-							BindingSet bindingSet = new ListBindingSet(columnNames, contextIter.next());
-							contexts.add(bindingSet);
-						}
-					}
-					finally {
-						contextIter.close();
-					}
-				}
-				catch (RepositoryException e) {
-					throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
-				}
 			}
-			model.put(QueryResultView.QUERY_RESULT_KEY, new IteratingTupleQueryResult(columnNames, contexts));
+			catch (RepositoryException e) {
+				// normally the QueryResultView closes the connection, but not if an exception occurred
+				repositoryCon.close();
+				throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
+			}
 		}
-
-		model.put(QueryResultView.FILENAME_HINT_KEY, "contexts");
-		model.put(QueryResultView.FACTORY_KEY, factory);
-		model.put(QueryResultView.HEADERS_ONLY, METHOD_HEAD.equals(request.getMethod()));
 		return new ModelAndView(TupleQueryResultView.getInstance(), model);
 	}
 }
