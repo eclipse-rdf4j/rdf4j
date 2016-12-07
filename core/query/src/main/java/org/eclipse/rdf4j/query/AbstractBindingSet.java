@@ -52,12 +52,11 @@ public abstract class AbstractBindingSet implements BindingSet {
 
 	@Override
 	public final int hashCode() {
-		int hashCode = 5;
+		int hashCode = 0;
 
 		for (Binding binding : this) {
-			hashCode = 37 * hashCode + binding.hashCode();
+			hashCode ^= binding.getName().hashCode() ^ binding.getValue().hashCode();
 		}
-
 		return hashCode;
 	}
 
