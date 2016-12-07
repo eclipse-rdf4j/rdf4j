@@ -17,6 +17,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.lang.FileFormat;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.servlet.View;
@@ -48,12 +49,10 @@ public abstract class QueryResultView implements View {
 	public static final String FILENAME_HINT_KEY = "filenameHint";
 
 	/**
-	 * Key by which the id of the current transaction is stored in the model. If this is present, the
-	 * QueryResultView will take care to release the connection back to the
-	 * {@link org.eclipse.rdf4j.http.server.repository.transaction.ActiveTransactionRegistry} after processing
-	 * the query result.
+	 * Key by which the current {@link RepositoryConnection} is stored in the Model. If this is present, the
+	 * {@link QueryResultView} will take care to close the connection after processing the query result.
 	 */
-	public static final String TRANSACTION_ID_KEY = "transactionID";
+	public static final String CONNECTION_KEY = "connection";
 
 	public static final String HEADERS_ONLY = "headersOnly";
 
@@ -61,7 +60,15 @@ public abstract class QueryResultView implements View {
 	public final void render(Map model, HttpServletRequest request, HttpServletResponse response)
 		throws IOException
 	{
-		renderInternal(model, request, response);
+		try {
+			renderInternal(model, request, response);
+		}
+		finally {
+			RepositoryConnection conn = (RepositoryConnection)model.get(CONNECTION_KEY);
+			if (conn != null) {
+				conn.close();
+			}
+		}
 	}
 
 	@SuppressWarnings("rawtypes")

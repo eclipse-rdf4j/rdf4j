@@ -13,11 +13,15 @@
 
 package org.eclipse.rdf4j.model.util.language;
 
+import org.eclipse.rdf4j.model.util.Literals;
+
 /**
  * Informational values about language codes. Values to be OR-ed together.
  * 
  * @author jjc
+ * @deprecated Use {@link Literals#normalizeLanguageTag(String) instead}
  */
+@Deprecated
 public interface LanguageTagCodes {
 
 	/**

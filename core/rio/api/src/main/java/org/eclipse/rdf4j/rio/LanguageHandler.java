@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.util.LiteralUtilException;
 public interface LanguageHandler {
 
 	/**
-	 * Identifier for the language tag format defined by RFC3066, which is referenced by the RDF
+	 * Identifier for the language tag format defined by RFC3066, which is referenced by the RDF-1.0
 	 * specification.
 	 */
 	public static final String RFC3066 = "org.eclipse.rdf4j.rio.languages.RFC3066";
@@ -33,6 +33,12 @@ public interface LanguageHandler {
 	 * referenced by the RDF specification.
 	 */
 	public static final String RFC4646 = "org.eclipse.rdf4j.rio.languages.RFC4646";
+
+	/**
+	 * Identifier for the language tag format defined by BCP47, which is referenced by the RDF-1.1
+	 * specification.
+	 */
+	public static final String BCP47 = "org.eclipse.rdf4j.rio.languages.BCP47";
 
 	/**
 	 * Checks if the given language tag is recognized by this language handler, including cases where the

@@ -183,23 +183,20 @@ public class GraphController extends AbstractController {
 		}
 
 		InputStream in = request.getInputStream();
-		try {
-			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-			synchronized (repositoryCon) {
-				boolean localTransaction = !repositoryCon.isActive();
+		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
+			boolean localTransaction = !repositoryCon.isActive();
 
-				if (localTransaction) {
-					repositoryCon.begin();
-				}
+			if (localTransaction) {
+				repositoryCon.begin();
+			}
 
-				if (replaceCurrent) {
-					repositoryCon.clear(graph);
-				}
-				repositoryCon.add(in, baseURI.stringValue(), rdfFormat, graph);
+			if (replaceCurrent) {
+				repositoryCon.clear(graph);
+			}
+			repositoryCon.add(in, baseURI.stringValue(), rdfFormat, graph);
 
-				if (localTransaction) {
-					repositoryCon.commit();
-				}
+			if (localTransaction) {
+				repositoryCon.commit();
 			}
 
 			return new ModelAndView(EmptySuccessView.getInstance());
@@ -233,11 +230,8 @@ public class GraphController extends AbstractController {
 
 		IRI graph = getGraphName(request, vf);
 
-		try {
-			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-			synchronized (repositoryCon) {
-				repositoryCon.clear(graph);
-			}
+		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
+			repositoryCon.clear(graph);
 
 			return new ModelAndView(EmptySuccessView.getInstance());
 		}

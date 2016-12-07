@@ -322,11 +322,6 @@ class NativeSailStore implements SailStore {
 
 		private final boolean explicit;
 
-		/**
-		 * The exclusive transaction lock held by this connection during transactions.
-		 */
-		private volatile boolean txnLockAcquired;
-
 		public NativeSailSink(boolean explicit)
 			throws SailException
 		{
@@ -335,10 +330,9 @@ class NativeSailStore implements SailStore {
 
 		@Override
 		public synchronized void close() {
-			boolean nextTxnLockAcquired = txnLockAcquired;
-			txnLockAcquired = false;
-			if (nextTxnLockAcquired) {
+			if (txnLockManager.isHeldByCurrentThread()) {
 				txnLockManager.unlock();
+				logger.trace("lock unlocked by thread [{}] (close)", Thread.currentThread().getName());
 			}
 		}
 
@@ -355,7 +349,7 @@ class NativeSailStore implements SailStore {
 		{
 			// SES-1949 check necessary to avoid empty/read-only transactions
 			// messing up concurrent transactions
-			if (txnLockAcquired && txnLockManager.getHoldCount() == 1) {
+			if (txnLockManager.isHeldByCurrentThread() && txnLockManager.getHoldCount() == 1) {
 				try {
 					try {
 						valueStore.sync();
@@ -435,22 +429,24 @@ class NativeSailStore implements SailStore {
 		private synchronized void acquireExclusiveTransactionLock()
 			throws SailException
 		{
-			boolean nextTxnLockAcquired = txnLockAcquired;
-			if (!nextTxnLockAcquired) {
+			boolean txnLockAcquired = false;
+			if (!txnLockManager.isHeldByCurrentThread()) {
 				txnLockManager.lock();
 				try {
 					if (txnLockManager.getHoldCount() == 1) {
 						// first object
 						tripleStore.startTransaction();
 					}
-					nextTxnLockAcquired = txnLockAcquired = true;
+					txnLockAcquired = true;
+					logger.trace("lock acquired by thread [{}]", Thread.currentThread().getName());
 				}
 				catch (IOException e) {
 					throw new SailException(e);
 				}
 				finally {
-					if (!nextTxnLockAcquired) {
+					if (!txnLockAcquired) {
 						txnLockManager.unlock();
+						logger.trace("lock unlocked by thread [{}] (error)", Thread.currentThread().getName());
 					}
 				}
 			}
