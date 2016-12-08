@@ -65,6 +65,10 @@ public class ZeroLengthPathIterationTest {
 		evaluator = new StrictEvaluationStrategy(ts, null);
 	}
 
+	/**
+	 * Verify that evaluation of a {@link ZeroLengthPathIteration} does not discard input bindings. 
+	 * @see https://github.com/eclipse/rdf4j/issues/689
+	 */
 	@Test
 	public void testRetainInputBindings() {
 
@@ -78,9 +82,9 @@ public class ZeroLengthPathIterationTest {
 		try {
 			BindingSet result = zlp.getNextElement();
 
-			assertTrue(result.hasBinding("a"));
-			assertTrue(result.hasBinding("x"));
-			assertTrue(result.hasBinding("y"));
+			assertTrue("zlp evaluation should have retained unrelated input binding", result.hasBinding("a"));
+			assertTrue("zlp evaluation should binding for subject var", result.hasBinding("x"));
+			assertTrue("zlp evaluation should binding for object var", result.hasBinding("y"));
 		}
 		finally {
 			zlp.close();
