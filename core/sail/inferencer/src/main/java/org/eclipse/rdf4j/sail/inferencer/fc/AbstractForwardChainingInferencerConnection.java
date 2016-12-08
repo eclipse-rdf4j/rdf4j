@@ -174,6 +174,7 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 			logger.debug("iteration " + iteration + " done; inferred " + nofInferred + " new statements");
 			totalInferred += nofInferred;
 		}
+		logger.info("{} inferred {} new statements", this.getClass().getName(), totalInferred);
 	}
 
 	/**
