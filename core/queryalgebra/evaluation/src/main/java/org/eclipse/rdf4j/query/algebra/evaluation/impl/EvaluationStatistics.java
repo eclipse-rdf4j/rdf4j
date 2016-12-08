@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Collection;
+import java.util.UUID;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
@@ -103,12 +104,14 @@ public class EvaluationStatistics {
 
 		@Override
 		public void meet(ArbitraryLengthPath node) {
-
-			// actual cardinality = count(union(subjs, objs))
-			// but might require getting all statements
-			// so due to the lower actual cardinality we value it in preference to a fully unbound statement pattern.
-			cardinality = getSubjectCardinality(node.getSubjectVar())
-					* getObjectCardinality(node.getObjectVar()) * getContextCardinality(node.getContextVar());
+			final Var pathVar = new Var("_anon_" + UUID.randomUUID().toString().replaceAll("-", "_"));
+			pathVar.setAnonymous(true);
+			// cardinality of ALP is determined based on the cost of a 
+			// single ?s ?p ?o ?c pattern where ?p is unbound, compensating for the fact that
+			// the length of the path is unknown but expected to be _at least_ twice that of a normal 
+			// statement pattern.
+			cardinality = 2.0 * getCardinality(new StatementPattern(node.getSubjectVar(), pathVar,
+					node.getObjectVar(), node.getContextVar()));
 		}
 
 		@Override
