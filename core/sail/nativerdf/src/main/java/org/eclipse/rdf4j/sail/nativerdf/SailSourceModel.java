@@ -102,7 +102,7 @@ class SailSourceModel extends AbstractModel {
 	}
 
 	@Override
-	public void closeIterator(Iterator<?> iter) {
+	public synchronized void closeIterator(Iterator<?> iter) {
 		super.closeIterator(iter);
 		if (iter instanceof StatementIterator) {
 			try {
@@ -165,7 +165,7 @@ class SailSourceModel extends AbstractModel {
 		}
 	}
 
-	public Set<Namespace> getNamespaces() {
+	public synchronized Set<Namespace> getNamespaces() {
 		Set<Namespace> set = new LinkedHashSet<Namespace>();
 		try {
 			CloseableIteration<? extends Namespace, SailException> spaces;
@@ -185,7 +185,7 @@ class SailSourceModel extends AbstractModel {
 		return set;
 	}
 
-	public Optional<Namespace> getNamespace(String prefix) {
+	public synchronized Optional<Namespace> getNamespace(String prefix) {
 		try {
 			String name = dataset().getNamespace(prefix);
 			return Optional.of(new SimpleNamespace(prefix, name));
@@ -195,7 +195,7 @@ class SailSourceModel extends AbstractModel {
 		}
 	}
 
-	public Namespace setNamespace(String prefix, String name) {
+	public synchronized Namespace setNamespace(String prefix, String name) {
 		try {
 			sink().setNamespace(prefix, name);
 		}
@@ -205,11 +205,11 @@ class SailSourceModel extends AbstractModel {
 		return new SimpleNamespace(prefix, name);
 	}
 
-	public void setNamespace(Namespace namespace) {
+	public synchronized void setNamespace(Namespace namespace) {
 		setNamespace(namespace.getPrefix(), namespace.getName());
 	}
 
-	public Optional<Namespace> removeNamespace(String prefix) {
+	public synchronized Optional<Namespace> removeNamespace(String prefix) {
 		Optional<Namespace> ret = getNamespace(prefix);
 		try {
 			sink().removeNamespace(prefix);
@@ -220,7 +220,7 @@ class SailSourceModel extends AbstractModel {
 		return ret;
 	}
 
-	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
+	public synchronized boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		try {
 			if (!isEmptyOrResourcePresent(contexts))
 				return false;
@@ -294,7 +294,7 @@ class SailSourceModel extends AbstractModel {
 	}
 
 	@Override
-	public Iterator<Statement> iterator() {
+	public synchronized Iterator<Statement> iterator() {
 		try {
 			return new StatementIterator(dataset().getStatements(null, null, null));
 		}
@@ -303,13 +303,13 @@ class SailSourceModel extends AbstractModel {
 		}
 	}
 
-	public Model filter(final Resource subj, final IRI pred, final Value obj, final Resource... contexts) {
+	public synchronized Model filter(final Resource subj, final IRI pred, final Value obj, final Resource... contexts) {
 		if (!isEmptyOrResourcePresent(contexts))
 			return new EmptyModel(this);
 		return new FilteredModel(this, subj, pred, obj, contexts) {
 
 			@Override
-			public int size() {
+			public synchronized int size() {
 				if (subj == null && pred == null && obj == null) {
 					try {
 						CloseableIteration<? extends Statement, SailException> iter;
@@ -336,7 +336,7 @@ class SailSourceModel extends AbstractModel {
 			}
 
 			@Override
-			public Iterator<Statement> iterator() {
+			public synchronized Iterator<Statement> iterator() {
 				try {
 					return new StatementIterator(dataset().getStatements(subj, pred, obj, contexts));
 				}
