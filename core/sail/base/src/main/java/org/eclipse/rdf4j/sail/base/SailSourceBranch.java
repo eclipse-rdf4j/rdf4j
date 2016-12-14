@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.model.impl.TreeModelFactory;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An {@link SailSource} that keeps a delta of its state from a backing {@link SailSource}.
@@ -33,6 +35,8 @@ import org.eclipse.rdf4j.sail.SailException;
  * @author James Leigh
  */
 class SailSourceBranch implements SailSource {
+
+	private static final Logger logger = LoggerFactory.getLogger(SailSourceBranch.class);
 
 	/**
 	 * Used to prevent changes to this object's field from multiple threads.
@@ -270,10 +274,14 @@ class SailSourceBranch implements SailSource {
 			semaphore.lock();
 			if (!changes.isEmpty()) {
 				if (prepared == null) {
+					logger.trace("creating new prepared");
 					prepare();
 				}
+				logger.trace("flushing prepared {}", prepared);
 				flush(prepared);
+				logger.trace("flushing step 2");
 				prepared.flush();
+				logger.trace("prep flushed");
 				try {
 					if (prepared != serializable) {
 						prepared.close();
@@ -502,6 +510,7 @@ class SailSourceBranch implements SailSource {
 	private void flush(Changeset change, SailSink sink)
 		throws SailException
 	{
+		logger.trace("flushing changeset to sink");
 		prepare(change, sink);
 		if (change.isNamespaceCleared()) {
 			sink.clearNamespaces();
@@ -533,9 +542,13 @@ class SailSourceBranch implements SailSource {
 		}
 		Model approved = change.getApproved();
 		if (approved != null) {
+			logger.trace("sinking approved");
 			for (Statement st : approved) {
 				sink.approve(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
 			}
+		}
+		else {
+			logger.trace("approved is null!");
 		}
 	}
 

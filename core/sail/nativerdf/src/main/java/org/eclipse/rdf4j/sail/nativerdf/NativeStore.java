@@ -269,6 +269,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 						protected SailStore createSailStore(File dataDir)
 							throws IOException, SailException
 						{
+							logger.debug("model too large for memory, using disk sync {}", dataDir);
 							// Model can't fit into memory, use another NativeSailStore to store delta
 							return new NativeSailStore(dataDir, getTripleIndexes());
 						}
