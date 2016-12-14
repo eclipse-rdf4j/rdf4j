@@ -274,14 +274,10 @@ class SailSourceBranch implements SailSource {
 			semaphore.lock();
 			if (!changes.isEmpty()) {
 				if (prepared == null) {
-					logger.trace("creating new prepared");
 					prepare();
 				}
-				logger.trace("flushing prepared {}", prepared);
 				flush(prepared);
-				logger.trace("flushing step 2");
 				prepared.flush();
-				logger.trace("prep flushed");
 				try {
 					if (prepared != serializable) {
 						prepared.close();
@@ -510,7 +506,6 @@ class SailSourceBranch implements SailSource {
 	private void flush(Changeset change, SailSink sink)
 		throws SailException
 	{
-		logger.trace("flushing changeset to sink");
 		prepare(change, sink);
 		if (change.isNamespaceCleared()) {
 			sink.clearNamespaces();
@@ -542,13 +537,9 @@ class SailSourceBranch implements SailSource {
 		}
 		Model approved = change.getApproved();
 		if (approved != null) {
-			logger.trace("sinking approved");
 			for (Statement st : approved) {
 				sink.approve(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
 			}
-		}
-		else {
-			logger.trace("approved is null!");
 		}
 	}
 
