@@ -52,7 +52,7 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class AbstractLuceneSailSpinTest {
 
-	private static final String DATA = "org/eclipse/rdf4j/sail/rivers-dbp-1.ttl";
+	private static final String DATA = "org/eclipse/rdf4j/sail/220-example.ttl";
 
 	private static Logger log = LoggerFactory.getLogger(AbstractLuceneSailSpinTest.class);
 
@@ -144,8 +144,8 @@ public abstract class AbstractLuceneSailSpinTest {
 	/**
 	 * Valid search query. SPRQL query: <code>
 	 * select ?pred ?score ?subject where {
-	 *    ("Detroit" search:allMatches search:score) search:search  (?pred ?score) .
-	 *    ?pred <http://purl.org/dc/terms/subject> ?subject . }
+	 *    ("ornare" search:allMatches search:score) search:search  (?pred ?score) .
+	 *    ?pred <urn:test.org/onto#number> ?subject . }
 	 * </code>
 	 *
 	 * @throws Exception
@@ -157,8 +157,8 @@ public abstract class AbstractLuceneSailSpinTest {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?predicate ?score ?subject where {\n");
 		buffer.append(
-				"(\"Detroit\" <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + ">  (?pred ?score) . \n");
-		buffer.append("  ?pred <http://purl.org/dc/terms/subject> ?subject .\n");
+				"(\"ornare\" <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + ">  (?pred ?score) . \n");
+		buffer.append("  ?pred <urn:test.org/onto#number> ?subject .\n");
 		buffer.append("}\n");
 		log.info("Request query: \n====================\n{}\n======================\n", buffer.toString());
 
@@ -189,7 +189,7 @@ public abstract class AbstractLuceneSailSpinTest {
 	/**
 	 * #220 exmaple was reproduced with query: <code>
 	 * select ?pred ?score ?query ?label where {
-	 *   bind(str("Detroit") as ?query) .
+	 *   bind(str("ornare") as ?query) .
 	 *   (?query search:allMatches search:score) search:search (?pred ?score) .
 	 *   ?pred rdfs:label ?label . }
 	 * </code>
@@ -202,7 +202,7 @@ public abstract class AbstractLuceneSailSpinTest {
 	{
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?pred ?score ?query ?label where {\n");
-		buffer.append("  bind(str(\"Detroit\") as ?query) .\n");
+		buffer.append("  bind(str(\"ornare\") as ?query) .\n");
 		buffer.append(
 				"  (?query <" + ALL_MATCHES + "> <" + SCORE + "> ) <" + SEARCH + ">  (?pred ?score) . \n");
 		buffer.append("  ?pred rdfs:label ?label .\n");
@@ -233,11 +233,11 @@ public abstract class AbstractLuceneSailSpinTest {
 	/**
 	 * Reproduce #235 with following query: <code>
 	 * construct {
-	 *   ?pred a <urn:ontology/River> . 
+	 *   ?pred a <urn:ontology/Phrase> . 
 	 *   ?pred <urn:ontology/label> ?label2 .
 	     *   ?pred <urn:ontology/score> ?score
 	 * } where {
-	 *   bind(str("Detroit") as ?query) .
+	 *   bind(str("ornare") as ?query) .
 	 *   (?query search:allMatches search:score) search:search (?pred ?score) .
 	 *   ?pred rdfs:label ?label . 
 	 *   bind(fn:upper-case(?label) as ?label2) ,
@@ -252,11 +252,11 @@ public abstract class AbstractLuceneSailSpinTest {
 	{
 		StringBuilder buffer = new StringBuilder();
 		buffer.append(" construct {\n");
-		buffer.append("  ?pred a <urn:ontology/River> .\n");
+		buffer.append("  ?pred a <urn:ontology/Phrase> .\n");
 		buffer.append("  ?pred <urn:ontology/label> ?label2 .\n");
 		buffer.append("  ?pred <urn:ontology/score> ?score .\n");
 		buffer.append(" } where {\n");
-		buffer.append("  bind(str(\"Detroit\") as ?query) .\n");
+		buffer.append("  bind(str(\"ornare\") as ?query) .\n");
 		buffer.append(
 				"  (?query <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + "> (?pred ?score) . \n");
 		buffer.append("  ?pred rdfs:label ?label .\n");

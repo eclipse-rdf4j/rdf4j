@@ -46,7 +46,7 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 
 	private Repository repository;
 
-	private static final String DATA = "org/eclipse/rdf4j/sail/rivers-dbp-1.ttl";
+	private static final String DATA = "org/eclipse/rdf4j/sail/220-example.ttl";
 
 	private RepositoryConnection connection;
 
@@ -157,7 +157,7 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 	 * Valid search query. SPRQL query: <code>
 	 * select ?pred ?score ?label where {
 	 *    ?pred search:matches[
-	 *       search:query "Detroit";
+	 *       search:query "ornare";
 	 *       search:score ?score 
 	 *       ] .
 	 *    ?pred rdfs:label ?label .
@@ -173,7 +173,7 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?pred ?score ?label where {\n");
 		buffer.append("  ?pred <" + MATCHES + "> [\n");
-		buffer.append("    <" + QUERY + ">  " + "\"Detroit\" ;\n");
+		buffer.append("    <" + QUERY + ">  " + "\"ornare\" ;\n");
 		buffer.append("    <" + SCORE + "> ?score \n");
 		buffer.append("  ] .\n");
 		buffer.append("  ?pred rdfs:label ?label .\n");
@@ -189,7 +189,7 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 			try (TupleQueryResult res = query.evaluate()) {
 				int count = countTupleResults(res);
 				log.info("count statements: {}", count);
-				Assert.assertTrue(count > 0);
+				Assert.assertTrue(count == 1);
 			}
 
 		}
@@ -206,7 +206,7 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 	/**
 	 * #220 exmaple was reproduced with query: <code>
 	 * select ?pred ?score ?query ?label where { 
-	 *   bind(str("Detroit") as ?query) . 
+	 *   bind(str("ornare") as ?query) . 
 	 *   ?pred search:matches [ 
 	 *        search:query ?query; 
 	 *        search:score ?score 
@@ -223,7 +223,7 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 	{
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?pred ?score ?query ?label where {\n");
-		buffer.append("  bind(str(\"Detroit\") as ?query) .\n");
+		buffer.append("  bind(str(\"ornare\") as ?query) .\n");
 		buffer.append("  ?pred <" + MATCHES + "> [\n");
 		buffer.append("    <" + QUERY + ">  " + " ?query ;\n");
 		buffer.append("    <" + SCORE + "> ?score \n");
@@ -240,7 +240,7 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 			try (TupleQueryResult res = query.evaluate()) {
 				int count = countTupleResults(res);
 				log.info("count statements: {}", count);
-				Assert.assertTrue(count > 0);
+				Assert.assertTrue(count == 1);
 			}
 		}
 		catch (Exception e) {
@@ -256,12 +256,12 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 	/**
 	 * Reproduce #235 with following query: <code>
 	 * construct {
-	 *   ?pred a <urn:ontology/River> .
+	 *   ?pred a <urn:ontology/Phrase> .
 	 *   ?pred <urn:ontology/label> ?label .
 	     *   ?pred <urn:ontology/score> ?score .
 	 * } where {
 	 *    ?pred search:matches[
-	 *       search:query "Detoid";
+	 *       search:query "ornare";
 	 *       search:score ?score 
 	 *       ] .
 	 *    ?pred rdfs:label ?label .
@@ -276,13 +276,13 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 	{
 		StringBuilder buffer = new StringBuilder();
 		buffer.append(" construct {\n");
-		buffer.append("  ?pred a <urn:ontology/River> .\n");
+		buffer.append("  ?pred a <urn:ontology/Phrase> .\n");
 		buffer.append("  ?pred <urn:ontology/label> ?label .\n");
 		buffer.append("  ?pred <urn:ontology/score> ?score . \n");
 		buffer.append(" } where {\n");
 		//buffer.append("select * where {\n");
 		buffer.append("  ?pred <" + MATCHES + "> [\n");
-		buffer.append("     <" + QUERY + "> \"Detroit\";\n");
+		buffer.append("     <" + QUERY + "> \"ornare\";\n");
 		buffer.append("     <" + SCORE + "> ?score \n");
 		buffer.append("     ] .\n");
 		buffer.append("  ?pred rdfs:label ?label .\n");
