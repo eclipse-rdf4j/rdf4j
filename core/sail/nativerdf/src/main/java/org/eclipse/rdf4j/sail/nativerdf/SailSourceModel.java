@@ -388,7 +388,6 @@ class SailSourceModel extends AbstractModel {
 	{
 		if (sink == null) {
 			sink = source.sink(level);
-			logger.trace("sink created: {}", sink);
 		}
 		return sink;
 	}
@@ -396,19 +395,15 @@ class SailSourceModel extends AbstractModel {
 	private SailDataset dataset()
 		throws SailException
 	{
-		logger.trace("obtaining dataset");
 		if (sink != null) {
-			logger.trace("flushing sink");
 			try {
 				sink.flush();
 			}
 			finally {
-				logger.trace("closing sink");
 				sink.close();
 				sink = null;
 			}
 			if (dataset != null) {
-				logger.trace("closing dataset");
 				dataset.close();
 				dataset = null;
 			}

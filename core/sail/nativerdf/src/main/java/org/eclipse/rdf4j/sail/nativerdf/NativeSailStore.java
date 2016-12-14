@@ -60,11 +60,6 @@ class NativeSailStore implements SailStore {
 	final NamespaceStore namespaceStore;
 
 	/**
-	 * Lock manager used to prevent concurrent transactions.
-	 */
-	final ReentrantLock txnLockManager = new ReentrantLock();
-
-	/**
 	 * Creates a new {@link NativeSailStore} with the default cache sizes.
 	 */
 	public NativeSailStore(File dataDir, String tripleIndexes)
@@ -322,6 +317,8 @@ class NativeSailStore implements SailStore {
 
 		private final boolean explicit;
 
+		private volatile boolean txnStarted;
+
 		public NativeSailSink(boolean explicit)
 			throws SailException
 		{
@@ -329,11 +326,8 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public synchronized void close() {
-			if (txnLockManager.isHeldByCurrentThread()) {
-				txnLockManager.unlock();
-				logger.trace("lock unlocked by thread [{}] (close)", Thread.currentThread().getName());
-			}
+		public void close() {
+			// no-op
 		}
 
 		@Override
@@ -344,35 +338,30 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public void flush()
+		public synchronized void flush()
 			throws SailException
 		{
-			// SES-1949 check necessary to avoid empty/read-only transactions
-			// messing up concurrent transactions
-			if (txnLockManager.isHeldByCurrentThread() && txnLockManager.getHoldCount() == 1) {
-				logger.trace("committing");
+			try {
 				try {
+					valueStore.sync();
+				}
+				finally {
 					try {
-						valueStore.sync();
+						namespaceStore.sync();
 					}
 					finally {
-						try {
-							namespaceStore.sync();
-						}
-						finally {
-							tripleStore.commit();
-							logger.trace("commit complete");
-						}
+						tripleStore.commit();
+						txnStarted = false;
 					}
 				}
-				catch (IOException e) {
-					logger.error("Encountered an unexpected problem while trying to commit", e);
-					throw new SailException(e);
-				}
-				catch (RuntimeException e) {
-					logger.error("Encountered an unexpected problem while trying to commit", e);
-					throw e;
-				}
+			}
+			catch (IOException e) {
+				logger.error("Encountered an unexpected problem while trying to commit", e);
+				throw new SailException(e);
+			}
+			catch (RuntimeException e) {
+				logger.error("Encountered an unexpected problem while trying to commit", e);
+				throw e;
 			}
 		}
 
@@ -380,7 +369,7 @@ class NativeSailStore implements SailStore {
 		public void setNamespace(String prefix, String name)
 			throws SailException
 		{
-			acquireExclusiveTransactionLock();
+			startTriplestoreTransaction();
 			namespaceStore.setNamespace(prefix, name);
 		}
 
@@ -388,7 +377,7 @@ class NativeSailStore implements SailStore {
 		public void removeNamespace(String prefix)
 			throws SailException
 		{
-			acquireExclusiveTransactionLock();
+			startTriplestoreTransaction();
 			namespaceStore.removeNamespace(prefix);
 		}
 
@@ -396,7 +385,7 @@ class NativeSailStore implements SailStore {
 		public void clearNamespaces()
 			throws SailException
 		{
-			acquireExclusiveTransactionLock();
+			startTriplestoreTransaction();
 			namespaceStore.clear();
 		}
 
@@ -428,28 +417,22 @@ class NativeSailStore implements SailStore {
 			removeStatements(subj, pred, obj, explicit, ctx);
 		}
 
-		private synchronized void acquireExclusiveTransactionLock()
+		/**
+		 * Starts a transaction on the triplestore, if necessary.
+		 * 
+		 * @throws SailException
+		 *         if a transaction could not be started.
+		 */
+		private synchronized void startTriplestoreTransaction()
 			throws SailException
 		{
-			boolean txnLockAcquired = false;
-			if (!txnLockManager.isHeldByCurrentThread()) {
-				txnLockManager.lock();
+			if (!txnStarted) {
 				try {
-					if (txnLockManager.getHoldCount() == 1) {
-						// first object
-						tripleStore.startTransaction();
-					}
-					txnLockAcquired = true;
-					logger.trace("lock acquired by thread [{}]", Thread.currentThread().getName());
+					tripleStore.startTransaction();
+					txnStarted = true;
 				}
 				catch (IOException e) {
 					throw new SailException(e);
-				}
-				finally {
-					if (!txnLockAcquired) {
-						txnLockManager.unlock();
-						logger.trace("lock unlocked by thread [{}] (error)", Thread.currentThread().getName());
-					}
 				}
 			}
 		}
@@ -458,7 +441,7 @@ class NativeSailStore implements SailStore {
 				Resource... contexts)
 			throws SailException
 		{
-			acquireExclusiveTransactionLock();
+			startTriplestoreTransaction();
 			OpenRDFUtil.verifyContextNotNull(contexts);
 
 			boolean result = false;
@@ -497,8 +480,7 @@ class NativeSailStore implements SailStore {
 				Resource... contexts)
 			throws SailException
 		{
-			acquireExclusiveTransactionLock();
-
+			startTriplestoreTransaction();
 			OpenRDFUtil.verifyContextNotNull(contexts);
 
 			try {
