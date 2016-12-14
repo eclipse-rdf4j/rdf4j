@@ -103,7 +103,7 @@ public abstract class SailConcurrencyTest {
 		 * The number of statements to add in this transaction. Should be sufficiently high to trigger caching
 		 * / disk syncing options in the sail being tested. 
 		 */
-		protected int txnSize = 80000;
+		protected int txnSize = 200000;
 
 		private final CountDownLatch latch;
 
@@ -118,9 +118,6 @@ public abstract class SailConcurrencyTest {
 				final SailConnection conn = store.getConnection();
 				try {
 					conn.begin();
-					conn.clear(context);
-					conn.commit();
-					conn.begin();
 					for (int i = 0; i < txnSize / 2; i++) {
 						IRI subject = vf.createIRI("urn:instance-" + i);
 						conn.addStatement(subject, RDFS.LABEL, vf.createLiteral("li" + i), context);
@@ -130,20 +127,6 @@ public abstract class SailConcurrencyTest {
 				}
 				finally {
 					conn.close();
-				}
-
-				List<IRI> toDelete = Arrays.asList(
-						new IRI[] { RDF.FIRST, RDF.REST, RDF.NIL, DC.CONTRIBUTOR });
-				final SailConnection conn2 = store.getConnection();
-				try {
-					conn2.begin();
-					for (IRI prop : toDelete) {
-						conn2.removeStatements(null, prop, null, context);
-					}
-					conn2.commit();
-				}
-				finally {
-					conn2.close();
 				}
 			}
 			catch (Throwable t) {

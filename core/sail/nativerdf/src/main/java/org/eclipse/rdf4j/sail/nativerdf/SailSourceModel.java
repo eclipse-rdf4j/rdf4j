@@ -32,6 +32,8 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A {@link Model} that keeps the {@link Statement}s in an {@link SailSource}.
@@ -39,6 +41,8 @@ import org.eclipse.rdf4j.sail.base.SailStore;
  * @author James Leigh
  */
 class SailSourceModel extends AbstractModel {
+
+	private static final Logger logger = LoggerFactory.getLogger(SailSourceModel.class);
 
 	private final class StatementIterator implements Iterator<Statement> {
 
@@ -235,8 +239,10 @@ class SailSourceModel extends AbstractModel {
 		if (subj == null || pred == null || obj == null)
 			throw new UnsupportedOperationException("Incomplete statement");
 		try {
-			if (contains(dataset, subj, pred, obj, contexts))
+			if (contains(dataset, subj, pred, obj, contexts)) {
+				logger.trace("already contains statement {} {} {} {}", subj, pred, obj, contexts);
 				return false;
+			}
 			if (size >= 0) {
 				size++;
 			}
@@ -382,6 +388,7 @@ class SailSourceModel extends AbstractModel {
 	{
 		if (sink == null) {
 			sink = source.sink(level);
+			logger.trace("sink created: {}", sink);
 		}
 		return sink;
 	}
@@ -389,15 +396,19 @@ class SailSourceModel extends AbstractModel {
 	private SailDataset dataset()
 		throws SailException
 	{
+		logger.trace("obtaining dataset");
 		if (sink != null) {
+			logger.trace("flushing sink");
 			try {
 				sink.flush();
 			}
 			finally {
+				logger.trace("closing sink");
 				sink.close();
 				sink = null;
 			}
 			if (dataset != null) {
+				logger.trace("closing dataset");
 				dataset.close();
 				dataset = null;
 			}

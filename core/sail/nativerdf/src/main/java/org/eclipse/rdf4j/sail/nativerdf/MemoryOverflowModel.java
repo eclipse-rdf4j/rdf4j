@@ -63,6 +63,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 
 	public MemoryOverflowModel() {
 		memory = new TreeModel();
+		logger.trace("memory overflow model created");
 	}
 
 	public MemoryOverflowModel(Model model) {
@@ -77,6 +78,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 
 	public MemoryOverflowModel(Set<Namespace> namespaces) {
 		memory = new TreeModel(namespaces);
+		logger.trace("memory overflow model created");
 	}
 
 	@Override
@@ -125,6 +127,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	}
 
 	public Iterator<Statement> iterator() {
+		logger.trace("iterating over model");
 		return getDelegate().iterator();
 	}
 
@@ -234,6 +237,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		try {
 			assert disk == null;
 			dataDir = createTempDir("model");
+			logger.debug("using datadir {}", dataDir);
 			store = createSailStore(dataDir);
 			disk = new SailSourceModel(store) {
 
@@ -241,6 +245,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 				protected void finalize()
 					throws Throwable
 				{
+					logger.debug("finalizing {}", dataDir);
 					if (disk == this) {
 						try {
 							store.close();

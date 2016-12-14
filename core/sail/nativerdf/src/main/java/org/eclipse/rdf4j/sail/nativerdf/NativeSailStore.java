@@ -350,6 +350,7 @@ class NativeSailStore implements SailStore {
 			// SES-1949 check necessary to avoid empty/read-only transactions
 			// messing up concurrent transactions
 			if (txnLockManager.isHeldByCurrentThread() && txnLockManager.getHoldCount() == 1) {
+				logger.trace("committing");
 				try {
 					try {
 						valueStore.sync();
@@ -360,6 +361,7 @@ class NativeSailStore implements SailStore {
 						}
 						finally {
 							tripleStore.commit();
+							logger.trace("commit complete");
 						}
 					}
 				}
@@ -457,7 +459,6 @@ class NativeSailStore implements SailStore {
 			throws SailException
 		{
 			acquireExclusiveTransactionLock();
-
 			OpenRDFUtil.verifyContextNotNull(contexts);
 
 			boolean result = false;
