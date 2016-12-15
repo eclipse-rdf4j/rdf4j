@@ -234,6 +234,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		try {
 			assert disk == null;
 			dataDir = createTempDir("model");
+			logger.debug("memory overflow using temp directory {}", dataDir);
 			store = createSailStore(dataDir);
 			disk = new SailSourceModel(store) {
 
@@ -241,6 +242,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 				protected void finalize()
 					throws Throwable
 				{
+					logger.debug("finalizing {}", dataDir);
 					if (disk == this) {
 						try {
 							store.close();
