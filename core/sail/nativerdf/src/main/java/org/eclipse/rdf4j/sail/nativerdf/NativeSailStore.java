@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.rdf4j.IsolationLevel;
@@ -70,7 +71,7 @@ class NativeSailStore implements SailStore {
 	 * Boolean indicating whether any {@link NativeSailSink} has started a transaction on the
 	 * {@link TripleStore}.
 	 */
-	private volatile boolean storeTxnStarted;
+	private final AtomicBoolean storeTxnStarted = new AtomicBoolean(false);
 
 	/**
 	 * Creates a new {@link NativeSailStore} with the default cache sizes.
@@ -362,9 +363,8 @@ class NativeSailStore implements SailStore {
 						namespaceStore.sync();
 					}
 					finally {
-						if (storeTxnStarted) {
+						if (storeTxnStarted.compareAndSet(true, false)) {
 							tripleStore.commit();
-							storeTxnStarted = false;
 						}
 					}
 				}
@@ -461,12 +461,13 @@ class NativeSailStore implements SailStore {
 		private synchronized void startTriplestoreTransaction()
 			throws SailException
 		{
-			if (!storeTxnStarted) {
+
+			if (storeTxnStarted.compareAndSet(false, true)) {
 				try {
 					tripleStore.startTransaction();
-					storeTxnStarted = true;
 				}
 				catch (IOException e) {
+					storeTxnStarted.set(false);
 					throw new SailException(e);
 				}
 			}
