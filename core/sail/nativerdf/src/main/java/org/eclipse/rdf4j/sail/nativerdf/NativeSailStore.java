@@ -64,7 +64,13 @@ class NativeSailStore implements SailStore {
 	 * NamespaceStore. Each sink method that directly accesses one of these store obtains the lock and
 	 * releases it immediately when done.
 	 */
-	final ReentrantLock sinkStoreAccessLock = new ReentrantLock();
+	private final ReentrantLock sinkStoreAccessLock = new ReentrantLock();
+
+	/**
+	 * Boolean indicating whether any {@link NativeSailSink} has started a transaction on the
+	 * {@link TripleStore}.
+	 */
+	private volatile boolean storeTxnStarted;
 
 	/**
 	 * Creates a new {@link NativeSailStore} with the default cache sizes.
@@ -324,8 +330,6 @@ class NativeSailStore implements SailStore {
 
 		private final boolean explicit;
 
-		private volatile boolean txnStarted;
-
 		public NativeSailSink(boolean explicit)
 			throws SailException
 		{
@@ -333,11 +337,8 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public synchronized void close() {
-			// TODO not entirely sure this is ever necessary.
-			if (sinkStoreAccessLock.isHeldByCurrentThread()) {
-				sinkStoreAccessLock.unlock();
-			}
+		public void close() {
+			// no-op
 		}
 
 		@Override
@@ -348,7 +349,7 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public void flush()
+		public synchronized void flush()
 			throws SailException
 		{
 			sinkStoreAccessLock.lock();
@@ -361,8 +362,10 @@ class NativeSailStore implements SailStore {
 						namespaceStore.sync();
 					}
 					finally {
-						tripleStore.commit();
-						txnStarted = false;
+						if (storeTxnStarted) {
+							tripleStore.commit();
+							storeTxnStarted = false;
+						}
 					}
 				}
 			}
@@ -458,10 +461,10 @@ class NativeSailStore implements SailStore {
 		private synchronized void startTriplestoreTransaction()
 			throws SailException
 		{
-			if (!txnStarted) {
+			if (!storeTxnStarted) {
 				try {
 					tripleStore.startTransaction();
-					txnStarted = true;
+					storeTxnStarted = true;
 				}
 				catch (IOException e) {
 					throw new SailException(e);
