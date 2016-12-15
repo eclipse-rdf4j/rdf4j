@@ -99,17 +99,20 @@ public abstract class SailConcurrencyTest {
 
 		private final IRI context;
 
-		/**
-		 * The number of statements to add in this transaction. Should be sufficiently high to trigger caching
-		 * / disk syncing options in the sail being tested. 
-		 */
-		protected int txnSize = 200000;
+		private int txnSize; 
+		
+		private final CountDownLatch completed;
 
-		private final CountDownLatch latch;
+		private final CountDownLatch otherTxnCommitted;
 
-		public UploadTransaction(CountDownLatch latch, IRI context) {
-			this.latch = latch;
+		private final boolean rollback;
+
+		public UploadTransaction(int txnSize, CountDownLatch completed, CountDownLatch otherTxnCommitted, IRI context, boolean rollback) {
+			this.txnSize = txnSize;
+			this.completed = completed;
+			this.otherTxnCommitted = otherTxnCommitted;
 			this.context = context;
+			this.rollback = rollback;
 		}
 
 		@Override
@@ -123,7 +126,14 @@ public abstract class SailConcurrencyTest {
 						conn.addStatement(subject, RDFS.LABEL, vf.createLiteral("li" + i), context);
 						conn.addStatement(subject, RDFS.COMMENT, vf.createLiteral("ci" + i), context);
 					}
-					conn.commit();
+					if (rollback) {
+						otherTxnCommitted.await();
+						conn.rollback();
+					}
+					else {
+						conn.commit();
+						otherTxnCommitted.countDown();
+					}
 				}
 				finally {
 					conn.close();
@@ -133,7 +143,7 @@ public abstract class SailConcurrencyTest {
 				logger.error("error while executing transactions", t);
 			}
 			finally {
-				latch.countDown();
+				completed.countDown();
 			}
 		}
 
@@ -152,11 +162,13 @@ public abstract class SailConcurrencyTest {
 	{
 		logger.info("executing two large concurrent transactions");
 		final CountDownLatch runnersDone = new CountDownLatch(2);
-
+		final CountDownLatch otherTxnCommitted = new CountDownLatch(1);
+		
 		final IRI context1 = vf.createIRI("urn:context1");
 		final IRI context2 = vf.createIRI("urn:context2");
-		UploadTransaction runner1 = new UploadTransaction(runnersDone, context1);
-		UploadTransaction runner2 = new UploadTransaction(runnersDone, context2);
+		final int transactionSize = 200000;
+		UploadTransaction runner1 = new UploadTransaction(transactionSize, runnersDone, otherTxnCommitted, context1, false);
+		UploadTransaction runner2 = new UploadTransaction(transactionSize, runnersDone, otherTxnCommitted, context2, false);
 
 		final long start = System.currentTimeMillis();
 		new Thread(runner1).start();
@@ -171,9 +183,54 @@ public abstract class SailConcurrencyTest {
 		try {
 			long size1 = conn.size(context1);
 			long size2 = conn.size(context2);
-			logger.debug("size: {}", size1);
-			assertTrue(size1 > 0);
-			assertEquals(size1, size2);
+			logger.debug("size 1 = {}, size 2 = {}", size1, size2);
+			assertEquals("upload into context 1 should have been fully committed", transactionSize, size1);
+			assertEquals("upload into context 2 should have been fully committed", transactionSize, size2);
+		}
+		finally {
+			conn.close();
+		}
+
+	}
+
+	/**
+	 * Verifies that two large concurrent transactions in separate contexts do not cause inconsistencies or
+	 * errors when one of the transactions rolls back at the end.
+	 */
+	@Test
+	public void testConcurrentAddLargeTxnRollback()
+		throws Exception
+	{
+		logger.info("executing two large concurrent transactions");
+		final CountDownLatch runnersDone = new CountDownLatch(2);
+		final CountDownLatch otherTxnCommitted = new CountDownLatch(1);
+		
+		final IRI context1 = vf.createIRI("urn:context1");
+		final IRI context2 = vf.createIRI("urn:context2");
+		final int transactionSize = 200000;
+		
+		// transaction into context 1 will commit
+		UploadTransaction runner1 = new UploadTransaction(transactionSize, runnersDone, otherTxnCommitted, context1, false);
+		
+		// transaction into context 2 will rollback
+		UploadTransaction runner2 = new UploadTransaction(transactionSize, runnersDone, otherTxnCommitted, context2, true);
+
+		final long start = System.currentTimeMillis();
+		new Thread(runner1).start();
+		new Thread(runner2).start();
+
+		runnersDone.await();
+		final long finish = System.currentTimeMillis();
+
+		logger.info("completed both txns in " + (finish - start) + " ms");
+
+		SailConnection conn = store.getConnection();
+		try {
+			long size1 = conn.size(context1);
+			long size2 = conn.size(context2);
+			logger.debug("size 1 = {}, size 2 = {}", size1, size2);
+			assertEquals("upload into context 1 should have been fully committed", transactionSize, size1);
+			assertEquals("upload into context 2 should have been rolled back", 0, size2);
 		}
 		finally {
 			conn.close();

@@ -363,8 +363,10 @@ class NativeSailStore implements SailStore {
 						namespaceStore.sync();
 					}
 					finally {
-						if (storeTxnStarted.compareAndSet(true, false)) {
+						if (storeTxnStarted.get()) {
 							tripleStore.commit();
+							// do not set flag to false until _after_ commit is succesfully completed.
+							storeTxnStarted.set(false);
 						}
 					}
 				}
