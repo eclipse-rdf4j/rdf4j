@@ -60,6 +60,13 @@ class NativeSailStore implements SailStore {
 	final NamespaceStore namespaceStore;
 
 	/**
+	 * A lock to control concurrent access by {@link NativeSailSink} to the TripleStore, ValueStore, and
+	 * NamespaceStore. Each sink method that directly accesses one of these store obtains the lock and
+	 * releases it immediately when done.
+	 */
+	final ReentrantLock sinkStoreAccessLock = new ReentrantLock();
+
+	/**
 	 * Creates a new {@link NativeSailStore} with the default cache sizes.
 	 */
 	public NativeSailStore(File dataDir, String tripleIndexes)
@@ -326,8 +333,11 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public void close() {
-			// no-op
+		public synchronized void close() {
+			// TODO not entirely sure this is ever necessary.
+			if (sinkStoreAccessLock.isHeldByCurrentThread()) {
+				sinkStoreAccessLock.unlock();
+			}
 		}
 
 		@Override
@@ -338,9 +348,10 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
-		public synchronized void flush()
+		public void flush()
 			throws SailException
 		{
+			sinkStoreAccessLock.lock();
 			try {
 				try {
 					valueStore.sync();
@@ -363,30 +374,51 @@ class NativeSailStore implements SailStore {
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw e;
 			}
+			finally {
+				sinkStoreAccessLock.unlock();
+			}
 		}
 
 		@Override
 		public void setNamespace(String prefix, String name)
 			throws SailException
 		{
-			startTriplestoreTransaction();
-			namespaceStore.setNamespace(prefix, name);
+			sinkStoreAccessLock.lock();
+			try {
+				startTriplestoreTransaction();
+				namespaceStore.setNamespace(prefix, name);
+			}
+			finally {
+				sinkStoreAccessLock.unlock();
+			}
 		}
 
 		@Override
 		public void removeNamespace(String prefix)
 			throws SailException
 		{
-			startTriplestoreTransaction();
-			namespaceStore.removeNamespace(prefix);
+			sinkStoreAccessLock.lock();
+			try {
+				startTriplestoreTransaction();
+				namespaceStore.removeNamespace(prefix);
+			}
+			finally {
+				sinkStoreAccessLock.unlock();
+			}
 		}
 
 		@Override
 		public void clearNamespaces()
 			throws SailException
 		{
-			startTriplestoreTransaction();
-			namespaceStore.clear();
+			sinkStoreAccessLock.lock();
+			try {
+				startTriplestoreTransaction();
+				namespaceStore.clear();
+			}
+			finally {
+				sinkStoreAccessLock.unlock();
+			}
 		}
 
 		@Override
@@ -441,12 +473,11 @@ class NativeSailStore implements SailStore {
 				Resource... contexts)
 			throws SailException
 		{
-			startTriplestoreTransaction();
 			OpenRDFUtil.verifyContextNotNull(contexts);
-
 			boolean result = false;
-
+			sinkStoreAccessLock.lock();
 			try {
+				startTriplestoreTransaction();
 				int subjID = valueStore.storeValue(subj);
 				int predID = valueStore.storeValue(pred);
 				int objID = valueStore.storeValue(obj);
@@ -472,6 +503,9 @@ class NativeSailStore implements SailStore {
 				logger.error("Encountered an unexpected problem while trying to add a statement", e);
 				throw e;
 			}
+			finally {
+				sinkStoreAccessLock.unlock();
+			}
 
 			return result;
 		}
@@ -480,10 +514,11 @@ class NativeSailStore implements SailStore {
 				Resource... contexts)
 			throws SailException
 		{
-			startTriplestoreTransaction();
 			OpenRDFUtil.verifyContextNotNull(contexts);
 
+			sinkStoreAccessLock.lock();
 			try {
+				startTriplestoreTransaction();
 				int subjID = NativeValue.UNKNOWN_ID;
 				if (subj != null) {
 					subjID = valueStore.getID(subj);
@@ -540,6 +575,9 @@ class NativeSailStore implements SailStore {
 			catch (RuntimeException e) {
 				logger.error("Encountered an unexpected problem while trying to remove statements", e);
 				throw e;
+			}
+			finally {
+				sinkStoreAccessLock.unlock();
 			}
 		}
 	}
