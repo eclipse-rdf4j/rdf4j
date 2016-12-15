@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.model.impl.TreeModelFactory;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An {@link SailSource} that keeps a delta of its state from a backing {@link SailSource}.
@@ -33,6 +35,8 @@ import org.eclipse.rdf4j.sail.SailException;
  * @author James Leigh
  */
 class SailSourceBranch implements SailSource {
+
+	private static final Logger logger = LoggerFactory.getLogger(SailSourceBranch.class);
 
 	/**
 	 * Used to prevent changes to this object's field from multiple threads.
