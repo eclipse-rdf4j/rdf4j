@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.AbstractFederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
@@ -56,7 +55,7 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 	}
 
 	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-			AbstractFederatedServiceResolver serviceResolver, TupleFunctionRegistry tupleFunctionRegistry)
+			FederatedServiceResolver serviceResolver, TupleFunctionRegistry tupleFunctionRegistry)
 	{
 		this(tripleSource, dataset, serviceResolver, tupleFunctionRegistry, 0);
 	}

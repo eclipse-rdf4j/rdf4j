@@ -10,9 +10,9 @@ package org.eclipse.rdf4j.spin.function;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Query;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryPreparer;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.eclipse.rdf4j.spin.QueryContext;
 
 public abstract class AbstractSpinFunction {
 
@@ -37,7 +37,8 @@ public abstract class AbstractSpinFunction {
 	}
 
 	protected QueryPreparer getCurrentQueryPreparer() {
-		QueryPreparer qp = (queryPreparer != null) ? queryPreparer : QueryContext.getQueryPreparer();
+		QueryPreparer qp = (queryPreparer != null) ? queryPreparer
+				: QueryContext.getQueryContext().getQueryPreparer();
 		if (qp == null) {
 			throw new IllegalStateException("No QueryPreparer!");
 		}
