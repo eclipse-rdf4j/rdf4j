@@ -22,29 +22,52 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingAssigner;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.CompareOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConjunctiveConstraintSplitter;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.FilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.IterativeEvaluationOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.OrderLimitOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.QueryContextIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.evaluation.SailTripleSource;
+import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.AddRemoveOperation;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.ClearContextOperation;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.Operation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.Sets;
 
 /**
  * <h2><a name="whySailConnectionListener">Sail Connection Listener instead of implementing add/remove</a>
@@ -71,6 +94,11 @@ import org.slf4j.LoggerFactory;
  * @author christian.huetter
  */
 public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
+
+	@SuppressWarnings("unchecked")
+	private static final Set<Class<? extends QueryModelNode>> PROJECTION_TYPES = Sets.newHashSet(
+			Projection.class,
+			MultiProjection.class);
 
 	final private Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -284,8 +312,35 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
 		throws SailException
 	{
+		QueryContext qctx = new QueryContext();
+		SearchIndexQueryContextInitializer.init(qctx, luceneIndex);
+
+		final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
+		qctx.begin();
+		try {
+			iter = evaluateInternal(tupleExpr, dataset, bindings, includeInferred);
+		}
+		finally {
+			qctx.end();
+		}
+
+		// NB: Iteration methods may do on-demand evaluation hence need to wrap
+		// these too
+		return new QueryContextIteration(iter, qctx);
+	}
+
+	private CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
+			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
+		throws SailException
+	{
 		// Don't modify the original tuple expression
 		tupleExpr = tupleExpr.clone();
+
+		if (!(tupleExpr instanceof QueryRoot)) {
+			// Add a dummy root node to the tuple expressions to allow the
+			// optimizers to modify the actual root node
+			tupleExpr = new QueryRoot(tupleExpr);
+		}
 
 		// Inline any externally set bindings, lucene statement patterns can also
 		// use externally bound variables
@@ -297,13 +352,45 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			interpreter.process(tupleExpr, bindings, queries);
 		}
 
-		// evaluate lucene queries
+		// constant optimizer - evaluate lucene queries
 		if (!queries.isEmpty()) {
 			evaluateLuceneQueries(queries, tupleExpr);
 		}
 
-		// let the lower sail evaluate the remaining query
-		return super.evaluate(tupleExpr, dataset, bindings, includeInferred);
+		if (sail.getEvaluationMode() == TupleFunctionEvaluationMode.TRIPLE_SOURCE) {
+			ValueFactory vf = sail.getValueFactory();
+			EvaluationStrategy strategy = new TupleFunctionEvaluationStrategy(
+					new SailTripleSource(this, includeInferred, vf), dataset,
+					sail.getFederatedServiceResolver(), sail.getTupleFunctionRegistry());
+
+			// do standard optimizations
+			new BindingAssigner().optimize(tupleExpr, dataset, bindings);
+			new ConstantOptimizer(strategy).optimize(tupleExpr, dataset, bindings);
+			new CompareOptimizer().optimize(tupleExpr, dataset, bindings);
+			new ConjunctiveConstraintSplitter().optimize(tupleExpr, dataset, bindings);
+			new DisjunctiveConstraintOptimizer().optimize(tupleExpr, dataset, bindings);
+			new SameTermFilterOptimizer().optimize(tupleExpr, dataset, bindings);
+			new QueryModelNormalizer().optimize(tupleExpr, dataset, bindings);
+			new QueryJoinOptimizer(new TupleFunctionEvaluationStatistics()).optimize(tupleExpr, dataset,
+					bindings);
+			// new SubSelectJoinOptimizer().optimize(tupleExpr, dataset,
+			// bindings);
+			new IterativeEvaluationOptimizer().optimize(tupleExpr, dataset, bindings);
+			new FilterOptimizer().optimize(tupleExpr, dataset, bindings);
+			new OrderLimitOptimizer().optimize(tupleExpr, dataset, bindings);
+
+			logger.trace("Optimized query model:\n{}", tupleExpr);
+
+			try {
+				return strategy.evaluate(tupleExpr, bindings);
+			}
+			catch (QueryEvaluationException e) {
+				throw new SailException(e);
+			}
+		}
+		else {
+			return super.evaluate(tupleExpr, dataset, bindings, includeInferred);
+		}
 	}
 
 	/**
@@ -371,7 +458,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 		// find projection for the given query
 		QueryModelNode principalNode = query.getParentQueryModelNode();
-		final Projection projection = (Projection)getParentNodeOfType(principalNode, Projection.class);
+		final UnaryTupleOperator projection = (UnaryTupleOperator)getParentNodeOfTypes(principalNode,
+				PROJECTION_TYPES);
 		if (projection == null) {
 			logger.error(
 					"Could not add bindings to the query tree because no projection was found for the query node: {}",
@@ -388,7 +476,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 				throws RuntimeException
 			{
 				// does the node belong to the same (sub-)query?
-				QueryModelNode parent = getParentNodeOfType(node, Projection.class);
+				QueryModelNode parent = getParentNodeOfTypes(node, PROJECTION_TYPES);
 				if (parent != null && parent.equals(projection))
 					assignments.add(node);
 			}
@@ -428,14 +516,19 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	/**
 	 * Returns the closest parent node of the given type.
 	 */
-	private QueryModelNode getParentNodeOfType(QueryModelNode node, Class<? extends QueryModelNode> type) {
+	private QueryModelNode getParentNodeOfTypes(QueryModelNode node,
+			Set<Class<? extends QueryModelNode>> types)
+	{
 		QueryModelNode parent = node.getParentNode();
-		if (parent == null)
+		if (parent == null) {
 			return null;
-		else if (parent.getClass().equals(type))
+		}
+		else if (types.contains(parent.getClass())) {
 			return parent;
-		else
-			return getParentNodeOfType(parent, type);
+		}
+		else {
+			return getParentNodeOfTypes(parent, types);
+		}
 	}
 
 	/**

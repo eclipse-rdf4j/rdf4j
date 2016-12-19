@@ -16,6 +16,9 @@ import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 
+/**
+ * A generic interface for executing queries over a {@link TripleSource}.
+ */
 public interface QueryPreparer {
 
 	BooleanQuery prepare(ParsedBooleanQuery q);
