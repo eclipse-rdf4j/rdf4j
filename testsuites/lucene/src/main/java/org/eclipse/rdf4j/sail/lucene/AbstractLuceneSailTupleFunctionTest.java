@@ -93,10 +93,14 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 		throws IOException, RepositoryException
 	{
 		try {
-			connection.close();
+			if (connection != null) {
+				connection.close();
+			}
 		}
 		finally {
-			repository.shutDown();
+			if (repository != null) {
+				repository.shutDown();
+			}
 		}
 	}
 

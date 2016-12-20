@@ -125,8 +125,16 @@ public abstract class AbstractLuceneSailIndexedPropertiesTest {
 	public void tearDown()
 		throws IOException, RepositoryException
 	{
-		connection.close();
-		repository.shutDown();
+		try {
+			if (connection != null) {
+				connection.close();
+			}
+		}
+		finally {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		}
 	}
 
 	@Test
