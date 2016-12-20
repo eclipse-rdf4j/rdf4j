@@ -15,6 +15,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -113,9 +114,9 @@ public class ElasticsearchIndexTest {
 		throws Exception
 	{
 		ElasticsearchTestUtils.TEST_SEMAPHORE.acquire();
+		testDir = tempDir.newFolder("es-index-test").toPath();
 		Properties sailProperties = new Properties();
 		sailProperties.put(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
-		testDir = tempDir.newFolder("elasticsearchindextest").toPath();
 		sailProperties.put(LuceneSail.LUCENE_DIR_KEY, testDir.toAbsolutePath().toString());
 		index = new ElasticsearchIndex();
 		index.initialize(sailProperties);
