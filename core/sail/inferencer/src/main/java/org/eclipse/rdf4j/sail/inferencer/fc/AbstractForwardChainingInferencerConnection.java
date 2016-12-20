@@ -166,15 +166,17 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 
 		while (hasNewStatements()) {
 			iteration++;
-			logger.debug("starting iteration " + iteration);
+			logger.trace("starting iteration " + iteration);
 			Model newThisIteration = prepareIteration();
 
 			int nofInferred = applyRules(newThisIteration);
 
-			logger.debug("iteration " + iteration + " done; inferred " + nofInferred + " new statements");
+			logger.trace("iteration " + iteration + " done; inferred " + nofInferred + " new statements");
 			totalInferred += nofInferred;
 		}
-		logger.info("{} inferred {} new statements", this.getClass().getName(), totalInferred);
+		if (totalInferred > 0) {
+			logger.debug("{} inferred {} new statements", this.getClass().getName(), totalInferred);
+		}
 	}
 
 	/**
