@@ -14,7 +14,6 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashSet;
@@ -23,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.Semaphore;
+import java.util.UUID;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -116,6 +115,7 @@ public class ElasticsearchIndexTest {
 	{
 		ElasticsearchTestUtils.TEST_SEMAPHORE.acquire();
 		Properties sailProperties = new Properties();
+		sailProperties.put(ElasticsearchIndex.INDEX_NAME_KEY, UUID.randomUUID().toString());
 		testDir = tempDir.newFolder("elasticsearchindextest").toPath();
 		sailProperties.put(LuceneSail.LUCENE_DIR_KEY, testDir.toAbsolutePath().toString());
 		index = new ElasticsearchIndex();
