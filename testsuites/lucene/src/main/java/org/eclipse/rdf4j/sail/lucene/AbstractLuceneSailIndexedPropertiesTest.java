@@ -80,7 +80,7 @@ public abstract class AbstractLuceneSailIndexedPropertiesTest {
 
 	@Before
 	public void setUp()
-		throws IOException, RepositoryException
+		throws Exception
 	{
 		// setup a LuceneSail
 		MemoryStore memoryStore = new MemoryStore();

@@ -137,9 +137,9 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
-	private Node node;
+	private volatile Node node;
 
-	private Client client;
+	private volatile Client client;
 
 	private String clusterName;
 
@@ -316,14 +316,19 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	public void shutDown()
 		throws IOException
 	{
-		if (client != null) {
-			client.close();
+		try {
+			Client toCloseClient = client;
 			client = null;
+			if (toCloseClient != null) {
+				toCloseClient.close();
+			}
 		}
-
-		if (node != null) {
-			node.close();
+		finally {
+			Node toCloseNode = node;
 			node = null;
+			if (toCloseNode != null) {
+				toCloseNode.close();
+			}
 		}
 	}
 
