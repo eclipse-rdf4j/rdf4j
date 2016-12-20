@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.sail.elasticsearch;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.UUID;
 
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailIndexedPropertiesTest;
@@ -27,7 +26,7 @@ public class ElasticsearchSailIndexedPropertiesTest extends AbstractLuceneSailIn
 
 	@Override
 	protected void configure(LuceneSail sail) {
-		sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, UUID.randomUUID().toString());
+		sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
 		sail.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
 		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, testDir.toAbsolutePath().toString());
 	}

@@ -16,6 +16,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.UUID;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.URI;
@@ -173,7 +174,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		throws Exception
 	{
 		super.initialize(parameters);
-		indexName = parameters.getProperty(INDEX_NAME_KEY, DEFAULT_INDEX_NAME);
+		indexName = parameters.getProperty(INDEX_NAME_KEY, UUID.randomUUID().toString());
 		documentType = parameters.getProperty(DOCUMENT_TYPE_KEY, DEFAULT_DOCUMENT_TYPE);
 		analyzer = parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY, DEFAULT_ANALYZER);
 		// slightly hacky cast to cope with the fact that Properties is
