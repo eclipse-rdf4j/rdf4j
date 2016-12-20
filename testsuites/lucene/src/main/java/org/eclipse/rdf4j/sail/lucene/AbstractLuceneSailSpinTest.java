@@ -92,8 +92,12 @@ public abstract class AbstractLuceneSailSpinTest {
 	public void tearDown()
 		throws IOException, RepositoryException
 	{
-		connection.close();
-		repository.shutDown();
+		try {
+			connection.close();
+		}
+		finally {
+			repository.shutDown();
+		}
 	}
 
 	protected abstract void configure(Properties parameters);

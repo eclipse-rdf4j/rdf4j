@@ -7,28 +7,52 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailIndexedPropertiesTest;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.elasticsearch.common.io.FileSystemUtils;
+import org.junit.Rule;
+import org.junit.rules.TemporaryFolder;
 
 public class ElasticsearchSailIndexedPropertiesTest extends AbstractLuceneSailIndexedPropertiesTest {
 
-	private static final String DATA_DIR = "target/test-data";
+	@Rule
+	public TemporaryFolder tempDir = new TemporaryFolder();
+
+	private Path testDir;
 
 	@Override
 	protected void configure(LuceneSail sail) {
 		sail.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
-		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, DATA_DIR);
+		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, testDir.toAbsolutePath().toString());
 	}
 
+	@Override
+	public void setUp()
+		throws Exception
+	{
+		ElasticsearchTestUtils.TEST_SEMAPHORE.acquire();
+		testDir = tempDir.newFolder("elasticsearch-indexedpropertiestest").toPath();
+		super.setUp();
+	}
+
+	@Override
 	public void tearDown()
 		throws IOException, RepositoryException
 	{
-		super.tearDown();
-		FileSystemUtils.deleteRecursively(new File(DATA_DIR));
+		try {
+			super.tearDown();
+		}
+		finally {
+			try {
+				FileSystemUtils.deleteRecursively(testDir.toFile());
+			}
+			finally {
+				ElasticsearchTestUtils.TEST_SEMAPHORE.release();
+			}
+		}
 	}
 }
