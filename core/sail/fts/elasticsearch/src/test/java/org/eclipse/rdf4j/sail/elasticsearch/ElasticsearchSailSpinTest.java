@@ -30,7 +30,7 @@ public class ElasticsearchSailSpinTest extends AbstractLuceneSailSpinTest {
 		throws Exception
 	{
 		ElasticsearchTestUtils.TEST_SEMAPHORE.acquire();
-		testDir = tempDir.newFolder("elasticsearch-sailspintest").toPath();
+		testDir = tempDir.newFolder("es-ss-test").toPath();
 		super.setUp();
 	}
 

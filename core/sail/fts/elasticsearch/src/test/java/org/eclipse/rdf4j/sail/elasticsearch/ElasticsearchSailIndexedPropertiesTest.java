@@ -36,7 +36,7 @@ public class ElasticsearchSailIndexedPropertiesTest extends AbstractLuceneSailIn
 		throws Exception
 	{
 		ElasticsearchTestUtils.TEST_SEMAPHORE.acquire();
-		testDir = tempDir.newFolder("elasticsearch-indexedpropertiestest").toPath();
+		testDir = tempDir.newFolder("es-ip-test").toPath();
 		super.setUp();
 	}
 

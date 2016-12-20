@@ -29,7 +29,7 @@ public class ElasticsearchSailTupleFunctionTest extends AbstractLuceneSailTupleF
 		throws Exception
 	{
 		ElasticsearchTestUtils.TEST_SEMAPHORE.acquire();
-		testDir = tempDir.newFolder("elasticsearch-sailspintest").toPath();
+		testDir = tempDir.newFolder("es-stf-test").toPath();
 		super.setUp();
 	}
 

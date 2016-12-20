@@ -43,7 +43,7 @@ public class ElasticsearchSailTest extends AbstractLuceneSailTest {
 		throws Exception
 	{
 		ElasticsearchTestUtils.TEST_SEMAPHORE.acquire();
-		testDir = tempDir.newFolder("elasticsearch-sailspintest").toPath();
+		testDir = tempDir.newFolder("es-sail-test").toPath();
 		super.setUp();
 	}
 

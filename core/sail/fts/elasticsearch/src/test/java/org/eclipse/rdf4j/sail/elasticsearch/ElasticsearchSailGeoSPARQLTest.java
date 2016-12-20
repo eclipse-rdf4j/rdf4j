@@ -59,7 +59,7 @@ public class ElasticsearchSailGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLT
 		throws Exception
 	{
 		ElasticsearchTestUtils.TEST_SEMAPHORE.acquire();
-		testDir = tempDir.newFolder("elasticsearch-geosparqltest").toPath();
+		testDir = tempDir.newFolder("es-gs-test").toPath();
 		super.setUp();
 	}
 

@@ -24,6 +24,6 @@ public class ElasticsearchTestUtils {
 	private static final AtomicLong TEST_COUNTER = new AtomicLong(0);
 	
 	public static String getNextTestIndexName() {
-		return "rdf4j-elasticsearch-testindex-" + TEST_COUNTER.incrementAndGet();
+		return "rdf4j-es-testindex-" + TEST_COUNTER.incrementAndGet();
 	}
 }
