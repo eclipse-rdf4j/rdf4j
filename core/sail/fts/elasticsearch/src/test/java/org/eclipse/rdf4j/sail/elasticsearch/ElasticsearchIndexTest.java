@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.UUID;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -115,7 +114,7 @@ public class ElasticsearchIndexTest {
 	{
 		ElasticsearchTestUtils.TEST_SEMAPHORE.acquire();
 		Properties sailProperties = new Properties();
-		sailProperties.put(ElasticsearchIndex.INDEX_NAME_KEY, UUID.randomUUID().toString());
+		sailProperties.put(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
 		testDir = tempDir.newFolder("elasticsearchindextest").toPath();
 		sailProperties.put(LuceneSail.LUCENE_DIR_KEY, testDir.toAbsolutePath().toString());
 		index = new ElasticsearchIndex();

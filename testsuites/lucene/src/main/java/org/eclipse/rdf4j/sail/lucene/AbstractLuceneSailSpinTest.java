@@ -113,10 +113,12 @@ public abstract class AbstractLuceneSailSpinTest {
 		URL resourceURL = AbstractLuceneSailSpinTest.class.getClassLoader().getResource(DATA);
 		log.info("Resource URL: {}", resourceURL.toString());
 		Model model = Rio.parse(resourceURL.openStream(), resourceURL.toString(), RDFFormat.TURTLE);
+		searchIndex.begin();
 		for (Statement stmt : model) {
 			repoConn.add(stmt);
 			searchIndex.addStatement(stmt);
 		}
+		searchIndex.commit();
 	}
 
 	/**
@@ -130,22 +132,11 @@ public abstract class AbstractLuceneSailSpinTest {
 	{
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?s ?p ?o where { ?s ?p ?o } limit 10");
-		try {
-			connection.begin();
-
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
-			try (TupleQueryResult res = query.evaluate()) {
-				int count = countTupleResults(res);
-				log.info("count statements: {}", count);
-				Assert.assertTrue(count > 0);
-			}
-		}
-		catch (Exception e) {
-			connection.rollback();
-			throw e;
-		}
-		finally {
-			connection.commit();
+		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
+		try (TupleQueryResult res = query.evaluate()) {
+			int count = countTupleResults(res);
+			log.info("count statements: {}", count);
+			Assert.assertTrue(count > 0);
 		}
 	}
 
@@ -170,26 +161,14 @@ public abstract class AbstractLuceneSailSpinTest {
 		buffer.append("}\n");
 		log.info("Request query: \n====================\n{}\n======================\n", buffer.toString());
 
-		try {
-			connection.begin();
-
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
-			log.debug("query class: {}", query.getClass());
-			//log.debug("query representation: \n{}", query);
-			//printTupleResult(query);
-			try (TupleQueryResult res = query.evaluate()) {
-				int count = countTupleResults(res);
-				log.info("count statements: {}", count);
-				Assert.assertTrue(count > 0);
-			}
-
-		}
-		catch (Exception e) {
-			connection.rollback();
-			throw e;
-		}
-		finally {
-			connection.commit();
+		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
+		log.debug("query class: {}", query.getClass());
+		//log.debug("query representation: \n{}", query);
+		//printTupleResult(query);
+		try (TupleQueryResult res = query.evaluate()) {
+			int count = countTupleResults(res);
+			log.info("count statements: {}", count);
+			Assert.assertTrue("count statements: " + count, count > 0);
 		}
 
 	}
@@ -217,23 +196,12 @@ public abstract class AbstractLuceneSailSpinTest {
 		buffer.append("}\n");
 		log.info("Request query: \n====================\n{}\n======================\n", buffer.toString());
 
-		try {
-			connection.begin();
-
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
-			printTupleResult(query);
-			try (TupleQueryResult res = query.evaluate()) {
-				int count = countTupleResults(res);
-				log.info("count statements: {}", count);
-				Assert.assertTrue(count > 0);
-			}
-		}
-		catch (Exception e) {
-			connection.rollback();
-			throw e;
-		}
-		finally {
-			connection.commit();
+		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
+		printTupleResult(query);
+		try (TupleQueryResult res = query.evaluate()) {
+			int count = countTupleResults(res);
+			log.info("count statements: {}", count);
+			Assert.assertTrue(count > 0);
 		}
 
 	}
@@ -272,51 +240,19 @@ public abstract class AbstractLuceneSailSpinTest {
 		buffer.append(" }");
 		log.info("Request query: \n====================\n{}\n======================\n", buffer.toString());
 
-		try {
-			connection.begin();
-
-			GraphQuery query = connection.prepareGraphQuery(QueryLanguage.SPARQL, buffer.toString());
-			printGraphResult(query);
-			try (GraphQueryResult res = query.evaluate()) {
-				int cnt = countGraphResults(res);
-				Assert.assertTrue(String.format("count triples: ", cnt), cnt > 2);
-			}
-			/*
-			 * TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
-			 * ByteArrayOutputStream resultoutput = new ByteArrayOutputStream(); query.evaluate(new
-			 * SPARQLResultsCSVWriter(resultoutput)); log.info("tuple response: "); log.info(new
-			 * String(resultoutput.toByteArray()));
-			 */
-			/*
-			 * try (TupleQueryResult res = query.evaluate()) { int count = countTupleResults(res); log.info(
-			 * "count statements: {}", count); Assert.assertTrue(count == 2); }
-			 */
-		}
-		catch (Exception e) {
-			connection.rollback();
-			throw e;
-		}
-		finally {
-			connection.commit();
+		GraphQuery query = connection.prepareGraphQuery(QueryLanguage.SPARQL, buffer.toString());
+		printGraphResult(query);
+		try (GraphQueryResult res = query.evaluate()) {
+			int cnt = countGraphResults(res);
+			Assert.assertTrue(String.format("count triples: ", cnt), cnt > 2);
 		}
 	}
 
 	public int countStatements(RepositoryConnection con)
 		throws Exception
 	{
-		try {
-			connection.begin();
-
-			RepositoryResult<Statement> sts = connection.getStatements(null, null, null, new Resource[] {});
-			return Iterations.asList(sts).size();
-		}
-		catch (Exception e) {
-			connection.rollback();
-			throw e;
-		}
-		finally {
-			connection.commit();
-		}
+		RepositoryResult<Statement> sts = connection.getStatements(null, null, null, new Resource[] {});
+		return Iterations.asList(sts).size();
 	}
 
 	public int countTupleResults(TupleQueryResult results)

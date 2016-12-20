@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.elasticsearch;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Properties;
-import java.util.UUID;
 
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailSpinTest;
@@ -54,7 +53,7 @@ public class ElasticsearchSailSpinTest extends AbstractLuceneSailSpinTest {
 
 	@Override
 	protected void configure(Properties parameters) {
-		parameters.setProperty(ElasticsearchIndex.INDEX_NAME_KEY, UUID.randomUUID().toString());
+		parameters.setProperty(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
 		parameters.setProperty(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
 		parameters.setProperty(LuceneSail.LUCENE_DIR_KEY, testDir.toAbsolutePath().toString());
 		parameters.setProperty(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
