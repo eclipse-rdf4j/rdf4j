@@ -60,6 +60,8 @@ public abstract class AbstractLuceneSailSpinTest {
 
 	private RepositoryConnection connection;
 
+	private SearchIndex searchIndex;
+
 	@Before
 	public void setUp()
 		throws Exception
@@ -74,7 +76,7 @@ public abstract class AbstractLuceneSailSpinTest {
 		// add Lucene support
 		Properties parameters = new Properties();
 		configure(parameters);
-		SearchIndex searchIndex = LuceneSail.createSearchIndex(parameters);
+		searchIndex = LuceneSail.createSearchIndex(parameters);
 		spin.addQueryContextInitializer(new SearchIndexQueryContextInitializer(searchIndex));
 		repository = new SailRepository(spin);
 		repository.initialize();
@@ -98,8 +100,15 @@ public abstract class AbstractLuceneSailSpinTest {
 			}
 		}
 		finally {
-			if (repository != null) {
-				repository.shutDown();
+			try {
+				if (repository != null) {
+					repository.shutDown();
+				}
+			}
+			finally {
+				if (searchIndex != null) {
+					searchIndex.shutDown();
+				}
 			}
 		}
 	}
