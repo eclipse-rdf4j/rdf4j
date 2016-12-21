@@ -14,8 +14,9 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -44,11 +45,16 @@ import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 public class ElasticsearchIndexTest {
 
-	private static final String DATA_DIR = "target/test-data";
+	@Rule
+	public TemporaryFolder tempDir = new TemporaryFolder();
+
+	private Path testDir;
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -107,9 +113,12 @@ public class ElasticsearchIndexTest {
 	public void setUp()
 		throws Exception
 	{
-		index = new ElasticsearchIndex();
+		ElasticsearchTestUtils.TEST_SEMAPHORE.acquire();
+		testDir = tempDir.newFolder("es-index-test").toPath();
 		Properties sailProperties = new Properties();
-		sailProperties.put(LuceneSail.LUCENE_DIR_KEY, DATA_DIR);
+		sailProperties.put(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
+		sailProperties.put(LuceneSail.LUCENE_DIR_KEY, testDir.toAbsolutePath().toString());
+		index = new ElasticsearchIndex();
 		index.initialize(sailProperties);
 		node = NodeBuilder.nodeBuilder().loadConfigSettings(false).client(true).local(true).clusterName(
 				index.getClusterName()).node();
@@ -120,10 +129,27 @@ public class ElasticsearchIndexTest {
 	public void tearDown()
 		throws Exception
 	{
-		client.close();
-		node.close();
-		index.shutDown();
-		FileSystemUtils.deleteRecursively(new File(DATA_DIR));
+		try {
+			client.close();
+		}
+		finally {
+			try {
+				node.close();
+			}
+			finally {
+				try {
+					index.shutDown();
+				}
+				finally {
+					try {
+						FileSystemUtils.deleteRecursively(testDir.toFile());
+					}
+					finally {
+						ElasticsearchTestUtils.TEST_SEMAPHORE.release();
+					}
+				}
+			}
+		}
 	}
 
 	@Test
@@ -159,7 +185,8 @@ public class ElasticsearchIndexTest {
 		index.addStatement(statement12);
 		index.commit();
 
-		// See if everything remains consistent. We must create a new IndexReader
+		// See if everything remains consistent. We must create a new
+		// IndexReader
 		// in order to be able to see the updates
 		count = client.prepareCount(index.getIndexName()).setTypes(
 				index.getTypes()).execute().actionGet().getCount();
@@ -194,7 +221,8 @@ public class ElasticsearchIndexTest {
 		index.removeStatement(statement11);
 		index.commit();
 
-		// check that that statement is actually removed and that the other still
+		// check that that statement is actually removed and that the other
+		// still
 		// exists
 		count = client.prepareCount(index.getIndexName()).setTypes(
 				index.getTypes()).execute().actionGet().getCount();
@@ -315,8 +343,7 @@ public class ElasticsearchIndexTest {
 
 		// now add the statements through the repo
 		// add statements with context
-		SailRepositoryConnection connection = repository.getConnection();
-		try {
+		try (SailRepositoryConnection connection = repository.getConnection();) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -344,7 +371,6 @@ public class ElasticsearchIndexTest {
 		}
 		finally {
 			// close repo
-			connection.close();
 			repository.shutDown();
 		}
 	}
@@ -373,8 +399,7 @@ public class ElasticsearchIndexTest {
 
 		// now add the statements through the repo
 		// add statements with context
-		SailRepositoryConnection connection = repository.getConnection();
-		try {
+		try (SailRepositoryConnection connection = repository.getConnection();) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -402,7 +427,6 @@ public class ElasticsearchIndexTest {
 		}
 		finally {
 			// close repo
-			connection.close();
 			repository.shutDown();
 		}
 	}
