@@ -9,16 +9,16 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
-import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -104,16 +104,10 @@ class Transaction implements AutoCloseable {
 			new ThreadFactoryBuilder().setNameFormat("rdf4j-transaction-%d").build());
 
 	/**
-	 * An append-only {@link Queue} that tracks the state of all of the futures involved in this Transaction.
+	 * A {@link List} that tracks the state of the futures involved in this Transaction. The front of the list
+	 * is cleaned of done operations during {@link #hasActiveOperations()} to release references to results.
 	 */
-	private final Queue<Future<?>> futures = new LinkedBlockingQueue<>();
-
-	/**
-	 * This {@link Semaphore} is used to ensure that only a single task is executed by the ExecutorService,
-	 * and that these tasks are not run while {@link #hasActiveOperations()} is determining whether there are
-	 * outstanding tasks open for this Transaction.
-	 */
-	private final Semaphore semaphore = new Semaphore(1);
+	private final List<Future<?>> futures = new ArrayList<>();
 
 	/**
 	 * Create a new Transaction for the given {@link Repository}.
@@ -413,29 +407,21 @@ class Transaction implements AutoCloseable {
 	 *         otherwise.
 	 */
 	boolean hasActiveOperations() {
-		// Synchronize on the futures set to ensure that new executions are not submitted once we get this monitor
+		// Synchronize on the futures set to ensure that new executions are blocked from submitting once we get this monitor
 		synchronized (futures) {
-			try {
-				/*
-				 * Acquire the sole Semaphore before checking isDone. Semaphore ensures that we get as
-				 * accurate a view as possible on isDone for all transactions without using a Lock. The
-				 * remaining cases are false positives, not false negatives. Ie, the semaphore may have been
-				 * released after the task completed in the finally block, but the ExecutorService may not
-				 * have set isDone from false to true yet on the Future, which is fine for our purposes. We
-				 * use Semaphore.acquireUninterruptibly to jump to the front of the queue compared to
-				 * Semaphore.acquire used in the submit(Callable) method.
-				 **/
-				semaphore.acquireUninterruptibly();
-				for (Future<?> future : futures) {
-					if (!future.isDone()) {
-						return true;
-					}
+			Iterator<Future<?>> iterator = futures.iterator();
+			while (iterator.hasNext()) {
+				Future<?> future = iterator.next();
+				if (!future.isDone()) {
+					// Execution is in serial, so everything after this item is assumed not to be able to be cleaned up
+					return true;
 				}
-				return false;
+				else {
+					// Clean up this item to remove the reference to the item, while we have a lock on futures
+					iterator.remove();
+				}
 			}
-			finally {
-				semaphore.release();
-			}
+			return false;
 		}
 	}
 
@@ -529,28 +515,19 @@ class Transaction implements AutoCloseable {
 		return future.get();
 	}
 
+	/**
+	 * Atomically submit the task to the executor and add to our local list used to track whether there are
+	 * outstanding operations for the executor.
+	 * 
+	 * @param callable
+	 *        The task to submit
+	 * @return A {@link Future} that can be used to track whether the operation has succeeded and get the
+	 *         result.
+	 */
 	private <T> Future<T> submit(final Callable<T> callable) {
-		// Add wrapper to ensure that we are exclusive with other tasks and with hasActiveOperations
-		final Callable<T> task = () -> {
-			try {
-				semaphore.acquire();
-				return callable.call();
-			}
-			catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new RepositoryException(e);
-			}
-			catch (Exception e) {
-				logger.error("Error while executing transaction component", e);
-				throw new RepositoryException(e);
-			}
-			finally {
-				semaphore.release();
-			}
-		};
 		// Synchronize around futures before submitting task so hasActiveOperations gets an instantaneous snapshot of the executor from futures
 		synchronized (futures) {
-			final Future<T> result = executor.submit(task);
+			final Future<T> result = executor.submit(callable);
 			futures.add(result);
 			return result;
 		}
