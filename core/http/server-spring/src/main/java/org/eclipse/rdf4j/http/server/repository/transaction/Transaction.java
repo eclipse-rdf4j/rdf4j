@@ -9,14 +9,16 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -64,7 +66,30 @@ class Transaction implements AutoCloseable {
 
 	private static final Logger logger = LoggerFactory.getLogger(Transaction.class);
 
+	/**
+	 * The period during the {@link #close()} method between waiting for
+	 * {@link ExecutorService#awaitTermination(long, TimeUnit)}, logging that the transaction has not
+	 * completed, and trying again up to {@link #MAX_CLOSE_WAIT_PERIODS} attempts.
+	 */
+	private static final int EXECUTOR_SHUTDOWN_WAIT_PERIOD = 10000;
+
+	/**
+	 * The maximum number of times during the {@link #close()} method that
+	 * {@link ExecutorService#awaitTermination(long, TimeUnit)} will be called before giving up and calling
+	 * {@link ExecutorService#shutdownNow()}.
+	 */
+	private static final int MAX_CLOSE_WAIT_PERIODS = 3;
+
+	/**
+	 * Set to true when entering the {@link #close()} method for the first time, to ensure that only a single
+	 * thread executes the close operations.
+	 */
 	private final AtomicBoolean isClosed = new AtomicBoolean(false);
+
+	/**
+	 * Set to true when the {@link #close()} method is about to complete for the first invocation.
+	 */
+	private final AtomicBoolean closeCompleted = new AtomicBoolean(false);
 
 	private final UUID id;
 
@@ -72,10 +97,23 @@ class Transaction implements AutoCloseable {
 
 	private final RepositoryConnection txnConnection;
 
+	/**
+	 * The {@link ExecutorService} that performs all of the operations related to this Transaction.
+	 */
 	private final ExecutorService executor = Executors.newSingleThreadExecutor(
 			new ThreadFactoryBuilder().setNameFormat("rdf4j-transaction-%d").build());
 
-	private final List<Future<?>> futures = new ArrayList<>();
+	/**
+	 * An append-only {@link Queue} that tracks the state of all of the futures involved in this Transaction.
+	 */
+	private final Queue<Future<?>> futures = new LinkedBlockingQueue<>();
+
+	/**
+	 * This {@link Semaphore} is used to ensure that only a single task is executed by the ExecutorService,
+	 * and that these tasks are not run while {@link #hasActiveOperations()} is determining whether there are
+	 * outstanding tasks open for this Transaction.
+	 */
+	private final Semaphore semaphore = new Semaphore(1);
 
 	/**
 	 * Create a new Transaction for the given {@link Repository}.
@@ -117,14 +155,10 @@ class Transaction implements AutoCloseable {
 	void begin(IsolationLevel level)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> {
+		Future<Boolean> result = submit(() -> {
 			txnConnection.begin(level);
 			return true;
 		});
-
-		synchronized (futures) {
-			futures.add(result);
-		}
 		result.get();
 	}
 
@@ -137,14 +171,10 @@ class Transaction implements AutoCloseable {
 	void rollback()
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> {
+		Future<Boolean> result = submit(() -> {
 			txnConnection.rollback();
 			return true;
 		});
-
-		synchronized (futures) {
-			futures.add(result);
-		}
 		result.get();
 	}
 
@@ -155,14 +185,10 @@ class Transaction implements AutoCloseable {
 	void commit()
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> {
+		Future<Boolean> result = submit(() -> {
 			txnConnection.commit();
 			return true;
 		});
-
-		synchronized (futures) {
-			futures.add(result);
-		}
 		result.get();
 	}
 
@@ -185,10 +211,7 @@ class Transaction implements AutoCloseable {
 	Query prepareQuery(QueryLanguage queryLn, String queryStr, String baseURI)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Query> result = executor.submit(() -> txnConnection.prepareQuery(queryLn, queryStr, baseURI));
-		synchronized (futures) {
-			futures.add(result);
-		}
+		Future<Query> result = submit(() -> txnConnection.prepareQuery(queryLn, queryStr, baseURI));
 		return result.get();
 	}
 
@@ -206,10 +229,7 @@ class Transaction implements AutoCloseable {
 	TupleQueryResult evaluate(TupleQuery tQuery)
 		throws InterruptedException, ExecutionException
 	{
-		Future<TupleQueryResult> result = executor.submit(() -> tQuery.evaluate());
-		synchronized (futures) {
-			futures.add(result);
-		}
+		Future<TupleQueryResult> result = submit(() -> tQuery.evaluate());
 		return result.get();
 	}
 
@@ -227,10 +247,7 @@ class Transaction implements AutoCloseable {
 	GraphQueryResult evaluate(GraphQuery gQuery)
 		throws InterruptedException, ExecutionException
 	{
-		Future<GraphQueryResult> result = executor.submit(() -> gQuery.evaluate());
-		synchronized (futures) {
-			futures.add(result);
-		}
+		Future<GraphQueryResult> result = submit(() -> gQuery.evaluate());
 		return result.get();
 	}
 
@@ -248,10 +265,7 @@ class Transaction implements AutoCloseable {
 	boolean evaluate(BooleanQuery bQuery)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> bQuery.evaluate());
-		synchronized (futures) {
-			futures.add(result);
-		}
+		Future<Boolean> result = submit(() -> bQuery.evaluate());
 		return result.get();
 	}
 
@@ -269,13 +283,10 @@ class Transaction implements AutoCloseable {
 			Resource... contexts)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> {
+		Future<Boolean> result = submit(() -> {
 			txnConnection.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
 			return true;
 		});
-		synchronized (futures) {
-			futures.add(result);
-		}
 		result.get();
 	}
 
@@ -290,10 +301,7 @@ class Transaction implements AutoCloseable {
 	long getSize(Resource[] contexts)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Long> result = executor.submit(() -> txnConnection.size(contexts));
-		synchronized (futures) {
-			futures.add(result);
-		}
+		Future<Long> result = submit(() -> txnConnection.size(contexts));
 		return result.get();
 	}
 
@@ -311,7 +319,7 @@ class Transaction implements AutoCloseable {
 			Resource... contexts)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> {
+		Future<Boolean> result = submit(() -> {
 			logger.debug("executing add operation");
 			try {
 				if (preserveBNodes) {
@@ -337,9 +345,6 @@ class Transaction implements AutoCloseable {
 				throw new RuntimeException(e);
 			}
 		});
-		synchronized (futures) {
-			futures.add(result);
-		}
 		result.get();
 	}
 
@@ -353,7 +358,7 @@ class Transaction implements AutoCloseable {
 	void delete(RDFFormat contentType, InputStream inputStream, String baseURI)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> {
+		Future<Boolean> result = submit(() -> {
 			logger.debug("executing delete operation");
 			RDFParser parser = Rio.createParser(contentType, txnConnection.getValueFactory());
 
@@ -368,10 +373,6 @@ class Transaction implements AutoCloseable {
 				throw new RuntimeException(e);
 			}
 		});
-
-		synchronized (futures) {
-			futures.add(result);
-		}
 		result.get();
 	}
 
@@ -389,7 +390,7 @@ class Transaction implements AutoCloseable {
 			boolean includeInferred, Dataset dataset, Map<String, Value> bindings)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result = executor.submit(() -> {
+		Future<Boolean> result = submit(() -> {
 			Update update = txnConnection.prepareUpdate(queryLn, sparqlUpdateString);
 			update.setIncludeInferred(includeInferred);
 			if (dataset != null) {
@@ -402,22 +403,58 @@ class Transaction implements AutoCloseable {
 			update.execute();
 			return true;
 		});
-
-		synchronized (futures) {
-			futures.add(result);
-		}
 		result.get();
 	}
 
+	/**
+	 * Checks if the user has any scheduled tasks for this transaction that have not yet completed.
+	 * 
+	 * @return True if there are currently no active tasks being executed for this transaction and false
+	 *         otherwise.
+	 */
 	boolean hasActiveOperations() {
+		// Synchronize on the futures set to ensure that new executions are not submitted once we get this monitor
 		synchronized (futures) {
-			for (Future<?> future : futures) {
-				if (!future.isDone()) {
-					return true;
+			try {
+				/*
+				 * Acquire the sole Semaphore before checking isDone. Semaphore ensures that we get as
+				 * accurate a view as possible on isDone for all transactions without using a Lock. The
+				 * remaining cases are false positives, not false negatives. Ie, the semaphore may have been
+				 * released after the task completed in the finally block, but the ExecutorService may not
+				 * have set isDone from false to true yet on the Future, which is fine for our purposes. We
+				 * use Semaphore.acquireUninterruptibly to jump to the front of the queue compared to
+				 * Semaphore.acquire used in the submit(Callable) method.
+				 **/
+				semaphore.acquireUninterruptibly();
+				for (Future<?> future : futures) {
+					if (!future.isDone()) {
+						return true;
+					}
 				}
+				return false;
+			}
+			finally {
+				semaphore.release();
 			}
 		}
-		return false;
+	}
+
+	/**
+	 * Checks if close has been called for this transaction.
+	 * 
+	 * @return True if the close method has been called for this transaction.
+	 */
+	boolean isClosed() {
+		return isClosed.get();
+	}
+
+	/**
+	 * Checks if close has been completed for this transaction.
+	 * 
+	 * @return True if the close operations have been completed.
+	 */
+	boolean isComplete() {
+		return closeCompleted.get();
 	}
 
 	/**
@@ -432,39 +469,55 @@ class Transaction implements AutoCloseable {
 	{
 		if (isClosed.compareAndSet(false, true)) {
 			try {
-				Future<Boolean> result = executor.submit(() -> {
+				Future<Boolean> result = submit(() -> {
 					txnConnection.close();
 					return true;
 				});
-
 				// Stop new tasks being submitted to the executor from now
 				executor.shutdown();
-
-				synchronized (futures) {
-					futures.add(result);
-				}
-
 				// We want to allow time for at least the close to complete, plus awaitTermination below if necessary for other tasks
 				result.get();
 			}
 			finally {
 				try {
-					executor.awaitTermination(10, TimeUnit.SECONDS);
+					int retryCount = 1;
+					while (!executor.awaitTermination(EXECUTOR_SHUTDOWN_WAIT_PERIOD, TimeUnit.MILLISECONDS)
+							|| retryCount > MAX_CLOSE_WAIT_PERIODS)
+					{
+						logger.warn("Transaction was not complete in {} seconds after close called",
+								TimeUnit.SECONDS.convert(retryCount * EXECUTOR_SHUTDOWN_WAIT_PERIOD,
+										TimeUnit.MILLISECONDS));
+						retryCount++;
+					}
 				}
 				finally {
-					if (!executor.isTerminated()) {
-						executor.shutdownNow();
+					try {
+						if (!executor.isTerminated()) {
+							executor.shutdownNow();
+						}
+					}
+					finally {
+						closeCompleted.set(true);
 					}
 				}
 			}
 		}
 	}
 
+	/**
+	 * Obtains a {@link RepositoryConnection} through the {@link ExecutorService}.
+	 * 
+	 * @return A new {@link RepositoryConnection} to use for this Transaction.
+	 * @throws InterruptedException
+	 *         If the execution of the task was interrupted.
+	 * @throws ExecutionException
+	 *         If the execution of the task failed for any reason.
+	 */
 	private RepositoryConnection getTransactionConnection()
 		throws InterruptedException, ExecutionException
 	{
 		// create a new RepositoryConnection with correct parser settings
-		Future<RepositoryConnection> future = executor.submit(() -> {
+		Future<RepositoryConnection> future = submit(() -> {
 			RepositoryConnection conn = rep.getConnection();
 			ParserConfig config = conn.getParserConfig();
 			config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
@@ -473,11 +526,34 @@ class Transaction implements AutoCloseable {
 
 			return conn;
 		});
-
-		synchronized (futures) {
-			futures.add(future);
-		}
 		return future.get();
+	}
+
+	private <T> Future<T> submit(final Callable<T> callable) {
+		// Add wrapper to ensure that we are exclusive with other tasks and with hasActiveOperations
+		final Callable<T> task = () -> {
+			try {
+				semaphore.acquire();
+				return callable.call();
+			}
+			catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new RepositoryException(e);
+			}
+			catch (Exception e) {
+				logger.error("Error while executing transaction component", e);
+				throw new RepositoryException(e);
+			}
+			finally {
+				semaphore.release();
+			}
+		};
+		// Synchronize around futures before submitting task so hasActiveOperations gets an instantaneous snapshot of the executor from futures
+		synchronized (futures) {
+			final Future<T> result = executor.submit(task);
+			futures.add(result);
+			return result;
+		}
 	}
 
 	private static class WildcardRDFRemover extends AbstractRDFHandler {
