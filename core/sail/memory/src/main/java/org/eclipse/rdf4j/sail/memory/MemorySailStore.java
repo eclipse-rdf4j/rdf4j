@@ -331,6 +331,7 @@ class MemorySailStore implements SailStore {
 							cleanSnapshots();
 						}
 						catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
 							logger.warn("snapshot cleanup interrupted");
 						}
 					}

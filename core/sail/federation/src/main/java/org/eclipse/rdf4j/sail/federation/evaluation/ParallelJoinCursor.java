@@ -69,6 +69,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public void run() {
 		evaluationThread = Thread.currentThread();
 		try {
@@ -80,7 +81,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 			rightQueue.toss(e);
 		}
 		catch (InterruptedException e) {
-			// stop
+			Thread.currentThread().interrupt();
 		}
 		finally {
 			evaluationThread = null; // NOPMD
