@@ -62,11 +62,14 @@ public abstract class GraphQueryResultTest {
 	public void tearDown()
 		throws Exception
 	{
-		con.close();
-		con = null;
-
-		rep.shutDown();
-		rep = null;
+		try {
+			con.close();
+			con = null;
+		}
+		finally {
+			rep.shutDown();
+			rep = null;
+		}
 	}
 
 	protected Repository createRepository()
