@@ -174,7 +174,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		throws Exception
 	{
 		super.initialize(parameters);
-		indexName = parameters.getProperty(INDEX_NAME_KEY, UUID.randomUUID().toString());
+		indexName = parameters.getProperty(INDEX_NAME_KEY, DEFAULT_INDEX_NAME);
 		documentType = parameters.getProperty(DOCUMENT_TYPE_KEY, DEFAULT_DOCUMENT_TYPE);
 		analyzer = parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY, DEFAULT_ANALYZER);
 		// slightly hacky cast to cope with the fact that Properties is
