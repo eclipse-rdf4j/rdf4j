@@ -67,20 +67,6 @@ class Transaction implements AutoCloseable {
 	private static final Logger logger = LoggerFactory.getLogger(Transaction.class);
 
 	/**
-	 * The period during the {@link #close()} method between waiting for
-	 * {@link ExecutorService#awaitTermination(long, TimeUnit)}, logging that the transaction has not
-	 * completed, and trying again up to {@link #MAX_CLOSE_WAIT_PERIODS} attempts.
-	 */
-	private static final int EXECUTOR_SHUTDOWN_WAIT_PERIOD = 10000;
-
-	/**
-	 * The maximum number of times during the {@link #close()} method that
-	 * {@link ExecutorService#awaitTermination(long, TimeUnit)} will be called before giving up and calling
-	 * {@link ExecutorService#shutdownNow()}.
-	 */
-	private static final int MAX_CLOSE_WAIT_PERIODS = 3;
-
-	/**
 	 * Set to true when entering the {@link #close()} method for the first time, to ensure that only a single
 	 * thread executes the close operations.
 	 */
@@ -455,36 +441,22 @@ class Transaction implements AutoCloseable {
 	{
 		if (isClosed.compareAndSet(false, true)) {
 			try {
-				Future<Boolean> result = submit(() -> {
+				// Stop new tasks being submitted to the executor from now
+				Future<Boolean> result = submitAndShutdown(() -> {
 					txnConnection.close();
 					return true;
 				});
-				// Stop new tasks being submitted to the executor from now
-				executor.shutdown();
-				// We want to allow time for at least the close to complete, plus awaitTermination below if necessary for other tasks
+				// Shutdown is atomic with the close operation above, so just need to block for it to complete before returning
 				result.get();
 			}
 			finally {
 				try {
-					int retryCount = 1;
-					while (!executor.awaitTermination(EXECUTOR_SHUTDOWN_WAIT_PERIOD, TimeUnit.MILLISECONDS)
-							|| retryCount > MAX_CLOSE_WAIT_PERIODS)
-					{
-						logger.warn("Transaction was not complete in {} seconds after close called",
-								TimeUnit.SECONDS.convert(retryCount * EXECUTOR_SHUTDOWN_WAIT_PERIOD,
-										TimeUnit.MILLISECONDS));
-						retryCount++;
+					if (!executor.isTerminated()) {
+						executor.shutdownNow();
 					}
 				}
 				finally {
-					try {
-						if (!executor.isTerminated()) {
-							executor.shutdownNow();
-						}
-					}
-					finally {
-						closeCompleted.set(true);
-					}
+					closeCompleted.set(true);
 				}
 			}
 		}
@@ -528,6 +500,26 @@ class Transaction implements AutoCloseable {
 		// Synchronize around futures before submitting task so hasActiveOperations gets an instantaneous snapshot of the executor from futures
 		synchronized (futures) {
 			final Future<T> result = executor.submit(callable);
+			futures.add(result);
+			return result;
+		}
+	}
+
+	/**
+	 * Atomically submit the task to the executor and add to our local list used to track whether there are
+	 * outstanding operations for the executor. In addition, this atomically shuts down the ExecutorService to
+	 * prevent future submissions from succeeding.
+	 * 
+	 * @param callable
+	 *        The task to submit
+	 * @return A {@link Future} that can be used to track whether the operation has succeeded and get the
+	 *         result.
+	 */
+	private <T> Future<T> submitAndShutdown(final Callable<T> callable) {
+		// Synchronize around futures before submitting task so hasActiveOperations gets an instantaneous snapshot of the executor from futures
+		synchronized (futures) {
+			final Future<T> result = executor.submit(callable);
+			executor.shutdown();
 			futures.add(result);
 			return result;
 		}
