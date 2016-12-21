@@ -52,8 +52,12 @@ public class ModificationTest {
 	public void tearDown()
 		throws Exception
 	{
-		con.close();
-		repo.shutDown();
+		try {
+			con.close();
+		}
+		finally {
+			repo.shutDown();
+		}
 	}
 
 	@Test

@@ -107,9 +107,17 @@ public class SerializableTest {
 	public void tearDown()
 		throws Exception
 	{
-		a.close();
-		b.close();
-		repo.shutDown();
+		try {
+			a.close();
+		}
+		finally {
+			try {
+				b.close();
+			}
+			finally {
+				repo.shutDown();
+			}
+		}
 	}
 
 	@Test
@@ -184,8 +192,9 @@ public class SerializableTest {
 			fail();
 		}
 		catch (RepositoryException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
+			b.rollback();
 		}
 	}
 
@@ -261,10 +270,13 @@ public class SerializableTest {
 			fail();
 		}
 		catch (RepositoryException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
+			assertEquals(0, size(a, null, RDF.TYPE, PAINTING, false));
 		}
-		assertEquals(0, size(a, null, RDF.TYPE, PAINTING, false));
+		finally {
+			b.rollback();
+		}
 	}
 
 	@Test
@@ -291,8 +303,9 @@ public class SerializableTest {
 			fail();
 		}
 		catch (RepositoryException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
+			b.rollback();
 		}
 		assertEquals(0, size(a, null, RDF.TYPE, PAINTING, false));
 	}
@@ -372,8 +385,9 @@ public class SerializableTest {
 			fail();
 		}
 		catch (RepositoryException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
+			b.rollback();
 		}
 		assertEquals(7, size(a, null, null, null, false));
 	}
@@ -402,8 +416,9 @@ public class SerializableTest {
 			fail();
 		}
 		catch (RepositoryException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
+			b.rollback();
 		}
 		assertEquals(7, size(a, null, null, null, false));
 	}
@@ -433,9 +448,10 @@ public class SerializableTest {
 			assertEquals(10, size(a, null, null, null, false));
 		}
 		catch (RepositoryException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 			assertEquals(7, size(a, null, null, null, false));
+			b.rollback();
 		}
 	}
 
@@ -462,9 +478,10 @@ public class SerializableTest {
 			assertEquals(10, size(a, null, null, null, false));
 		}
 		catch (RepositoryException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 			assertEquals(7, size(a, null, null, null, false));
+			b.rollback();
 		}
 	}
 
@@ -497,8 +514,9 @@ public class SerializableTest {
 			fail();
 		}
 		catch (RepositoryException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
+			b.rollback();
 		}
 		assertEquals(9, size(a, null, null, null, false));
 	}
@@ -529,8 +547,9 @@ public class SerializableTest {
 			fail();
 		}
 		catch (RepositoryException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
+			b.rollback();
 		}
 		assertEquals(9, size(a, null, null, null, false));
 	}
@@ -566,9 +585,10 @@ public class SerializableTest {
 			assertEquals(17, size(a, null, null, null, false));
 		}
 		catch (RepositoryException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 			assertEquals(13, size(a, null, null, null, false));
+			b.rollback();
 		}
 	}
 
@@ -602,9 +622,10 @@ public class SerializableTest {
 			assertEquals(17, size(a, null, null, null, false));
 		}
 		catch (RepositoryException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
 			assertEquals(13, size(a, null, null, null, false));
+			b.rollback();
 		}
 	}
 
@@ -639,8 +660,9 @@ public class SerializableTest {
 			fail();
 		}
 		catch (RepositoryException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
+			b.rollback();
 		}
 		assertEquals(13, size(a, null, null, null, false));
 	}
@@ -676,8 +698,9 @@ public class SerializableTest {
 			fail();
 		}
 		catch (RepositoryException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
 			assertTrue(e.getCause() instanceof SailConflictException);
+			b.rollback();
 		}
 		assertEquals(13, size(a, null, null, null, false));
 	}
@@ -692,17 +715,12 @@ public class SerializableTest {
 	private List<Value> eval(String var, RepositoryConnection con, String qry)
 		throws Exception
 	{
-		TupleQueryResult result;
-		result = con.prepareTupleQuery(QueryLanguage.SPARQL, qry, NS).evaluate();
-		try {
+		try (TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SPARQL, qry, NS).evaluate();) {
 			List<Value> list = new ArrayList<Value>();
 			while (result.hasNext()) {
 				list.add(result.next().getValue(var));
 			}
 			return list;
-		}
-		finally {
-			result.close();
 		}
 	}
 

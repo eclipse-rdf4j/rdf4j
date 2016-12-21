@@ -106,9 +106,17 @@ public class SnapshotTest {
 	public void tearDown()
 		throws Exception
 	{
-		a.close();
-		b.close();
-		repo.shutDown();
+		try {
+			a.close();
+		}
+		finally {
+			try {
+				b.close();
+			}
+			finally {
+				repo.shutDown();
+			}
+		}
 	}
 
 	@Test
