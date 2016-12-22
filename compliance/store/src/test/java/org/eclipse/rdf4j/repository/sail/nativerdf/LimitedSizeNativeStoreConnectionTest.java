@@ -32,13 +32,6 @@ import org.junit.Test;
 
 public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTest {
 
-	@BeforeClass
-	public static void setUpClass()
-		throws Exception
-	{
-		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
-	}
-
 	private File dataDir;
 
 	public LimitedSizeNativeStoreConnectionTest(IsolationLevel level) {
