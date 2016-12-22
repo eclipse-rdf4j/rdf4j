@@ -278,7 +278,8 @@ public abstract class SailIsolationLevelTest {
 					}
 					catch (SailException e) {
 						// it is okay to abort after a dirty read
-						e.printStackTrace();
+						// e.printStackTrace();
+						read.rollback();
 						return;
 					}
 					// not read if transaction is consistent
