@@ -885,12 +885,14 @@ public abstract class RepositoryConnectionTest {
 	public void testPreparedGraphQuery()
 		throws Exception
 	{
+		testCon.begin();
 		testCon.add(alice, name, nameAlice, context2);
 		testCon.add(alice, mbox, mboxAlice, context2);
 		testCon.add(context2, publisher, nameAlice);
 		testCon.add(bob, name, nameBob, context1);
 		testCon.add(bob, mbox, mboxBob, context1);
 		testCon.add(context1, publisher, nameBob);
+		testCon.commit();
 		StringBuilder queryBuilder = new StringBuilder(128);
 		queryBuilder.append(" CONSTRUCT *");
 		queryBuilder.append(" FROM {} foaf:name {name};");

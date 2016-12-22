@@ -27,9 +27,17 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.nativerdf.LimitedSizeNativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.LimitedSizeNativeStoreConnection;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	private File dataDir;
 
