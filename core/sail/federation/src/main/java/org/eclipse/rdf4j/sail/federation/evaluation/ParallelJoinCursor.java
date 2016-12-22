@@ -54,6 +54,8 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	private final QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>> rightQueue = new QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>>(
 			1024);
 
+	private final List<CloseableIteration<BindingSet, QueryEvaluationException>> toCloseList = new ArrayList<>();
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -79,25 +81,17 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 			while (!isClosed() && leftIter.hasNext()) {
 				CloseableIteration<BindingSet, QueryEvaluationException> evaluate = strategy.evaluate(
 						rightArg, leftIter.next());
-				try {
-					rightQueue.put(evaluate);
-				}
-				catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					try {
-						// Close the iteration we were attempting to put onto the queue
-						// so we don't rely on the automatic closure method
-						evaluate.close();
-						break;
-					}
-					finally {
-						close();
-					}
-				}
+				toCloseList.add(evaluate);
+				rightQueue.put(evaluate);
 			}
 		}
 		catch (RuntimeException e) {
 			rightQueue.toss(e);
+			close();
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			close();
 		}
 		finally {
 			evaluationThread = null;
@@ -122,7 +116,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 				}
 				else {
 					nextRightIter.close();
-					nextRightIter = rightIter = null; // NOPMD
+					nextRightIter = rightIter = null;
 				}
 			}
 		}
@@ -140,25 +134,37 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 		}
 		finally {
 			try {
-				Thread toCloseEvaluationThread = evaluationThread;
-				if (toCloseEvaluationThread != null) {
-					toCloseEvaluationThread.interrupt();
+				CloseableIteration<BindingSet, QueryEvaluationException> toCloseRightIter = rightIter;
+				rightIter = null;
+				if (toCloseRightIter != null) {
+					toCloseRightIter.close();
 				}
 			}
 			finally {
 				try {
-					CloseableIteration<BindingSet, QueryEvaluationException> toCloseRightIter = rightIter;
-					rightIter = null; // NOPMD
-					if (toCloseRightIter != null) {
-						toCloseRightIter.close();
-					}
+					leftIter.close();
 				}
 				finally {
 					try {
-						leftIter.close();
+						rightQueue.close();
 					}
 					finally {
-						rightQueue.close();
+						try {
+							for (CloseableIteration<BindingSet, QueryEvaluationException> nextToCloseIteration : toCloseList) {
+								try {
+									nextToCloseIteration.close();
+								}
+								catch (Exception e) {
+									// Ignoring exceptions while closing component iterations
+								}
+							}
+						}
+						finally {
+							Thread toCloseEvaluationThread = evaluationThread;
+							if (toCloseEvaluationThread != null) {
+								toCloseEvaluationThread.interrupt();
+							}
+						}
 					}
 				}
 			}

@@ -261,18 +261,27 @@ public abstract class AbstractSailConnection implements SailConnection {
 		try {
 			verifyIsOpen();
 			boolean registered = false;
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> iteration = evaluateInternal(
-					tupleExpr, dataset, bindings, includeInferred);
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> iteration = null;
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> registeredIteration = null;
 			try {
-				CloseableIteration<? extends BindingSet, QueryEvaluationException> registeredIteration = registerIteration(
-						iteration);
+				iteration = evaluateInternal(tupleExpr, dataset, bindings, includeInferred);
+				registeredIteration = registerIteration(iteration);
 				registered = true;
 				return registeredIteration;
 			}
 			finally {
 				if (!registered) {
 					try {
-						iteration.close();
+						try {
+							if (registeredIteration != null) {
+								registeredIteration.close();
+							}
+						}
+						finally {
+							if (iteration != null) {
+								iteration.close();
+							}
+						}
 					}
 					catch (QueryEvaluationException e) {
 						throw new SailException(e);
@@ -878,7 +887,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 
 		final List<SailException> toThrowExceptions = new ArrayList<>();
-		
+
 		for (Map.Entry<SailBaseIteration, Throwable> entry : activeIterationsCopy.entrySet()) {
 			SailBaseIteration ci = entry.getKey();
 			Throwable creatorTrace = entry.getValue();
@@ -897,8 +906,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 				toThrowExceptions.add(new SailException(e));
 			}
 		}
-		
-		if(!toThrowExceptions.isEmpty()) {
+
+		if (!toThrowExceptions.isEmpty()) {
 			throw toThrowExceptions.get(0);
 		}
 	}
