@@ -23,7 +23,8 @@ public class Example02BuildModel {
 	public static void main(String[] args) {
 
 		// Create a new RDF model containing two statements by using a ModelBuilder
-		Model model = new ModelBuilder()
+		ModelBuilder builder = new ModelBuilder();
+		Model model = builder
 				.setNamespace("ex", "http://example.org/")
 				.subject("ex:Picasso")
 					.add(RDF.TYPE, "ex:Artist")		// Picasso is an Artist
