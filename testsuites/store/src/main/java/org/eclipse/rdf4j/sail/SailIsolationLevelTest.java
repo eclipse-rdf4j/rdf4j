@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +39,13 @@ import org.slf4j.LoggerFactory;
  * @author James Leigh
  */
 public abstract class SailIsolationLevelTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	private final Logger logger = LoggerFactory.getLogger(SailIsolationLevelTest.class);
 
@@ -341,7 +349,8 @@ public abstract class SailIsolationLevelTest {
 					}
 					catch (SailException e) {
 						// it is okay to abort on inconsistency
-						e.printStackTrace();
+						//e.printStackTrace();
+						read.rollback();
 						return;
 					}
 					// statement must continue to exist if transaction consistent

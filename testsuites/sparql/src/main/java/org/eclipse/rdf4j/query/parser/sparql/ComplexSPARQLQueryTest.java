@@ -647,7 +647,7 @@ public abstract class ComplexSPARQLQueryTest {
 				count++;
 				assertNotNull(bs);
 
-				System.out.println(bs);
+				// System.out.println(bs);
 
 				Value l = bs.getValue("l");
 				assertTrue(l instanceof Literal);
@@ -805,7 +805,7 @@ public abstract class ComplexSPARQLQueryTest {
 			int count = 0;
 			while (result.hasNext()) {
 				BindingSet r = result.next();
-				System.out.println(r);
+				// System.out.println(r);
 				count++;
 			}
 			assertEquals(4, count);

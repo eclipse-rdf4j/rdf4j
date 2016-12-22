@@ -75,36 +75,33 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	@Override
 	public void run() {
 		evaluationThread = Thread.currentThread();
-		List<CloseableIteration<BindingSet, QueryEvaluationException>> iterationsToClose = new ArrayList<>();
 		try {
 			while (!isClosed() && leftIter.hasNext()) {
 				CloseableIteration<BindingSet, QueryEvaluationException> evaluate = strategy.evaluate(
 						rightArg, leftIter.next());
-				iterationsToClose.add(evaluate);
-				rightQueue.put(evaluate);
+				try {
+					rightQueue.put(evaluate);
+				}
+				catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					try {
+						// Close the iteration we were attempting to put onto the queue
+						// so we don't rely on the automatic closure method
+						evaluate.close();
+						break;
+					}
+					finally {
+						close();
+					}
+				}
 			}
 		}
 		catch (RuntimeException e) {
 			rightQueue.toss(e);
 		}
-		catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-		}
 		finally {
-			try {
-				evaluationThread = null;
-				for (CloseableIteration<BindingSet, QueryEvaluationException> iterationToClose : iterationsToClose) {
-					try {
-						iterationToClose.close();
-					}
-					catch (QueryEvaluationException e) {
-						rightQueue.toss(e);
-					}
-				}
-			}
-			finally {
-				rightQueue.done();
-			}
+			evaluationThread = null;
+			rightQueue.done();
 		}
 	}
 
@@ -157,7 +154,12 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 					}
 				}
 				finally {
-					leftIter.close();
+					try {
+						leftIter.close();
+					}
+					finally {
+						rightQueue.close();
+					}
 				}
 			}
 		}
