@@ -75,7 +75,6 @@ import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -247,9 +246,17 @@ public abstract class RepositoryConnectionTest {
 	public void tearDown()
 		throws Exception
 	{
-		testCon2.close();
-		testCon.close();
-		testRepository.shutDown();
+		try {
+			testCon2.close();
+		}
+		finally {
+			try {
+				testCon.close();
+			}
+			finally {
+				testRepository.shutDown();
+			}
+		}
 	}
 
 	/**
@@ -276,14 +283,16 @@ public abstract class RepositoryConnectionTest {
 
 		Repository tempRep = new SailRepository(new MemoryStore());
 		tempRep.initialize();
-		RepositoryConnection con = tempRep.getConnection();
+		try (RepositoryConnection con = tempRep.getConnection();) {
 
-		con.add(testCon.getStatements(null, null, null, false));
+			con.add(testCon.getStatements(null, null, null, false));
 
-		assertTrue("Temp Repository should contain newly added statement",
-				con.hasStatement(bob, name, nameBob, false));
-		con.close();
-		tempRep.shutDown();
+			assertTrue("Temp Repository should contain newly added statement",
+					con.hasStatement(bob, name, nameBob, false));
+		}
+		finally {
+			tempRep.shutDown();
+		}
 	}
 
 	@Test
@@ -347,17 +356,14 @@ public abstract class RepositoryConnectionTest {
 						testCon2.hasStatement(OWL.CLASS, RDFS.COMMENT, RDF.STATEMENT, true));
 
 				String query = "CONSTRUCT WHERE { <" + OWL.CLASS + "> <" + RDFS.COMMENT + ">  ?obj . }";
-				GraphQueryResult queryResult = testCon2.prepareGraphQuery(QueryLanguage.SPARQL,
-						query).evaluate();
-				try {
+
+				try (GraphQueryResult queryResult = testCon2.prepareGraphQuery(QueryLanguage.SPARQL,
+						query).evaluate();)
+				{
 					assertFalse(
 							"Should not be able to see uncommitted statement on separate connection inside transaction",
 							queryResult.hasNext());
 				}
-				finally {
-					queryResult.close();
-				}
-
 			}
 			finally {
 				testCon2.rollback();
@@ -407,27 +413,30 @@ public abstract class RepositoryConnectionTest {
 	public void testAddReader()
 		throws Exception
 	{
-		Reader defaultGraph = new InputStreamReader(
+		try (Reader defaultGraph = new InputStreamReader(
 				RepositoryConnectionTest.class.getResourceAsStream(TEST_DIR_PREFIX + "default-graph.ttl"),
-				"UTF-8");
-		testCon.add(defaultGraph, "", RDFFormat.TURTLE);
-		defaultGraph.close();
+				"UTF-8");)
+		{
+			testCon.add(defaultGraph, "", RDFFormat.TURTLE);
+		}
 		assertTrue(NEWLY_ADDED, testCon.hasStatement(null, publisher, nameBob, false));
 		assertTrue(NEWLY_ADDED, testCon.hasStatement(null, publisher, nameAlice, false));
 
 		// add file graph1.ttl to context1
-		InputStream graph1Stream = RepositoryConnectionTest.class.getResourceAsStream(
+		try (InputStream graph1Stream = RepositoryConnectionTest.class.getResourceAsStream(
 				TEST_DIR_PREFIX + "graph1.ttl");
-		Reader graph1 = new InputStreamReader(graph1Stream, "UTF-8");
-		testCon.add(graph1, "", RDFFormat.TURTLE, context1);
-		graph1.close();
+				Reader graph1 = new InputStreamReader(graph1Stream, "UTF-8");)
+		{
+			testCon.add(graph1, "", RDFFormat.TURTLE, context1);
+		}
 
 		// add file graph2.ttl to context2
-		InputStream graph2Stream = RepositoryConnectionTest.class.getResourceAsStream(
+		try (InputStream graph2Stream = RepositoryConnectionTest.class.getResourceAsStream(
 				TEST_DIR_PREFIX + "graph2.ttl");
-		Reader graph2 = new InputStreamReader(graph2Stream, "UTF-8");
-		testCon.add(graph2, "", RDFFormat.TURTLE, context2);
-		graph2.close();
+				Reader graph2 = new InputStreamReader(graph2Stream, "UTF-8");)
+		{
+			testCon.add(graph2, "", RDFFormat.TURTLE, context2);
+		}
 		assertTrue("alice should be known in the store", testCon.hasStatement(null, name, nameAlice, false));
 		assertFalse("alice should not be known in context1",
 				testCon.hasStatement(null, name, nameAlice, false, context1));
@@ -445,24 +454,27 @@ public abstract class RepositoryConnectionTest {
 		throws Exception
 	{
 		// add file default-graph.ttl to repository, no context
-		InputStream defaultGraph = RepositoryConnectionTest.class.getResourceAsStream(
-				TEST_DIR_PREFIX + "default-graph.ttl");
-		testCon.add(defaultGraph, "", RDFFormat.TURTLE);
-		defaultGraph.close();
+		try (InputStream defaultGraph = RepositoryConnectionTest.class.getResourceAsStream(
+				TEST_DIR_PREFIX + "default-graph.ttl");)
+		{
+			testCon.add(defaultGraph, "", RDFFormat.TURTLE);
+		}
 		assertTrue(NEWLY_ADDED, testCon.hasStatement(null, publisher, nameBob, false));
 		assertTrue(NEWLY_ADDED, testCon.hasStatement(null, publisher, nameAlice, false));
 
 		// add file graph1.ttl to context1
-		InputStream graph1 = RepositoryConnectionTest.class.getResourceAsStream(
-				TEST_DIR_PREFIX + "graph1.ttl");
-		testCon.add(graph1, "", RDFFormat.TURTLE, context1);
-		graph1.close();
+		try (InputStream graph1 = RepositoryConnectionTest.class.getResourceAsStream(
+				TEST_DIR_PREFIX + "graph1.ttl");)
+		{
+			testCon.add(graph1, "", RDFFormat.TURTLE, context1);
+		}
 
 		// add file graph2.ttl to context2
-		InputStream graph2 = RepositoryConnectionTest.class.getResourceAsStream(
-				TEST_DIR_PREFIX + "graph2.ttl");
-		testCon.add(graph2, "", RDFFormat.TURTLE, context2);
-		graph2.close();
+		try (InputStream graph2 = RepositoryConnectionTest.class.getResourceAsStream(
+				TEST_DIR_PREFIX + "graph2.ttl");)
+		{
+			testCon.add(graph2, "", RDFFormat.TURTLE, context2);
+		}
 		assertTrue("alice should be known in the store", testCon.hasStatement(null, name, nameAlice, false));
 		assertFalse("alice should not be known in context1",
 				testCon.hasStatement(null, name, nameAlice, false, context1));
@@ -480,15 +492,12 @@ public abstract class RepositoryConnectionTest {
 		throws Exception
 	{
 		// add file default-graph.ttl to repository, no context
-		InputStream defaultGraph = RepositoryConnectionTest.class.getResourceAsStream(
-				TEST_DIR_PREFIX + "default-graph.ttl");
-		try {
+		try (InputStream defaultGraph = RepositoryConnectionTest.class.getResourceAsStream(
+				TEST_DIR_PREFIX + "default-graph.ttl");)
+		{
 			testCon.begin();
 			testCon.add(defaultGraph, "", RDFFormat.TURTLE);
 			testCon.commit();
-		}
-		finally {
-			defaultGraph.close();
 		}
 		assertTrue(NEWLY_ADDED, testCon.hasStatement(null, publisher, nameBob, false));
 		assertTrue(NEWLY_ADDED, testCon.hasStatement(null, publisher, nameAlice, false));
@@ -499,17 +508,14 @@ public abstract class RepositoryConnectionTest {
 		throws Exception
 	{
 		// add file default-graph.ttl to repository, no context
-		InputStream defaultGraph = RepositoryConnectionTest.class.getResourceAsStream(
-				TEST_DIR_PREFIX + "default-graph.ttl");
 
-		InputStreamReader reader = new InputStreamReader(defaultGraph);
-		try {
+		try (InputStream defaultGraph = RepositoryConnectionTest.class.getResourceAsStream(
+				TEST_DIR_PREFIX + "default-graph.ttl");
+				InputStreamReader reader = new InputStreamReader(defaultGraph);)
+		{
 			testCon.begin();
 			testCon.add(reader, "", RDFFormat.TURTLE);
 			testCon.commit();
-		}
-		finally {
-			defaultGraph.close();
 		}
 		assertTrue(NEWLY_ADDED, testCon.hasStatement(null, publisher, nameBob, false));
 		assertTrue(NEWLY_ADDED, testCon.hasStatement(null, publisher, nameAlice, false));
@@ -520,13 +526,10 @@ public abstract class RepositoryConnectionTest {
 		throws Exception
 	{
 		// add file default-graph.ttl to repository, no context
-		InputStream defaultGraph = RepositoryConnectionTest.class.getResourceAsStream(
-				TEST_DIR_PREFIX + "default-graph.ttl.gz");
-		try {
+		try (InputStream defaultGraph = RepositoryConnectionTest.class.getResourceAsStream(
+				TEST_DIR_PREFIX + "default-graph.ttl.gz");)
+		{
 			testCon.add(defaultGraph, "", RDFFormat.TURTLE);
-		}
-		finally {
-			defaultGraph.close();
 		}
 
 		assertTrue(NEWLY_ADDED, testCon.hasStatement(null, publisher, nameBob, false));
@@ -628,9 +631,10 @@ public abstract class RepositoryConnectionTest {
 		queryBuilder.append(" FROM {} foaf:name {name};");
 		queryBuilder.append("         foaf:mbox {mbox}");
 		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
-		TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SERQL,
-				queryBuilder.toString()).evaluate();
-		try {
+
+		try (TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SERQL,
+				queryBuilder.toString()).evaluate();)
+		{
 			assertThat(result, is(notNullValue()));
 			assertThat(result.hasNext(), is(equalTo(true)));
 			while (result.hasNext()) {
@@ -642,9 +646,6 @@ public abstract class RepositoryConnectionTest {
 				assertThat(nameResult, anyOf(is(equalTo((Value)nameAlice)), is(equalTo((Value)nameBob))));
 				assertThat(mboxResult, anyOf(is(equalTo((Value)mboxAlice)), is(equalTo((Value)mboxBob))));
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -734,9 +735,10 @@ public abstract class RepositoryConnectionTest {
 		queryBuilder.append(" SELECT person");
 		queryBuilder.append(" FROM {person} foaf:name {").append(Александър.getLabel()).append("}");
 		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
-		TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SERQL,
-				queryBuilder.toString()).evaluate();
-		try {
+
+		try (TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SERQL,
+				queryBuilder.toString()).evaluate();)
+		{
 			assertThat(result, is(notNullValue()));
 			assertThat(result.hasNext(), is(equalTo(true)));
 			while (result.hasNext()) {
@@ -744,9 +746,6 @@ public abstract class RepositoryConnectionTest {
 				assertThat(solution.hasBinding(PERSON), is(equalTo(true)));
 				assertThat(solution.getValue(PERSON), is(equalTo((Value)alexander)));
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -767,8 +766,8 @@ public abstract class RepositoryConnectionTest {
 		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
 		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SERQL, queryBuilder.toString());
 		query.setBinding(NAME, nameBob);
-		TupleQueryResult result = query.evaluate();
-		try {
+
+		try (TupleQueryResult result = query.evaluate();) {
 			assertThat(result, is(notNullValue()));
 			assertThat(result.hasNext(), is(equalTo(true)));
 			while (result.hasNext()) {
@@ -780,9 +779,6 @@ public abstract class RepositoryConnectionTest {
 				assertEquals("unexpected value for name: " + nameResult, nameBob, nameResult);
 				assertEquals("unexpected value for mbox: " + mboxResult, mboxBob, mboxResult);
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -804,8 +800,8 @@ public abstract class RepositoryConnectionTest {
 		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
 		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SERQL, queryBuilder.toString());
 		query.setBinding("VAR", bob);
-		TupleQueryResult result = query.evaluate();
-		try {
+
+		try (TupleQueryResult result = query.evaluate();) {
 			assertThat(result, is(notNullValue()));
 			assertThat(result.hasNext(), is(equalTo(true)));
 			while (result.hasNext()) {
@@ -817,9 +813,6 @@ public abstract class RepositoryConnectionTest {
 				assertEquals("unexpected value for name: " + nameResult, nameBob, nameResult);
 				assertEquals("unexpected value for mbox: " + mboxResult, mboxBob, mboxResult);
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -837,9 +830,7 @@ public abstract class RepositoryConnectionTest {
 		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SERQL, queryBuilder.toString());
 		query.setBinding(NAME, Александър);
 
-		TupleQueryResult result = query.evaluate();
-
-		try {
+		try (TupleQueryResult result = query.evaluate();) {
 			assertThat(result, is(notNullValue()));
 			assertThat(result.hasNext(), is(equalTo(true)));
 
@@ -848,9 +839,6 @@ public abstract class RepositoryConnectionTest {
 				assertThat(solution.hasBinding(PERSON), is(equalTo(true)));
 				assertThat(solution.getValue(PERSON), is(equalTo((Value)alexander)));
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -872,10 +860,9 @@ public abstract class RepositoryConnectionTest {
 		queryBuilder.append("         foaf:mbox {mbox}");
 		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
 
-		GraphQueryResult result = testCon.prepareGraphQuery(QueryLanguage.SERQL,
-				queryBuilder.toString()).evaluate();
-
-		try {
+		try (GraphQueryResult result = testCon.prepareGraphQuery(QueryLanguage.SERQL,
+				queryBuilder.toString()).evaluate();)
+		{
 			assertThat(result, is(notNullValue()));
 			assertThat(result.hasNext(), is(equalTo(true)));
 
@@ -891,9 +878,6 @@ public abstract class RepositoryConnectionTest {
 							anyOf(is(equalTo((Value)mboxAlice)), is(equalTo((Value)mboxBob))));
 				}
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -914,8 +898,8 @@ public abstract class RepositoryConnectionTest {
 		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
 		GraphQuery query = testCon.prepareGraphQuery(QueryLanguage.SERQL, queryBuilder.toString());
 		query.setBinding(NAME, nameBob);
-		GraphQueryResult result = query.evaluate();
-		try {
+
+		try (GraphQueryResult result = query.evaluate();) {
 			assertThat(result, is(notNullValue()));
 			assertThat(result.hasNext(), is(equalTo(true)));
 			while (result.hasNext()) {
@@ -931,9 +915,6 @@ public abstract class RepositoryConnectionTest {
 					assertEquals("unexpected value for mbox: " + object, mboxBob, object);
 				}
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -1048,9 +1029,7 @@ public abstract class RepositoryConnectionTest {
 
 		assertTrue("Repository should contain statement", testCon.hasStatement(bob, name, nameBob, false));
 
-		RepositoryResult<Statement> result = testCon.getStatements(null, name, null, false);
-
-		try {
+		try (RepositoryResult<Statement> result = testCon.getStatements(null, name, null, false);) {
 			assertNotNull("Iterator should not be null", result);
 			assertTrue("Iterator should not be empty", result.hasNext());
 
@@ -1059,9 +1038,6 @@ public abstract class RepositoryConnectionTest {
 				assertNull("Statement should not be in a context ", st.getContext());
 				assertTrue("Statement predicate should be equal to name ", st.getPredicate().equals(name));
 			}
-		}
-		finally {
-			result.close();
 		}
 
 		List<Statement> list = Iterations.addAll(testCon.getStatements(null, name, null, false),
@@ -1080,13 +1056,13 @@ public abstract class RepositoryConnectionTest {
 			IRI pred = vf.createIRI(URN_PRED);
 			testCon.add(bob, pred, invalidIntegerLiteral);
 
-			RepositoryResult<Statement> statements = testCon.getStatements(bob, pred, null, true);
-
-			assertNotNull(statements);
-			assertTrue(statements.hasNext());
-			Statement st = statements.next();
-			assertTrue(st.getObject() instanceof Literal);
-			assertTrue(st.getObject().equals(invalidIntegerLiteral));
+			try (RepositoryResult<Statement> statements = testCon.getStatements(bob, pred, null, true);) {
+				assertNotNull(statements);
+				assertTrue(statements.hasNext());
+				Statement st = statements.next();
+				assertTrue(st.getObject() instanceof Literal);
+				assertTrue(st.getObject().equals(invalidIntegerLiteral));
+			}
 		}
 		catch (RepositoryException e) {
 			// shouldn't happen
@@ -1103,13 +1079,13 @@ public abstract class RepositoryConnectionTest {
 			IRI pred = vf.createIRI(URN_PRED);
 			testCon.add(bob, pred, invalidLanguageLiteral);
 
-			RepositoryResult<Statement> statements = testCon.getStatements(bob, pred, null, true);
-
-			assertNotNull(statements);
-			assertTrue(statements.hasNext());
-			Statement st = statements.next();
-			assertTrue(st.getObject() instanceof Literal);
-			assertTrue(st.getObject().equals(invalidLanguageLiteral));
+			try (RepositoryResult<Statement> statements = testCon.getStatements(bob, pred, null, true);) {
+				assertNotNull(statements);
+				assertTrue(statements.hasNext());
+				Statement st = statements.next();
+				assertTrue(st.getObject() instanceof Literal);
+				assertTrue(st.getObject().equals(invalidLanguageLiteral));
+			}
 		}
 		catch (RepositoryException e) {
 			e.printStackTrace();
@@ -1137,8 +1113,7 @@ public abstract class RepositoryConnectionTest {
 				testCon.hasStatement(bob, name, nameBob, false, context2));
 
 		// Check handling of getStatements without context IDs
-		RepositoryResult<Statement> result = testCon.getStatements(bob, name, null, false);
-		try {
+		try (RepositoryResult<Statement> result = testCon.getStatements(bob, name, null, false);) {
 			while (result.hasNext()) {
 				Statement st = result.next();
 				assertThat(st.getSubject(), is(equalTo((Resource)bob)));
@@ -1147,36 +1122,28 @@ public abstract class RepositoryConnectionTest {
 				assertThat(st.getContext(), is(equalTo((Resource)context1)));
 			}
 		}
-		finally {
-			result.close();
-		}
 
 		// Check handling of getStatements with a known context ID
-		result = testCon.getStatements(null, null, null, false, context1);
-		try {
+		try (RepositoryResult<Statement> result = testCon.getStatements(null, null, null, false, context1);) {
 			while (result.hasNext()) {
 				Statement st = result.next();
 				assertThat(st.getContext(), is(equalTo((Resource)context1)));
 			}
 		}
-		finally {
-			result.close();
-		}
 
 		// Check handling of getStatements with an unknown context ID
-		result = testCon.getStatements(null, null, null, false, unknownContext);
-		try {
+		try (RepositoryResult<Statement> result = testCon.getStatements(null, null, null, false,
+				unknownContext);)
+		{
 			assertThat(result, is(notNullValue()));
 			assertThat(result.hasNext(), is(equalTo(false)));
 		}
-		finally {
-			result.close();
-		}
 
-		List<Statement> list = Iterations.addAll(testCon.getStatements(null, name, null, false, context1),
-				new ArrayList<Statement>());
-		assertNotNull("List should not be null", list);
-		assertFalse("List should not be empty", list.isEmpty());
+		try (RepositoryResult<Statement> result = testCon.getStatements(null, name, null, false, context1);) {
+			List<Statement> list = Iterations.addAll(result, new ArrayList<Statement>());
+			assertNotNull("List should not be null", list);
+			assertFalse("List should not be empty", list.isEmpty());
+		}
 	}
 
 	@Test
@@ -1192,10 +1159,9 @@ public abstract class RepositoryConnectionTest {
 		testCon.commit();
 
 		// get statements with either no context or context2
-		CloseableIteration<? extends Statement, RepositoryException> iter = testCon.getStatements(null, null,
-				null, false, null, context2);
-
-		try {
+		try (RepositoryResult<Statement> iter = testCon.getStatements(null, null, null, false, null,
+				context2);)
+		{
 			int count = 0;
 			while (iter.hasNext()) {
 				count++;
@@ -1206,17 +1172,14 @@ public abstract class RepositoryConnectionTest {
 
 			assertEquals("there should be three statements", 3, count);
 		}
-		finally {
-			iter.close();
-		}
 
 		// get all statements with context1 or context2. Note that context1 and
 		// context2 are both known
 		// in the store because they have been created through the store's own
 		// value vf.
-		iter = testCon.getStatements(null, null, null, false, context1, context2);
-
-		try {
+		try (RepositoryResult<Statement> iter = testCon.getStatements(null, null, null, false, context1,
+				context2);)
+		{
 			int count = 0;
 			while (iter.hasNext()) {
 				count++;
@@ -1225,15 +1188,12 @@ public abstract class RepositoryConnectionTest {
 				assertThat(st.getContext(), is(equalTo((Resource)context2)));
 			}
 			assertEquals("there should be two statements", 2, count);
-		}
-		finally {
-			iter.close();
 		}
 
 		// get all statements with unknownContext or context2.
-		iter = testCon.getStatements(null, null, null, false, unknownContext, context2);
-
-		try {
+		try (RepositoryResult<Statement> iter = testCon.getStatements(null, null, null, false, unknownContext,
+				context2);)
+		{
 			int count = 0;
 			while (iter.hasNext()) {
 				count++;
@@ -1242,9 +1202,6 @@ public abstract class RepositoryConnectionTest {
 				assertThat(st.getContext(), is(equalTo((Resource)context2)));
 			}
 			assertEquals("there should be two statements", 2, count);
-		}
-		finally {
-			iter.close();
 		}
 
 		// add statements to context1
@@ -1254,18 +1211,15 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(context1, publisher, nameBob);
 		testCon.commit();
 
-		iter = testCon.getStatements(null, null, null, false, context1);
-		try {
+		try (RepositoryResult<Statement> iter = testCon.getStatements(null, null, null, false, context1);) {
 			assertThat(iter, is(notNullValue()));
 			assertThat(iter.hasNext(), is(equalTo(true)));
 		}
-		finally {
-			iter.close();
-		}
 
 		// get statements with either no context or context2
-		iter = testCon.getStatements(null, null, null, false, null, context2);
-		try {
+		try (RepositoryResult<Statement> iter = testCon.getStatements(null, null, null, false, null,
+				context2);)
+		{
 			int count = 0;
 			while (iter.hasNext()) {
 				count++;
@@ -1277,14 +1231,11 @@ public abstract class RepositoryConnectionTest {
 			}
 			assertEquals("there should be four statements", 4, count);
 		}
-		finally {
-			iter.close();
-		}
 
 		// get all statements with context1 or context2
-		iter = testCon.getStatements(null, null, null, false, context1, context2);
-
-		try {
+		try (RepositoryResult<Statement> iter = testCon.getStatements(null, null, null, false, context1,
+				context2);)
+		{
 			int count = 0;
 			while (iter.hasNext()) {
 				count++;
@@ -1293,9 +1244,6 @@ public abstract class RepositoryConnectionTest {
 						anyOf(is(equalTo((Resource)context1)), is(equalTo((Resource)context2))));
 			}
 			assertEquals("there should be four statements", 4, count);
-		}
-		finally {
-			iter.close();
 		}
 	}
 
@@ -1309,18 +1257,18 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(bob, name, nameBob, context2);
 		testCon.commit();
 
-		RepositoryResult<Statement> result = testCon.getStatements(bob, name, null, true);
-		result.enableDuplicateFilter();
-
-		int count = 0;
-		while (result.hasNext()) {
-			result.next();
-			count++;
+		try (RepositoryResult<Statement> result = testCon.getStatements(bob, name, null, true);) {
+			result.enableDuplicateFilter();
+			int count = 0;
+			while (result.hasNext()) {
+				result.next();
+				count++;
+			}
+			// TODO now that statement.equals includes context, the above three statements are considered distinct. 
+			// This duplicate filter test has become meaningless since it is _expected_ that nothing gets filtered out.
+			// We should look into reimplementing/renaming the enableDuplicateFilter to ignore context.
+			assertThat(count, is(equalTo(3)));
 		}
-		// TODO now that statement.equals includes context, the above three statements are considered distinct. 
-		// This duplicate filter test has become meaningless since it is _expected_ that nothing gets filtered out.
-		// We should look into reimplementing/renaming the enableDuplicateFilter to ignore context.
-		assertThat(count, is(equalTo(3)));
 	}
 
 	@Test
@@ -1357,13 +1305,14 @@ public abstract class RepositoryConnectionTest {
 		assertThat(testCon.hasStatement(bob, name, nameBob, false), is(equalTo(true)));
 		assertThat(testCon.hasStatement(alice, name, nameAlice, false), is(equalTo(true)));
 
-		Collection<Statement> c = Iterations.addAll(testCon.getStatements(null, null, null, false),
-				new ArrayList<Statement>());
+		try (RepositoryResult<Statement> result = testCon.getStatements(null, null, null, false);) {
+			Collection<Statement> c = Iterations.addAll(result, new ArrayList<Statement>());
 
-		testCon.remove(c);
+			testCon.remove(c);
 
-		assertThat(testCon.hasStatement(bob, name, nameBob, false), is(equalTo(false)));
-		assertThat(testCon.hasStatement(alice, name, nameAlice, false), is(equalTo(false)));
+			assertThat(testCon.hasStatement(bob, name, nameBob, false), is(equalTo(false)));
+			assertThat(testCon.hasStatement(alice, name, nameAlice, false), is(equalTo(false)));
+		}
 	}
 
 	@Test
@@ -1378,14 +1327,10 @@ public abstract class RepositoryConnectionTest {
 		assertThat(testCon.hasStatement(bob, name, nameBob, false), is(equalTo(true)));
 		assertThat(testCon.hasStatement(alice, name, nameAlice, false), is(equalTo(true)));
 
-		CloseableIteration<? extends Statement, RepositoryException> iter = testCon.getStatements(null, null,
-				null, false);
-
-		try {
+		try (CloseableIteration<? extends Statement, RepositoryException> iter = testCon.getStatements(null,
+				null, null, false);)
+		{
 			testCon.remove(iter);
-		}
-		finally {
-			iter.close();
 		}
 
 		assertThat(testCon.hasStatement(bob, name, nameBob, false), is(equalTo(false)));
@@ -1471,12 +1416,9 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(bob, name, nameBob);
 
 		Statement st;
-		RepositoryResult<Statement> statements = testCon.getStatements(null, null, null, true);
-		try {
+
+		try (RepositoryResult<Statement> statements = testCon.getStatements(null, null, null, true);) {
 			st = statements.next();
-		}
-		finally {
-			statements.close();
 		}
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -1502,12 +1444,8 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(bob, name, nameBob);
 
 		Statement st;
-		RepositoryResult<Statement> statements = testCon.getStatements(null, null, null, false);
-		try {
+		try (RepositoryResult<Statement> statements = testCon.getStatements(null, null, null, false);) {
 			st = statements.next();
-		}
-		finally {
-			statements.close();
 		}
 
 		BNode bnode = (BNode)st.getSubject();
@@ -1535,12 +1473,8 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(bob, name, nameBob);
 
 		Statement st;
-		RepositoryResult<Statement> statements = testCon.getStatements(null, null, null, false);
-		try {
+		try (RepositoryResult<Statement> statements = testCon.getStatements(null, null, null, false);) {
 			st = statements.next();
-		}
-		finally {
-			statements.close();
 		}
 
 		IRI uri = st.getPredicate();
@@ -1568,12 +1502,8 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(bob, name, nameBob);
 
 		Statement st;
-		RepositoryResult<Statement> statements = testCon.getStatements(null, null, null, false);
-		try {
+		try (RepositoryResult<Statement> statements = testCon.getStatements(null, null, null, false);) {
 			st = statements.next();
-		}
-		finally {
-			statements.close();
 		}
 
 		Literal literal = (Literal)st.getObject();
@@ -1601,24 +1531,25 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(bob, name, nameBob);
 		testCon.add(alice, name, nameAlice);
 
-		RepositoryResult<Statement> statements = testCon.getStatements(null, null, null, true);
-		Model graph = Iterations.addAll(statements, new LinkedHashModel());
+		try (RepositoryResult<Statement> statements = testCon.getStatements(null, null, null, true);) {
+			Model graph = Iterations.addAll(statements, new LinkedHashModel());
 
-		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		ObjectOutputStream out = new ObjectOutputStream(baos);
-		out.writeObject(graph);
-		out.close();
+			ByteArrayOutputStream baos = new ByteArrayOutputStream();
+			ObjectOutputStream out = new ObjectOutputStream(baos);
+			out.writeObject(graph);
+			out.close();
 
-		ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
-		ObjectInputStream in = new ObjectInputStream(bais);
-		Model deserializedGraph = (Model)in.readObject();
-		in.close();
+			ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+			ObjectInputStream in = new ObjectInputStream(bais);
+			Model deserializedGraph = (Model)in.readObject();
+			in.close();
 
-		assertThat(deserializedGraph.isEmpty(), is(equalTo(false)));
-
-		for (Statement st : deserializedGraph) {
-			assertThat(graph, hasItem(st));
-			assertThat(testCon.hasStatement(st, true), is(equalTo(true)));
+			assertThat(deserializedGraph.isEmpty(), is(equalTo(false)));
+			assertThat(deserializedGraph.size(), is(equalTo(graph.size())));
+			for (Statement st : deserializedGraph) {
+				assertThat(graph, hasItem(st));
+				assertThat(testCon.hasStatement(st, true), is(equalTo(true)));
+			}
 		}
 	}
 
@@ -1721,6 +1652,7 @@ public abstract class RepositoryConnectionTest {
 		testCon.begin();
 		testCon.add(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
 		assertEquals("Statement should appear once", 1, testCon.size());
+		testCon.commit();
 	}
 
 	@Test
@@ -1749,8 +1681,8 @@ public abstract class RepositoryConnectionTest {
 	public void testAddDelete()
 		throws RDF4JException
 	{
-		final Statement stmt = vf.createStatement(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1),
-				vf.createURI(URN_TEST_O1));
+		final Statement stmt = vf.createStatement(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1),
+				vf.createIRI(URN_TEST_O1));
 		testCon.begin();
 		testCon.add(stmt);
 		testCon.prepareUpdate(QueryLanguage.SPARQL,
@@ -1772,8 +1704,8 @@ public abstract class RepositoryConnectionTest {
 	public final void testInsertRemove()
 		throws RDF4JException
 	{
-		final Statement stmt = vf.createStatement(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1),
-				vf.createURI(URN_TEST_O1));
+		final Statement stmt = vf.createStatement(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1),
+				vf.createIRI(URN_TEST_O1));
 		testCon.begin();
 		testCon.prepareUpdate(QueryLanguage.SPARQL,
 				"INSERT DATA {<" + URN_TEST_S1 + "> <" + URN_TEST_P1 + "> <" + URN_TEST_O1 + ">}").execute();
@@ -1795,8 +1727,8 @@ public abstract class RepositoryConnectionTest {
 	public void testInsertDelete()
 		throws RDF4JException
 	{
-		final Statement stmt = vf.createStatement(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1),
-				vf.createURI(URN_TEST_O1));
+		final Statement stmt = vf.createStatement(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1),
+				vf.createIRI(URN_TEST_O1));
 		testCon.begin();
 		testCon.prepareUpdate(QueryLanguage.SPARQL,
 				"INSERT DATA {<" + URN_TEST_S1 + "> <" + URN_TEST_P1 + "> <" + URN_TEST_O1 + ">}").execute();
@@ -1819,11 +1751,11 @@ public abstract class RepositoryConnectionTest {
 	public void testAddRemoveAdd()
 		throws RDF4JException
 	{
-		Statement stmt = vf.createStatement(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1),
-				vf.createURI(URN_TEST_O1));
+		Statement stmt = vf.createStatement(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1),
+				vf.createIRI(URN_TEST_O1));
 		testCon.add(stmt);
 		testCon.begin();
-		testCon.remove(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1), vf.createURI(URN_TEST_O1));
+		testCon.remove(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1), vf.createIRI(URN_TEST_O1));
 		testCon.add(stmt);
 		testCon.commit();
 		Assert.assertFalse(testCon.isEmpty());
@@ -1833,8 +1765,8 @@ public abstract class RepositoryConnectionTest {
 	public void testAddDeleteAdd()
 		throws RDF4JException
 	{
-		Statement stmt = vf.createStatement(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1),
-				vf.createURI(URN_TEST_O1));
+		Statement stmt = vf.createStatement(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1),
+				vf.createIRI(URN_TEST_O1));
 		testCon.add(stmt);
 		testCon.begin();
 		testCon.prepareUpdate(QueryLanguage.SPARQL,
@@ -1848,8 +1780,8 @@ public abstract class RepositoryConnectionTest {
 	public void testAddRemoveInsert()
 		throws RDF4JException
 	{
-		Statement stmt = vf.createStatement(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1),
-				vf.createURI(URN_TEST_O1));
+		Statement stmt = vf.createStatement(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1),
+				vf.createIRI(URN_TEST_O1));
 		testCon.add(stmt);
 		testCon.begin();
 		testCon.remove(stmt);
@@ -1863,7 +1795,7 @@ public abstract class RepositoryConnectionTest {
 	public void testAddDeleteInsert()
 		throws RDF4JException
 	{
-		testCon.add(vf.createURI(URN_TEST_S1), vf.createURI(URN_TEST_P1), vf.createURI(URN_TEST_O1));
+		testCon.add(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1), vf.createIRI(URN_TEST_O1));
 		testCon.begin();
 		testCon.prepareUpdate(QueryLanguage.SPARQL,
 				"DELETE DATA {<" + URN_TEST_S1 + "> <" + URN_TEST_P1 + "> <" + URN_TEST_O1 + ">}").execute();
@@ -1881,14 +1813,13 @@ public abstract class RepositoryConnectionTest {
 
 		testCon.begin();
 		String query = "SELECT * where {?x a ?y }";
-		TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
-
-		// test verifies that query as part of transaction executes and returns
-		// a
-		// result
-		assertNotNull(result);
-		assertTrue(result.hasNext());
-		testCon.commit();
+		try (TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();) {
+			// test verifies that query as part of transaction executes and returns
+			// a result
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			testCon.commit();
+		}
 	}
 
 	@Test
@@ -1902,8 +1833,7 @@ public abstract class RepositoryConnectionTest {
 		testCon.prepareUpdate(QueryLanguage.SPARQL, query).execute();
 
 		// test verifies that update as part of transaction executes and returns
-		// a
-		// result
+		// a result
 		assertTrue(testCon.hasStatement(bob, RDFS.LABEL, vf.createLiteral("Bob"), true));
 		testCon.commit();
 	}
@@ -1998,15 +1928,15 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(s, p1, v3);
 		String qry = "PREFIX :<urn:test:> SELECT ?s ?v1 ?v2 WHERE " + optional;
 		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SPARQL, qry);
-		TupleQueryResult result = query.evaluate();
-		Set<List<Value>> set = new HashSet<List<Value>>();
-		while (result.hasNext()) {
-			BindingSet bindings = result.next();
-			set.add(Arrays.asList(bindings.getValue("v1"), bindings.getValue("v2")));
+		try (TupleQueryResult result = query.evaluate();) {
+			Set<List<Value>> set = new HashSet<List<Value>>();
+			while (result.hasNext()) {
+				BindingSet bindings = result.next();
+				set.add(Arrays.asList(bindings.getValue("v1"), bindings.getValue("v2")));
+			}
+			assertThat(set, hasItem(Arrays.asList(v1, v2)));
+			assertThat(set, hasItem(Arrays.asList(v3, null)));
 		}
-		result.close();
-		assertThat(set, hasItem(Arrays.asList(v1, v2)));
-		assertThat(set, hasItem(Arrays.asList(v3, null)));
 	}
 
 	@Test
@@ -2022,15 +1952,15 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(s, p2, o);
 		String qry = "PREFIX :<urn:test:> SELECT ?p WHERE " + union;
 		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SPARQL, qry);
-		TupleQueryResult result = query.evaluate();
-		List<Value> list = new ArrayList<Value>();
-		while (result.hasNext()) {
-			BindingSet bindings = result.next();
-			list.add(bindings.getValue("p"));
+		try (TupleQueryResult result = query.evaluate();) {
+			List<Value> list = new ArrayList<Value>();
+			while (result.hasNext()) {
+				BindingSet bindings = result.next();
+				list.add(bindings.getValue("p"));
+			}
+			assertThat(list, hasItem(p1));
+			assertThat(list, hasItem(p2));
 		}
-		result.close();
-		assertThat(list, hasItem(p1));
-		assertThat(list, hasItem(p2));
 	}
 
 	@Test
@@ -2040,12 +1970,8 @@ public abstract class RepositoryConnectionTest {
 		String queryString = "SELECT * { ?sub ?pred ?obj . FILTER ( 'not a number' + 1 = ?obj )}";
 
 		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-		TupleQueryResult tqr = query.evaluate();
-		try {
+		try (TupleQueryResult tqr = query.evaluate();) {
 			assertFalse("Query should not return any results", tqr.hasNext());
-		}
-		finally {
-			tqr.close();
 		}
 	}
 
@@ -2063,15 +1989,15 @@ public abstract class RepositoryConnectionTest {
 		String queryString = "SELECT ?o WHERE { <urn:subject1> rdfs:label ?o . }";
 
 		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-		TupleQueryResult result = query.evaluate();
+		try (TupleQueryResult result = query.evaluate();) {
+			assertNotNull(result);
 
-		assertNotNull(result);
+			final String expected = "设备";
+			while (result.hasNext()) {
+				Value o = result.next().getValue("o");
 
-		final String expected = "设备";
-		while (result.hasNext()) {
-			Value o = result.next().getValue("o");
-
-			assertEquals(expected, o.stringValue());
+				assertEquals(expected, o.stringValue());
+			}
 		}
 	}
 
@@ -2120,13 +2046,10 @@ public abstract class RepositoryConnectionTest {
 		throws Exception
 	{
 		testCon.add(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1), vf.createIRI(URN_TEST_O1));
-		TupleQueryResult rs = testCon.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT * { <> ?p ?o }",
-				URN_TEST_S1).evaluate();
-		try {
+		try (TupleQueryResult rs = testCon.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT * { <> ?p ?o }",
+				URN_TEST_S1).evaluate();)
+		{
 			assertThat(rs.hasNext(), is(equalTo(true)));
-		}
-		finally {
-			rs.close();
 		}
 	}
 
@@ -2160,91 +2083,100 @@ public abstract class RepositoryConnectionTest {
 	public void testDefaultContext()
 		throws Exception
 	{
-		ContextAwareConnection con = new ContextAwareConnection(testCon);
-		IRI defaultGraph = vf.createIRI("urn:test:default");
-		con.setReadContexts(defaultGraph);
-		con.setInsertContext(defaultGraph);
-		con.setRemoveContexts(defaultGraph);
-		con.add(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1), vf.createIRI(URN_TEST_O1));
-		con.prepareUpdate("INSERT DATA { <urn:test:s2> <urn:test:p2> \"l2\" }").execute();
-		assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(2)));
-		assertThat(Iterations.asList(con.getStatements(null, null, null, defaultGraph)).size(),
-				is(equalTo(2)));
-		assertThat(size(defaultGraph), is(equalTo(2)));
-		con.add(vf.createIRI("urn:test:s3"), vf.createIRI("urn:test:p3"), vf.createIRI("urn:test:o3"),
-				(Resource)null);
-		con.add(vf.createIRI("urn:test:s4"), vf.createIRI("urn:test:p4"), vf.createIRI("urn:test:o4"),
-				vf.createIRI(URN_TEST_OTHER));
-		assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(3)));
-		assertThat(Iterations.asList(testCon.getStatements(null, null, null, true)).size(), is(equalTo(4)));
-		assertThat(size(defaultGraph), is(equalTo(3)));
-		assertThat(size(vf.createIRI(URN_TEST_OTHER)), is(equalTo(1)));
-		con.prepareUpdate(SPARQL_DEL_ALL).execute();
-		assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(0)));
-		assertThat(Iterations.asList(testCon.getStatements(null, null, null, true)).size(), is(equalTo(1)));
-		assertThat(size(defaultGraph), is(equalTo(0)));
-		assertThat(size(vf.createIRI(URN_TEST_OTHER)), is(equalTo(1)));
+		try (ContextAwareConnection con = new ContextAwareConnection(testCon);) {
+			IRI defaultGraph = vf.createIRI("urn:test:default");
+			con.setReadContexts(defaultGraph);
+			con.setInsertContext(defaultGraph);
+			con.setRemoveContexts(defaultGraph);
+			con.add(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1), vf.createIRI(URN_TEST_O1));
+			con.prepareUpdate("INSERT DATA { <urn:test:s2> <urn:test:p2> \"l2\" }").execute();
+			assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(2)));
+			assertThat(Iterations.asList(con.getStatements(null, null, null, defaultGraph)).size(),
+					is(equalTo(2)));
+			assertThat(size(defaultGraph), is(equalTo(2)));
+			con.add(vf.createIRI("urn:test:s3"), vf.createIRI("urn:test:p3"), vf.createIRI("urn:test:o3"),
+					(Resource)null);
+			con.add(vf.createIRI("urn:test:s4"), vf.createIRI("urn:test:p4"), vf.createIRI("urn:test:o4"),
+					vf.createIRI(URN_TEST_OTHER));
+			assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(3)));
+			assertThat(Iterations.asList(testCon.getStatements(null, null, null, true)).size(),
+					is(equalTo(4)));
+			assertThat(size(defaultGraph), is(equalTo(3)));
+			assertThat(size(vf.createIRI(URN_TEST_OTHER)), is(equalTo(1)));
+			con.prepareUpdate(SPARQL_DEL_ALL).execute();
+			assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(0)));
+			assertThat(Iterations.asList(testCon.getStatements(null, null, null, true)).size(),
+					is(equalTo(1)));
+			assertThat(size(defaultGraph), is(equalTo(0)));
+			assertThat(size(vf.createIRI(URN_TEST_OTHER)), is(equalTo(1)));
+		}
 	}
 
 	@Test
 	public void testDefaultInsertContext()
 		throws Exception
 	{
-		ContextAwareConnection con = new ContextAwareConnection(testCon);
-		IRI defaultGraph = vf.createIRI("urn:test:default");
-		con.setInsertContext(defaultGraph);
-		con.add(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1), vf.createIRI(URN_TEST_O1));
-		con.prepareUpdate("INSERT DATA { <urn:test:s2> <urn:test:p2> \"l2\" }").execute();
-		assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(2)));
-		assertThat(Iterations.asList(con.getStatements(null, null, null, defaultGraph)).size(),
-				is(equalTo(2)));
-		assertThat(size(defaultGraph), is(equalTo(2)));
-		con.add(vf.createIRI("urn:test:s3"), vf.createIRI("urn:test:p3"), vf.createIRI("urn:test:o3"),
-				(Resource)null);
-		con.add(vf.createIRI("urn:test:s4"), vf.createIRI("urn:test:p4"), vf.createIRI("urn:test:o4"),
-				vf.createIRI(URN_TEST_OTHER));
-		assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(4)));
-		assertThat(Iterations.asList(con.getStatements(null, null, null, defaultGraph)).size(),
-				is(equalTo(3)));
-		assertThat(Iterations.asList(testCon.getStatements(null, null, null, true)).size(), is(equalTo(4)));
-		assertThat(size(defaultGraph), is(equalTo(3)));
-		assertThat(size(vf.createIRI(URN_TEST_OTHER)), is(equalTo(1)));
-		con.prepareUpdate(SPARQL_DEL_ALL).execute();
-		assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(0)));
-		assertThat(Iterations.asList(testCon.getStatements(null, null, null, true)).size(), is(equalTo(0)));
-		assertThat(size(defaultGraph), is(equalTo(0)));
-		assertThat(size(vf.createIRI(URN_TEST_OTHER)), is(equalTo(0)));
+		try (ContextAwareConnection con = new ContextAwareConnection(testCon);) {
+			IRI defaultGraph = vf.createIRI("urn:test:default");
+			con.setInsertContext(defaultGraph);
+			con.add(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1), vf.createIRI(URN_TEST_O1));
+			con.prepareUpdate("INSERT DATA { <urn:test:s2> <urn:test:p2> \"l2\" }").execute();
+			assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(2)));
+			assertThat(Iterations.asList(con.getStatements(null, null, null, defaultGraph)).size(),
+					is(equalTo(2)));
+			assertThat(size(defaultGraph), is(equalTo(2)));
+			con.add(vf.createIRI("urn:test:s3"), vf.createIRI("urn:test:p3"), vf.createIRI("urn:test:o3"),
+					(Resource)null);
+			con.add(vf.createIRI("urn:test:s4"), vf.createIRI("urn:test:p4"), vf.createIRI("urn:test:o4"),
+					vf.createIRI(URN_TEST_OTHER));
+			assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(4)));
+			assertThat(Iterations.asList(con.getStatements(null, null, null, defaultGraph)).size(),
+					is(equalTo(3)));
+			assertThat(Iterations.asList(testCon.getStatements(null, null, null, true)).size(),
+					is(equalTo(4)));
+			assertThat(size(defaultGraph), is(equalTo(3)));
+			assertThat(size(vf.createIRI(URN_TEST_OTHER)), is(equalTo(1)));
+			con.prepareUpdate(SPARQL_DEL_ALL).execute();
+			assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(0)));
+			assertThat(Iterations.asList(testCon.getStatements(null, null, null, true)).size(),
+					is(equalTo(0)));
+			assertThat(size(defaultGraph), is(equalTo(0)));
+			assertThat(size(vf.createIRI(URN_TEST_OTHER)), is(equalTo(0)));
+		}
 	}
 
 	@Test
 	public void testExclusiveNullContext()
 		throws Exception
 	{
-		ContextAwareConnection con = new ContextAwareConnection(testCon);
-		IRI defaultGraph = null; // null context
-		con.setReadContexts(defaultGraph);
-		con.setInsertContext(defaultGraph);
-		con.setRemoveContexts(defaultGraph);
-		con.add(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1), vf.createIRI(URN_TEST_O1));
-		con.prepareUpdate("INSERT DATA { <urn:test:s2> <urn:test:p2> \"l2\" }").execute();
-		assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(2)));
-		assertThat(Iterations.asList(con.getStatements(null, null, null, defaultGraph)).size(),
-				is(equalTo(2)));
-		assertThat(size(defaultGraph), is(equalTo(2)));
-		con.add(vf.createIRI("urn:test:s3"), vf.createIRI("urn:test:p3"), vf.createIRI("urn:test:o3"),
-				(Resource)null);
-		con.add(vf.createIRI("urn:test:s4"), vf.createIRI("urn:test:p4"), vf.createIRI("urn:test:o4"),
+		try (ContextAwareConnection con = new ContextAwareConnection(testCon);) {
+			IRI defaultGraph = null; // null context
+			con.setReadContexts(defaultGraph);
+			con.setInsertContext(defaultGraph);
+			con.setRemoveContexts(defaultGraph);
+			con.add(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1), vf.createIRI(URN_TEST_O1));
+			con.prepareUpdate("INSERT DATA { <urn:test:s2> <urn:test:p2> \"l2\" }").execute();
+			assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(2)));
+			assertThat(Iterations.asList(con.getStatements(null, null, null, defaultGraph)).size(),
+					is(equalTo(2)));
+			assertThat(size(defaultGraph), is(equalTo(2)));
+			con.add(vf.createIRI("urn:test:s3"), vf.createIRI("urn:test:p3"), vf.createIRI("urn:test:o3"),
+					(Resource)null);
+			con.add(vf.createIRI("urn:test:s4"), vf.createIRI("urn:test:p4"), vf.createIRI("urn:test:o4"),
 
-				vf.createIRI(URN_TEST_OTHER));
-		assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(3)));
-		assertThat(Iterations.asList(testCon.getStatements(null, null, null, true)).size(), is(equalTo(4)));
-		assertThat(size(defaultGraph), is(equalTo(3)));
-		assertThat(size(vf.createIRI(URN_TEST_OTHER)), is(equalTo(1)));
-		con.prepareUpdate(SPARQL_DEL_ALL).execute();
-		assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(0)));
-		assertThat(Iterations.asList(testCon.getStatements(null, null, null, true)).size(), is(equalTo(1)));
-		assertThat(size(defaultGraph), is(equalTo(0)));
-		assertThat(size(vf.createIRI(URN_TEST_OTHER)), is(equalTo(1)));
+					vf.createIRI(URN_TEST_OTHER));
+			assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(3)));
+			assertThat(Iterations.asList(testCon.getStatements(null, null, null, true)).size(),
+					is(equalTo(4)));
+			assertThat(size(defaultGraph), is(equalTo(3)));
+			assertThat(size(vf.createIRI(URN_TEST_OTHER)), is(equalTo(1)));
+			con.prepareUpdate(SPARQL_DEL_ALL).execute();
+			assertThat(Iterations.asList(con.getStatements(null, null, null)).size(), is(equalTo(0)));
+			assertThat(Iterations.asList(testCon.getStatements(null, null, null, true)).size(),
+					is(equalTo(1)));
+			assertThat(size(defaultGraph), is(equalTo(0)));
+			assertThat(size(vf.createIRI(URN_TEST_OTHER)), is(equalTo(1)));
+		}
 	}
 
 	private int size(IRI defaultGraph)

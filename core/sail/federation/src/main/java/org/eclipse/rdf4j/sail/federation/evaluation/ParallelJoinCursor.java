@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation.evaluation;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -72,9 +75,13 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	@Override
 	public void run() {
 		evaluationThread = Thread.currentThread();
+		List<CloseableIteration<BindingSet, QueryEvaluationException>> iterationsToClose = new ArrayList<>();
 		try {
 			while (!isClosed() && leftIter.hasNext()) {
-				rightQueue.put(strategy.evaluate(rightArg, leftIter.next()));
+				CloseableIteration<BindingSet, QueryEvaluationException> evaluate = strategy.evaluate(
+						rightArg, leftIter.next());
+				iterationsToClose.add(evaluate);
+				rightQueue.put(evaluate);
 			}
 		}
 		catch (RuntimeException e) {
@@ -84,8 +91,20 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 			Thread.currentThread().interrupt();
 		}
 		finally {
-			evaluationThread = null; // NOPMD
-			rightQueue.done();
+			try {
+				evaluationThread = null;
+				for (CloseableIteration<BindingSet, QueryEvaluationException> iterationToClose : iterationsToClose) {
+					try {
+						iterationToClose.close();
+					}
+					catch (QueryEvaluationException e) {
+						rightQueue.toss(e);
+					}
+				}
+			}
+			finally {
+				rightQueue.done();
+			}
 		}
 	}
 
