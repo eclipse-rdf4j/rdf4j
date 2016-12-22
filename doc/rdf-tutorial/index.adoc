@@ -1,0 +1,158 @@
+include::../shared-settings.adoc[]
+include::../header.adoc[]
+
+:numbered!:
+== How to use RDF and the Eclipse RDF4J Framework
+
+Getting started with RDF can be hard. In this tutorial, we go through the basics of what RDF is and how you can use it, and we show how you can use the Eclipse RDF4J framework to create, process, store, and query RDF data. We assume that you know a little about programming in Java, but no prior knowledge on what RDF is is assumed.
+
+:numbered:
+== Introducing RDF
+
+The https://www.w3.org/TR/rdf11-primer/[Resource Description Framework (RDF)] is a standard (or more accurately, a "recommendation") formulated by the https://www.w3.org/[World Wide Web Consortium (W3C)], the same organization that developed HTTP, HTML, and XML. The purpose of RDF is to provide a framework for expressing information about resources.
+
+A _resource_ can be anything that we can stick an identifier on: a web page, an image, but also more abstract/real-world things like you, me, the concept of "world peace", the number 42, and that library book you never returned. 
+
+RDF is intended for modeling information that needs to processed by applications, rather than just being shown to people. 
+
+In this tutorial, we will be modeling information about artists . Let's start with a simple fact: "Picasso's first name is Pablo". In RDF, this could be expressed as follows:
+
+image:rdf-graph-1.png[]
+
+So what exactly are we looking at here? Well, we have a _resource_ "Picasso", denoted by an IRI (Internationalized _Resource Identifier_): `http://example.org/Picasso`. In RDF, resources have _properties_. Here we are using the `foaf:firstName` property to denote the relation between the resource "Picasso" and the value "Pablo". `foaf:firstName` is also an IRI, though to make things easier to read we use an abbreviated syntax, called _prefixed names_ (more about this later). Finally, the property value, "Pablo", is a _literal_ value: it is not represented using a resource identifier, but simply as a string of characters.
+
+As you may have noticed, we have depicted our fact about Picasso as a simple *graph*: two nodes, connected by an edge. It is very helpful to think about RDF models as graphs, and a lot of the tools we will be using to create and query RDF data make a lot more sense if you do.
+
+In RDF, each fact is called a *statement*. Each statement consists of three parts (for this reason, it is also often called a _triple_):
+
+* the _subject_ is the starting node of the statement, representing the resource that the fact is "about";
+* the _predicate_ is the property that denotes the edge between two nodes;
+* the _object_ is the end node of the statement, representing the resource or literal that is the _property value_.
+
+Let's expand our example slightly: we don't just have a single statement about Picasso, we know another fact as well: "Picasso is a painter". We can extend our RDF model as follows:
+
+image:rdf-graph-2.png[]
+
+Notice how the second statement was added to our graph depiction by simply adding a second edge to an already existing node , labeled with the `rdf:type` property, and the value `art:Artist`. As you continue to add new facts to your data model, nodes and edges continue to be added to the graph.
+
+== Using RDF4J to create RDF models
+
+Eclipse RDF4J is a Java API for RDF: it allows you to create, parse, write, store, query and reason with RDF data in a highly scalable manner. 
+
+https://github.com/eclipse/rdf4j-doc/examples/[Example 01] shows how we can create the RDF model we introduced above using RDF4J:
+
+[[code-example-01]]
+[source,java,linenums]
+----
+// We use a ValueFactory to create the building blocks of our RDF statements: 
+// IRIs, blank nodes and literals.
+ValueFactory vf = SimpleValueFactory.getInstance();
+
+// We want to reuse this namespace when creating several building blocks.
+String ex = "http://example.org/";
+
+// Create IRIs for the resources we want to add.
+IRI picasso = vf.createIRI(ex, "Picasso");
+IRI artist = vf.createIRI(ex, "Artist");
+
+// Create a new, empty Model object.
+Model model = new TreeModel();
+
+// add our first statement: Picasso is an Artist
+model.add(picasso, RDF.TYPE, artist);
+
+// second statement: Picasso's first name is "Pablo".
+model.add(picasso, FOAF.FIRST_NAME, vf.createLiteral("Pablo"));
+----
+
+Let's take a closer look at this, because an awful lot of stuff happens here in a short bit of code. Lines 1 and 2 are necessary preparation: we use a `ValueFactory` to create a `BNode` (an object representing a blank node), which we will later use to add facts to our model. 
+
+On line 3, we create a new `ModelBuilder`, which is RDF4J's convenience class for quickly creating RDF models from scratch. 
+
+On lines 4-5, we define namespace prefixes (`art` and `ex`), and the full namespace IRIs for which they are an abbreviation. For example the prefixed name `art:Artist` now corresponds to the full URI `http://example.org/art/Artist`.
+
+On line 6, we add the _subject_ resource that we are going to add facts about. 
+
+On lines 7-9 we add three facts about our subject resource: firstly, that Picasso's first name is "Pablo", and secondly, that he is of type "Artist". Notice that in both cases, we use predefined constants for the properties: RDF4J provides constants for various well-known RDF vocabularies that you can easily reuse. The third fact we add is that he has a home address whose value is a blank node.
+
+On line 10 and further, we add additional facts about the address: its street, city, and country. Then finally, we instruct the `ModelBuilder` to create the `Model` object for us.
+
+In RDF4J, a `Model` is simply an in-memory collection of RDF statements. We can add statements to an existing model, remove statements from it, and of course iterate over the statements in it to do things with them. As an example, let's iterate over all statements in our `Model`, and simply print them out:
+
+[source, java]
+----
+for (Statement statement: rdfModel) {
+    System.out.println(statement);
+}
+----
+
+When you run this, the output will look something like this:
+
+----
+(http://example.org/Picasso, http://xmlns.com/foaf/0.1/firstName, "Pablo"^^<http://www.w3.org/2001/XMLSchema#string>) [null]
+(http://example.org/Picasso, http://www.w3.org/1999/02/22-rdf-syntax-ns#type, http://example.org/art/Artist) [null]
+(http://example.org/Picasso, http://example.org/homeAddress, _:node1b4ijf50ox1) [null]
+(_:node1b4ijf50ox1, http://example.org/street, "31 Art Gallery"^^<http://www.w3.org/2001/XMLSchema#string>) [null]
+(_:node1b4ijf50ox1, http://example.org/city, "Madrid"^^<http://www.w3.org/2001/XMLSchema#string>) [null]
+(_:node1b4ijf50ox1, http://example.org/country, "Spain"^^<http://www.w3.org/2001/XMLSchema#string>) [null]
+----
+
+Not very pretty perhaps, but at least you should be able to recognize the RDF statements that we originally added to our model. Each line is a single statement, with the subject, predicate, and object value in comma-separated form. The `[null]` behind each statement is a context identifier or named graph identifier, which you can safely ignore for now. The bit `^^<http://www.w3.org/2001/XMLSchema#string>` is a _datatype_ that RDF4J assigned to the literal value we added (in this case, the datatype is simply string).  Finally, the `_:node1b4ijf50ox1` is an internal identifier that RDF4J assigns to blank nodes. Although superficially it looks a little like an IRI or a prefixed name, it is important to realize that it is not: the identifier is strictly internal to RDF4J and may change whenever an RDF model is read or written to or from a database or file.
+
+== Reading and Writing RDF
+
+In the previous section we saw how to print the contents of a Model to the screen, and we could of course amend this to write the contents to a file on disk, instead. However, this would be of limited use: the format is not easy to read, and certainly not by any other tools that you may wish to share the information with.
+
+Fortunately, RDF4J provides tools for reading and writing RDF models in several syntax formats, all of which are standardized, and therefore can be used to share data between applications. The most commonly used formats are RDF/XML, Turtle, and N-Triples (though there are several others). 
+
+We can write our model in the desired syntax using RDF4J's Rio toolkit. For example, if we desire to see our model in Turtle syntax, simply replace the `for-each` loop in the previous code example by this:
+
+[source, java]
+----
+Rio.write(rdfModel, System.out, RDFFormat.TURTLE);
+----
+
+The output will be similar to this:
+
+----
+@prefix art: <http://example.org/art/> .
+@prefix ex: <http://example.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+ex:Picasso <http://xmlns.com/foaf/0.1/firstName> "Pablo" ;
+	a art:Artist ;
+	ex:homeAddress _:node1b4ikqhq2x1 .
+
+_:node1b4ikqhq2x1 ex:street "31 Art Gallery" ;
+	ex:city "Madrid" ;
+	ex:country "Spain" .
+----
+
+The `Rio.write` method takes a java `OutputStream` as an argument, so if we wish to write to file instead of to the screen, we can simply use a `FileOutputStream` and point it at the desired file location.
+
+=== IRIs, namespaces, and prefixed names
+
+IRIs are at the core of what makes RDF powerful. They provide a mechanism that allows global identification of any resource: no matter who authors a dataset or where that data is physically stored, if that data shares an identical IRI with another dataset you know with certainty that both datasets are talking about the same thing. 
+
+As mentioned earlier in this tutorial, you will often see IRIs in abbreviated form whenever you encounter examples of RDF data. This abbreviated form, known as "prefixed names", has no impact on the meaning of the data, but it makes it easier for people to read the data. 
+
+Prefixed names work by defining a prefix (typically a three-four letter word or acronym) that is a replacement for a _namespace_. A namespace is the first part of an IRI that is shared by several resources. For example, the IRIs `http://example.org/Picasso`, `http://example.org/Rodin`, and `http://example.org/Rembrandt` all share the the namespace `http://example.org/`. By defining a new prefix `ex` as the abbreviation for this namespace, we can use the string `ex:Picasso` instead of its full IRI.
+
+=== Blank nodes
+
+Sometimes, we may want to model some facts without explicitly giving all resources involved in that fact an identifier. For example, consider the following sentenct: "Picasso has created a painting depicting cubes, and using a blue color scheme". There's several facts in this sentence:
+
+1. Picasso created some painting;
+2. that painting depicts cubes;
+3. that painting uses the color blue.
+
+All of the above may be true, but it doesn't involve identifying a specific painting. All we know is that there is _some_ (unknown) painting for which all of this is true. We can express this in RDF using a *blank node*.
+
+When looking at a graph depiction of the RDF, it becomes obvious why it is called a _blank_ node:
+
+image:rdf-graph-3.png[]
+
+Other possible uses for blank nodes are for modeling a collection of facts that are strongly tied together. For example, "Picasso's home address is '31 Art Gallery, Madrid, Spain'" could be modeled as follows:
+
+image:rdf-graph-4.png[]
+
