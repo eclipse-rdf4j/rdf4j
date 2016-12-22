@@ -12,7 +12,7 @@ import static org.junit.Assert.assertTrue;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.model.URI;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -21,9 +21,17 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 public class ModificationTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	private Repository repo;
 
@@ -33,9 +41,9 @@ public class ModificationTest {
 
 	private String NS = "http://rdf.example.org/";
 
-	private URI PAINTER;
+	private IRI PAINTER;
 
-	private URI PICASSO;
+	private IRI PICASSO;
 
 	@Before
 	public void setUp()
@@ -43,8 +51,8 @@ public class ModificationTest {
 	{
 		repo = OptimisticIsolationTest.getEmptyInitializedRepository(ModificationTest.class);
 		ValueFactory uf = repo.getValueFactory();
-		PAINTER = uf.createURI(NS, "Painter");
-		PICASSO = uf.createURI(NS, "picasso");
+		PAINTER = uf.createIRI(NS, "Painter");
+		PICASSO = uf.createIRI(NS, "picasso");
 		con = repo.getConnection();
 	}
 
