@@ -114,7 +114,8 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 		QueryEvaluationException shouldThrow = runQuery(q);
 		assertNotNull(shouldThrow);
 
-		// There is just one object therefore we should not throw a new exception
+		// There is just one object therefore we should not throw a new
+		// exception
 		queryString = "SELECT DISTINCT ?o WHERE {?s ?p ?o}";
 		q = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 		shouldThrow = runQuery(q);
@@ -150,8 +151,7 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 
 	protected QueryEvaluationException runQuery(TupleQuery q) {
 		QueryEvaluationException shouldThrow = null;
-		try {
-			TupleQueryResult r = q.evaluate();
+		try (TupleQueryResult r = q.evaluate();) {
 			assertTrue(r.hasNext());
 			while (r.hasNext()) {
 				assertNotNull(r.next());
