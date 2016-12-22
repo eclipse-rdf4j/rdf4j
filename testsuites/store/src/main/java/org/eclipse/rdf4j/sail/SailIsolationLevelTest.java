@@ -462,7 +462,8 @@ public abstract class SailIsolationLevelTest {
 					}
 					catch (SailException e) {
 						// it is okay to abort on inconsistency
-						e.printStackTrace();
+						// e.printStackTrace();
+						read.rollback();
 						return;
 					}
 					// store must not change if transaction consistent
