@@ -4,7 +4,7 @@ include::../header.adoc[]
 :numbered!:
 == How to use RDF and the Eclipse RDF4J Framework
 
-Getting started with RDF can be hard. In this tutorial, we go through the basics of what RDF is and how you can use it, and we show how you can use the Eclipse RDF4J framework to create, process, store, and query RDF data. We assume that you know a little about programming in Java, but no prior knowledge on what RDF is is assumed.
+Getting started with RDF is not hard! In this tutorial, we go through the basics of what RDF is and how you can use it, and we show how you can use the Eclipse RDF4J framework to create, process, store, and query RDF data. We assume that you know a little about programming in Java, but no prior knowledge on RDF is assumed.
 
 The code examples in this tutorial are available for download from the https://github.com/eclipse/rdf4j-doc/examples[rdf4j-doc GitHub repository]. We encourage you to download these examples and play around with them.
 
@@ -54,7 +54,7 @@ Eclipse RDF4J is a Java API for RDF: it allows you to create, parse, write, stor
 https://github.com/eclipse/rdf4j-doc/examples/src/main/java/org/eclipse/rdf4j/examples/model/Example01BuildModel.java[Example 01] shows how we can create the RDF model we introduced above using RDF4J:
 
 [[code-example-01]]
-[source,java,linenums]
+[source,java,linenum]
 ----
 // We use a ValueFactory to create the building blocks of our RDF statements: 
 // IRIs, blank nodes and literals.
@@ -85,7 +85,7 @@ On lines 16 and 19, we add our two facts that we know about Picasso: that's he's
 
 In RDF4J, a `Model` is simply an in-memory collection of RDF statements. We can add statements to an existing model, remove statements from it, and of course iterate over the model to do things with its contents. As an example, let's iterate over all statements in our `Model` using a `for-each` loop, and print them to the screen:
 
-[source, java, linenums]
+[source,java,linenums]
 ----
 for (Statement statement: model) {
     System.out.println(statement);
@@ -108,7 +108,7 @@ The previous code example shows that you need to do a bit of prep on your data b
 https://github.com/eclipse/rdf4j-doc/examples/src/main/java/org/eclipse/rdf4j/examples/model/Example02BuildModel.java[Example 02] shows how we can create the exact same model using a `ModelBuilder`:
 
 [[code-example-02]]
-[source, java, linenums]
+[source,java,linenum]
 ----
 ModelBuilder builder = new ModelBuilder();
 Model model = builder
@@ -266,11 +266,66 @@ https://github.com/eclipse/rdf4j-doc/examples/src/main/java/org/eclipse/rdf4j/ex
 [[code-example-06]]
 [source, java, linenums]
 ----
-String filename = "example06-picasso.ttl";
+String filename = "example-data-artists.ttl";
 
-// read the file 'example06-picasso.ttl' as an InputStream.
+// read the file 'example-data-artists.ttl' as an InputStream.
 InputStream input = Example06ReadTurtle.class.getResourceAsStream("/" + filename);
 
 // Rio also accepts a java.io.Reader as input for the parser.
 Model model = Rio.parse(input, "", RDFFormat.TURTLE);
 ----
+
+== Accessing a Model 
+
+Now that we know how to create, read, and save an RDF Models, it is time to look at how we can access the information in a Model. 
+
+We have already seen one simple way of accessing a `Model`: we can iterate over its contents using a `for-each` loop. The reason this works is that `Model` extends the Java Collection API, more particularly it is a `java.util.Set<Statement>`. 
+
+We have more sophisticated options at our disposal, however. 
+
+=== Example 07: filtering on a specific subject
+
+https://github.com/eclipse/rdf4j-doc/examples/src/main/java/org/eclipse/rdf4j/examples/model/Example07Filter.java[Example 07] shows how we can use `Model.filter` to "zoom in" on a specific subject in our model. We're also using the opportunity to show how you can print out RDF statements in a slightly prettier way:
+
+[[code-example-07]]
+[source,java,linenum]
+----
+ValueFactory vf = SimpleValueFactory.getInstance();
+
+// We want to find all information about the artist `ex:VanGogh` in our model
+IRI vanGogh = vf.createIRI("http://example.org/VanGogh");
+
+// By filtering on a specific subject we zoom in on the data that is about that subject.
+// The filter method takes a subject, predicate, object (and optionally a named graph/context)
+// argument. The more arguments we set to a value, the more specific the filter becomes.
+Model aboutVanGogh = model.filter(vanGogh, null, null);
+
+// Iterate over the statements that are about Van Gogh
+for (Statement st: aboutVanGogh) {
+	// the subject will always be `ex:VanGogh`, an IRI, so we can safely cast it
+	IRI subject = (IRI)st.getSubject();
+	// the property predicate is always an IRI
+	IRI predicate = st.getPredicate();
+
+	// the property value could be an IRI, a BNode, or a Literal. In RDF4J, Value is
+	// is the supertype of all possible kinds of RDF values.
+	Value object = st.getObject();
+
+	// let's print out the statement in a nice way. We ignore the namespaces and only print the
+	// local name of each IRI
+	System.out.print(subject.getLocalName() + " " + predicate.getLocalName() + " ");
+	if (object instanceof Literal) {
+		// if it's a literal, let's print it out nicely, in quotes, and without any ugly
+		// datatype stuff
+		System.out.println("\"" + ((Literal)object).getLabel() + "\"");
+	}
+	else if (object instanceof  IRI) {
+		System.out.println(((IRI)object).getLocalName());
+	}
+	else {
+		System.out.println(object);
+	}
+
+}
+----
+

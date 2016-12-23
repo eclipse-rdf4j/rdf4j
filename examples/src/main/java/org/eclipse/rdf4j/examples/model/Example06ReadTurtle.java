@@ -7,14 +7,8 @@
  */
 package org.eclipse.rdf4j.examples.model;
 
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.util.ModelBuilder;
-import org.eclipse.rdf4j.model.vocabulary.FOAF;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 
@@ -33,9 +27,9 @@ public class Example06ReadTurtle {
 
 	public static void main(String[] args) throws IOException {
 
-		String filename = "example06-picasso.ttl";
+		String filename = "example-data-artists.ttl";
 
-		// read the file 'example06-picasso.ttl' as an InputStream.
+		// read the file 'example-data-artists.ttl' as an InputStream.
 		InputStream input = Example06ReadTurtle.class.getResourceAsStream("/" + filename);
 
 		// Rio also accepts a java.io.Reader as input for the parser.
