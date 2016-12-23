@@ -1,0 +1,9 @@
+@prefix ex: <http://example.org/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+ex:Picasso a ex:Artist ;
+	foaf:firstName "Pablo" ;
+	ex:homeAddress _:node1 .
+
+	_:node1  ex:street "31 Art Gallery" ;
+	         ex:city "Madrid" ;
+	         ex:country "Spain" .
