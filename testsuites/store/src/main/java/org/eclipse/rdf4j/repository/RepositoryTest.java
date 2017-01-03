@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.repository;
 
 import static org.junit.Assert.assertTrue;
 
+import java.util.concurrent.TimeUnit;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -18,6 +20,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
@@ -29,11 +32,18 @@ import org.junit.rules.Timeout;
  */
 public abstract class RepositoryTest {
 
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
 	/**
 	 * Timeout all individual tests after 1 minute.
 	 */
 	@Rule
-	public Timeout to = new Timeout(60000);
+	public Timeout to = new Timeout(1, TimeUnit.MINUTES);
 
 	private static final String MBOX = "mbox";
 

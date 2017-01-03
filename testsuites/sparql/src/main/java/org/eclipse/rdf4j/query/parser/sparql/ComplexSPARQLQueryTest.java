@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.AbstractTupleQueryResultHandler;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -55,6 +56,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,6 +69,13 @@ import org.slf4j.LoggerFactory;
  * @author Jeen Broekstra
  */
 public abstract class ComplexSPARQLQueryTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -114,14 +123,16 @@ public abstract class ComplexSPARQLQueryTest {
 	public void tearDown()
 		throws Exception
 	{
-		logger.debug("tearing down...");
-		conn.close();
-		conn = null;
-
-		rep.shutDown();
-		rep = null;
-
-		logger.debug("tearDown complete.");
+		try {
+			if (conn != null) {
+				conn.close();
+			}
+		}
+		finally {
+			if (rep != null) {
+				rep.shutDown();
+			}
+		}
 	}
 
 	@Test
@@ -136,8 +147,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			while (result.hasNext()) {
@@ -153,7 +163,6 @@ public abstract class ComplexSPARQLQueryTest {
 				// default
 				// graph
 			}
-			result.close();
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -180,10 +189,12 @@ public abstract class ComplexSPARQLQueryTest {
 		qb.append("  ?v <u:x> ?x \n");
 		qb.append("}\n");
 
-		TupleQueryResult res = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb.toString()).evaluate();
-		assertTrue("The query should return a result", res.hasNext());
-		BindingSet b = res.next();
-		assertTrue("?x is from the mandatory part of the query and should be bound", b.hasBinding("x"));
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb.toString());
+		try (TupleQueryResult result = tq.evaluate();) {
+			assertTrue("The query should return a result", result.hasNext());
+			BindingSet b = result.next();
+			assertTrue("?x is from the mandatory part of the query and should be bound", b.hasBinding("x"));
+		}
 	}
 
 	@Test
@@ -234,15 +245,17 @@ public abstract class ComplexSPARQLQueryTest {
 		qb.append("ORDER BY ?s\n");
 		qb.append("LIMIT 10 \n");
 
-		TupleQueryResult res = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb.toString()).evaluate();
-		assertTrue("The query should return a result", res.hasNext());
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb.toString());
+		try (TupleQueryResult evaluate = tq.evaluate();) {
+			assertTrue("The query should return a result", evaluate.hasNext());
 
-		List<BindingSet> result = QueryResults.asList(res);
-		assertEquals(10, result.size());
-		for (BindingSet bs : result) {
-			Literal label = (Literal)bs.getValue("label");
-			assertTrue("wrong label value (expected '01' or '02', but got '" + label.stringValue() + "')",
-					label.stringValue().equals("01") || label.stringValue().equals("02"));
+			List<BindingSet> result = QueryResults.asList(evaluate);
+			assertEquals(10, result.size());
+			for (BindingSet bs : result) {
+				Literal label = (Literal)bs.getValue("label");
+				assertTrue("wrong label value (expected '01' or '02', but got '" + label.stringValue() + "')",
+						label.stringValue().equals("01") || label.stringValue().equals("02"));
+			}
 		}
 	}
 
@@ -259,8 +272,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			while (result.hasNext()) {
@@ -276,7 +288,6 @@ public abstract class ComplexSPARQLQueryTest {
 				// default
 				// graph
 			}
-			result.close();
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -298,13 +309,15 @@ public abstract class ComplexSPARQLQueryTest {
 		ValueFactory f = conn.getValueFactory();
 		IRI a = f.createIRI("http://example.org/a");
 		IRI p = f.createIRI("http://example.org/p");
-		Model result = QueryResults.asModel(gq.evaluate());
-		Set<Value> objects = result.filter(a, p, null).objects();
-		assertNotNull(objects);
-		for (Value object : objects) {
-			if (object instanceof BNode) {
-				assertTrue(result.contains((Resource)object, null, null));
-				assertEquals(2, result.filter((Resource)object, null, null).size());
+		try (GraphQueryResult evaluate = gq.evaluate();) {
+			Model result = QueryResults.asModel(evaluate);
+			Set<Value> objects = result.filter(a, p, null).objects();
+			assertNotNull(objects);
+			for (Value object : objects) {
+				if (object instanceof BNode) {
+					assertTrue(result.contains((Resource)object, null, null));
+					assertEquals(2, result.filter((Resource)object, null, null).size());
+				}
 			}
 		}
 	}
@@ -323,13 +336,15 @@ public abstract class ComplexSPARQLQueryTest {
 		ValueFactory f = conn.getValueFactory();
 		IRI a = f.createIRI("http://example.org/a");
 		IRI p = f.createIRI("http://example.org/p");
-		Model result = QueryResults.asModel(gq.evaluate());
-		Set<Value> objects = result.filter(a, p, null).objects();
-		assertNotNull(objects);
-		for (Value object : objects) {
-			if (object instanceof BNode) {
-				assertTrue(result.contains((Resource)object, null, null));
-				assertEquals(2, result.filter((Resource)object, null, null).size());
+		try (GraphQueryResult evaluate = gq.evaluate();) {
+			Model result = QueryResults.asModel(evaluate);
+			Set<Value> objects = result.filter(a, p, null).objects();
+			assertNotNull(objects);
+			for (Value object : objects) {
+				if (object instanceof BNode) {
+					assertTrue(result.contains((Resource)object, null, null));
+					assertEquals(2, result.filter((Resource)object, null, null).size());
+				}
 			}
 		}
 	}
@@ -353,20 +368,22 @@ public abstract class ComplexSPARQLQueryTest {
 		IRI f = vf.createIRI("http://example.org/f");
 		IRI p = vf.createIRI("http://example.org/p");
 
-		Model result = QueryResults.asModel(gq.evaluate());
-		assertTrue(result.contains(a, p, null));
-		assertTrue(result.contains(b, RDFS.LABEL, null));
-		assertTrue(result.contains(c, RDFS.LABEL, null));
-		assertTrue(result.contains(null, p, b));
-		assertTrue(result.contains(e, RDFS.LABEL, null));
-		assertTrue(result.contains(null, p, e));
-		assertFalse(result.contains(f, null, null));
-		Set<Value> objects = result.filter(a, p, null).objects();
-		assertNotNull(objects);
-		for (Value object : objects) {
-			if (object instanceof BNode) {
-				assertTrue(result.contains((Resource)object, null, null));
-				assertEquals(2, result.filter((Resource)object, null, null).size());
+		try (GraphQueryResult evaluate = gq.evaluate();) {
+			Model result = QueryResults.asModel(evaluate);
+			assertTrue(result.contains(a, p, null));
+			assertTrue(result.contains(b, RDFS.LABEL, null));
+			assertTrue(result.contains(c, RDFS.LABEL, null));
+			assertTrue(result.contains(null, p, b));
+			assertTrue(result.contains(e, RDFS.LABEL, null));
+			assertTrue(result.contains(null, p, e));
+			assertFalse(result.contains(f, null, null));
+			Set<Value> objects = result.filter(a, p, null).objects();
+			assertNotNull(objects);
+			for (Value object : objects) {
+				if (object instanceof BNode) {
+					assertTrue(result.contains((Resource)object, null, null));
+					assertEquals(2, result.filter((Resource)object, null, null).size());
+				}
 			}
 		}
 	}
@@ -385,12 +402,14 @@ public abstract class ComplexSPARQLQueryTest {
 		ValueFactory f = conn.getValueFactory();
 		IRI b = f.createIRI("http://example.org/b");
 		IRI p = f.createIRI("http://example.org/p");
-		Model result = QueryResults.asModel(gq.evaluate());
-		Set<Resource> subjects = result.filter(null, p, b).subjects();
-		assertNotNull(subjects);
-		for (Value subject : subjects) {
-			if (subject instanceof BNode) {
-				assertTrue(result.contains(null, null, subject));
+		try (GraphQueryResult evaluate = gq.evaluate();) {
+			Model result = QueryResults.asModel(evaluate);
+			Set<Resource> subjects = result.filter(null, p, b).subjects();
+			assertNotNull(subjects);
+			for (Value subject : subjects) {
+				if (subject instanceof BNode) {
+					assertTrue(result.contains(null, null, subject));
+				}
 			}
 		}
 	}
@@ -410,20 +429,22 @@ public abstract class ComplexSPARQLQueryTest {
 		IRI d = f.createIRI("http://example.org/d");
 		IRI p = f.createIRI("http://example.org/p");
 		IRI e = f.createIRI("http://example.org/e");
-		Model result = QueryResults.asModel(gq.evaluate());
+		try (GraphQueryResult evaluate = gq.evaluate();) {
+			Model result = QueryResults.asModel(evaluate);
 
-		assertNotNull(result);
-		assertTrue(result.contains(null, p, e));
-		assertFalse(result.contains(e, null, null));
-		Set<Value> objects = result.filter(d, p, null).objects();
-		assertNotNull(objects);
-		for (Value object : objects) {
-			if (object instanceof BNode) {
-				Set<Value> childObjects = result.filter((BNode)object, null, null).objects();
-				assertNotNull(childObjects);
-				for (Value childObject : childObjects) {
-					if (childObject instanceof BNode) {
-						assertTrue(result.contains((BNode)childObject, null, null));
+			assertNotNull(result);
+			assertTrue(result.contains(null, p, e));
+			assertFalse(result.contains(e, null, null));
+			Set<Value> objects = result.filter(d, p, null).objects();
+			assertNotNull(objects);
+			for (Value object : objects) {
+				if (object instanceof BNode) {
+					Set<Value> childObjects = result.filter((BNode)object, null, null).objects();
+					assertNotNull(childObjects);
+					for (Value childObject : childObjects) {
+						if (childObject instanceof BNode) {
+							assertTrue(result.contains((BNode)childObject, null, null));
+						}
 					}
 				}
 			}
@@ -444,19 +465,21 @@ public abstract class ComplexSPARQLQueryTest {
 		ValueFactory vf = conn.getValueFactory();
 		IRI f = vf.createIRI("http://example.org/f");
 		IRI p = vf.createIRI("http://example.org/p");
-		Model result = QueryResults.asModel(gq.evaluate());
+		try (GraphQueryResult evaluate = gq.evaluate();) {
+			Model result = QueryResults.asModel(evaluate);
 
-		assertNotNull(result);
-		assertEquals(4, result.size());
-		Set<Value> objects = result.filter(f, p, null).objects();
-		assertNotNull(objects);
-		for (Value object : objects) {
-			if (object instanceof BNode) {
-				Set<Value> childObjects = result.filter((BNode)object, null, null).objects();
-				assertNotNull(childObjects);
-				for (Value childObject : childObjects) {
-					if (childObject instanceof BNode) {
-						assertTrue(result.contains((BNode)childObject, null, null));
+			assertNotNull(result);
+			assertEquals(4, result.size());
+			Set<Value> objects = result.filter(f, p, null).objects();
+			assertNotNull(objects);
+			for (Value object : objects) {
+				if (object instanceof BNode) {
+					Set<Value> childObjects = result.filter((BNode)object, null, null).objects();
+					assertNotNull(childObjects);
+					for (Value childObject : childObjects) {
+						if (childObject instanceof BNode) {
+							assertTrue(result.contains((BNode)childObject, null, null));
+						}
 					}
 				}
 			}
@@ -483,10 +506,12 @@ public abstract class ComplexSPARQLQueryTest {
 		IRI urn2 = vf.createIRI("urn:2");
 		IRI blank = vf.createIRI("urn:blank");
 
-		Model result = QueryResults.asModel(gq.evaluate());
-		assertTrue(result.contains(urn1, p1, null));
-		assertTrue(result.contains(null, blank, urn1));
-		assertTrue(result.contains(urn2, p2, null));
+		try (GraphQueryResult evaluate = gq.evaluate();) {
+			Model result = QueryResults.asModel(evaluate);
+			assertTrue(result.contains(urn1, p1, null));
+			assertTrue(result.contains(null, blank, urn1));
+			assertTrue(result.contains(urn2, p2, null));
+		}
 	}
 
 	@Test
@@ -508,11 +533,13 @@ public abstract class ComplexSPARQLQueryTest {
 		IRI p2 = vf.createIRI("urn:p2");
 		IRI urn2 = vf.createIRI("urn:2");
 		IRI blank = vf.createIRI("urn:blank");
-		Model result = QueryResults.asModel(gq.evaluate());
+		try (GraphQueryResult evaluate = gq.evaluate();) {
+			Model result = QueryResults.asModel(evaluate);
 
-		assertTrue(result.contains(urn1, p1, null));
-		assertTrue(result.contains(urn1, blank, null));
-		assertTrue(result.contains(urn2, p2, null));
+			assertTrue(result.contains(urn1, p1, null));
+			assertTrue(result.contains(urn1, blank, null));
+			assertTrue(result.contains(urn2, p2, null));
+		}
 	}
 
 	@Test
@@ -534,12 +561,14 @@ public abstract class ComplexSPARQLQueryTest {
 		IRI p2 = vf.createIRI("urn:p2");
 		IRI urn2 = vf.createIRI("urn:2");
 		IRI blank = vf.createIRI("urn:blank");
-		Model result = QueryResults.asModel(gq.evaluate());
+		try (GraphQueryResult evaluate = gq.evaluate();) {
+			Model result = QueryResults.asModel(evaluate);
 
-		assertTrue(result.contains(urn1, p1, null));
-		assertTrue(result.contains(urn1, blank, null));
-		assertTrue(result.contains(null, blank, urn1));
-		assertTrue(result.contains(urn2, p2, null));
+			assertTrue(result.contains(urn1, p1, null));
+			assertTrue(result.contains(urn1, blank, null));
+			assertTrue(result.contains(null, blank, urn1));
+			assertTrue(result.contains(urn2, p2, null));
+		}
 	}
 
 	@Test
@@ -562,26 +591,31 @@ public abstract class ComplexSPARQLQueryTest {
 		IRI urn2 = vf.createIRI("urn:2");
 		IRI urn4 = vf.createIRI("urn:4");
 		IRI blank = vf.createIRI("urn:blank");
-		Model result = QueryResults.asModel(gq.evaluate());
+		try (GraphQueryResult evaluate = gq.evaluate();) {
+			Model result = QueryResults.asModel(evaluate);
 
-		assertTrue(result.contains(urn1, p1, null));
-		assertTrue(result.contains(null, blank, urn1));
-		assertTrue(result.contains(urn2, p2, null));
-		assertTrue(result.contains(urn4, p2, null));
-		assertTrue(result.contains(urn4, blank, null));
+			assertTrue(result.contains(urn1, p1, null));
+			assertTrue(result.contains(null, blank, urn1));
+			assertTrue(result.contains(urn2, p2, null));
+			assertTrue(result.contains(urn4, p2, null));
+			assertTrue(result.contains(urn4, blank, null));
+		}
 	}
 
-	
-	@Test 
-	public void testGroupByEmpty() throws Exception {
+	@Test
+	public void testGroupByEmpty()
+		throws Exception
+	{
 		// see issue https://github.com/eclipse/rdf4j/issues/573
 		String query = "select ?x where {?x ?p ?o} group by ?x";
-		
-		TupleQueryResult result = conn.prepareTupleQuery(query).evaluate();
-		assertNotNull(result);
-		assertFalse(result.hasNext());
+
+		TupleQuery tq = conn.prepareTupleQuery(query);
+		try (TupleQueryResult result = tq.evaluate();) {
+			assertNotNull(result);
+			assertFalse(result.hasNext());
+		}
 	}
-	
+
 	@Test
 	public void testGroupConcatDistinct()
 		throws Exception
@@ -595,8 +629,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			while (result.hasNext()) {
@@ -618,7 +651,6 @@ public abstract class ComplexSPARQLQueryTest {
 				occ = countCharOccurrences(lexValue, 'd');
 				assertEquals(1, occ);
 			}
-			result.close();
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -656,8 +688,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			int count = 0;
@@ -666,7 +697,7 @@ public abstract class ComplexSPARQLQueryTest {
 				count++;
 				assertNotNull(bs);
 
-				System.out.println(bs);
+				// System.out.println(bs);
 
 				Value l = bs.getValue("l");
 				assertTrue(l instanceof Literal);
@@ -678,8 +709,6 @@ public abstract class ComplexSPARQLQueryTest {
 				Value opt2 = bs.getValue("opt2");
 				assertNull(opt2);
 			}
-			result.close();
-
 			assertEquals(1, count);
 		}
 		catch (QueryEvaluationException e) {
@@ -719,11 +748,8 @@ public abstract class ComplexSPARQLQueryTest {
 		TupleQuery tq1 = conn.prepareTupleQuery(QueryLanguage.SPARQL, query1.toString());
 		TupleQuery tq2 = conn.prepareTupleQuery(QueryLanguage.SPARQL, query2.toString());
 
-		try {
-			TupleQueryResult result1 = tq1.evaluate();
+		try (TupleQueryResult result1 = tq1.evaluate(); TupleQueryResult result2 = tq2.evaluate();) {
 			assertNotNull(result1);
-
-			TupleQueryResult result2 = tq2.evaluate();
 			assertNotNull(result2);
 
 			List<BindingSet> qr1 = QueryResults.asList(result1);
@@ -760,8 +786,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			int count = 0;
@@ -778,8 +803,6 @@ public abstract class ComplexSPARQLQueryTest {
 				assertEquals(f.createIRI("http://example.org/a"), s);
 				assertEquals(f.createIRI("http://example.org/b"), a);
 			}
-			result.close();
-
 			assertEquals(1, count);
 		}
 		catch (QueryEvaluationException e) {
@@ -803,9 +826,7 @@ public abstract class ComplexSPARQLQueryTest {
 		query.append("  } ");
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
-
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			int count = 0;
@@ -840,19 +861,16 @@ public abstract class ComplexSPARQLQueryTest {
 		query += "where{ ";
 		query += "?c1 ^<http://example.org/b2c>/^<http://example.org/a2b>/<http://example.org/a2b>/<http://example.org/b2c> ?c2 . ";
 		query += " } ";
-		TupleQueryResult qRes = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
-		try {
-			assertTrue(qRes.hasNext());
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		try (TupleQueryResult result = tq.evaluate();) {
+			assertTrue(result.hasNext());
 			int count = 0;
-			while (qRes.hasNext()) {
-				BindingSet r = qRes.next();
-				System.out.println(r);
+			while (result.hasNext()) {
+				BindingSet r = result.next();
+				// System.out.println(r);
 				count++;
 			}
 			assertEquals(4, count);
-		}
-		finally {
-			qRes.close();
 		}
 	}
 
@@ -866,8 +884,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			assertTrue(result.hasNext());
@@ -876,8 +893,6 @@ public abstract class ComplexSPARQLQueryTest {
 			assertNotNull(count);
 
 			assertEquals(3, count.intValue());
-
-			result.close();
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -894,17 +909,17 @@ public abstract class ComplexSPARQLQueryTest {
 		conn.add(new StringReader("@prefix : <urn:> . :a :p :b . :b :p :a ."), "", RDFFormat.TURTLE);
 
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
-		TupleQueryResult result = query.evaluate();
+		try (TupleQueryResult result = query.evaluate();) {
+			assertNotNull(result);
 
-		assertNotNull(result);
-
-		int count = 0;
-		while (result.hasNext()) {
-			result.next();
-			count++;
+			int count = 0;
+			while (result.hasNext()) {
+				result.next();
+				count++;
+			}
+			// result should be both a and b.
+			assertEquals(2, count);
 		}
-		// result should be both a and b.
-		assertEquals(2, count);
 	}
 
 	@Test
@@ -919,12 +934,13 @@ public abstract class ComplexSPARQLQueryTest {
 		final IRI p = conn.getValueFactory().createIRI("urn:p");
 
 		GraphQuery query = conn.prepareGraphQuery(QueryLanguage.SPARQL, queryStr);
-		Model result = QueryResults.asModel(query.evaluate());
+		try (GraphQueryResult evaluate = query.evaluate();) {
+			Model result = QueryResults.asModel(evaluate);
 
-		assertNotNull(result);
-		assertFalse(result.isEmpty());
-		assertTrue(result.contains(x, p, x));
-
+			assertNotNull(result);
+			assertFalse(result.isEmpty());
+			assertTrue(result.contains(x, p, x));
+		}
 	}
 
 	@Test
@@ -942,8 +958,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			int count = 0;
@@ -990,16 +1005,16 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		TupleQueryResult result = tq.evaluate();
-		assertNotNull(result);
-		assertTrue(result.hasNext());
+		try (TupleQueryResult result = tq.evaluate();) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
 
-		BindingSet bs = result.next();
-		Value y = bs.getValue("y");
-		assertNotNull(y);
-		assertTrue(y instanceof Literal);
-		assertEquals(f.createLiteral("1", XMLSchema.INTEGER), y);
-
+			BindingSet bs = result.next();
+			Value y = bs.getValue("y");
+			assertNotNull(y);
+			assertTrue(y instanceof Literal);
+			assertEquals(f.createLiteral("1", XMLSchema.INTEGER), y);
+		}
 	}
 
 	@Test
@@ -1013,10 +1028,10 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		TupleQueryResult result = tq.evaluate();
-		assertNotNull(result);
-		assertFalse(result.hasNext());
-
+		try (TupleQueryResult result = tq.evaluate();) {
+			assertNotNull(result);
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Test
@@ -1030,15 +1045,16 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		TupleQueryResult result = tq.evaluate();
-		assertNotNull(result);
-		assertTrue(result.hasNext());
+		try (TupleQueryResult result = tq.evaluate();) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
 
-		BindingSet bs = result.next();
-		Value y = bs.getValue("y");
-		assertNotNull(y);
-		assertTrue(y instanceof Literal);
-		assertEquals(f.createLiteral("1", XMLSchema.INTEGER), y);
+			BindingSet bs = result.next();
+			Value y = bs.getValue("y");
+			assertNotNull(y);
+			assertTrue(y instanceof Literal);
+			assertEquals(f.createLiteral("1", XMLSchema.INTEGER), y);
+		}
 	}
 
 	@Test
@@ -1047,21 +1063,23 @@ public abstract class ComplexSPARQLQueryTest {
 	{
 		String query = "SELECT (URI(\"foo bar\") as ?uri) WHERE {}";
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-		TupleQueryResult result = tq.evaluate();
-		assertNotNull(result);
-		assertTrue(result.hasNext());
-		BindingSet bs = result.next();
-		IRI uri = (IRI)bs.getValue("uri");
-		assertTrue("uri result for invalid URI should be unbound", uri == null);
+		try (TupleQueryResult result = tq.evaluate();) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			BindingSet bs = result.next();
+			IRI uri = (IRI)bs.getValue("uri");
+			assertTrue("uri result for invalid URI should be unbound", uri == null);
+		}
 
 		query = "BASE <http://example.org/> SELECT (URI(\"foo bar\") as ?uri) WHERE {}";
 		tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-		result = tq.evaluate();
-		assertNotNull(result);
-		assertTrue(result.hasNext());
-		bs = result.next();
-		uri = (IRI)bs.getValue("uri");
-		assertTrue("uri result for valid URI reference should be bound", uri != null);
+		try (TupleQueryResult result = tq.evaluate();) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			BindingSet bs = result.next();
+			IRI uri = (IRI)bs.getValue("uri");
+			assertTrue("uri result for valid URI reference should be bound", uri != null);
+		}
 	}
 
 	@Test
@@ -1073,18 +1091,18 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		TupleQueryResult result = tq.evaluate();
-		assertNotNull(result);
-		assertTrue(result.hasNext());
+		try (TupleQueryResult result = tq.evaluate();) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
 
-		BindingSet bs = result.next();
-		Value p = bs.getValue("p");
-		Value n = bs.getValue("n");
+			BindingSet bs = result.next();
+			Value p = bs.getValue("p");
+			Value n = bs.getValue("n");
 
-		assertNotNull(p);
-		assertNotNull(n);
-		assertEquals(p, n);
-
+			assertNotNull(p);
+			assertNotNull(n);
+			assertEquals(p, n);
+		}
 	}
 
 	@Test
@@ -1105,13 +1123,14 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		TupleQueryResult result = tq.evaluate();
-		assertNotNull(result);
-		assertTrue(result.hasNext());
-		BindingSet bs = result.next();
-		assertFalse("only one result expected", result.hasNext());
-		assertEquals(a, bs.getValue("s"));
-		assertEquals(b, bs.getValue("o"));
+		try (TupleQueryResult result = tq.evaluate();) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			BindingSet bs = result.next();
+			assertFalse("only one result expected", result.hasNext());
+			assertEquals(a, bs.getValue("s"));
+			assertEquals(b, bs.getValue("o"));
+		}
 	}
 
 	@Test
@@ -1142,28 +1161,29 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		TupleQueryResult result = tq.evaluate();
-		assertNotNull(result);
-		assertTrue(result.hasNext());
+		try (TupleQueryResult result = tq.evaluate();) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
 
-		int count = 0;
-		while (result.hasNext()) {
-			count++;
-			BindingSet bs = result.next();
-			System.out.println(bs);
-			IRI a = (IRI)bs.getValue("a");
-			assertNotNull(a);
-			Value isX = bs.getValue("isX");
-			Literal name = (Literal)bs.getValue("name");
-			assertNotNull(name);
-			if (a.stringValue().endsWith("a1")) {
-				assertNotNull(isX);
+			int count = 0;
+			while (result.hasNext()) {
+				count++;
+				BindingSet bs = result.next();
+				// System.out.println(bs);
+				IRI a = (IRI)bs.getValue("a");
+				assertNotNull(a);
+				Value isX = bs.getValue("isX");
+				Literal name = (Literal)bs.getValue("name");
+				assertNotNull(name);
+				if (a.stringValue().endsWith("a1")) {
+					assertNotNull(isX);
+				}
+				else if (a.stringValue().endsWith(("a2"))) {
+					assertNull(isX);
+				}
 			}
-			else if (a.stringValue().endsWith(("a2"))) {
-				assertNull(isX);
-			}
+			assertEquals(2, count);
 		}
-		assertEquals(2, count);
 	}
 
 	@Test
@@ -1180,8 +1200,7 @@ public abstract class ComplexSPARQLQueryTest {
 		query.append("}");
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 			while (result.hasNext()) {
 				BindingSet bs = result.next();
@@ -1212,8 +1231,7 @@ public abstract class ComplexSPARQLQueryTest {
 		query.append("}");
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 			while (result.hasNext()) {
 				BindingSet bs = result.next();
@@ -1250,8 +1268,7 @@ public abstract class ComplexSPARQLQueryTest {
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 		tq.setBinding("william", conn.getValueFactory().createIRI("http://example.org/william"));
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			int count = 0;
@@ -1260,15 +1277,13 @@ public abstract class ComplexSPARQLQueryTest {
 				count++;
 				assertNotNull(bs);
 
-				System.out.println(bs);
+				// System.out.println(bs);
 
 				Value mbox = bs.getValue("mbox");
 				Value x = bs.getValue("x");
 
 				assertTrue(mbox instanceof Literal || x instanceof IRI);
 			}
-			result.close();
-
 			assertEquals(3, count);
 		}
 		catch (QueryEvaluationException e) {
@@ -1311,8 +1326,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			int count = 0;
@@ -1321,7 +1335,7 @@ public abstract class ComplexSPARQLQueryTest {
 				count++;
 				assertNotNull(bs);
 
-				System.out.println(bs);
+				// System.out.println(bs);
 
 				Value prop1 = bs.getValue("prop1");
 				Value l = bs.getValue("l");
@@ -1335,8 +1349,6 @@ public abstract class ComplexSPARQLQueryTest {
 					assertNull(opt2);
 				}
 			}
-			result.close();
-
 			assertEquals(2, count);
 		}
 		catch (QueryEvaluationException e) {
@@ -1360,18 +1372,15 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			while (result.hasNext()) {
 				BindingSet bs = result.next();
 				assertNotNull(bs);
 
-				System.out.println(bs);
-
+				// System.out.println(bs);
 			}
-			result.close();
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -1401,8 +1410,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			assertTrue(result.hasNext());
@@ -1410,11 +1418,9 @@ public abstract class ComplexSPARQLQueryTest {
 			while (result.hasNext()) {
 				BindingSet bs = result.next();
 				count++;
-				System.out.println(bs);
+				// System.out.println(bs);
 			}
 			assertEquals(1, count);
-
-			result.close();
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -1434,8 +1440,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			while (result.hasNext()) {
@@ -1457,7 +1462,6 @@ public abstract class ComplexSPARQLQueryTest {
 				occ = countCharOccurrences(lexValue, 'd');
 				assertEquals(1, occ);
 			}
-			result.close();
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -1482,9 +1486,8 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
+		try (TupleQueryResult result = tq.evaluate();) {
 			// first execute without binding
-			TupleQueryResult result = tq.evaluate();
 			assertNotNull(result);
 
 			int count = 0;
@@ -1499,17 +1502,18 @@ public abstract class ComplexSPARQLQueryTest {
 			// execute again, but this time setting a binding
 			tq.setBinding("parent", OWL.THING);
 
-			result = tq.evaluate();
-			assertNotNull(result);
+			try (TupleQueryResult result2 = tq.evaluate();) {
+				assertNotNull(result2);
 
-			count = 0;
-			while (result.hasNext()) {
-				count++;
-				BindingSet bs = result.next();
-				assertTrue(bs.hasBinding("child"));
-				assertTrue(bs.hasBinding("parent"));
+				count = 0;
+				while (result2.hasNext()) {
+					count++;
+					BindingSet bs = result2.next();
+					assertTrue(bs.hasBinding("child"));
+					assertTrue(bs.hasBinding("parent"));
+				}
+				assertEquals(4, count);
 			}
-			assertEquals(4, count);
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -1536,9 +1540,8 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
+		try (TupleQueryResult result = tq.evaluate();) {
 			// first execute without binding
-			TupleQueryResult result = tq.evaluate();
 			assertNotNull(result);
 
 			int count = 0;
@@ -1553,17 +1556,18 @@ public abstract class ComplexSPARQLQueryTest {
 			// execute again, but this time setting a binding
 			tq.setBinding("parent", OWL.THING);
 
-			result = tq.evaluate();
-			assertNotNull(result);
+			try (TupleQueryResult result2 = tq.evaluate();) {
+				assertNotNull(result2);
 
-			count = 0;
-			while (result.hasNext()) {
-				count++;
-				BindingSet bs = result.next();
-				assertTrue(bs.hasBinding("child"));
-				assertTrue(bs.hasBinding("parent"));
+				count = 0;
+				while (result2.hasNext()) {
+					count++;
+					BindingSet bs = result2.next();
+					assertTrue(bs.hasBinding("child"));
+					assertTrue(bs.hasBinding("parent"));
+				}
+				assertEquals(4, count);
 			}
-			assertEquals(4, count);
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -1590,9 +1594,8 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
+		try (TupleQueryResult result = tq.evaluate();) {
 			// first execute without binding
-			TupleQueryResult result = tq.evaluate();
 			assertNotNull(result);
 
 			int count = 0;
@@ -1607,17 +1610,18 @@ public abstract class ComplexSPARQLQueryTest {
 			// execute again, but this time setting a binding
 			tq.setBinding("child", f.createIRI(EX_NS, "C"));
 
-			result = tq.evaluate();
-			assertNotNull(result);
+			try (TupleQueryResult result2 = tq.evaluate();) {
+				assertNotNull(result2);
 
-			count = 0;
-			while (result.hasNext()) {
-				count++;
-				BindingSet bs = result.next();
-				assertTrue(bs.hasBinding("child"));
-				assertTrue(bs.hasBinding("parent"));
+				count = 0;
+				while (result2.hasNext()) {
+					count++;
+					BindingSet bs = result2.next();
+					assertTrue(bs.hasBinding("child"));
+					assertTrue(bs.hasBinding("parent"));
+				}
+				assertEquals(2, count);
 			}
-			assertEquals(2, count);
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -1644,9 +1648,8 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
+		try (TupleQueryResult result = tq.evaluate();) {
 			// first execute without binding
-			TupleQueryResult result = tq.evaluate();
 			assertNotNull(result);
 
 			int count = 0;
@@ -1661,17 +1664,18 @@ public abstract class ComplexSPARQLQueryTest {
 			// execute again, but this time setting a binding
 			tq.setBinding("child", f.createIRI(EX_NS, "C"));
 
-			result = tq.evaluate();
-			assertNotNull(result);
+			try (TupleQueryResult result2 = tq.evaluate();) {
+				assertNotNull(result2);
 
-			count = 0;
-			while (result.hasNext()) {
-				count++;
-				BindingSet bs = result.next();
-				assertTrue(bs.hasBinding("child"));
-				assertTrue(bs.hasBinding("parent"));
+				count = 0;
+				while (result2.hasNext()) {
+					count++;
+					BindingSet bs = result2.next();
+					assertTrue(bs.hasBinding("child"));
+					assertTrue(bs.hasBinding("parent"));
+				}
+				assertEquals(2, count);
 			}
-			assertEquals(2, count);
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -1698,19 +1702,19 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
+		try (TupleQueryResult result = tq.evaluate();) {
 			// first execute without binding
-			TupleQueryResult result = tq.evaluate();
 			assertNotNull(result);
 
-			System.out.println("--- testArbitraryLengthPathWithBinding5 ---");
+			// System.out.println("--- testArbitraryLengthPathWithBinding5
+			// ---");
 
 			int count = 0;
 			while (result.hasNext()) {
 				count++;
 				BindingSet bs = result.next();
 
-				System.out.println(bs);
+				// System.out.println(bs);
 
 				assertTrue(bs.hasBinding("child"));
 				assertTrue(bs.hasBinding("parent"));
@@ -1720,17 +1724,18 @@ public abstract class ComplexSPARQLQueryTest {
 			// execute again, but this time setting a binding
 			tq.setBinding("child", f.createIRI(EX_NS, "C"));
 
-			result = tq.evaluate();
-			assertNotNull(result);
+			try (TupleQueryResult result2 = tq.evaluate();) {
+				assertNotNull(result2);
 
-			count = 0;
-			while (result.hasNext()) {
-				count++;
-				BindingSet bs = result.next();
-				assertTrue(bs.hasBinding("child"));
-				assertTrue(bs.hasBinding("parent"));
+				count = 0;
+				while (result2.hasNext()) {
+					count++;
+					BindingSet bs = result2.next();
+					assertTrue(bs.hasBinding("child"));
+					assertTrue(bs.hasBinding("parent"));
+				}
+				assertEquals(2, count);
 			}
-			assertEquals(2, count);
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -1757,19 +1762,19 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
+		try (TupleQueryResult result = tq.evaluate();) {
 			// first execute without binding
-			TupleQueryResult result = tq.evaluate();
 			assertNotNull(result);
 
-			System.out.println("--- testArbitraryLengthPathWithBinding6 ---");
+			// System.out.println("--- testArbitraryLengthPathWithBinding6
+			// ---");
 
 			int count = 0;
 			while (result.hasNext()) {
 				count++;
 				BindingSet bs = result.next();
 
-				System.out.println(bs);
+				// System.out.println(bs);
 
 				assertTrue(bs.hasBinding("child"));
 				assertTrue(bs.hasBinding("parent"));
@@ -1779,17 +1784,18 @@ public abstract class ComplexSPARQLQueryTest {
 			// execute again, but this time setting a binding
 			tq.setBinding("child", f.createIRI(EX_NS, "C"));
 
-			result = tq.evaluate();
-			assertNotNull(result);
+			try (TupleQueryResult result2 = tq.evaluate();) {
+				assertNotNull(result2);
 
-			count = 0;
-			while (result.hasNext()) {
-				count++;
-				BindingSet bs = result.next();
-				assertTrue(bs.hasBinding("child"));
-				assertTrue(bs.hasBinding("parent"));
+				count = 0;
+				while (result2.hasNext()) {
+					count++;
+					BindingSet bs = result2.next();
+					assertTrue(bs.hasBinding("child"));
+					assertTrue(bs.hasBinding("parent"));
+				}
+				assertEquals(2, count);
 			}
-			assertEquals(2, count);
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -1819,19 +1825,19 @@ public abstract class ComplexSPARQLQueryTest {
 		dt.addDefaultGraph(this.alice);
 		tq.setDataset(dt);
 
-		try {
+		try (TupleQueryResult result = tq.evaluate();) {
 			// first execute without binding
-			TupleQueryResult result = tq.evaluate();
 			assertNotNull(result);
 
-			System.out.println("--- testArbitraryLengthPathWithBinding7 ---");
+			// System.out.println("--- testArbitraryLengthPathWithBinding7
+			// ---");
 
 			int count = 0;
 			while (result.hasNext()) {
 				count++;
 				BindingSet bs = result.next();
 
-				System.out.println(bs);
+				// System.out.println(bs);
 
 				assertTrue(bs.hasBinding("child"));
 				assertTrue(bs.hasBinding("parent"));
@@ -1841,17 +1847,18 @@ public abstract class ComplexSPARQLQueryTest {
 			// execute again, but this time setting a binding
 			tq.setBinding("child", f.createIRI(EX_NS, "C"));
 
-			result = tq.evaluate();
-			assertNotNull(result);
+			try (TupleQueryResult result2 = tq.evaluate();) {
+				assertNotNull(result2);
 
-			count = 0;
-			while (result.hasNext()) {
-				count++;
-				BindingSet bs = result.next();
-				assertTrue(bs.hasBinding("child"));
-				assertTrue(bs.hasBinding("parent"));
+				count = 0;
+				while (result2.hasNext()) {
+					count++;
+					BindingSet bs = result2.next();
+					assertTrue(bs.hasBinding("child"));
+					assertTrue(bs.hasBinding("parent"));
+				}
+				assertEquals(2, count);
 			}
-			assertEquals(2, count);
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -1882,17 +1889,17 @@ public abstract class ComplexSPARQLQueryTest {
 		dt.addDefaultGraph(this.bob);
 		tq.setDataset(dt);
 
-		try {
+		try (TupleQueryResult result = tq.evaluate();) {
 			// first execute without binding
-			TupleQueryResult result = tq.evaluate();
 			assertNotNull(result);
-			System.out.println("--- testArbitraryLengthPathWithBinding8 ---");
+			// System.out.println("--- testArbitraryLengthPathWithBinding8
+			// ---");
 			int count = 0;
 			while (result.hasNext()) {
 				count++;
 				BindingSet bs = result.next();
 
-				System.out.println(bs);
+				// System.out.println(bs);
 
 				assertTrue(bs.hasBinding("child"));
 				assertTrue(bs.hasBinding("parent"));
@@ -1902,17 +1909,18 @@ public abstract class ComplexSPARQLQueryTest {
 			// execute again, but this time setting a binding
 			tq.setBinding("child", f.createIRI(EX_NS, "C"));
 
-			result = tq.evaluate();
-			assertNotNull(result);
+			try (TupleQueryResult result2 = tq.evaluate();) {
+				assertNotNull(result2);
 
-			count = 0;
-			while (result.hasNext()) {
-				count++;
-				BindingSet bs = result.next();
-				assertTrue(bs.hasBinding("child"));
-				assertTrue(bs.hasBinding("parent"));
+				count = 0;
+				while (result2.hasNext()) {
+					count++;
+					BindingSet bs = result2.next();
+					assertTrue(bs.hasBinding("child"));
+					assertTrue(bs.hasBinding("parent"));
+				}
+				assertEquals(2, count);
 			}
-			assertEquals(2, count);
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -1938,8 +1946,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			int count = 0;
@@ -1974,8 +1981,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			int count = 0;
@@ -2010,8 +2016,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			int count = 0;
@@ -2055,8 +2060,8 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
+
 			assertNotNull(result);
 			assertTrue(result.hasNext());
 
@@ -2080,8 +2085,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			IRI uuid1 = (IRI)result.next().getValue("uid");
@@ -2090,8 +2094,6 @@ public abstract class ComplexSPARQLQueryTest {
 			assertNotNull(uuid1);
 			assertNotNull(uuid2);
 			assertFalse(uuid1.equals(uuid2));
-
-			result.close();
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -2108,8 +2110,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			Literal uid1 = (Literal)result.next().getValue("uid");
@@ -2117,8 +2118,6 @@ public abstract class ComplexSPARQLQueryTest {
 
 			assertNotNull(uid1);
 			assertFalse(uid1.equals(uid2));
-
-			result.close();
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -2135,8 +2134,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			Literal r1 = (Literal)result.next().getValue("r");
@@ -2151,8 +2149,6 @@ public abstract class ComplexSPARQLQueryTest {
 			// three successive calls (still theoretically possible to be
 			// identical, but phenomenally unlikely).
 			assertFalse(r1.equals(r2) && r1.equals(r3));
-
-			result.close();
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -2169,8 +2165,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			Literal d1 = (Literal)result.next().getValue("d");
@@ -2178,8 +2173,6 @@ public abstract class ComplexSPARQLQueryTest {
 
 			assertNotNull(d1);
 			assertEquals(d1, d2);
-
-			result.close();
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -2196,8 +2189,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-		try {
-			TupleQueryResult result = tq.evaluate();
+		try (TupleQueryResult result = tq.evaluate();) {
 			assertNotNull(result);
 
 			BindingSet bs = result.next();
@@ -2206,8 +2198,6 @@ public abstract class ComplexSPARQLQueryTest {
 
 			assertNotNull(l1);
 			assertFalse(l1.equals(l2));
-
-			result.close();
 		}
 		catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -2220,15 +2210,11 @@ public abstract class ComplexSPARQLQueryTest {
 		throws Exception
 	{
 		String query = "SELECT (MIN(?v) as ?min) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
-		TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
-		try {
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();) {
 			assertNotNull(result);
 			assertTrue(result.hasNext());
 			assertEquals("1", result.next().getValue("min").stringValue());
 			assertFalse(result.hasNext());
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -2237,15 +2223,11 @@ public abstract class ComplexSPARQLQueryTest {
 		throws Exception
 	{
 		String query = "SELECT (MAX(?v) as ?max) WHERE { VALUES ?v { 1 2 7 undef 3 4 }}";
-		TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
-		try {
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();) {
 			assertNotNull(result);
 			assertTrue(result.hasNext());
 			assertEquals("7", result.next().getValue("max").stringValue());
 			assertFalse(result.hasNext());
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -2254,15 +2236,11 @@ public abstract class ComplexSPARQLQueryTest {
 		throws Exception
 	{
 		String query = "SELECT (COUNT(?v) as ?c) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
-		TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
-		try {
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();) {
 			assertNotNull(result);
 			assertTrue(result.hasNext());
 			assertEquals("4", result.next().getValue("c").stringValue());
 			assertFalse(result.hasNext());
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -2271,15 +2249,11 @@ public abstract class ComplexSPARQLQueryTest {
 		throws Exception
 	{
 		String query = "SELECT (COUNT(*) as ?c) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
-		TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
-		try {
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();) {
 			assertNotNull(result);
 			assertTrue(result.hasNext());
 			assertEquals("4", result.next().getValue("c").stringValue());
 			assertFalse(result.hasNext());
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -2288,15 +2262,11 @@ public abstract class ComplexSPARQLQueryTest {
 		throws Exception
 	{
 		String query = "SELECT (SUM(?v) as ?s) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
-		TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
-		try {
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();) {
 			assertNotNull(result);
 			assertTrue(result.hasNext());
 			assertEquals("10", result.next().getValue("s").stringValue());
 			assertFalse(result.hasNext());
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -2310,8 +2280,8 @@ public abstract class ComplexSPARQLQueryTest {
 		ValueFactory vf = conn.getValueFactory();
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-		try {
-			List<BindingSet> result = QueryResults.asList(tq.evaluate());
+		try (TupleQueryResult evaluate = tq.evaluate();) {
+			List<BindingSet> result = QueryResults.asList(evaluate);
 			assertNotNull(result);
 
 			IRI a = vf.createIRI(EX_NS, "a");
@@ -2348,8 +2318,8 @@ public abstract class ComplexSPARQLQueryTest {
 		ValueFactory vf = conn.getValueFactory();
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
 
-		try {
-			List<BindingSet> result = QueryResults.asList(tq.evaluate());
+		try (TupleQueryResult evaluate = tq.evaluate();) {
+			List<BindingSet> result = QueryResults.asList(evaluate);
 			assertNotNull(result);
 			assertEquals(1, result.size());
 
@@ -2406,14 +2376,10 @@ public abstract class ComplexSPARQLQueryTest {
 		throws RDFParseException, RepositoryException, IOException
 	{
 		logger.debug("loading dataset {}", dataFile);
-		InputStream dataset = ComplexSPARQLQueryTest.class.getResourceAsStream(dataFile);
-		try {
+		try (InputStream dataset = ComplexSPARQLQueryTest.class.getResourceAsStream(dataFile);) {
 			conn.add(dataset, "",
 					Rio.getParserFormatForFileName(dataFile).orElseThrow(Rio.unsupportedFormat(dataFile)),
 					contexts);
-		}
-		finally {
-			dataset.close();
 		}
 		logger.debug("dataset loaded.");
 	}
