@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.repository.optimistic.SnapshotTest;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryFactory;
 import org.eclipse.rdf4j.sail.config.SailFactory;
+import org.junit.BeforeClass;
 import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
 import org.junit.runners.Suite.SuiteClasses;
@@ -47,6 +48,13 @@ import org.junit.runners.Suite.SuiteClasses;
 		SnapshotTest.class,
 		SerializableTest.class })
 public abstract class OptimisticIsolationTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	private static RepositoryFactory factory;
 

@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
+import static org.junit.Assert.*;
+
 import java.util.Random;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -18,6 +20,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 /**
@@ -26,6 +29,13 @@ import org.junit.Test;
  * @author Arjohn Kampman
  */
 public abstract class SailInterruptTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	private Sail store;
 
@@ -63,6 +73,10 @@ public abstract class SailInterruptTest {
 				insertTestStatement(con, r.nextInt());
 			}
 			con.commit();
+		}
+		catch(Exception e) {
+			con.rollback();
+			fail(e.getMessage());
 		}
 		finally {
 			con.close();
@@ -113,20 +127,12 @@ public abstract class SailInterruptTest {
 	private void iterateStatements()
 		throws SailException
 	{
-		SailConnection con = store.getConnection();
-		try {
-			CloseableIteration<?, SailException> iter = con.getStatements(null, null, null, true);
-			try {
-				while (iter.hasNext()) {
-					iter.next();
-				}
+		try (SailConnection con = store.getConnection();
+				CloseableIteration<?, SailException> iter = con.getStatements(null, null, null, true);)
+		{
+			while (iter.hasNext()) {
+				iter.next();
 			}
-			finally {
-				iter.close();
-			}
-		}
-		finally {
-			con.close();
 		}
 	}
 }
