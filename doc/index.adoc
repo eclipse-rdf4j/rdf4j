@@ -10,7 +10,8 @@ include::header.adoc[]
 
 === Tutorials 
 
-- link:getting-started[Getting Started with RDF4J, Maven, and Eclipse]
+- link:rdf-tutorial[How to use RDF and the RDF4J Framework]
+- link:getting-started[Setting up a new RDF4J/Maven/Eclipse project]
 
 === Reference Documentation
 
