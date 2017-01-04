@@ -1,7 +1,8 @@
 :stylesdir: ../css/
 :stylesheet: rdf4j.css
 :linkcss:
-:source-highlighter: prettify
+:source-highlighter: pygments
+:pygments-linenum-mode: inline
 :icons: font
 :imagesdir: ../images/
 :sectnums:
