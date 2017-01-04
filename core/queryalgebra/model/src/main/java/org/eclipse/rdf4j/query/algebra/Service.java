@@ -214,8 +214,9 @@ public class Service extends UnaryTupleOperator {
 				throws RuntimeException
 			{
 				// take only real vars, i.e. ignore blank nodes
-				if (!node.hasValue() && !node.isAnonymous())
+				if (!node.hasValue() && !node.isAnonymous()) {
 					res.add(node.getName());
+				}
 			}
 			
 			@Override
@@ -225,6 +226,7 @@ public class Service extends UnaryTupleOperator {
 			
 			@Override
 			public void meet(Extension e) {
+				super.meet(e);
 				for (ExtensionElem elem: e.getElements()) {
 					res.add(elem.getName());
 				}
