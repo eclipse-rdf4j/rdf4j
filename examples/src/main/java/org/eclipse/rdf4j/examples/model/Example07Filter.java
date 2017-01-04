@@ -32,6 +32,8 @@ public class Example07Filter {
 		// read the file 'example-data-artists.ttl' as an InputStream.
 		InputStream input = Example07Filter.class.getResourceAsStream("/" + filename);
 
+
+
 		// Rio also accepts a java.io.Reader as input for the parser.
 		Model model = Rio.parse(input, "", RDFFormat.TURTLE);
 
@@ -60,14 +62,16 @@ public class Example07Filter {
 			// local name of each IRI
 			System.out.print(subject.getLocalName() + " " + predicate.getLocalName() + " ");
 			if (object instanceof Literal) {
-				// if it's a literal, let's print it out nicely, in quotes, and without any ugly
+				// it's a literal value. Let's print it out nicely, in quotes, and without any ugly
 				// datatype stuff
 				System.out.println("\"" + ((Literal)object).getLabel() + "\"");
 			}
 			else if (object instanceof  IRI) {
+				// it's an IRI. Just print out the local part (without the namespace)
 				System.out.println(((IRI)object).getLocalName());
 			}
 			else {
+				// it's a blank node. Just print it out as-is.
 				System.out.println(object);
 			}
 		}

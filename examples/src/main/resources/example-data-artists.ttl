@@ -17,8 +17,16 @@ ex:guernica a ex:Painting ;
 ex:VanGogh a ex:Artist ;
         	foaf:firstName "Vincent" ;
             foaf:surname "van Gogh";
-            ex:creatorOf ex:starrynight .
+            ex:creatorOf ex:starryNight, ex:sunflowers, ex:potatoEaters .
 
 ex:starryNight a ex:Painting ;
-               ex:technique "oil on canvas";
-               rdfs:label "Starry Night" .
+            ex:technique "oil on canvas";
+            rdfs:label "Starry Night" .
+
+ex:sunflowers a ex:Painting ;
+            ex:technique "oil on canvas";
+            rdfs:label "Sunflowers" .
+
+ex:potatoEaters a ex:Painting ;
+            ex:technique "oil on canvas";
+            rdfs:label "The Potato Eaters" .
