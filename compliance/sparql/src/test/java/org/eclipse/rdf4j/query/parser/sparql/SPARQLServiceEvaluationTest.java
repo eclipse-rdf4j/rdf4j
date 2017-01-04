@@ -227,6 +227,10 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		}
 	}
 
+	/**
+	 * Verify that BIND clause alias from the SERVICE clause gets added to the result set.
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/646">#646</a>
+	 */
 	@Test
 	public void testValuesBindClauseHandling()
 		throws Exception
@@ -249,6 +253,38 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 				assertTrue(bs.hasBinding("x"));
 				int x = Literals.getIntValue(bs.getValue("x"), 0);
 				assertTrue(x == 1 || x == 2);
+			}
+		}
+	}
+
+	/**
+	 * Verify that all relevant variable names from the SERVICE clause get added to the result set when
+	 * a BIND clause is present.
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/703">#703</a>
+	 */
+	@Test
+	public void testVariableNameHandling()
+			throws Exception
+	{
+		String query = "select * { service <" + getRepositoryUrl(1)
+				+ "> { ?s ?p ?o . Bind(str(?o) as ?val) .  } }";
+
+		// add some data to the remote endpoint (we don't care about the exact contents)
+		prepareTest(null, Arrays.asList("/testcases-service/data13.ttl"));
+		try (RepositoryConnection conn = localRepository.getConnection()) {
+			TupleQuery tq = conn.prepareTupleQuery(query);
+			TupleQueryResult tqr = tq.evaluate();
+
+			assertNotNull(tqr);
+			assertTrue(tqr.hasNext());
+
+			List<BindingSet> result = QueryResults.asList(tqr);
+			assertTrue(result.size() > 0);
+			for (BindingSet bs : result) {
+				assertTrue(bs.hasBinding("val"));
+				assertTrue(bs.hasBinding("s"));
+				assertTrue(bs.hasBinding("p"));
+				assertTrue(bs.hasBinding("o"));
 			}
 		}
 	}
