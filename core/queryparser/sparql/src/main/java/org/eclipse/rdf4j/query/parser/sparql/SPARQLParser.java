@@ -78,6 +78,7 @@ public class SPARQLParser implements QueryParser {
 
 				StringEscapesProcessor.process(uc);
 				BaseDeclProcessor.process(uc, baseURI);
+				WildcardProjectionProcessor.process(uc);
 
 				// do a special dance to handle prefix declarations in sequences: if
 				// the current
