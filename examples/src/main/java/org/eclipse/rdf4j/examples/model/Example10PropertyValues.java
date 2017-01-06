@@ -1,10 +1,10 @@
-/*
- *  Copyright (c) 2015-2017 Eclipse RDF4J contributors.
- *  All rights reserved. This program and the accompanying materials
- *  are made available under the terms of the Eclipse Distribution License v1.0
- *  which accompanies this distribution, and is available at
- *  http://www.eclipse.org/org/documents/edl-v10.php.
- */
+/*******************************************************************************
+ * Copyright (c) 2016, 2017 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 package org.eclipse.rdf4j.examples.model;
 
 import org.eclipse.rdf4j.examples.model.vocabulary.EX;
@@ -18,20 +18,20 @@ import java.io.InputStream;
 import java.util.Set;
 
 /**
- * RDF Tutorial example 08: Getting all values of a property for a particular subject.
+ * RDF Tutorial example 10: Getting all values of a property for a particular subject.
  *
  * In this example, we show how you can get retrieve all paintings that Van Gogh created.
  *
  * @author Jeen Broekstra
  */
-public class Example08PropertyValues {
+public class Example10PropertyValues {
 
 	public static void main(String[] args) throws IOException {
 
 		String filename = "example-data-artists.ttl";
 
 		// read the file 'example-data-artists.ttl' as an InputStream.
-		InputStream input = Example08PropertyValues.class.getResourceAsStream("/" + filename);
+		InputStream input = Example10PropertyValues.class.getResourceAsStream("/" + filename);
 		Model model = Rio.parse(input, "", RDFFormat.TURTLE);
 
 		ValueFactory vf = SimpleValueFactory.getInstance();

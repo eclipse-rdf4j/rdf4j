@@ -1,10 +1,10 @@
-/*
- *  Copyright (c) 2015-2016 Eclipse RDF4J contributors.
- *  All rights reserved. This program and the accompanying materials
- *  are made available under the terms of the Eclipse Distribution License v1.0
- *  which accompanies this distribution, and is available at
- *  http://www.eclipse.org/org/documents/edl-v10.php.
- */
+/*******************************************************************************
+ * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 package org.eclipse.rdf4j.examples.model;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 
 /**
- * RDF Tutorial example 05: Writing an RDF model in Turtle syntax
+ * RDF Tutorial example 07: Writing an RDF model in Turtle syntax
  *
  * In this example, we show how you can use the Rio Parser/writer toolkit to write your
  * model in Turtle syntax.
@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.rio.Rio;
  * @author Jeen Broekstra
  * @see
  */
-public class Example05WriteTurtle {
+public class Example07WriteTurtle {
 
 	public static void main(String[] args) {
 

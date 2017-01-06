@@ -2,3 +2,8 @@
 .idea
 *.iml
 target/
+examples/.classpath
+examples/.project
+examples/.settings/org.eclipse.core.resources.prefs
+examples/.settings/org.eclipse.jdt.core.prefs
+examples/.settings/org.eclipse.m2e.core.prefs

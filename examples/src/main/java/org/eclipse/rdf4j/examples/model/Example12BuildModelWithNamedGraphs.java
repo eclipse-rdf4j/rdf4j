@@ -1,10 +1,10 @@
-/*
- *  Copyright (c) 2015-2017 Eclipse RDF4J contributors.
- *  All rights reserved. This program and the accompanying materials
- *  are made available under the terms of the Eclipse Distribution License v1.0
- *  which accompanies this distribution, and is available at
- *  http://www.eclipse.org/org/documents/edl-v10.php.
- */
+/*******************************************************************************
+ * Copyright (c) 2016, 2017 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 package org.eclipse.rdf4j.examples.model;
 
 import org.eclipse.rdf4j.examples.model.vocabulary.EX;
@@ -26,14 +26,14 @@ import java.net.URL;
 import java.util.Optional;
 
 /**
- * RDF Tutorial example 10: Building a Model with named graphs
+ * RDF Tutorial example 12: Building a Model with named graphs
  *
  * In this example, we show how you can use the context mechanism to add statements separate named
  * graphs within the same Model.
  *
  * @author Jeen Broekstra
  */
-public class Example10BuildModelWithNamedGraphs {
+public class Example12BuildModelWithNamedGraphs {
 
 	public static void main(String[] args)
 			throws IOException

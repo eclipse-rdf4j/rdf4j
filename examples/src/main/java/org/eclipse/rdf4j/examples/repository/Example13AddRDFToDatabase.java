@@ -1,38 +1,31 @@
-/*
- *  Copyright (c) 2015-2017 Eclipse RDF4J contributors.
- *  All rights reserved. This program and the accompanying materials
- *  are made available under the terms of the Eclipse Distribution License v1.0
- *  which accompanies this distribution, and is available at
- *  http://www.eclipse.org/org/documents/edl-v10.php.
- */
+/*******************************************************************************
+ * Copyright (c) 2016, 2017 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 package org.eclipse.rdf4j.examples.repository;
 
-import org.eclipse.rdf4j.examples.model.Example06ReadTurtle;
-import org.eclipse.rdf4j.examples.model.vocabulary.EX;
+import java.io.IOException;
+import java.io.InputStream;
+
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.util.ModelBuilder;
-import org.eclipse.rdf4j.model.vocabulary.FOAF;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
-import org.eclipse.rdf4j.repository.manager.RepositoryProvider;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
-import java.io.IOException;
-import java.io.InputStream;
-
 /**
- * RDF Tutorial example 11: Adding an RDF Model to a database
+ * RDF Tutorial example 13: Adding an RDF Model to a database
  *
  * @author Jeen Broekstra
  */
-public class Example11AddRDFToDatabase {
+public class Example13AddRDFToDatabase {
 
 	public static void main(String[] args)
 			throws IOException
@@ -40,7 +33,7 @@ public class Example11AddRDFToDatabase {
 
 		// First load our RDF file as a Model.
 		String filename = "example-data-artists.ttl";
-		InputStream input = Example11AddRDFToDatabase.class.getResourceAsStream("/" + filename);
+		InputStream input = Example13AddRDFToDatabase.class.getResourceAsStream("/" + filename);
 		Model model = Rio.parse(input, "", RDFFormat.TURTLE);
 
 		// Create a new Repository. Here, we choose a database implementation
