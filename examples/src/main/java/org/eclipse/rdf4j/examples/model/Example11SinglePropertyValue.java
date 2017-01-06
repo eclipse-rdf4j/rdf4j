@@ -1,10 +1,10 @@
-/*
- *  Copyright (c) 2015-2017 Eclipse RDF4J contributors.
- *  All rights reserved. This program and the accompanying materials
- *  are made available under the terms of the Eclipse Distribution License v1.0
- *  which accompanies this distribution, and is available at
- *  http://www.eclipse.org/org/documents/edl-v10.php.
- */
+/*******************************************************************************
+ * Copyright (c) 2016, 2017 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 package org.eclipse.rdf4j.examples.model;
 
 import org.eclipse.rdf4j.examples.model.vocabulary.EX;
@@ -22,12 +22,12 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * RDF Tutorial example 09: Getting a single property value for a particular subject.
+ * RDF Tutorial example 11: Getting a single property value for a particular subject.
  * In this example, we show how you can get retrieve each artist's first name and print it.
  *
  * @author Jeen Broekstra
  */
-public class Example09SinglePropertyValue {
+public class Example11SinglePropertyValue {
 
 	public static void main(String[] args)
 			throws IOException
@@ -36,7 +36,7 @@ public class Example09SinglePropertyValue {
 		String filename = "example-data-artists.ttl";
 
 		// read the file 'example-data-artists.ttl' as an InputStream.
-		InputStream input = Example09SinglePropertyValue.class.getResourceAsStream("/" + filename);
+		InputStream input = Example11SinglePropertyValue.class.getResourceAsStream("/" + filename);
 		Model model = Rio.parse(input, "", RDFFormat.TURTLE);
 
 		// iterate over all resources that are of type 'ex:Artist'
