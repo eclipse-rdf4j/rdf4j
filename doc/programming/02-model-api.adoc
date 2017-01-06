@@ -84,7 +84,7 @@ RDF4J provides two default implementations of the `Model` interface: {javadoc}mo
 
 == Building RDF Models with the ModelBuilder
 
-Since version 2.1, RDF4J provides a {javadoc}model/util/ModelBuiler.html[ModelBuilder] utility. The ModelBuilder provides a fluent API to quickly and efficiently create RDF models programmatically.
+Since version 2.1, RDF4J provides a {javadoc}model/util/ModelBuilder.html[ModelBuilder] utility. The ModelBuilder provides a fluent API to quickly and efficiently create RDF models programmatically.
 
 Here’s a simple code example that demonstrates how to quickly create an RDF graph with some FOAF data:
 
