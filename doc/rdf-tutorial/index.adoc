@@ -292,7 +292,7 @@ Fortunately, RDF4J provides tools for reading and writing RDF models in several 
 
 === Example 06: Writing to RDF/XML 
 
-{example}model/Example06WriteRdfXml.java[Example 06] shows how we can write our Model as RDF/XML, using the RDF4J {javadoc}rio/Rio.html[Rio] parser/writer tools:
+{examples}model/Example06WriteRdfXml.java[Example 06] shows how we can write our Model as RDF/XML, using the RDF4J {javadoc}rio/Rio.html[Rio] parser/writer tools:
 
 [[code-example-06]]
 [source, java]
@@ -374,7 +374,7 @@ Line 7 and further, finally, state facts about the blank node (the home address 
 
 Very similar to how we can write RDF models to files in various syntaxes, we can also use RDF4J Rio to _read_ files to produce an RDF model. 
 
-{example}model/Example08ReadTurtle.java[Example 08] shows how we can read a Turtle file and produce a `Model` object out of it:
+{examples}model/Example08ReadTurtle.java[Example 08] shows how we can read a Turtle file and produce a `Model` object out of it:
 
 [[code-example-08]]
 [source, java, linenums]
