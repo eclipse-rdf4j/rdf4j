@@ -11,7 +11,7 @@ represents RDF literal values (strings, dates, integer numbers, and so on).
 
 To create new values and statements, we can use a {javadoc}model/ValueFactory.html[ValueFactory]. You can use a default ValueFactory implementation called {javadoc}model/impl/SimpleValueFactory[SimpleValueFactory]:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -23,7 +23,7 @@ You can also obtain a `ValueFactory` from the {javadoc}repository/Repository.htm
 
 Regardless of how you obtain your `ValueFactory`, once you have it, you can use it to create new URIs, Literals, and Statements:
 
-[source,java]
+[source,java,linenum]
 ----
 IRI bob = factory.createIRI("http://example.org/bob");
 IRI name = factory.createIRI("http://example.org/name");
@@ -33,7 +33,7 @@ Statement nameStatement = factory.createStatement(bob, name, bobsName);
 
 The Model API also provides pre-defined IRIs for several well-known vocabularies, such as RDF, RDFS, OWL, DC (Dublin Core), FOAF (Friend-of-a-Friend), and more. These constants can all be found in the {javadoc}model/vocabulary/package-summary.html[org.eclipse.rdf4j.model.vocabulary] package, and can be quite handy in quick creation of RDF statements (or in querying a Repository, as we shall see later):
 
-[source,java]
+[source,java,linenum]
 ----
 Statement typeStatement = factory.createStatement(bob, RDF.TYPE, FOAF.PERSON);
 ----
@@ -44,7 +44,7 @@ The above interfaces and classes show how we can create the individual building 
 
 `Model` is an extension of the default Java Collection class `java.util.Set<Statement>`. This means that you can use a `Model` like any other Java collection in your code: 
 
-[source,java]
+[source,java,linenum]
 ----
 // create a new Model to put statements in
 Model model = new LinkedHashModel(); 
@@ -61,7 +61,7 @@ for (Statement statement: model) {
 
 In addition, however, `Model` offers a number of useful methods to quickly get subsets of statements and otherwise search/filter your collection of statements. For example, to quickly iterate over all statements that make a resource an instance of the class `foaf:Person`, you can do:
 
-[source,java]
+[source,java,linenum]
 ----
 for (Statement typeStatement: model.filter(null, RDF.TYPE, FOAF.PERSON)) {
   // ...
@@ -70,7 +70,7 @@ for (Statement typeStatement: model.filter(null, RDF.TYPE, FOAF.PERSON)) {
 
 Even more convenient is that you can quickly retrieve the building blocks that make up the statements. For example, to immediately iterate over all subject-resources that are of type `foaf:Person` and then retrieve each person’s name, you can do something like the following:
 
-[source,java]
+[source,java,linenum]
 ----
 for (Resource person: model.filter(null, RDF.TYPE, FOAF.PERSON).subjects()) {
   // get the name of the person (if it exists)
@@ -88,7 +88,7 @@ Since version 2.1, RDF4J provides a {javadoc}model/util/ModelBuilder.html[ModelB
 
 Here’s a simple code example that demonstrates how to quickly create an RDF graph with some FOAF data:
 
-[source,java]
+[source,java,linenum]
 ----
 ModelBuilder builder = new ModelBuilder();
  
@@ -133,7 +133,7 @@ As an example, suppose we wish to add the above list of three string literals as
 
 The {javadoc}model/util/RDFCollections.html[RDFCollections] utility allows us to do this, as follows:
 
-[source,java]
+[source,java,linenum]
 ----
 String ns = "http://example.org/";
 ValueFactory vf = SimpleValueFactory.getInstance(); 
@@ -153,7 +153,7 @@ aboutJohn.add(john, favoriteLetters, head);
 
 Of course, we can also convert back:
 
-[source,java]
+[source,java,linenum]
 ----
 Model aboutJohn = ... ; // our Model about John
 // get the value of the ex:favoriteLetters property  
@@ -170,7 +170,7 @@ if(node != null) {
 
 To extract an RDF Collection from the model which contains it, we can do the following:
 
-[source,java]
+[source,java,linenum]
 ----
 Model aboutJohn = ...; // our model
 // get the value of the ex:favoriteLetters property  
@@ -185,7 +185,7 @@ As you can see, instead of converting the RDF Collection to a Java List of value
 
 Once you have this copy of your Collection, you can use it to add it somewhere else, or to remove the collection from your Model:
 
-[source,java]
+[source,java,linenum]
 ----
 // remove the collection from our model about John 
 aboutJohn.removeAll(rdfList); 
@@ -195,7 +195,7 @@ aboutJohn.remove(john, favoriteLetters, node);
 
 Actually, deleting can be done more efficiently than this. Rather than first creating a completely new copy of the RDF Collection only to then delete it, we can use a streaming approach instead:
 
-[source,java]
+[source,java,linenum]
 ----
 // extract the collection from our model in streaming fashion and remove each statement from the model 
 RDFCollections.extract(aboutJohn, node, st -> aboutJohn.remove(st)); 

@@ -22,7 +22,7 @@ We will first take a look at the use of the SailRepository class in order to cre
 
 One of the simplest configurations is a repository that just stores RDF data in main memory without applying any inferencing. This is also by far the fastest type of repository that can be used. The following code creates and initializes a non-inferencing main-memory repository:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -38,7 +38,7 @@ The repository that is created by the above code is volatile: its contents are l
 
 Different types of Sail objects take parameters in their constructor that change their behaviour. The {javadoc}sail/memory/MemoryStore.html[MemoryStore] for example takes a data directory parameter that specifies a data directory for persisent storage. If specified, the MemoryStore will write its contents to this directory so that it can restore it when it is re-initialized in a future session:
 
-[source,java]
+[source,java,linenum]
 ----
 File dataDir = new File("C:\\temp\\myRepository\\");
 Repository repo = new SailRepository( new MemoryStore(dataDir) );
@@ -47,7 +47,7 @@ repo.initialize();
 
 As you can see, we can fine-tune the configuration of our repository by passing parameters to the constructor of the Sail object. Some Sail types may offer additional configuration methods, all of which need to be called before the repository is initialized. The MemoryStore currently has one such method: setSyncDelay(long), which can be used to control the strategy that is used for writing to the data file, e.g.:
 
-[source,java]
+[source,java,linenum]
 ----
 File dataDir = new File("C:\\temp\\myRepository\\");
 MemoryStore memStore = new MemoryStore(dataDir);
@@ -62,7 +62,7 @@ A Native RDF Repository does not keep its data in main memory, but instead store
 
 The code for creation of a Native RDF repository is almost identical to that of a main memory repository:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -75,7 +75,7 @@ repo.initialize();
 
 By default, the Native store creates a set of two indexes (see section-native-store-config). To configure which indexes it should create, we can either use the NativeStore.setTripleIndexes(String) method, or we can directly supply a index configuration string to the constructor:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -91,7 +91,7 @@ repo.initialize();
 
 As we have seen, we can create Repository objects for any kind of back-end store by passing them a reference to the appropriate Sail object. We can pass any stack of Sails this way, allowing all kinds of repository configurations to be created quite easily. For example, to stack an RDF Schema inferencer on top of a memory store, we simply create a repository like so:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -112,7 +112,7 @@ The {javadoc}sail/inferencer/fc/ForwardChainingRDFSInferencer.html[ForwardChaini
 
 The previous subsection showed how to use the built-in RDF schema inferencer. This subsection will briefly show how to create a repository capable of performing inferences according to a custom rule that you provide.
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.Repository;
@@ -153,7 +153,7 @@ Working with remote repositories is just as easy as working with local ones. We 
 
 A requirement is of course that there is a RDF4J Server running on some remote system, which is accessible over HTTP. For example, suppose that at http://example.org/rdf4j-server/ a RDF4J Server is running, which has a repository with the identification ‘example-db’. We can access this repository in our code as follows:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
@@ -168,7 +168,7 @@ repo.initialize();
 
 We can use the Repository interface to access any SPARQL endpoint as well. This is done as follows:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
@@ -196,7 +196,7 @@ A LocalRepositoryManager manages repository handling for you locally, and is alw
 
 You create a new LocalRepositoryManager as follows:
 
-[source,java]
+[source,java,linenum]
 ----
 import java.io.File;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
@@ -207,7 +207,7 @@ manager.initialize();
 
 To use a LocalRepositoryManager to create and manage repositories is slightly different from what we’ve seen before about creating repositories. The LocalRepositoryManager works by providing it with RepositoryConfig objects, which are declarative specifications of the repository you want. You add a RepositoryConfig object for your new repository, and then request the actual Repository back from the LocalRepositoryManager:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
  
@@ -222,7 +222,7 @@ In the above bit of code, you may have noticed that I provide an innocuous-looki
 
 Creating a `RepositoryImplConfig` object can be done in two ways: programmatically, or by reading a (RDF) config file. Here, we will show the programmatic way.
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
@@ -240,7 +240,7 @@ As you can see, we use a class called `MemoryStoreConfig` for specifying the typ
 
 As a second example, we create a slightly more complex type of store: still in-memory, but this time we want it to use the memory store’s persistence option, and we also want to add RDFS inferencing. In RDF4J, RDFS inferencing is provided by a separate SAIL implementation, which can be ‘stacked’ on top of another SAIL. We follow that pattern in the creation of our config object:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.sail.inferencer.fc.config.ForwardChainingRDFSInferencerConfig;
  
@@ -261,7 +261,7 @@ A useful feature of RDF4J is that most its APIs are transparent with respect to 
 
 A RemoteRepositoryManager is initialized as follows:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
  
@@ -279,7 +279,7 @@ Finally, RDF4J also includes a {javadoc}repository/manager/RepositoryProvider.ht
 
 To obtain a RepositoryManager from a RepositoryProvider you invoke it with the location you want a RepositoryManager for. If you provide a HTTP url, it will automatically return a RemoteRepositoryManager, and if you provide a local file URL, it will be a LocalRepositoryManager.
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.repository.manager.RepositoryProvider;
 String url = "http://localhost:8080/rdf4j-server";
@@ -292,7 +292,7 @@ The RepositoryProvider creates and keeps a singleton instance of RepositoryManag
 
 It is possible to create a virtual repository that is a federation of existing repositories. The following code illustrates how to use the RepositoryManagerFederator class to create a federation. It assumes you already have a reference to a RepositoryManager instance, and is a simplified form of what the RDF4J Console runs when its federate command is invoked:
 
-[source,java]
+[source,java,linenum]
 ----
 void federate(RepositoryManager manager, String fedID, String description, 
 	Collection<String> memberIDs, boolean readonly, boolean distinct) 
@@ -345,7 +345,7 @@ We perform operations on a repository by requesting a RepositoryConnection from 
 
 The following example code adds two files, one local and one available through HTTP, to a repository:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.repository.Repository;
@@ -377,7 +377,7 @@ catch (java.io.IOEXception e) {
 
 As you can see, the above code does very explicit exception handling and makes sure resources are properly closed when we are done. A lot of this can be simplified. RepositoryConnection implements AutoCloseable, so a first simple change is to use a try-with-resources construction for handling proper opening and closing of the RepositoryConnection:
 
-[source,java]
+[source,java,linenum]
 ----
 File file = new File("/path/to/example.rdf");
 String baseURI = "http://example.org/example/local";
@@ -411,7 +411,7 @@ The result of boolean queries is a simple boolean value, i.e. true or false. Thi
 
 To evaluate a tuple query we can do the following:
 
-[source,java]
+[source,java,linenum]
 ----
 import java.util.List;
 import org.eclipse.rdf4j.RDF4JException;
@@ -440,7 +440,7 @@ This evaluates a SPARQL SELECT query and returns a {javadoc}query/TupleQueryResu
 
 As you can see, we use the TupleQueryResult to iterate over all results and get each individual result for `x` and `y`. We retrieve values by name rather than by an index. The names used should be the names of variables as specified in your query (note that we leave out the ‘?’ or ‘$’ prefixes used in SPARQL). The `TupleQueryResult.getBindingNames()` method returns a list of binding names, in the order in which they were specified in the query. To process the bindings in each binding set in the order specified by the projection, you can do the following:
 
-[source,java]
+[source,java,linenum]
 ----
 List<String> bindingNames = result.getBindingNames();
 while (result.hasNext()) {
@@ -455,7 +455,7 @@ Finally, it is important to make sure that both the `TupleQueryResult` and the `
 
 As said: a `TupleQueryResult` evaluates lazily, and keeps an open connection to the data source while being processed. If you wish to quickly materialize the full query result (for example, convert it to a Java List) and then close the TupleQueryResult, you can do something like this:
 
-[source,java]
+[source,java,linenum]
 ----
 List<BindingSet> resultList;
 try (TupleQueryResult result = tupleQuery.evaluate()) {
@@ -467,7 +467,7 @@ try (TupleQueryResult result = tupleQuery.evaluate()) {
 
 RDF4J provides a convenience utility class {javadoc}repository/util/Repositories.html[org.eclipse.rdf4j.repository.util.Repositories], which allows us to significantly shorten our boilerplate code. In particular, the Repositories utility allows us to do away with opening/closing a `RepositoryConnection` completely. For example, to open a connection, create and evaluate a  SPARQL SELECT query, and then put that query’s result in a list, we can do the following:
 
-[source,java]
+[source,java,linenum]
 ----
 List<BindingSet> results = Repositories.tupleQuery(rep, 
 	     "SELECT * WHERE {?s ?p ?o }", r -> QueryResults.asList(r));
@@ -485,7 +485,7 @@ to directly write the query result to the console. `SPARQLResultsCSVWriter` is
 a `TupleQueryResultHandler` implementation that writes SPARQL Results as
 comma-separated values.
 
-[source,java]
+[source,java,linenum]
 ----
 String queryString = "SELECT * WHERE {?x ?p ?y }";
 con.prepareTupleQuery(queryString).evaluate(new SPARQLResultsCSVWriter(System.out));
@@ -497,7 +497,7 @@ RDF4J provides a number of standard implementations of `TupleQueryResultHandler`
 
 The following code evaluates a graph query on a repository:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.query.GraphQueryResult;
 GraphQueryResult graphResult = con.prepareGraphQuery("CONSTRUCT { ?s ?p ?o } WHERE {?s ?p ?o }".evaluate();
@@ -505,7 +505,7 @@ GraphQueryResult graphResult = con.prepareGraphQuery("CONSTRUCT { ?s ?p ?o } WHE
 
 A {javadoc}query/GraphQueryResult.html[GraphQueryResult] is similar to `TupleQueryResult` in that is an object that iterates over the query solutions. However, for graph queries the query solutions are RDF statements, so a `GraphQueryResult` iterates over `Statement` objects:
 
-[source,java]
+[source,java,linenum]
 ----
 while (graphResult.hasNext()) {
    Statement st = graphResult.next();
@@ -515,7 +515,7 @@ while (graphResult.hasNext()) {
 
 You can also quickly turn a `GraphQueryResult` into a {javadoc}model/Model.html[Model] (that is, a Java Collection of statements), by using the {javadoc}query/QueryResults.html[org.eclipse.rdf4j.query.QueryResults] utility class:
 
-[source,java]
+[source,java,linenum]
 ----
 Model resultModel = QueryResults.asModel(graphQueryResult);
 ----
@@ -524,7 +524,7 @@ Model resultModel = QueryResults.asModel(graphQueryResult);
 
 Similarly to how we do this with SELECT queries, we can use the {javadoc}repository/util/Repositories.html[Repositories] utility to obtain a result from a SPARQL CONSTRUCT (or DESCRIBE) query in a single line of Java code:
 
-[source,java]
+[source,java,linenum]
 ----
 Model m = Repositories.graphQuery(rep, "CONSTRUCT WHERE {?s ?p ?o}", r -> QueryResults.asModel(r));
 ----
@@ -535,7 +535,7 @@ For graph queries, we can supply an {javadoc}rio/RDFHandler.html[org.eclipse.rdf
 
 All Rio writers (such as the {javadoc}rio/rdfxml/RDFXMLWriter.html[RDFXmlWriter], {javadoc}rio/turtle/TurtleWriter.html[TurtleWriter], {javadoc}rio/trix/TriXWriter.html[TriXWriter], etc.) implement the `RDFHandler` interface. This allows them to be used in combination with querying quite easily. In the following example, we use a `TurtleWriter` to write the result of a SPARQL graph query to standard output in Turtle format:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -557,7 +557,7 @@ A `Query` object, once created, can be (re)used. For example, we can evaluate a 
 
 The `Query` object also has a `setBinding()` method, which can be used to specify specific values for query variables. As a simple example, suppose we have a repository containing names and e-mail addresses of people, and we want to do a query for each person, retrieve his/her e-mail address, for example, but we want to do a separate query for each person. This can be achieved using the `setBinding()` functionality, as follows:
 
-[source,java]
+[source,java,linenum]
 ----
 try (RepositoryConnection con = repo.getConnection()){
    // First, prepare a query that retrieves all names of persons
@@ -590,7 +590,7 @@ try (RepositoryConnection con = repo.getConnection()){
 
 The values with which you perform the `setBinding` operation of course do not necessarily have to come from a previous query result (as they do in the above example). Using a `ValueFactory` you can create your own value objects. You can use this functionality to, for example, query for a particular keyword that is given by user input:
 
-[source,java]
+[source,java,linenum]
 ----
 ValueFactory factory = myRepository.getValueFactory();
 
@@ -620,7 +620,7 @@ The `RepositoryConnection` can also be used for adding, retrieving, removing or 
 
 To be able to add new statements, we can use a `ValueFactory` to create the `Values` out of which the statements consist. For example, we want to add a few statements about two resources, Alice and Bob:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -652,14 +652,14 @@ Of course, it will not always be necessary to use a `ValueFactory` to create IRI
 
 Retrieving statements works in a very similar way. One way of retrieving statements we have already seen actually: we can get a `GraphQueryResult` containing statements by evaluating a graph query. However, we can also use direct method calls to retrieve (sets of) statements. For example, to retrieve all statements about Alice, we could do:
 
-[source,java]
+[source,java,linenum]
 ----
 RepositoryResult<Statement> statements = con.getStatements(alice, null, null);
 ----
 
 Similarly to the `TupleQueryResult` object and other types of query results, the {javadoc}repository/RepositoryResult.html[RepositoryResult] is an iterator-like object that lazily retrieves each matching statement from the repository when its `next()` method is called. Note that, like is the case with `QueryResult` objects, iterating over a `RepositoryResult` may result in exceptions which you should catch to make sure that the RepositoryResult is always properly closed after use:
 
-[source,java]
+[source,java,linenum]
 ----
 RepositoryResult<Statement> statements = con.getStatements(alice, null, null, true);
 try {
@@ -675,7 +675,7 @@ finally {
 
 Or alternatively, using try-with-resources:
 
-[source,java]
+[source,java,linenum]
 ----
 try (RepositoryResult<Statement> statements = con.getStatements(alice, null, null, true)) {
    while (statements.hasNext()) {
@@ -689,14 +689,14 @@ In the above `getStatements()` invocation, we see four parameters being passed. 
 
 Removing statements again works in a very similar fashion. Suppose we want to retract the statement that the name of Alice is “Alice”):
 
-[source,java]
+[source,java,linenum]
 ----
 con.remove(alice, name, alicesName);
 ----
 
 Or, if we want to erase all statements about Alice completely, we can do:
 
-[source,java]
+[source,java,linenum]
 ----
 con.remove(alice, null, null);
 ----
@@ -711,7 +711,7 @@ Another typical use case is to support *named graphs*: in the SPARQL query langu
 
 We will start by showing some simple examples of using context in the API. In the following example, we add an RDF document from the Web to our repository, in a context. In the example, we make the context identifier equal to the Web location of the file being uploaded.
 
-[source,java]
+[source,java,linenum]
 ----
 String location = "http://example.org/example/example.rdf";
 String baseURI = location;
@@ -722,7 +722,7 @@ conn.add(url, baseURI, RDFFormat.RDFXML, context);
 
 We can now use the context mechanism to specifically address these statements in the repository for retrieve and remove operations:
 
-[source,java]
+[source,java,linenum]
 ----
 // Get all statements in the context
 try (RepositoryResult<Statement> result = conn.getStatements(null, null, null, context)) {
@@ -742,7 +742,7 @@ In most methods in the Repository API, the context parameter is a vararg, meanin
 
 In the following example we add information about Bob and Alice again, but this time each has their own context. We also create a new property called ‘creator’ that has as its value the name of the person who is the creator a particular context. The knowledge about creators of contexts we do not add to any particular context, however:
 
-[source,java]
+[source,java,linenum]
 ----
 IRI context1 = f.createIRI("http://example.org/context1");
 IRI context2 = f.createIRI("http://example.org/context2");
@@ -765,7 +765,7 @@ conn.add(context2, creator, bobsName);
 
 Once we have this information in our repository, we can retrieve all statements about either Alice or Bob by using the context vararg:
 
-[source,java]
+[source,java,linenum]
 ----
 // Get all statements in either context1 or context2
 RepositoryResult<Statement> result =
@@ -776,7 +776,7 @@ You should observe that the above `RepositoryResult` will not contain the inform
 
 To explicitly retrieve statements that do not have an associated context, we do the following:
 
-[source,java]
+[source,java,linenum]
 ----
 // Get all statements that do not have an associated context
 RepositoryResult<Statement> result =
@@ -787,7 +787,7 @@ This will give us only the statements about the creators of the contexts, becaus
 
 We can also get everything that either has no context or is in context1:
 
-[source,java]
+[source,java,linenum]
 ----
 // Get all statements that do not have an associated context, or that are in context1
 RepositoryResult<Statement> result =
@@ -814,7 +814,7 @@ Most of these examples sofar have been on the level of individual statements. Ho
 
 For example, in the following bit of code, we first retrieve all statements about Alice, put them in a {javadoc}model/Model.html[Model] (which, as we have seen in the previous sections, is an implementation of `java.util.Collection`) and then remove them:
 
-[source,java]
+[source,java,linenum]
 ----
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.model.Model;
@@ -831,7 +831,7 @@ As you can see, the {javadoc}query/QueryResults.html[QueryResults] class provide
 
 In the above code, you first retrieve all statements, put them in a Model, and then remove them. Although this works fine, it can be done in an easier fashion, by simply supplying the resulting object directly:
 
-[source,java]
+[source,java,linenum]
 ----
 con.remove(con.getStatements(alice, null, null));
 ----
@@ -842,7 +842,7 @@ The {javadoc}repository/RepositoryConnect.html[RepositoryConnection] interface h
 
 In a previous section we have already seen how we can use the RDFCollections utility on top of a Model. This makes it very easy to insert any RDF Collection into your Repository - after all a Model can simply be added as follows:
 
-[source,java]
+[source,java,linenum]
 ----
 Model rdfList = ... ;
 try (RepositoryConnection conn = repo.getConnection()) {
@@ -854,7 +854,7 @@ In addition to this the Repository API offers the {javadoc}repository/util/Conne
 
 For example, to retrieve all statements corresponding to an RDF Collection identified by the resource node from our Repository, we can do the following:
 
-[source,java]
+[source,java,linenum]
 ----
 // retrieve all statements forming our RDF Collection from the Repository and put
 // them in a Model
@@ -865,7 +865,7 @@ try(RepositoryConnection conn = rep.getConnection()) {
 
 Or instead, you can retrieve them in streaming fashion as well:
 
-[source,java]
+[source,java,linenum]
 ----
 try(RepositoryConnection conn = repo.getConnection()) {
     Connections.consumeRDFCollection(conn, node, 
@@ -881,13 +881,37 @@ The {javadoc}repository/RepositoryConnection.html[RepositoryConnection interface
 
 We can indicate that we want to begin a transaction by using the `RepositoryConnection.begin()` method. In the following example, we use a connection to bundle two file addition operations in a single transaction:
 
-[source,java]
+[source,java,linenum]
 ----
 File inputFile1 = new File("/path/to/example1.rdf");
 String baseURI1 = "http://example.org/example1/";
 File inputFile2 = new File("/path/to/example2.rdf");
 String baseURI2 = "http://example.org/example2/";
 
+try (RepositoryConnection con = myRepository.getConnection()) {
+   // start a transaction
+   con.begin();
+   try {
+      // Add the first file
+      con.add(inputFile1, baseURI1, RDFFormat.RDFXML);
+      // Add the second file
+      con.add(inputFile2, baseURI2, RDFFormat.RDFXML);
+      // If everything went as planned, we can commit the result
+      con.commit();
+   } 
+   catch (RepositoryException e) {
+      // Something went wrong during the transaction, so we roll it back
+      con.rollback();
+   }
+}
+----
+
+In the above example, we use a transaction to add two files to the repository. Only if both files can be successfully added will the repository change. If one of the files can not be added (for example because it can not be read), then the entire transaction is cancelled and none of the files is added to the repository.
+
+As you can see, we open a new `try` block after calling the `begin()` method (line 9 and further). The purpose of this is to be able to catch any errors that happen during transaction execution, so that we can explicitly call `rollback()` on the transaction (line 19). If you prefer your code shorter, you can leave this out, and just do this:
+
+[source,java,linenum]
+----
 try (RepositoryConnection con = myRepository.getConnection()) {
    // start a transaction
    con.begin();
@@ -898,13 +922,9 @@ try (RepositoryConnection con = myRepository.getConnection()) {
    // If everything went as planned, we can commit the result
    con.commit();
 }
-catch (RepositoryException e) {
-   // Something went wrong during the transaction, so we roll it back
-   con.rollback();
-}
 ----
 
-In the above example, we use a transaction to add two files to the repository. Only if both files can be successfully added will the repository change. If one of the files can not be added (for example because it can not be read), then the entire transaction is cancelled and none of the files is added to the repository.
+The `close()` method, which is automatically invoked by Java when the try-with resources block ends, will also ensure that an unfinished transaction is rolled back (it will also log a warning about this).
 
 IMPORTANT: A `RepositoryConnection` only supports one active transaction at a time. You can check at any time whether a transaction is active on your connection by using the `isActive()` method. If you need concurrent transactions, you will need to use several separate `RepositoryConnections`.
 
@@ -929,7 +949,7 @@ The native and memory store use an optimistic locking scheme. This means that th
 
 You can specify the transaction isolation level by means of an optional parameter on the begin() method. For example, to start a transaction that uses SERIALIZABLE isolation:
 
-[source,java]
+[source,java,linenum]
 ----
 try (RepositoryConnection conn = rep.getConnection()) {
     conn.begin(IsolationLevels.SERIALIZABLE);
@@ -946,7 +966,7 @@ Although transactions are a convenient mechanism, having to always call `begin()
 
 As an example, consider this bit of transactional code. It opens a connection, starts a transaction, adds two RDF statements, and then commits. It also makes sure that it rolls back the transaction if something went wrong, and it ensures that once we’re done, the connection is closed.
 
-[source,java]
+[source,java,linenum]
 ----
 ValueFactory f = myRepository.getValueFactory();
 IRI bob = f.createIRI("urn:bob"); 
@@ -960,11 +980,14 @@ try {
 catch (RepositoryException e) {
    conn.rollback();
 }
+finally {
+   conn.close();
+}
 ----
 
 That’s an awful lot of code for just inserting two triples. The same thing can be achieved with far less boilerplate code, as follows:
 
-[source,java]
+[source,java,linenum]
 ----
 ValueFactory f = myRepository.getValueFactory();
 IRI bob = f.createIRI("urn:bob");
@@ -984,4 +1007,4 @@ The Repository API supports multithreaded access to a store: multiple concurrent
 
 The Repository object is thread-safe, and can be safely shared and reused across multiple threads (a good way to do this is via a {javadoc}repository/manager/RepositoryProvider.html[RepositoryProvider]).
 
-However, it is very important to note that `RepositoryConnection` is *not* guaranteedto be thread-safe. This means that you should not try to share a single `RepositoryConnection` over multiple threads. Instead, ensure that each thread creates and uses its own `RepositoryConnection`s, and use transaction isolation levels to control visibility of concurrent updates between threads.
+WARNING: `RepositoryConnection` is *not thread-safe*. This means that you should not try to share a single RepositoryConnection over multiple threads. Instead, ensure that each thread obtains its own RepositoryConnection from a shared `Repository` object. You can use transaction isolation levels to control visibility of concurrent updates between threads.

@@ -16,7 +16,7 @@ As a simple example of how to use Rio, we parse an RDF document and collect all 
 
 Let’s say we have a Turtle file, available at http://example.org/example.ttl:
 
-[source,java]
+[source,java,linenum]
 ----
 java.net.URL documentUrl = new URL(“http://example.org/example.ttl”);
 InputStream inputStream = documentUrl.openStream();
@@ -24,7 +24,7 @@ InputStream inputStream = documentUrl.openStream();
 
 We now have an open `InputStream` to our RDF file. Now we need a {javadoc}rio/RDFParser.html[RDFParser] object that reads this InputStream and creates RDF statements out of it. Since we are reading a Turtle file, we create a `RDFParser` object for the {javadoc}rio/RDFFormat.html[RDFFormat.TURTLE] syntax format:
 
-[source,java]
+[source,java,linenum]
 ----
 RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
 ----
@@ -33,7 +33,7 @@ Note that all Rio classes and interfaces are in package {javadoc}rio/package-sum
 
 We also need an RDFHandler which can receive RDF statements from the parser. Since we just want to create a collection of Statements for now, we’ll just use Rio’s StatementCollector:
 
-[source,java]
+[source,java,linenum]
 ----
 Model model = new LinkedHashModel();
 rdfParser.setRDFHandler(new StatementCollector(model));
@@ -43,7 +43,7 @@ Note, by the way, that you can use any standard Java Collection class (such as `
 
 Finally, we need to set the parser to work:
 
-[source,java]
+[source,java,linenum]
 ----
 try {
    rdfParser.parse(inputStream, documentURL.toString());
@@ -63,7 +63,7 @@ After the `parse()` method has executed (and provided no exception has occurred)
 
 The {javadoc}rio/Rio.html[Rio utility class] provides additional helper methods, to make parsing to a Model a single API call:
 
-[source,java]
+[source,java,linenum]
 ----
 Model results = Rio.parse(inputStream, documentUrl.toString(), RDFFormat.TURTLE);
 ----
@@ -74,7 +74,7 @@ Suppose you want to count the number of triples in an RDF file. You could of cou
 
 To create your own handler, you can of course create a class that implements the {javadoc}rio/RDFHandler.html[RDFHandler interface], but a useful shortcut is to instead create a subclass of {javadoc}rio/helpers/AbstractRDFHandler.html[AbstractRDFHandler]. This is a base class that provides dummy implementations of all interface methods. The advantage is that you only have to override the methods in which you need to do something. Since what we want to do is just count statements, we only need to override the `handleStatement` method. Additionaly, we of course need a way to get back the total number of statements found by our counter:
 
-[source,java]
+[source,java,linenum]
 ----
 class StatementCounter extends AbstractRDFHandler {
  
@@ -93,7 +93,7 @@ class StatementCounter extends AbstractRDFHandler {
 
 Once we have our custom `RDFHandler` class, we can supply that to the parser instead of the StatementCollector we saw earlier:
 
-[source,java]
+[source,java,linenum]
 ----
 StatementCounter myCounter = new StatementCounter();
 rdfParser.setRDFHandler(myCounter);
@@ -112,7 +112,7 @@ In the examples sofar, we have always assumed that you know what the syntax form
 
 The {javadoc}rio/Rio.html[Rio utility class] has a couple of methods for guessing the correct format, given either a filename or a MIME-type. For example, to get back the RDF format for our Turtle file, we could do the following:
 
-[source,java]
+[source,java,linenum]
 ----
 RDFFormat format = Rio.getParserFormatForFileName(documentURL.toString()).orElse(RDFFormat.RDFXML);
 ----
@@ -123,7 +123,7 @@ Note the `.orElse(RDFFormat.RDFXML)` bit at the end: _if_ Rio can not guess the 
 
 Once we have the format determined, we can create a parser for it like so:
 
-[source,java]
+[source,java,linenum]
 ----
 RDFParser rdfParser = Rio.createParser(format);
 ----
@@ -136,7 +136,7 @@ Sofar, we’ve seen how to read RDF, but Rio of course also allows you to write 
 
 As an example, we start with a Model containing several RDF statements, and we want to write these statements to a file. In this example, we’ll write our statements to a file in RDF/XML syntax:
 
-[source,java]
+[source,java,linenum]
 ----
 Model model; // a collection of several RDF statements
 FileOutputStream out = new FileOutputStream("/path/to/file.rdf");
@@ -155,7 +155,7 @@ catch (RDFHandlerException e) {
 
 Again, the Rio helper class provides convenience methods which you can use to make this a one step process. If the collection is a `Model` and the desired output format supports namespaces, then the namespaces from the model will also be serialised.
 
-[source,java]
+[source,java,linenum]
 ----
 Model model; // a collection of several RDF statements
 FileOutputStream out = new FileOutputStream("/path/to/file.rdf")
@@ -166,7 +166,7 @@ Since we have now seen how to read RDF using a parser and how to write using a w
 
 Fortunately, there is a shortcut. We can eliminate the need for using a Model altogether. If you’ve paid attention, you might have spotted it already: RDFWriters are also RDFHandlers. So instead of first using a StatementCollector to collect our RDF data and then writing that to our RDFWriter, we can simply use the RDFWriter directly. So if we want to convert our input RDF file from Turtle syntax to RDF/XML syntax, we can do that, like so:
 
-[source,java]
+[source,java,linenum]
 ----
 // open our input document
 java.net.URL documentUrl = new URL(“http://example.org/example.ttl”);
