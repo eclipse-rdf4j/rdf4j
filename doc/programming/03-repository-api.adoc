@@ -950,7 +950,8 @@ As an example, consider this bit of transactional code. It opens a connection, s
 ----
 ValueFactory f = myRepository.getValueFactory();
 IRI bob = f.createIRI("urn:bob"); 
-try (RepositoryConnection conn = myRepository.getConnection()) {
+RepositoryConnection conn = myRepository.getConnection();
+try {
    conn.begin();
    conn.add(bob, RDF.TYPE, FOAF.PERSON);
    conn.add(bob, FOAF.NAME, f.createLiteral("Bob"));
