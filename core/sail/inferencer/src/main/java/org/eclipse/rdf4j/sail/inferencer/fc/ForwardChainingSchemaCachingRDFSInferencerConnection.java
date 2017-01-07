@@ -113,14 +113,12 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Abstra
                 forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
                 forwardChainingSchemaCachingRDFSInferencer.types.add((Resource) object);
             }
-
         }
 
         if (!forwardChainingSchemaCachingRDFSInferencer.properties.contains(predicate)) {
             forwardChainingSchemaCachingRDFSInferencer.upgradeLock(this);
             forwardChainingSchemaCachingRDFSInferencer.properties.add(predicate);
         }
-
 
     }
 
