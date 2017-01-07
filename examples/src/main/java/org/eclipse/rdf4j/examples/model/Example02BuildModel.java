@@ -33,9 +33,7 @@ public class Example02BuildModel {
 				.subject("ex:Picasso")
 					.add(RDF.TYPE, "ex:Artist")		// Picasso is an Artist
 					.add(FOAF.FIRST_NAME, "Pablo") 	// his first name is "Pablo"
-				    .add(RDF.FIRST, new GregorianCalendar(1885, Calendar.APRIL, 1).getTime())
 				.build();
-
 
 		// To see what's in our model, let's just print it to the screen
 		for(Statement st: model) {
