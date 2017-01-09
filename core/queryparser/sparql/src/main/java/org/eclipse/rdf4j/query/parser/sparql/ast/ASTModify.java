@@ -43,9 +43,5 @@ public class ASTModify extends ASTUpdate {
 		}
 	}
 
-	public ASTGraphPatternGroup getWhereClause() {
-		return jjtGetChild(ASTGraphPatternGroup.class);
-	}
-
 }
 /* JavaCC - OriginalChecksum=9460d42e4f84afaf785d4073d7125899 (do not edit this line) */

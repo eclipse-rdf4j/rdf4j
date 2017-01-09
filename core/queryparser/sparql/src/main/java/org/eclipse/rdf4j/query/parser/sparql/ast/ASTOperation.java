@@ -33,4 +33,7 @@ public abstract class ASTOperation extends SimpleNode {
 		return jjtGetChildren(ASTDatasetClause.class);
 	}
 
+	public ASTWhereClause getWhereClause() {
+		return jjtGetChild(ASTWhereClause.class);
+	}
 }

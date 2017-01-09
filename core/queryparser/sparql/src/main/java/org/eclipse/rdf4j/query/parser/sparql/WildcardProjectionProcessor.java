@@ -13,9 +13,9 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribe;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribeQuery;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperation;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperationContainer;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTProjectionElem;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQuery;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSelect;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSelectQuery;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTVar;
@@ -32,20 +32,21 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  */
 public class WildcardProjectionProcessor extends AbstractASTVisitor {
 
-	public static void process(ASTQueryContainer qc)
+	public static void process(ASTOperationContainer container)
 		throws MalformedQueryException
 	{
-		ASTQuery queryNode = qc.getQuery();
 
-		// scan for nested SELECT clauses in the query
-		if (queryNode != null) {
-			ASTWhereClause queryBody = queryNode.getWhereClause();
+		ASTOperation operation = container.getOperation();
 
-			// DESCRIBE queries can be without a query body sometimes
-			if (queryBody != null) {
+		// scan for nested SELECT clauses in the operation's WHERE clause
+		if (operation != null) {
+			ASTWhereClause whereClause = operation.getWhereClause();
+
+			// DESCRIBE queries and certain update operations can be without a WHERE clause
+			if (whereClause != null) {
 				SelectClauseCollector collector = new SelectClauseCollector();
 				try {
-					queryBody.jjtAccept(collector, null);
+					whereClause.jjtAccept(collector, null);
 
 					Set<ASTSelect> selectClauses = collector.getSelectClauses();
 
@@ -65,19 +66,19 @@ public class WildcardProjectionProcessor extends AbstractASTVisitor {
 			}
 		}
 
-		if (queryNode instanceof ASTSelectQuery) {
+		if (operation instanceof ASTSelectQuery) {
 			// check for wildcard in upper SELECT query
 
-			ASTSelectQuery selectQuery = (ASTSelectQuery)queryNode;
+			ASTSelectQuery selectQuery = (ASTSelectQuery)operation;
 			ASTSelect selectClause = selectQuery.getSelect();
 			if (selectClause.isWildcard()) {
 				addQueryVars(selectQuery.getWhereClause(), selectClause);
 				selectClause.setWildcard(false);
 			}
 		}
-		else if (queryNode instanceof ASTDescribeQuery) {
+		else if (operation instanceof ASTDescribeQuery) {
 			// check for possible wildcard in DESCRIBE query
-			ASTDescribeQuery describeQuery = (ASTDescribeQuery)queryNode;
+			ASTDescribeQuery describeQuery = (ASTDescribeQuery)operation;
 			ASTDescribe describeClause = describeQuery.getDescribe();
 
 			if (describeClause.isWildcard()) {
