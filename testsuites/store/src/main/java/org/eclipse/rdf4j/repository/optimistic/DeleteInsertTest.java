@@ -18,9 +18,17 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 public class DeleteInsertTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	private Repository repo;
 
@@ -44,8 +52,12 @@ public class DeleteInsertTest {
 	public void tearDown()
 		throws Exception
 	{
-		con.close();
-		repo.shutDown();
+		try {
+			con.close();
+		}
+		finally {
+			repo.shutDown();
+		}
 	}
 
 	@Test

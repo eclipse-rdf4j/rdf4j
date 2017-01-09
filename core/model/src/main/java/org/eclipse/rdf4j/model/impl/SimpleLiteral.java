@@ -169,7 +169,7 @@ public class SimpleLiteral implements Literal {
 		return false;
 	}
 
-	// overrides Object.hashCode(), implements hashCode()
+	// overrides Object.hashCode(), implements Literal.hashCode()
 	@Override
 	public int hashCode() {
 		return label.hashCode();

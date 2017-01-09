@@ -7,36 +7,61 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailTest;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.elasticsearch.common.io.FileSystemUtils;
+import org.junit.Rule;
+import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class ElasticsearchSailTest extends AbstractLuceneSailTest {
 
-	private static final String DATA_DIR = "target/test-data";
+	@Rule
+	public TemporaryFolder tempDir = new TemporaryFolder();
 
-        private Logger log = LoggerFactory.getLogger(getClass());
+	private Path testDir;
+
+	private Logger log = LoggerFactory.getLogger(getClass());
 
 	@Override
 	protected void configure(LuceneSail sail) {
+		sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
 		sail.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
-		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, DATA_DIR);
+		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, testDir.toAbsolutePath().toString());
 		sail.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
 		sail.setParameter(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
-		log.debug("******* \t Data dir: {}", DATA_DIR);
+		log.debug("******* \t Data dir: {}", testDir.toAbsolutePath().toString());
+	}
+
+	@Override
+	public void setUp()
+		throws Exception
+	{
+		ElasticsearchTestUtils.TEST_SEMAPHORE.acquire();
+		testDir = tempDir.newFolder("es-sail-test").toPath();
+		super.setUp();
 	}
 
 	@Override
 	public void tearDown()
-		throws IOException, RepositoryException
+		throws RepositoryException, IOException
 	{
-		super.tearDown();
-		FileSystemUtils.deleteRecursively(new File(DATA_DIR));
+		try {
+			super.tearDown();
+		}
+		finally {
+			try {
+				FileSystemUtils.deleteRecursively(testDir.toFile());
+			}
+			finally {
+				ElasticsearchTestUtils.TEST_SEMAPHORE.release();
+			}
+		}
 	}
+
 }

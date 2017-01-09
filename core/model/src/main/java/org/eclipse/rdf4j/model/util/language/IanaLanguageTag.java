@@ -16,13 +16,17 @@ package org.eclipse.rdf4j.model.util.language;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.eclipse.rdf4j.model.util.Literals;
+
 /**
  * Language codes registered by IANA. An encapsulation of the IANA language registry found at <a href=
  * " http://www.iana.org/assignments/language-tags"> http://www.iana.org/assignments/language-tags</a>. The
  * values were updated on 8th July 2002 from a file dated 7th July 2002.
  * 
  * @author jjc
+ * @deprecated Use {@link Literals#normalizeLanguageTag(String) instead}
  */
+@Deprecated
 public class IanaLanguageTag extends LanguageTag {
 
 	static final Map<String, IanaLanguageTag[]> all = new HashMap<String, IanaLanguageTag[]>();

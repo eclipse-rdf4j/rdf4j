@@ -16,6 +16,8 @@ package org.eclipse.rdf4j.model.util.language;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.eclipse.rdf4j.model.util.Literals;
+
 /**
  * Language codes from ISO639-1 and ISO639-2.
  * <p>
@@ -24,8 +26,9 @@ import java.util.Map;
  * englangn.html</a> on the 24th July 2001, and dated 12th October 2000.
  * 
  * @author jjc
+ * @deprecated Use {@link Literals#normalizeLanguageTag(String) instead}
  */
-
+@Deprecated
 public class Iso639 implements LanguageTagCodes {
 
 	static final Map<String, Iso639> all = new HashMap<String, Iso639>();

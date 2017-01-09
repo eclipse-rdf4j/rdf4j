@@ -121,6 +121,7 @@ public class QueueCursor<E> extends LookAheadIteration<E, QueryEvaluationExcepti
 			return take;
 		}
 		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
 			checkException();
 			throw new QueryEvaluationException(e);
 		}

@@ -86,7 +86,7 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 
 	@Before
 	public void setUp()
-		throws IOException, RepositoryException
+		throws Exception
 	{
 		// setup a LuceneSail
 		MemoryStore memoryStore = new MemoryStore();
@@ -127,11 +127,15 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 	public void tearDown()
 		throws IOException, RepositoryException
 	{
-		if (connection != null) {
-			connection.close();
+		try {
+			if (connection != null) {
+				connection.close();
+			}
 		}
-		if (repository != null) {
-			repository.shutDown();
+		finally {
+			if (repository != null) {
+				repository.shutDown();
+			}
 		}
 	}
 
