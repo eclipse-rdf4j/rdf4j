@@ -1,10 +1,10 @@
-/**
+/*******************************************************************************
  * Copyright (c) 2016 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- */
+ *******************************************************************************/
 package org.eclipse.rdf4j.repository;
 
 import static org.junit.Assert.assertEquals;
@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryProvider;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 /**
@@ -38,6 +39,13 @@ import org.junit.Test;
  * @author Jeen Broekstra
  */
 public abstract class EvaluationStrategyTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	private Repository strictRepo;
 

@@ -13,7 +13,9 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
+import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -25,6 +27,7 @@ import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -74,6 +77,37 @@ public class SPARQLParserTest {
 	}
 
 	@Test
+	public void testInsertDataLineNumberReporting()
+		throws Exception
+	{
+		String insertDataString = "INSERT DATA {\n incorrect reference }";
+
+		try {
+			ParsedUpdate u = parser.parseUpdate(insertDataString, null);
+			fail("should have resulted in parse exception");
+		}
+		catch (MalformedQueryException e) {
+			assertTrue(e.getMessage().contains("line 2,"));
+		}
+
+	}
+
+	@Test
+	public void testDeleteDataLineNumberReporting()
+		throws Exception
+	{
+		String deleteDataString = "DELETE DATA {\n incorrect reference }";
+
+		try {
+			ParsedUpdate u = parser.parseUpdate(deleteDataString, null);
+			fail("should have resulted in parse exception");
+		}
+		catch (MalformedQueryException e) {
+			assertTrue(e.getMessage().contains("line 2,"));
+		}
+	}
+
+	@Test
 	public void testSES1922PathSequenceWithValueConstant()
 		throws Exception
 	{
@@ -113,6 +147,19 @@ public class SPARQLParserTest {
 		assertNotNull(te);
 		assertTrue(te instanceof Slice);
 		assertNull(te.getParentNode());
+	}
+
+	@Test
+	public void testParseIntegerObjectValue()
+		throws Exception
+	{
+		// test that the parser correctly parses the object value as an integer, instead of as a decimal. 
+		String query = "select ?Concept where { ?Concept a 1. ?Concept2 a 1. } ";
+		ParsedTupleQuery q = (ParsedTupleQuery)parser.parseQuery(query, null);
+
+		// all we're verifying is that the query is parsed without error. If it doesn't parse as integer but as a decimal, the
+		// parser will fail, because the statement pattern doesn't end with a full-stop.
+		assertNotNull(q);
 	}
 
 	@Test

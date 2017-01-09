@@ -18,18 +18,14 @@ RDF4J is a project governed by the [Eclipse Foundation](http://www.eclipse.org/)
 
 In order for any contributions to RDF4J to be accepted, you MUST do the following things:
 
-1. Digitally sign the [Eclipse Foundation Contributor License Agreement](http://www.eclipse.org/legal/CLA.php).
-To sign the Eclipse CLA you need to:
+1. Digitally sign the [Eclipse Contributor Agreement (ECA)](https://www.eclipse.org/legal/ECA.php). You can do this as follows: 
 
-  * Obtain an Eclipse Foundation userid. If you already use Eclipse Bugzilla or Gerrit you already have one of those. If you don’t, you need to
-[register](https://dev.eclipse.org/site_login/createaccount.php).
+  * If you haven't done so already, [register an Eclipse account](https://dev.eclipse.org/site_login/createaccount.php). Use the same email address when you register for the account that you intend to use on Git commit records. 
+  * Log into the [Eclipse projects forge](http://www.eclipse.org/contribute/cla); click on the "Eclipse Contributor Agreement" tab; and complete the form. See the [ECA FAQ](https://www.eclipse.org/legal/ecafaq.php) for more info. 
 
-  * Login into the [projects portal](https://projects.eclipse.org/), select “My Account”, and then the “Contributor License Agreement” tab. Read through, then sign.
-
-2. Add your github username in your Eclipse Foundation account settings. Log in it to Eclipse and go to account settings.
+2. Add your github username in your [Eclipse account settings](https://dev.eclipse.org/site_login/#open_tab_accountsettings).
 
 3. "Sign-off" your commits
-
 Every commit you make in your patch or pull request MUST be "signed off".
 You do this by adding the `-s` flag when you make the commit(s).
 
@@ -44,7 +40,7 @@ Once the legalities are out of the way you can dig in. Here's how:
 5. Make sure you include tests.
 6. Make sure the test suite passes after your changes.
 7. Commit your changes into the branch. Use meaningful commit messages. Reference the issue number in the commit message (for example "issue #276: added null check").
-8. **Sign off** every commit you do (as explained in the [legal stuff](#legal-stuff).
+8. **Sign off** every commit you do, using the `-s` flag (as explained in the [legal stuff](#legal-stuff).
 9. Optionally squash your commits (not necessary, but if you want to clean your commit history a bit, _this_ is the point to do it).
 10. Push your changes to your branch in your forked repository.
 11. If your contribution is complete, use GitHub to submit a pull request (PR)
@@ -127,5 +123,14 @@ principles:
 2. Use unix newlines consistently
 3. Use UTF-8 file encoding
 4. Set line width to 110 characters 
-5. Make sure every new source file starts with the Eclipse copyright license header
-
+5. Make sure every new source file starts with the correct Eclipse copyright license header. The license header to use is:
+```
+/*******************************************************************************
+ * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+ ```
+ **NB** for older existing source code, RDF4J uses a slightly different copyright header, mentioning 'Aduna' as additional copyright holder . Please make sure you do not use that different header for any new contributions. 

@@ -18,6 +18,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.Iterator;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
@@ -47,6 +48,8 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
@@ -58,11 +61,18 @@ import org.junit.rules.Timeout;
  */
 public abstract class RDFStoreTest {
 
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
 	/**
 	 * Timeout all individual tests after 1 minute.
 	 */
 	@Rule
-	public Timeout to = new Timeout(60000);
+	public Timeout to = new Timeout(60, TimeUnit.SECONDS);
 
 	/*-----------*
 	 * Constants *
@@ -168,8 +178,14 @@ public abstract class RDFStoreTest {
 	{
 		try {
 			if (con.isOpen()) {
-				con.rollback();
-				con.close();
+				try {
+					if (con.isActive()) {
+						con.rollback();
+					}
+				}
+				finally {
+					con.close();
+				}
 			}
 		}
 		finally {
@@ -718,6 +734,8 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
+	@Ignore("test is fundamentelly flawed as it uses multithreaded access on the same connection")
+	@Deprecated
 	public void testMultiThreadedAccess() {
 
 		Runnable runnable = new Runnable() {

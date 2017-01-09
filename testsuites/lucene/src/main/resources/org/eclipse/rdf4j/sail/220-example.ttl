@@ -1,0 +1,27 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+@prefix t: <urn:test.org/onto#> .
+
+
+
+<urn:test.org/data/rec1> a t:Data ;
+   rdfs:label "In egestas gravida" ;
+   t:number 1 .
+
+<urn:test.org/data/rec2> a t:Data ;
+   rdfs:label "Sed ornare, leo" ;
+   t:number 2 .
+
+<urn:test.org/data/rec3> a t:Data ;
+   rdfs:label "Suspendisse at justo" ;
+   t:number 3 .
+
+<urn:test.org/data/rec4> a t:Data ;
+   rdfs:label "Nam viverra est" ;
+   t:number 4 .
+
+<urn:test.org/data/rec5> a t:Data ;
+   rdfs:label "Donec risus quam" ;
+   t:number 5 .
+

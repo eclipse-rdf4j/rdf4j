@@ -24,10 +24,12 @@ import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -222,6 +224,68 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		}
 		finally {
 			server.stop();
+		}
+	}
+
+	/**
+	 * Verify that BIND clause alias from the SERVICE clause gets added to the result set.
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/646">#646</a>
+	 */
+	@Test
+	public void testValuesBindClauseHandling()
+		throws Exception
+	{
+		String query = "select * { service <" + getRepositoryUrl(1)
+				+ "> { Bind(1 as ?val) . VALUES ?x {1 2} . } }";
+
+		try (RepositoryConnection conn = localRepository.getConnection()) {
+			TupleQuery tq = conn.prepareTupleQuery(query);
+			TupleQueryResult tqr = tq.evaluate();
+
+			assertNotNull(tqr);
+			assertTrue(tqr.hasNext());
+
+			List<BindingSet> result = QueryResults.asList(tqr);
+			assertEquals(2, result.size());
+			for (BindingSet bs : result) {
+				assertTrue(bs.hasBinding("val"));
+				assertEquals(1, Literals.getIntValue(bs.getValue("val"), 0));
+				assertTrue(bs.hasBinding("x"));
+				int x = Literals.getIntValue(bs.getValue("x"), 0);
+				assertTrue(x == 1 || x == 2);
+			}
+		}
+	}
+
+	/**
+	 * Verify that all relevant variable names from the SERVICE clause get added to the result set when
+	 * a BIND clause is present.
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/703">#703</a>
+	 */
+	@Test
+	public void testVariableNameHandling()
+			throws Exception
+	{
+		String query = "select * { service <" + getRepositoryUrl(1)
+				+ "> { ?s ?p ?o . Bind(str(?o) as ?val) .  } }";
+
+		// add some data to the remote endpoint (we don't care about the exact contents)
+		prepareTest(null, Arrays.asList("/testcases-service/data13.ttl"));
+		try (RepositoryConnection conn = localRepository.getConnection()) {
+			TupleQuery tq = conn.prepareTupleQuery(query);
+			TupleQueryResult tqr = tq.evaluate();
+
+			assertNotNull(tqr);
+			assertTrue(tqr.hasNext());
+
+			List<BindingSet> result = QueryResults.asList(tqr);
+			assertTrue(result.size() > 0);
+			for (BindingSet bs : result) {
+				assertTrue(bs.hasBinding("val"));
+				assertTrue(bs.hasBinding("s"));
+				assertTrue(bs.hasBinding("p"));
+				assertTrue(bs.hasBinding("o"));
+			}
 		}
 	}
 

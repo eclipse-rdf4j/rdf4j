@@ -30,9 +30,17 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 public class SnapshotTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	private Repository repo;
 
@@ -106,9 +114,17 @@ public class SnapshotTest {
 	public void tearDown()
 		throws Exception
 	{
-		a.close();
-		b.close();
-		repo.shutDown();
+		try {
+			a.close();
+		}
+		finally {
+			try {
+				b.close();
+			}
+			finally {
+				repo.shutDown();
+			}
+		}
 	}
 
 	@Test

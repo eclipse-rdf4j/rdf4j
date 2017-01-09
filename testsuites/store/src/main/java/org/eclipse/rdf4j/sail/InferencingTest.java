@@ -28,9 +28,17 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 public abstract class InferencingTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	/*-----------*
 	 * Constants *
@@ -55,59 +63,57 @@ public abstract class InferencingTest {
 		Repository repository = new SailRepository(sailStack);
 		repository.initialize();
 
-		RepositoryConnection con = repository.getConnection();
-		con.begin();
-
-		// clear the input store
-		con.clear();
-		con.commit();
-
-		// Upload input data
-		InputStream stream = getClass().getResourceAsStream(inputData);
-		try {
+		try (RepositoryConnection con = repository.getConnection();) {
 			con.begin();
-			con.add(stream, inputData, RDFFormat.NTRIPLES);
+
+			// clear the input store
+			con.clear();
 			con.commit();
 
-			entailedStatements = Iterations.addAll(con.getStatements(null, null, null, true),
-					new HashSet<Statement>());
-		}
-		catch (Exception e) {
-			if (con.isActive()) {
-				con.rollback();
+			// Upload input data
+
+			try (InputStream stream = getClass().getResourceAsStream(inputData);) {
+				con.begin();
+				con.add(stream, inputData, RDFFormat.NTRIPLES);
+				con.commit();
+
+				entailedStatements = Iterations.addAll(con.getStatements(null, null, null, true),
+						new HashSet<Statement>());
+			}
+			catch (Exception e) {
+				if (con.isActive()) {
+					con.rollback();
+				}
 			}
 			e.printStackTrace();
 		}
 		finally {
-			stream.close();
-			con.close();
+			repository.shutDown();
 		}
 
-		// Upload output data
 		Repository outputRepository = new SailRepository(new MemoryStore());
 		outputRepository.initialize();
-		con = outputRepository.getConnection();
+		// Upload output data
+		try (RepositoryConnection con = outputRepository.getConnection();
+				InputStream stream = getClass().getResourceAsStream(outputData);)
+		{
+			try {
+				con.begin();
+				con.add(stream, outputData, RDFFormat.NTRIPLES);
+				con.commit();
 
-		stream = getClass().getResourceAsStream(outputData);
-		try {
-			con.begin();
-			con.add(stream, outputData, RDFFormat.NTRIPLES);
-			con.commit();
-
-			expectedStatements = Iterations.addAll(con.getStatements(null, null, null, false),
-					new HashSet<Statement>());
-		}
-		catch (Exception e) {
-			if (con.isActive()) {
-				con.rollback();
+				expectedStatements = Iterations.addAll(con.getStatements(null, null, null, false),
+						new HashSet<Statement>());
+			}
+			catch (Exception e) {
+				if (con.isActive()) {
+					con.rollback();
+				}
 			}
 			e.printStackTrace();
 		}
 		finally {
-			stream.close();
-			con.close();
 			outputRepository.shutDown();
-			repository.shutDown();
 		}
 
 		// Check whether all expected statements are present in the entailment
@@ -139,8 +145,7 @@ public abstract class InferencingTest {
 		File tmpFile = new File(tmpDir, "junit-" + name + ".nt");
 		tmpFile.createNewFile();
 
-		OutputStream export = new FileOutputStream(tmpFile);
-		try {
+		try (OutputStream export = new FileOutputStream(tmpFile);) {
 			RDFWriter writer = Rio.createWriter(RDFFormat.NTRIPLES, export);
 
 			writer.startRDF();
@@ -148,9 +153,6 @@ public abstract class InferencingTest {
 				writer.handleStatement(st);
 			}
 			writer.endRDF();
-		}
-		finally {
-			export.close();
 		}
 
 		return tmpFile;

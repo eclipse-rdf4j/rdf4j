@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.query.algebra.UpdateExpr;
  * @author jeen
  * @author Arjohn Kampman
  */
-public interface SailConnection {
+public interface SailConnection extends AutoCloseable {
 
 	/**
 	 * Checks whether this SailConnection is open. A SailConnection is open from the moment it is created

@@ -1,8 +1,12 @@
 # Welcome to the RDF4J code repository
 
+[![Build Status](https://travis-ci.org/eclipse/rdf4j.svg?branch=master)](https://travis-ci.org/eclipse/rdf4j)
+
 This is the main code repository for the Eclipse RDF4J project. Please see
 [RDF4J.org](http://rdf4j.org) for detailed information about RDF4J, including
-user documentation and download links.
+user documentation and [downloads of the latest release](http://rdf4j.org/download).
+
+[![Visit our IRC channel](https://kiwiirc.com/buttons/irc.freenode.net/rdf4j.png)](https://kiwiirc.com/client/irc.freenode.net/?nick=rdf4j-user|?#rdf4j)
 
 ## Keen to contribute?
 
@@ -11,7 +15,7 @@ guidelines](https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md
 
 The short version:
 
-1. Digitally sign the [Eclipse Foundation Contributor License Agreement](http://www.eclipse.org/legal/CLA.php).
+1. Digitally sign the [Eclipse Contributor Agreement (ECA)](https://www.eclipse.org/legal/ECA.php). You can do this by logging into the [Eclipse projects forge](http://www.eclipse.org/contribute/cla); click on "Eclipse Contributor Agreement"; and Complete the form. Be sure to use the same email address when you register for the account that you intend to use on Git commit records. See the [ECA FAQ](https://www.eclipse.org/legal/ecafaq.php) for more info. 
 2. Create an issue in the [RDF4J GitHub issue tracker](https://github.com/eclipse/rdf4j/issues) that describes your improvement, new feature, or bug fix.
 3. Fork the GitHub repository.
 4. Create a new branch (starting from master) for your issue. 
@@ -23,4 +27,3 @@ The short version:
 
 These steps are explained in more detail in the [Contributor
 guidelines](https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md).
-

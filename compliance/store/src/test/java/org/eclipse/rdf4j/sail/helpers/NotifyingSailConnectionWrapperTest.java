@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 /**
@@ -27,6 +28,13 @@ import org.junit.Test;
  * @author Dale Visser
  */
 public class NotifyingSailConnectionWrapperTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	/**
 	 * @author Dale Visser
@@ -59,7 +67,7 @@ public class NotifyingSailConnectionWrapperTest {
 	MemoryStore memoryStore = new MemoryStore();
 
 	@Before
-	public void before()
+	public void setUp()
 		throws SailException
 	{
 		memoryStore.initialize();
@@ -68,11 +76,15 @@ public class NotifyingSailConnectionWrapperTest {
 	}
 
 	@After
-	public void after()
+	public void tearDown()
 		throws SailException
 	{
-		wrapper.close();
-		memoryStore.shutDown();
+		try {
+			wrapper.close();
+		}
+		finally {
+			memoryStore.shutDown();
+		}
 	}
 
 	/**

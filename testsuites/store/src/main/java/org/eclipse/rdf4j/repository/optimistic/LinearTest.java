@@ -16,20 +16,31 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.OptimisticIsolationTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 public class LinearTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	private Repository repo;
 
@@ -103,9 +114,17 @@ public class LinearTest {
 	public void tearDown()
 		throws Exception
 	{
-		a.close();
-		b.close();
-		repo.shutDown();
+		try {
+			a.close();
+		}
+		finally {
+			try {
+				b.close();
+			}
+			finally {
+				repo.shutDown();
+			}
+		}
 	}
 
 	@Test
@@ -381,23 +400,21 @@ public class LinearTest {
 			Resource... ctx)
 		throws Exception
 	{
-		return QueryResults.asList(con.getStatements(subj, pred, obj, inf, ctx)).size();
+		try(RepositoryResult<Statement> statements = con.getStatements(subj, pred, obj, inf, ctx);) {
+			return QueryResults.asList(statements).size();
+		}
 	}
 
 	private List<Value> eval(String var, RepositoryConnection con, String qry)
 		throws Exception
 	{
-		TupleQueryResult result;
-		result = con.prepareTupleQuery(QueryLanguage.SPARQL, qry, NS).evaluate();
-		try {
+		TupleQuery tq = con.prepareTupleQuery(QueryLanguage.SPARQL, qry, NS);
+		try (TupleQueryResult result = tq.evaluate();) {
 			List<Value> list = new ArrayList<Value>();
 			while (result.hasNext()) {
 				list.add(result.next().getValue(var));
 			}
 			return list;
-		}
-		finally {
-			result.close();
 		}
 	}
 

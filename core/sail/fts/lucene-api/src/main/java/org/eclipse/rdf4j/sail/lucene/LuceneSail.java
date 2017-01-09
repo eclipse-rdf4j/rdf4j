@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -31,10 +32,14 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -252,6 +257,11 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public static final String INCOMPLETE_QUERY_FAIL_KEY = "incompletequeryfail";
 
 	/**
+	 * See {@link TupleFunctionEvaluationMode}.
+	 */
+	public static final String EVALUATION_MODE_KEY = "evaluationMode";
+
+	/**
 	 * The LuceneIndex holding the indexed literals.
 	 */
 	private volatile SearchIndex luceneIndex;
@@ -261,6 +271,12 @@ public class LuceneSail extends NotifyingSailWrapper {
 	private volatile String reindexQuery = "SELECT ?s ?p ?o ?c WHERE {{?s ?p ?o} UNION {GRAPH ?c {?s ?p ?o.}}} ORDER BY ?s";
 
 	private volatile boolean incompleteQueryFails = true;
+
+	private volatile TupleFunctionEvaluationMode evaluationMode = TupleFunctionEvaluationMode.TRIPLE_SOURCE;
+
+	private TupleFunctionRegistry tupleFunctionRegistry = TupleFunctionRegistry.getInstance();
+
+	private FederatedServiceResolver serviceResolver = new FederatedServiceResolverImpl();
 
 	private Set<IRI> indexedFields;
 
@@ -351,11 +367,17 @@ public class LuceneSail extends NotifyingSailWrapper {
 		}
 
 		try {
-			if (parameters.containsKey(REINDEX_QUERY_KEY))
+			if (parameters.containsKey(REINDEX_QUERY_KEY)) {
 				setReindexQuery(parameters.getProperty(REINDEX_QUERY_KEY));
-			if (parameters.containsKey(INCOMPLETE_QUERY_FAIL_KEY))
+			}
+			if (parameters.containsKey(INCOMPLETE_QUERY_FAIL_KEY)) {
 				setIncompleteQueryFails(
 						Boolean.parseBoolean(parameters.getProperty(INCOMPLETE_QUERY_FAIL_KEY)));
+			}
+			if (parameters.containsKey(EVALUATION_MODE_KEY)) {
+				setEvaluationMode(
+						TupleFunctionEvaluationMode.valueOf(parameters.getProperty(EVALUATION_MODE_KEY)));
+			}
 			if (luceneIndex == null) {
 				initializeLuceneIndex();
 			}
@@ -365,12 +387,19 @@ public class LuceneSail extends NotifyingSailWrapper {
 		}
 	}
 
-	protected void initializeLuceneIndex()
+	protected static SearchIndex createSearchIndex(Properties parameters)
 		throws Exception
 	{
 		String indexClassName = parameters.getProperty(INDEX_CLASS_KEY, DEFAULT_INDEX_CLASS);
 		SearchIndex index = (SearchIndex)Class.forName(indexClassName).newInstance();
 		index.initialize(parameters);
+		return index;
+	}
+
+	protected void initializeLuceneIndex()
+		throws Exception
+	{
+		SearchIndex index = createSearchIndex(parameters);
 		setLuceneIndex(index);
 	}
 
@@ -422,6 +451,43 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public void setIncompleteQueryFails(boolean incompleteQueryFails) {
 		this.setParameter(INCOMPLETE_QUERY_FAIL_KEY, Boolean.toString(incompleteQueryFails));
 		this.incompleteQueryFails = incompleteQueryFails;
+	}
+
+	/**
+	 * See EVALUATION_MODE_KEY parameter.
+	 */
+	public TupleFunctionEvaluationMode getEvaluationMode() {
+		return evaluationMode;
+	}
+
+	/**
+	 * See EVALUATION_MODE_KEY parameter.
+	 */
+	public void setEvaluationMode(TupleFunctionEvaluationMode mode) {
+		Objects.requireNonNull(mode);
+		if (mode == TupleFunctionEvaluationMode.SERVICE) {
+			throw new IllegalArgumentException("Service evaluation mode is not currently supported");
+		}
+		this.setParameter(EVALUATION_MODE_KEY, mode.name());
+		this.evaluationMode = mode;
+	}
+
+	public TupleFunctionRegistry getTupleFunctionRegistry() {
+		return tupleFunctionRegistry;
+	}
+
+	public void setTupleFunctionRegistry(TupleFunctionRegistry registry) {
+		this.tupleFunctionRegistry = registry;
+	}
+
+	public FederatedServiceResolver getFederatedServiceResolver() {
+		return serviceResolver;
+	}
+
+	@Override
+	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+		serviceResolver = resolver;
+		super.setFederatedServiceResolver(resolver);
 	}
 
 	/**
@@ -535,7 +601,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	protected Collection<SearchQueryInterpreter> getSearchQueryInterpreters() {
-		return Arrays.<SearchQueryInterpreter> asList(new QuerySpecBuilder(incompleteQueryFails),
+		return Arrays.<SearchQueryInterpreter> asList(
+				new QuerySpecBuilder(incompleteQueryFails),
 				new DistanceQuerySpecBuilder(luceneIndex), new GeoRelationQuerySpecBuilder(luceneIndex));
 	}
 }
