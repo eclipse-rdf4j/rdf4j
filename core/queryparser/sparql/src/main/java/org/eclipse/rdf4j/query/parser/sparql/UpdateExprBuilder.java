@@ -37,7 +37,6 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDeleteData;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDeleteWhere;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDrop;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphOrDefault;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphPatternGroup;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphRefAll;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInsertClause;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInsertData;
@@ -47,11 +46,12 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMove;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQuadsNotTriples;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUnparsedQuadDataBlock;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpdate;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTWhereClause;
 import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 
 /**
  * Extension of TupleExprBuilder that builds Update Expressions.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class UpdateExprBuilder extends TupleExprBuilder {
@@ -83,7 +83,7 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	{
 		ASTUnparsedQuadDataBlock dataBlock = node.jjtGetChild(ASTUnparsedQuadDataBlock.class);
 		InsertData insertData = new InsertData(dataBlock.getDataBlock());
-		
+
 		insertData.setLineNumberOffset(dataBlock.getAddedDefaultPrefixes());
 		return insertData;
 	}
@@ -95,7 +95,7 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 
 		ASTUnparsedQuadDataBlock dataBlock = node.jjtGetChild(ASTUnparsedQuadDataBlock.class);
 		DeleteData deleteData = new DeleteData(dataBlock.getDataBlock());
-		
+
 		deleteData.setLineNumberOffset(dataBlock.getAddedDefaultPrefixes());
 		return deleteData;
 
@@ -312,7 +312,7 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	public Modify visit(ASTModify node, Object data)
 		throws VisitorException
 	{
-		ASTGraphPatternGroup whereClause = node.getWhereClause();
+		ASTWhereClause whereClause = node.getWhereClause();
 
 		TupleExpr where = null;
 		if (whereClause != null) {
