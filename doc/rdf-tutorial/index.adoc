@@ -153,7 +153,7 @@ The above bit of code creates the exact same model that we saw in link:#code-exa
 
 == Blank nodes
 
-Sometimes, we may want to model some facts without explicitly giving all resources involved in that fact an identifier. For example, consider the following sentenct: "Picasso has created a painting depicting cubes, and using a blue color scheme". There's several facts in this sentence:
+Sometimes, we may want to model some facts without explicitly giving all resources involved in that fact an identifier. For example, consider the following sentence: "Picasso has created a painting depicting cubes, and using a blue color scheme". There's several facts in this sentence:
 
 1. Picasso created some painting;
 2. that painting depicts cubes;
