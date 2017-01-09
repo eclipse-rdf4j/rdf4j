@@ -30,9 +30,13 @@ import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public abstract class InferencingTest {
 
+	private static final Logger logger = LoggerFactory.getLogger(InferencingTest.class);
+	
 	@BeforeClass
 	public static void setUpClass()
 		throws Exception
@@ -84,8 +88,8 @@ public abstract class InferencingTest {
 				if (con.isActive()) {
 					con.rollback();
 				}
+				logger.error("exception while uploading input data", e);
 			}
-			e.printStackTrace();
 		}
 		finally {
 			repository.shutDown();
@@ -109,8 +113,8 @@ public abstract class InferencingTest {
 				if (con.isActive()) {
 					con.rollback();
 				}
+				logger.error("exception while uploading output data", e);
 			}
-			e.printStackTrace();
 		}
 		finally {
 			outputRepository.shutDown();
