@@ -204,7 +204,7 @@ for(Statement st: model) {
 }
 ----
 
-=== Example 04: adding an artwork's title in Dutch and Engish
+=== Example 04: adding an artwork's title in Dutch and English
 
 {examples}model/Example04LanguageTags.java[Example 04] shows how we can add the title of the painting in both Dutch and English, and how we can retrieve this information back from the model:
 
