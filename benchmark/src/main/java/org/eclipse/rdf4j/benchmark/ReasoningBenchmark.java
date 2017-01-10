@@ -8,11 +8,12 @@
 
 package org.eclipse.rdf4j.benchmark;
 
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencer;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -33,8 +34,11 @@ import java.util.concurrent.TimeUnit;
 @State(Scope.Thread)
 public class ReasoningBenchmark {
 
-    @Param({"moreRdfs", "longChain", "medium", "simple"})
-    public String directory;
+
+    private int expectedCount;
+
+    @Param({"moreRdfs::3164", "longChain::5599", "medium::441", "simple::147"})
+    public String param;
 
     @Benchmark
     @BenchmarkMode(Mode.AverageTime)
@@ -121,6 +125,23 @@ public class ReasoningBenchmark {
 
             connection.commit();
         }
+
+        checkSize(sail);
+    }
+
+    private void checkSize(SailRepository sail) {
+
+        assert getSize(sail) == expectedCount : "Was "+getSize(sail)+" but expected "+expectedCount;
+
+    }
+
+    private int getSize(SailRepository sail) {
+        try (SailRepositoryConnection connection = sail.getConnection()) {
+            try (TupleQueryResult evaluate = connection.prepareTupleQuery("select (count (*) as ?count) where {?a ?b ?c}").evaluate()) {
+                 return ((Literal) evaluate.next().getBinding("count").getValue()).intValue();
+
+            }
+        }
     }
 
     @Benchmark
@@ -139,6 +160,8 @@ public class ReasoningBenchmark {
             addAllDataMultipleTransactions(connection);
 
         }
+        checkSize(sail);
+
     }
 
     @Benchmark
@@ -153,6 +176,8 @@ public class ReasoningBenchmark {
             addAllDataSingleTransaction(connection);
             connection.commit();
         }
+        checkSize(sail);
+
     }
 
     @Benchmark
@@ -165,6 +190,8 @@ public class ReasoningBenchmark {
         try (SailRepositoryConnection connection = sail.getConnection()) {
             addAllDataMultipleTransactions(connection);
         }
+        checkSize(sail);
+
     }
 
     private SailRepository createSchema() throws IOException {
@@ -218,7 +245,10 @@ public class ReasoningBenchmark {
     }
 
     private InputStream resourceAsStream(String resourceName) {
-        return ReasoningBenchmark.class.getClassLoader().getResourceAsStream(directory + "/" + resourceName);
+        String[] split = param.split("\\:\\:");
+
+        this.expectedCount = Integer.parseInt(split[1]);
+        return ReasoningBenchmark.class.getClassLoader().getResourceAsStream(split[0] + "/" + resourceName);
 
     }
 
