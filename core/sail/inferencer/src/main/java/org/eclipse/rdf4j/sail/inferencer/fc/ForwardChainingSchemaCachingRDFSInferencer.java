@@ -547,11 +547,4 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends AbstractForwardC
 
 		return iris != null ? iris : Collections.emptySet();
 	}
-
-	/**
-	 * @return
-	 */
-	long getSchemaSize() {
-		return schemaStatements.size() + properties.size() + types.size();
-	}
 }

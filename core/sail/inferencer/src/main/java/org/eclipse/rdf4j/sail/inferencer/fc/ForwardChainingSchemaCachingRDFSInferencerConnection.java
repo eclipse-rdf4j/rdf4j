@@ -12,16 +12,29 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * @author Håvard Mikkelsen Ottestad
@@ -36,7 +49,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 
 	private boolean inferredCleared = false;
 
-	private long originalSchemaSize = -1;
 	
 	ForwardChainingSchemaCachingRDFSInferencerConnection(
 			ForwardChainingSchemaCachingRDFSInferencer forwardChainingSchemaCachingRDFSInferencer,
@@ -125,12 +137,20 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	}
 
 	@Override
+	public void begin()
+		throws SailException
+	{
+		super.begin();
+
+	}
+
+	@Override
 	public void begin(IsolationLevel level)
 		throws UnknownSailTransactionStateException
 	{
 		super.begin(level);
 		inferencerSail.readLock(this);
-		originalSchemaSize = inferencerSail.getSchemaSize();
+
 	}
 
 	@Override
@@ -147,7 +167,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	{
 		prepareIteration();
 
-		if (inferencerSail.schema == null && originalSchemaSize != inferencerSail.getSchemaSize())
+		if (inferencerSail.schema == null)
 		{
 			inferencerSail.upgradeLock(this);
 
