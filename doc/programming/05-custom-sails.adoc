@@ -49,12 +49,11 @@ Repository repo = new SailRepository(lucenesail);
 repo.initialize();
 
 // Get the subjects and a highlighted snippet
-String qry = 
-	"PREFIX search: <http://www.openrdf.org/contrib/lucenesail#> " +
-	"SELECT ?subj ?text " +
-	"WHERE { ?subj search:matches [" +
-						" search:query ?term ; " +
-						" search:snippet ?text ] } ";
+String qry = "PREFIX search: <http://www.openrdf.org/contrib/lucenesail#> " +
+			"SELECT ?subj ?text " +
+			"WHERE { ?subj search:matches [" +
+					" search:query ?term ; " +
+					" search:snippet ?text ] } ";
 
 List<BindingSet> results;	
 try (RepositoryConnection con = repo.getConnection()) {
