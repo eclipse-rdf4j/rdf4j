@@ -255,6 +255,7 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends AbstractForwardC
 				try (RepositoryConnection schemaConnection = schema.getConnection()) {
 					schemaConnection.begin();
 					tbox = QueryResults.asModel(schemaConnection.getStatements(null, null, null));
+					tbox.forEach(connection::processForSchemaCache);
 					schemaConnection.commit();
 				}
 			}
