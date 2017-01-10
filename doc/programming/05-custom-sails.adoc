@@ -35,7 +35,7 @@ The LuceneSail is a stacked Sail: To use it, simply wrap your base SAIL with it:
     ...
     // wrap base sail
     lucenesail.setBaseSail(baseSail);
----
+----
 
 === Full text search
 
@@ -69,7 +69,7 @@ For example, search all literals containing words starting with "alic" (e.g. per
 			System.out.println(res.getValue("subj").stringValue()); 
 			System.out.println(res.getValue("text").stringValue());
 	});
----	
+----
 
 === SearchIndex implementations
 
