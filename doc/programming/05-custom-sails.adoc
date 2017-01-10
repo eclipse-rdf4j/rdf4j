@@ -26,6 +26,8 @@ The ‘virtual’ properties in the search: namespace have the following meaning
 
 The LuceneSail is a stacked Sail: To use it, simply wrap your base SAIL with it:
 
+[source,java]
+----
 	Sail baseSail = new NativeStore(new File("."));
     LuceneSail lucenesail = new LuceneSail();
     // set any parameters
@@ -33,22 +35,25 @@ The LuceneSail is a stacked Sail: To use it, simply wrap your base SAIL with it:
     ...
     // wrap base sail
     lucenesail.setBaseSail(baseSail);
+---
 
 === Full text search
 
 Search is case-insensitive, wildcards and other modifiers can be used to broaden the search.
 For example, search all literals containing words starting with "alic" (e.g. persons named "Alice"):
-	
+
+[source,java]
+----	
 	Repository repo = new SailRepository(lucenesail);
 	repo.initialize();
-	 
+
 	String qry = 
 		"PREFIX search: <http://www.openrdf.org/contrib/lucenesail#> " +
 		"SELECT ?subj ?text " +
 		"WHERE { ?subj search:matches [" +
 						" search:query ?term ; " +
 						" search:snippet ?text ] } ";
-	
+
 	List<BindingSet> results;	
 	try (RepositoryConnection con = repo.getConnection()) {
 		ValueFactory fac = con.getValueFactory();
@@ -59,12 +64,12 @@ For example, search all literals containing words starting with "alic" (e.g. per
 	
 		results = QueryResults.asList(tq.evaluate());
 	}
-	 
+
 	results.forEach(res -> { 
 			System.out.println(res.getValue("subj").stringValue()); 
 			System.out.println(res.getValue("text").stringValue());
 	});
-	
+---	
 
 === SearchIndex implementations
 
