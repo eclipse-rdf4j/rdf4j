@@ -30,7 +30,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerMemInferencingTest extend
 	}
 
 	@Test
-	public void testBlankNodePredicateInference(){
+	public void testBlankNodePredicateInference() {
 		Repository sailRepository = new SailRepository(createSail());
 		sailRepository.initialize();
 		ValueFactory vf = sailRepository.getValueFactory();
@@ -39,12 +39,15 @@ public class ForwardChainingSchemaCachingRDFSInferencerMemInferencingTest extend
 			BNode bNode = vf.createBNode();
 			connection.add(vf.createStatement(vf.createIRI("http://a"), RDFS.SUBPROPERTYOF, bNode)); // 1
 			connection.add(vf.createStatement(bNode, RDFS.DOMAIN, vf.createIRI("http://c"))); // 2
-			connection.add(vf.createStatement(vf.createIRI("http://d"), vf.createIRI("http://a"), vf.createIRI("http://e"))); // 3
+			connection.add(vf.createStatement(vf.createIRI("http://d"), vf.createIRI("http://a"),
+					vf.createIRI("http://e"))); // 3
 		}
 
 		try (RepositoryConnection connection = sailRepository.getConnection()) {
-			boolean correctInference = connection.hasStatement(vf.createIRI("http://d"), RDF.TYPE, vf.createIRI("http://c"), true);
-			assertTrue("d should be type c, because 3 and 1 entail 'd _:bNode e' with 2 entail 'd type c'", correctInference);
+			boolean correctInference = connection.hasStatement(vf.createIRI("http://d"), RDF.TYPE,
+					vf.createIRI("http://c"), true);
+			assertTrue("d should be type c, because 3 and 1 entail 'd _:bNode e' with 2 entail 'd type c'",
+					correctInference);
 		}
 
 	}
