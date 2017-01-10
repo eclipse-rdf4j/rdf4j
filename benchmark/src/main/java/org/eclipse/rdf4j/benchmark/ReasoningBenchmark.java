@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -37,7 +38,7 @@ public class ReasoningBenchmark {
 
     private int expectedCount;
 
-    @Param({"moreRdfs::3164", "longChain::5599", "medium::441", "simple::147"})
+    @Param({"moreRdfs::12180", "longChain::5803", "medium::544", "simple::152"})
     public String param;
 
     @Benchmark
