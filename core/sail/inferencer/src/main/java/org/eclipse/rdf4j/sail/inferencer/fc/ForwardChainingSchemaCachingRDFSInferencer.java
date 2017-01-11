@@ -254,8 +254,7 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends AbstractForwardC
     }
 
     public ValueFactory getValueFactory() {
-
-        return SimpleValueFactory.getInstance();
+    	return getBaseSail().getValueFactory();
     }
 
     static public ForwardChainingSchemaCachingRDFSInferencer fastInstantiateFrom(ForwardChainingSchemaCachingRDFSInferencer baseSail, NotifyingSail store) {
