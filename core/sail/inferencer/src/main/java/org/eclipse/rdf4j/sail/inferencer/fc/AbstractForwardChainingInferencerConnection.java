@@ -94,8 +94,8 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	public void flushUpdates()
 		throws SailException
 	{
-		if (statementsRemoved) {
-			logger.debug("statements removed, starting inferencing from scratch");
+		if (needsFullRecomputation()) {
+			logger.debug("full recomputation needed, starting inferencing from scratch");
 			clearInferred();
 			super.flushUpdates();
 
@@ -193,5 +193,12 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 
 	protected boolean hasNewStatements() {
 		return newStatements != null;
+	}
+	
+	/**
+	 * Indicates if a full recomputation of the deductive closure is needed. 
+	 */
+	protected boolean needsFullRecomputation() {
+		return statementsRemoved;
 	}
 }
