@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -203,142 +204,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Abstra
 
     @Override
     protected Model createModel() {
-        return new Model() {
-            @Override
-            public Model unmodifiable() {
-                return null;
-            }
-
-            @Override
-            public Set<Namespace> getNamespaces() {
-                return null;
-            }
-
-            @Override
-            public void setNamespace(Namespace namespace) {
-
-            }
-
-            @Override
-            public Optional<Namespace> removeNamespace(String s) {
-                return null;
-            }
-
-            @Override
-            public boolean contains(Resource resource, IRI iri, Value value, Resource... resources) {
-                return false;
-            }
-
-            @Override
-            public boolean add(Resource resource, IRI iri, Value value, Resource... resources) {
-                return false;
-            }
-
-            @Override
-            public boolean clear(Resource... resources) {
-                return false;
-            }
-
-            @Override
-            public boolean remove(Resource resource, IRI iri, Value value, Resource... resources) {
-                return false;
-            }
-
-            @Override
-            public Model filter(Resource resource, IRI iri, Value value, Resource... resources) {
-                return null;
-            }
-
-            @Override
-            public Set<Resource> subjects() {
-                return null;
-            }
-
-            @Override
-            public Set<IRI> predicates() {
-                return null;
-            }
-
-            @Override
-            public Set<Value> objects() {
-                return null;
-            }
-
-            @Override
-            public ValueFactory getValueFactory() {
-                return null;
-            }
-
-            @Override
-            public Iterator<Statement> match(Resource resource, IRI iri, Value value, Resource... resources) {
-                return null;
-            }
-
-            @Override
-            public int size() {
-                return 0;
-            }
-
-            @Override
-            public boolean isEmpty() {
-                return false;
-            }
-
-            @Override
-            public boolean contains(Object o) {
-                return false;
-            }
-
-            @Override
-            public Iterator<Statement> iterator() {
-                return null;
-            }
-
-            @Override
-            public Object[] toArray() {
-                return new Object[0];
-            }
-
-            @Override
-            public <T> T[] toArray(T[] a) {
-                return null;
-            }
-
-            @Override
-            public boolean add(Statement statement) {
-                return false;
-            }
-
-            @Override
-            public boolean remove(Object o) {
-                return false;
-            }
-
-            @Override
-            public boolean containsAll(Collection<?> c) {
-                return false;
-            }
-
-            @Override
-            public boolean addAll(Collection<? extends Statement> c) {
-                return false;
-            }
-
-            @Override
-            public boolean removeAll(Collection<?> c) {
-                return false;
-            }
-
-            @Override
-            public boolean retainAll(Collection<?> c) {
-                return false;
-            }
-
-            @Override
-            public void clear() {
-
-            }
-        };
+       return new LinkedHashModelFactory().createEmptyModel();
     }
 
     @Override
