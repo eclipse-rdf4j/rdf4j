@@ -36,7 +36,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 
 	private final NotifyingSailConnection connection;
 
-	long lockStamp = 0;
+	private boolean hasWriteLock = false;
 
 	ForwardChainingSchemaCachingRDFSInferencerConnection(
 			ForwardChainingSchemaCachingRDFSInferencer inferencingSail, InferencerConnection e)
@@ -46,68 +46,78 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		this.connection = e;
 	}
 
+	/**
+	 * Verifies this connection holds the exclusive write lock, and if not, obtains it.
+	 */
+	private void verifyExclusiveWriteLockAcquired() {
+		if (!hasWriteLock) {
+			inferencerSail.acquireExclusiveWriteLock();
+			hasWriteLock = true;
+		}
+	}
+
+	/**
+	 * Verifies this connection does not hold the exclusive write lock, and if it does, releases it.
+	 */
+	private void verifyExclusiveWriteLockReleased() {
+		if (hasWriteLock) {
+			inferencerSail.releaseExclusiveWriteLock();
+			hasWriteLock = false;
+		}
+	}
+
 	@Override
 	public void rollback()
 		throws SailException
 	{
 		super.rollback();
 		statementRemoved = false;
-		if (lockStamp != 0) {
-			inferencerSail.releaseLock(this);
-		}
+		verifyExclusiveWriteLockReleased();
 		//@TODO Do I need to clean up the tbox cache and lookup maps after rolling back? Probably if the connection has a write lock.
 	}
 
 	void processForSchemaCache(Statement statement) {
+		verifyExclusiveWriteLockAcquired();
+
 		final IRI predicate = statement.getPredicate();
 		final Value object = statement.getObject();
 		final Resource subject = statement.getSubject();
 
 		if (predicate.equals(RDFS.SUBCLASSOF)) {
-			inferencerSail.upgradeLock(this);
 			inferencerSail.addSubClassOfStatement(statement);
 		}
 		else if (predicate.equals(RDF.TYPE) && object.equals(RDF.PROPERTY)) {
-			inferencerSail.upgradeLock(this);
 			inferencerSail.addProperty(subject);
 
 		}
 		else if (predicate.equals(RDFS.SUBPROPERTYOF)) {
-			inferencerSail.upgradeLock(this);
 			inferencerSail.addSubPropertyOfStatement(statement);
 		}
 		else if (predicate.equals(RDFS.RANGE)) {
-			inferencerSail.upgradeLock(this);
 			inferencerSail.addRangeStatement(statement);
 		}
 		else if (predicate.equals(RDFS.DOMAIN)) {
-			inferencerSail.upgradeLock(this);
 			inferencerSail.addDomainStatement(statement);
 		}
 		else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CLASS)) {
-			inferencerSail.upgradeLock(this);
 			inferencerSail.addSubClassOfStatement(inferencerSail.getValueFactory().createStatement(subject,
 					RDFS.SUBCLASSOF, RDFS.RESOURCE));
 		}
 		else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.DATATYPE)) {
-			inferencerSail.upgradeLock(this);
 			inferencerSail.addSubClassOfStatement(
 					inferencerSail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
 		}
 		else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CONTAINERMEMBERSHIPPROPERTY)) {
-			inferencerSail.upgradeLock(this);
 			inferencerSail.addSubPropertyOfStatement(inferencerSail.getValueFactory().createStatement(subject,
 					RDFS.SUBPROPERTYOF, RDFS.MEMBER));
 		}
 		else if (predicate.equals(RDF.TYPE)) {
 			if (!inferencerSail.hasType(((Resource)object))) {
-				inferencerSail.upgradeLock(this);
 				inferencerSail.addType((Resource)object);
 			}
 		}
 
 		if (!inferencerSail.hasProperty(predicate)) {
-			inferencerSail.upgradeLock(this);
 			inferencerSail.addProperty(predicate);
 		}
 
@@ -140,7 +150,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		throws UnknownSailTransactionStateException
 	{
 		super.begin(level);
-		inferencerSail.readLock(this);
 		statementRemoved = false;
 
 		originalSchemaSize = inferencerSail.getSchemaSize();
@@ -153,7 +162,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	{
 		super.commit();
 		statementRemoved = false;
-		inferencerSail.releaseLock(this);
+		verifyExclusiveWriteLockReleased();
 	}
 
 	@Override
@@ -163,12 +172,12 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		// inferences relying on this statement.
 		statementRemoved = true;
 	}
-	
+
 	@Override
 	protected boolean needsFullRecomputation() {
 		return this.statementRemoved;
 	}
-	
+
 	@Override
 	protected void doInferencing()
 		throws SailException
@@ -178,8 +187,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		// FIXME check on schema size change is unreliable: e.g. a change may have added one and removed
 		// one.
 		if (inferencerSail.schema == null && originalSchemaSize != inferencerSail.getSchemaSize()) {
-
-			inferencerSail.upgradeLock(this);
 
 			inferencerSail.clearInferenceTables();
 			addAxiomStatements();
@@ -211,17 +218,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 			}
 		}
 		inferredCleared = false;
-
-	}
-
-	@Override
-	public void close()
-		throws SailException
-	{
-		if (lockStamp != 0) {
-			inferencerSail.releaseLock(this);
-		}
-		super.close();
 
 	}
 
@@ -261,7 +257,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 			Resource... resources)
 		throws SailException
 	{
-
+		verifyExclusiveWriteLockAcquired();
 		if (inferencerSail.schema == null) {
 			processForSchemaCache(
 					inferencerSail.getValueFactory().createStatement(subject, predicate, object));
@@ -343,6 +339,8 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	}
 
 	protected void addAxiomStatements() {
+		verifyExclusiveWriteLockAcquired();
+
 		ValueFactory vf = inferencerSail.getValueFactory();
 
 		// This is http://www.w3.org/2000/01/rdf-schema# forward chained

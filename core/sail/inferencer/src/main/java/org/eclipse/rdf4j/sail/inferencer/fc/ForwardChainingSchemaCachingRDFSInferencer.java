@@ -10,18 +10,19 @@ package org.eclipse.rdf4j.sail.inferencer.fc;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.StampedLock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -33,27 +34,26 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.sail.NotifyingSail;
-import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-
 public class ForwardChainingSchemaCachingRDFSInferencer extends AbstractForwardChainingInferencer {
 
 	// The schema, or null
 	Repository schema;
 
-	private static final Random random = new Random();
-
-	private StampedLock readWriteLock = new StampedLock();
-
-	private AtomicInteger numberOfThreadsWaitingForWriteLock = new AtomicInteger(0);
+	// exclusive lock for modifying the schema cache.
+	private final ReentrantLock exclusiveWriteLock = new ReentrantLock(true);
 
 	// If false, the inferencer will skip some RDFS rules.
 	boolean useAllRdfsRules = true;
+
+	// supported isolation levels for this inferencer (overriding possibly supported levels of base sail).
+	private final List<IsolationLevel> levels = Arrays.asList(
+			new IsolationLevel[] { IsolationLevels.SERIALIZABLE });
 
 	// Schema cache
 	private final Collection<Resource> properties = new HashSet<>();
@@ -94,85 +94,36 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends AbstractForwardC
 		calculatedDomain.clear();
 	}
 
-	void readLock(ForwardChainingSchemaCachingRDFSInferencerConnection connection) {
-
-		//        if (numberOfThreadsWaitingForWriteLock.get() > 0) {
-		//            System.err.println("starve reads");
-		//        }
-
-		while (numberOfThreadsWaitingForWriteLock.get() > 0) {
-			Thread.yield();
-		}
-
-		if (connection.lockStamp != 0) {
-			throw new SailException(
-					"Connection already has a lock! Might be a begin() without a commit() or rollback() for previous transaction().");
-		}
-		connection.lockStamp = readWriteLock.readLock();
-		//        System.err.println("readLock: " + connection.lockStamp);
-
+	@Override
+	public IsolationLevel getDefaultIsolationLevel() {
+		return IsolationLevels.SERIALIZABLE;
 	}
 
-	void releaseLock(ForwardChainingSchemaCachingRDFSInferencerConnection connection) {
-		if (connection.lockStamp == 0) {
-			throw new SailException(
-					"Expected connection to have lock. Might be a commit() without a begin().");
-		}
-		readWriteLock.unlock(connection.lockStamp);
-		//        System.err.println("Released lock: " + connection.lockStamp);
-
-		connection.lockStamp = 0;
+	@Override
+	public List<IsolationLevel> getSupportedIsolationLevels() {
+		return levels;
 	}
 
-	void upgradeLock(ForwardChainingSchemaCachingRDFSInferencerConnection connection) {
-
-		//        System.err.println("Attempt writelock: "+connection.lockStamp);
-
-		numberOfThreadsWaitingForWriteLock.incrementAndGet();
-
+	/**
+	 * Tries to obtain an exclusive write lock on this store. This method will block until either the lock is
+	 * obtained or an interrupt signal is received.
+	 * 
+	 * @throws SailException if the thread is interrupted while waiting to obtain the lock.
+	 */
+	void acquireExclusiveWriteLock() {
 		try {
-			while (true) {
-				long l = readWriteLock.tryConvertToWriteLock(connection.lockStamp);
-
-				if (l != 0) {
-					//                    long temp = connection.lockStamp;
-					connection.lockStamp = l;
-					//                    if (temp != l) {
-					//                        System.err.println("readLock: " + temp + " writeLock: " + connection.lockStamp);
-					//                    }
-
-					return;
-				}
-
-				try {
-					Thread.sleep(random.nextInt(2));
-				}
-				catch (InterruptedException e) {
-					// ignore interrupted exception
-				}
-
-				// detect potential deadlock scenario
-				if (numberOfThreadsWaitingForWriteLock.get() > 1 //More than 1 connection waiting for a write lock
-						&& numberOfThreadsWaitingForWriteLock.get() <= readWriteLock.getReadLockCount() // no connection only using a read lock
-						&& random.nextBoolean())
-				{ // randomly kick this connection out
-					break;
-				}
-
-			}
-
-			//            System.err.println("isReadLocked: " + readWriteLock.isReadLocked());
-			//            System.err.println("isWriteLocked(): " + readWriteLock.isWriteLocked());
-			//            System.err.println("read lock count: " + readWriteLock.getReadLockCount());
-
-			releaseLock(connection);
-			throw new SailConflictException("Concurrent modification of schema, could not acquire the lock.");
+			exclusiveWriteLock.lockInterruptibly();
 		}
-		finally {
-
-			numberOfThreadsWaitingForWriteLock.decrementAndGet();
+		catch (InterruptedException e) {
+			throw new SailException(e);
 		}
+	}
 
+	/**
+	 * Releases the exclusive write lock.
+	 */
+	void releaseExclusiveWriteLock() {
+		exclusiveWriteLock.unlock();
 	}
 
 	public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data) {
