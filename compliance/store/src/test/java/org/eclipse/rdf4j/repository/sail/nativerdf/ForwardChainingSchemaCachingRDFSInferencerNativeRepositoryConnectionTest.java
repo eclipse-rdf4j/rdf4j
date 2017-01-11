@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail.nativerdf;
 
+import java.io.File;
+import java.io.IOException;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.repository.RDFSchemaRepositoryConnectionTest;
@@ -15,10 +18,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 
-import java.io.File;
-import java.io.IOException;
-
-public class ForwardChainingSchemaCachingRDFSInferencerNativeRepositoryConnectionTest extends RDFSchemaRepositoryConnectionTest {
+public class ForwardChainingSchemaCachingRDFSInferencerNativeRepositoryConnectionTest
+		extends RDFSchemaRepositoryConnectionTest
+{
 
 	private File dataDir;
 
@@ -31,7 +33,8 @@ public class ForwardChainingSchemaCachingRDFSInferencerNativeRepositoryConnectio
 		throws IOException
 	{
 		dataDir = FileUtil.createTempDir("nativestore");
-		return new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new NativeStore(dataDir, "spoc"), true));
+		return new SailRepository(
+				new ForwardChainingSchemaCachingRDFSInferencer(new NativeStore(dataDir, "spoc"), true));
 	}
 
 	@Override
