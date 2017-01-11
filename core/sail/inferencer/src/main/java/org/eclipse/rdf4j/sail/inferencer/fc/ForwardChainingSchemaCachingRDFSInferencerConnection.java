@@ -51,6 +51,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		throws SailException
 	{
 		super.rollback();
+		statementRemoved = false;
 		if (lockStamp != 0) {
 			inferencerSail.releaseLock(this);
 		}
@@ -124,6 +125,8 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 
 	private long originalSchemaSize = -1;
 
+	private boolean statementRemoved = false;
+
 	@Override
 	public void begin()
 		throws SailException
@@ -138,6 +141,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	{
 		super.begin(level);
 		inferencerSail.readLock(this);
+		statementRemoved = false;
 
 		originalSchemaSize = inferencerSail.getSchemaSize();
 
@@ -148,9 +152,23 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		throws SailException
 	{
 		super.commit();
+		statementRemoved = false;
 		inferencerSail.releaseLock(this);
 	}
 
+	@Override
+	public void statementRemoved(Statement st) {
+		// we need to register a statement as removed regardless of whether it was also added 
+		// as part of this transaction: the schema cache is updated on the fly so may contain
+		// inferences relying on this statement.
+		statementRemoved = true;
+	}
+	
+	@Override
+	protected boolean needsFullRecomputation() {
+		return this.statementRemoved;
+	}
+	
 	@Override
 	protected void doInferencing()
 		throws SailException
