@@ -26,17 +26,17 @@ import org.eclipse.rdf4j.query.algebra.Var;
 
 public class DistanceQuerySpec implements SearchQueryEvaluator {
 
-	private final FunctionCall distanceFunction;
+	private FunctionCall distanceFunction;
 
-	private final Literal from;
+	private Literal from;
 
-	private final IRI units;
+	private IRI units;
 
 	private final ValueExpr distanceExpr;
 
-	private final double distance;
+	private double distance;
 
-	private final String distanceVar;
+	private String distanceVar;
 
 	private StatementPattern geoStatement;
 
@@ -48,7 +48,7 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 
 	private final String geoVar;
 
-	private final Filter filter;
+	private Filter filter;
 
 	public DistanceQuerySpec(FunctionCall distanceFunction, ValueExpr distanceExpr, String distVar,
 			Filter filter)
@@ -93,16 +93,32 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 		this.filter = null;
 	}
 
+	public void setFrom(Literal from) {
+		this.from = from;
+	}
+
 	public Literal getFrom() {
 		return from;
+	}
+
+	public void setUnits(IRI units) {
+		this.units = units;
 	}
 
 	public IRI getUnits() {
 		return units;
 	}
 
+	public void setDistance(double d) {
+		this.distance = d;
+	}
+
 	public double getDistance() {
 		return distance;
+	}
+
+	public void setDistanceVar(String varName) {
+		this.distanceVar = varName;
 	}
 
 	public String getDistanceVar() {
@@ -144,12 +160,20 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 		return geoVar;
 	}
 
+	public void setDistanceFunctionCall(FunctionCall distanceFunction) {
+		this.distanceFunction = distanceFunction;
+	}
+
 	public FunctionCall getDistanceFunctionCall() {
 		return distanceFunction;
 	}
 
 	public ValueExpr getDistanceExpr() {
 		return distanceExpr;
+	}
+
+	public void setFilter(Filter f) {
+		this.filter = f;
 	}
 
 	public Filter getFilter() {
