@@ -465,9 +465,6 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 */
 	public void setEvaluationMode(TupleFunctionEvaluationMode mode) {
 		Objects.requireNonNull(mode);
-		if (mode == TupleFunctionEvaluationMode.SERVICE) {
-			throw new IllegalArgumentException("Service evaluation mode is not currently supported");
-		}
 		this.setParameter(EVALUATION_MODE_KEY, mode.name());
 		this.evaluationMode = mode;
 	}
