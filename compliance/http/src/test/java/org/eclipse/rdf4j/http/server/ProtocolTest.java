@@ -58,6 +58,7 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import com.google.common.collect.Sets;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.opencsv.CSVReader;
 
 public class ProtocolTest {
@@ -485,7 +486,8 @@ public class ProtocolTest {
 		// "Test-NativeStore");
 		String repositoryLocation = TestServer.REPOSITORY_URL;
 
-		ExecutorService threadPool = Executors.newFixedThreadPool(20);
+		ExecutorService threadPool = Executors.newFixedThreadPool(20,
+				new ThreadFactoryBuilder().setNameFormat("rdf4j-protocoltest-%d").build());
 
 		for (int count = 0; count < limitCount; count++) {
 			final int number = count;
@@ -598,8 +600,9 @@ public class ProtocolTest {
 
 		int responseCode = conn.getResponseCode();
 
-		if (responseCode != HttpURLConnection.HTTP_OK && // 200 OK
-				responseCode != HttpURLConnection.HTTP_NO_CONTENT) // 204 NO CONTENT
+		// HTTP 200 or 204
+		if (responseCode != HttpURLConnection.HTTP_OK && 
+				responseCode != HttpURLConnection.HTTP_NO_CONTENT)
 		{
 			String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 					+ responseCode + ")";
@@ -621,8 +624,9 @@ public class ProtocolTest {
 
 		int responseCode = conn.getResponseCode();
 
-		if (responseCode != HttpURLConnection.HTTP_OK && // 200 OK
-				responseCode != HttpURLConnection.HTTP_NO_CONTENT) // 204 NO CONTENT
+		// HTTP 200 or 204
+		if (responseCode != HttpURLConnection.HTTP_OK &&
+				responseCode != HttpURLConnection.HTTP_NO_CONTENT) 
 		{
 			String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 					+ responseCode + ")";
@@ -662,8 +666,9 @@ public class ProtocolTest {
 
 		int responseCode = conn.getResponseCode();
 
-		if (responseCode != HttpURLConnection.HTTP_OK && // 200 OK
-				responseCode != HttpURLConnection.HTTP_NO_CONTENT) // 204 NO CONTENT
+		// HTTP 200 or 204
+		if (responseCode != HttpURLConnection.HTTP_OK &&
+				responseCode != HttpURLConnection.HTTP_NO_CONTENT)
 		{
 			String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 					+ responseCode + ")";
@@ -682,8 +687,9 @@ public class ProtocolTest {
 
 		int responseCode = conn.getResponseCode();
 
-		if (responseCode != HttpURLConnection.HTTP_OK && // 200 OK
-				responseCode != HttpURLConnection.HTTP_NO_CONTENT) // 204 NO CONTENT
+		// HTTP 200 or 204
+		if (responseCode != HttpURLConnection.HTTP_OK &&
+				responseCode != HttpURLConnection.HTTP_NO_CONTENT)
 		{
 			String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 					+ responseCode + ")";
@@ -707,6 +713,7 @@ public class ProtocolTest {
 
 		try {
 			int responseCode = conn.getResponseCode();
+			// HTTP 200
 			if (responseCode == HttpURLConnection.HTTP_OK) {
 				// Process query results
 				return QueryResultIO.parseTuple(conn.getInputStream(), TupleQueryResultFormat.SPARQL);

@@ -12,12 +12,18 @@ import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.hamcrest.CoreMatchers.is;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -26,9 +32,17 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 public abstract class TupleQueryResultTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	private Repository rep;
 
@@ -55,11 +69,14 @@ public abstract class TupleQueryResultTest {
 	public void tearDown()
 		throws Exception
 	{
-		con.close();
-		con = null;
-
-		rep.shutDown();
-		rep = null;
+		try {
+			con.close();
+			con = null;
+		}
+		finally {
+			rep.shutDown();
+			rep = null;
+		}
 	}
 
 	protected Repository createRepository()
@@ -176,6 +193,46 @@ public abstract class TupleQueryResultTest {
 		}
 		finally {
 			result.close();
+		}
+	}
+
+	@Test
+	public void testStreaming()
+		throws Exception
+	{
+		ValueFactory vf = con.getValueFactory();
+		int subjectIndex = 0;
+		int predicateIndex = 100;
+		int objectIndex = 1000;
+		int testStatementCount = 1000;
+		int count = 0;
+		con.begin();
+		while (count < testStatementCount) {
+			con.add(vf.createIRI("urn:test:" + subjectIndex), vf.createIRI("urn:test:" + predicateIndex),
+					vf.createIRI("urn:test:" + objectIndex));
+			if(Math.round(Math.random()) > 0) {
+				subjectIndex++;
+			}
+			if(Math.round(Math.random()) > 0) {
+				predicateIndex++;
+			}
+			if(Math.round(Math.random()) > 0) {
+				objectIndex++;
+			}
+			count++;
+		}
+		con.commit();
+		
+		for(int evaluateCount = 0; evaluateCount < 1000; evaluateCount++) {
+			try (ByteArrayOutputStream stream = new ByteArrayOutputStream();
+					RepositoryConnection nextCon = rep.getConnection();) {
+				TupleQueryResultWriter sparqlWriter = QueryResultIO.createTupleWriter(
+						TupleQueryResultFormat.SPARQL, stream);
+				TupleQuery tupleQuery = nextCon.prepareTupleQuery(QueryLanguage.SPARQL,
+						"SELECT ?s ?p ?o WHERE { ?s ?p ?o . }");
+				tupleQuery.setIncludeInferred(false);
+				tupleQuery.evaluate(sparqlWriter);
+			}
 		}
 	}
 }

@@ -9,8 +9,8 @@ package org.eclipse.rdf4j.sail.lucene;
 
 import java.util.List;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -26,7 +26,7 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 
 	private Literal from;
 
-	private URI units;
+	private IRI units;
 
 	private double distance;
 
@@ -48,11 +48,11 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 		return from;
 	}
 
-	public void setUnits(URI units) {
+	public void setUnits(IRI units) {
 		this.units = units;
 	}
 
-	public URI getUnits() {
+	public IRI getUnits() {
 		return units;
 	}
 
@@ -93,8 +93,8 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 		return geoStatement.getContextVar();
 	}
 
-	public URI getGeoProperty() {
-		return (URI)geoStatement.getPredicateVar().getValue();
+	public IRI getGeoProperty() {
+		return (IRI)geoStatement.getPredicateVar().getValue();
 	}
 
 	public String getGeoVar() {

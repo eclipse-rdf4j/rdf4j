@@ -21,8 +21,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.LiteralImpl;
-import org.eclipse.rdf4j.model.impl.URIImpl;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.repository.OptimisticIsolationTest;
@@ -32,6 +30,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,6 +41,13 @@ import org.slf4j.LoggerFactory;
  * @author James Leigh
  */
 public class SailIsolationLevelTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	private final Logger logger = LoggerFactory.getLogger(SailIsolationLevelTest.class);
 
@@ -86,8 +92,12 @@ public class SailIsolationLevelTest {
 			return false;
 		}
 		finally {
-			con.rollback();
-			con.close();
+			try {
+				con.rollback();
+			}
+			finally {
+				con.close();
+			}
 		}
 	}
 
@@ -173,16 +183,12 @@ public class SailIsolationLevelTest {
 		throws RepositoryException
 	{
 		clear(store);
-		RepositoryConnection con = store.getConnection();
-		try {
+		try (RepositoryConnection con = store.getConnection();) {
 			con.begin(level);
 			con.add(RDF.NIL, RDF.TYPE, RDF.LIST);
 			assertEquals(1, count(con, RDF.NIL, RDF.TYPE, RDF.LIST, false));
 			con.remove(RDF.NIL, RDF.TYPE, RDF.LIST);
 			con.commit();
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -193,15 +199,11 @@ public class SailIsolationLevelTest {
 		throws RepositoryException
 	{
 		clear(store);
-		RepositoryConnection con = store.getConnection();
-		try {
+		try (RepositoryConnection con = store.getConnection();) {
 			con.begin(level);
 			con.add(RDF.NIL, RDF.TYPE, RDF.LIST);
 			con.rollback();
 			assertEquals(0, count(con, RDF.NIL, RDF.TYPE, RDF.LIST, false));
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -218,20 +220,14 @@ public class SailIsolationLevelTest {
 		Thread writer = new Thread(new Runnable() {
 
 			public void run() {
-				try {
-					RepositoryConnection write = store.getConnection();
-					try {
-						start.countDown();
-						start.await();
-						write.begin(level);
-						write.add(RDF.NIL, RDF.TYPE, RDF.LIST);
-						begin.countDown();
-						uncommitted.await(1, TimeUnit.SECONDS);
-						write.rollback();
-					}
-					finally {
-						write.close();
-					}
+				try (RepositoryConnection write = store.getConnection();) {
+					start.countDown();
+					start.await();
+					write.begin(level);
+					write.add(RDF.NIL, RDF.TYPE, RDF.LIST);
+					begin.countDown();
+					uncommitted.await(1, TimeUnit.SECONDS);
+					write.rollback();
 				}
 				catch (Throwable e) {
 					fail("Writer failed", e);
@@ -241,30 +237,24 @@ public class SailIsolationLevelTest {
 		Thread reader = new Thread(new Runnable() {
 
 			public void run() {
-				try {
-					RepositoryConnection read = store.getConnection();
+				try (RepositoryConnection read = store.getConnection();) {
+					start.countDown();
+					start.await();
+					begin.await();
+					read.begin(level);
+					// must not read uncommitted changes
+					long counted = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
+					uncommitted.countDown();
 					try {
-						start.countDown();
-						start.await();
-						begin.await();
-						read.begin(level);
-						// must not read uncommitted changes
-						long counted = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
-						uncommitted.countDown();
-						try {
-							read.commit();
-						}
-						catch (RepositoryException e) {
-							// it is okay to abort after a dirty read
-							e.printStackTrace();
-							return;
-						}
-						// not read if transaction is consistent
-						assertEquals(0, counted);
+						read.commit();
 					}
-					finally {
-						read.close();
+					catch (RepositoryException e) {
+						// it is okay to abort after a dirty read
+						// e.printStackTrace();
+						return;
 					}
+					// not read if transaction is consistent
+					assertEquals(0, counted);
 				}
 				catch (Throwable e) {
 					fail("Reader failed", e);
@@ -292,26 +282,20 @@ public class SailIsolationLevelTest {
 		Thread writer = new Thread(new Runnable() {
 
 			public void run() {
-				try {
-					RepositoryConnection write = store.getConnection();
-					try {
-						start.countDown();
-						start.await();
-						write.begin(level);
-						write.add(RDF.NIL, RDF.TYPE, RDF.LIST);
-						write.commit();
+				try (RepositoryConnection write = store.getConnection();) {
+					start.countDown();
+					start.await();
+					write.begin(level);
+					write.add(RDF.NIL, RDF.TYPE, RDF.LIST);
+					write.commit();
 
-						begin.countDown();
-						observed.await();
+					begin.countDown();
+					observed.await();
 
-						write.begin(level);
-						write.remove(RDF.NIL, RDF.TYPE, RDF.LIST);
-						write.commit();
-						changed.countDown();
-					}
-					finally {
-						write.close();
-					}
+					write.begin(level);
+					write.remove(RDF.NIL, RDF.TYPE, RDF.LIST);
+					write.commit();
+					changed.countDown();
 				}
 				catch (Throwable e) {
 					fail("Writer failed", e);
@@ -321,33 +305,28 @@ public class SailIsolationLevelTest {
 		Thread reader = new Thread(new Runnable() {
 
 			public void run() {
-				try {
-					RepositoryConnection read = store.getConnection();
+				try (RepositoryConnection read = store.getConnection();) {
+					start.countDown();
+					start.await();
+					begin.await();
+					read.begin(level);
+					long first = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
+					assertEquals(1, first);
+					observed.countDown();
+					changed.await(1, TimeUnit.SECONDS);
+					// observed statements must continue to exist
+					long second = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
 					try {
-						start.countDown();
-						start.await();
-						begin.await();
-						read.begin(level);
-						long first = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
-						assertEquals(1, first);
-						observed.countDown();
-						changed.await(1, TimeUnit.SECONDS);
-						// observed statements must continue to exist
-						long second = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);
-						try {
-							read.commit();
-						}
-						catch (RepositoryException e) {
-							// it is okay to abort on inconsistency
-							e.printStackTrace();
-							return;
-						}
-						// statement must continue to exist if transaction consistent
-						assertEquals(first, second);
+						read.commit();
 					}
-					finally {
-						read.close();
+					catch (RepositoryException e) {
+						// it is okay to abort on inconsistency
+						// e.printStackTrace();
+						read.rollback();
+						return;
 					}
+					// statement must continue to exist if transaction consistent
+					assertEquals(first, second);
 				}
 				catch (Throwable e) {
 					fail("Reader failed", e);
@@ -368,17 +347,16 @@ public class SailIsolationLevelTest {
 		throws RepositoryException
 	{
 		clear(store);
-		RepositoryConnection con = store.getConnection();
-		try {
+		try (RepositoryConnection con = store.getConnection();) {
 			con.begin(level);
 			int size = 1;
 			for (int i = 0; i < size; i++) {
 				insertTestStatement(con, i);
 			}
 			int counter = 0;
-			CloseableIteration<? extends Statement, RepositoryException> stmts;
-			stmts = con.getStatements(null, null, null, false);
-			try {
+			try (CloseableIteration<? extends Statement, RepositoryException> stmts = con.getStatements(null,
+					null, null, false);)
+			{
 				while (stmts.hasNext()) {
 					Statement st = stmts.next();
 					counter++;
@@ -390,9 +368,6 @@ public class SailIsolationLevelTest {
 					}
 				}
 			}
-			finally {
-				stmts.close();
-			}
 			try {
 				con.commit();
 			}
@@ -402,9 +377,6 @@ public class SailIsolationLevelTest {
 				return;
 			}
 			assertEquals(size, counter);
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -451,32 +423,27 @@ public class SailIsolationLevelTest {
 		Thread reader = new Thread(new Runnable() {
 
 			public void run() {
-				try {
-					RepositoryConnection read = store.getConnection();
+				try (RepositoryConnection read = store.getConnection();) {
+					start.countDown();
+					start.await();
+					begin.await();
+					read.begin(level);
+					long first = count(read, null, null, null, false);
+					observed.countDown();
+					changed.await(1, TimeUnit.SECONDS);
+					// new statements must not be observed
+					long second = count(read, null, null, null, false);
 					try {
-						start.countDown();
-						start.await();
-						begin.await();
-						read.begin(level);
-						long first = count(read, null, null, null, false);
-						observed.countDown();
-						changed.await(1, TimeUnit.SECONDS);
-						// new statements must not be observed
-						long second = count(read, null, null, null, false);
-						try {
-							read.commit();
-						}
-						catch (RepositoryException e) {
-							// it is okay to abort on inconsistency
-							e.printStackTrace();
-							return;
-						}
-						// store must not change if transaction consistent
-						assertEquals(first, second);
+						read.commit();
 					}
-					finally {
-						read.close();
+					catch (RepositoryException e) {
+						// it is okay to abort on inconsistency
+						// e.printStackTrace();
+						read.rollback();
+						return;
 					}
+					// store must not change if transaction consistent
+					assertEquals(first, second);
 				}
 				catch (Throwable e) {
 					fail("Reader failed", e);
@@ -500,14 +467,10 @@ public class SailIsolationLevelTest {
 		final ValueFactory vf = store.getValueFactory();
 		final IRI subj = vf.createIRI("http://test#s");
 		final IRI pred = vf.createIRI("http://test#p");
-		RepositoryConnection prep = store.getConnection();
-		try {
+		try (RepositoryConnection prep = store.getConnection();) {
 			prep.begin(level);
 			prep.add(subj, pred, vf.createLiteral(1));
 			prep.commit();
-		}
-		finally {
-			prep.close();
 		}
 		final CountDownLatch start = new CountDownLatch(2);
 		final CountDownLatch observed = new CountDownLatch(2);
@@ -518,8 +481,7 @@ public class SailIsolationLevelTest {
 		t2.join();
 		t1.join();
 		assertNotFailed();
-		RepositoryConnection check = store.getConnection();
-		try {
+		try (RepositoryConnection check = store.getConnection();) {
 			check.begin(level);
 			Literal lit = readLiteral(check, subj, pred);
 			int val = lit.intValue();
@@ -528,9 +490,6 @@ public class SailIsolationLevelTest {
 				assertEquals(9, val);
 			}
 			check.commit();
-		}
-		finally {
-			check.close();
 		}
 	}
 
@@ -541,27 +500,22 @@ public class SailIsolationLevelTest {
 		return new Thread(new Runnable() {
 
 			public void run() {
-				try {
-					RepositoryConnection con = store.getConnection();
+				try (RepositoryConnection con = store.getConnection();) {
+					start.countDown();
+					start.await();
+					con.begin(level);
+					Literal o1 = readLiteral(con, subj, pred);
+					observed.countDown();
+					observed.await(1, TimeUnit.SECONDS);
+					con.remove(subj, pred, o1);
+					con.add(subj, pred, vf.createLiteral(o1.intValue() + by));
 					try {
-						start.countDown();
-						start.await();
-						con.begin(level);
-						Literal o1 = readLiteral(con, subj, pred);
-						observed.countDown();
-						observed.await(1, TimeUnit.SECONDS);
-						con.remove(subj, pred, o1);
-						con.add(subj, pred, vf.createLiteral(o1.intValue() + by));
-						try {
-							con.commit();
-						}
-						catch (RepositoryException e) {
-							// it is okay to abort on conflict
-							e.printStackTrace();
-						}
+						con.commit();
 					}
-					finally {
-						con.close();
+					catch (RepositoryException e) {
+						// it is okay to abort on conflict
+						//e.printStackTrace();
+						con.rollback();
 					}
 				}
 				catch (Throwable e) {
@@ -574,14 +528,10 @@ public class SailIsolationLevelTest {
 	private void clear(Repository store)
 		throws RepositoryException
 	{
-		RepositoryConnection con = store.getConnection();
-		try {
+		try (RepositoryConnection con = store.getConnection();) {
 			con.begin();
 			con.clear();
 			con.commit();
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -589,9 +539,9 @@ public class SailIsolationLevelTest {
 			boolean includeInferred, Resource... contexts)
 		throws RepositoryException
 	{
-		CloseableIteration<Statement, RepositoryException> stmts;
-		stmts = con.getStatements(subj, pred, obj, includeInferred, contexts);
-		try {
+		try (CloseableIteration<Statement, RepositoryException> stmts = con.getStatements(subj, pred, obj,
+				includeInferred, contexts);)
+		{
 			long counter = 0;
 			while (stmts.hasNext()) {
 				stmts.next();
@@ -599,35 +549,32 @@ public class SailIsolationLevelTest {
 			}
 			return counter;
 		}
-		finally {
-			stmts.close();
-		}
 	}
 
 	protected Literal readLiteral(RepositoryConnection con, final IRI subj, final IRI pred)
 		throws RepositoryException
 	{
-		CloseableIteration<? extends Statement, RepositoryException> stmts;
-		stmts = con.getStatements(subj, pred, null, false);
-		try {
-			if (!stmts.hasNext())
+		try (CloseableIteration<? extends Statement, RepositoryException> stmts = con.getStatements(subj,
+				pred, null, false);)
+		{
+			if (!stmts.hasNext()) {
 				return null;
+			}
 			Value obj = stmts.next().getObject();
-			if (stmts.hasNext())
+			if (stmts.hasNext()) {
 				org.junit.Assert.fail("multiple literals: " + obj + " and " + stmts.next());
+			}
 			return (Literal)obj;
-		}
-		finally {
-			stmts.close();
 		}
 	}
 
 	protected void insertTestStatement(RepositoryConnection connection, int i)
 		throws RepositoryException
 	{
-		LiteralImpl lit = new LiteralImpl(Integer.toString(i), XMLSchema.INTEGER);
-		connection.add(new URIImpl("http://test#s" + i), new URIImpl("http://test#p"), lit,
-				new URIImpl("http://test#context_" + i));
+		ValueFactory vf = connection.getValueFactory();
+		Literal lit = vf.createLiteral(Integer.toString(i), XMLSchema.INTEGER);
+		connection.add(vf.createIRI("http://test#s" + i), vf.createIRI("http://test#p"), lit,
+				vf.createIRI("http://test#context_" + i));
 	}
 
 	protected synchronized void fail(String message, Throwable t) {

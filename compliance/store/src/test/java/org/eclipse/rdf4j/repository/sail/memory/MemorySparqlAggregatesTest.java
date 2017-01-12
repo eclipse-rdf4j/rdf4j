@@ -11,8 +11,16 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.SparqlAggregatesTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.BeforeClass;
 
 public class MemorySparqlAggregatesTest extends SparqlAggregatesTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	protected Repository newRepository() {
 		return new SailRepository(new MemoryStore());

@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
@@ -59,6 +60,13 @@ import org.junit.rules.Timeout;
  * should be extended for specific Sail implementations.
  */
 public abstract class RDFStoreTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	/**
 	 * Timeout all individual tests after 1 minute.

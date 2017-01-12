@@ -23,7 +23,6 @@ options {
 }
 
 PARSER_BEGIN(SyntaxTreeBuilder)
-
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
 import java.io.StringReader;
@@ -309,9 +308,7 @@ TOKEN:
 |	<INTEGER: (<NUM>)+>
 |	<INTEGER_POSITIVE: "+" <INTEGER>>
 |	<INTEGER_NEGATIVE: "-" <INTEGER>>
-|	<DECIMAL: (<DECIMAL1>|<DECIMAL2>)>
-|	<#DECIMAL1: (<NUM>)+ "." (<NUM>)*>
-|	<#DECIMAL2: "." (<NUM>)+>
+|	<DECIMAL: (<NUM>)* "." (<NUM>)+>
 |	<DECIMAL_POSITIVE: "+" <DECIMAL>>
 |	<DECIMAL_NEGATIVE: "-" <DECIMAL>>
 |	<DOUBLE: (<DOUBLE1>|<DOUBLE2>|<DOUBLE3>)>
@@ -1876,10 +1873,19 @@ void WithClause() #DatasetClause :
     <WITH> IRIref()
 }
 
+/*
+ * WHERE keyword is required in modify operations
+ */
+void ModifyWhereClause() #WhereClause :
+{}
+{
+	 <WHERE> GroupGraphPattern()
+}
+
 void Modify() :
 {}
 {
     [ WithClause() ] 
     ( DeleteClause() [InsertClause()] | InsertClause() ) (UsingClause())* 
-    <WHERE> GroupGraphPattern()
+    ModifyWhereClause()
 }

@@ -7,20 +7,42 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
+import java.io.IOException;
+import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Random;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.DC;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Tests concurrent read and write access to a Sail implementation.
@@ -29,6 +51,7 @@ import org.junit.Test;
  */
 public abstract class SailConcurrencyTest {
 
+	private static final Logger logger = LoggerFactory.getLogger(SailConcurrencyTest.class);
 	/*-----------*
 	 * Constants *
 	 *-----------*/
@@ -70,6 +93,149 @@ public abstract class SailConcurrencyTest {
 		throws Exception
 	{
 		store.shutDown();
+	}
+
+	protected class UploadTransaction implements Runnable {
+
+		private final IRI context;
+
+		private int txnSize; 
+		
+		private final CountDownLatch completed;
+
+		private final CountDownLatch otherTxnCommitted;
+
+		private final boolean rollback;
+
+		public UploadTransaction(int txnSize, CountDownLatch completed, CountDownLatch otherTxnCommitted, IRI context, boolean rollback) {
+			this.txnSize = txnSize;
+			this.completed = completed;
+			this.otherTxnCommitted = otherTxnCommitted;
+			this.context = context;
+			this.rollback = rollback;
+		}
+
+		@Override
+		public void run() {
+			try {
+				final SailConnection conn = store.getConnection();
+				try {
+					conn.begin();
+					for (int i = 0; i < txnSize / 2; i++) {
+						IRI subject = vf.createIRI("urn:instance-" + i);
+						conn.addStatement(subject, RDFS.LABEL, vf.createLiteral("li" + i), context);
+						conn.addStatement(subject, RDFS.COMMENT, vf.createLiteral("ci" + i), context);
+					}
+					if (rollback) {
+						otherTxnCommitted.await();
+						conn.rollback();
+					}
+					else {
+						conn.commit();
+						otherTxnCommitted.countDown();
+					}
+				}
+				finally {
+					conn.close();
+				}
+			}
+			catch (Throwable t) {
+				logger.error("error while executing transactions", t);
+			}
+			finally {
+				completed.countDown();
+			}
+		}
+
+	}
+
+	/**
+	 * Verifies that two large concurrent transactions in separate contexts do not cause inconsistencies or
+	 * errors. This test may fail intermittently rather than consistently, given its dependency on
+	 * multi-threading.
+	 * 
+	 * @see https://github.com/eclipse/rdf4j/issues/693
+	 */
+	@Test
+	public void testConcurrentAddLargeTxn()
+		throws Exception
+	{
+		logger.info("executing two large concurrent transactions");
+		final CountDownLatch runnersDone = new CountDownLatch(2);
+		final CountDownLatch otherTxnCommitted = new CountDownLatch(1);
+		
+		final IRI context1 = vf.createIRI("urn:context1");
+		final IRI context2 = vf.createIRI("urn:context2");
+		final int transactionSize = 200000;
+		UploadTransaction runner1 = new UploadTransaction(transactionSize, runnersDone, otherTxnCommitted, context1, false);
+		UploadTransaction runner2 = new UploadTransaction(transactionSize, runnersDone, otherTxnCommitted, context2, false);
+
+		final long start = System.currentTimeMillis();
+		new Thread(runner1).start();
+		new Thread(runner2).start();
+
+		runnersDone.await();
+		final long finish = System.currentTimeMillis();
+
+		logger.info("completed both txns in " + (finish - start) + " ms");
+
+		SailConnection conn = store.getConnection();
+		try {
+			long size1 = conn.size(context1);
+			long size2 = conn.size(context2);
+			logger.debug("size 1 = {}, size 2 = {}", size1, size2);
+			assertEquals("upload into context 1 should have been fully committed", transactionSize, size1);
+			assertEquals("upload into context 2 should have been fully committed", transactionSize, size2);
+		}
+		finally {
+			conn.close();
+		}
+
+	}
+
+	/**
+	 * Verifies that two large concurrent transactions in separate contexts do not cause inconsistencies or
+	 * errors when one of the transactions rolls back at the end.
+	 */
+	@Test
+	public void testConcurrentAddLargeTxnRollback()
+		throws Exception
+	{
+		logger.info("executing two large concurrent transactions");
+		final CountDownLatch runnersDone = new CountDownLatch(2);
+		final CountDownLatch otherTxnCommitted = new CountDownLatch(1);
+		
+		final IRI context1 = vf.createIRI("urn:context1");
+		final IRI context2 = vf.createIRI("urn:context2");
+		final int transactionSize = 200000;
+		
+		// transaction into context 1 will commit
+		UploadTransaction runner1 = new UploadTransaction(transactionSize, runnersDone, otherTxnCommitted, context1, false);
+		
+		// transaction into context 2 will rollback
+		UploadTransaction runner2 = new UploadTransaction(transactionSize, runnersDone, otherTxnCommitted, context2, true);
+
+		final long start = System.currentTimeMillis();
+		new Thread(runner1).start();
+		new Thread(runner2).start();
+
+		runnersDone.await();
+		final long finish = System.currentTimeMillis();
+
+		logger.info("completed both txns in " + (finish - start) + " ms");
+
+		SailConnection conn = store.getConnection();
+		try {
+			long size1 = conn.size(context1);
+			long size2 = conn.size(context2);
+			logger.debug("size 1 = {}, size 2 = {}", size1, size2);
+			assertEquals("upload into context 1 should have been fully committed", transactionSize, size1);
+			assertEquals("upload into context 2 should have been rolled back", 0, size2);
+		}
+		finally {
+			conn.close();
+		}
+
 	}
 
 	@Test
@@ -150,7 +316,7 @@ public abstract class SailConcurrencyTest {
 		Thread writerThread1 = new Thread(writer);
 		Thread writerThread2 = new Thread(writer);
 
-		System.out.println("Running concurrency test...");
+		logger.info("Running concurrency test...");
 
 		continueRunning = true;
 		readerThread1.start();
@@ -171,7 +337,7 @@ public abstract class SailConcurrencyTest {
 			Assert.fail("Test Failed");
 		}
 		else {
-			System.out.println("Test succeeded");
+			logger.info("Test succeeded");
 		}
 	}
 

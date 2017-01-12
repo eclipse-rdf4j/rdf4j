@@ -27,9 +27,17 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 public class MonotonicTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	private Repository repo;
 
@@ -103,9 +111,17 @@ public class MonotonicTest {
 	public void tearDown()
 		throws Exception
 	{
-		a.close();
-		b.close();
-		repo.shutDown();
+		try {
+			a.close();
+		}
+		finally {
+			try {
+				b.close();
+			}
+			finally {
+				repo.shutDown();
+			}
+		}
 	}
 
 	@Test

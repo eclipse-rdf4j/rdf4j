@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -22,7 +21,6 @@ import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
-import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 
 /**
@@ -95,9 +93,12 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 			return bindingNames;
 		}
 		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			close();
 			throw new UndeclaredThrowableException(e);
 		}
 		catch (QueryEvaluationException e) {
+			close();
 			throw new UndeclaredThrowableException(e);
 		}
 	}
@@ -110,12 +111,11 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 		}
 		catch (QueryResultHandlerException e) {
 			// parsing cancelled or interrupted
+			close();
 		}
-		catch (QueryResultParseException e) {
+		catch (Exception e) {
 			queue.toss(e);
-		}
-		catch (IOException e) {
-			queue.toss(e);
+			close();
 		}
 		finally {
 			queue.done();
@@ -139,6 +139,8 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 			queue.put(bindingSet);
 		}
 		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			close();
 			throw new TupleQueryResultHandlerException(e);
 		}
 		if (isClosed()) {

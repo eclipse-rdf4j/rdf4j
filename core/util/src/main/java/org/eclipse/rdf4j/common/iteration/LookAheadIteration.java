@@ -49,9 +49,7 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 		if (isClosed()) {
 			return false;
 		}
-		lookAhead();
-
-		boolean result = nextElement != null;
+		boolean result = (lookAhead() != null);
 		if (!result) {
 			close();
 		}
@@ -65,9 +63,7 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
-		lookAhead();
-
-		E result = nextElement;
+		E result = lookAhead();
 
 		if (result != null) {
 			nextElement = null;
@@ -82,9 +78,11 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 	/**
 	 * Fetches the next element if it hasn't been fetched yet and stores it in {@link #nextElement}.
 	 * 
+	 * @return The next element, or null if there are no more results.
 	 * @throws X
+	 *         If there is an issue getting the next element or closing the iteration.
 	 */
-	private void lookAhead()
+	private E lookAhead()
 		throws X
 	{
 		E checkElement = nextElement;
@@ -95,6 +93,7 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 				close();
 			}
 		}
+		return checkElement;
 	}
 
 	/**
