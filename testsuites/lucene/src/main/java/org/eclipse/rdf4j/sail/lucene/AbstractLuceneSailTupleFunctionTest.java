@@ -92,8 +92,16 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 	public void tearDown()
 		throws IOException, RepositoryException
 	{
-		connection.close();
-		repository.shutDown();
+		try {
+			if (connection != null) {
+				connection.close();
+			}
+		}
+		finally {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		}
 	}
 
 	protected abstract void configure(LuceneSail sail);

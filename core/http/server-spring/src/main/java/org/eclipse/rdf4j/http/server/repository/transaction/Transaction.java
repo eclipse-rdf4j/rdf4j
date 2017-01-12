@@ -10,13 +10,16 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.IsolationLevel;
@@ -49,6 +52,8 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
 /**
  * A transaction encapsulates a single {@link Thread} and a {@link RepositoryConnection}, to enable executing
  * all operations that are part of the transaction from a single, dedicated thread. This is necessary because
@@ -57,11 +62,20 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Jeen Broekstra
  */
-class Transaction {
+class Transaction implements AutoCloseable {
 
 	private static final Logger logger = LoggerFactory.getLogger(Transaction.class);
 
+	/**
+	 * Set to true when entering the {@link #close()} method for the first time, to ensure that only a single
+	 * thread executes the close operations.
+	 */
 	private final AtomicBoolean isClosed = new AtomicBoolean(false);
+
+	/**
+	 * Set to true when the {@link #close()} method is about to complete for the first invocation.
+	 */
+	private final AtomicBoolean closeCompleted = new AtomicBoolean(false);
 
 	private final UUID id;
 
@@ -69,8 +83,16 @@ class Transaction {
 
 	private final RepositoryConnection txnConnection;
 
-	private final ExecutorService executor = Executors.newSingleThreadExecutor();
+	/**
+	 * The {@link ExecutorService} that performs all of the operations related to this Transaction.
+	 */
+	private final ExecutorService executor = Executors.newSingleThreadExecutor(
+			new ThreadFactoryBuilder().setNameFormat("rdf4j-transaction-%d").build());
 
+	/**
+	 * A {@link List} that tracks the state of the futures involved in this Transaction. The front of the list
+	 * is cleaned of done operations during {@link #hasActiveOperations()} to release references to results.
+	 */
 	private final List<Future<?>> futures = new ArrayList<>();
 
 	/**
@@ -113,15 +135,10 @@ class Transaction {
 	void begin(IsolationLevel level)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
-		synchronized (futures) {
-			result = executor.submit(() -> {
-				txnConnection.begin(level);
-				return true;
-			});
-
-			futures.add(result);
-		}
+		Future<Boolean> result = submit(() -> {
+			txnConnection.begin(level);
+			return true;
+		});
 		result.get();
 	}
 
@@ -134,15 +151,10 @@ class Transaction {
 	void rollback()
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
-		synchronized (futures) {
-			result = executor.submit(() -> {
-				txnConnection.rollback();
-				return true;
-			});
-
-			futures.add(result);
-		}
+		Future<Boolean> result = submit(() -> {
+			txnConnection.rollback();
+			return true;
+		});
 		result.get();
 	}
 
@@ -153,15 +165,10 @@ class Transaction {
 	void commit()
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
-		synchronized (futures) {
-			result = executor.submit(() -> {
-				txnConnection.commit();
-				return true;
-			});
-
-			futures.add(result);
-		}
+		Future<Boolean> result = submit(() -> {
+			txnConnection.commit();
+			return true;
+		});
 		result.get();
 	}
 
@@ -184,11 +191,7 @@ class Transaction {
 	Query prepareQuery(QueryLanguage queryLn, String queryStr, String baseURI)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Query> result;
-		synchronized (futures) {
-			result = executor.submit(() -> txnConnection.prepareQuery(queryLn, queryStr, baseURI));
-			futures.add(result);
-		}
+		Future<Query> result = submit(() -> txnConnection.prepareQuery(queryLn, queryStr, baseURI));
 		return result.get();
 	}
 
@@ -206,11 +209,7 @@ class Transaction {
 	TupleQueryResult evaluate(TupleQuery tQuery)
 		throws InterruptedException, ExecutionException
 	{
-		Future<TupleQueryResult> result;
-		synchronized (futures) {
-			result = executor.submit(() -> tQuery.evaluate());
-			futures.add(result);
-		}
+		Future<TupleQueryResult> result = submit(() -> tQuery.evaluate());
 		return result.get();
 	}
 
@@ -228,11 +227,7 @@ class Transaction {
 	GraphQueryResult evaluate(GraphQuery gQuery)
 		throws InterruptedException, ExecutionException
 	{
-		Future<GraphQueryResult> result;
-		synchronized (futures) {
-			result = executor.submit(() -> gQuery.evaluate());
-			futures.add(result);
-		}
+		Future<GraphQueryResult> result = submit(() -> gQuery.evaluate());
 		return result.get();
 	}
 
@@ -250,11 +245,7 @@ class Transaction {
 	boolean evaluate(BooleanQuery bQuery)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
-		synchronized (futures) {
-			result = executor.submit(() -> bQuery.evaluate());
-			futures.add(result);
-		}
+		Future<Boolean> result = submit(() -> bQuery.evaluate());
 		return result.get();
 	}
 
@@ -272,14 +263,10 @@ class Transaction {
 			Resource... contexts)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
-		synchronized (futures) {
-			result = executor.submit(() -> {
-				txnConnection.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
-				return true;
-			});
-			futures.add(result);
-		}
+		Future<Boolean> result = submit(() -> {
+			txnConnection.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
+			return true;
+		});
 		result.get();
 	}
 
@@ -294,11 +281,7 @@ class Transaction {
 	long getSize(Resource[] contexts)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Long> result;
-		synchronized (futures) {
-			result = executor.submit(() -> txnConnection.size(contexts));
-			futures.add(result);
-		}
+		Future<Long> result = submit(() -> txnConnection.size(contexts));
 		return result.get();
 	}
 
@@ -316,35 +299,32 @@ class Transaction {
 			Resource... contexts)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
-		synchronized (futures) {
-			result = executor.submit(() -> {
-				logger.debug("executing add operation");
-				try {
-					if (preserveBNodes) {
-						// create a reconfigured parser + inserter instead of relying on standard
-						// repositoryconn add method.
-						RDFParser parser = Rio.createParser(format);
-						parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-						RDFInserter inserter = new RDFInserter(txnConnection);
-						inserter.setPreserveBNodeIDs(true);
-						if (contexts.length > 0) {
-							inserter.enforceContext(contexts);
-						}
-						parser.setRDFHandler(inserter);
-						parser.parse(inputStream, baseURI);
+		Future<Boolean> result = submit(() -> {
+			logger.debug("executing add operation");
+			try {
+				if (preserveBNodes) {
+					// create a reconfigured parser + inserter instead of
+					// relying on standard
+					// repositoryconn add method.
+					RDFParser parser = Rio.createParser(format);
+					parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+					RDFInserter inserter = new RDFInserter(txnConnection);
+					inserter.setPreserveBNodeIDs(true);
+					if (contexts.length > 0) {
+						inserter.enforceContext(contexts);
 					}
-					else {
-						txnConnection.add(inputStream, baseURI, format, contexts);
-					}
-					return true;
+					parser.setRDFHandler(inserter);
+					parser.parse(inputStream, baseURI);
 				}
-				catch (IOException e) {
-					throw new RuntimeException(e);
+				else {
+					txnConnection.add(inputStream, baseURI, format, contexts);
 				}
-			});
-			futures.add(result);
-		}
+				return true;
+			}
+			catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+		});
 		result.get();
 	}
 
@@ -358,26 +338,21 @@ class Transaction {
 	void delete(RDFFormat contentType, InputStream inputStream, String baseURI)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
-		synchronized (futures) {
-			result = executor.submit(() -> {
-				logger.debug("executing delete operation");
-				RDFParser parser = Rio.createParser(contentType, txnConnection.getValueFactory());
+		Future<Boolean> result = submit(() -> {
+			logger.debug("executing delete operation");
+			RDFParser parser = Rio.createParser(contentType, txnConnection.getValueFactory());
 
-				parser.setRDFHandler(new WildcardRDFRemover(txnConnection));
-				parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-				try {
-					parser.parse(inputStream, baseURI);
-					return true;
-				}
-				catch (IOException e) {
-					logger.error("error during txn delete operation", e);
-					throw new RuntimeException(e);
-				}
-			});
-
-			futures.add(result);
-		}
+			parser.setRDFHandler(new WildcardRDFRemover(txnConnection));
+			parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+			try {
+				parser.parse(inputStream, baseURI);
+				return true;
+			}
+			catch (IOException e) {
+				logger.error("error during txn delete operation", e);
+				throw new RuntimeException(e);
+			}
+		});
 		result.get();
 	}
 
@@ -395,36 +370,63 @@ class Transaction {
 			boolean includeInferred, Dataset dataset, Map<String, Value> bindings)
 		throws InterruptedException, ExecutionException
 	{
-		Future<Boolean> result;
-		synchronized (futures) {
-			result = executor.submit(() -> {
-				Update update = txnConnection.prepareUpdate(queryLn, sparqlUpdateString);
-				update.setIncludeInferred(includeInferred);
-				if (dataset != null) {
-					update.setDataset(dataset);
-				}
-				for (String bindingName : bindings.keySet()) {
-					update.setBinding(bindingName, bindings.get(bindingName));
-				}
+		Future<Boolean> result = submit(() -> {
+			Update update = txnConnection.prepareUpdate(queryLn, sparqlUpdateString);
+			update.setIncludeInferred(includeInferred);
+			if (dataset != null) {
+				update.setDataset(dataset);
+			}
+			for (String bindingName : bindings.keySet()) {
+				update.setBinding(bindingName, bindings.get(bindingName));
+			}
 
-				update.execute();
-				return true;
-			});
-
-			futures.add(result);
-		}
+			update.execute();
+			return true;
+		});
 		result.get();
 	}
 
+	/**
+	 * Checks if the user has any scheduled tasks for this transaction that have not yet completed.
+	 * 
+	 * @return True if there are currently no active tasks being executed for this transaction and false
+	 *         otherwise.
+	 */
 	boolean hasActiveOperations() {
+		// Synchronize on the futures set to ensure that new executions are blocked from submitting once we get this monitor
 		synchronized (futures) {
-			for (Future future : futures) {
+			Iterator<Future<?>> iterator = futures.iterator();
+			while (iterator.hasNext()) {
+				Future<?> future = iterator.next();
 				if (!future.isDone()) {
+					// Execution is in serial, so everything after this item is assumed not to be able to be cleaned up
 					return true;
 				}
+				else {
+					// Clean up this item to remove the reference to the item, while we have a lock on futures
+					iterator.remove();
+				}
 			}
+			return false;
 		}
-		return false;
+	}
+
+	/**
+	 * Checks if close has been called for this transaction.
+	 * 
+	 * @return True if the close method has been called for this transaction.
+	 */
+	boolean isClosed() {
+		return isClosed.get();
+	}
+
+	/**
+	 * Checks if close has been completed for this transaction.
+	 * 
+	 * @return True if the close operations have been completed.
+	 */
+	boolean isComplete() {
+		return closeCompleted.get();
 	}
 
 	/**
@@ -433,46 +435,94 @@ class Transaction {
 	 * @throws InterruptedException
 	 * @throws ExecutionException
 	 */
-	void close()
+	@Override
+	public void close()
 		throws InterruptedException, ExecutionException
 	{
 		if (isClosed.compareAndSet(false, true)) {
 			try {
-				Future<Boolean> result;
-				synchronized (futures) {
-					result = executor.submit(() -> {
-						txnConnection.close();
-						return true;
-					});
-					futures.add(result);
-				}
+				// Stop new tasks being submitted to the executor from now
+				Future<Boolean> result = submitAndShutdown(() -> {
+					txnConnection.close();
+					return true;
+				});
+				// Shutdown is atomic with the close operation above, so just need to block for it to complete before returning
 				result.get();
 			}
 			finally {
-				executor.shutdown();
+				try {
+					if (!executor.isTerminated()) {
+						executor.shutdownNow();
+					}
+				}
+				finally {
+					closeCompleted.set(true);
+				}
 			}
 		}
 	}
 
+	/**
+	 * Obtains a {@link RepositoryConnection} through the {@link ExecutorService}.
+	 * 
+	 * @return A new {@link RepositoryConnection} to use for this Transaction.
+	 * @throws InterruptedException
+	 *         If the execution of the task was interrupted.
+	 * @throws ExecutionException
+	 *         If the execution of the task failed for any reason.
+	 */
 	private RepositoryConnection getTransactionConnection()
 		throws InterruptedException, ExecutionException
 	{
 		// create a new RepositoryConnection with correct parser settings
-		Future<RepositoryConnection> future;
-		synchronized (futures) {
-			future = executor.submit(() -> {
-				RepositoryConnection conn = rep.getConnection();
-				ParserConfig config = conn.getParserConfig();
-				config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
-				config.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
-				config.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
+		Future<RepositoryConnection> future = submit(() -> {
+			RepositoryConnection conn = rep.getConnection();
+			ParserConfig config = conn.getParserConfig();
+			config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+			config.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
+			config.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 
-				return conn;
-			});
-
-			futures.add(future);
-		}
+			return conn;
+		});
 		return future.get();
+	}
+
+	/**
+	 * Atomically submit the task to the executor and add to our local list used to track whether there are
+	 * outstanding operations for the executor.
+	 * 
+	 * @param callable
+	 *        The task to submit
+	 * @return A {@link Future} that can be used to track whether the operation has succeeded and get the
+	 *         result.
+	 */
+	private <T> Future<T> submit(final Callable<T> callable) {
+		// Synchronize around futures before submitting task so hasActiveOperations gets an instantaneous snapshot of the executor from futures
+		synchronized (futures) {
+			final Future<T> result = executor.submit(callable);
+			futures.add(result);
+			return result;
+		}
+	}
+
+	/**
+	 * Atomically submit the task to the executor and add to our local list used to track whether there are
+	 * outstanding operations for the executor. In addition, this atomically shuts down the ExecutorService to
+	 * prevent future submissions from succeeding.
+	 * 
+	 * @param callable
+	 *        The task to submit
+	 * @return A {@link Future} that can be used to track whether the operation has succeeded and get the
+	 *         result.
+	 */
+	private <T> Future<T> submitAndShutdown(final Callable<T> callable) {
+		// Synchronize around futures before submitting task so hasActiveOperations gets an instantaneous snapshot of the executor from futures
+		synchronized (futures) {
+			final Future<T> result = executor.submit(callable);
+			executor.shutdown();
+			futures.add(result);
+			return result;
+		}
 	}
 
 	private static class WildcardRDFRemover extends AbstractRDFHandler {
@@ -492,7 +542,8 @@ class Transaction {
 			IRI predicate = SESAME.WILDCARD.equals(st.getPredicate()) ? null : st.getPredicate();
 			Value object = SESAME.WILDCARD.equals(st.getObject()) ? null : st.getObject();
 
-			// use the RepositoryConnection.clear operation if we're removing all statements
+			// use the RepositoryConnection.clear operation if we're removing
+			// all statements
 			final boolean clearAllTriples = subject == null && predicate == null && object == null;
 
 			try {

@@ -54,8 +54,6 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 
 	protected Map<String, Repository> initializedRepositories;
 
-	private HttpClient httpClient;
-
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -130,8 +128,9 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * Gets the SYSTEM repository.
 	 */
 	public Repository getSystemRepository() {
-		if (!isInitialized())
+		if (!isInitialized()) {
 			throw new IllegalStateException("Repository Manager is not initialized");
+		}
 		synchronized (initializedRepositories) {
 			return initializedRepositories.get(SystemRepository.ID);
 		}
@@ -362,6 +361,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 		throws RepositoryConfigException, RepositoryException
 	{
 		synchronized (initializedRepositories) {
+			updateInitializedRepositories();
 			Repository result = initializedRepositories.get(identity);
 
 			if (result != null && !result.isInitialized()) {
@@ -435,8 +435,14 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 		synchronized (initializedRepositories) {
 			Iterator<Repository> iter = initializedRepositories.values().iterator();
 			while (iter.hasNext()) {
-				if (!iter.next().isInitialized()) {
+				Repository next = iter.next();
+				if (!next.isInitialized()) {
 					iter.remove();
+					try {
+						next.shutDown();
+					} catch(RepositoryException e) {
+						
+					}
 				}
 			}
 		}
@@ -554,6 +560,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 */
 	public void shutDown() {
 		synchronized (initializedRepositories) {
+			updateInitializedRepositories();
 			for (Repository repository : initializedRepositories.values()) {
 				try {
 					if (repository.isInitialized()) {

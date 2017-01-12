@@ -57,10 +57,10 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	/**
 	 * The HTTP client that takes care of the client-server communication.
 	 */
-	private SesameClient client;
+	private volatile SesameClient client;
 
 	/** dependent life cycle */
-	private SesameClientImpl dependentClient;
+	private volatile SesameClientImpl dependentClient;
 
 	private String username;
 
@@ -76,7 +76,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	private File dataDir;
 
-	private Boolean compatibleMode = null;
+	private volatile Boolean compatibleMode = null;
 
 	/*--------------*
 	 * Constructors *
@@ -111,46 +111,77 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	 * ---------------* public methods * ---------------
 	 */
 
+	@Override
 	public void setDataDir(final File dataDir) {
 		this.dataDir = dataDir;
 	}
 
+	@Override
 	public File getDataDir() {
 		return dataDir;
 	}
 
-	public synchronized SesameClient getSesameClient() {
-		if (client == null) {
-			client = dependentClient = new SesameClientImpl();
+	@Override
+	public SesameClient getSesameClient() {
+		SesameClient result = client;
+		if (result == null) {
+			synchronized (this) {
+				result = client;
+				if (result == null) {
+					result = client = dependentClient = new SesameClientImpl();
+				}
+			}
 		}
-		return client;
+		return result;
 	}
 
-	public synchronized void setSesameClient(SesameClient client) {
-		this.client = client;
+	@Override
+	public void setSesameClient(SesameClient client) {
+		synchronized (this) {
+			this.client = client;
+			// If they set a client, we need to check whether we need to
+			// shutdown any existing dependentClient
+			SesameClientImpl toCloseDependentClient = dependentClient;
+			dependentClient = null;
+			if (toCloseDependentClient != null) {
+				toCloseDependentClient.shutDown();
+			}
+		}
 	}
 
+	@Override
 	public final HttpClient getHttpClient() {
 		return getSesameClient().getHttpClient();
 	}
 
+	@Override
 	public void setHttpClient(HttpClient httpClient) {
-		if (dependentClient == null) {
-			client = dependentClient = new SesameClientImpl();
+		SesameClientImpl toSetDependentClient = dependentClient;
+		if (toSetDependentClient == null) {
+			getSesameClient();
+			toSetDependentClient = dependentClient;
 		}
-		dependentClient.setHttpClient(httpClient);
+		// The strange lifecycle results in the possibility that the
+		// dependentClient will be null due to a call to setSesameClient, so add
+		// a null guard here for that possibility
+		if (toSetDependentClient != null) {
+			toSetDependentClient.setHttpClient(httpClient);
+		}
 	}
 
+	@Override
 	public ValueFactory getValueFactory() {
 		return SimpleValueFactory.getInstance();
 	}
 
+	@Override
 	public RepositoryConnection getConnection()
 		throws RepositoryException
 	{
 		return new HTTPRepositoryConnection(this, createHTTPClient());
 	}
 
+	@Override
 	public boolean isWritable()
 		throws RepositoryException
 	{
@@ -264,16 +295,22 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 		// no-op
 	}
 
+	@Override
 	protected void shutDownInternal()
 		throws RepositoryException
 	{
-		if (dependentClient != null) {
-			dependentClient.shutDown();
+		try {
+			SesameClientImpl toCloseDependentClient = dependentClient;
 			dependentClient = null;
+			if (toCloseDependentClient != null) {
+				toCloseDependentClient.shutDown();
+			}
 		}
-		// remove reference but do not shut down, client may be shared by other
-		// repos.
-		client = null;
+		finally {
+			// remove reference but do not shut down, client may be shared by
+			// other repos.
+			client = null;
+		}
 	}
 
 	/**
@@ -309,24 +346,31 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	 * @throws RepositoryException
 	 *         if something went wrong while querying the server for the protocol version.
 	 */
-	synchronized boolean useCompatibleMode()
+	boolean useCompatibleMode()
 		throws RepositoryException
 	{
-		if (compatibleMode == null) {
-			try {
-				final String serverProtocolVersion = createHTTPClient().getServerProtocol();
+		Boolean result = compatibleMode;
+		if (result == null) {
+			synchronized (this) {
+				result = compatibleMode;
+				if (result == null) {
+					try {
+						final String serverProtocolVersion = createHTTPClient().getServerProtocol();
 
-				// protocol version 7 supports the new transaction handling. If
-				// the server is older, we need to run in backward-compatible mode.
-				this.compatibleMode = (Integer.parseInt(serverProtocolVersion) < 7);
-			}
-			catch (NumberFormatException e) {
-				throw new RepositoryException("could not read protocol version from server: ", e);
-			}
-			catch (IOException e) {
-				throw new RepositoryException("could not read protocol version from server: ", e);
+						// protocol version 7 supports the new transaction
+						// handling. If the server is older, we need to run in
+						// backward-compatible mode.
+						result = compatibleMode = (Integer.parseInt(serverProtocolVersion) < 7);
+					}
+					catch (NumberFormatException e) {
+						throw new RepositoryException("could not read protocol version from server: ", e);
+					}
+					catch (IOException e) {
+						throw new RepositoryException("could not read protocol version from server: ", e);
+					}
+				}
 			}
 		}
-		return compatibleMode;
+		return result;
 	}
 }

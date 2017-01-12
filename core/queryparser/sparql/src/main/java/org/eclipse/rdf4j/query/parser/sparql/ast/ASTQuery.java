@@ -17,10 +17,6 @@ public abstract class ASTQuery extends ASTOperation {
 		super(p, id);
 	}
 
-	public ASTWhereClause getWhereClause() {
-		return jjtGetChild(ASTWhereClause.class);
-	}
-
 	public ASTOrderClause getOrderClause() {
 		return jjtGetChild(ASTOrderClause.class);
 	}

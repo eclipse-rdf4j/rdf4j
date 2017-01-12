@@ -31,9 +31,11 @@ import org.apache.http.NameValuePair;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.HttpDelete;
+import org.apache.http.client.methods.HttpEntityEnclosingRequestBase;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
+import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.methods.RequestBuilder;
 import org.apache.http.client.utils.URIBuilder;
@@ -177,6 +179,9 @@ public class SesameSession extends SparqlSession {
 			logger.warn("Server reported unexpected malfored query error", e);
 			throw new RepositoryException(e.getMessage(), e);
 		}
+		finally {
+			method.reset();
+		}
 	}
 
 	/*------------------*
@@ -198,6 +203,9 @@ public class SesameSession extends SparqlSession {
 		}
 		catch (RDF4JException e) {
 			throw new RepositoryException(e);
+		}
+		finally {
+			method.reset();
 		}
 	}
 
@@ -222,15 +230,21 @@ public class SesameSession extends SparqlSession {
 				url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContexts[i]);
 			}
 
-			final HttpUriRequest method = useTransaction ? new HttpPut(url.build())
+			final HttpRequestBase method = useTransaction ? new HttpPut(url.build())
 					: new HttpGet(url.build());
 
-			String response = EntityUtils.toString(executeOK(method).getEntity());
 			try {
-				return Long.parseLong(response);
+				String response = EntityUtils.toString(executeOK(method).getEntity());
+				
+				try {
+					return Long.parseLong(response);
+				}
+				catch (NumberFormatException e) {
+					throw new RepositoryException("Server responded with invalid size value: " + response);
+				}
 			}
-			catch (NumberFormatException e) {
-				throw new RepositoryException("Server responded with invalid size value: " + response);
+			finally {
+				method.reset();
 			}
 		}
 		catch (URISyntaxException e) {
@@ -248,7 +262,7 @@ public class SesameSession extends SparqlSession {
 		throws IOException, RepositoryException
 	{
 
-		HttpUriRequest method = new HttpDelete(Protocol.getRepositoryLocation(serverURL, repositoryID));
+		HttpDelete method = new HttpDelete(Protocol.getRepositoryLocation(serverURL, repositoryID));
 
 		try {
 			executeNoContent(method);
@@ -258,6 +272,9 @@ public class SesameSession extends SparqlSession {
 		}
 		catch (RDF4JException e) {
 			throw new RepositoryException(e);
+		}
+		finally {
+			method.reset();
 		}
 	}
 
@@ -285,7 +302,7 @@ public class SesameSession extends SparqlSession {
 	{
 		checkRepositoryURL();
 
-		HttpUriRequest method = new HttpGet(Protocol.getNamespacesLocation(getQueryURL()));
+		HttpGet method = new HttpGet(Protocol.getNamespacesLocation(getQueryURL()));
 
 		try {
 			getTupleQueryResult(method, handler);
@@ -294,6 +311,9 @@ public class SesameSession extends SparqlSession {
 			logger.warn("Server reported unexpected malfored query error", e);
 			throw new RepositoryException(e.getMessage(), e);
 		}
+		finally {
+			method.reset();
+		}
 	}
 
 	public String getNamespace(String prefix)
@@ -301,7 +321,7 @@ public class SesameSession extends SparqlSession {
 	{
 		checkRepositoryURL();
 
-		HttpUriRequest method = new HttpGet(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix));
+		HttpGet method = new HttpGet(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix));
 
 		try {
 			HttpResponse response = execute(method);
@@ -320,6 +340,9 @@ public class SesameSession extends SparqlSession {
 		catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
+		finally {
+			method.reset();
+		}
 	}
 
 	public void setNamespacePrefix(String prefix, String name)
@@ -328,9 +351,9 @@ public class SesameSession extends SparqlSession {
 		checkRepositoryURL();
 
 		HttpPut method = new HttpPut(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix));
-		method.setEntity(new StringEntity(name, ContentType.create("text/plain", "UTF-8")));
 
 		try {
+			method.setEntity(new StringEntity(name, ContentType.create("text/plain", "UTF-8")));
 			executeNoContent(method);
 		}
 		catch (RepositoryException e) {
@@ -338,6 +361,9 @@ public class SesameSession extends SparqlSession {
 		}
 		catch (RDF4JException e) {
 			throw new RepositoryException(e);
+		}
+		finally {
+			method.reset();
 		}
 	}
 
@@ -346,7 +372,7 @@ public class SesameSession extends SparqlSession {
 	{
 		checkRepositoryURL();
 
-		HttpUriRequest method = new HttpDelete(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix));
+		HttpDelete method = new HttpDelete(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix));
 
 		try {
 			executeNoContent(method);
@@ -356,6 +382,9 @@ public class SesameSession extends SparqlSession {
 		}
 		catch (RDF4JException e) {
 			throw new RepositoryException(e);
+		}
+		finally {
+			method.reset();
 		}
 	}
 
@@ -364,7 +393,7 @@ public class SesameSession extends SparqlSession {
 	{
 		checkRepositoryURL();
 
-		HttpUriRequest method = new HttpDelete(Protocol.getNamespacesLocation(getQueryURL()));
+		HttpDelete method = new HttpDelete(Protocol.getNamespacesLocation(getQueryURL()));
 
 		try {
 			executeNoContent(method);
@@ -374,6 +403,9 @@ public class SesameSession extends SparqlSession {
 		}
 		catch (RDF4JException e) {
 			throw new RepositoryException(e);
+		}
+		finally {
+			method.reset();
 		}
 	}
 
@@ -409,6 +441,9 @@ public class SesameSession extends SparqlSession {
 		catch (MalformedQueryException e) {
 			logger.warn("Server reported unexpected malfored query error", e);
 			throw new RepositoryException(e.getMessage(), e);
+		}
+		finally {
+			method.reset();
 		}
 	}
 
@@ -447,7 +482,7 @@ public class SesameSession extends SparqlSession {
 				url.setParameter(Protocol.ACTION_PARAM_NAME, Action.GET.toString());
 			}
 
-			HttpUriRequest method = useTransaction ? new HttpPut(url.build()) : new HttpGet(url.build());
+			HttpRequestBase method = useTransaction ? new HttpPut(url.build()) : new HttpGet(url.build());
 
 			try {
 				getRDF(method, handler, true);
@@ -455,6 +490,9 @@ public class SesameSession extends SparqlSession {
 			catch (MalformedQueryException e) {
 				logger.warn("Server reported unexpected malfored query error", e);
 				throw new RepositoryException(e.getMessage(), e);
+			}
+			finally {
+				method.reset();
 			}
 		}
 		catch (URISyntaxException e) {
@@ -473,31 +511,36 @@ public class SesameSession extends SparqlSession {
 
 		HttpPost method = new HttpPost(Protocol.getTransactionsLocation(getRepositoryURL()));
 
-		method.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
-
-		List<NameValuePair> params = new ArrayList<NameValuePair>();
-		if (isolationLevel != null) {
-			params.add(new BasicNameValuePair(Protocol.ISOLATION_LEVEL_PARAM_NAME,
-					isolationLevel.getURI().stringValue()));
-		}
-
-		method.setEntity(new UrlEncodedFormEntity(params, UTF8));
-		HttpResponse response = execute(method);
-		int code = response.getStatusLine().getStatusCode();
-
 		try {
-			if (code == HttpURLConnection.HTTP_CREATED) {
-				transactionURL = response.getFirstHeader("Location").getValue();
-				if (transactionURL == null) {
-					throw new RepositoryException("no valid transaction ID received in server response.");
+			method.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
+	
+			List<NameValuePair> params = new ArrayList<NameValuePair>();
+			if (isolationLevel != null) {
+				params.add(new BasicNameValuePair(Protocol.ISOLATION_LEVEL_PARAM_NAME,
+						isolationLevel.getURI().stringValue()));
+			}
+	
+			method.setEntity(new UrlEncodedFormEntity(params, UTF8));
+			HttpResponse response = execute(method);
+			try {
+				int code = response.getStatusLine().getStatusCode();
+	
+				if (code == HttpURLConnection.HTTP_CREATED) {
+					transactionURL = response.getFirstHeader("Location").getValue();
+					if (transactionURL == null) {
+						throw new RepositoryException("no valid transaction ID received in server response.");
+					}
+				}
+				else {
+					throw new RepositoryException("unable to start transaction. HTTP error code " + code);
 				}
 			}
-			else {
-				throw new RepositoryException("unable to start transaction. HTTP error code " + code);
+			finally {
+				EntityUtils.consume(response.getEntity());
 			}
 		}
 		finally {
-			EntityUtils.consume(response.getEntity());
+			method.reset();
 		}
 	}
 
@@ -515,27 +558,31 @@ public class SesameSession extends SparqlSession {
 			URIBuilder url = new URIBuilder(transactionURL);
 			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.COMMIT.toString());
 			method = new HttpPut(url.build());
+
+			final HttpResponse response = execute(method);
+			try {
+				int code = response.getStatusLine().getStatusCode();
+				if (code == HttpURLConnection.HTTP_OK) {
+					// we're done.
+					transactionURL = null;
+				}
+				else {
+					throw new RepositoryException("unable to commit transaction. HTTP error code " + code);
+				}
+			}
+			finally {
+				EntityUtils.consumeQuietly(response.getEntity());
+			}
 		}
 		catch (URISyntaxException e) {
 			logger.error("could not create URL for transaction commit", e);
 			throw new RuntimeException(e);
 		}
-
-		final HttpResponse response = execute(method);
-		try {
-			int code = response.getStatusLine().getStatusCode();
-			if (code == HttpURLConnection.HTTP_OK) {
-				// we're done.
-				transactionURL = null;
-			}
-			else {
-				throw new RepositoryException("unable to commit transaction. HTTP error code " + code);
-			}
-		}
 		finally {
-			EntityUtils.consumeQuietly(response.getEntity());
+			if(method != null) {
+				method.reset();
+			}
 		}
-
 	}
 
 	public synchronized void rollbackTransaction()
@@ -550,19 +597,24 @@ public class SesameSession extends SparqlSession {
 		String requestURL = transactionURL;
 		HttpDelete method = new HttpDelete(requestURL);
 
-		final HttpResponse response = execute(method);
 		try {
-			int code = response.getStatusLine().getStatusCode();
-			if (code == HttpURLConnection.HTTP_NO_CONTENT) {
-				// we're done.
-				transactionURL = null;
+			final HttpResponse response = execute(method);
+			try {
+				int code = response.getStatusLine().getStatusCode();
+				if (code == HttpURLConnection.HTTP_NO_CONTENT) {
+					// we're done.
+					transactionURL = null;
+				}
+				else {
+					throw new RepositoryException("unable to rollback transaction. HTTP error code " + code);
+				}
 			}
-			else {
-				throw new RepositoryException("unable to rollback transaction. HTTP error code " + code);
+			finally {
+				EntityUtils.consumeQuietly(response.getEntity());
 			}
 		}
 		finally {
-			EntityUtils.consumeQuietly(response.getEntity());
+			method.reset();
 		}
 	}
 
@@ -596,49 +648,54 @@ public class SesameSession extends SparqlSession {
 
 		HttpPost method = new HttpPost(Protocol.getStatementsLocation(getQueryURL()));
 
-		// Create a RequestEntity for the transaction data
-		method.setEntity(new AbstractHttpEntity() {
-
-			public long getContentLength() {
-				return -1; // don't know
-			}
-
-			public Header getContentType() {
-				return new BasicHeader("Content-Type", Protocol.TXN_MIME_TYPE);
-			}
-
-			public boolean isRepeatable() {
-				return true;
-			}
-
-			public boolean isStreaming() {
-				return true;
-			}
-
-			public InputStream getContent()
-				throws IOException, IllegalStateException
-			{
-				ByteArrayOutputStream buf = new ByteArrayOutputStream();
-				writeTo(buf);
-				return new ByteArrayInputStream(buf.toByteArray());
-			}
-
-			public void writeTo(OutputStream out)
-				throws IOException
-			{
-				TransactionWriter txnWriter = new TransactionWriter();
-				txnWriter.serialize(txn, out);
-			}
-		});
-
 		try {
-			executeNoContent(method);
+			// Create a RequestEntity for the transaction data
+			method.setEntity(new AbstractHttpEntity() {
+	
+				public long getContentLength() {
+					return -1; // don't know
+				}
+	
+				public Header getContentType() {
+					return new BasicHeader("Content-Type", Protocol.TXN_MIME_TYPE);
+				}
+	
+				public boolean isRepeatable() {
+					return true;
+				}
+	
+				public boolean isStreaming() {
+					return true;
+				}
+	
+				public InputStream getContent()
+					throws IOException, IllegalStateException
+				{
+					ByteArrayOutputStream buf = new ByteArrayOutputStream();
+					writeTo(buf);
+					return new ByteArrayInputStream(buf.toByteArray());
+				}
+	
+				public void writeTo(OutputStream out)
+					throws IOException
+				{
+					TransactionWriter txnWriter = new TransactionWriter();
+					txnWriter.serialize(txn, out);
+				}
+			});
+	
+			try {
+				executeNoContent(method);
+			}
+			catch (RepositoryException e) {
+				throw e;
+			}
+			catch (RDF4JException e) {
+				throw new RepositoryException(e);
+			}
 		}
-		catch (RepositoryException e) {
-			throw e;
-		}
-		catch (RDF4JException e) {
-			throw new RepositoryException(e);
+		finally {
+			method.reset();
 		}
 	}
 
@@ -829,29 +886,36 @@ public class SesameSession extends SparqlSession {
 			}
 
 			// Select appropriate HTTP method
-			HttpEntityEnclosingRequest method;
-			if (overwrite || useTransaction) {
-				method = new HttpPut(url.build());
-			}
-			else {
-				method = new HttpPost(url.build());
-			}
-
-			// Set payload
-			method.setEntity(reqEntity);
-
-			// Send request
+			HttpEntityEnclosingRequestBase method = null;
 			try {
-				executeNoContent((HttpUriRequest)method);
+				if (overwrite || useTransaction) {
+					method = new HttpPut(url.build());
+				}
+				else {
+					method = new HttpPost(url.build());
+				}
+	
+				// Set payload
+				method.setEntity(reqEntity);
+	
+				// Send request
+				try {
+					executeNoContent((HttpUriRequest)method);
+				}
+				catch (RepositoryException e) {
+					throw e;
+				}
+				catch (RDFParseException e) {
+					throw e;
+				}
+				catch (RDF4JException e) {
+					throw new RepositoryException(e);
+				}
 			}
-			catch (RepositoryException e) {
-				throw e;
-			}
-			catch (RDFParseException e) {
-				throw e;
-			}
-			catch (RDF4JException e) {
-				throw new RepositoryException(e);
+			finally {
+				if(method != null) {
+					method.reset();
+				}
 			}
 		}
 		catch (URISyntaxException e) {

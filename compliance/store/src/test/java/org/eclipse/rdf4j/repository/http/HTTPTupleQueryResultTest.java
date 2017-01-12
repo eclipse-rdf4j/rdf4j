@@ -5,24 +5,41 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.repository.sail.memory;
+package org.eclipse.rdf4j.repository.http;
 
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.SparqlAggregatesTest;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.repository.TupleQueryResultTest;
+import org.junit.AfterClass;
 import org.junit.BeforeClass;
 
-public class MemorySparqlAggregatesTest extends SparqlAggregatesTest {
+public class HTTPTupleQueryResultTest extends TupleQueryResultTest {
+
+	private static HTTPMemServer server;
 
 	@BeforeClass
-	public static void setUpClass()
+	public static void startServer()
 		throws Exception
 	{
-		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+		server = new HTTPMemServer();
+		try {
+			server.start();
+		}
+		catch (Exception e) {
+			server.stop();
+			throw e;
+		}
 	}
 
-	protected Repository newRepository() {
-		return new SailRepository(new MemoryStore());
+	@AfterClass
+	public static void stopServer()
+		throws Exception
+	{
+		server.stop();
 	}
+
+	@Override
+	protected Repository newRepository() {
+		return new HTTPRepository(HTTPMemServer.REPOSITORY_URL);
+	}
+
 }

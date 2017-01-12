@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 import static javax.servlet.http.HttpServletResponse.SC_CREATED;
 
 import java.io.IOException;
+import java.lang.reflect.UndeclaredThrowableException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -98,24 +99,38 @@ public class TransactionStartController extends AbstractController {
 			}
 		}
 
+		Transaction txn = null;
+		boolean allGood = false;
 		try {
-			Transaction txn = new Transaction(repository);
+			txn = new Transaction(repository);
 			txn.begin(isolationLevel);
 
 			UUID txnId = txn.getID();
-					
-			ActiveTransactionRegistry.INSTANCE.register(txn);
-			
+
 			model.put(SimpleResponseView.SC_KEY, SC_CREATED);
 			final StringBuffer txnURL = request.getRequestURL();
 			txnURL.append("/" + txnId.toString());
 			Map<String, String> customHeaders = new HashMap<String, String>();
 			customHeaders.put("Location", txnURL.toString());
 			model.put(SimpleResponseView.CUSTOM_HEADERS_KEY, customHeaders);
-			return new ModelAndView(SimpleResponseView.getInstance(), model);
+
+			ModelAndView result = new ModelAndView(SimpleResponseView.getInstance(), model);
+			ActiveTransactionRegistry.INSTANCE.register(txn);
+			allGood = true;
+			return result;
 		}
 		catch (RepositoryException | InterruptedException | ExecutionException e) {
 			throw new ServerHTTPException("Transaction start error: " + e.getMessage(), e);
+		}
+		finally {
+			if (!allGood) {
+				try {
+					txn.close();
+				}
+				catch (InterruptedException | ExecutionException e) {
+					throw new ServerHTTPException("Transaction start error: " + e.getMessage(), e);
+				}
+			}
 		}
 	}
 

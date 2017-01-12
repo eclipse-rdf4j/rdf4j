@@ -23,7 +23,6 @@ options {
 }
 
 PARSER_BEGIN(SyntaxTreeBuilder)
-
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
 import java.io.StringReader;
@@ -1874,10 +1873,19 @@ void WithClause() #DatasetClause :
     <WITH> IRIref()
 }
 
+/*
+ * WHERE keyword is required in modify operations
+ */
+void ModifyWhereClause() #WhereClause :
+{}
+{
+	 <WHERE> GroupGraphPattern()
+}
+
 void Modify() :
 {}
 {
     [ WithClause() ] 
     ( DeleteClause() [InsertClause()] | InsertClause() ) (UsingClause())* 
-    <WHERE> GroupGraphPattern()
+    ModifyWhereClause()
 }

@@ -22,9 +22,17 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 public class RemoveIsolationTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	private Repository repo;
 
@@ -47,8 +55,12 @@ public class RemoveIsolationTest {
 	public void tearDown()
 		throws Exception
 	{
-		con.close();
-		repo.shutDown();
+		try {
+			con.close();
+		}
+		finally {
+			repo.shutDown();
+		}
 	}
 
 	@Test
@@ -57,13 +69,16 @@ public class RemoveIsolationTest {
 	{
 		con.begin(level);
 
-		con.add(f.createURI("http://example.org/people/alice"),
-				f.createURI("http://example.org/ontology/name"), f.createLiteral("Alice"));
+		con.add(f.createIRI("http://example.org/people/alice"),
+				f.createIRI("http://example.org/ontology/name"), f.createLiteral("Alice"));
 
-		con.remove(con.getStatements(null, null, null, true));
+		try (RepositoryResult<Statement> stats = con.getStatements(null, null, null, true);) {
+			con.remove(stats);
+		}
 
-		RepositoryResult<Statement> stats = con.getStatements(null, null, null, true);
-		assertEquals(Collections.emptyList(), QueryResults.asList(stats));
+		try (RepositoryResult<Statement> stats = con.getStatements(null, null, null, true);) {
+			assertEquals(Collections.emptyList(), QueryResults.asList(stats));
+		}
 		con.rollback();
 	}
 
@@ -73,13 +88,16 @@ public class RemoveIsolationTest {
 	{
 		con.begin(level);
 
-		con.add(f.createURI("http://example.org/people/alice"),
-				f.createURI("http://example.org/ontology/name"), f.createLiteral("Alice"));
+		con.add(f.createIRI("http://example.org/people/alice"),
+				f.createIRI("http://example.org/ontology/name"), f.createLiteral("Alice"));
 
-		con.remove(con.getStatements(null, null, null, true));
+		try (RepositoryResult<Statement> stats = con.getStatements(null, null, null, true);) {
+			con.remove(stats);
+		}
 
-		RepositoryResult<Statement> stats = con.getStatements(null, null, null, true);
-		assertEquals(Collections.emptyList(), QueryResults.asList(stats));
+		try (RepositoryResult<Statement> stats = con.getStatements(null, null, null, true);) {
+			assertEquals(Collections.emptyList(), QueryResults.asList(stats));
+		}
 		con.rollback();
 	}
 }
