@@ -7,44 +7,29 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.spin;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryContextInitializer;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.inferencer.fc.AbstractForwardChainingInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.spin.SpinParser;
 
 public class SpinSail extends AbstractForwardChainingInferencer {
-
-	public enum EvaluationMode {
-		/**
-		 * Uses the base SAIL along with an embedded SERVICE to perform query evaluation. The SERVICE is used
-		 * to evaluate extended query algebra nodes such as {@link TupleFunction}s. (Default).
-		 */
-		SERVICE,
-		/**
-		 * Assumes the base SAIL supports an extended query algebra (e.g. {@link TupleFunction}s) and use it
-		 * to perform all query evaluation.
-		 */
-		NATIVE,
-		/**
-		 * Treats the base SAIL as a simple triple source and all the query evaluation is performed by this
-		 * SAIL.
-		 */
-		TRIPLE_SOURCE
-	}
 
 	private FunctionRegistry functionRegistry = FunctionRegistry.getInstance();
 
@@ -54,7 +39,9 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 
 	private SpinParser parser = new SpinParser();
 
-	private EvaluationMode evaluationMode = EvaluationMode.SERVICE;
+	private TupleFunctionEvaluationMode evaluationMode = TupleFunctionEvaluationMode.SERVICE;
+
+	private List<QueryContextInitializer> queryContextInitializers = new ArrayList<>();
 
 	private boolean axiomClosureNeeded = true;
 
@@ -104,11 +91,11 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 		super.setFederatedServiceResolver(resolver);
 	}
 
-	public void setEvaluationMode(EvaluationMode mode) {
+	public void setEvaluationMode(TupleFunctionEvaluationMode mode) {
 		this.evaluationMode = mode;
 	}
 
-	public EvaluationMode getEvaluationMode() {
+	public TupleFunctionEvaluationMode getEvaluationMode() {
 		return evaluationMode;
 	}
 
@@ -125,6 +112,14 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 	 */
 	public boolean isAxiomClosureNeeded() {
 		return this.axiomClosureNeeded;
+	}
+
+	public void addQueryContextInitializer(QueryContextInitializer initializer) {
+		this.queryContextInitializers.add(initializer);
+	}
+
+	protected List<QueryContextInitializer> getQueryContextInitializers() {
+		return this.queryContextInitializers;
 	}
 
 	public SpinParser getSpinParser() {

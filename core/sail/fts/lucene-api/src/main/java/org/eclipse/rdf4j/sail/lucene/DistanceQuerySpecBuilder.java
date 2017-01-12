@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
@@ -29,7 +30,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.helpers.QueryModelVisitorBase;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.sail.SailException;
 
 public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
@@ -46,7 +47,7 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 		throws SailException
 	{
 
-		tupleExpr.visit(new QueryModelVisitorBase<SailException>() {
+		tupleExpr.visit(new AbstractQueryModelVisitor<SailException>() {
 
 			final Map<String, DistanceQuerySpec> specs = new HashMap<String, DistanceQuerySpec>();
 
@@ -62,7 +63,7 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 
 					Literal from = getLiteral(args.get(0));
 					String to = getVarName(args.get(1));
-					URI units = getURI(args.get(2));
+					IRI units = getURI(args.get(2));
 
 					if (from == null || to == null || units == null) {
 						return;
@@ -165,10 +166,10 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 		return null;
 	}
 
-	private static URI getURI(ValueExpr v) {
+	private static IRI getURI(ValueExpr v) {
 		Value value = getValue(v);
-		if (value instanceof URI) {
-			return (URI)value;
+		if (value instanceof IRI) {
+			return (IRI)value;
 		}
 		return null;
 	}

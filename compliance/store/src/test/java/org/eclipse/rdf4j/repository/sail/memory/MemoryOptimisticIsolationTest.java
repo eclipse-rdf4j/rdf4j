@@ -18,6 +18,7 @@ public class MemoryOptimisticIsolationTest extends OptimisticIsolationTest {
 	public static void setUpClass()
 		throws Exception
 	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 		setSailFactory(new MemoryStoreFactory());
 	}
 

@@ -74,10 +74,10 @@ public class LocalRepositoryManager extends RepositoryManager {
 	private final File baseDir;
 
 	/** dependent life cycle */
-	private SesameClientImpl client;
+	private volatile SesameClientImpl client;
 
 	/** dependent life cycle */
-	private FederatedServiceResolverImpl serviceResolver;
+	private volatile FederatedServiceResolverImpl serviceResolver;
 
 	/*--------------*
 	 * Constructors *
@@ -130,48 +130,75 @@ public class LocalRepositoryManager extends RepositoryManager {
 		return baseDir.toURI().toURL();
 	}
 
+	/**
+	 * @return Returns the httpClient.
+	 */
+	protected SesameClientImpl getSesameClient() {
+		SesameClientImpl result = client;
+		if (result == null) {
+			synchronized (this) {
+				result = client;
+				if (result == null) {
+					result = client = new SesameClientImpl();
+				}
+			}
+		}
+		return result;
+	}
+
 	@Override
 	public HttpClient getHttpClient() {
-		if (client == null) {
+		SesameClientImpl nextClient = client;
+		if (nextClient == null) {
 			return null;
 		}
 		else {
-			return client.getHttpClient();
+			return nextClient.getHttpClient();
 		}
 	}
 
 	@Override
-	public synchronized void setHttpClient(HttpClient httpClient) {
-		if (client == null) {
-			client = new SesameClientImpl();
-		}
-		client.setHttpClient(httpClient);
+	public void setHttpClient(HttpClient httpClient) {
+		getSesameClient().setHttpClient(httpClient);
 	}
 
 	/**
 	 * @return Returns the serviceResolver.
 	 */
-	protected synchronized FederatedServiceResolver getFederatedServiceResolver() {
-		if (serviceResolver == null) {
-			if (client == null) {
-				client = new SesameClientImpl();
+	protected FederatedServiceResolver getFederatedServiceResolver() {
+		FederatedServiceResolverImpl result = serviceResolver;
+		if (result == null) {
+			synchronized (this) {
+				result = serviceResolver;
+				if (result == null) {
+					result = serviceResolver = new FederatedServiceResolverImpl();
+					result.setSesameClient(getSesameClient());
+				}
 			}
-			serviceResolver = new FederatedServiceResolverImpl();
-			serviceResolver.setSesameClient(client);
 		}
-		return serviceResolver;
+		return result;
 	}
 
 	@Override
 	public void shutDown() {
-		super.shutDown();
-		if (serviceResolver != null) {
-			serviceResolver.shutDown();
-			serviceResolver = null;
+		try {
+			super.shutDown();
 		}
-		if (client != null) {
-			client.shutDown();
-			client = null;
+		finally {
+			try {
+				FederatedServiceResolverImpl toCloseServiceResolver = serviceResolver;
+				serviceResolver = null;
+				if (toCloseServiceResolver != null) {
+					toCloseServiceResolver.shutDown();
+				}
+			}
+			finally {
+				SesameClientImpl toCloseClient = client;
+				client = null;
+				if (toCloseClient != null) {
+					toCloseClient.shutDown();
+				}
+			}
 		}
 	}
 

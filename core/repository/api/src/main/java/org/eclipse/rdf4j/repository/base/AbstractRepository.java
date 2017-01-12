@@ -19,7 +19,6 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class AbstractRepository implements Repository {
 
-	// "volatile" guarantees access ordering in JDK5+
 	private volatile boolean initialized = false;
 
 	private final Object initLock = new Object();
