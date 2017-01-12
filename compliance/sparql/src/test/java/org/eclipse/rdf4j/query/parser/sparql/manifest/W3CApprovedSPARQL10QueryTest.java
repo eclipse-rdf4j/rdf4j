@@ -40,12 +40,19 @@ public class W3CApprovedSPARQL10QueryTest extends SPARQLQueryTest {
 					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality,
 					boolean checkOrder)
 			{
-				String[] ignoredTests = {};
+				String[] ignoredTests = {
+						// incompatible with SPARQL 1.1 - syntax for decimals was modified
+						"Basic - Term 6",
+						// incompatible with SPARQL 1.1 - syntax for decimals was modified
+						"Basic - Term 7",
+						// Test is incorrect: assumes timezoned date is comparable with non-timezoned
+						"date-2"};
 
 				return new W3CApprovedSPARQL10QueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
 						laxCardinality, checkOrder, ignoredTests);
 			}
 		});
+
 	}
 
 	protected W3CApprovedSPARQL10QueryTest(String testURI, String name, String queryFileURL,
