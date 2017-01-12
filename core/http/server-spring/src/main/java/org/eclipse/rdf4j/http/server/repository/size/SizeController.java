@@ -57,11 +57,10 @@ public class SizeController extends AbstractController {
 
 			long size = -1;
 
-			try {
-				RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-				synchronized (repositoryCon) {
-					size = repositoryCon.size(contexts);
-				}
+			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(
+					request))
+			{
+				size = repositoryCon.size(contexts);
 			}
 			catch (RepositoryException e) {
 				throw new ServerHTTPException("Repository error: " + e.getMessage(), e);

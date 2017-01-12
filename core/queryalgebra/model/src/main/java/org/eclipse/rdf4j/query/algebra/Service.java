@@ -214,11 +214,24 @@ public class Service extends UnaryTupleOperator {
 				throws RuntimeException
 			{
 				// take only real vars, i.e. ignore blank nodes
-				if (!node.hasValue() && !node.isAnonymous())
+				if (!node.hasValue() && !node.isAnonymous()) {
 					res.add(node.getName());
+				}
+			}
+			
+			@Override
+			public void meet(BindingSetAssignment bsa) {
+				res.addAll(bsa.getAssuredBindingNames());
+			}
+			
+			@Override
+			public void meet(Extension e) {
+				super.meet(e);
+				for (ExtensionElem elem: e.getElements()) {
+					res.add(elem.getName());
+				}
 			}
 			// TODO maybe stop tree traversal in nested SERVICE?
-			// TODO special case handling for BIND
 		});
 		return res;
 	}

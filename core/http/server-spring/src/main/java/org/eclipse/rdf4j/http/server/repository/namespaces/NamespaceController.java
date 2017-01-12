@@ -84,13 +84,8 @@ public class NamespaceController extends AbstractController {
 	private ModelAndView getExportNamespaceResult(HttpServletRequest request, String prefix)
 		throws ServerHTTPException, ClientHTTPException
 	{
-		try {
-			String namespace = null;
-
-			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-			synchronized (repositoryCon) {
-				namespace = repositoryCon.getNamespace(prefix);
-			}
+		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
+			String namespace = repositoryCon.getNamespace(prefix);
 
 			if (namespace == null) {
 				throw new ClientHTTPException(SC_NOT_FOUND, "Undefined prefix: " + prefix);
@@ -117,11 +112,8 @@ public class NamespaceController extends AbstractController {
 		}
 		// FIXME: perform some sanity checks on the namespace string
 
-		try {
-			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-			synchronized (repositoryCon) {
-				repositoryCon.setNamespace(prefix, namespace);
-			}
+		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
+			repositoryCon.setNamespace(prefix, namespace);
 		}
 		catch (RepositoryException e) {
 			throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
@@ -133,11 +125,8 @@ public class NamespaceController extends AbstractController {
 	private ModelAndView getRemoveNamespaceResult(HttpServletRequest request, String prefix)
 		throws ServerHTTPException
 	{
-		try {
-			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
-			synchronized (repositoryCon) {
-				repositoryCon.removeNamespace(prefix);
-			}
+		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
+			repositoryCon.removeNamespace(prefix);
 		}
 		catch (RepositoryException e) {
 			throw new ServerHTTPException("Repository error: " + e.getMessage(), e);

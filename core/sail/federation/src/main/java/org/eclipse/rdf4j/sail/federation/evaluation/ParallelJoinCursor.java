@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation.evaluation;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -51,6 +54,8 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	private final QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>> rightQueue = new QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>>(
 			1024);
 
+	private final List<CloseableIteration<BindingSet, QueryEvaluationException>> toCloseList = new ArrayList<>();
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -69,21 +74,27 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public void run() {
 		evaluationThread = Thread.currentThread();
 		try {
 			while (!isClosed() && leftIter.hasNext()) {
-				rightQueue.put(strategy.evaluate(rightArg, leftIter.next()));
+				CloseableIteration<BindingSet, QueryEvaluationException> evaluate = strategy.evaluate(
+						rightArg, leftIter.next());
+				toCloseList.add(evaluate);
+				rightQueue.put(evaluate);
 			}
 		}
 		catch (RuntimeException e) {
 			rightQueue.toss(e);
+			close();
 		}
 		catch (InterruptedException e) {
-			// stop
+			Thread.currentThread().interrupt();
+			close();
 		}
 		finally {
-			evaluationThread = null; // NOPMD
+			evaluationThread = null;
 			rightQueue.done();
 		}
 	}
@@ -105,7 +116,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 				}
 				else {
 					nextRightIter.close();
-					nextRightIter = rightIter = null; // NOPMD
+					nextRightIter = rightIter = null;
 				}
 			}
 		}
@@ -123,21 +134,38 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 		}
 		finally {
 			try {
-				Thread toCloseEvaluationThread = evaluationThread;
-				if (toCloseEvaluationThread != null) {
-					toCloseEvaluationThread.interrupt();
+				CloseableIteration<BindingSet, QueryEvaluationException> toCloseRightIter = rightIter;
+				rightIter = null;
+				if (toCloseRightIter != null) {
+					toCloseRightIter.close();
 				}
 			}
 			finally {
 				try {
-					CloseableIteration<BindingSet, QueryEvaluationException> toCloseRightIter = rightIter;
-					rightIter = null; // NOPMD
-					if (toCloseRightIter != null) {
-						toCloseRightIter.close();
-					}
+					leftIter.close();
 				}
 				finally {
-					leftIter.close();
+					try {
+						rightQueue.close();
+					}
+					finally {
+						try {
+							for (CloseableIteration<BindingSet, QueryEvaluationException> nextToCloseIteration : toCloseList) {
+								try {
+									nextToCloseIteration.close();
+								}
+								catch (Exception e) {
+									// Ignoring exceptions while closing component iterations
+								}
+							}
+						}
+						finally {
+							Thread toCloseEvaluationThread = evaluationThread;
+							if (toCloseEvaluationThread != null) {
+								toCloseEvaluationThread.interrupt();
+							}
+						}
+					}
 				}
 			}
 		}

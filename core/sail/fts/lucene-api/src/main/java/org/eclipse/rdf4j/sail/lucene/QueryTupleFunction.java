@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2015 Eclipse RDF4J contributors.
+ * Copyright (c) 2016 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -26,14 +26,24 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * Arguments: query is the query string. subject is the query subject or the constant search:allMatches.
- * propertyPredicate is the constant search:property or not present. property is present if only
- * propertyPredicate is present and is the property to query or the constant search:allProperties.
- * scorePredicate is the constant search:score or not present. snippetPredicate is the constant search:snippet
- * or not present. Results: subject is included if the subject parameter is search:allMatches else omitted.
- * property included if the propertyPredicate parameter is present and the property parameter is
- * search:allProperties else omitted. score is included if the scorePredicate is search:score else omitted.
- * snippet is included if the snippetPredicate is search:snippet else omitted.
+ * Arguments:
+ * <ol>
+ * <li>query is the query string.</li>
+ * <li>subject is the query subject or the constant search:allMatches.</li>
+ * <li>propertyPredicate is the constant search:property or not present.</li>
+ * <li>property is present if only propertyPredicate is present and is the property to query or the constant
+ * search:allProperties.</li>
+ * <li>scorePredicate is the constant search:score or not present.</li>
+ * <li>snippetPredicate is the constant search:snippet or not present.</li>
+ * </ol>
+ * Results:
+ * <ol>
+ * <li>subject is included if the subject parameter is search:allMatches else omitted.</li>
+ * <li>property included if the propertyPredicate parameter is present and the property parameter is
+ * search:allProperties else omitted.</li>
+ * <li>score is included if the scorePredicate is search:score else omitted.</li>
+ * <li>snippet is included if the snippetPredicate is search:snippet else omitted.</li>
+ * </ol>
  */
 public class QueryTupleFunction implements TupleFunction {
 

@@ -15,14 +15,20 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.util.List;
+
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Modify;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -75,10 +81,10 @@ public class SPARQLParserTest {
 		assertNotNull(q);
 		assertEquals(simpleSparqlQuery, q.getSourceString());
 	}
-	
-	
-	@Test 
-	public void testInsertDataLineNumberReporting() throws Exception
+
+	@Test
+	public void testInsertDataLineNumberReporting()
+		throws Exception
 	{
 		String insertDataString = "INSERT DATA {\n incorrect reference }";
 
@@ -89,11 +95,12 @@ public class SPARQLParserTest {
 		catch (MalformedQueryException e) {
 			assertTrue(e.getMessage().contains("line 2,"));
 		}
-		
+
 	}
-	
-	@Test 
-	public void testDeleteDataLineNumberReporting() throws Exception
+
+	@Test
+	public void testDeleteDataLineNumberReporting()
+		throws Exception
 	{
 		String deleteDataString = "DELETE DATA {\n incorrect reference }";
 
@@ -105,7 +112,7 @@ public class SPARQLParserTest {
 			assertTrue(e.getMessage().contains("line 2,"));
 		}
 	}
-	
+
 	@Test
 	public void testSES1922PathSequenceWithValueConstant()
 		throws Exception
@@ -146,6 +153,46 @@ public class SPARQLParserTest {
 		assertNotNull(te);
 		assertTrue(te instanceof Slice);
 		assertNull(te.getParentNode());
+	}
+
+	/**
+	 * Verify that an INSERT with a subselect using a wildcard correctly adds vars to projection 
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/686">#686</a>
+	 */
+	@Test
+	public void testParseWildcardSubselectInUpdate() throws Exception
+	{
+			StringBuilder update = new StringBuilder();
+			update.append("INSERT { <urn:a> <urn:b> <urn:c> . } WHERE { SELECT * {?s ?p ?o } }");
+			
+			ParsedUpdate parsedUpdate = parser.parseUpdate(update.toString(), null);
+			List<UpdateExpr> exprs = parsedUpdate.getUpdateExprs();
+			assertEquals(1, exprs.size());
+			
+			UpdateExpr expr = exprs.get(0);
+			assertTrue(expr instanceof Modify);
+			Modify m = (Modify)expr;
+			TupleExpr whereClause = m.getWhereExpr();
+			assertTrue(whereClause instanceof Projection);
+			ProjectionElemList projectionElemList = ((Projection)whereClause).getProjectionElemList();
+			assertNotNull(projectionElemList);
+			List<ProjectionElem> elements = projectionElemList.getElements();
+			assertNotNull(elements);
+
+			assertEquals("projection should contain all three variables", 3, elements.size());
+	}
+	
+	@Test
+	public void testParseIntegerObjectValue()
+		throws Exception
+	{
+		// test that the parser correctly parses the object value as an integer, instead of as a decimal. 
+		String query = "select ?Concept where { ?Concept a 1. ?Concept2 a 1. } ";
+		ParsedTupleQuery q = (ParsedTupleQuery)parser.parseQuery(query, null);
+
+		// all we're verifying is that the query is parsed without error. If it doesn't parse as integer but as a decimal, the
+		// parser will fail, because the statement pattern doesn't end with a full-stop.
+		assertNotNull(q);
 	}
 
 	@Test

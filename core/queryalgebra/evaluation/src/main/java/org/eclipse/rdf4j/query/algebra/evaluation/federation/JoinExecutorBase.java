@@ -98,6 +98,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 			rightQueue.put(res);
 		}
 		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
 			throw new RuntimeException("Error adding element to right queue", e);
 		}
 	}

@@ -7,69 +7,56 @@
  */
 package org.eclipse.rdf4j.sail.elasticsearch;
 
-import java.io.File;
 import java.io.IOException;
-import java.net.URL;
+import java.nio.file.Path;
 
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailSpinTest;
 import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailTupleFunctionTest;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.elasticsearch.common.io.FileSystemUtils;
-import org.junit.After;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.junit.Rule;
+import org.junit.rules.TemporaryFolder;
 
 public class ElasticsearchSailTupleFunctionTest extends AbstractLuceneSailTupleFunctionTest {
 
-	private static final String DATA_DIR = "target/test-data";
+	@Rule
+	public TemporaryFolder tempDir = new TemporaryFolder();
 
-	private static final String DATA = "org/eclipse/rdf4j/sail/yeastract_raw.ttl";
+	private Path testDir;
 
-	private Logger log = LoggerFactory.getLogger(getClass());
+	@Override
+	public void setUp()
+		throws Exception
+	{
+		ElasticsearchTestUtils.TEST_SEMAPHORE.acquire();
+		testDir = tempDir.newFolder("es-stf-test").toPath();
+		super.setUp();
+	}
 
-	@After
+	@Override
 	public void tearDown()
 		throws RepositoryException, IOException
 	{
-		super.tearDown();
-		FileSystemUtils.deleteRecursively(new File(DATA_DIR));
+		try {
+			super.tearDown();
+		}
+		finally {
+			try {
+				FileSystemUtils.deleteRecursively(testDir.toFile());
+			}
+			finally {
+				ElasticsearchTestUtils.TEST_SEMAPHORE.release();
+			}
+		}
 	}
 
 	@Override
 	protected void configure(LuceneSail sail) {
+		sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
 		sail.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
-		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, DATA_DIR);
+		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, testDir.toAbsolutePath().toString());
 		sail.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
 		sail.setParameter(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
 	}
 
-	@Override
-	protected void populate(RepositoryConnection connection)
-		throws Exception
-	{
-		// process transaction
-		try {
-			// load resources
-			URL resourceURL = AbstractLuceneSailSpinTest.class.getClassLoader().getResource(DATA);
-			log.info("Resource URL: {}", resourceURL.toString());
-			connection.begin();
-
-			assert resourceURL instanceof URL;
-			connection.add(resourceURL.openStream(), resourceURL.toString(), RDFFormat.TURTLE,
-					new Resource[] {});
-
-		}
-		catch (Exception e) {
-			connection.rollback();
-			throw e;
-		}
-		finally {
-			connection.commit();
-		}
-
-	}
 }

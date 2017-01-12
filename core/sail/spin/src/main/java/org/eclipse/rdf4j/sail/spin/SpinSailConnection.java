@@ -394,6 +394,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		try {
 			InputStream in = new BufferedInputStream(url.openStream());
 			try {
+				logger.debug("loading axioms statements from {}", file);
 				parser.parse(in, url.toString());
 			}
 			finally {
@@ -444,6 +445,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	{
 		int nofInferred = 0;
 		for (Resource res : resources) {
+			logger.debug("building class hierarchy for {}", res);
 			// build local class hierarchy
 			Collection<IRI> remainingClasses = getClasses(res);
 			List<IRI> classHierarchy = new ArrayList<IRI>(remainingClasses.size());
@@ -491,8 +493,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		throws QueryEvaluationException
 	{
 		List<IRI> classes = new LinkedList<IRI>();
-		CloseableIteration<? extends IRI, QueryEvaluationException> classIter = TripleSources.getObjectURIs(subj,
-				RDF.TYPE, tripleSource);
+		CloseableIteration<? extends IRI, QueryEvaluationException> classIter = TripleSources.getObjectURIs(
+				subj, RDF.TYPE, tripleSource);
 		Iterations.addAll(classIter, classes);
 		return classes;
 	}
@@ -508,13 +510,19 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 		for (IRI cls : classHierarchy) {
 			List<Resource> constructors = getConstructorsForClass(cls);
-			for (Resource constructor : constructors) {
-				if (constructed.add(constructor)) {
-					nofInferred += executeRule(subj, constructor);
-					addInferredStatement(subj, EXECUTED, constructor);
+			if (!constructors.isEmpty()) {
+				logger.trace("executing constructors for resource {} of class {}", subj, cls);
+
+				for (Resource constructor : constructors) {
+					if (constructed.add(constructor)) {
+						logger.trace("executing constructor {} for resource {}", constructor, subj);
+						nofInferred += executeRule(subj, constructor);
+						addInferredStatement(subj, EXECUTED, constructor);
+					}
 				}
 			}
 		}
+		logger.trace("added {} new triples via constructors for resource {}", nofInferred, subj);
 		return nofInferred;
 	}
 
@@ -539,6 +547,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		for (IRI cls : classHierarchy) {
 			Map<IRI, List<Resource>> classRulesByProperty = getRulesForClass(cls, ruleProps);
 			if (!classRulesByProperty.isEmpty()) {
+				logger.debug("executing rules for resource {} of class {}", subj, cls);
 				// execute rules
 				for (Map.Entry<IRI, List<Resource>> ruleEntry : classRulesByProperty.entrySet()) {
 					RuleProperty ruleProperty = getRuleProperty(ruleEntry.getKey());
@@ -555,6 +564,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 								continue;
 							}
 						}
+						logger.trace("executing rule {} on resource {}", rule, subj);
 						nofInferred += executeRule(subj, rule);
 						if (executions != null) {
 							executions.count++;
@@ -563,6 +573,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 				}
 			}
 		}
+		logger.debug("inferred {} new triples for resource {}", nofInferred, subj);
 		return nofInferred;
 	}
 
@@ -649,11 +660,14 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	{
 		Map<IRI, List<Resource>> constraintsByClass = getConstraintsForSubject(subj, classHierarchy);
 
-		// check constraints
-		for (Map.Entry<IRI, List<Resource>> clsEntry : constraintsByClass.entrySet()) {
-			List<Resource> constraints = clsEntry.getValue();
-			for (Resource constraint : constraints) {
-				checkConstraint(subj, constraint);
+		if (!constraintsByClass.isEmpty()) {
+			// check constraints
+			logger.debug("checking constraints for resource {}", subj);
+			for (Map.Entry<IRI, List<Resource>> clsEntry : constraintsByClass.entrySet()) {
+				List<Resource> constraints = clsEntry.getValue();
+				for (Resource constraint : constraints) {
+					checkConstraint(subj, constraint);
+				}
 			}
 		}
 	}
@@ -661,10 +675,14 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	private void checkConstraint(Resource subj, Resource constraint)
 		throws RDF4JException
 	{
+		logger.trace("checking constraint {} on resoure {}", constraint, subj);
 		ConstraintViolation violation = SpinInferencing.checkConstraint(subj, constraint, queryPreparer,
 				parser);
 		if (violation != null) {
 			handleConstraintViolation(violation);
+		}
+		else {
+			logger.trace("no violation detected for resource {}", subj);
 		}
 	}
 

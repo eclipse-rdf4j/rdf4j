@@ -43,20 +43,20 @@ public class SPARQLRepository extends AbstractRepository
 	/**
 	 * The HTTP client that takes care of the client-server communication.
 	 */
-	private SesameClient client;
+	private volatile SesameClient client;
 
 	/** dependent life cycle */
-	private SesameClientImpl dependentClient;
+	private volatile SesameClientImpl dependentClient;
 
 	private String username;
 
 	private String password;
 
-	private String queryEndpointUrl;
+	private final String queryEndpointUrl;
 
-	private String updateEndpointUrl;
+	private final String updateEndpointUrl;
 
-	private Map<String, String> additionalHttpHeaders = Collections.emptyMap();
+	private volatile Map<String, String> additionalHttpHeaders = Collections.emptyMap();
 
 	/**
 	 * Create a new SPARQLRepository using the supplied endpoint URL for queries and updates.
@@ -87,26 +87,51 @@ public class SPARQLRepository extends AbstractRepository
 		this.updateEndpointUrl = updateEndpointUrl;
 	}
 
-	public synchronized SesameClient getSesameClient() {
-		if (client == null) {
-			client = dependentClient = new SesameClientImpl();
+	@Override
+	public SesameClient getSesameClient() {
+		SesameClient result = client;
+		if (result == null) {
+			synchronized (this) {
+				result = client;
+				if (result == null) {
+					result = client = dependentClient = new SesameClientImpl();
+				}
+			}
 		}
-		return client;
+		return result;
 	}
 
-	public synchronized void setSesameClient(SesameClient client) {
-		this.client = client;
+	@Override
+	public void setSesameClient(SesameClient client) {
+		synchronized (this) {
+			this.client = client;
+			// If they set a client, we need to check whether we need to shutdown any existing dependentClient
+			SesameClientImpl toCloseDependentClient = dependentClient;
+			dependentClient = null;
+			if (toCloseDependentClient != null) {
+				toCloseDependentClient.shutDown();
+			}
+		}
 	}
 
+	@Override
 	public final HttpClient getHttpClient() {
 		return getSesameClient().getHttpClient();
 	}
 
+	@Override
 	public void setHttpClient(HttpClient httpClient) {
-		if (dependentClient == null) {
-			client = dependentClient = new SesameClientImpl();
+		SesameClientImpl toSetDependentClient = dependentClient;
+		if (toSetDependentClient == null) {
+			getSesameClient();
+			toSetDependentClient = dependentClient;
 		}
-		dependentClient.setHttpClient(httpClient);
+		// The strange lifecycle results in the possibility that the
+		// dependentClient will be null due to a call to setSesameClient, so add
+		// a null guard here for that possibility
+		if (toSetDependentClient != null) {
+			toSetDependentClient.setHttpClient(httpClient);
+		}
 	}
 
 	/**
@@ -126,6 +151,7 @@ public class SPARQLRepository extends AbstractRepository
 		return httpClient;
 	}
 
+	@Override
 	public RepositoryConnection getConnection()
 		throws RepositoryException
 	{
@@ -135,10 +161,12 @@ public class SPARQLRepository extends AbstractRepository
 		return new SPARQLConnection(this, createHTTPClient(), quadMode);
 	}
 
+	@Override
 	public File getDataDir() {
 		return null;
 	}
 
+	@Override
 	public ValueFactory getValueFactory() {
 		return SimpleValueFactory.getInstance();
 	}
@@ -150,12 +178,14 @@ public class SPARQLRepository extends AbstractRepository
 		// no-op
 	}
 
+	@Override
 	public boolean isWritable()
 		throws RepositoryException
 	{
 		return false;
 	}
 
+	@Override
 	public void setDataDir(File dataDir) {
 		// no-op
 	}
@@ -177,13 +207,18 @@ public class SPARQLRepository extends AbstractRepository
 	protected void shutDownInternal()
 		throws RepositoryException
 	{
-		if (dependentClient != null) {
-			dependentClient.shutDown();
+		try {
+			SesameClientImpl toCloseDependentClient = dependentClient;
 			dependentClient = null;
+			if (toCloseDependentClient != null) {
+				toCloseDependentClient.shutDown();
+			}
 		}
-		// remove reference but do not shut down, client may be shared by other
-		// repos.
-		client = null;
+		finally {
+			// remove reference but do not shut down, client may be shared by
+			// other repos.
+			client = null;
+		}
 	}
 
 	@Override

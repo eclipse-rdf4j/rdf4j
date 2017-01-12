@@ -27,9 +27,17 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 public abstract class GraphQueryResultTest {
+
+	@BeforeClass
+	public static void setUpClass()
+		throws Exception
+	{
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
 
 	private Repository rep;
 
@@ -62,11 +70,14 @@ public abstract class GraphQueryResultTest {
 	public void tearDown()
 		throws Exception
 	{
-		con.close();
-		con = null;
-
-		rep.shutDown();
-		rep = null;
+		try {
+			con.close();
+			con = null;
+		}
+		finally {
+			rep.shutDown();
+			rep = null;
+		}
 	}
 
 	protected Repository createRepository()

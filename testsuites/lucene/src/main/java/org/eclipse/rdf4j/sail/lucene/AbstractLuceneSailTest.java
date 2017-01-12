@@ -108,7 +108,7 @@ public abstract class AbstractLuceneSailTest {
 
 	@Before
 	public void setUp()
-		throws IOException, RepositoryException
+		throws Exception
 	{
 		// set logging, uncomment this to get better logging for debugging
 		// org.apache.log4j.BasicConfigurator.configure();
@@ -147,11 +147,15 @@ public abstract class AbstractLuceneSailTest {
 	public void tearDown()
 		throws IOException, RepositoryException
 	{
-		if (connection != null) {
-			connection.close();
+		try {
+			if (connection != null) {
+				connection.close();
+			}
 		}
-		if (repository != null) {
-			repository.shutDown();
+		finally {
+			if (repository != null) {
+				repository.shutDown();
+			}
 		}
 	}
 

@@ -12,6 +12,7 @@ import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.QUERY;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
 
 import java.io.IOException;
+import java.net.URL;
 
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
@@ -43,6 +45,8 @@ import org.slf4j.LoggerFactory;
 public abstract class AbstractLuceneSailTupleFunctionTest {
 
 	private Repository repository;
+
+	private static final String DATA = "org/eclipse/rdf4j/sail/220-example.ttl";
 
 	private RepositoryConnection connection;
 
@@ -67,7 +71,7 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 		// load data into memory store
 		MemoryStore store = new MemoryStore();
 
-                // activate Lucene index
+		// activate Lucene index
 		LuceneSail lucene = new LuceneSail();
 		configure(lucene);
 		lucene.setBaseSail(store);
@@ -88,14 +92,44 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 	public void tearDown()
 		throws IOException, RepositoryException
 	{
-		connection.close();
-		repository.shutDown();
+		try {
+			if (connection != null) {
+				connection.close();
+			}
+		}
+		finally {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		}
 	}
 
 	protected abstract void configure(LuceneSail sail);
 
-	protected abstract void populate(RepositoryConnection connection)
-		throws Exception;
+	protected void populate(RepositoryConnection connection)
+		throws Exception
+	{
+		// process transaction
+		try {
+			// load resources
+			URL resourceURL = AbstractLuceneSailTupleFunctionTest.class.getClassLoader().getResource(DATA);
+			log.info("Resource URL: {}", resourceURL.toString());
+			connection.begin();
+
+			assert resourceURL instanceof URL;
+			connection.add(resourceURL.openStream(), resourceURL.toString(), RDFFormat.TURTLE,
+					new Resource[] {});
+
+		}
+		catch (Exception e) {
+			connection.rollback();
+			throw e;
+		}
+		finally {
+			connection.commit();
+		}
+
+	}
 
 	/**
 	 * Positive control test: ie valid SPARQL query.
@@ -129,12 +163,12 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 
 	/**
 	 * Valid search query. SPRQL query: <code>
-	 * select ?pred ?score ?id where {
+	 * select ?pred ?score ?label where {
 	 *    ?pred search:matches[
-	 *       search:query "Abf1";
+	 *       search:query "ornare";
 	 *       search:score ?score 
 	 *       ] .
-	 *    ?pred <urn:raw:yeastract#Yeast_id> ?id .
+	 *    ?pred rdfs:label ?label .
 	 * }
 	 * </code>
 	 * 
@@ -145,12 +179,12 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 		throws Exception
 	{
 		StringBuilder buffer = new StringBuilder();
-		buffer.append("select ?pred ?score ?id where {\n");
+		buffer.append("select ?pred ?score ?label where {\n");
 		buffer.append("  ?pred <" + MATCHES + "> [\n");
-		buffer.append("    <" + QUERY + ">  " + "\"Abf1\" ;\n");
+		buffer.append("    <" + QUERY + ">  " + "\"ornare\" ;\n");
 		buffer.append("    <" + SCORE + "> ?score \n");
 		buffer.append("  ] .\n");
-		buffer.append("  ?pred <urn:raw:yeastract#Yeast_id> ?id .\n");
+		buffer.append("  ?pred rdfs:label ?label .\n");
 		buffer.append("}\n");
 		log.info("Request query: \n{}\n", buffer.toString());
 
@@ -163,7 +197,7 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 			try (TupleQueryResult res = query.evaluate()) {
 				int count = countTupleResults(res);
 				log.info("count statements: {}", count);
-				Assert.assertTrue(count > 0);
+				Assert.assertTrue(count == 1);
 			}
 
 		}
@@ -179,13 +213,13 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 
 	/**
 	 * #220 exmaple was reproduced with query: <code>
-	 * select ?pred ?score ?query ?id where { 
-	 *   bind(str("Abf1") as ?query) . 
+	 * select ?pred ?score ?query ?label where { 
+	 *   bind(str("ornare") as ?query) . 
 	 *   ?pred search:matches [ 
 	 *        search:query ?query; 
 	 *        search:score ?score 
 	 *        ] . 
-	 *   ?pred <urn:raw:yeastract#Yeast_id> ?id . 
+	 *   ?pred rdfs:label ?label . 
 	 * }
 	 * </code>
 	 * 
@@ -196,13 +230,13 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 		throws Exception
 	{
 		StringBuilder buffer = new StringBuilder();
-		buffer.append("select ?pred ?score ?query ?id where {\n");
-		buffer.append("  bind(str(\"Abf1\") as ?query) .\n");
+		buffer.append("select ?pred ?score ?query ?label where {\n");
+		buffer.append("  bind(str(\"ornare\") as ?query) .\n");
 		buffer.append("  ?pred <" + MATCHES + "> [\n");
 		buffer.append("    <" + QUERY + ">  " + " ?query ;\n");
 		buffer.append("    <" + SCORE + "> ?score \n");
 		buffer.append("  ] .\n");
-		buffer.append("  ?pred <urn:raw:yeastract#Yeast_id> ?id .\n");
+		buffer.append("  ?pred rdfs:label ?label .\n");
 		buffer.append("}\n");
 		log.info("Request query: \n==================\n{}\n=======================\n", buffer.toString());
 
@@ -214,7 +248,7 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 			try (TupleQueryResult res = query.evaluate()) {
 				int count = countTupleResults(res);
 				log.info("count statements: {}", count);
-				Assert.assertTrue(count > 0);
+				Assert.assertTrue(count == 1);
 			}
 		}
 		catch (Exception e) {
@@ -230,15 +264,15 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 	/**
 	 * Reproduce #235 with following query: <code>
 	 * construct {
-	 *   ?pred a <urn:ontology/Gene> .
-	 *   ?pred <urn:ontology/id> ?id2 .
+	 *   ?pred a <urn:ontology/Phrase> .
+	 *   ?pred <urn:ontology/label> ?label .
+	     *   ?pred <urn:ontology/score> ?score .
 	 * } where {
 	 *    ?pred search:matches[
-	 *       search:query "Abf1";
+	 *       search:query "ornare";
 	 *       search:score ?score 
 	 *       ] .
-	 *    ?pred <urn:raw:yeastract#Yeast_id> ?id .
-	 *    bind(str(?id) as ?id2)
+	 *    ?pred rdfs:label ?label .
 	 * }
 	 * </code>
 	 * 
@@ -250,16 +284,16 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 	{
 		StringBuilder buffer = new StringBuilder();
 		buffer.append(" construct {\n");
-		buffer.append("  ?pred a <urn:ontology/Gene> .\n");
-		buffer.append("  ?pred <urn:ontology/id> ?id2 .\n");
+		buffer.append("  ?pred a <urn:ontology/Phrase> .\n");
+		buffer.append("  ?pred <urn:ontology/label> ?label .\n");
+		buffer.append("  ?pred <urn:ontology/score> ?score . \n");
 		buffer.append(" } where {\n");
 		//buffer.append("select * where {\n");
 		buffer.append("  ?pred <" + MATCHES + "> [\n");
-		buffer.append("     <" + QUERY + "> \"Abf1\";\n");
+		buffer.append("     <" + QUERY + "> \"ornare\";\n");
 		buffer.append("     <" + SCORE + "> ?score \n");
 		buffer.append("     ] .\n");
-		buffer.append("  ?pred <urn:raw:yeastract#Yeast_id> ?id .\n");
-		buffer.append("  bind(str(?id) as ?id2)\n");
+		buffer.append("  ?pred rdfs:label ?label .\n");
 		buffer.append(" }");
 		log.info("Request query: \n{}\n", buffer.toString());
 
@@ -271,7 +305,7 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 			try (GraphQueryResult res = query.evaluate()) {
 				int cnt = countGraphResults(res);
 				log.info("+++++    count triples: {}", cnt);
-				Assert.assertTrue(String.format("count triples: {}", cnt), cnt == 2);
+				Assert.assertTrue(String.format("count triples: {}", cnt), cnt == 3);
 			}
 			/*
 			 * TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
