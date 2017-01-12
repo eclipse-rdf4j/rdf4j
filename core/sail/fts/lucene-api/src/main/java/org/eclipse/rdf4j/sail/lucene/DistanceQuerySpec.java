@@ -12,7 +12,6 @@ import java.util.List;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -51,8 +50,8 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 
 	private final Filter filter;
 
-	public DistanceQuerySpec(FunctionCall distanceFunction, ValueExpr distanceExpr,
-			String distVar, Filter filter)
+	public DistanceQuerySpec(FunctionCall distanceFunction, ValueExpr distanceExpr, String distVar,
+			Filter filter)
 	{
 		this.distanceFunction = distanceFunction;
 		this.distanceExpr = distanceExpr;
@@ -71,7 +70,7 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 		}
 		if (distanceExpr != null) {
 			Literal dist = getLiteral(distanceExpr);
-			if (XMLSchema.DOUBLE.equals(dist.getDatatype())) {
+			if (dist != null) {
 				this.distance = getLiteral(distanceExpr).doubleValue();
 			}
 			else {
@@ -84,8 +83,7 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 	}
 
 	public DistanceQuerySpec(Literal from, IRI units, double dist, String distVar, IRI geoProperty,
-			String geoVar,
-			Var contextVar)
+			String geoVar, String subjectVar, Var contextVar)
 	{
 		this.from = from;
 		this.units = units;
@@ -93,6 +91,7 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 		this.distanceVar = distVar;
 		this.geoProperty = geoProperty;
 		this.geoVar = geoVar;
+		this.subjectVar = subjectVar;
 		this.contextVar = contextVar;
 		this.distanceFunction = null;
 		this.distanceExpr = null;
@@ -131,7 +130,7 @@ public class DistanceQuerySpec implements SearchQueryEvaluator {
 		this.geoStatement = sp;
 		this.subjectVar = sp.getSubjectVar().getName();
 		this.contextVar = sp.getContextVar();
-		this.geoProperty = (IRI)geoStatement.getPredicateVar().getValue();
+		this.geoProperty = (IRI)sp.getPredicateVar().getValue();
 	}
 
 	public String getSubjectVar() {

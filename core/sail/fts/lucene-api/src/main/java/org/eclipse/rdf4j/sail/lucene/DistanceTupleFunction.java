@@ -28,11 +28,22 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * Arguments: from is the WKT point to measure from. maxDistance is the maximum distance to consider. units
- * are the measurement units. geoProperty is the predicate to use. search:distance else omitted.
- * search:context else omitted. Results: subject is the subject whose geometry is within the given max
- * distance. to is the WKT of the shape measured to. distance is the distance to the shape if search:distance
- * is present. context is the context if search:context is present.
+ * Arguments:
+ * <ol>
+ * <li>from is the WKT point to measure from.</li>
+ * <li>maxDistance is the maximum distance to consider.</li>
+ * <li>units are the measurement units.</li>
+ * <li>geoProperty is the predicate to use.</li>
+ * <li>search:distance else omitted.</li>
+ * <li>search:context else omitted.</li>
+ * </ol>
+ * Results:
+ * <ol>
+ * <li>subject is the subject whose geometry is within the given max distance.</li>
+ * <li>to is the WKT of the shape measured to.</li>
+ * <li>distance is the distance to the shape if search:distance is present.</li>
+ * <li>context is the context if search:context is present.</li>
+ * </ol>
  */
 public class DistanceTupleFunction implements TupleFunction {
 
@@ -44,7 +55,7 @@ public class DistanceTupleFunction implements TupleFunction {
 	@Override
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
 			ValueFactory valueFactory, Value... args)
-		throws QueryEvaluationException
+				throws QueryEvaluationException
 	{
 		int i = 0;
 
@@ -53,6 +64,7 @@ public class DistanceTupleFunction implements TupleFunction {
 		IRI units = (IRI)args[i++];
 		IRI geoProperty = (IRI)args[i++];
 		String geoVar = "geometry";
+		String subjectVar = "subject";
 		String distanceVar = null;
 		if (args.length - i > 0 && LuceneSailSchema.DISTANCE.equals(args[i])) {
 			distanceVar = "distance";
@@ -67,8 +79,8 @@ public class DistanceTupleFunction implements TupleFunction {
 			}
 		}
 
-		final DistanceQuerySpec query = new DistanceQuerySpec(from, units, maxDist.doubleValue(),
-				distanceVar, geoProperty, geoVar, contextVar);
+		final DistanceQuerySpec query = new DistanceQuerySpec(from, units, maxDist.doubleValue(), distanceVar,
+				geoProperty, geoVar, subjectVar, contextVar);
 
 		SearchIndex luceneIndex = SearchIndexQueryContextInitializer.getSearchIndex(
 				QueryContext.getQueryContext());
