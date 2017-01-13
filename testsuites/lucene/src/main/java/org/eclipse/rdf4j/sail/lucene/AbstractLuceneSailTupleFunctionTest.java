@@ -11,15 +11,25 @@ import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.MATCHES;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.QUERY;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
 
+import static org.hamcrest.CoreMatchers.is;
+
 import java.io.IOException;
 import java.net.URL;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.GEO;
+import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
+import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -317,6 +327,35 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 			 * try (TupleQueryResult res = query.evaluate()) { int count = countTupleResults(res); log.info(
 			 * "count statements: {}", count); Assert.assertTrue(count == 2); }
 			 */
+		}
+		catch (Exception e) {
+			connection.rollback();
+			throw e;
+		}
+		finally {
+			connection.commit();
+		}
+	}
+
+	@Test
+	public void testDistanceFunction()
+			throws Exception
+	{
+		String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
+				+ "select ?toUri ?fromUri ?dist where {?toUri a <urn:geo/Landmark>; geo:asWKT ?to. ?fromUri geo:asWKT ?from; <urn:geo/maxDistance> ?range."
+				+ " bind(geof:distance(?from, ?to, ?units) as ?dist)" + " filter(?dist < ?range)" + " }";
+		try
+		{
+			connection.begin();
+			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
+			query.setBinding("units", GEOF.UOM_METRE);
+	
+			printTupleResult(query);
+			try(TupleQueryResult result = query.evaluate())
+			{
+				int count = countTupleResults(result);
+				Assert.assertThat(count, is(2));
+			}
 		}
 		catch (Exception e) {
 			connection.rollback();

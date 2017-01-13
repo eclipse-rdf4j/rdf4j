@@ -40,6 +40,8 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.AbstractFederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingAssigner;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.CompareOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConjunctiveConstraintSplitter;
@@ -100,11 +102,13 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			Projection.class,
 			MultiProjection.class);
 
-	final private Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
-	final private SearchIndex luceneIndex;
+	private final SearchIndex luceneIndex;
 
-	final private LuceneSail sail;
+	private final AbstractFederatedServiceResolver tupleFunctionServiceResolver;
+
+	private final LuceneSail sail;
 
 	/**
 	 * the buffer that collects operations
@@ -158,6 +162,19 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		super(wrappedConnection);
 		this.luceneIndex = luceneIndex;
 		this.sail = sail;
+
+		if (sail.getEvaluationMode() == TupleFunctionEvaluationMode.SERVICE) {
+			FederatedServiceResolver resolver = sail.getFederatedServiceResolver();
+			if (!(resolver instanceof AbstractFederatedServiceResolver)) {
+				throw new IllegalArgumentException(
+						"SERVICE EvaluationMode requires a FederatedServiceResolver that is an instance of "
+								+ AbstractFederatedServiceResolver.class.getName());
+			}
+			this.tupleFunctionServiceResolver = (AbstractFederatedServiceResolver)resolver;
+		}
+		else {
+			this.tupleFunctionServiceResolver = null;
+		}
 
 		/*
 		 * Using SailConnectionListener, see <a href="#whySailConnectionListener">above</a>
