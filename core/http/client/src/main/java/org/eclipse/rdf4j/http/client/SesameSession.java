@@ -19,13 +19,13 @@ import java.net.URISyntaxException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
-import org.apache.http.HttpEntityEnclosingRequest;
 import org.apache.http.HttpResponse;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.HttpClient;
@@ -47,8 +47,8 @@ import org.apache.http.message.BasicHeader;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.util.EntityUtils;
 import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.OpenRDFUtil;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
@@ -235,7 +235,7 @@ public class SesameSession extends SparqlSession {
 
 			try {
 				String response = EntityUtils.toString(executeOK(method).getEntity());
-				
+
 				try {
 					return Long.parseLong(response);
 				}
@@ -513,18 +513,18 @@ public class SesameSession extends SparqlSession {
 
 		try {
 			method.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
-	
+
 			List<NameValuePair> params = new ArrayList<NameValuePair>();
 			if (isolationLevel != null) {
 				params.add(new BasicNameValuePair(Protocol.ISOLATION_LEVEL_PARAM_NAME,
 						isolationLevel.getURI().stringValue()));
 			}
-	
+
 			method.setEntity(new UrlEncodedFormEntity(params, UTF8));
 			HttpResponse response = execute(method);
 			try {
 				int code = response.getStatusLine().getStatusCode();
-	
+
 				if (code == HttpURLConnection.HTTP_CREATED) {
 					transactionURL = response.getFirstHeader("Location").getValue();
 					if (transactionURL == null) {
@@ -579,7 +579,7 @@ public class SesameSession extends SparqlSession {
 			throw new RuntimeException(e);
 		}
 		finally {
-			if(method != null) {
+			if (method != null) {
 				method.reset();
 			}
 		}
@@ -651,23 +651,23 @@ public class SesameSession extends SparqlSession {
 		try {
 			// Create a RequestEntity for the transaction data
 			method.setEntity(new AbstractHttpEntity() {
-	
+
 				public long getContentLength() {
 					return -1; // don't know
 				}
-	
+
 				public Header getContentType() {
 					return new BasicHeader("Content-Type", Protocol.TXN_MIME_TYPE);
 				}
-	
+
 				public boolean isRepeatable() {
 					return true;
 				}
-	
+
 				public boolean isStreaming() {
 					return true;
 				}
-	
+
 				public InputStream getContent()
 					throws IOException, IllegalStateException
 				{
@@ -675,7 +675,7 @@ public class SesameSession extends SparqlSession {
 					writeTo(buf);
 					return new ByteArrayInputStream(buf.toByteArray());
 				}
-	
+
 				public void writeTo(OutputStream out)
 					throws IOException
 				{
@@ -683,7 +683,7 @@ public class SesameSession extends SparqlSession {
 					txnWriter.serialize(txn, out);
 				}
 			});
-	
+
 			try {
 				executeNoContent(method);
 			}
@@ -894,10 +894,10 @@ public class SesameSession extends SparqlSession {
 				else {
 					method = new HttpPost(url.build());
 				}
-	
+
 				// Set payload
 				method.setEntity(reqEntity);
-	
+
 				// Send request
 				try {
 					executeNoContent((HttpUriRequest)method);
@@ -913,7 +913,7 @@ public class SesameSession extends SparqlSession {
 				}
 			}
 			finally {
-				if(method != null) {
+				if (method != null) {
 					method.reset();
 				}
 			}
@@ -928,4 +928,66 @@ public class SesameSession extends SparqlSession {
 		checkServerURL();
 		setUsernameAndPasswordForUrl(username, password, getServerURL());
 	}
+
+	@Override
+	protected List<NameValuePair> getQueryMethodParameters(QueryLanguage ql, String query, String baseURI,
+			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings)
+	{
+		Objects.requireNonNull(ql, "QueryLanguage may not be null");
+
+		List<NameValuePair> queryParams = super.getQueryMethodParameters(ql, query, baseURI, dataset,
+				includeInferred, maxQueryTime, bindings);
+
+		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
+
+		if (baseURI != null) {
+			queryParams.add(new BasicNameValuePair(Protocol.BASEURI_PARAM_NAME, baseURI));
+		}
+		queryParams.add(new BasicNameValuePair(Protocol.INCLUDE_INFERRED_PARAM_NAME,
+				Boolean.toString(includeInferred)));
+		if (maxQueryTime > 0) {
+			queryParams.add(
+					new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));
+		}
+
+		for (int i = 0; i < bindings.length; i++) {
+			String paramName = Protocol.BINDING_PREFIX + bindings[i].getName();
+			String paramValue = Protocol.encodeValue(bindings[i].getValue());
+			queryParams.add(new BasicNameValuePair(paramName, paramValue));
+		}
+
+		return queryParams;
+	}
+
+	@Override
+	protected List<NameValuePair> getUpdateMethodParameters(QueryLanguage ql, String update, String baseURI,
+			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings)
+	{
+		Objects.requireNonNull(ql, "QueryLanguage may not be null");
+
+		List<NameValuePair> queryParams = super.getUpdateMethodParameters(ql, update, baseURI, dataset,
+				includeInferred, maxQueryTime, bindings);
+
+		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
+
+		if (dataset != null) {
+			for (IRI graphURI : dataset.getDefaultRemoveGraphs()) {
+				queryParams.add(
+						new BasicNameValuePair(Protocol.REMOVE_GRAPH_PARAM_NAME, String.valueOf(graphURI)));
+			}
+			if (dataset.getDefaultInsertGraph() != null) {
+				queryParams.add(new BasicNameValuePair(Protocol.INSERT_GRAPH_PARAM_NAME,
+						String.valueOf(dataset.getDefaultInsertGraph())));
+			}
+		}
+
+		for (int i = 0; i < bindings.length; i++) {
+			String paramName = Protocol.BINDING_PREFIX + bindings[i].getName();
+			String paramValue = Protocol.encodeValue(bindings[i].getValue());
+			queryParams.add(new BasicNameValuePair(paramName, paramValue));
+		}
+
+		return queryParams;
+	}
+
 }

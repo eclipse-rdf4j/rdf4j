@@ -600,26 +600,14 @@ public class SparqlSession implements HttpClientDependent {
 	protected List<NameValuePair> getQueryMethodParameters(QueryLanguage ql, String query, String baseURI,
 			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings)
 	{
-		if (ql == null) {
-			throw new NullPointerException("ql may not be null");
-		}
+		List<NameValuePair> queryParams = new ArrayList<NameValuePair>();
 
-		// TODO there is a bunch of HttpRepository specific parameters here
-		List<NameValuePair> queryParams = new ArrayList<NameValuePair>(bindings.length + 10);
+		/*
+		 * Only query, default-graph-uri, and named-graph-uri are standard parameters in SPARQL Protocol 1.1.
+		 */
 
-		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
 		if (query != null) {
 			queryParams.add(new BasicNameValuePair(Protocol.QUERY_PARAM_NAME, query));
-		}
-
-		if (baseURI != null) {
-			queryParams.add(new BasicNameValuePair(Protocol.BASEURI_PARAM_NAME, baseURI));
-		}
-		queryParams.add(new BasicNameValuePair(Protocol.INCLUDE_INFERRED_PARAM_NAME,
-				Boolean.toString(includeInferred)));
-		if (maxQueryTime > 0) {
-			queryParams.add(
-					new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));
 		}
 
 		if (dataset != null) {
@@ -631,12 +619,6 @@ public class SparqlSession implements HttpClientDependent {
 				queryParams.add(new BasicNameValuePair(Protocol.NAMED_GRAPH_PARAM_NAME,
 						String.valueOf(namedGraphURI)));
 			}
-		}
-
-		for (int i = 0; i < bindings.length; i++) {
-			String paramName = Protocol.BINDING_PREFIX + bindings[i].getName();
-			String paramValue = Protocol.encodeValue(bindings[i].getValue());
-			queryParams.add(new BasicNameValuePair(paramName, paramValue));
 		}
 
 		return queryParams;
@@ -651,37 +633,15 @@ public class SparqlSession implements HttpClientDependent {
 	protected List<NameValuePair> getUpdateMethodParameters(QueryLanguage ql, String update, String baseURI,
 			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings)
 	{
-		if (ql == null) {
-			throw new NullPointerException("ql may not be null");
-		}
 
-		List<NameValuePair> queryParams = new ArrayList<NameValuePair>(bindings.length + 10);
+		List<NameValuePair> queryParams = new ArrayList<NameValuePair>();
 
-		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
 		if (update != null) {
 			queryParams.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));
 			logger.debug("added update string {}", update);
 		}
 
-		if (baseURI != null) {
-			queryParams.add(new BasicNameValuePair(Protocol.BASEURI_PARAM_NAME, baseURI));
-		}
-		queryParams.add(new BasicNameValuePair(Protocol.INCLUDE_INFERRED_PARAM_NAME,
-				Boolean.toString(includeInferred)));
-		if (maxQueryTime > 0) {
-			queryParams.add(
-					new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));
-		}
-
 		if (dataset != null) {
-			for (IRI graphURI : dataset.getDefaultRemoveGraphs()) {
-				queryParams.add(
-						new BasicNameValuePair(Protocol.REMOVE_GRAPH_PARAM_NAME, String.valueOf(graphURI)));
-			}
-			if (dataset.getDefaultInsertGraph() != null) {
-				queryParams.add(new BasicNameValuePair(Protocol.INSERT_GRAPH_PARAM_NAME,
-						String.valueOf(dataset.getDefaultInsertGraph())));
-			}
 			for (IRI defaultGraphURI : dataset.getDefaultGraphs()) {
 				queryParams.add(new BasicNameValuePair(Protocol.USING_GRAPH_PARAM_NAME,
 						String.valueOf(defaultGraphURI)));
@@ -690,12 +650,6 @@ public class SparqlSession implements HttpClientDependent {
 				queryParams.add(new BasicNameValuePair(Protocol.USING_NAMED_GRAPH_PARAM_NAME,
 						String.valueOf(namedGraphURI)));
 			}
-		}
-
-		for (int i = 0; i < bindings.length; i++) {
-			String paramName = Protocol.BINDING_PREFIX + bindings[i].getName();
-			String paramValue = Protocol.encodeValue(bindings[i].getValue());
-			queryParams.add(new BasicNameValuePair(paramName, paramValue));
 		}
 
 		return queryParams;
