@@ -6,3 +6,5 @@ branches:
   only:
   - master
   - /^releases.*$/
+env:
+  - MAVEN_OPTS=-Xmx1024M
