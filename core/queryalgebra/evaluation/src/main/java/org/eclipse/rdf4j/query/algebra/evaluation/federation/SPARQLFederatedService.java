@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.federation;
 
-import org.eclipse.rdf4j.http.client.SesameClient;
+import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 
 /**
@@ -17,9 +17,9 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
  */
 public class SPARQLFederatedService extends RepositoryFederatedService {
 
-	private static SPARQLRepository createSPARQLRepository(String serviceUrl, SesameClient client) {
+	private static SPARQLRepository createSPARQLRepository(String serviceUrl, HttpClientSessionManager client) {
 		SPARQLRepository rep = new SPARQLRepository(serviceUrl);
-		rep.setSesameClient(client);
+		rep.setHttpClientSessionManager(client);
 		return rep;
 	}
 
@@ -27,7 +27,7 @@ public class SPARQLFederatedService extends RepositoryFederatedService {
 	 * @param serviceUrl
 	 *        the serviceUrl use to initialize the inner {@link SPARQLRepository}
 	 */
-	public SPARQLFederatedService(String serviceUrl, SesameClient client) {
+	public SPARQLFederatedService(String serviceUrl, HttpClientSessionManager client) {
 		super(createSPARQLRepository(serviceUrl, client));
 	}
 }

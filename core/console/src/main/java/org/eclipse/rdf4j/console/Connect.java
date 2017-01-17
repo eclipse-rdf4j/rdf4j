@@ -12,9 +12,9 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 
-import org.eclipse.rdf4j.http.client.SesameClient;
-import org.eclipse.rdf4j.http.client.SesameClientImpl;
-import org.eclipse.rdf4j.http.client.SesameSession;
+import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
@@ -77,9 +77,9 @@ public class Connect implements Command {
 		boolean result = false;
 		try {
 			// Ping server
-			final SesameClient client = new SesameClientImpl();
+			final HttpClientSessionManager client = new SharedHttpClientSessionManager();
 			try {
-				SesameSession httpClient = client.createSesameSession(url);
+				RDF4JProtocolSession httpClient = client.createRDF4JProtocolSession(url);
 
 				if (user != null) {
 					httpClient.setUsernameAndPassword(user, pass);

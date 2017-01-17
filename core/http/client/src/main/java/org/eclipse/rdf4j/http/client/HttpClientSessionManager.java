@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2017 Eclipse RDF4J contributors.
+ * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -10,11 +10,12 @@ package org.eclipse.rdf4j.http.client;
 import org.apache.http.client.HttpClient;
 
 /**
- * @author Jeen Broekstra
- * @deprecated use {@link HttpClientSessionManager} instead.
+ * Manager for remote HTTP sessions using a {@link HttpClient}.
+ * 
+ * @author James Leigh
  */
-@Deprecated
-public interface SesameClient {
+@SuppressWarnings("deprecation")
+public interface HttpClientSessionManager extends SesameClient {
 
 	/**
 	 * @return Returns the httpClient.
@@ -22,33 +23,18 @@ public interface SesameClient {
 	HttpClient getHttpClient();
 
 	/**
-	 * Creates a new session to the remote SPARQL endpoint to manage the auth state.
+	 * Creates a new SPARQL Protocol session to the remote SPARQL endpoint.
 	 */
 	SPARQLProtocolSession createSPARQLProtocolSession(String queryEndpointUrl, String updateEndpointUrl);
 
 	/**
-	 * @deprecated use {@link #createSPARQLProtocolSession(String, String)} instead.
-	 */
-	@Deprecated
-	default SPARQLProtocolSession createSparqlSession(String queryEndpointUrl, String updateEndpointUrl) {
-		return createSPARQLProtocolSession(queryEndpointUrl, updateEndpointUrl);
-	}
-
-	/**
-	 * Creates a new session to the remote Sesame server to manage the auth state.
+	 * Creates a new session to the remote RDF4J REST API.
 	 */
 	RDF4JProtocolSession createRDF4JProtocolSession(String serverURL);
-
-	/**
-	 * @deprecated use {@link #createRDF4JProtocolSession(String)} instead.
-	 */
-	@Deprecated
-	default RDF4JProtocolSession createSesameSession(String serverURL) {
-		return createRDF4JProtocolSession(serverURL);
-	}
-
+	
 	/**
 	 * Closes any remaining connections and threads used by the sessions created by this object.
 	 */
 	void shutDown();
+
 }

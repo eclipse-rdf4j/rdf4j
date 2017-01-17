@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.repository.http;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.http.client.SparqlSession;
+import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.client.query.AbstractHTTPQuery;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -39,7 +39,7 @@ public class HTTPBooleanQuery extends AbstractHTTPQuery implements BooleanQuery 
 	public boolean evaluate()
 		throws QueryEvaluationException
 	{
-		SparqlSession client = getHttpClient();
+		SPARQLProtocolSession client = getHttpClient();
 
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);

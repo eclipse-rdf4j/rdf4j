@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.repository.sparql.query;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.http.client.SparqlSession;
+import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.client.query.AbstractHTTPUpdate;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
  */
 public class SPARQLUpdate extends AbstractHTTPUpdate {
 
-	public SPARQLUpdate(SparqlSession httpClient, String baseURI, String queryString) {
+	public SPARQLUpdate(SPARQLProtocolSession httpClient, String baseURI, String queryString) {
 		super(httpClient, QueryLanguage.SPARQL, queryString, baseURI);
 	}
 
@@ -38,7 +38,7 @@ public class SPARQLUpdate extends AbstractHTTPUpdate {
 
 		try {
 			// execute update immediately
-			SparqlSession client = getHttpClient();
+			SPARQLProtocolSession client = getHttpClient();
 			try {
 				client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset,
 						includeInferred, getMaxExecutionTime(), getBindingsArray());
