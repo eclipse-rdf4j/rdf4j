@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.http.client.query;
 
 import java.util.Iterator;
 
-import org.eclipse.rdf4j.http.client.SparqlSession;
+import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.impl.AbstractUpdate;
  */
 public abstract class AbstractHTTPUpdate extends AbstractUpdate {
 
-	private final SparqlSession httpClient;
+	private final SPARQLProtocolSession httpClient;
 
 	protected final QueryLanguage queryLanguage;
 
@@ -31,7 +31,7 @@ public abstract class AbstractHTTPUpdate extends AbstractUpdate {
 
 	protected final String baseURI;
 
-	public AbstractHTTPUpdate(SparqlSession httpClient, QueryLanguage queryLanguage, String queryString,
+	public AbstractHTTPUpdate(SPARQLProtocolSession httpClient, QueryLanguage queryLanguage, String queryString,
 			String baseURI)
 	{
 		super();
@@ -42,9 +42,9 @@ public abstract class AbstractHTTPUpdate extends AbstractUpdate {
 	}
 
 	/**
-	 * @return Returns the {@link SparqlSession} to be used for all HTTP based interaction
+	 * @return Returns the {@link SPARQLProtocolSession} to be used for all HTTP based interaction
 	 */
-	protected SparqlSession getHttpClient() {
+	protected SPARQLProtocolSession getHttpClient() {
 		return httpClient;
 	}
 

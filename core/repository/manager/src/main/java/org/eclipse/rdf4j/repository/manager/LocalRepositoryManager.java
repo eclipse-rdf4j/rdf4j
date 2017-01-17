@@ -24,8 +24,8 @@ import java.util.Set;
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
-import org.eclipse.rdf4j.http.client.SesameClientDependent;
-import org.eclipse.rdf4j.http.client.SesameClientImpl;
+import org.eclipse.rdf4j.http.client.SessionManagerDependent;
+import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -74,7 +74,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	private final File baseDir;
 
 	/** dependent life cycle */
-	private volatile SesameClientImpl client;
+	private volatile SharedHttpClientSessionManager client;
 
 	/** dependent life cycle */
 	private volatile FederatedServiceResolverImpl serviceResolver;
@@ -133,13 +133,13 @@ public class LocalRepositoryManager extends RepositoryManager {
 	/**
 	 * @return Returns the httpClient.
 	 */
-	protected SesameClientImpl getSesameClient() {
-		SesameClientImpl result = client;
+	protected SharedHttpClientSessionManager getSesameClient() {
+		SharedHttpClientSessionManager result = client;
 		if (result == null) {
 			synchronized (this) {
 				result = client;
 				if (result == null) {
-					result = client = new SesameClientImpl();
+					result = client = new SharedHttpClientSessionManager();
 				}
 			}
 		}
@@ -148,7 +148,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 	@Override
 	public HttpClient getHttpClient() {
-		SesameClientImpl nextClient = client;
+		SharedHttpClientSessionManager nextClient = client;
 		if (nextClient == null) {
 			return null;
 		}
@@ -172,7 +172,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 				result = serviceResolver;
 				if (result == null) {
 					result = serviceResolver = new FederatedServiceResolverImpl();
-					result.setSesameClient(getSesameClient());
+					result.setHttpClientSessionManager(getSesameClient());
 				}
 			}
 		}
@@ -193,7 +193,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 				}
 			}
 			finally {
-				SesameClientImpl toCloseClient = client;
+				SharedHttpClientSessionManager toCloseClient = client;
 				client = null;
 				if (toCloseClient != null) {
 					toCloseClient.shutDown();
@@ -272,8 +272,8 @@ public class LocalRepositoryManager extends RepositoryManager {
 			((FederatedServiceResolverClient)repository).setFederatedServiceResolver(
 					getFederatedServiceResolver());
 		}
-		if (repository instanceof SesameClientDependent) {
-			((SesameClientDependent)repository).setSesameClient(client);
+		if (repository instanceof SessionManagerDependent) {
+			((SessionManagerDependent)repository).setHttpClientSessionManager(client);
 		}
 		else if (repository instanceof HttpClientDependent) {
 			((HttpClientDependent)repository).setHttpClient(getHttpClient());

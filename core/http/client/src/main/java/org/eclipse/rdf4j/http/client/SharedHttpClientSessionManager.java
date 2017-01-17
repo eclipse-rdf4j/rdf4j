@@ -22,11 +22,11 @@ import org.eclipse.rdf4j.http.client.util.HttpClientBuilders;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 /**
- * Uses {@link HttpClient} to manage HTTP connections.
+ * A Manager for HTTP sessions that uses a shared {@link HttpClient} to manage HTTP connections.
  * 
  * @author James Leigh
  */
-public class SesameClientImpl implements SesameClient, HttpClientDependent {
+public class SharedHttpClientSessionManager implements HttpClientSessionManager, HttpClientDependent {
 
 	/** independent life cycle */
 	private volatile HttpClient httpClient;
@@ -45,12 +45,14 @@ public class SesameClientImpl implements SesameClient, HttpClientDependent {
 	 * Constructors *
 	 *--------------*/
 
-	public SesameClientImpl() {
+	public SharedHttpClientSessionManager() {
 		this.executor = Executors.newCachedThreadPool(
 				new ThreadFactoryBuilder().setNameFormat("rdf4j-sesameclientimpl-%d").build());
 	}
 
-	public SesameClientImpl(CloseableHttpClient dependentClient, ExecutorService dependentExecutorService) {
+	public SharedHttpClientSessionManager(CloseableHttpClient dependentClient,
+			ExecutorService dependentExecutorService)
+	{
 		this.httpClient = this.dependentClient = Objects.requireNonNull(dependentClient,
 				"HTTP client was null");
 		this.executor = Objects.requireNonNull(dependentExecutorService, "Executor service was null");
@@ -108,16 +110,16 @@ public class SesameClientImpl implements SesameClient, HttpClientDependent {
 	}
 
 	@Override
-	public SparqlSession createSparqlSession(String queryEndpointUrl, String updateEndpointUrl) {
-		SparqlSession session = new SparqlSession(getHttpClient(), executor);
+	public SPARQLProtocolSession createSPARQLProtocolSession(String queryEndpointUrl, String updateEndpointUrl) {
+		SPARQLProtocolSession session = new SPARQLProtocolSession(getHttpClient(), executor);
 		session.setQueryURL(queryEndpointUrl);
 		session.setUpdateURL(updateEndpointUrl);
 		return session;
 	}
 
 	@Override
-	public SesameSession createSesameSession(String serverURL) {
-		SesameSession session = new SesameSession(getHttpClient(), executor);
+	public RDF4JProtocolSession createRDF4JProtocolSession(String serverURL) {
+		RDF4JProtocolSession session = new RDF4JProtocolSession(getHttpClient(), executor);
 		session.setServerURL(serverURL);
 		return session;
 	}

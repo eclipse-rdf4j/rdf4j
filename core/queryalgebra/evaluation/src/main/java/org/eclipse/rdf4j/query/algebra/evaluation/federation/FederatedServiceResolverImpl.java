@@ -9,9 +9,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.federation;
 
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
-import org.eclipse.rdf4j.http.client.SesameClient;
-import org.eclipse.rdf4j.http.client.SesameClientDependent;
-import org.eclipse.rdf4j.http.client.SesameClientImpl;
+import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.SessionManagerDependent;
+import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author James Leigh
  */
 public class FederatedServiceResolverImpl extends AbstractFederatedServiceResolver
-		implements FederatedServiceResolver, HttpClientDependent, SesameClientDependent
+		implements FederatedServiceResolver, HttpClientDependent, SessionManagerDependent
 {
 
 	public FederatedServiceResolverImpl() {
@@ -33,30 +33,30 @@ public class FederatedServiceResolverImpl extends AbstractFederatedServiceResolv
 	}
 
 	/** independent life cycle */
-	private volatile SesameClient client;
+	private volatile HttpClientSessionManager client;
 
 	/** dependent life cycle */
-	private volatile SesameClientImpl dependentClient;
+	private volatile SharedHttpClientSessionManager dependentClient;
 
-	public SesameClient getSesameClient() {
-		SesameClient result = client;
+	public HttpClientSessionManager getHttpClientSessionManager() {
+		HttpClientSessionManager result = client;
 		if (result == null) {
 			synchronized (this) {
 				result = client;
 				if (result == null) {
-					result = client = dependentClient = new SesameClientImpl();
+					result = client = dependentClient = new SharedHttpClientSessionManager();
 				}
 			}
 		}
 		return result;
 	}
 
-	public void setSesameClient(SesameClient client) {
+	public void setHttpClientSessionManager(HttpClientSessionManager client) {
 		synchronized (this) {
 			this.client = client;
 			// If they set a client, we need to check whether we need to
 			// shutdown any existing dependentClient
-			SesameClientImpl toCloseDependentClient = dependentClient;
+			SharedHttpClientSessionManager toCloseDependentClient = dependentClient;
 			dependentClient = null;
 			if (toCloseDependentClient != null) {
 				toCloseDependentClient.shutDown();
@@ -65,13 +65,13 @@ public class FederatedServiceResolverImpl extends AbstractFederatedServiceResolv
 	}
 
 	public HttpClient getHttpClient() {
-		return getSesameClient().getHttpClient();
+		return getHttpClientSessionManager().getHttpClient();
 	}
 
 	public void setHttpClient(HttpClient httpClient) {
-		SesameClientImpl toSetDependentClient = dependentClient;
+		SharedHttpClientSessionManager toSetDependentClient = dependentClient;
 		if (toSetDependentClient == null) {
-			getSesameClient();
+			getHttpClientSessionManager();
 			toSetDependentClient = dependentClient;
 		}
 		// The strange lifecycle results in the possibility that the
@@ -86,7 +86,7 @@ public class FederatedServiceResolverImpl extends AbstractFederatedServiceResolv
 	protected FederatedService createService(String serviceUrl)
 		throws QueryEvaluationException
 	{
-		return new SPARQLFederatedService(serviceUrl, getSesameClient());
+		return new SPARQLFederatedService(serviceUrl, getHttpClientSessionManager());
 	}
 
 	@Override
