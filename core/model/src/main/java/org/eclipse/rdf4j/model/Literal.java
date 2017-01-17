@@ -60,7 +60,7 @@ public interface Literal extends Value {
 	public boolean equals(Object other);
 
 	/**
-	 * Returns the literal's hash code. 
+	 * Returns hash code value of the Literal. 
 	 * 
 	 * @return A hash code for the literal.
 	 */

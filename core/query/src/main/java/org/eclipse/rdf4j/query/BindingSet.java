@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.Value;
 /**
  * A BindingSet is a set of named value bindings, which is used a.o. to represent a single query solution.
  * Values are indexed by name of the binding which typically corresponds to the names of the variables used in
- * the projection of the orginal query.
+ * the projection of the original query.
  */
 public interface BindingSet extends Iterable<Binding>, Serializable {
 
@@ -78,13 +78,17 @@ public interface BindingSet extends Iterable<Binding>, Serializable {
 	 * @return <tt>true</tt> if the other object is an instance of {@link BindingSet} and it contains the same
 	 *         set of bindings (disregarding order), <tt>false</tt> otherwise.
 	 */
+	@Override
 	public boolean equals(Object o);
 
 	/**
-	 * The hash code of a {@link BindingSet}. Note: the calculated hash code intentionally does not depend on
-	 * the order in which the bindings are iterated over.
+	 * Returns the hash code value of the {@link BindingSet}.
+	 * <p/>
+	 * The calculated hash code intentionally does not depend on the order in which the bindings are iterated
+	 * over.
 	 * 
 	 * @return A hash code for the BindingSet.
 	 */
+	@Override
 	public int hashCode();
 }

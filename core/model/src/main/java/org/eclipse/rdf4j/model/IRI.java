@@ -60,12 +60,14 @@ public interface IRI extends URI, Resource {
 	 * @return <tt>true</tt> if the other object is an instance of {@link IRI} and their
 	 *         String-representations are equal, <tt>false</tt> otherwise.
 	 */
+	@Override
 	public boolean equals(Object o);
 
 	/**
-	 * The hash code of an IRI.
+	 * Returns the hash code value of the IRI.
 	 * 
 	 * @return A hash code for the IRI.
 	 */
+	@Override
 	public int hashCode();
 }

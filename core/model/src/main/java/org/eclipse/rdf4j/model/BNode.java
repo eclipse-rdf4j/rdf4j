@@ -32,12 +32,14 @@ public interface BNode extends Resource {
 	 * @return <tt>true</tt> if the other object is an instance of {@link BNode} and their IDs are equal,
 	 *         <tt>false</tt> otherwise.
 	 */
+	@Override
 	public boolean equals(Object o);
 
 	/**
-	 * The hash code of a blank node.
+	 * Returns the hash code value of the blank node.
 	 * 
 	 * @return A hash code for the blank node.
 	 */
+	@Override
 	public int hashCode();
 }
