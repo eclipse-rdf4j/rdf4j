@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
  */
 
 public class ForwardChainingSchemaCachingRDFSInferencerConnection
-		extends AbstractForwardChainingInferencerConnection
+		extends TEMP_AbstractForwardChainingInferencerConnection
 {
 
 	private final ForwardChainingSchemaCachingRDFSInferencer inferencerSail;
