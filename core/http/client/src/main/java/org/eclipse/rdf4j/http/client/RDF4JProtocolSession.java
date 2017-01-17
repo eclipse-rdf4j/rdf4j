@@ -956,11 +956,11 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		
 		if (dataset != null) {
 			for (IRI defaultGraphURI : dataset.getDefaultGraphs()) {
-				queryParams.add(new BasicNameValuePair(Protocol.USING_GRAPH_PARAM_NAME,
+				queryParams.add(new BasicNameValuePair(Protocol.DEFAULT_GRAPH_PARAM_NAME,
 						String.valueOf(defaultGraphURI)));
 			}
 			for (IRI namedGraphURI : dataset.getNamedGraphs()) {
-				queryParams.add(new BasicNameValuePair(Protocol.USING_NAMED_GRAPH_PARAM_NAME,
+				queryParams.add(new BasicNameValuePair(Protocol.NAMED_GRAPH_PARAM_NAME,
 						String.valueOf(namedGraphURI)));
 			}
 		}
