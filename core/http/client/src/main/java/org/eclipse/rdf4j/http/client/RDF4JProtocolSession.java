@@ -938,19 +938,31 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	{
 		Objects.requireNonNull(ql, "QueryLanguage may not be null");
 
-		List<NameValuePair> queryParams = super.getQueryMethodParameters(ql, query, baseURI, dataset,
-				includeInferred, maxQueryTime, bindings);
-
+		List<NameValuePair> queryParams = new ArrayList<NameValuePair>();
 		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
-
+		queryParams.add(new BasicNameValuePair(Protocol.QUERY_PARAM_NAME, query));
+		
 		if (baseURI != null) {
 			queryParams.add(new BasicNameValuePair(Protocol.BASEURI_PARAM_NAME, baseURI));
 		}
+		
 		queryParams.add(new BasicNameValuePair(Protocol.INCLUDE_INFERRED_PARAM_NAME,
 				Boolean.toString(includeInferred)));
+		
 		if (maxQueryTime > 0) {
 			queryParams.add(
 					new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));
+		}
+		
+		if (dataset != null) {
+			for (IRI defaultGraphURI : dataset.getDefaultGraphs()) {
+				queryParams.add(new BasicNameValuePair(Protocol.USING_GRAPH_PARAM_NAME,
+						String.valueOf(defaultGraphURI)));
+			}
+			for (IRI namedGraphURI : dataset.getNamedGraphs()) {
+				queryParams.add(new BasicNameValuePair(Protocol.USING_NAMED_GRAPH_PARAM_NAME,
+						String.valueOf(namedGraphURI)));
+			}
 		}
 
 		for (int i = 0; i < bindings.length; i++) {
@@ -968,11 +980,18 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	{
 		Objects.requireNonNull(ql, "QueryLanguage may not be null");
 
-		List<NameValuePair> queryParams = super.getUpdateMethodParameters(ql, update, baseURI, dataset,
-				includeInferred, maxQueryTime, bindings);
+		List<NameValuePair> queryParams = new ArrayList<NameValuePair>();
 
 		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
-
+		queryParams.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));
+		
+		if (baseURI != null) {
+			queryParams.add(new BasicNameValuePair(Protocol.BASEURI_PARAM_NAME, baseURI));
+		}
+		
+		queryParams.add(new BasicNameValuePair(Protocol.INCLUDE_INFERRED_PARAM_NAME,
+				Boolean.toString(includeInferred)));
+		
 		if (dataset != null) {
 			for (IRI graphURI : dataset.getDefaultRemoveGraphs()) {
 				queryParams.add(
@@ -982,8 +1001,21 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				queryParams.add(new BasicNameValuePair(Protocol.INSERT_GRAPH_PARAM_NAME,
 						String.valueOf(dataset.getDefaultInsertGraph())));
 			}
+			for (IRI defaultGraphURI : dataset.getDefaultGraphs()) {
+				queryParams.add(new BasicNameValuePair(Protocol.USING_GRAPH_PARAM_NAME,
+						String.valueOf(defaultGraphURI)));
+			}
+			for (IRI namedGraphURI : dataset.getNamedGraphs()) {
+				queryParams.add(new BasicNameValuePair(Protocol.USING_NAMED_GRAPH_PARAM_NAME,
+						String.valueOf(namedGraphURI)));
+			}
 		}
 
+		if (maxQueryTime > 0) {
+			queryParams.add(
+					new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));
+		}
+		
 		for (int i = 0; i < bindings.length; i++) {
 			String paramName = Protocol.BINDING_PREFIX + bindings[i].getName();
 			String paramValue = Protocol.encodeValue(bindings[i].getValue());
