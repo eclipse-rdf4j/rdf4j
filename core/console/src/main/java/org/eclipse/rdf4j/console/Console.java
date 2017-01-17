@@ -77,7 +77,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 
 	private boolean showPrefix = true;
 
-	private boolean queryPrefix = false;
+	private boolean queryPrefix = true;
 
 	/*----------------*
 	 * Static methods *
