@@ -40,7 +40,7 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-public class ForwardChainingSchemaCachingRDFSInferencer extends AbstractForwardChainingInferencer {
+public class ForwardChainingSchemaCachingRDFSInferencer extends TEMP_AbstractForwardChainingInferencer {
 
 	// The schema, or null
 	Repository schema;
