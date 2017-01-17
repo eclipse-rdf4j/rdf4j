@@ -35,7 +35,7 @@ public interface BNode extends Resource {
 	public boolean equals(Object o);
 
 	/**
-	 * The hash code of a blank node is defined as the hash code of its identifier: <tt>id.hashCode()</tt>.
+	 * The hash code of a blank node.
 	 * 
 	 * @return A hash code for the blank node.
 	 */

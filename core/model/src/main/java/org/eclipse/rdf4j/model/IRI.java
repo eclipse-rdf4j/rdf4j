@@ -63,8 +63,7 @@ public interface IRI extends URI, Resource {
 	public boolean equals(Object o);
 
 	/**
-	 * The hash code of an IRI is defined as the hash code of its String-representation:
-	 * <tt>toString().hashCode</tt>.
+	 * The hash code of an IRI.
 	 * 
 	 * @return A hash code for the IRI.
 	 */

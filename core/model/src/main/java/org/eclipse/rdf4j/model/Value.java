@@ -16,7 +16,7 @@ public interface Value extends Serializable {
 
 	/**
 	 * Returns the String-value of a <tt>Value</tt> object. This returns either a {@link Literal}'s label, a
-	 * {@link IRI}'s URI or a {@link BNode}'s ID.
+	 * {@link IRI}'s full string-representation or a {@link BNode}'s ID.
 	 */
 	public String stringValue();
 }

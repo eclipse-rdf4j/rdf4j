@@ -81,18 +81,8 @@ public interface BindingSet extends Iterable<Binding>, Serializable {
 	public boolean equals(Object o);
 
 	/**
-	 * The hash code of a binding is defined as the bit-wise XOR of the hash codes of its bindings:
-	 * 
-	 * <pre>
-	 * int hashCode = 0;
-	 *
-	 * for (Binding binding : this) {
-	 * 	hashCode &circ;= binding.getName().hashCode() &circ; binding.getValue().hashCode();
-	 * }
-	 * </pre>
-	 * 
-	 * Note: the calculated hash code intentionally does not depend on the order in which the bindings are
-	 * iterated over.
+	 * The hash code of a {@link BindingSet}. Note: the calculated hash code intentionally does not depend on
+	 * the order in which the bindings are iterated over.
 	 * 
 	 * @return A hash code for the BindingSet.
 	 */
