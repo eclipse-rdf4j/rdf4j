@@ -22,6 +22,14 @@ public class SesameClientImpl extends SharedHttpClientSessionManager {
 	 * @deprecated use {@link SharedHttpClientSessionManager} instead.
 	 */
 	@Deprecated
+	public SesameClientImpl() {
+		super();
+	}
+
+	/**
+	 * @deprecated use {@link SharedHttpClientSessionManager} instead.
+	 */
+	@Deprecated
 	public SesameClientImpl(CloseableHttpClient dependentClient, ExecutorService dependentExecutorService) {
 		super(dependentClient, dependentExecutorService);
 	}
