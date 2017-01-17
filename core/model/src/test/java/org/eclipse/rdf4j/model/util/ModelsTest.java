@@ -11,6 +11,10 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -264,6 +268,97 @@ public class ModelsTest {
 		assertFalse(model1.contains(foo, bar, foo));
 		assertTrue(model1.contains(foo, bar, lit2));
 
+	}
+
+	@Test
+	public void testGetProperty() {
+		Literal lit1 = VF.createLiteral(1.0);
+		model1.add(foo, bar, lit1);
+		model1.add(foo, bar, foo);
+
+		Value v = Models.getProperty(model1, foo, bar).orElse(null);
+
+		assertNotNull(v);
+		assertTrue(lit1.equals(v) || foo.equals(v));
+	}
+
+	@Test
+	public void testGetProperties() {
+		Literal lit1 = VF.createLiteral(1.0);
+		model1.add(foo, bar, lit1);
+		model1.add(foo, bar, foo);
+
+		Set<Value> values = Models.getProperties(model1, foo, bar);
+
+		assertNotNull(values);
+		assertEquals(2, values.size());
+		assertTrue(values.contains(lit1));
+		assertTrue(values.contains(foo));
+	}
+
+	@Test
+	public void testGetPropertyLiteral() {
+		Literal lit1 = VF.createLiteral(1.0);
+		model1.add(foo, bar, lit1);
+		model1.add(foo, bar, foo);
+
+		Literal l = Models.getPropertyLiteral(model1, foo, bar).orElse(null);
+
+		assertNotNull(l);
+		assertEquals(lit1, l);
+	}
+
+	@Test
+	public void testGetPropertyLiteral2() {
+		model1.add(foo, bar, foo);
+
+		Optional<Literal> l = Models.getPropertyLiteral(model1, foo, bar);
+		assertEquals(Optional.empty(), l);
+	}
+
+	@Test
+	public void testGetPropertyIRI() {
+		Literal lit1 = VF.createLiteral(1.0);
+		model1.add(foo, bar, lit1);
+		model1.add(foo, bar, foo);
+
+		IRI iri = Models.getPropertyIRI(model1, foo, bar).orElse(null);
+
+		assertNotNull(iri);
+		assertEquals(foo, iri);
+	}
+
+	@Test
+	public void testGetPropertyIRI2() {
+		Literal lit1 = VF.createLiteral(1.0);
+		model1.add(foo, bar, lit1);
+
+		Optional<IRI> iri = Models.getPropertyIRI(model1, foo, bar);
+
+		assertEquals(Optional.empty(), iri);
+	}
+
+	@Test
+	public void testGetPropertyInvalidInput() {
+		Literal lit1 = VF.createLiteral(1.0);
+		model1.add(foo, bar, lit1);
+		model1.add(foo, bar, foo);
+
+		try {
+			Models.getProperty(model1, foo, null).orElse(null);
+			fail("should have resulted in exception");
+		}
+		catch (NullPointerException e) {
+			// expected
+		}
+
+		try {
+			Models.getProperty(model1, null, bar).orElse(null);
+			fail("should have resulted in exception");
+		}
+		catch (NullPointerException e) {
+			// expected
+		}
 	}
 
 	@Test
