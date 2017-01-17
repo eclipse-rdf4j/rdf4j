@@ -71,7 +71,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		throws SailException
 	{
 		super.rollback();
-		statementRemoved = false;
 		verifyExclusiveWriteLockReleased();
 		//@TODO Do I need to clean up the tbox cache and lookup maps after rolling back? Probably if the connection has a write lock.
 	}
@@ -135,7 +134,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 
 	private long originalSchemaSize = -1;
 
-	private boolean statementRemoved = false;
 
 	@Override
 	public void begin()
@@ -150,7 +148,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		throws UnknownSailTransactionStateException
 	{
 		super.begin(level);
-		statementRemoved = false;
 
 		originalSchemaSize = inferencerSail.getSchemaSize();
 
@@ -161,28 +158,18 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		throws SailException
 	{
 		super.commit();
-		statementRemoved = false;
 		verifyExclusiveWriteLockReleased();
 	}
 
-	@Override
-	public void statementRemoved(Statement st) {
-		// we need to register a statement as removed regardless of whether it was also added 
-		// as part of this transaction: the schema cache is updated on the fly so may contain
-		// inferences relying on this statement.
-		statementRemoved = true;
-	}
 
-	@Override
-	protected boolean needsFullRecomputation() {
-		return this.statementRemoved;
-	}
+
+
 
 	@Override
 	protected void doInferencing()
 		throws SailException
 	{
-		prepareIteration();
+//		prepareIteration();
 
 		// FIXME check on schema size change is unreliable: e.g. a change may have added one and removed
 		// one.
@@ -221,23 +208,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 
 	}
 
-	@Override
-	protected Model createModel() {
-		return new LinkedHashModelFactory().createEmptyModel();
-	}
-
-	@Override
-	protected int applyRules(Model model)
-		throws SailException
-	{
-
-		// Required by extended class
-
-		// Not used here because rules are usually applied while adding data
-		// and not at the end of a transaction
-
-		return 0;
-	}
 
 	public void addStatement(Resource subject, IRI predicate, Value object, Resource... contexts)
 		throws SailException
