@@ -20,7 +20,7 @@ import org.junit.Test;
 public class FederationSparqlTest {
 
 	@Test
-	public void quickTest()
+	public void test181Issue()
 		throws Exception
 	{
 		SailRepository repo1 = new SailRepository(new MemoryStore());
