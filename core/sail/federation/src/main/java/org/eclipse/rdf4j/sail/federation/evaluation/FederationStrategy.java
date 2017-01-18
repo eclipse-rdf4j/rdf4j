@@ -91,7 +91,9 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 		for (int i = 1, n = join.getNumberOfArguments(); i < n; i++) {
 
 			TupleExpr rightArg = join.getArg(i);
-			if (TupleExprs.containsProjection(rightArg)) {
+			if (TupleExprs.containsProjection(rightArg)
+					|| (rightArg instanceof OwnedTupleExpr && ((OwnedTupleExpr)rightArg).getQuery() != null))
+			{
 				TupleExpr leftArg = join.getArg(i - 1);
 				collectedBindingNames.addAll(leftArg.getBindingNames());
 				result = new HashJoinIteration(this, result, collectedBindingNames,
