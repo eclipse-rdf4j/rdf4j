@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.sail.inferencer.fc;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
@@ -17,12 +16,11 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnectionWrapper;
-import org.eclipse.rdf4j.sail.model.SailModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public abstract class TEMP_AbstractForwardChainingInferencerConnection extends InferencerConnectionWrapper
-		implements SailConnectionListener
+	implements SailConnectionListener
 {
 
 	/*-----------*
@@ -42,9 +40,10 @@ public abstract class TEMP_AbstractForwardChainingInferencerConnection extends I
 	 */
 	private boolean statementsRemoved;
 
+	/**
+	 * true if the base Sail reported added statements.
+	 */
 	private boolean statementsAdded;
-
-
 
 
 	/*--------------*
@@ -64,10 +63,8 @@ public abstract class TEMP_AbstractForwardChainingInferencerConnection extends I
 	// Called by base sail
 	@Override
 	public void statementAdded(Statement st) {
-		
 		statementsAdded = true;
 	}
-
 
 	// Called by base sail
 	@Override
@@ -79,24 +76,26 @@ public abstract class TEMP_AbstractForwardChainingInferencerConnection extends I
 	public void flushUpdates()
 		throws SailException
 	{
-
 		if (statementsRemoved) {
 			logger.debug("full recomputation needed, starting inferencing from scratch");
 			clearInferred();
+			super.flushUpdates();
 
 			addAxiomStatements();
+			super.flushUpdates();
 			doInferencing();
-
-			statementsRemoved = false;
-			statementsAdded = false;
-
-		} else if (statementsAdded) {
-			statementsAdded = false;
+			super.flushUpdates();
+		}
+		else if (statementsAdded) {
+			super.flushUpdates();
 			doInferencing();
 		}
+		else {
+			super.flushUpdates();
+		}
 
-		super.flushUpdates();
-
+		statementsAdded = false;
+		statementsRemoved = false;
 	}
 
 	@Override
@@ -115,10 +114,10 @@ public abstract class TEMP_AbstractForwardChainingInferencerConnection extends I
 		}
 
 		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
-				sail.getSupportedIsolationLevels());
+			sail.getSupportedIsolationLevels());
 		if (compatibleLevel == null) {
 			throw new UnknownSailTransactionStateException(
-					"Isolation level " + level + " not compatible with this Sail");
+				"Isolation level " + level + " not compatible with this Sail");
 		}
 		super.begin(compatibleLevel);
 	}
@@ -142,6 +141,5 @@ public abstract class TEMP_AbstractForwardChainingInferencerConnection extends I
 
 	abstract protected void doInferencing()
 		throws SailException;
-
 
 }
