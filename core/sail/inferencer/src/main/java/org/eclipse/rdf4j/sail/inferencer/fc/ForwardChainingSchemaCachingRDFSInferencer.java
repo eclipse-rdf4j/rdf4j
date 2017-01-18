@@ -21,8 +21,6 @@ import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -50,10 +48,6 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends TEMP_AbstractFor
 
 	// If false, the inferencer will skip some RDFS rules.
 	boolean useAllRdfsRules = true;
-
-	// supported isolation levels for this inferencer (overriding possibly supported levels of base sail).
-	private final List<IsolationLevel> levels = Arrays.asList(
-			new IsolationLevel[] { IsolationLevels.SERIALIZABLE });
 
 	// Schema cache
 	private final Collection<Resource> properties = new HashSet<>();
@@ -92,16 +86,6 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends TEMP_AbstractFor
 		calculatedProperties.clear();
 		calculatedRange.clear();
 		calculatedDomain.clear();
-	}
-
-	@Override
-	public IsolationLevel getDefaultIsolationLevel() {
-		return IsolationLevels.SERIALIZABLE;
-	}
-
-	@Override
-	public List<IsolationLevel> getSupportedIsolationLevels() {
-		return levels;
 	}
 
 	/**
