@@ -55,6 +55,10 @@ public class OwnedTupleExpr extends UnaryTupleOperator {
 		this.variables = bindings;
 	}
 
+	public TupleQuery getQuery() {
+		return query;
+	}
+
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Dataset dataset,
 			BindingSet bindings)
 		throws QueryEvaluationException
