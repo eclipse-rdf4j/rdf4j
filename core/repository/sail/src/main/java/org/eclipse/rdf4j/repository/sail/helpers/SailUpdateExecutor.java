@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.net.URL;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -536,11 +538,17 @@ public class SailUpdateExecutor {
 	}
 
 	private IRI[] getDefaultRemoveGraphs(Dataset dataset) {
-		if (dataset == null)
+		if (dataset == null) {
 			return new IRI[0];
-		Set<IRI> set = dataset.getDefaultRemoveGraphs();
-		if (set == null || set.isEmpty())
+		}
+		Set<IRI> set = new HashSet<>(dataset.getDefaultRemoveGraphs());
+		if (set.isEmpty()) {
 			return new IRI[0];
+		}
+		if (set.remove(SESAME.NIL)) {
+			set.add(null);
+		}
+
 		return set.toArray(new IRI[set.size()]);
 	}
 
@@ -672,7 +680,12 @@ public class SailUpdateExecutor {
 				}
 
 				if (context != null) {
-					con.removeStatement(uc, subject, predicate, object, context);
+					if (SESAME.NIL.equals(context)) {
+						con.removeStatement(uc, subject, predicate, object, (Resource)null);
+					}
+					else {
+						con.removeStatement(uc, subject, predicate, object, context);
+					}
 				}
 				else {
 					IRI[] remove = getDefaultRemoveGraphs(uc.getDataset());
