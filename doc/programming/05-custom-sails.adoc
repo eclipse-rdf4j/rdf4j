@@ -7,11 +7,10 @@ In addition to some of the SAIL implementations we have already seen, RDF4J offe
 The LuceneSail enables you to add full text search of RDF literals to find subject resources to any Sail stack. It provides querying support for the following statement patterns:
 
  PREFIX search: <http://www.openrdf.org/contrib/lucenesail#>
- 
+	 
  ?subj search:matches [
                search:query "search terms..."; 
                search:property my:property;
-
                search:score ?score;
                search:snippet ?snippet ] .
 
@@ -27,12 +26,53 @@ The ‘virtual’ properties in the search: namespace have the following meaning
 
 The LuceneSail is a stacked Sail: To use it, simply wrap your base SAIL with it:
 
-    LuceneSail lucenesail = new LuceneSail();
-    // set any parameters
-    lucenesail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true");
-    ...
-    // wrap base sail
-    lucenesail.setBaseSail(baseSail);
+[source,java]
+----
+Sail baseSail = new NativeStore(new File("."));
+LuceneSail lucenesail = new LuceneSail();
+// set any parameters, this one stores the Lucene index files into memory
+lucenesail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true");
+...
+// wrap base sail
+lucenesail.setBaseSail(baseSail);
+----
+
+=== Full text search
+
+Search is case-insensitive, wildcards and other modifiers can be used to broaden the search.
+For example, search all literals containing words starting with "alic" (e.g. persons named "Alice"):
+
+[source,java]
+----
+....
+Repository repo = new SailRepository(lucenesail);
+repo.initialize();
+
+// Get the subjects and a highlighted snippet
+String qry = "PREFIX search: <http://www.openrdf.org/contrib/lucenesail#> " +
+			"SELECT ?subj ?text " +
+			"WHERE { ?subj search:matches [" +
+					" search:query ?term ; " +
+					" search:snippet ?text ] } ";
+
+List<BindingSet> results;	
+try (RepositoryConnection con = repo.getConnection()) {
+	ValueFactory fac = con.getValueFactory();
+		 
+	TupleQuery tq = con.prepareTupleQuery(QueryLanguage.SPARQL, qry);
+	// add wildcard '*' to perform wildcard search
+	tq.setBinding("term", fac.createLiteral("alic" + "*"));
+	
+	// copy the results and processs them after the connection is closed
+	results = QueryResults.asList(tq.evaluate());
+}
+
+results.forEach(res -> { 
+		System.out.println(res.getValue("subj").stringValue()); 
+		System.out.println(res.getValue("text").stringValue());
+});
+
+----
 
 === SearchIndex implementations
 
