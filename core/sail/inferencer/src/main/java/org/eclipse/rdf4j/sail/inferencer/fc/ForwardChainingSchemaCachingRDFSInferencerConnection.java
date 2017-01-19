@@ -39,11 +39,11 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	private boolean hasWriteLock = false;
 
 	ForwardChainingSchemaCachingRDFSInferencerConnection(
-			ForwardChainingSchemaCachingRDFSInferencer inferencingSail, InferencerConnection e)
+			ForwardChainingSchemaCachingRDFSInferencer inferencingSail, InferencerConnection connection)
 	{
-		super(inferencingSail, e);
+		super(inferencingSail, connection);
 		this.inferencerSail = inferencingSail;
-		this.connection = e;
+		this.connection = connection;
 	}
 
 	/**
