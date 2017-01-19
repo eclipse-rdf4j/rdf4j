@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -114,53 +115,108 @@ public abstract class SPARQLUpdateTest {
 	/* test methods */
 
 	@Test
-	public void testInsertWhereInvalidTriple() throws Exception {
+	public void testDeleteFromDefaultGraph()
+		throws Exception
+	{
+
+		con.add(RDF.FIRST, RDF.FIRST, RDF.FIRST);
+		con.add(RDF.FIRST, RDF.FIRST, RDF.FIRST, RDF.ALT);
+		con.add(RDF.FIRST, RDF.FIRST, RDF.FIRST, RDF.BAG);
+
+		StringBuilder update = new StringBuilder();
+		update.append(getNamespaceDeclarations());
+		update.append("DELETE { GRAPH sesame:nil { ?s ?p ?o } } WHERE { GRAPH rdf:Alt { ?s ?p ?o } }");
+
+		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
+		operation.execute();
+
+		assertTrue(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF.ALT));
+		assertTrue(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF.BAG));
+		assertFalse(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, SESAME.NIL));
+		assertFalse(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, (Resource)null));
+	}
+
+	@Test
+	public void testDeleteFromDefaultGraphUsingWith()
+		throws Exception
+	{
+
+		con.add(RDF.FIRST, RDF.FIRST, RDF.FIRST);
+		con.add(RDF.FIRST, RDF.FIRST, RDF.FIRST, RDF.ALT);
+		con.add(RDF.FIRST, RDF.FIRST, RDF.FIRST, RDF.BAG);
+
+		StringBuilder update = new StringBuilder();
+		update.append(getNamespaceDeclarations());
+		update.append("WITH sesame:nil DELETE { ?s ?p ?o  } WHERE { ?s ?p ?o }");
+
+		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
+		operation.execute();
+
+		assertTrue(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF.ALT));
+		assertTrue(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF.BAG));
+		assertFalse(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, SESAME.NIL));
+		assertFalse(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, (Resource)null));
+	}
+
+	@Test
+	public void testInsertWhereInvalidTriple()
+		throws Exception
+	{
 		StringBuilder update = new StringBuilder();
 		update.append(getNamespaceDeclarations());
 		update.append("INSERT {?name a foaf:Person. ?x a <urn:TestSubject>. } WHERE { ?x foaf:name ?name }");
-		
+
 		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
-		
+
 		try {
 			operation.execute();
-		} catch (ClassCastException e) {
+		}
+		catch (ClassCastException e) {
 			fail("subject-literal triple pattern should be silently ignored");
 		}
-		
-		assertTrue(con.hasStatement((Resource)null, RDF.TYPE, con.getValueFactory().createIRI("urn:TestSubject"), true));
+
+		assertTrue(con.hasStatement((Resource)null, RDF.TYPE,
+				con.getValueFactory().createIRI("urn:TestSubject"), true));
 	}
-	
+
 	@Test
-	public void testDeleteWhereInvalidTriple() throws Exception {
+	public void testDeleteWhereInvalidTriple()
+		throws Exception
+	{
 		StringBuilder update = new StringBuilder();
 		update.append(getNamespaceDeclarations());
 		update.append("DELETE {?name a foaf:Person. ?x foaf:name ?name } WHERE { ?x foaf:name ?name }");
-		
+
 		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
-		
+
 		try {
 			operation.execute();
-		} catch (ClassCastException e) {
+		}
+		catch (ClassCastException e) {
 			fail("subject-literal triple pattern should be silently ignored");
 		}
 		assertFalse(con.hasStatement(null, FOAF.NAME, null, true));
 	}
-	
+
 	@Test
-	public void testDeleteInsertWhereInvalidTriple() throws Exception {
+	public void testDeleteInsertWhereInvalidTriple()
+		throws Exception
+	{
 		StringBuilder update = new StringBuilder();
 		update.append(getNamespaceDeclarations());
-		update.append("DELETE {?name a foaf:Person} INSERT {?name a foaf:Agent} WHERE { ?x foaf:name ?name }");
-		
+		update.append(
+				"DELETE {?name a foaf:Person} INSERT {?name a foaf:Agent} WHERE { ?x foaf:name ?name }");
+
 		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
-		
+
 		try {
 			operation.execute();
-		} catch (ClassCastException e) {
+		}
+		catch (ClassCastException e) {
 			fail("subject-literal triple pattern should be silently ignored");
 		}
 	}
-	
+
 	@Test
 	public void testInsertWhere()
 		throws Exception
