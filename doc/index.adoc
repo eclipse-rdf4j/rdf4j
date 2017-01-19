@@ -10,8 +10,14 @@ include::header.adoc[]
 
 === Tutorials 
 
+==== Beginner's Guides
+
 - link:rdf-tutorial[How to use RDF and the RDF4J Framework]
 - link:getting-started[Setting up a new RDF4J/Maven/Eclipse project]
+
+==== Howto's
+
+- link:custom-sparql-functions[Creating Custom SPARQL Functions]
 
 === Reference Documentation
 
