@@ -255,12 +255,8 @@ public class TransactionController extends AbstractController {
 				case UPDATE:
 					return getSparqlUpdateResult(transaction, request, response);
 				case COMMIT:
-					try {
-						transaction.commit();
-					}
-					finally {
-						ActiveTransactionRegistry.INSTANCE.deregister(transaction);
-					}
+					transaction.commit();
+					ActiveTransactionRegistry.INSTANCE.deregister(transaction);
 					break;
 				default:
 					logger.warn("transaction modification action '{}' not recognized", action);
