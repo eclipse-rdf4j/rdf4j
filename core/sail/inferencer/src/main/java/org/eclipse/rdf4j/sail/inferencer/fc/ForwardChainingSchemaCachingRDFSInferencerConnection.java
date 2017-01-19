@@ -173,8 +173,9 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	{
 //		prepareIteration();
 
-		// FIXME check on schema size change is unreliable: e.g. a change may have added one and removed
-		// one.
+		// Check on schema cache size is always reliable since things can only be added to the cache
+		// The only place where things can be removed from the cache is within the method clearInferenceTables()
+		// which is only called from within this block
 		if (inferencerSail.schema == null && originalSchemaSize != inferencerSail.getSchemaSize()) {
 
 			inferencerSail.clearInferenceTables();
@@ -189,6 +190,8 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 				}
 			}
 			inferencerSail.calculateInferenceMaps(this);
+
+			originalSchemaSize = inferencerSail.getSchemaSize();
 			inferredCleared = true;
 
 		}
