@@ -141,6 +141,8 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	{
 		super.begin();
 
+		originalSchemaSize = inferencerSail.getSchemaSize();
+
 	}
 
 	@Override
