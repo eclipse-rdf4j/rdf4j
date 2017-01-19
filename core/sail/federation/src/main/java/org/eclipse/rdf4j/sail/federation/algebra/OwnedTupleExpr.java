@@ -55,8 +55,8 @@ public class OwnedTupleExpr extends UnaryTupleOperator {
 		this.variables = bindings;
 	}
 
-	public TupleQuery getQuery() {
-		return query;
+	public boolean hasQuery() {
+		return query != null;
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Dataset dataset,
