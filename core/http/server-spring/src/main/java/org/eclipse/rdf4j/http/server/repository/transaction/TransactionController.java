@@ -256,6 +256,8 @@ public class TransactionController extends AbstractController {
 					return getSparqlUpdateResult(transaction, request, response);
 				case COMMIT:
 					transaction.commit();
+					// If commit fails with an exception, deregister should be skipped so the user
+					// has a chance to do a proper rollback. See #725.
 					ActiveTransactionRegistry.INSTANCE.deregister(transaction);
 					break;
 				default:
