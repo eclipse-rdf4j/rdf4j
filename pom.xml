@@ -163,6 +163,7 @@
 		<httpcore.version>4.4.4</httpcore.version>
 		<jackson.version>2.8.2</jackson.version>
 		<jsonldjava.version>0.8.3</jsonldjava.version>
+		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
 	</properties>
 
 	<dependencyManagement>
@@ -414,32 +415,6 @@
 						<artifactId>commons-logging</artifactId>
 					</exclusion>
 				</exclusions>
-			</dependency>
-
-			<!-- Compliance tests -->
-			<dependency>
-				<groupId>edu.lehigh.swat.bench</groupId>
-				<artifactId>uba</artifactId>
-				<version>1.7</version>
-			</dependency>
-			<dependency>
-				<groupId>edu.lehigh.swat.bench</groupId>
-				<artifactId>ubt</artifactId>
-				<version>1.1</version>
-			</dependency>
-
-			<!-- JDBC Drivers -->
-
-			<dependency>
-				<groupId>postgresql</groupId>
-				<artifactId>postgresql</artifactId>
-				<version>9.1-901.jdbc4</version>
-			</dependency>
-
-			<dependency>
-				<groupId>mysql</groupId>
-				<artifactId>mysql-connector-java</artifactId>
-				<version>5.1.31</version>
 			</dependency>
 
 			<!-- various -->
@@ -715,21 +690,66 @@
 					<artifactId>tomcat7-maven-plugin</artifactId>
 					<version>2.2</version>
 				</plugin>
+				<plugin>
+					<groupId>com.github.siom79.japicmp</groupId>
+					<artifactId>japicmp-maven-plugin</artifactId>
+					<version>0.9.3</version>
+					<configuration>
+						<oldVersion>
+							<dependency>
+								<groupId>${project.groupId}</groupId>
+								<artifactId>${project.artifactId}</artifactId>
+								<version>${last.japicmp.compare.version}</version>
+								<type>jar</type>
+							</dependency>
+						</oldVersion>
+						<newVersion>
+							<file>
+								<path>${project.build.directory}/${project.artifactId}-${project.version}.jar</path>
+							</file>
+						</newVersion>
+						<parameter>
+							<onlyModified>true</onlyModified>
+						</parameter>
+					</configuration>
+					<executions>
+						<execution>
+							<phase>verify</phase>
+							<goals>
+								<goal>cmp</goal>
+							</goals>
+						</execution>
+					</executions>
+				</plugin>
 			</plugins>
 		</pluginManagement>
 
 		<plugins>
-			<!-- disabled since no java8 signature is available yet <plugin> <groupId>org.codehaus.mojo</groupId> 
-				<artifactId>animal-sniffer-maven-plugin</artifactId> <version>1.14</version> 
-				<executions> <execution> <phase>test</phase> <goals> <goal>check</goal> </goals> 
-				</execution> </executions> <configuration> <signature> <groupId>org.codehaus.mojo.signature</groupId> 
-				<artifactId>java16</artifactId> <version>1.1</version> </signature> </configuration> 
-				</plugin> -->
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>animal-sniffer-maven-plugin</artifactId>
+				<version>1.14</version>
+				<executions>
+					<execution>
+						<phase>test</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+					</execution>
+				</executions>
+				<configuration>
+					<signature>
+						<groupId>org.codehaus.mojo.signature</groupId>
+						<artifactId>java18</artifactId>
+						<version>1.0</version>
+					</signature>
+				</configuration>
+			</plugin>
 			<plugin>
 				<!-- verify all bytecode (including third party libs) is Java 8 max -->
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-enforcer-plugin</artifactId>
-				<version>1.3.1</version>
+				<version>1.4.1</version>
 				<executions>
 					<execution>
 						<id>enforce-bytecode-version</id>
@@ -750,13 +770,12 @@
 					<dependency>
 						<groupId>org.codehaus.mojo</groupId>
 						<artifactId>extra-enforcer-rules</artifactId>
-						<version>1.0-beta-3</version>
+						<version>1.0-beta-6</version>
 					</dependency>
 				</dependencies>
 			</plugin>
 
 		</plugins>
-
 
 		<extensions>
 			<extension>
