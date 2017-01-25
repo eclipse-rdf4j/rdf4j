@@ -33,6 +33,10 @@ include::header.adoc[]
 - link:/javadoc/latest[RDF4J API Javadoc]
 - older versions: [link:/javadoc/2.0[2.0]] [link:/javadoc/1.0[1.0]]
 
+=== Project internal documentation
+
+- link:developer[Developer Workflow and Project Management]
+
 == Sesame Archives
 
 If you are looking for documentation belonging to the (now deprecated) Sesame project, you can go to the http://archive.rdf4j.org/[archive website].
