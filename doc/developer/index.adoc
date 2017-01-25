@@ -216,3 +216,12 @@ Jeen Broekstra
 When IP log approval and review approval have been given, the review can be scheduled. To do this, emo@eclipse.org needs to be notified. This can happen through the https://projects.eclipse.org/projects/technology.rdf4j/governance[eclipse project governance page] (accessible through the project site), which will show a link at the top of the page for the planned release.
 
 For more detailed information about the release review process, see the https://www.eclipse.org/projects/handbook/[Eclipse Project Handbook].
+
+== Further reading
+
+Some generic sources of information about projects hosted by Eclipse:
+
+* https://www.eclipse.org/projects/handbook/[The Eclipse Project Handbook]
+* https://eclipse.org/projects/dev_process/index-quick.php[The Eclipse Development Process]
+* https://wiki.eclipse.org/Development_Resources/Committer_Cheat_Sheet[Committer Cheat Sheet]
+* https://wiki.eclipse.org/Development_Resources/Contribution_Questionnaire[Contribution Questionnaires]
