@@ -5,8 +5,9 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.http.client;
+package org.eclipse.rdf4j.query.impl;
 
+import org.eclipse.rdf4j.common.iteration.QueueIteration;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
@@ -14,10 +15,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * automatically converting the exception into a QueryEvaluationException with an appropriate stack trace.
  * 
  * @author James Leigh
- * @deprecated Use {@link org.eclipse.rdf4j.query.impl.QueueCursor} instead
  */
-@Deprecated
-public class QueueCursor<E> extends org.eclipse.rdf4j.query.impl.QueueCursor<E> {
+public class QueueCursor<E> extends QueueIteration<E, QueryEvaluationException> {
 
 	/**
 	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and default access policy.

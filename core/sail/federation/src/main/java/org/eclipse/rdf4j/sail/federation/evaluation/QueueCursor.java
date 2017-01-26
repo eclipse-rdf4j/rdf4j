@@ -12,7 +12,7 @@ package org.eclipse.rdf4j.sail.federation.evaluation;
  * automatically converting the exception into a QueryEvaluationException with an appropriate stack trace.
  * 
  * @author James Leigh
- * @deprecated Use {@link org.eclipse.rdf4j.http.client.QueueCursor} instead	
+ * @deprecated Use {@link org.eclipse.rdf4j.query.impl.QueueCursor} instead
  */
 @Deprecated
 public class QueueCursor<E> extends org.eclipse.rdf4j.http.client.QueueCursor<E> {
