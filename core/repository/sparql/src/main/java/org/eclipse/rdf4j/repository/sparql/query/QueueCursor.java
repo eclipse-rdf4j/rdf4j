@@ -12,8 +12,7 @@ package org.eclipse.rdf4j.repository.sparql.query;
  * automatically converting the exception into a QueryEvaluationException with an appropriate stack trace.
  * 
  * @author James Leigh
- * @deprecated use {@link org.eclipse.rdf4j.http.client.QueueCursor} instead
- * @see org.eclipse.rdf4j.http.client.QueueCursor
+ * @deprecated Use {@link org.eclipse.rdf4j.query.impl.QueueCursor} instead
  */
 @Deprecated
 public class QueueCursor<E> extends org.eclipse.rdf4j.http.client.QueueCursor<E> {
