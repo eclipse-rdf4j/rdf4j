@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.repository.sparql.query;
  * @deprecated use {@link org.eclipse.rdf4j.http.client.QueueCursor} instead
  * @see org.eclipse.rdf4j.http.client.QueueCursor
  */
+@Deprecated
 public class QueueCursor<E> extends org.eclipse.rdf4j.http.client.QueueCursor<E> {
 
 	public QueueCursor(int capacity, boolean fair) {
