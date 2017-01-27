@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Optional;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -21,7 +22,9 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+import org.eclipse.rdf4j.query.impl.QueueCursor;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
+import org.eclipse.rdf4j.query.resultio.helpers.BackgroundTupleResult;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -316,24 +319,77 @@ public class QueryResultIO {
 		throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
 		UnsupportedQueryResultFormatException
 	{
+		return parseTupleInternal(in, format, false);
+	}
+
+	/**
+	 * Parses a query result document and returns it as a TupleQueryResult object, with parsing done on a
+	 * separate thread in the background.<br>
+	 * IMPORTANT: As this method will spawn a new thread in the background, it is vitally important that it be
+	 * closed consistently when it is no longer required, to prevent resource leaks.
+	 * 
+	 * @param in
+	 *        An InputStream to read the query result document from.
+	 * @param format
+	 *        The query result format of the document to parse. Supported formats are
+	 *        {@link TupleQueryResultFormat#SPARQL} and {@link TupleQueryResultFormat#BINARY}.
+	 * @throws IOException
+	 *         If an I/O error occured while reading the query result document from the stream.
+	 * @throws TupleQueryResultHandlerException
+	 *         If such an exception is thrown by the used query result parser.
+	 * @throws UnsupportedQueryResultFormatException
+	 * @throws IllegalArgumentException
+	 *         If an unsupported query result file format was specified.
+	 */
+	public static TupleQueryResult parseTupleBackground(InputStream in, QueryResultFormat format)
+		throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
+		UnsupportedQueryResultFormatException
+	{
+		return parseTupleInternal(in, format, true);
+	}
+
+	private static TupleQueryResult parseTupleInternal(InputStream in, QueryResultFormat format,
+			boolean parseOnBackgroundThread)
+		throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
+		UnsupportedQueryResultFormatException
+	{
 		TupleQueryResultParser parser = createTupleParser(format);
 
-		TupleQueryResultBuilder qrBuilder = new TupleQueryResultBuilder();
-		parser.setQueryResultHandler(qrBuilder);
-
-		try {
-			parser.parseQueryResult(in);
-		}
-		catch (QueryResultHandlerException e) {
-			if (e instanceof TupleQueryResultHandlerException) {
-				throw (TupleQueryResultHandlerException)e;
+		if (parseOnBackgroundThread) {
+			BackgroundTupleResult result = new BackgroundTupleResult(
+					new QueueCursor<>(new LinkedBlockingQueue<>(1)), parser, in);
+			// Start a new thread in the background, which will be completed
+			// when the BackgroundTupleResult is either closed or interrupted
+			boolean allGood = false;
+			try {
+				new Thread(result).start();
+				allGood = true;
 			}
-			else {
-				throw new TupleQueryResultHandlerException(e);
+			finally {
+				if (!allGood) {
+					result.close();
+				}
 			}
+			return result;
 		}
+		else {
+			TupleQueryResultBuilder qrBuilder = new TupleQueryResultBuilder();
+			parser.setQueryResultHandler(qrBuilder);
 
-		return qrBuilder.getQueryResult();
+			try {
+				parser.parseQueryResult(in);
+			}
+			catch (QueryResultHandlerException e) {
+				if (e instanceof TupleQueryResultHandlerException) {
+					throw (TupleQueryResultHandlerException)e;
+				}
+				else {
+					throw new TupleQueryResultHandlerException(e);
+				}
+			}
+
+			return qrBuilder.getQueryResult();
+		}
 	}
 
 	/**
