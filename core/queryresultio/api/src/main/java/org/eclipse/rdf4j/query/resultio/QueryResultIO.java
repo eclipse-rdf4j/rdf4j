@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Optional;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.function.Supplier;
 
@@ -362,7 +363,7 @@ public class QueryResultIO {
 			// when the BackgroundTupleResult is either closed or interrupted
 			boolean allGood = false;
 			try {
-				new Thread(result).start();
+				ForkJoinPool.commonPool().submit(result);
 				allGood = true;
 			}
 			finally {

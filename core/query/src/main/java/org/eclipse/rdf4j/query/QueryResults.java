@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -220,7 +221,7 @@ public class QueryResults extends Iterations {
 				new QueueCursor<>(new LinkedBlockingQueue<>(1)), parser, in, format.getCharset(), baseURI);
 		boolean allGood = false;
 		try {
-			new Thread(result).start();
+			ForkJoinPool.commonPool().submit(result);
 			allGood = true;
 		}
 		finally {
