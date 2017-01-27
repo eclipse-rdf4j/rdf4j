@@ -73,10 +73,14 @@ public class QueryResults extends Iterations {
 		throws QueryEvaluationException
 	{
 		Statement singleResult = null;
-		if (result.hasNext()) {
-			singleResult = result.next();
+		try {
+			if (result.hasNext()) {
+				singleResult = result.next();
+			}
 		}
-		result.close();
+		finally {
+			result.close();
+		}
 		return singleResult;
 	}
 
@@ -90,10 +94,14 @@ public class QueryResults extends Iterations {
 		throws QueryEvaluationException
 	{
 		BindingSet singleResult = null;
-		if (result.hasNext()) {
-			singleResult = result.next();
+		try {
+			if (result.hasNext()) {
+				singleResult = result.next();
+			}
 		}
-		result.close();
+		finally {
+			result.close();
+		}
 		return singleResult;
 	}
 
