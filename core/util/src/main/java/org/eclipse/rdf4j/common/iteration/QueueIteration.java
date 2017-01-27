@@ -33,7 +33,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	private final Queue<Exception> exceptions = new ConcurrentLinkedQueue<Exception>();
 
 	/**
-	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and default access policy.
+	 * Creates an <tt>QueueIteration</tt> with the given (fixed) capacity and default access policy.
 	 * 
 	 * @param capacity
 	 *        the capacity of this queue
@@ -43,7 +43,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	}
 
 	/**
-	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and the specified access policy.
+	 * Creates an <tt>QueueIteration</tt> with the given (fixed) capacity and the specified access policy.
 	 * 
 	 * @param capacity
 	 *        the capacity of this queue
@@ -54,6 +54,19 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	public QueueIteration(int capacity, boolean fair) {
 		super();
 		this.queue = new ArrayBlockingQueue<E>(capacity, fair);
+	}
+
+	/**
+	 * Creates an <tt>QueueIteration</tt> with the given {@link BlockingQueue} as its backing queue.<br>
+	 * It may not be threadsafe to modify or access the given {@link BlockingQueue} from other locations. This
+	 * method only enables the default {@link ArrayBlockingQueue} to be overridden.
+	 * 
+	 * @param queue
+	 *        A BlockingQueue that is not used in other locations, but will be used as the backing Queue
+	 *        implementation for this cursor.
+	 */
+	public QueueIteration(BlockingQueue<E> queue) {
+		this.queue = queue;
 	}
 
 	/**

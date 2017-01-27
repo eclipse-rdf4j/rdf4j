@@ -15,6 +15,7 @@ import static org.junit.Assert.fail;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.util.Arrays;
 import java.util.Collections;
@@ -72,6 +73,27 @@ public abstract class AbstractQueryResultIOTest {
 	protected abstract String getFileName();
 
 	protected abstract QueryResultFormat getFormat();
+
+	/**
+	 * Override this to customise how the tuple parsing is performed, particularly to test background and
+	 * other parsing strategies.
+	 * 
+	 * @param format
+	 *        The {@link TupleQueryResultFormat} for the parser.
+	 * @param in
+	 *        The InputStream to parse
+	 * @return A {@link TupleQueryResult} that can be parsed.
+	 * @throws IOException
+	 * @throws QueryResultParseException
+	 * @throws TupleQueryResultHandlerException
+	 * @throws UnsupportedQueryResultFormatException
+	 */
+	protected TupleQueryResult parseTupleInternal(TupleQueryResultFormat format, InputStream in)
+		throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
+		UnsupportedQueryResultFormatException
+	{
+		return QueryResultIO.parseTuple(in, format);
+	}
 
 	/**
 	 * Test method for
@@ -216,7 +238,7 @@ public abstract class AbstractQueryResultIOTest {
 		// System.out.println("output: " + out.toString("UTF-8"));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
-		TupleQueryResult output = QueryResultIO.parseTuple(in, format);
+		TupleQueryResult output = parseTupleInternal(format, in);
 
 		assertQueryResultsEqual(expected, output);
 	}
@@ -237,7 +259,7 @@ public abstract class AbstractQueryResultIOTest {
 		// System.out.println("output: " + out.toString("UTF-8"));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
-		TupleQueryResult output = QueryResultIO.parseTuple(in, format);
+		TupleQueryResult output = parseTupleInternal(format, in);
 
 		assertQueryResultsEqual(expected, output);
 	}
@@ -262,7 +284,7 @@ public abstract class AbstractQueryResultIOTest {
 		// System.out.println("output: " + out.toString("UTF-8"));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
-		TupleQueryResult output = QueryResultIO.parseTuple(in, format);
+		TupleQueryResult output = parseTupleInternal(format, in);
 
 		assertQueryResultsEqual(expected, output);
 	}
@@ -297,7 +319,7 @@ public abstract class AbstractQueryResultIOTest {
 		// System.out.println("output: " + result);
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
-		TupleQueryResult output = QueryResultIO.parseTuple(in, format);
+		TupleQueryResult output = parseTupleInternal(format, in);
 
 		assertQueryResultsEqual(expected, output);
 
@@ -338,12 +360,13 @@ public abstract class AbstractQueryResultIOTest {
 			assertTrue(result.startsWith(callback + "("));
 			assertTrue(result.endsWith(");"));
 
-			// Strip off the callback function and verify that it contains a valid
+			// Strip off the callback function and verify that it contains a
+			// valid
 			// JSON object containing the correct results
 			result = result.substring(callback.length() + 1, result.length() - 2);
 
 			ByteArrayInputStream in = new ByteArrayInputStream(result.getBytes("UTF-8"));
-			TupleQueryResult output = QueryResultIO.parseTuple(in, format);
+			TupleQueryResult output = parseTupleInternal(format, in);
 
 			assertQueryResultsEqual(expected, output);
 		}
@@ -361,7 +384,7 @@ public abstract class AbstractQueryResultIOTest {
 		// System.out.println("output: " + out.toString("UTF-8"));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
-		TupleQueryResult output = QueryResultIO.parseTuple(in, format);
+		TupleQueryResult output = parseTupleInternal(format, in);
 
 		assertQueryResultsEqual(expected, output);
 	}
@@ -379,7 +402,7 @@ public abstract class AbstractQueryResultIOTest {
 		// System.out.println("output: " + out.toString("UTF-8"));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
-		TupleQueryResult output = QueryResultIO.parseTuple(in, format);
+		TupleQueryResult output = parseTupleInternal(format, in);
 
 		assertQueryResultsEqual(expected, output);
 	}
@@ -399,7 +422,7 @@ public abstract class AbstractQueryResultIOTest {
 		// System.out.println("output: " + out.toString("UTF-8"));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
-		TupleQueryResult output = QueryResultIO.parseTuple(in, format);
+		TupleQueryResult output = parseTupleInternal(format, in);
 
 		assertQueryResultsEqual(expected, output);
 	}
@@ -431,7 +454,7 @@ public abstract class AbstractQueryResultIOTest {
 		// System.out.println("output: " + out.toString("UTF-8"));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
-		TupleQueryResult output = QueryResultIO.parseTuple(in, format);
+		TupleQueryResult output = parseTupleInternal(format, in);
 
 		assertQueryResultsEqual(expected, output);
 	}
@@ -496,7 +519,7 @@ public abstract class AbstractQueryResultIOTest {
 		TupleQueryResultParser parser = QueryResultIO.createTupleParser(format);
 		// This should perform a full parse to verify the document, even though
 		// the handler is not set
-		parser.parse(in);
+		parser.parseQueryResult(in);
 	}
 
 	/**

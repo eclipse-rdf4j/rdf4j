@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.impl;
 
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+
 import org.eclipse.rdf4j.common.iteration.QueueIteration;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
@@ -39,6 +42,19 @@ public class QueueCursor<E> extends QueueIteration<E, QueryEvaluationException> 
 	 */
 	public QueueCursor(int capacity, boolean fair) {
 		super(capacity, fair);
+	}
+
+	/**
+	 * Creates an <tt>QueueCursor</tt> with the given {@link BlockingQueue} as its backing queue.<br>
+	 * It may not be threadsafe to modify or access the given {@link BlockingQueue} from other locations. This
+	 * method only enables the default {@link ArrayBlockingQueue} to be overridden.
+	 * 
+	 * @param queue
+	 *        A BlockingQueue that is not used in other locations, but will be used as the backing Queue
+	 *        implementation for this cursor.
+	 */
+	public QueueCursor(BlockingQueue<E> queue) {
+		super(queue);
 	}
 
 	@Override
