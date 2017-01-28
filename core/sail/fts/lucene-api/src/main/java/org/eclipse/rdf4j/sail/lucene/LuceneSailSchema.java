@@ -39,6 +39,12 @@ public class LuceneSailSchema {
 
 	public static final IRI ALL_PROPERTIES;
 
+	public static final IRI WITHIN_DISTANCE;
+
+	public static final IRI DISTANCE;
+
+	public static final IRI CONTEXT;
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance(); // compatible with beta4:
 																	// creating a new factory
@@ -52,5 +58,9 @@ public class LuceneSailSchema {
 		SEARCH = factory.createIRI(NAMESPACE + "search");
 		ALL_MATCHES = factory.createIRI(NAMESPACE + "allMatches");
 		ALL_PROPERTIES = factory.createIRI(NAMESPACE + "allProperties");
+
+		WITHIN_DISTANCE = factory.createIRI(NAMESPACE + "withinDistance");
+		DISTANCE = factory.createIRI(NAMESPACE + "distance");
+		CONTEXT = factory.createIRI(NAMESPACE + "context");
 	}
 }
