@@ -31,9 +31,8 @@ import org.slf4j.LoggerFactory;
  * @author Håvard Mikkelsen Ottestad
  */
 
-public class ForwardChainingSchemaCachingRDFSInferencerConnection
-	extends InferencerConnectionWrapper
-	implements SailConnectionListener
+public class ForwardChainingSchemaCachingRDFSInferencerConnection extends InferencerConnectionWrapper
+		implements SailConnectionListener
 {
 
 	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
@@ -54,8 +53,8 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	 */
 	private boolean statementsAdded;
 
-	ForwardChainingSchemaCachingRDFSInferencerConnection(
-			ForwardChainingSchemaCachingRDFSInferencer sail, InferencerConnection connection)
+	ForwardChainingSchemaCachingRDFSInferencerConnection(ForwardChainingSchemaCachingRDFSInferencer sail,
+			InferencerConnection connection)
 	{
 
 		super(connection);
@@ -86,8 +85,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		}
 	}
 
-
-
 	void processForSchemaCache(Statement statement) {
 		verifyExclusiveWriteLockAcquired();
 
@@ -112,16 +109,16 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 			sail.addDomainStatement(statement);
 		}
 		else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CLASS)) {
-			sail.addSubClassOfStatement(sail.getValueFactory().createStatement(subject,
-					RDFS.SUBCLASSOF, RDFS.RESOURCE));
+			sail.addSubClassOfStatement(
+					sail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE));
 		}
 		else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.DATATYPE)) {
 			sail.addSubClassOfStatement(
 					sail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
 		}
 		else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CONTAINERMEMBERSHIPPROPERTY)) {
-			sail.addSubPropertyOfStatement(sail.getValueFactory().createStatement(subject,
-					RDFS.SUBPROPERTYOF, RDFS.MEMBER));
+			sail.addSubPropertyOfStatement(
+					sail.getValueFactory().createStatement(subject, RDFS.SUBPROPERTYOF, RDFS.MEMBER));
 		}
 		else if (predicate.equals(RDF.TYPE)) {
 			if (!sail.hasType(((Resource)object))) {
@@ -147,9 +144,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 
 	private long originalSchemaSize = -1;
 
-
-
-
 	@Override
 	public void commit()
 		throws SailException
@@ -158,14 +152,10 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		verifyExclusiveWriteLockReleased();
 	}
 
-
-
-
-
 	protected void doInferencing()
 		throws SailException
 	{
-//		prepareIteration();
+		//		prepareIteration();
 
 		// Check on schema cache size is always reliable since things can only be added to the cache
 		// The only place where things can be removed from the cache is within the method clearInferenceTables()
@@ -207,7 +197,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 
 	}
 
-
 	public void addStatement(Resource subject, IRI predicate, Value object, Resource... contexts)
 		throws SailException
 	{
@@ -228,8 +217,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	{
 		verifyExclusiveWriteLockAcquired();
 		if (sail.schema == null) {
-			processForSchemaCache(
-					sail.getValueFactory().createStatement(subject, predicate, object));
+			processForSchemaCache(sail.getValueFactory().createStatement(subject, predicate, object));
 		}
 
 		if (sail.useAllRdfsRules) {
@@ -762,10 +750,10 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		}
 
 		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
-			sail.getSupportedIsolationLevels());
+				sail.getSupportedIsolationLevels());
 		if (compatibleLevel == null) {
 			throw new UnknownSailTransactionStateException(
-				"Isolation level " + level + " not compatible with this Sail");
+					"Isolation level " + level + " not compatible with this Sail");
 		}
 		super.begin(compatibleLevel);
 	}
@@ -780,8 +768,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		statementsRemoved = false;
 		statementsAdded = false;
 	}
-
-
 
 	@Override
 	public void flushUpdates()
@@ -820,7 +806,5 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	public void statementRemoved(Statement st) {
 		statementsRemoved = true;
 	}
-
-
 
 }
