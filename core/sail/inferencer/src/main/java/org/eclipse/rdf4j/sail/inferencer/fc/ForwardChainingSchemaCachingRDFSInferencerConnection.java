@@ -9,41 +9,61 @@
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
 import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
+import org.eclipse.rdf4j.sail.inferencer.InferencerConnectionWrapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
 
 public class ForwardChainingSchemaCachingRDFSInferencerConnection
-		extends TEMP_AbstractForwardChainingInferencerConnection
+	extends InferencerConnectionWrapper
+	implements SailConnectionListener
 {
 
-	private final ForwardChainingSchemaCachingRDFSInferencer inferencerSail;
+	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+
+	private final ForwardChainingSchemaCachingRDFSInferencer sail;
 
 	private final NotifyingSailConnection connection;
 
 	private boolean hasWriteLock = false;
 
+	/**
+	 * true if the base Sail reported removed statements.
+	 */
+	private boolean statementsRemoved;
+
+	/**
+	 * true if the base Sail reported added statements.
+	 */
+	private boolean statementsAdded;
+
 	ForwardChainingSchemaCachingRDFSInferencerConnection(
-			ForwardChainingSchemaCachingRDFSInferencer inferencingSail, InferencerConnection connection)
+			ForwardChainingSchemaCachingRDFSInferencer sail, InferencerConnection connection)
 	{
-		super(inferencingSail, connection);
-		this.inferencerSail = inferencingSail;
+
+		super(connection);
+		connection.addConnectionListener(this);
+
+		this.sail = sail;
 		this.connection = connection;
+
 	}
 
 	/**
@@ -51,7 +71,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	 */
 	private void verifyExclusiveWriteLockAcquired() {
 		if (!hasWriteLock) {
-			inferencerSail.acquireExclusiveWriteLock();
+			sail.acquireExclusiveWriteLock();
 			hasWriteLock = true;
 		}
 	}
@@ -61,19 +81,12 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	 */
 	private void verifyExclusiveWriteLockReleased() {
 		if (hasWriteLock) {
-			inferencerSail.releaseExclusiveWriteLock();
+			sail.releaseExclusiveWriteLock();
 			hasWriteLock = false;
 		}
 	}
 
-	@Override
-	public void rollback()
-		throws SailException
-	{
-		super.rollback();
-		verifyExclusiveWriteLockReleased();
-		//@TODO Do I need to clean up the tbox cache and lookup maps after rolling back? Probably if the connection has a write lock.
-	}
+
 
 	void processForSchemaCache(Statement statement) {
 		verifyExclusiveWriteLockAcquired();
@@ -83,41 +96,41 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		final Resource subject = statement.getSubject();
 
 		if (predicate.equals(RDFS.SUBCLASSOF)) {
-			inferencerSail.addSubClassOfStatement(statement);
+			sail.addSubClassOfStatement(statement);
 		}
 		else if (predicate.equals(RDF.TYPE) && object.equals(RDF.PROPERTY)) {
-			inferencerSail.addProperty(subject);
+			sail.addProperty(subject);
 
 		}
 		else if (predicate.equals(RDFS.SUBPROPERTYOF)) {
-			inferencerSail.addSubPropertyOfStatement(statement);
+			sail.addSubPropertyOfStatement(statement);
 		}
 		else if (predicate.equals(RDFS.RANGE)) {
-			inferencerSail.addRangeStatement(statement);
+			sail.addRangeStatement(statement);
 		}
 		else if (predicate.equals(RDFS.DOMAIN)) {
-			inferencerSail.addDomainStatement(statement);
+			sail.addDomainStatement(statement);
 		}
 		else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CLASS)) {
-			inferencerSail.addSubClassOfStatement(inferencerSail.getValueFactory().createStatement(subject,
+			sail.addSubClassOfStatement(sail.getValueFactory().createStatement(subject,
 					RDFS.SUBCLASSOF, RDFS.RESOURCE));
 		}
 		else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.DATATYPE)) {
-			inferencerSail.addSubClassOfStatement(
-					inferencerSail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
+			sail.addSubClassOfStatement(
+					sail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
 		}
 		else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CONTAINERMEMBERSHIPPROPERTY)) {
-			inferencerSail.addSubPropertyOfStatement(inferencerSail.getValueFactory().createStatement(subject,
+			sail.addSubPropertyOfStatement(sail.getValueFactory().createStatement(subject,
 					RDFS.SUBPROPERTYOF, RDFS.MEMBER));
 		}
 		else if (predicate.equals(RDF.TYPE)) {
-			if (!inferencerSail.hasType(((Resource)object))) {
-				inferencerSail.addType((Resource)object);
+			if (!sail.hasType(((Resource)object))) {
+				sail.addType((Resource)object);
 			}
 		}
 
-		if (!inferencerSail.hasProperty(predicate)) {
-			inferencerSail.addProperty(predicate);
+		if (!sail.hasProperty(predicate)) {
+			sail.addProperty(predicate);
 		}
 
 	}
@@ -135,25 +148,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	private long originalSchemaSize = -1;
 
 
-	@Override
-	public void begin()
-		throws SailException
-	{
-		super.begin();
 
-		originalSchemaSize = inferencerSail.getSchemaSize();
-
-	}
-
-	@Override
-	public void begin(IsolationLevel level)
-		throws UnknownSailTransactionStateException
-	{
-		super.begin(level);
-
-		originalSchemaSize = inferencerSail.getSchemaSize();
-
-	}
 
 	@Override
 	public void commit()
@@ -167,7 +162,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 
 
 
-	@Override
 	protected void doInferencing()
 		throws SailException
 	{
@@ -176,9 +170,9 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		// Check on schema cache size is always reliable since things can only be added to the cache
 		// The only place where things can be removed from the cache is within the method clearInferenceTables()
 		// which is only called from within this block
-		if (inferencerSail.schema == null && originalSchemaSize != inferencerSail.getSchemaSize()) {
+		if (sail.schema == null && originalSchemaSize != sail.getSchemaSize()) {
 
-			inferencerSail.clearInferenceTables();
+			sail.clearInferenceTables();
 			addAxiomStatements();
 
 			try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(
@@ -189,9 +183,9 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 					processForSchemaCache(next);
 				}
 			}
-			inferencerSail.calculateInferenceMaps(this);
+			sail.calculateInferenceMaps(this);
 
-			originalSchemaSize = inferencerSail.getSchemaSize();
+			originalSchemaSize = sail.getSchemaSize();
 			inferredCleared = true;
 
 		}
@@ -233,12 +227,12 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		throws SailException
 	{
 		verifyExclusiveWriteLockAcquired();
-		if (inferencerSail.schema == null) {
+		if (sail.schema == null) {
 			processForSchemaCache(
-					inferencerSail.getValueFactory().createStatement(subject, predicate, object));
+					sail.getValueFactory().createStatement(subject, predicate, object));
 		}
 
-		if (inferencerSail.useAllRdfsRules) {
+		if (sail.useAllRdfsRules) {
 			addInferredStatement(subject, RDF.TYPE, RDFS.RESOURCE);
 
 			if (object instanceof Resource) {
@@ -282,15 +276,15 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 				throw new SailException("Expected object to a a Resource: " + object.toString());
 			}
 
-			inferencerSail.resolveTypes((Resource)object).stream().peek(inferredType -> {
-				if (inferencerSail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
+			sail.resolveTypes((Resource)object).stream().peek(inferredType -> {
+				if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
 					addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 				}
 			}).filter(inferredType -> !inferredType.equals(object)).forEach(
 					inferredType -> addInferredStatement(subject, RDF.TYPE, inferredType));
 		}
 
-		inferencerSail.resolveProperties(predicate).stream().filter(
+		sail.resolveProperties(predicate).stream().filter(
 				inferredProperty -> !inferredProperty.equals(predicate)).filter(
 						inferredPropery -> inferredPropery instanceof IRI).map(
 								inferredPropery -> ((IRI)inferredPropery)).forEach(
@@ -298,15 +292,15 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 												object));
 
 		if (object instanceof Resource) {
-			inferencerSail.resolveRangeTypes(predicate).stream().peek(inferredType -> {
-				if (inferencerSail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
+			sail.resolveRangeTypes(predicate).stream().peek(inferredType -> {
+				if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
 					addInferredStatement(((Resource)object), RDFS.SUBCLASSOF, RDFS.RESOURCE);
 				}
 			}).forEach(inferredType -> addInferredStatement(((Resource)object), RDF.TYPE, inferredType));
 		}
 
-		inferencerSail.resolveDomainTypes(predicate).stream().peek(inferredType -> {
-			if (inferencerSail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
+		sail.resolveDomainTypes(predicate).stream().peek(inferredType -> {
+			if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
 				addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 			}
 		}).forEach(inferredType -> addInferredStatement((subject), RDF.TYPE, inferredType));
@@ -316,7 +310,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 	protected void addAxiomStatements() {
 		verifyExclusiveWriteLockAcquired();
 
-		ValueFactory vf = inferencerSail.getValueFactory();
+		ValueFactory vf = sail.getValueFactory();
 
 		// This is http://www.w3.org/2000/01/rdf-schema# forward chained
 		// Eg. all axioms in RDFS forward chained w.r.t. RDFS.
@@ -748,5 +742,85 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection
 		addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
 
 	}
+
+	@Override
+	public void begin()
+		throws SailException
+	{
+		this.begin(null);
+	}
+
+	@Override
+	public void begin(IsolationLevel level)
+		throws SailException
+	{
+
+		originalSchemaSize = sail.getSchemaSize();
+
+		if (level == null) {
+			level = sail.getDefaultIsolationLevel();
+		}
+
+		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
+			sail.getSupportedIsolationLevels());
+		if (compatibleLevel == null) {
+			throw new UnknownSailTransactionStateException(
+				"Isolation level " + level + " not compatible with this Sail");
+		}
+		super.begin(compatibleLevel);
+	}
+
+	@Override
+	public void rollback()
+		throws SailException
+	{
+		super.rollback();
+		verifyExclusiveWriteLockReleased();
+		//@TODO Do I need to clean up the tbox cache and lookup maps after rolling back? Probably if the connection has a write lock.
+		statementsRemoved = false;
+		statementsAdded = false;
+	}
+
+
+
+	@Override
+	public void flushUpdates()
+		throws SailException
+	{
+		if (statementsRemoved) {
+			logger.debug("full recomputation needed, starting inferencing from scratch");
+			clearInferred();
+			super.flushUpdates();
+
+			addAxiomStatements();
+			super.flushUpdates();
+			doInferencing();
+			super.flushUpdates();
+		}
+		else if (statementsAdded) {
+			super.flushUpdates();
+			doInferencing();
+		}
+		else {
+			super.flushUpdates();
+		}
+
+		statementsAdded = false;
+		statementsRemoved = false;
+	}
+
+	// Called by base sail
+	@Override
+	public void statementAdded(Statement st) {
+		statementsAdded = true;
+	}
+
+	// Called by base sail
+	@Override
+	public void statementRemoved(Statement st) {
+		statementsRemoved = true;
+	}
+
+
 
 }
