@@ -95,7 +95,8 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends NotifyingSailWra
 	 * Tries to obtain an exclusive write lock on this store. This method will block until either the lock is
 	 * obtained or an interrupt signal is received.
 	 * 
-	 * @throws SailException if the thread is interrupted while waiting to obtain the lock.
+	 * @throws SailException
+	 *         if the thread is interrupted while waiting to obtain the lock.
 	 */
 	void acquireExclusiveWriteLock() {
 		try {
