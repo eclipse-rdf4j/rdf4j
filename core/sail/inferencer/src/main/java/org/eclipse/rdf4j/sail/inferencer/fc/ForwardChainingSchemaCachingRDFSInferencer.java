@@ -21,6 +21,8 @@ import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -33,12 +35,13 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-public class ForwardChainingSchemaCachingRDFSInferencer extends TEMP_AbstractForwardChainingInferencer {
+public class ForwardChainingSchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 	// The schema, or null
 	Repository schema;
@@ -501,6 +504,30 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends TEMP_AbstractFor
 			});
 
 		}
+	}
+
+	@Override
+	public IsolationLevel getDefaultIsolationLevel() {
+		IsolationLevel level = super.getDefaultIsolationLevel();
+		if (level.isCompatibleWith(IsolationLevels.READ_COMMITTED)) {
+			return level;
+		}
+		else {
+			List<IsolationLevel> supported = this.getSupportedIsolationLevels();
+			return IsolationLevels.getCompatibleIsolationLevel(IsolationLevels.READ_COMMITTED, supported);
+		}
+	}
+
+	@Override
+	public List<IsolationLevel> getSupportedIsolationLevels() {
+		List<IsolationLevel> supported = super.getSupportedIsolationLevels();
+		List<IsolationLevel> levels = new ArrayList<IsolationLevel>(supported.size());
+		for (IsolationLevel level : supported) {
+			if (level.isCompatibleWith(IsolationLevels.READ_COMMITTED)) {
+				levels.add(level);
+			}
+		}
+		return levels;
 	}
 
 }
