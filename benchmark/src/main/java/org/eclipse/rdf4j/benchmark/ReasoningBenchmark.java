@@ -36,221 +36,221 @@ import java.util.concurrent.TimeUnit;
 public class ReasoningBenchmark {
 
 
-    private int expectedCount;
+	private int expectedCount;
 
-    @Param({"moreRdfs::12180", "longChain::5803", "medium::544", "simple::152"})
-    public String param;
+	@Param({"moreRdfs::12180", "longChain::5803", "medium::544", "simple::152"})
+	public String param;
 
-//    @Benchmark
-//    @BenchmarkMode(Mode.AverageTime)
-//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-//    public void noReasoning() throws IOException {
-//        SailRepository sail = new SailRepository(new MemoryStore());
-//        sail.initialize();
-//
-//        try (SailRepositoryConnection connection = sail.getConnection()) {
-//            connection.begin();
-//
-//            connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-//            addAllDataSingleTransaction(connection);
-//
-//            connection.commit();
-//        }
-//    }
-//
-//    @Benchmark
-//    @BenchmarkMode(Mode.AverageTime)
-//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-//    public void noReasoningMultipleTransactions() throws IOException {
-//        SailRepository sail = new SailRepository(new MemoryStore());
-//        sail.initialize();
-//
-//        try (SailRepositoryConnection connection = sail.getConnection()) {
-//
-//            connection.begin();
-//            connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-//            connection.commit();
-//
-//            addAllDataMultipleTransactions(connection);
-//
-//        }
-//    }
-//
-//    @Benchmark
-//    @BenchmarkMode(Mode.AverageTime)
-//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-//    public void forwardChainingRDFSInferencer() throws IOException {
-//        SailRepository sail = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()));
-//        sail.initialize();
-//
-//        try (SailRepositoryConnection connection = sail.getConnection()) {
-//            connection.begin();
-//
-//            connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-//            addAllDataSingleTransaction(connection);
-//
-//            connection.commit();
-//        }
-//    }
-//
-//    @Benchmark
-//    @BenchmarkMode(Mode.AverageTime)
-//    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-//    public void forwardChainingRDFSInferencerMultipleTransactions() throws IOException {
-//        SailRepository sail = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()));
-//        sail.initialize();
-//
-//        try (SailRepositoryConnection connection = sail.getConnection()) {
-//
-//            connection.begin();
-//            connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-//            connection.commit();
-//
-//            addAllDataMultipleTransactions(connection);
-//
-//        }
-//    }
+	@Benchmark
+	@BenchmarkMode(Mode.AverageTime)
+	@OutputTimeUnit(TimeUnit.MILLISECONDS)
+	public void noReasoning() throws IOException {
+		SailRepository sail = new SailRepository(new MemoryStore());
+		sail.initialize();
 
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void forwardChainingSchemaCachingRDFSInferencer() throws IOException {
-        SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore()));
-        sail.initialize();
+		try (SailRepositoryConnection connection = sail.getConnection()) {
+			connection.begin();
 
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
+			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
+			addAllDataSingleTransaction(connection);
 
-            connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-            addAllDataSingleTransaction(connection);
+			connection.commit();
+		}
+	}
 
-            connection.commit();
-        }
+	@Benchmark
+	@BenchmarkMode(Mode.AverageTime)
+	@OutputTimeUnit(TimeUnit.MILLISECONDS)
+	public void noReasoningMultipleTransactions() throws IOException {
+		SailRepository sail = new SailRepository(new MemoryStore());
+		sail.initialize();
 
-        checkSize(sail);
-    }
+		try (SailRepositoryConnection connection = sail.getConnection()) {
 
-    private void checkSize(SailRepository sail) {
+			connection.begin();
+			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
+			connection.commit();
 
-        assert getSize(sail) == expectedCount : "Was "+getSize(sail)+" but expected "+expectedCount;
+			addAllDataMultipleTransactions(connection);
 
-    }
+		}
+	}
 
-    private int getSize(SailRepository sail) {
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            try (TupleQueryResult evaluate = connection.prepareTupleQuery("select (count (*) as ?count) where {?a ?b ?c}").evaluate()) {
-                 return ((Literal) evaluate.next().getBinding("count").getValue()).intValue();
+	@Benchmark
+	@BenchmarkMode(Mode.AverageTime)
+	@OutputTimeUnit(TimeUnit.MILLISECONDS)
+	public void forwardChainingRDFSInferencer() throws IOException {
+		SailRepository sail = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()));
+		sail.initialize();
 
-            }
-        }
-    }
+		try (SailRepositoryConnection connection = sail.getConnection()) {
+			connection.begin();
 
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void forwardChainingSchemaCachingRDFSInferencerMultipleTransactions() throws IOException {
-        SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore()));
-        sail.initialize();
+			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
+			addAllDataSingleTransaction(connection);
 
-        try (SailRepositoryConnection connection = sail.getConnection()) {
+			connection.commit();
+		}
+	}
 
-            connection.begin();
-            connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-            connection.commit();
+	@Benchmark
+	@BenchmarkMode(Mode.AverageTime)
+	@OutputTimeUnit(TimeUnit.MILLISECONDS)
+	public void forwardChainingRDFSInferencerMultipleTransactions() throws IOException {
+		SailRepository sail = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()));
+		sail.initialize();
 
-            addAllDataMultipleTransactions(connection);
+		try (SailRepositoryConnection connection = sail.getConnection()) {
 
-        }
-        checkSize(sail);
+			connection.begin();
+			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
+			connection.commit();
 
-    }
+			addAllDataMultipleTransactions(connection);
 
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void forwardChainingSchemaCachingRDFSInferencerSchema() throws IOException {
-        SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore(), createSchema()));
-        sail.initialize();
+		}
+	}
 
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            connection.begin();
-            addAllDataSingleTransaction(connection);
-            connection.commit();
-        }
-        checkSize(sail);
+	@Benchmark
+	@BenchmarkMode(Mode.AverageTime)
+	@OutputTimeUnit(TimeUnit.MILLISECONDS)
+	public void forwardChainingSchemaCachingRDFSInferencer() throws IOException {
+		SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore()));
+		sail.initialize();
 
-    }
+		try (SailRepositoryConnection connection = sail.getConnection()) {
+			connection.begin();
 
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void forwardChainingSchemaCachingRDFSInferencerMultipleTransactionsSchema() throws IOException {
-        SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore(), createSchema()));
-        sail.initialize();
+			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
+			addAllDataSingleTransaction(connection);
 
-        try (SailRepositoryConnection connection = sail.getConnection()) {
-            addAllDataMultipleTransactions(connection);
-        }
-        checkSize(sail);
+			connection.commit();
+		}
 
-    }
+		checkSize(sail);
+	}
 
-    private SailRepository createSchema() throws IOException {
-        SailRepository schema = new SailRepository(new MemoryStore());
-        schema.initialize();
+	private void checkSize(SailRepository sail) {
 
-        try (SailRepositoryConnection schemaConnection = schema.getConnection()) {
-            schemaConnection.begin();
-            schemaConnection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-            schemaConnection.commit();
-        }
-        return schema;
-    }
+		assert getSize(sail) == expectedCount : "Was " + getSize(sail) + " but expected " + expectedCount;
 
-    private void addAllDataSingleTransaction(SailRepositoryConnection connection) throws IOException {
-        InputStream data = resourceAsStream("data.ttl");
+	}
 
-        if (data != null) {
-            connection.add(data, "", RDFFormat.TURTLE);
-        }
+	private int getSize(SailRepository sail) {
+		try (SailRepositoryConnection connection = sail.getConnection()) {
+			try (TupleQueryResult evaluate = connection.prepareTupleQuery("select (count (*) as ?count) where {?a ?b ?c}").evaluate()) {
+				return ((Literal) evaluate.next().getBinding("count").getValue()).intValue();
 
-        int counter = 0;
-        while (true) {
-            data = resourceAsStream("data" + counter++ + ".ttl");
-            if (data == null) {
-                break;
-            }
-            connection.add(data, "", RDFFormat.TURTLE);
-        }
-    }
+			}
+		}
+	}
 
-    private void addAllDataMultipleTransactions(SailRepositoryConnection connection) throws IOException {
-        InputStream data = resourceAsStream("data.ttl");
+	@Benchmark
+	@BenchmarkMode(Mode.AverageTime)
+	@OutputTimeUnit(TimeUnit.MILLISECONDS)
+	public void forwardChainingSchemaCachingRDFSInferencerMultipleTransactions() throws IOException {
+		SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore()));
+		sail.initialize();
 
-        if (data != null) {
-            connection.begin();
-            connection.add(data, "", RDFFormat.TURTLE);
-            connection.commit();
-        }
+		try (SailRepositoryConnection connection = sail.getConnection()) {
 
-        int counter = 0;
-        while (true) {
-            data = resourceAsStream("data" + counter++ + ".ttl");
-            if (data == null) {
-                break;
-            }
-            connection.begin();
-            connection.add(data, "", RDFFormat.TURTLE);
-            connection.commit();
-        }
-    }
+			connection.begin();
+			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
+			connection.commit();
 
-    private InputStream resourceAsStream(String resourceName) {
-        String[] split = param.split("\\:\\:");
+			addAllDataMultipleTransactions(connection);
 
-        this.expectedCount = Integer.parseInt(split[1]);
-        return ReasoningBenchmark.class.getClassLoader().getResourceAsStream(split[0] + "/" + resourceName);
+		}
+		checkSize(sail);
 
-    }
+	}
+
+	@Benchmark
+	@BenchmarkMode(Mode.AverageTime)
+	@OutputTimeUnit(TimeUnit.MILLISECONDS)
+	public void forwardChainingSchemaCachingRDFSInferencerSchema() throws IOException {
+		SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore(), createSchema()));
+		sail.initialize();
+
+		try (SailRepositoryConnection connection = sail.getConnection()) {
+			connection.begin();
+			addAllDataSingleTransaction(connection);
+			connection.commit();
+		}
+		checkSize(sail);
+
+	}
+
+	@Benchmark
+	@BenchmarkMode(Mode.AverageTime)
+	@OutputTimeUnit(TimeUnit.MILLISECONDS)
+	public void forwardChainingSchemaCachingRDFSInferencerMultipleTransactionsSchema() throws IOException {
+		SailRepository sail = new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore(), createSchema()));
+		sail.initialize();
+
+		try (SailRepositoryConnection connection = sail.getConnection()) {
+			addAllDataMultipleTransactions(connection);
+		}
+		checkSize(sail);
+
+	}
+
+	private SailRepository createSchema() throws IOException {
+		SailRepository schema = new SailRepository(new MemoryStore());
+		schema.initialize();
+
+		try (SailRepositoryConnection schemaConnection = schema.getConnection()) {
+			schemaConnection.begin();
+			schemaConnection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
+			schemaConnection.commit();
+		}
+		return schema;
+	}
+
+	private void addAllDataSingleTransaction(SailRepositoryConnection connection) throws IOException {
+		InputStream data = resourceAsStream("data.ttl");
+
+		if (data != null) {
+			connection.add(data, "", RDFFormat.TURTLE);
+		}
+
+		int counter = 0;
+		while (true) {
+			data = resourceAsStream("data" + counter++ + ".ttl");
+			if (data == null) {
+				break;
+			}
+			connection.add(data, "", RDFFormat.TURTLE);
+		}
+	}
+
+	private void addAllDataMultipleTransactions(SailRepositoryConnection connection) throws IOException {
+		InputStream data = resourceAsStream("data.ttl");
+
+		if (data != null) {
+			connection.begin();
+			connection.add(data, "", RDFFormat.TURTLE);
+			connection.commit();
+		}
+
+		int counter = 0;
+		while (true) {
+			data = resourceAsStream("data" + counter++ + ".ttl");
+			if (data == null) {
+				break;
+			}
+			connection.begin();
+			connection.add(data, "", RDFFormat.TURTLE);
+			connection.commit();
+		}
+	}
+
+	private InputStream resourceAsStream(String resourceName) {
+		String[] split = param.split("\\:\\:");
+
+		this.expectedCount = Integer.parseInt(split[1]);
+		return ReasoningBenchmark.class.getClassLoader().getResourceAsStream(split[0] + "/" + resourceName);
+
+	}
 
 }
