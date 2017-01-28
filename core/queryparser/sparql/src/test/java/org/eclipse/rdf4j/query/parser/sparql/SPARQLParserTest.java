@@ -15,14 +15,20 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.util.List;
+
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Modify;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -149,6 +155,33 @@ public class SPARQLParserTest {
 		assertNull(te.getParentNode());
 	}
 
+	/**
+	 * Verify that an INSERT with a subselect using a wildcard correctly adds vars to projection 
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/686">#686</a>
+	 */
+	@Test
+	public void testParseWildcardSubselectInUpdate() throws Exception
+	{
+			StringBuilder update = new StringBuilder();
+			update.append("INSERT { <urn:a> <urn:b> <urn:c> . } WHERE { SELECT * {?s ?p ?o } }");
+			
+			ParsedUpdate parsedUpdate = parser.parseUpdate(update.toString(), null);
+			List<UpdateExpr> exprs = parsedUpdate.getUpdateExprs();
+			assertEquals(1, exprs.size());
+			
+			UpdateExpr expr = exprs.get(0);
+			assertTrue(expr instanceof Modify);
+			Modify m = (Modify)expr;
+			TupleExpr whereClause = m.getWhereExpr();
+			assertTrue(whereClause instanceof Projection);
+			ProjectionElemList projectionElemList = ((Projection)whereClause).getProjectionElemList();
+			assertNotNull(projectionElemList);
+			List<ProjectionElem> elements = projectionElemList.getElements();
+			assertNotNull(elements);
+
+			assertEquals("projection should contain all three variables", 3, elements.size());
+	}
+	
 	@Test
 	public void testParseIntegerObjectValue()
 		throws Exception

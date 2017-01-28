@@ -1,5 +1,6 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix geo: <http://www.opengis.net/ont/geosparql#> .
 
 @prefix t: <urn:test.org/onto#> .
 
@@ -25,3 +26,12 @@
    rdfs:label "Donec risus quam" ;
    t:number 5 .
 
+<urn:eiffel_tower> a <urn:geo/Landmark> ;
+   geo:asWKT "POINT (2.2945 48.8582)"^^geo:wktLiteral .
+<urn:arc_triomphe> a <urn:geo/Landmark> ;
+   geo:asWKT "POINT (2.2950 48.8738)"^^geo:wktLiteral .
+<urn:notre_dame>   a <urn:geo/Landmark> ;
+   geo:asWKT "POINT (2.3465 48.8547)"^^geo:wktLiteral .
+
+<urn:location1> geo:asWKT "POINT (2.2871 48.8630)"^^geo:wktLiteral ;
+   <urn:geo/maxDistance> 1500 .
