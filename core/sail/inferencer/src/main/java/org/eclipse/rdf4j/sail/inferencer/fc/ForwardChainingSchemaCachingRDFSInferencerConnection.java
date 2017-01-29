@@ -35,7 +35,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 		implements SailConnectionListener
 {
 
-	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	private final ForwardChainingSchemaCachingRDFSInferencer sail;
 
@@ -130,7 +130,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 		sail.releaseExclusiveWriteLock();
 	}
 
-	protected void doInferencing()
+	void doInferencing()
 		throws SailException
 	{
 
