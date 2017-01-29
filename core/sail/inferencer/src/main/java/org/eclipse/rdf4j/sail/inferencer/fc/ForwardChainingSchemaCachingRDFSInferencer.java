@@ -175,6 +175,10 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends NotifyingSailWra
 	 *         if the thread is interrupted while waiting to obtain the lock.
 	 */
 	void acquireExclusiveWriteLock() {
+		if(exclusiveWriteLock.isHeldByCurrentThread()){
+			return;
+		}
+
 		try {
 			exclusiveWriteLock.lockInterruptibly();
 		}

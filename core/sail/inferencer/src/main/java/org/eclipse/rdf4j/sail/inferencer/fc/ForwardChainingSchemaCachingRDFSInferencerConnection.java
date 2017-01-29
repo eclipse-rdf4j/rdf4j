@@ -41,8 +41,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 
 	private final NotifyingSailConnection connection;
 
-	private boolean hasWriteLock = false;
-
 	/**
 	 * true if the base Sail reported removed statements.
 	 */
@@ -65,28 +63,8 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 
 	}
 
-	/**
-	 * Verifies this connection holds the exclusive write lock, and if not, obtains it.
-	 */
-	private void verifyExclusiveWriteLockAcquired() {
-		if (!hasWriteLock) {
-			sail.acquireExclusiveWriteLock();
-			hasWriteLock = true;
-		}
-	}
-
-	/**
-	 * Verifies this connection does not hold the exclusive write lock, and if it does, releases it.
-	 */
-	private void verifyExclusiveWriteLockReleased() {
-		if (hasWriteLock) {
-			sail.releaseExclusiveWriteLock();
-			hasWriteLock = false;
-		}
-	}
-
 	void processForSchemaCache(Statement statement) {
-		verifyExclusiveWriteLockAcquired();
+		sail.acquireExclusiveWriteLock();
 
 		final IRI predicate = statement.getPredicate();
 		final Value object = statement.getObject();
@@ -149,7 +127,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 		throws SailException
 	{
 		super.commit();
-		verifyExclusiveWriteLockReleased();
+		sail.releaseExclusiveWriteLock();
 	}
 
 	protected void doInferencing()
@@ -211,7 +189,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 			Resource... resources)
 		throws SailException
 	{
-		verifyExclusiveWriteLockAcquired();
+		sail.acquireExclusiveWriteLock();
 		if (sail.schema == null) {
 			processForSchemaCache(sail.getValueFactory().createStatement(subject, predicate, object));
 		}
@@ -292,7 +270,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 	}
 
 	void addAxiomStatements() {
-		verifyExclusiveWriteLockAcquired();
+		sail.acquireExclusiveWriteLock();
 
 		ValueFactory vf = sail.getValueFactory();
 
@@ -742,7 +720,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 		statementsRemoved = false;
 		statementsRemoved = false;
 
-		verifyExclusiveWriteLockReleased();
+		sail.releaseExclusiveWriteLock();
 	}
 
 	@Override
