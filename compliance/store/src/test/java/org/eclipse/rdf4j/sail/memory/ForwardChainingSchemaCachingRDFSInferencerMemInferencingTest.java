@@ -18,11 +18,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.InferencingTest;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencer;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencerConnection;
 import org.junit.Test;
 
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 
 import static junit.framework.TestCase.assertFalse;
 import static junit.framework.TestCase.assertTrue;
@@ -46,14 +44,14 @@ public class ForwardChainingSchemaCachingRDFSInferencerMemInferencingTest extend
 			connection.add(vf.createStatement(vf.createIRI("http://a"), RDFS.SUBPROPERTYOF, bNode)); // 1
 			connection.add(vf.createStatement(bNode, RDFS.DOMAIN, vf.createIRI("http://c"))); // 2
 			connection.add(vf.createStatement(vf.createIRI("http://d"), vf.createIRI("http://a"),
-					vf.createIRI("http://e"))); // 3
+				vf.createIRI("http://e"))); // 3
 		}
 
 		try (RepositoryConnection connection = sailRepository.getConnection()) {
 			boolean correctInference = connection.hasStatement(vf.createIRI("http://d"), RDF.TYPE,
-					vf.createIRI("http://c"), true);
+				vf.createIRI("http://c"), true);
 			assertTrue("d should be type c, because 3 and 1 entail 'd _:bNode e' with 2 entail 'd type c'",
-					correctInference);
+				correctInference);
 		}
 
 	}
@@ -105,6 +103,38 @@ public class ForwardChainingSchemaCachingRDFSInferencerMemInferencingTest extend
 			assertTrue("aInstance should be instance of C because A subClassOfC was added earlier.",
 				correctInference);
 		}
-
 	}
+
+	@Test
+	public void testFastInstantiate() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+		Sail sail = createSail();
+		Repository sailRepository = new SailRepository(sail);
+		sailRepository.initialize();
+		ValueFactory vf = sailRepository.getValueFactory();
+
+		IRI A = vf.createIRI("http://A");
+		IRI aInstance = vf.createIRI("http://aInstance");
+
+		IRI B = vf.createIRI("http://B");
+		IRI C = vf.createIRI("http://C");
+
+		try (RepositoryConnection connection = sailRepository.getConnection()) {
+			connection.add(vf.createStatement(A, RDFS.SUBCLASSOF, C));
+		}
+
+		SailRepository sailRepository1 = new SailRepository(ForwardChainingSchemaCachingRDFSInferencer.fastInstantiateFrom((ForwardChainingSchemaCachingRDFSInferencer) sail, new MemoryStore()));
+		sailRepository1.initialize();
+
+		try (RepositoryConnection connection = sailRepository1.getConnection()) {
+			connection.add(vf.createStatement(aInstance, RDF.TYPE, A));
+		}
+
+		try (RepositoryConnection connection = sailRepository1.getConnection()) {
+			boolean correctInference = connection.hasStatement(aInstance, RDF.TYPE, C, true);
+			assertTrue("aInstance should be instance of C because A subClassOfC was added to the sail used by fastInstantiateFrom.",
+				correctInference);
+		}
+	}
+
+
 }

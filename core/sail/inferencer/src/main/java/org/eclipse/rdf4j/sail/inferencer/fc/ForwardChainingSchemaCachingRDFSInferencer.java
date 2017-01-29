@@ -8,9 +8,7 @@
 
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
-import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -39,6 +37,21 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 
 /**
+ * <p>
+ * 		The ForwardChainingSchemaCachingRDFSInferencer is an RDFS reasoner that caches all schema (TBox) statements
+ * 		and calculates an inference map to quickly determine inferred statements. The reasoner can also be instantiated
+ * 		with a predefined schema for improved performance.
+ * </p>
+ * <p>
+ * 		This reasoner is not a rule based reasoner and will be up to 80x faster than the ForwardChainingRDFSInferencer,
+ * 		as well as being more complete.
+ * </p>
+ *
+ * <p>
+ * 		The sail puts no limitations on isolation level for read transactions,
+ * 		however all write/delete/update transactions are serializable with exclusive locks.
+ * 		This limits write/delete/update transactions to one transaction at a time.
+ * </p>
  * @author Håvard Mikkelsen Ottestad
  */
 public class ForwardChainingSchemaCachingRDFSInferencer extends NotifyingSailWrapper {
@@ -80,6 +93,65 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends NotifyingSailWra
 	// The previous transaction rolled back
 	boolean rolledBackAfterModifyingSchemaCache;
 
+	/**
+	 * Instantiate a ForwardChainingSchemaCachingRDFSInferencer.
+	 *
+	 * @param data Base sail for storing data.
+	 */
+	public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data) {
+		super(data);
+		schema = null;
+
+	}
+
+	/**
+	 * Instantiate a ForwardChainingSchemaCachingRDFSInferencer with a predefined schema. The schema will be used for
+	 * inference, all other schema statements added will be ignored and no schema statements can be removed.
+	 * Using a predefined schema significantly improves performance.
+	 *
+	 * @param data Base sail for storing data.
+	 * @param schema Repository containing the schema.
+	 */
+	public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data, Repository schema) {
+		super(data);
+
+		this.schema = schema;
+
+	}
+
+	/**
+	 * Instantiate a ForwardChainingSchemaCachingRDFSInferencer.
+	 *
+	 * @param data Base sail for storing data.
+	 * @param useAllRdfsRules Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
+	 */
+	public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data, boolean useAllRdfsRules) {
+		super(data);
+		schema = null;
+
+		this.useAllRdfsRules = useAllRdfsRules;
+
+	}
+
+	/**
+	 * Instantiate a ForwardChainingSchemaCachingRDFSInferencer with a predefined schema. The schema will be used for
+	 * inference, all other schema statements added will be ignored and no schema statements can be removed.
+	 * Using a predefined schema significantly improves performance.
+	 *
+	 * @param data Base sail for storing data.
+	 * @param schema Repository containing the schema.
+	 * @param useAllRdfsRules Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
+	 */
+	public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data, Repository schema,
+			boolean useAllRdfsRules)
+	{
+		super(data);
+
+		this.schema = schema;
+		this.useAllRdfsRules = useAllRdfsRules;
+
+	}
+
 	void clearInferenceTables() {
 		acquireExclusiveWriteLock();
 		properties.clear();
@@ -98,7 +170,7 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends NotifyingSailWra
 	/**
 	 * Tries to obtain an exclusive write lock on this store. This method will block until either the lock is
 	 * obtained or an interrupt signal is received.
-	 * 
+	 *
 	 * @throws SailException
 	 *         if the thread is interrupted while waiting to obtain the lock.
 	 */
@@ -116,37 +188,6 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends NotifyingSailWra
 	 */
 	void releaseExclusiveWriteLock() {
 		exclusiveWriteLock.unlock();
-	}
-
-	public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data) {
-		super(data);
-		schema = null;
-
-	}
-
-	public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data, Repository schema) {
-		super(data);
-
-		this.schema = schema;
-
-	}
-
-	public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data, boolean useAllRdfsRules) {
-		super(data);
-		schema = null;
-
-		this.useAllRdfsRules = useAllRdfsRules;
-
-	}
-
-	public ForwardChainingSchemaCachingRDFSInferencer(NotifyingSail data, Repository schema,
-			boolean useAllRdfsRules)
-	{
-		super(data);
-
-		this.schema = schema;
-		this.useAllRdfsRules = useAllRdfsRules;
-
 	}
 
 	public void initialize()
@@ -188,14 +229,6 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends NotifyingSailWra
 
 	}
 
-	public void setDataDir(File file) {
-		throw new UnsupportedOperationException();
-	}
-
-	public File getDataDir() {
-		throw new UnsupportedOperationException();
-	}
-
 	public ForwardChainingSchemaCachingRDFSInferencerConnection getConnection()
 		throws SailException
 	{
@@ -207,25 +240,46 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends NotifyingSailWra
 		return getBaseSail().getValueFactory();
 	}
 
+	/**
+	 * Instantiate a new ForwardChainingSchemaCachingRDFSInferencer from an existing one.
+	 * Fast instantiation extracts the schema lookup tables generated by the existing sail and uses them to
+	 * populate the lookup tables of a new reasoner.
+	 * Schema triples can not be queried in the ForwardChainingSchemaCachingRDFSInferencer returned by this method.
+	 * @param sailToInstantiateFrom The ForwardChainingSchemaCachingRDFSInferencer to extract the lookup tables from.
+	 * @param store Base sail for storing data.
+	 * @return
+	 */
 	static public ForwardChainingSchemaCachingRDFSInferencer fastInstantiateFrom(
-			ForwardChainingSchemaCachingRDFSInferencer baseSail, NotifyingSail store)
+			ForwardChainingSchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store)
 	{
-		return fastInstantiateFrom(baseSail, store, true);
+		return fastInstantiateFrom(sailToInstantiateFrom, store, true);
 	}
-
+	/**
+	 * Instantiate a new ForwardChainingSchemaCachingRDFSInferencer from an existing one.
+	 * Fast instantiation extracts the schema lookup tables generated by the existing sail and uses them to
+	 * populate the lookup tables of a new reasoner.
+	 * Schema triples can not be queried in the ForwardChainingSchemaCachingRDFSInferencer returned by this method.
+	 * @param sailToInstantiateFrom The ForwardChainingSchemaCachingRDFSInferencer to extract the lookup tables from.
+	 * @param store Base sail for storing data.
+	 * @param useAllRdfsRules Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
+	 * @return
+	 */
 	static public ForwardChainingSchemaCachingRDFSInferencer fastInstantiateFrom(
-			ForwardChainingSchemaCachingRDFSInferencer baseSail, NotifyingSail store,
+			ForwardChainingSchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store,
 			boolean useAllRdfsRules)
 	{
 
-		baseSail.getConnection().close();
+		if(sailToInstantiateFrom.rolledBackAfterModifyingSchemaCache){
+			throw new SailException("ForwardChainingSchemaCachingRDFSInferencer used was previously rolled back and can not be used by fastInstantiateFrom().");
+		}
+		sailToInstantiateFrom.getConnection().close();
 
 		ForwardChainingSchemaCachingRDFSInferencer ret = new ForwardChainingSchemaCachingRDFSInferencer(store,
-				baseSail.schema, useAllRdfsRules);
+				sailToInstantiateFrom.schema, useAllRdfsRules);
 
 		ret.sharedSchema = true;
 
-		baseSail.calculatedTypes.forEach((key, value) -> {
+		sailToInstantiateFrom.calculatedTypes.forEach((key, value) -> {
 			value.forEach(v -> {
 				if (!ret.calculatedTypes.containsKey(key)) {
 					ret.calculatedTypes.put(key, new HashSet<>());
@@ -234,7 +288,7 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends NotifyingSailWra
 			});
 		});
 
-		baseSail.calculatedProperties.forEach((key, value) -> {
+		sailToInstantiateFrom.calculatedProperties.forEach((key, value) -> {
 			value.forEach(v -> {
 				if (!ret.calculatedProperties.containsKey(key)) {
 					ret.calculatedProperties.put(key, new HashSet<>());
@@ -243,7 +297,7 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends NotifyingSailWra
 			});
 		});
 
-		baseSail.calculatedRange.forEach((key, value) -> {
+		sailToInstantiateFrom.calculatedRange.forEach((key, value) -> {
 			value.forEach(v -> {
 				if (!ret.calculatedRange.containsKey(key)) {
 					ret.calculatedRange.put(key, new HashSet<>());
@@ -252,7 +306,7 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends NotifyingSailWra
 			});
 		});
 
-		baseSail.calculatedDomain.forEach((key, value) -> {
+		sailToInstantiateFrom.calculatedDomain.forEach((key, value) -> {
 			value.forEach(v -> {
 				if (!ret.calculatedDomain.containsKey(key)) {
 					ret.calculatedDomain.put(key, new HashSet<>());
