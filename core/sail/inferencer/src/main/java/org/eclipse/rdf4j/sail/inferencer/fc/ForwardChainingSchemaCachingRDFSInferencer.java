@@ -77,7 +77,11 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends NotifyingSailWra
 	// The inferencer has been instantiated from another inferencer and shares it's schema with that one
 	private boolean sharedSchema;
 
+	// The previous transaction rolled back
+	boolean rolledBackAfterModifyingSchemaCache;
+
 	void clearInferenceTables() {
+		acquireExclusiveWriteLock();
 		properties.clear();
 		types.clear();
 		subClassOfStatements.clear();

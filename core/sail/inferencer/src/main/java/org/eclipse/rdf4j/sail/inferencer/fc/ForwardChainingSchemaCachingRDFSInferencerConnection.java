@@ -155,27 +155,13 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 	protected void doInferencing()
 		throws SailException
 	{
-		//		prepareIteration();
 
 		// Check on schema cache size is always reliable since things can only be added to the cache
 		// The only place where things can be removed from the cache is within the method clearInferenceTables()
 		// which is only called from within this block
 		if (sail.schema == null && originalSchemaSize != sail.getSchemaSize()) {
 
-			sail.clearInferenceTables();
-			addAxiomStatements();
-
-			try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(
-					null, null, null, false))
-			{
-				while (statements.hasNext()) {
-					Statement next = statements.next();
-					processForSchemaCache(next);
-				}
-			}
-			sail.calculateInferenceMaps(this);
-
-			originalSchemaSize = sail.getSchemaSize();
+			regenerateCacheAndInferenceMaps();
 			inferredCleared = true;
 
 		}
@@ -197,17 +183,27 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 
 	}
 
+	private void regenerateCacheAndInferenceMaps() {
+		sail.clearInferenceTables();
+		addAxiomStatements();
+
+		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(
+				null, null, null, false))
+		{
+			while (statements.hasNext()) {
+				Statement next = statements.next();
+				processForSchemaCache(next);
+			}
+		}
+		sail.calculateInferenceMaps(this);
+
+		originalSchemaSize = sail.getSchemaSize();
+	}
+
 	public void addStatement(Resource subject, IRI predicate, Value object, Resource... contexts)
 		throws SailException
 	{
 		addStatement(true, subject, predicate, object, contexts);
-	}
-
-	@Override
-	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
-		return super.addInferredStatement(subj, pred, obj, contexts);
 	}
 
 	// actuallyAdd
@@ -295,7 +291,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 
 	}
 
-	protected void addAxiomStatements() {
+	void addAxiomStatements() {
 		verifyExclusiveWriteLockAcquired();
 
 		ValueFactory vf = sail.getValueFactory();
@@ -732,6 +728,24 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 	}
 
 	@Override
+	public void rollback()
+		throws SailException
+	{
+		super.rollback();
+
+		// if the schema cache was modified
+		if(sail.schema == null && sail.getSchemaSize() != originalSchemaSize){
+			sail.clearInferenceTables();
+			sail.rolledBackAfterModifyingSchemaCache = true;
+		}
+
+		statementsRemoved = false;
+		statementsRemoved = false;
+
+		verifyExclusiveWriteLockReleased();
+	}
+
+	@Override
 	public void begin()
 		throws SailException
 	{
@@ -742,8 +756,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 	public void begin(IsolationLevel level)
 		throws SailException
 	{
-
-		originalSchemaSize = sail.getSchemaSize();
 
 		if (level == null) {
 			level = sail.getDefaultIsolationLevel();
@@ -756,18 +768,18 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 					"Isolation level " + level + " not compatible with this Sail");
 		}
 		super.begin(compatibleLevel);
+
+		if(sail.rolledBackAfterModifyingSchemaCache){
+			// previous connection was rolled back after modifying the schema cache
+			// refresh the cache before beginning
+
+			regenerateCacheAndInferenceMaps();
+		}
+
+		sail.rolledBackAfterModifyingSchemaCache = false;
+		originalSchemaSize = sail.getSchemaSize();
 	}
 
-	@Override
-	public void rollback()
-		throws SailException
-	{
-		super.rollback();
-		verifyExclusiveWriteLockReleased();
-		//@TODO Do I need to clean up the tbox cache and lookup maps after rolling back? Probably if the connection has a write lock.
-		statementsRemoved = false;
-		statementsAdded = false;
-	}
 
 	@Override
 	public void flushUpdates()
