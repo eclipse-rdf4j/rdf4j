@@ -127,7 +127,7 @@ public abstract class SailConcurrencyTest {
 						conn.addStatement(subject, RDFS.COMMENT, vf.createLiteral("ci" + i), context);
 					}
 					if (rollback) {
-						otherTxnCommitted.await();
+						otherTxnCommitted.await(); // deadlocks here. Waiting for another transaction while holding the exclusive write lock!
 						conn.rollback();
 					}
 					else {
