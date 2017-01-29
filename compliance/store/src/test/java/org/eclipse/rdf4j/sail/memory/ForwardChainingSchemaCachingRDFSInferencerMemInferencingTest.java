@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.memory;
 
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -17,8 +18,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.InferencingTest;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencerConnection;
 import org.junit.Test;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+
+import static junit.framework.TestCase.assertFalse;
 import static junit.framework.TestCase.assertTrue;
 
 public class ForwardChainingSchemaCachingRDFSInferencerMemInferencingTest extends InferencingTest {
@@ -48,6 +54,56 @@ public class ForwardChainingSchemaCachingRDFSInferencerMemInferencingTest extend
 					vf.createIRI("http://c"), true);
 			assertTrue("d should be type c, because 3 and 1 entail 'd _:bNode e' with 2 entail 'd type c'",
 					correctInference);
+		}
+
+	}
+
+	@Test
+	public void testRollback() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+		Repository sailRepository = new SailRepository(createSail());
+		sailRepository.initialize();
+		ValueFactory vf = sailRepository.getValueFactory();
+
+		IRI A = vf.createIRI("http://A");
+		IRI aInstance = vf.createIRI("http://aInstance");
+
+		IRI B = vf.createIRI("http://B");
+		IRI C = vf.createIRI("http://C");
+
+		try (RepositoryConnection connection = sailRepository.getConnection()) {
+			connection.add(vf.createStatement(A, RDFS.SUBCLASSOF, C));
+		}
+
+		try (RepositoryConnection connection = sailRepository.getConnection()) {
+			connection.begin();
+			connection.add(vf.createStatement(A, RDFS.SUBCLASSOF, B));
+			connection.size(); // forces flushUpdate() to be called
+			connection.rollback();
+		}
+
+		try (RepositoryConnection connection = sailRepository.getConnection()) {
+			connection.add(vf.createStatement(aInstance, RDF.TYPE, A));
+		}
+
+		try (RepositoryConnection connection = sailRepository.getConnection()) {
+			connection.begin();
+			connection.add(vf.createStatement(vf.createBNode(), RDF.TYPE, A));
+			connection.rollback();
+		}
+
+		try (RepositoryConnection connection = sailRepository.getConnection()) {
+			connection.add(vf.createStatement(vf.createBNode(), RDF.TYPE, A));
+		}
+
+		try (RepositoryConnection connection = sailRepository.getConnection()) {
+
+			boolean incorrectInference = connection.hasStatement(aInstance, RDF.TYPE, B, true);
+			assertFalse("Previous rollback() should have have cleared the cache for A subClassOf B. ",
+				incorrectInference);
+
+			boolean correctInference = connection.hasStatement(aInstance, RDF.TYPE, C, true);
+			assertTrue("aInstance should be instance of C because A subClassOfC was added earlier.",
+				correctInference);
 		}
 
 	}
