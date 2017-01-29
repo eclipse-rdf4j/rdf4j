@@ -187,7 +187,9 @@ public class ForwardChainingSchemaCachingRDFSInferencer extends NotifyingSailWra
 	 * Releases the exclusive write lock.
 	 */
 	void releaseExclusiveWriteLock() {
-		exclusiveWriteLock.unlock();
+		while(exclusiveWriteLock.isHeldByCurrentThread()){
+			exclusiveWriteLock.unlock();
+		}
 	}
 
 	public void initialize()
