@@ -9,13 +9,15 @@ Geographic coordinates can be stored as literals with the "Well-Known Text" (WKT
 === Order of coordinates
 
 WKT can also describe coordinate reference systems (CRS) and projections. 
-One common source of confusing is that, by default, the X-coordinate (longitude)is followed by Y-coordinate (latitude) while many people are used to the Y-X (latitude-longitute) notation.
+One common source of confusing is that, by default, the X-coordinate (longitude)is followed by Y-coordinate (latitude) while many people are used to the Y-X (latitude-longitude) notation.
+
+Spatial4j provides some convenient functions to generate geometric shapes.
+For instance, a series of points representing the center of the cities of Amsterdam, Brussels... can easily be generated using `SpatialContext.GEO`.
 
 [source,java]
 ----
 import com.spatial4j.core.context.SpatialContext;
 import com.spatial4j.core.shape.Point;
-
 ....
 SpatialContext geo = SpatialContext.GEO;
 Point amsterdam = geo.makePoint(4.9, 52.37);
@@ -28,12 +30,55 @@ Point dakar = geo.makePoint(-17.45, 14.69);
 
 RDF4j 2.1.x uses Spatial4J 0.4.1, which does not support writing shapes to WKT just yet (added in 0.5).
 
+An extremely simple writer could look like:
+
+[source,java]
+----
+public static String toWkt(Point p) {
+   return "POINT(" + p.getX() + " " + p.getY() + ")";
+}
+----
 
 == Queries
 
+Using the function described above, the coordinates can be added to subjects.
+
+[source,java]
+----
+import org.eclipse.rdf4j.model.vocabulary.GEO;
+...
+IRI am = fac.createIRI("http://example.org/amsterdam");
+con.add(am, GEO.AS_WKT, fac.createLiteral(toWkt(amsterdam), GEO.WKT_LITERAL));
+...
+----
+
 Make sure to include the rdf4j-queryalgebra-geosparql jar in your project.
 
-=== Lucene
+The following query returns the distance between city centers in kilometers.
+`GEOF` provides geometric functions, while `UOM` provides unit of measurements. Note that the metric unit is spelled `metre` (not the US spelling `meter`)
+
+[source,java]
+-----
+String qry = 
+   "PREFIX geo: <http://www.opengis.net/ont/geosparql#> " +
+   "PREFIX geof: <http://www.opengis.net/def/function/geosparql/> " +
+   "PREFIX uom: <http://www.opengis.net/def/uom/OGC/1.0/> " +
+   "SELECT ?cityA ?cityB ?dist " +
+   "WHERE { ?cityA geo:asWKT ?coord1 . " +
+   "        ?cityB geo:asWKT ?coord2 . " +
+   " BIND((geof:distance(?coord1, ?coord2, uom:metre) / 1000) as ?dist) . " +
+   "        FILTER ( !sameTerm (?cityA, ?cityB) ) }";
+
+List<BindingSet> results = Repositories.tupleQuery(repo, qry, 
+                                                   r -> QueryResults.asList(r));
+
+results.forEach(res -> { 
+   System.out.println(res.getValue("cityA").stringValue() + " - " +
+                      res.getValue("cityB").stringValue() + " : " +
+                      res.getValue("dist").stringValue() + "km");		});
+----
+
+=== Lucene indexing
 
 == Further reading
 

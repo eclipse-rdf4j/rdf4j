@@ -17,3 +17,4 @@ include::04-rio.adoc[leveloffset=+1]
 
 include::05-custom-sails.adoc[leveloffset=+1]
 
+include::06-geosparql.adoc[leveloffset=+1]
