@@ -26,8 +26,8 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
-import org.eclipse.rdf4j.http.client.SesameClient;
-import org.eclipse.rdf4j.http.client.SesameClientDependent;
+import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.SessionManagerDependent;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
@@ -58,7 +58,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
  * @author Arjohn Kampman
  */
 public class Federation implements Sail, Executor, FederatedServiceResolverClient, RepositoryResolverClient,
-		HttpClientDependent, SesameClientDependent
+		HttpClientDependent, SessionManagerDependent
 {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(Federation.class);
@@ -212,10 +212,10 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	@Override
-	public SesameClient getSesameClient() {
+	public HttpClientSessionManager getHttpClientSessionManager() {
 		for (Repository member : members) {
-			if (member instanceof SesameClientDependent) {
-				SesameClient client = ((SesameClientDependent)member).getSesameClient();
+			if (member instanceof SessionManagerDependent) {
+				HttpClientSessionManager client = ((SessionManagerDependent)member).getHttpClientSessionManager();
 				if (client != null) {
 					return client;
 				}
@@ -225,10 +225,10 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	@Override
-	public void setSesameClient(SesameClient client) {
+	public void setHttpClientSessionManager(HttpClientSessionManager client) {
 		for (Repository member : members) {
-			if (member instanceof SesameClientDependent) {
-				((SesameClientDependent)member).setSesameClient(client);
+			if (member instanceof SessionManagerDependent) {
+				((SessionManagerDependent)member).setHttpClientSessionManager(client);
 			}
 		}
 	}

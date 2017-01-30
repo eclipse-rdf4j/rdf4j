@@ -15,9 +15,9 @@ import java.util.Collection;
 import java.util.List;
 
 import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.http.client.SesameClient;
-import org.eclipse.rdf4j.http.client.SesameClientImpl;
-import org.eclipse.rdf4j.http.client.SesameSession;
+import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
@@ -72,7 +72,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	 *-----------*/
 
 	/** dependent life cycle */
-	private volatile SesameClientImpl client;
+	private volatile SharedHttpClientSessionManager client;
 
 	/**
 	 * The URL of the remote server, e.g. http://localhost:8080/openrdf-sesame/
@@ -105,13 +105,13 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	/**
 	 * @return Returns the httpClient.
 	 */
-	protected SesameClientImpl getSesameClient() {
-		SesameClientImpl result = client;
+	protected SharedHttpClientSessionManager getSesameClient() {
+		SharedHttpClientSessionManager result = client;
 		if (result == null) {
 			synchronized (this) {
 				result = client;
 				if (result == null) {
-					result = client = new SesameClientImpl();
+					result = client = new SharedHttpClientSessionManager();
 				}
 			}
 		}
@@ -120,7 +120,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 
 	@Override
 	public HttpClient getHttpClient() {
-		SesameClientImpl nextClient = client;
+		SharedHttpClientSessionManager nextClient = client;
 		if (nextClient == null) {
 			return null;
 		}
@@ -147,7 +147,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 			super.shutDown();
 		}
 		finally {
-			SesameClientImpl toCloseClient = client;
+			SharedHttpClientSessionManager toCloseClient = client;
 			client = null;
 			if (toCloseClient != null) {
 				toCloseClient.shutDown();
@@ -173,7 +173,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		throws RepositoryException
 	{
 		HTTPRepository systemRepository = new HTTPRepository(serverURL, SystemRepository.ID);
-		systemRepository.setSesameClient(getSesameClient());
+		systemRepository.setHttpClientSessionManager(getSesameClient());
 		systemRepository.setUsernameAndPassword(username, password);
 		systemRepository.initialize();
 		return systemRepository;
@@ -215,7 +215,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 
 		if (RepositoryConfigUtil.hasRepositoryConfig(getSystemRepository(), id)) {
 			result = new HTTPRepository(serverURL, id);
-			result.setSesameClient(getSesameClient());
+			result.setHttpClientSessionManager(getSesameClient());
 			result.setUsernameAndPassword(username, password);
 			result.initialize();
 		}
@@ -243,7 +243,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		List<RepositoryInfo> result = new ArrayList<RepositoryInfo>();
 
 		try {
-			SesameSession httpClient = getSesameClient().createSesameSession(serverURL);
+			RDF4JProtocolSession httpClient = getSesameClient().createRDF4JProtocolSession(serverURL);
 			httpClient.setUsernameAndPassword(username, password);
 			TupleQueryResult responseFromServer = httpClient.getRepositoryList();
 			while (responseFromServer.hasNext()) {
@@ -306,7 +306,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		boolean existingRepo = RepositoryConfigUtil.hasRepositoryConfig(getSystemRepository(), repositoryID);
 
 		if (existingRepo) {
-			SesameSession httpClient = getSesameClient().createSesameSession(serverURL);
+			RDF4JProtocolSession httpClient = getSesameClient().createRDF4JProtocolSession(serverURL);
 			httpClient.setUsernameAndPassword(username, password);
 
 			try {

@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
-import org.eclipse.rdf4j.http.client.SparqlSession;
+import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -86,7 +86,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	private static final String NAMEDGRAPHS = "SELECT DISTINCT ?_ WHERE { GRAPH ?_ { ?s ?p ?o } }";
 
-	private final SparqlSession client;
+	private final SPARQLProtocolSession client;
 
 	private StringBuffer sparqlTransaction;
 
@@ -94,11 +94,11 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	private final boolean quadMode;
 
-	public SPARQLConnection(SPARQLRepository repository, SparqlSession client) {
+	public SPARQLConnection(SPARQLRepository repository, SPARQLProtocolSession client) {
 		this(repository, client, false); // in triple mode by default
 	}
 
-	public SPARQLConnection(SPARQLRepository repository, SparqlSession client, boolean quadMode) {
+	public SPARQLConnection(SPARQLRepository repository, SPARQLProtocolSession client, boolean quadMode) {
 		super(repository);
 		this.client = client;
 		this.quadMode = quadMode;
