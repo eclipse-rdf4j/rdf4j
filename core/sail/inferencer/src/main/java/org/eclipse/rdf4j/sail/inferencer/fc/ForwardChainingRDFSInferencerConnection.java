@@ -641,6 +641,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 					Resource xxx = t1.getSubject();
 					Value yyy = t1.getObject();
 
+					// TODO check that aaa != bbb
 					boolean added = addInferredStatement(xxx, (IRI)bbb, yyy);
 					if (added) {
 						nofInferred++;
