@@ -14,11 +14,11 @@ import java.util.regex.Pattern;
 
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
-import org.eclipse.rdf4j.http.client.SesameClient;
-import org.eclipse.rdf4j.http.client.SesameClientDependent;
-import org.eclipse.rdf4j.http.client.SesameClientImpl;
-import org.eclipse.rdf4j.http.client.SesameSession;
-import org.eclipse.rdf4j.http.client.SparqlSession;
+import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.SessionManagerDependent;
+import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
+import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -48,7 +48,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
  * @author Jeen Broekstra
  * @author Herko ter Horst
  */
-public class HTTPRepository extends AbstractRepository implements HttpClientDependent, SesameClientDependent {
+public class HTTPRepository extends AbstractRepository implements HttpClientDependent, SessionManagerDependent {
 
 	/*-----------*
 	 * Variables *
@@ -57,10 +57,10 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	/**
 	 * The HTTP client that takes care of the client-server communication.
 	 */
-	private volatile SesameClient client;
+	private volatile HttpClientSessionManager client;
 
 	/** dependent life cycle */
-	private volatile SesameClientImpl dependentClient;
+	private volatile SharedHttpClientSessionManager dependentClient;
 
 	private String username;
 
@@ -122,13 +122,13 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	}
 
 	@Override
-	public SesameClient getSesameClient() {
-		SesameClient result = client;
+	public HttpClientSessionManager getHttpClientSessionManager() {
+		HttpClientSessionManager result = client;
 		if (result == null) {
 			synchronized (this) {
 				result = client;
 				if (result == null) {
-					result = client = dependentClient = new SesameClientImpl();
+					result = client = dependentClient = new SharedHttpClientSessionManager();
 				}
 			}
 		}
@@ -136,12 +136,12 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	}
 
 	@Override
-	public void setSesameClient(SesameClient client) {
+	public void setHttpClientSessionManager(HttpClientSessionManager client) {
 		synchronized (this) {
 			this.client = client;
 			// If they set a client, we need to check whether we need to
 			// shutdown any existing dependentClient
-			SesameClientImpl toCloseDependentClient = dependentClient;
+			SharedHttpClientSessionManager toCloseDependentClient = dependentClient;
 			dependentClient = null;
 			if (toCloseDependentClient != null) {
 				toCloseDependentClient.shutDown();
@@ -151,14 +151,14 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	@Override
 	public final HttpClient getHttpClient() {
-		return getSesameClient().getHttpClient();
+		return getHttpClientSessionManager().getHttpClient();
 	}
 
 	@Override
 	public void setHttpClient(HttpClient httpClient) {
-		SesameClientImpl toSetDependentClient = dependentClient;
+		SharedHttpClientSessionManager toSetDependentClient = dependentClient;
 		if (toSetDependentClient == null) {
-			getSesameClient();
+			getHttpClientSessionManager();
 			toSetDependentClient = dependentClient;
 		}
 		// The strange lifecycle results in the possibility that the
@@ -221,8 +221,8 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Sets the preferred serialization format for tuple query results to the supplied
-	 * {@link TupleQueryResultFormat}, overriding the {@link SparqlSession} 's default preference. Setting
-	 * this parameter is not necessary in most cases as the {@link SparqlSession} by default indicates a
+	 * {@link TupleQueryResultFormat}, overriding the {@link SPARQLProtocolSession} 's default preference. Setting
+	 * this parameter is not necessary in most cases as the {@link SPARQLProtocolSession} by default indicates a
 	 * preference for the most compact and efficient format available.
 	 * 
 	 * @param format
@@ -244,8 +244,8 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Sets the preferred serialization format for RDF to the supplied {@link RDFFormat}, overriding the
-	 * {@link SparqlSession}'s default preference. Setting this parameter is not necessary in most cases as
-	 * the {@link SparqlSession} by default indicates a preference for the most compact and efficient format
+	 * {@link SPARQLProtocolSession}'s default preference. Setting this parameter is not necessary in most cases as
+	 * the {@link SPARQLProtocolSession} by default indicates a preference for the most compact and efficient format
 	 * available.
 	 * <p>
 	 * Use with caution: if set to a format that does not support context serialization any context info
@@ -300,7 +300,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 		throws RepositoryException
 	{
 		try {
-			SesameClientImpl toCloseDependentClient = dependentClient;
+			SharedHttpClientSessionManager toCloseDependentClient = dependentClient;
 			dependentClient = null;
 			if (toCloseDependentClient != null) {
 				toCloseDependentClient.shutDown();
@@ -318,9 +318,9 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	 * 
 	 * @return a HTTPClient object.
 	 */
-	protected SesameSession createHTTPClient() {
+	protected RDF4JProtocolSession createHTTPClient() {
 		// initialize HTTP client
-		SesameSession httpClient = getSesameClient().createSesameSession(serverURL);
+		RDF4JProtocolSession httpClient = getHttpClientSessionManager().createRDF4JProtocolSession(serverURL);
 		httpClient.setValueFactory(SimpleValueFactory.getInstance());
 		if (repositoryURL != null) {
 			httpClient.setRepository(repositoryURL);
