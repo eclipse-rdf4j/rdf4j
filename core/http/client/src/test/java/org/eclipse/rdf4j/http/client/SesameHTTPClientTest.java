@@ -20,7 +20,7 @@ public class SesameHTTPClientTest {
 	@Rule
 	public ExpectedException expectedException = ExpectedException.none();
 
-	private SesameSession httpClient = new SesameSession(null, null);
+	private RDF4JProtocolSession httpClient = new RDF4JProtocolSession(null, null);
 
 	@Test
 	public void setUsernameAndPassword_should_succeed_with_server_url_but_no_query_url() {

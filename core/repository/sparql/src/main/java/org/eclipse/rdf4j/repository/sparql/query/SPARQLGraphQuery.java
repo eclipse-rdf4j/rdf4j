@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.repository.sparql.query;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.http.client.SparqlSession;
+import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.client.query.AbstractHTTPQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
@@ -28,14 +28,14 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
  */
 public class SPARQLGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 
-	public SPARQLGraphQuery(SparqlSession httpClient, String baseURI, String queryString) {
+	public SPARQLGraphQuery(SPARQLProtocolSession httpClient, String baseURI, String queryString) {
 		super(httpClient, QueryLanguage.SPARQL, queryString, baseURI);
 	}
 
 	public GraphQueryResult evaluate()
 		throws QueryEvaluationException
 	{
-		SparqlSession client = getHttpClient();
+		SPARQLProtocolSession client = getHttpClient();
 		try {
 			// TODO getQueryString() already inserts bindings, use emptybindingset
 			// as last argument?
@@ -57,7 +57,7 @@ public class SPARQLGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 		throws QueryEvaluationException, RDFHandlerException
 	{
 
-		SparqlSession client = getHttpClient();
+		SPARQLProtocolSession client = getHttpClient();
 		try {
 			client.sendGraphQuery(queryLanguage, getQueryString(), baseURI, dataset, getIncludeInferred(),
 					getMaxExecutionTime(), handler, getBindingsArray());
