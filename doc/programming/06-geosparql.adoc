@@ -58,15 +58,16 @@ The following query returns the distance between city centers in kilometers.
 `GEOF` provides geometric functions, while `UOM` provides unit of measurements. Note that the metric unit is spelled `metre` (not the US spelling `meter`)
 
 [source,java]
------
+----
 String qry = 
    "PREFIX geo: <http://www.opengis.net/ont/geosparql#> " +
    "PREFIX geof: <http://www.opengis.net/def/function/geosparql/> " +
    "PREFIX uom: <http://www.opengis.net/def/uom/OGC/1.0/> " +
+   " " +
    "SELECT ?cityA ?cityB ?dist " +
    "WHERE { ?cityA geo:asWKT ?coord1 . " +
    "        ?cityB geo:asWKT ?coord2 . " +
-   " BIND((geof:distance(?coord1, ?coord2, uom:metre) / 1000) as ?dist) . " +
+   " BIND( (geof:distance(?coord1, ?coord2, uom:metre) / 1000) as ?dist) . " +
    "        FILTER ( !sameTerm (?cityA, ?cityB) ) }";
 
 List<BindingSet> results = Repositories.tupleQuery(repo, qry, 
