@@ -24,8 +24,8 @@ import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
-import org.eclipse.rdf4j.http.client.SesameClient;
-import org.eclipse.rdf4j.http.client.SesameClientDependent;
+import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.SessionManagerDependent;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -77,7 +77,7 @@ import org.slf4j.LoggerFactory;
  * @author Arjohn Kampman
  */
 abstract class AbstractFederationConnection extends AbstractSailConnection implements
-		FederatedServiceResolverClient, RepositoryResolverClient, HttpClientDependent, SesameClientDependent
+		FederatedServiceResolverClient, RepositoryResolverClient, HttpClientDependent, SessionManagerDependent
 {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(AbstractFederationConnection.class);
@@ -207,10 +207,10 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	}
 
 	@Override
-	public SesameClient getSesameClient() {
+	public HttpClientSessionManager getHttpClientSessionManager() {
 		for (RepositoryConnection member : members) {
-			if (member instanceof SesameClientDependent) {
-				SesameClient client = ((SesameClientDependent)member).getSesameClient();
+			if (member instanceof SessionManagerDependent) {
+				HttpClientSessionManager client = ((SessionManagerDependent)member).getHttpClientSessionManager();
 				if (client != null) {
 					return client;
 				}
@@ -220,10 +220,10 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	}
 
 	@Override
-	public void setSesameClient(SesameClient client) {
+	public void setHttpClientSessionManager(HttpClientSessionManager client) {
 		for (RepositoryConnection member : members) {
-			if (member instanceof SesameClientDependent) {
-				((SesameClientDependent)member).setSesameClient(client);
+			if (member instanceof SessionManagerDependent) {
+				((SessionManagerDependent)member).setHttpClientSessionManager(client);
 			}
 		}
 	}

@@ -210,6 +210,26 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@Test
+	@Ignore
+	@Override
+	public void testDefaultInsertContext()
+		throws Exception
+	{
+		System.err.println(
+				"temporarily disabled testDefaultInsertContext() for SPARQLRepository: separation of insert/remove/default graphs is not supported in SPARQL protocol.");
+	}
+
+	@Test
+	@Ignore
+	@Override
+	public void testDefaultContext()
+		throws Exception
+	{
+		System.err.println(
+				"temporarily disabled testDefaultContext() for SPARQLRepository: separation of insert/remove/default graphs is not supported in SPARQL protocol.");
+	}
+
+	@Test
 	public void testGetStatementsContextHandling()
 		throws Exception
 	{

@@ -13,10 +13,10 @@ import java.util.Map;
 
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
-import org.eclipse.rdf4j.http.client.SesameClient;
-import org.eclipse.rdf4j.http.client.SesameClientDependent;
-import org.eclipse.rdf4j.http.client.SesameClientImpl;
-import org.eclipse.rdf4j.http.client.SparqlSession;
+import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.SessionManagerDependent;
+import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.repository.base.AbstractRepository;
  * @author James Leigh
  */
 public class SPARQLRepository extends AbstractRepository
-		implements HttpClientDependent, SesameClientDependent
+		implements HttpClientDependent, SessionManagerDependent
 {
 
 	/**
@@ -43,10 +43,10 @@ public class SPARQLRepository extends AbstractRepository
 	/**
 	 * The HTTP client that takes care of the client-server communication.
 	 */
-	private volatile SesameClient client;
+	private volatile HttpClientSessionManager client;
 
 	/** dependent life cycle */
-	private volatile SesameClientImpl dependentClient;
+	private volatile SharedHttpClientSessionManager dependentClient;
 
 	private String username;
 
@@ -88,13 +88,13 @@ public class SPARQLRepository extends AbstractRepository
 	}
 
 	@Override
-	public SesameClient getSesameClient() {
-		SesameClient result = client;
+	public HttpClientSessionManager getHttpClientSessionManager() {
+		HttpClientSessionManager result = client;
 		if (result == null) {
 			synchronized (this) {
 				result = client;
 				if (result == null) {
-					result = client = dependentClient = new SesameClientImpl();
+					result = client = dependentClient = new SharedHttpClientSessionManager();
 				}
 			}
 		}
@@ -102,11 +102,11 @@ public class SPARQLRepository extends AbstractRepository
 	}
 
 	@Override
-	public void setSesameClient(SesameClient client) {
+	public void setHttpClientSessionManager(HttpClientSessionManager client) {
 		synchronized (this) {
 			this.client = client;
 			// If they set a client, we need to check whether we need to shutdown any existing dependentClient
-			SesameClientImpl toCloseDependentClient = dependentClient;
+			SharedHttpClientSessionManager toCloseDependentClient = dependentClient;
 			dependentClient = null;
 			if (toCloseDependentClient != null) {
 				toCloseDependentClient.shutDown();
@@ -116,14 +116,14 @@ public class SPARQLRepository extends AbstractRepository
 
 	@Override
 	public final HttpClient getHttpClient() {
-		return getSesameClient().getHttpClient();
+		return getHttpClientSessionManager().getHttpClient();
 	}
 
 	@Override
 	public void setHttpClient(HttpClient httpClient) {
-		SesameClientImpl toSetDependentClient = dependentClient;
+		SharedHttpClientSessionManager toSetDependentClient = dependentClient;
 		if (toSetDependentClient == null) {
-			getSesameClient();
+			getHttpClientSessionManager();
 			toSetDependentClient = dependentClient;
 		}
 		// The strange lifecycle results in the possibility that the
@@ -139,9 +139,9 @@ public class SPARQLRepository extends AbstractRepository
 	 * 
 	 * @return a HTTPClient object.
 	 */
-	protected SparqlSession createHTTPClient() {
+	protected SPARQLProtocolSession createHTTPClient() {
 		// initialize HTTP client
-		SparqlSession httpClient = getSesameClient().createSparqlSession(queryEndpointUrl, updateEndpointUrl);
+		SPARQLProtocolSession httpClient = getHttpClientSessionManager().createSPARQLProtocolSession(queryEndpointUrl, updateEndpointUrl);
 		httpClient.setValueFactory(SimpleValueFactory.getInstance());
 		httpClient.setPreferredTupleQueryResultFormat(TupleQueryResultFormat.SPARQL);
 		httpClient.setAdditionalHttpHeaders(additionalHttpHeaders);
@@ -208,7 +208,7 @@ public class SPARQLRepository extends AbstractRepository
 		throws RepositoryException
 	{
 		try {
-			SesameClientImpl toCloseDependentClient = dependentClient;
+			SharedHttpClientSessionManager toCloseDependentClient = dependentClient;
 			dependentClient = null;
 			if (toCloseDependentClient != null) {
 				toCloseDependentClient.shutDown();
