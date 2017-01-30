@@ -1,0 +1,44 @@
+= GeoSPARQL
+
+(Work in progress)
+
+== WKT Literals
+
+Geographic coordinates can be stored as literals with the "Well-Known Text" (WKT) datatype. WKT allows for very simple, i.e. a single point, but also very complex shapes, e.g. shapes consisting of multiple polygons. 
+
+=== Order of coordinates
+
+WKT can also describe coordinate reference systems (CRS) and projections. 
+One common source of confusing is that, by default, the X-coordinate (longitude)is followed by Y-coordinate (latitude) while many people are used to the Y-X (latitude-longitute) notation.
+
+[source,java]
+----
+import com.spatial4j.core.context.SpatialContext;
+import com.spatial4j.core.shape.Point;
+
+....
+SpatialContext geo = SpatialContext.GEO;
+Point amsterdam = geo.makePoint(4.9, 52.37);
+Point brussels = geo.makePoint(4.35, 50.85);
+Point canberra = geo.makePoint(149.12, -35.31);
+Point dakar = geo.makePoint(-17.45, 14.69);
+----
+
+=== Writing WKT
+
+RDF4j 2.1.x uses Spatial4J 0.4.1, which does not support writing shapes to WKT just yet (added in 0.5).
+
+
+== Queries
+
+Make sure to include the rdf4j-queryalgebra-geosparql jar in your project.
+
+=== Lucene
+
+== Further reading
+
+Here are some useful links:
+
+- http://www.opengeospatial.org/standards/geosparql[OGC GeoSPARQL specification]
+- https://en.wikipedia.org/wiki/Well-known_text[Wikipedia article on WKT]
+
