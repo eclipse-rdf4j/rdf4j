@@ -201,8 +201,9 @@ public class QueryResults extends Iterations {
 	/**
 	 * Parses an RDF document and returns it as a GraphQueryResult object, with parsing done on a separate
 	 * thread in the background.<br>
-	 * IMPORTANT: As this method will spawn a new thread in the background, it is vitally important that it be
-	 * closed consistently when it is no longer required, to prevent resource leaks.
+	 * IMPORTANT: As this method will spawn a new thread in the background, it is vitally important that the
+	 * resulting GraphQueryResult be closed consistently when it is no longer required, to prevent resource
+	 * leaks.
 	 * 
 	 * @param in
 	 *        The {@link InputStream} containing the RDF document.
@@ -210,7 +211,8 @@ public class QueryResults extends Iterations {
 	 *        The base URI for the RDF document.
 	 * @param format
 	 *        The {@link RDFFormat} of the RDF document.
-	 * @return A {@link GraphQueryResult} that parses in the background.
+	 * @return A {@link GraphQueryResult} that parses in the background, and must be closed to prevent
+	 *         resource leaks.
 	 */
 	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFFormat format)
 		throws UnsupportedRDFormatException
