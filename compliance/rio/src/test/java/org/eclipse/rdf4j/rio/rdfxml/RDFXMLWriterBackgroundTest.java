@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.rio.rdfjson;
+package org.eclipse.rdf4j.rio.rdfxml;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -14,21 +14,23 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.rio.RDFWriterTest;
-import org.eclipse.rdf4j.rio.rdfjson.RDFJSONParserFactory;
-import org.eclipse.rdf4j.rio.rdfjson.RDFJSONWriterFactory;
+import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.rdfxml.RDFXMLParserFactory;
+import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriterFactory;
+import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriterTestCase;
 
-/**
- * JUnit test for the RDF/JSON parser.
- * 
- * @author Peter Ansell
- */
-public class RDFJSONWriterTest extends RDFWriterTest {
+public class RDFXMLWriterBackgroundTest extends RDFXMLWriterTestCase {
 
-	public RDFJSONWriterTest() {
-		super(new RDFJSONWriterFactory(), new RDFJSONParserFactory());
+	public RDFXMLWriterBackgroundTest() {
+		super(new RDFXMLWriterFactory(), new RDFXMLParserFactory());
 	}
 	
+	@Override
+	protected void setupWriterConfig(WriterConfig config) {
+		config.set(BasicWriterSettings.PRETTY_PRINT, false);
+	}
+
 	@Override
 	protected Model parse(InputStream reader, String baseURI)
 		throws RDFParseException, RDFHandlerException, IOException

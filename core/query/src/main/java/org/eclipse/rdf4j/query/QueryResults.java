@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query;
 
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -14,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.LinkedBlockingQueue;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
@@ -34,10 +37,16 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.query.impl.BackgroundGraphResult;
 import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
+import org.eclipse.rdf4j.query.impl.QueueCursor;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
+import org.eclipse.rdf4j.rio.RDFParser;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 
 /**
  * Utility methods related to query results.
@@ -73,10 +82,14 @@ public class QueryResults extends Iterations {
 		throws QueryEvaluationException
 	{
 		Statement singleResult = null;
-		if (result.hasNext()) {
-			singleResult = result.next();
+		try {
+			if (result.hasNext()) {
+				singleResult = result.next();
+			}
 		}
-		result.close();
+		finally {
+			result.close();
+		}
 		return singleResult;
 	}
 
@@ -90,10 +103,14 @@ public class QueryResults extends Iterations {
 		throws QueryEvaluationException
 	{
 		BindingSet singleResult = null;
-		if (result.hasNext()) {
-			singleResult = result.next();
+		try {
+			if (result.hasNext()) {
+				singleResult = result.next();
+			}
 		}
-		result.close();
+		finally {
+			result.close();
+		}
 		return singleResult;
 	}
 
@@ -130,9 +147,11 @@ public class QueryResults extends Iterations {
 	 * @param limit
 	 *        the maximum number of solutions to return. If set to 0 or lower, no limit will be applied.
 	 * @param offset
-	 *        the number of solutions to skip at the beginning. If set to 0 or lower, no offset will be applied.
+	 *        the number of solutions to skip at the beginning. If set to 0 or lower, no offset will be
+	 *        applied.
 	 * @return A {@link TupleQueryResult} that will at return at most the specified maximum number of
-	 *         solutions. If neither {@code limit} nor {@code offset} are applied, this returns the original {@code queryResult}.
+	 *         solutions. If neither {@code limit} nor {@code offset} are applied, this returns the original
+	 *         {@code queryResult}.
 	 */
 	public static TupleQueryResult limitResults(TupleQueryResult queryResult, long limit, long offset) {
 		CloseableIteration<BindingSet, QueryEvaluationException> iter = queryResult;
@@ -158,9 +177,11 @@ public class QueryResults extends Iterations {
 	 * @param limit
 	 *        the maximum number of solutions to return. If set to 0 or lower, no limit will be applied.
 	 * @param offset
-	 *        the number of solutions to skip at the beginning. If set to 0 or lower, no offset will be applied.
+	 *        the number of solutions to skip at the beginning. If set to 0 or lower, no offset will be
+	 *        applied.
 	 * @return A {@link GraphQueryResult} that will at return at most the specified maximum number of
-	 *         solutions. If neither {@code limit} nor {@code offset} are applied, this returns the original {@code queryResult}.
+	 *         solutions. If neither {@code limit} nor {@code offset} are applied, this returns the original
+	 *         {@code queryResult}.
 	 */
 	public static GraphQueryResult limitResults(GraphQueryResult queryResult, long limit, long offset) {
 		CloseableIteration<Statement, QueryEvaluationException> iter = queryResult;
@@ -175,6 +196,42 @@ public class QueryResults extends Iterations {
 			return new IteratingGraphQueryResult(queryResult.getNamespaces(), iter);
 		}
 		return (GraphQueryResult)iter;
+	}
+
+	/**
+	 * Parses an RDF document and returns it as a GraphQueryResult object, with parsing done on a separate
+	 * thread in the background.<br>
+	 * IMPORTANT: As this method will spawn a new thread in the background, it is vitally important that the
+	 * resulting GraphQueryResult be closed consistently when it is no longer required, to prevent resource
+	 * leaks.
+	 * 
+	 * @param in
+	 *        The {@link InputStream} containing the RDF document.
+	 * @param baseURI
+	 *        The base URI for the RDF document.
+	 * @param format
+	 *        The {@link RDFFormat} of the RDF document.
+	 * @return A {@link GraphQueryResult} that parses in the background, and must be closed to prevent
+	 *         resource leaks.
+	 */
+	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFFormat format)
+		throws UnsupportedRDFormatException
+	{
+		RDFParser parser = Rio.createParser(format);
+
+		BackgroundGraphResult result = new BackgroundGraphResult(
+				new QueueCursor<>(new LinkedBlockingQueue<>(1)), parser, in, format.getCharset(), baseURI);
+		boolean allGood = false;
+		try {
+			ForkJoinPool.commonPool().submit(result);
+			allGood = true;
+		}
+		finally {
+			if (!allGood) {
+				result.close();
+			}
+		}
+		return result;
 	}
 
 	/**
