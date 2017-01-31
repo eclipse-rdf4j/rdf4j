@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.repository.http;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.http.client.SparqlSession;
+import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.client.query.AbstractHTTPUpdate;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -43,7 +43,7 @@ public class HTTPUpdate extends AbstractHTTPUpdate {
 			if (httpCon.getRepository().useCompatibleMode()) {
 				if (httpCon.isAutoCommit()) {
 					// execute update immediately
-					SparqlSession client = getHttpClient();
+					SPARQLProtocolSession client = getHttpClient();
 					try {
 						client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset,
 								includeInferred, getMaxExecutionTime(), getBindingsArray());
@@ -68,7 +68,7 @@ public class HTTPUpdate extends AbstractHTTPUpdate {
 				return;
 			}
 
-			SparqlSession client = getHttpClient();
+			SPARQLProtocolSession client = getHttpClient();
 			try {
 				httpCon.flushTransactionState(Action.UPDATE);
 				client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset,

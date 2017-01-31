@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.repository.http;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.http.client.SparqlSession;
+import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.client.query.AbstractHTTPQuery;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.GraphQuery;
@@ -44,7 +44,7 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 	public GraphQueryResult evaluate()
 		throws QueryEvaluationException
 	{
-		SparqlSession client = getHttpClient();
+		SPARQLProtocolSession client = getHttpClient();
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			return client.sendGraphQuery(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
@@ -73,7 +73,7 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 	public void evaluate(RDFHandler handler)
 		throws QueryEvaluationException, RDFHandlerException
 	{
-		SparqlSession client = getHttpClient();
+		SPARQLProtocolSession client = getHttpClient();
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			client.sendGraphQuery(queryLanguage, queryString, baseURI, dataset, includeInferred,

@@ -11,8 +11,8 @@ import java.io.File;
 
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
-import org.eclipse.rdf4j.http.client.SesameClient;
-import org.eclipse.rdf4j.http.client.SesameClientDependent;
+import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.SessionManagerDependent;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -54,7 +54,7 @@ import org.eclipse.rdf4j.sail.StackableSail;
  * @author Arjohn Kampman
  */
 public class SailRepository extends AbstractRepository implements FederatedServiceResolverClient,
-		RepositoryResolverClient, HttpClientDependent, SesameClientDependent
+		RepositoryResolverClient, HttpClientDependent, SessionManagerDependent
 {
 
 	/*-----------*
@@ -106,10 +106,10 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	}
 
 	@Override
-	public SesameClient getSesameClient() {
-		SesameClientDependent stack = findSailOf(sail, SesameClientDependent.class);
+	public HttpClientSessionManager getHttpClientSessionManager() {
+		SessionManagerDependent stack = findSailOf(sail, SessionManagerDependent.class);
 		if (stack != null) {
-			return stack.getSesameClient();
+			return stack.getHttpClientSessionManager();
 		}
 		else {
 			return null;
@@ -117,10 +117,10 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	}
 
 	@Override
-	public void setSesameClient(SesameClient client) {
-		SesameClientDependent stack = findSailOf(sail, SesameClientDependent.class);
+	public void setHttpClientSessionManager(HttpClientSessionManager client) {
+		SessionManagerDependent stack = findSailOf(sail, SessionManagerDependent.class);
 		if (stack != null) {
-			stack.setSesameClient(client);
+			stack.setHttpClientSessionManager(client);
 		}
 	}
 

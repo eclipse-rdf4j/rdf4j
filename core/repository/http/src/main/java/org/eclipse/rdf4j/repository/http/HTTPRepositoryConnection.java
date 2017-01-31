@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
-import org.eclipse.rdf4j.http.client.SesameSession;
+import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
 import org.eclipse.rdf4j.http.protocol.transaction.operations.AddStatementOperation;
@@ -95,7 +95,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	private List<TransactionOperation> txn = Collections.synchronizedList(
 			new ArrayList<TransactionOperation>());
 
-	private final SesameSession client;
+	private final RDF4JProtocolSession client;
 
 	private boolean active;
 
@@ -113,7 +113,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	 * Constructors *
 	 *--------------*/
 
-	public HTTPRepositoryConnection(HTTPRepository repository, SesameSession client) {
+	public HTTPRepositoryConnection(HTTPRepository repository, RDF4JProtocolSession client) {
 		super(repository);
 
 		this.client = client;
@@ -904,7 +904,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	/**
 	 * @return
 	 */
-	protected SesameSession getSesameSession() {
+	protected RDF4JProtocolSession getSesameSession() {
 		return client;
 	}
 }
