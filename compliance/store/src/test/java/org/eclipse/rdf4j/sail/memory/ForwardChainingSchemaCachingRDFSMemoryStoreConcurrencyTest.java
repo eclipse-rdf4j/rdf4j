@@ -33,9 +33,10 @@ public class ForwardChainingSchemaCachingRDFSMemoryStoreConcurrencyTest extends 
 
 	@Ignore
 	@Test
+	@Override
 	public void testConcurrentAddLargeTxnRollback()
 		throws Exception
 	{
-
+		// empty since this test is ignored
 	}
 }
