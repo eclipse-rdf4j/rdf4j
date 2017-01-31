@@ -634,14 +634,14 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 				inferredSink = branch.sink(level);
 				explicitOnlyDataset = branch(false).dataset(level);
 			}
-			addStatementInternal(subj, pred, obj, contexts);
 			boolean modified = false;
 			if (contexts.length == 0) {
-				if (!hasStatement(explicitOnlyDataset, subj, pred, obj, null)) {
+				if (!hasStatement(explicitOnlyDataset, subj, pred, obj)) {
 					// only add inferred statements that aren't already explicit
-					if (!hasStatement(inferredDataset, subj, pred, obj, null)) {
+					if (!hasStatement(inferredDataset, subj, pred, obj)) {
 						// only report inferred statements that don't already
 						// exist
+						addStatementInternal(subj, pred, obj, contexts);
 						notifyStatementAdded(vf.createStatement(subj, pred, obj));
 						modified = true;
 					}
@@ -656,6 +656,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 						if (!hasStatement(inferredDataset, subj, pred, obj, ctx)) {
 							// only report inferred statements that don't
 							// already exist
+							addStatementInternal(subj, pred, obj, ctx);
 							notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
 							modified = true;
 						}
@@ -673,7 +674,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	{
 		boolean modified = false;
 		if (contexts.length == 0) {
-			if (!hasStatement(dataset, subj, pred, obj, null)) {
+			if (!hasStatement(dataset, subj, pred, obj)) {
 				notifyStatementAdded(vf.createStatement(subj, pred, obj));
 				modified = true;
 			}
@@ -925,12 +926,12 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		};
 	}
 
-	private boolean hasStatement(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource ctx)
+	private boolean hasStatement(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException
 	{
 		CloseableIteration<? extends Statement, SailException> iter = null;
 		try {
-			iter = dataset.getStatements(subj, pred, obj, ctx);
+			iter = dataset.getStatements(subj, pred, obj, contexts);
 			return iter.hasNext();
 		}
 		finally {
