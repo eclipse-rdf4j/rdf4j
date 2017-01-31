@@ -712,7 +712,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 		super.rollback();
 
 		// if the schema cache was modified
-		if(sail.schema == null && sail.getSchemaSize() != originalSchemaSize){
+		if (sail.schema == null && sail.getSchemaSize() != originalSchemaSize) {
 			sail.clearInferenceTables();
 			sail.rolledBackAfterModifyingSchemaCache = true;
 		}
@@ -747,7 +747,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 		}
 		super.begin(compatibleLevel);
 
-		if(sail.rolledBackAfterModifyingSchemaCache){
+		if (sail.rolledBackAfterModifyingSchemaCache) {
 			// previous connection was rolled back after modifying the schema cache
 			// refresh the cache before beginning
 
@@ -757,7 +757,6 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 		sail.rolledBackAfterModifyingSchemaCache = false;
 		originalSchemaSize = sail.getSchemaSize();
 	}
-
 
 	@Override
 	public void flushUpdates()

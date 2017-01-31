@@ -25,16 +25,16 @@ import java.util.concurrent.TimeUnit;
 @State(Scope.Thread)
 abstract class InitializationBenchmark {
 
-    abstract SailRepository getSail(SailRepository schema);
+	abstract SailRepository getSail(SailRepository schema);
 
-    abstract Class getSailClass();
+	abstract Class getSailClass();
 
-    @Benchmark
-    @BenchmarkMode(Mode.AverageTime)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public void initialize() {
+	@Benchmark
+	@BenchmarkMode(Mode.AverageTime)
+	@OutputTimeUnit(TimeUnit.MILLISECONDS)
+	public void initialize() {
 
-        getSail(null).initialize();
-    }
+		getSail(null).initialize();
+	}
 
 }

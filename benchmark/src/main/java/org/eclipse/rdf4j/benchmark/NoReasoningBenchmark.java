@@ -16,13 +16,13 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
  */
 public class NoReasoningBenchmark extends InitializationBenchmark {
 
-    @Override
-    SailRepository getSail(SailRepository schema) {
-        return new SailRepository(new MemoryStore());
-    }
+	@Override
+	SailRepository getSail(SailRepository schema) {
+		return new SailRepository(new MemoryStore());
+	}
 
-    @Override
-    Class getSailClass() {
-        return MemoryStore.class;
-    }
+	@Override
+	Class getSailClass() {
+		return MemoryStore.class;
+	}
 }
