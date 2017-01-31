@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.rio.rdfjson;
+package org.eclipse.rdf4j.rio.binary;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -15,20 +15,18 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
-import org.eclipse.rdf4j.rio.rdfjson.RDFJSONParserFactory;
-import org.eclipse.rdf4j.rio.rdfjson.RDFJSONWriterFactory;
+import org.eclipse.rdf4j.rio.binary.BinaryRDFParserFactory;
+import org.eclipse.rdf4j.rio.binary.BinaryRDFWriterFactory;
 
 /**
- * JUnit test for the RDF/JSON parser.
- * 
- * @author Peter Ansell
+ * @author Arjohn Kampman
  */
-public class RDFJSONWriterTest extends RDFWriterTest {
+public class BinaryRDFWriterBackgroundTest extends RDFWriterTest {
 
-	public RDFJSONWriterTest() {
-		super(new RDFJSONWriterFactory(), new RDFJSONParserFactory());
+	public BinaryRDFWriterBackgroundTest() {
+		super(new BinaryRDFWriterFactory(), new BinaryRDFParserFactory());
 	}
-	
+
 	@Override
 	protected Model parse(InputStream reader, String baseURI)
 		throws RDFParseException, RDFHandlerException, IOException
@@ -36,5 +34,4 @@ public class RDFJSONWriterTest extends RDFWriterTest {
 		return QueryResults.asModel(
 				QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
 	}
-	
 }
