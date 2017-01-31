@@ -11,6 +11,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Optional;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -21,7 +23,9 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+import org.eclipse.rdf4j.query.impl.QueueCursor;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
+import org.eclipse.rdf4j.query.resultio.helpers.BackgroundTupleResult;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -137,6 +141,7 @@ public class QueryResultIO {
 	 * by {@link TupleQueryResultParserRegistry#getInstance()} to get a factory for the specified format and
 	 * uses this factory to create the appropriate parser.
 	 * 
+	 * @return A TupleQueryResultParser matching the given format.
 	 * @throws UnsupportedQueryResultFormatException
 	 *         If no parser is available for the specified tuple query result format.
 	 */
@@ -155,6 +160,7 @@ public class QueryResultIO {
 	 * Convenience methods for creating TupleQueryResultParser objects that use the specified ValueFactory to
 	 * create RDF model objects.
 	 * 
+	 * @return A TupleQueryResultParser matching the given format.
 	 * @throws UnsupportedQueryResultFormatException
 	 *         If no parser is available for the specified tuple query result format.
 	 * @see #createParser(TupleQueryResultFormat)
@@ -174,6 +180,7 @@ public class QueryResultIO {
 	 * by {@link TupleQueryResultWriterRegistry#getInstance()} to get a factory for the specified format and
 	 * uses this factory to create the appropriate writer.
 	 * 
+	 * @return A TupleQueryResultWriter matching the given format.
 	 * @throws UnsupportedQueryResultFormatException
 	 *         If no writer is available for the specified tuple query result format.
 	 */
@@ -193,6 +200,7 @@ public class QueryResultIO {
 	 * returned by {@link BooleanQueryResultParserRegistry#getInstance()} to get a factory for the specified
 	 * format and uses this factory to create the appropriate parser.
 	 * 
+	 * @return A BooleanQueryResultParser matching the given format.
 	 * @throws UnsupportedQueryResultFormatException
 	 *         If no parser is available for the specified boolean query result format.
 	 */
@@ -212,6 +220,7 @@ public class QueryResultIO {
 	 * returned by {@link BooleanQueryResultWriterRegistry#getInstance()} to get a factory for the specified
 	 * format and uses this factory to create the appropriate writer.
 	 * 
+	 * @return A BooleanQueryResultWriter matching the given format.
 	 * @throws UnsupportedQueryResultFormatException
 	 *         If no writer is available for the specified boolean query result format.
 	 */
@@ -231,6 +240,7 @@ public class QueryResultIO {
 	 * {@link TupleQueryResultWriterRegistry#getInstance()} to get a factory for the specified format and uses
 	 * this factory to create the appropriate writer.
 	 * 
+	 * @return A QueryResultWriter matching the given format.
 	 * @throws UnsupportedQueryResultFormatException
 	 *         If no writer is available for the specified tuple query result format.
 	 */
@@ -304,6 +314,7 @@ public class QueryResultIO {
 	 * @param format
 	 *        The query result format of the document to parse. Supported formats are
 	 *        {@link TupleQueryResultFormat#SPARQL} and {@link TupleQueryResultFormat#BINARY}.
+	 * @return A TupleQueryResult containing the query results.
 	 * @throws IOException
 	 *         If an I/O error occured while reading the query result document from the stream.
 	 * @throws TupleQueryResultHandlerException
@@ -316,24 +327,77 @@ public class QueryResultIO {
 		throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
 		UnsupportedQueryResultFormatException
 	{
+		return parseTupleInternal(in, format, false);
+	}
+
+	/**
+	 * Parses a query result document and returns it as a TupleQueryResult object, with parsing done on a
+	 * separate thread in the background.<br>
+	 * IMPORTANT: As this method may spawn a new thread in the background, it is vitally important that the
+	 * TupleQueryResult be closed consistently when it is no longer required, to prevent resource leaks.
+	 * 
+	 * @param in
+	 *        An InputStream to read the query result document from.
+	 * @param format
+	 *        The query result format of the document to parse. Supported formats are
+	 *        {@link TupleQueryResultFormat#SPARQL} and {@link TupleQueryResultFormat#BINARY}.
+	 * @return A TupleQueryResult containing the query results, which must be closed to prevent resource
+	 *         leaks.
+	 * @throws IOException
+	 *         If an I/O error occured while reading the query result document from the stream.
+	 * @throws TupleQueryResultHandlerException
+	 *         If such an exception is thrown by the used query result parser.
+	 * @throws UnsupportedQueryResultFormatException
+	 * @throws IllegalArgumentException
+	 *         If an unsupported query result file format was specified.
+	 */
+	public static TupleQueryResult parseTupleBackground(InputStream in, QueryResultFormat format)
+		throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
+		UnsupportedQueryResultFormatException
+	{
+		return parseTupleInternal(in, format, true);
+	}
+
+	private static TupleQueryResult parseTupleInternal(InputStream in, QueryResultFormat format,
+			boolean parseOnBackgroundThread)
+		throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
+		UnsupportedQueryResultFormatException
+	{
 		TupleQueryResultParser parser = createTupleParser(format);
 
-		TupleQueryResultBuilder qrBuilder = new TupleQueryResultBuilder();
-		parser.setQueryResultHandler(qrBuilder);
-
-		try {
-			parser.parseQueryResult(in);
-		}
-		catch (QueryResultHandlerException e) {
-			if (e instanceof TupleQueryResultHandlerException) {
-				throw (TupleQueryResultHandlerException)e;
+		if (parseOnBackgroundThread) {
+			BackgroundTupleResult result = new BackgroundTupleResult(
+					new QueueCursor<>(new LinkedBlockingQueue<>(1)), parser, in);
+			// Start a new thread in the background, which will be completed
+			// when the BackgroundTupleResult is either closed or interrupted
+			boolean allGood = false;
+			try {
+				ForkJoinPool.commonPool().submit(result);
+				allGood = true;
 			}
-			else {
-				throw new TupleQueryResultHandlerException(e);
+			finally {
+				if (!allGood) {
+					result.close();
+				}
 			}
+			return result;
 		}
+		else {
+			TupleQueryResultBuilder qrBuilder = new TupleQueryResultBuilder();
+			try {
+				parser.setQueryResultHandler(qrBuilder).parseQueryResult(in);
+			}
+			catch (QueryResultHandlerException e) {
+				if (e instanceof TupleQueryResultHandlerException) {
+					throw (TupleQueryResultHandlerException)e;
+				}
+				else {
+					throw new TupleQueryResultHandlerException(e);
+				}
+			}
 
-		return qrBuilder.getQueryResult();
+			return qrBuilder.getQueryResult();
+		}
 	}
 
 	/**
@@ -343,6 +407,7 @@ public class QueryResultIO {
 	 *        An InputStream to read the query result document from.
 	 * @param format
 	 *        The file format of the document to parse.
+	 * @return A boolean representing the result of parsing the given InputStream.
 	 * @throws IOException
 	 *         If an I/O error occured while reading the query result document from the stream.
 	 * @throws UnsupportedQueryResultFormatException

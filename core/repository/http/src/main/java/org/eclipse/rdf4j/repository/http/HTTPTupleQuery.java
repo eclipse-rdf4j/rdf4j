@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.repository.http;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.http.client.SparqlSession;
+import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.client.query.AbstractHTTPQuery;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -43,7 +43,7 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 	public TupleQueryResult evaluate()
 		throws QueryEvaluationException
 	{
-		SparqlSession client = getHttpClient();
+		SPARQLProtocolSession client = getHttpClient();
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			return client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
@@ -63,7 +63,7 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 	public void evaluate(TupleQueryResultHandler handler)
 		throws QueryEvaluationException, TupleQueryResultHandlerException
 	{
-		SparqlSession client = getHttpClient();
+		SPARQLProtocolSession client = getHttpClient();
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, includeInferred,

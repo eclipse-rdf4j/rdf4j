@@ -12,8 +12,8 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
-import org.eclipse.rdf4j.http.client.SesameClient;
-import org.eclipse.rdf4j.http.client.SesameClientDependent;
+import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.SessionManagerDependent;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -51,7 +51,7 @@ import org.eclipse.rdf4j.sail.SailReadOnlyException;
  * @author Arjohn Kampman
  */
 public class SailRepositoryConnection extends AbstractRepositoryConnection implements
-		FederatedServiceResolverClient, RepositoryResolverClient, HttpClientDependent, SesameClientDependent
+		FederatedServiceResolverClient, RepositoryResolverClient, HttpClientDependent, SessionManagerDependent
 {
 
 	/*-----------*
@@ -102,9 +102,9 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public SesameClient getSesameClient() {
-		if (sailConnection instanceof SesameClientDependent) {
-			return ((SesameClientDependent)sailConnection).getSesameClient();
+	public HttpClientSessionManager getHttpClientSessionManager() {
+		if (sailConnection instanceof SessionManagerDependent) {
+			return ((SessionManagerDependent)sailConnection).getHttpClientSessionManager();
 		}
 		else {
 			return null;
@@ -112,9 +112,9 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
-	public void setSesameClient(SesameClient client) {
-		if (sailConnection instanceof SesameClientDependent) {
-			((SesameClientDependent)sailConnection).setSesameClient(client);
+	public void setHttpClientSessionManager(HttpClientSessionManager client) {
+		if (sailConnection instanceof SessionManagerDependent) {
+			((SessionManagerDependent)sailConnection).setHttpClientSessionManager(client);
 		}
 	}
 
