@@ -11,6 +11,8 @@ import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConcurrencyTest;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencer;
+import org.junit.Ignore;
+import org.junit.Test;
 
 /**
  * An extension of {@link SailConcurrencyTest} for testing the class {@link MemoryStore}.
@@ -27,5 +29,13 @@ public class ForwardChainingSchemaCachingRDFSMemoryStoreConcurrencyTest extends 
 	{
 		Sail sailStack = new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore(), true);
 		return sailStack;
+	}
+
+	@Ignore
+	@Test
+	public void testConcurrentAddLargeTxnRollback()
+		throws Exception
+	{
+
 	}
 }
