@@ -7,15 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -166,6 +168,42 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 		assertTrue(testCon.hasStatement(bob, RDF.TYPE, RDFS.RESOURCE, true));
 		assertTrue(testCon2.hasStatement(bob, RDF.TYPE, RDFS.RESOURCE, true));
+	}
+
+	@Test
+	public void testContextStatementsNotDuplicated()
+		throws Exception
+	{
+		testCon.add(bob, RDF.TYPE, FOAF.PERSON, RDF.FIRST);
+
+		// TODO this test currently assumes that inferred triples are added to the null context. If we extend 
+		// the reasoner to support usage of other contexts, this will have to be amended.
+		assertTrue("inferred triple should have been added to null context",
+				testCon.hasStatement(bob, RDF.TYPE, RDFS.RESOURCE, true, (Resource)null));
+		assertFalse("input triple should not have been re-added as inferred",
+				testCon.hasStatement(bob, RDF.TYPE, FOAF.PERSON, true, (Resource)null));
+	}
+
+	@Test
+	public void testContextStatementsNotDuplicated2()
+		throws Exception
+	{
+		testCon.add(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, RDF.FIRST);
+		testCon.add(FOAF.PERSON, RDFS.SUBCLASSOF, FOAF.AGENT, RDF.FIRST);
+
+		// TODO this test currently assumes that inferred triples are added to the null context. If we extend 
+		// the reasoner to support usage of other contexts, this will have to be amended.
+		assertTrue("inferred triple should have been added to null context",
+				testCon.hasStatement(FOAF.AGENT, RDF.TYPE, RDFS.CLASS, true, (Resource)null));
+		assertFalse("input triple should not have been re-added as inferred",
+				testCon.hasStatement(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, true, (Resource)null));
+		assertFalse("input triple should not have been re-added as inferred",
+				testCon.hasStatement(FOAF.PERSON, RDFS.SUBCLASSOF, FOAF.AGENT, true, (Resource)null));
+		assertTrue("input triple should be explicitly present",
+				testCon.hasStatement(FOAF.PERSON, RDFS.SUBCLASSOF, FOAF.AGENT, false));
+		assertTrue("input triple should be explicitly present",
+				testCon.hasStatement(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, false));
+
 	}
 
 	@Ignore
