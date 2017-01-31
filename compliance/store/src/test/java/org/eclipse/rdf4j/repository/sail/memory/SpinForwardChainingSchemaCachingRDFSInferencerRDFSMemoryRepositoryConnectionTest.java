@@ -24,9 +24,13 @@ import org.junit.Test;
 import java.io.IOException;
 
 @Ignore("#58 - disabled spin compliance tests due to being slow and unstable. Manually execute when modifying SPIN functionality")
-public class SpinForwardChainingSchemaCachingRDFSInferencerRDFSMemoryRepositoryConnectionTest extends RepositoryConnectionTest {
+public class SpinForwardChainingSchemaCachingRDFSInferencerRDFSMemoryRepositoryConnectionTest
+		extends RepositoryConnectionTest
+{
 
-	public SpinForwardChainingSchemaCachingRDFSInferencerRDFSMemoryRepositoryConnectionTest(IsolationLevel level) {
+	public SpinForwardChainingSchemaCachingRDFSInferencerRDFSMemoryRepositoryConnectionTest(
+			IsolationLevel level)
+	{
 		super(level);
 	}
 
@@ -34,8 +38,8 @@ public class SpinForwardChainingSchemaCachingRDFSInferencerRDFSMemoryRepositoryC
 	protected Repository createRepository()
 		throws MalformedQueryException, UnsupportedQueryLanguageException, SailException, IOException
 	{
-		return new SailRepository(
-				new SpinSail(new ForwardChainingSchemaCachingRDFSInferencer(new DedupingInferencer(new MemoryStore()), true)));
+		return new SailRepository(new SpinSail(new ForwardChainingSchemaCachingRDFSInferencer(
+				new DedupingInferencer(new MemoryStore()), true)));
 	}
 
 	@Ignore
