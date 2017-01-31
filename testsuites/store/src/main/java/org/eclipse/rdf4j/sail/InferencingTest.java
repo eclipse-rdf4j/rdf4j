@@ -30,9 +30,13 @@ import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public abstract class InferencingTest {
 
+	private static final Logger logger = LoggerFactory.getLogger(InferencingTest.class);
+	
 	@BeforeClass
 	public static void setUpClass()
 		throws Exception
@@ -57,7 +61,7 @@ public abstract class InferencingTest {
 		final String inputData = TEST_DIR_PREFIX + "/" + name + "-in.nt";
 		final String outputData = TEST_DIR_PREFIX + "/" + name + "-out.nt";
 
-		Collection<? extends Statement> entailedStatements = null;
+		Collection<? extends Statement> entailedStatements = new HashSet<>();
 		Collection<? extends Statement> expectedStatements = null;
 
 		Repository repository = new SailRepository(sailStack);
@@ -84,6 +88,7 @@ public abstract class InferencingTest {
 				if (con.isActive()) {
 					con.rollback();
 				}
+				logger.error("exception while uploading input data", e);
 			}
 		}
 		finally {
@@ -108,6 +113,7 @@ public abstract class InferencingTest {
 				if (con.isActive()) {
 					con.rollback();
 				}
+				logger.error("exception while uploading output data", e);
 			}
 		}
 		finally {
@@ -119,8 +125,11 @@ public abstract class InferencingTest {
 		boolean outputEntailed = Models.isSubset(expectedStatements, entailedStatements);
 
 		if (isPositiveTest && !outputEntailed) {
+			Collection<? extends Statement> difference = RepositoryUtil.difference(expectedStatements, entailedStatements);
+			difference.forEach(System.out::println);
+
 			File dumpFile = dumpStatements(name,
-					RepositoryUtil.difference(expectedStatements, entailedStatements));
+				difference);
 
 			fail("Incomplete entailment, difference between expected and entailed dumped to file "
 					+ dumpFile);
@@ -136,7 +145,9 @@ public abstract class InferencingTest {
 	{
 		// Dump results to tmp file for debugging
 		String tmpDir = System.getProperty("java.io.tmpdir");
+		name = name.replace("/", "_");
 		File tmpFile = new File(tmpDir, "junit-" + name + ".nt");
+		tmpFile.createNewFile();
 
 		try (OutputStream export = new FileOutputStream(tmpFile);) {
 			RDFWriter writer = Rio.createWriter(RDFFormat.NTRIPLES, export);
@@ -202,6 +213,13 @@ public abstract class InferencingTest {
 		throws Exception
 	{
 		runTest(createSail(), "subpropertyof", "test003", true);
+	}
+
+	@Test
+	public void testSubPropertyOf004()
+		throws Exception
+	{
+		runTest(createSail(), "subpropertyof", "test004", true);
 	}
 
 	@Test
@@ -275,6 +293,13 @@ public abstract class InferencingTest {
 	}
 
 	@Test
+	public void testType006()
+		throws Exception
+	{
+		runTest(createSail(), "type", "test006", true);
+	}
+
+	@Test
 	public void testTypeError001()
 		throws Exception
 	{
@@ -287,6 +312,8 @@ public abstract class InferencingTest {
 	{
 		runTest(createSail(), "type", "error002", false);
 	}
+
+
 
 	/**
 	 * Gets an instance of the Sail that should be tested. The returned repository must not be initialized.
