@@ -31,13 +31,13 @@ import org.slf4j.LoggerFactory;
  * @author Håvard Mikkelsen Ottestad
  */
 
-public class ForwardChainingSchemaCachingRDFSInferencerConnection extends InferencerConnectionWrapper
+public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionWrapper
 		implements SailConnectionListener
 {
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
-	private final ForwardChainingSchemaCachingRDFSInferencer sail;
+	private final SchemaCachingRDFSInferencer sail;
 
 	private final NotifyingSailConnection connection;
 
@@ -51,7 +51,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerConnection extends Infere
 	 */
 	private boolean statementsAdded;
 
-	ForwardChainingSchemaCachingRDFSInferencerConnection(ForwardChainingSchemaCachingRDFSInferencer sail,
+	SchemaCachingRDFSInferencerConnection(SchemaCachingRDFSInferencer sail,
 			InferencerConnection connection)
 	{
 

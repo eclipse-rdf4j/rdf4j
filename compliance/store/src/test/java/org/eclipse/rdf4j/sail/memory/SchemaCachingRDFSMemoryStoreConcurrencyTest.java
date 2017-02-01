@@ -10,14 +10,14 @@ package org.eclipse.rdf4j.sail.memory;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConcurrencyTest;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.junit.Ignore;
 import org.junit.Test;
 
 /**
  * An extension of {@link SailConcurrencyTest} for testing the class {@link MemoryStore}.
  */
-public class ForwardChainingSchemaCachingRDFSMemoryStoreConcurrencyTest extends SailConcurrencyTest {
+public class SchemaCachingRDFSMemoryStoreConcurrencyTest extends SailConcurrencyTest {
 
 	/*---------*
 	 * Methods *
@@ -27,7 +27,7 @@ public class ForwardChainingSchemaCachingRDFSMemoryStoreConcurrencyTest extends 
 	protected Sail createSail()
 		throws SailException
 	{
-		Sail sailStack = new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore(), true);
+		Sail sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(), true);
 		return sailStack;
 	}
 

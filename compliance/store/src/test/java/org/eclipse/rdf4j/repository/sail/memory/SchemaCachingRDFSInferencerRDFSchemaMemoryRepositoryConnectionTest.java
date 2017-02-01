@@ -11,14 +11,14 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.repository.RDFSchemaRepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
-public class ForwardChainingSchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
+public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 		extends RDFSchemaRepositoryConnectionTest
 {
 
-	public ForwardChainingSchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest(
+	public SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest(
 			IsolationLevel level)
 	{
 		super(level);
@@ -26,7 +26,7 @@ public class ForwardChainingSchemaCachingRDFSInferencerRDFSchemaMemoryRepository
 
 	@Override
 	protected Repository createRepository() {
-		return new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore(), true));
+		return new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore(), true));
 	}
 
 }

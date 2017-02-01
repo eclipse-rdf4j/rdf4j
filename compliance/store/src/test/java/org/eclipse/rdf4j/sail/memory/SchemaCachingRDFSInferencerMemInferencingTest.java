@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.InferencingTest;
 import org.eclipse.rdf4j.sail.Sail;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.junit.Test;
 
 import java.lang.reflect.InvocationTargetException;
@@ -25,11 +25,11 @@ import java.lang.reflect.InvocationTargetException;
 import static junit.framework.TestCase.assertFalse;
 import static junit.framework.TestCase.assertTrue;
 
-public class ForwardChainingSchemaCachingRDFSInferencerMemInferencingTest extends InferencingTest {
+public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTest {
 
 	@Override
 	protected Sail createSail() {
-		Sail sailStack = new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore(), true);
+		Sail sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(), true);
 		return sailStack;
 	}
 
@@ -127,8 +127,8 @@ public class ForwardChainingSchemaCachingRDFSInferencerMemInferencingTest extend
 		}
 
 		SailRepository sailRepository1 = new SailRepository(
-				ForwardChainingSchemaCachingRDFSInferencer.fastInstantiateFrom(
-						(ForwardChainingSchemaCachingRDFSInferencer)sail, new MemoryStore()));
+				SchemaCachingRDFSInferencer.fastInstantiateFrom(
+						(SchemaCachingRDFSInferencer)sail, new MemoryStore()));
 		sailRepository1.initialize();
 
 		try (RepositoryConnection connection = sailRepository1.getConnection()) {
