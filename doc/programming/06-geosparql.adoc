@@ -1,17 +1,27 @@
 = GeoSPARQL
 
-== SAILs, relation with Spatial4j / JTS and licenses
+== SAILs, relation with Spatial4j / JTS
 
 Most of the geo heavy-lifting is performed by the SAILs, which also means that GeoSPARQL support (or lack thereof) depends on the SAIL being used.
+Strictly speaking using a (text) search engine like Lucene is not required, but it will speed up spatial queries.
+
+=== Lucene
+
+By default, the Lucene SAIL only spatially indexes `http://www.opengis.net/ont/geosparql#asWKT` fields.
+This can be changed using the `LuceneSail.WKT_FIELDS` parameter.
 
 The Lucene SAIL included in RDF4j uses a slightly outdated version of the https://www.locationtech.org/proposals/spatial4j[Spatial4j] library, 
 which in turn relies on an older version of the https://www.locationtech.org/projects/technology.jts[JTS] library for certain features.
- 
-This JTS library is not bundled with RDF4j due to license incompatibilities.
+This JTS library is not bundled with RDF4j due to license issues.
 Future versions of RDF4j will likely solve this issue, as both Spatial4j and JTS are moving to https://www.locationtech.org[Eclipse LocationTech],
 and the JTS license will be changed.
 
 Meanwhile RDF4j users can use the Solr or ElasticSearch SAIL to connect to external search services.
+
+=== Providing your own SpatialSupportInitializer
+
+Another option is to implement a class `org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer`.
+For example, https://bitbucket.org/pulquero/sesame-geosparql-jts[Mark Hale's sesame-geosparql-jts].
 
 == WKT Literals
 
@@ -23,25 +33,6 @@ WKT allows for very simple, i.e. a single point, but also very complex shapes, e
 WKT can also describe coordinate reference systems (CRS) and projections. 
 One common source of confusing is that, by default, the X-coordinate (longitude)is followed by Y-coordinate (latitude) 
 while many people are used to the Y-X (latitude-longitude) notation.
-
-=== Reading WKT Literals
-
-=== Writing WKT Literals
-
-RDF4j 2.1.x uses Spatial4J 0.4.1, which does not support writing shapes to WKT just yet (added in 0.5).
-
-An extremely simple writer could look like:
-
-[source,java]
-----
-public static String toWkt(Point p) {
-   return "POINT(" + p.getX() + " " + p.getY() + ")";
-}
-----
-
-== Queries
-
-=== Simple shapes
 
 Spatial4j provides some convenience functions for generating simple geometric shapes.
 For instance, points representing the center of the cities of Amsterdam, Brussels... can easily be generated using `SpatialContext.GEO`.
@@ -59,6 +50,24 @@ Point dakar = geo.makePoint(-17.45, 14.69);
 ----
 
 Circles and rectangles are also supported, polygons require JTS to be present.
+
+=== Reading WKT Literals
+
+=== Writing WKT Literals
+
+RDF4j 2.1.x uses Spatial4J 0.4.1, which does not support writing shapes to WKT just yet (added in 0.5).
+
+An extremely simple writer could look like:
+
+[source,java]
+----
+public static String toWkt(Point p) {
+   return "POINT(" + p.getX() + " " + p.getY() + ")";
+}
+----
+
+
+== Queries
 
 === Distance query
 
@@ -100,7 +109,7 @@ results.forEach(res -> {
                       res.getValue("dist").stringValue() + "km");   } );
 ----
 
-===
+=== 
 
 == Further reading
 
@@ -108,4 +117,3 @@ Here are some useful links:
 
 - http://www.opengeospatial.org/standards/geosparql[OGC GeoSPARQL specification]
 - https://en.wikipedia.org/wiki/Well-known_text[Wikipedia article on WKT]
-
