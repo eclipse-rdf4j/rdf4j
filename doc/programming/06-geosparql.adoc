@@ -1,32 +1,32 @@
 = GeoSPARQL
 
-(Work in progress)
+== SAILs, relation with Spatial4j / JTS and licenses
+
+Most of the geo heavy-lifting is performed by the SAILs, which also means that GeoSPARQL support (or lack thereof) depends on the SAIL being used.
+
+The Lucene SAIL included in RDF4j uses a slightly outdated version of the https://www.locationtech.org/proposals/spatial4j[Spatial4j] library, 
+which in turn relies on an older version of the https://www.locationtech.org/projects/technology.jts[JTS] library for certain features.
+ 
+This JTS library is not bundled with RDF4j due to license incompatibilities.
+Future versions of RDF4j will likely solve this issue, as both Spatial4j and JTS are moving to https://www.locationtech.org[Eclipse LocationTech],
+and the JTS license will be changed.
+
+Meanwhile RDF4j users can use the Solr or ElasticSearch SAIL to connect to external search services.
 
 == WKT Literals
 
-Geographic coordinates can be stored as literals with the "Well-Known Text" (WKT) datatype. WKT allows for very simple, i.e. a single point, but also very complex shapes, e.g. shapes consisting of multiple polygons. 
+Geographic coordinates can be stored as literals with the "Well-Known Text" (WKT) datatype. 
+WKT allows for very simple, i.e. a single point, but also very complex shapes, e.g. shapes consisting of multiple polygons. 
 
 === Order of coordinates
 
 WKT can also describe coordinate reference systems (CRS) and projections. 
-One common source of confusing is that, by default, the X-coordinate (longitude)is followed by Y-coordinate (latitude) while many people are used to the Y-X (latitude-longitude) notation.
+One common source of confusing is that, by default, the X-coordinate (longitude)is followed by Y-coordinate (latitude) 
+while many people are used to the Y-X (latitude-longitude) notation.
 
-Spatial4j provides some convenient functions to generate geometric shapes.
-For instance, a series of points representing the center of the cities of Amsterdam, Brussels... can easily be generated using `SpatialContext.GEO`.
+=== Reading WKT Literals
 
-[source,java]
-----
-import com.spatial4j.core.context.SpatialContext;
-import com.spatial4j.core.shape.Point;
-....
-SpatialContext geo = SpatialContext.GEO;
-Point amsterdam = geo.makePoint(4.9, 52.37);
-Point brussels = geo.makePoint(4.35, 50.85);
-Point canberra = geo.makePoint(149.12, -35.31);
-Point dakar = geo.makePoint(-17.45, 14.69);
-----
-
-=== Writing WKT
+=== Writing WKT Literals
 
 RDF4j 2.1.x uses Spatial4J 0.4.1, which does not support writing shapes to WKT just yet (added in 0.5).
 
@@ -40,6 +40,27 @@ public static String toWkt(Point p) {
 ----
 
 == Queries
+
+=== Simple shapes
+
+Spatial4j provides some convenience functions for generating simple geometric shapes.
+For instance, points representing the center of the cities of Amsterdam, Brussels... can easily be generated using `SpatialContext.GEO`.
+
+[source,java]
+----
+import com.spatial4j.core.context.SpatialContext;
+import com.spatial4j.core.shape.Point;
+....
+SpatialContext geo = SpatialContext.GEO;
+Point amsterdam = geo.makePoint(4.9, 52.37);
+Point brussels = geo.makePoint(4.35, 50.85);
+Point canberra = geo.makePoint(149.12, -35.31);
+Point dakar = geo.makePoint(-17.45, 14.69);
+----
+
+Circles and rectangles are also supported, polygons require JTS to be present.
+
+=== Distance query
 
 Using the function described above, the coordinates can be added to subjects.
 
@@ -55,7 +76,8 @@ con.add(am, GEO.AS_WKT, fac.createLiteral(toWkt(amsterdam), GEO.WKT_LITERAL));
 Make sure to include the rdf4j-queryalgebra-geosparql jar in your project.
 
 The following query returns the distance between city centers in kilometers.
-`GEOF` provides geometric functions, while `UOM` provides unit of measurements. Note that the metric unit is spelled `metre` (not the US spelling `meter`)
+`GEOF` provides geometric functions, while `UOM` provides unit of measurements.
+Note that the metric unit is spelled `metre` (not the US spelling `meter`)
 
 [source,java]
 ----
@@ -72,14 +94,13 @@ String qry =
 
 List<BindingSet> results = Repositories.tupleQuery(repo, qry, 
                                                    r -> QueryResults.asList(r));
-
 results.forEach(res -> { 
    System.out.println(res.getValue("cityA").stringValue() + " - " +
                       res.getValue("cityB").stringValue() + " : " +
-                      res.getValue("dist").stringValue() + "km");		});
+                      res.getValue("dist").stringValue() + "km");   } );
 ----
 
-=== Lucene indexing
+===
 
 == Further reading
 
