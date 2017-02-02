@@ -16,11 +16,11 @@ This JTS library is not bundled with RDF4j due to license issues.
 Future versions of RDF4j will likely solve this issue, as both Spatial4j and JTS are moving to https://www.locationtech.org[Eclipse LocationTech],
 and the JTS license will be changed.
 
-Meanwhile RDF4j users can use the Solr or ElasticSearch SAIL to connect to external search services.
+Meanwhile RDF4j users can use the Solr or ElasticSearch SAIL to connect to external search services with more recent versions of these libraries.
 
 === Providing your own SpatialSupportInitializer
 
-Another option is to implement a class `org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer`.
+Another option is to implement a `org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer` class.
 For example, https://bitbucket.org/pulquero/sesame-geosparql-jts[Mark Hale's sesame-geosparql-jts].
 
 == WKT Literals
@@ -31,7 +31,7 @@ WKT allows for very simple, i.e. a single point, but also very complex shapes, e
 === Order of coordinates
 
 WKT can also describe coordinate reference systems (CRS) and projections. 
-One common source of confusing is that, by default, the X-coordinate (longitude)is followed by Y-coordinate (latitude) 
+One common source of confusing is that, by default, the X-coordinate (longitude) is followed by Y-coordinate (latitude) 
 while many people are used to the Y-X (latitude-longitude) notation.
 
 Spatial4j provides some convenience functions for generating simple geometric shapes.
