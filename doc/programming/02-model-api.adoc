@@ -114,6 +114,57 @@ The ModelBuilder offers several conveniences:
  - you can add a literal object as a String, an int, or several other supported Java primitive types.
  - the subject() method make it easier to take a resource-centric view when building an RDF Model.
 
+== Quickly accessing data with the `Models` utility
+
+The {javadoc}model/util/Models.html[Models] utility class offers a number of useful methods for convenient access and manipulation of data in a Model object. We have already shown some examples of its use in previous sections. For example, to retrieve the value of the `foaf:name` properties for all resources of type `foaf:Person`: 
+
+[source,java,linenum]
+----
+for (Resource person: model.filter(null, RDF.TYPE, FOAF.PERSON).subjects()) {
+  // get the name of the person (if it exists)
+  Optional<Literal> name = Models.objectLiteral(model.filter(person, FOAF.NAME, null));
+}
+----
+
+The `Models.objectLiteral` method retrieves an arbitrary object literal value from the statements in the supplied Model. Since the supplied Model is filtered to only contain the `foaf:name` statements for the given person, the resulting object literal value is the name value for this person. Note that if the model happens to contain more than one name value for this person, this will just return an arbitrary one.
+
+The Models utility provides variants for retrieving different types of object values: `Models.object()` retrieves a {javadoc}model/Value.html[Value], `Models.objectResource()` a {javadoc}model/Resource.html[Resource], `Models.objectIRI` an {javadoc}model/IRI.html[IRI]. 
+
+=== Property-centric access
+
+To provide quicker access to a property's value(s), the `Models` class offers some further shortcuts that bypass the need to first filter the Model. For example, to retrieve the name literal, we can replace the `objectLiteral` call from the previous example like so:
+
+[source,java,linenum]
+----
+for (Resource person: model.filter(null, RDF.TYPE, FOAF.PERSON).subjects()) {
+  // get the name of the person (if it exists)
+  Optional<Literal> name = Models.getPropertyLiteral(model, person, FOAF.NAME);
+}
+----
+
+`Models` also provides methods that allow retrieving all values, instead of one arbitrary one:
+
+[source,java,linenum]
+----
+for (Resource person: model.filter(null, RDF.TYPE, FOAF.PERSON).subjects()) {
+  // get all name-values of the person 
+  Set<Literal> names = Models.getPropertyLiterals(model, person, FOAF.NAME);
+}
+----
+
+For both retrieval types, Models also provides variants that retrieve other value types such as IRIs. The {javadoc}model/util/Models.html[Models javadoc] is worth exploring for a complete overview of all methods.
+
+In addition to retrieving values in a property-centric manner, `Models` also provides a `setProperty` method, which can be used to quickly give a resoure's property a new value. For example:
+
+
+[source,java,linenum]
+----
+Literal newName = vf.createLiteral("John");
+Models.setProperty(person, FOAF.NAME, newName);
+----
+
+This will remove any existing name-properties for the given person, and set it to the single new value "John".
+
 == RDF Collections
 
 To model closed lists of items, RDF provides a Collection vocabulary . RDF Collections are represented as a list of items using a Lisp-like structure.  The list starts with a head resource (typically a blank node), which is connected to the first collection member via the rdf:first relation. The head resource is then connected to the rest of the list via an rdf:rest relation.  The last resource in the list is marked using the rdf:nil node.
