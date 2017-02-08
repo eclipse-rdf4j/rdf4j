@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
+import org.eclipse.rdf4j.sail.lucene.util.SearchIndexUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -387,6 +388,14 @@ public class LuceneSail extends NotifyingSailWrapper {
 		}
 	}
 
+        /**
+         * The method is relocated to {@link SearchIndexUtils#createSearchIndex(java.util.Properties) }.
+         * @param parameters
+         * @return
+         * @throws Exception
+         * @deprecated
+         */
+        @Deprecated
 	protected static SearchIndex createSearchIndex(Properties parameters)
 		throws Exception
 	{
