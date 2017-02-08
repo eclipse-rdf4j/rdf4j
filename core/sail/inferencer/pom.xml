@@ -50,6 +50,16 @@
 			<artifactId>rdf4j-model</artifactId>
 			<version>${project.version}</version>
 		</dependency>
+                <dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-sail-spin</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+                <dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-sail-lucene</artifactId>
+			<version>${project.version}</version>
+		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-util</artifactId>
