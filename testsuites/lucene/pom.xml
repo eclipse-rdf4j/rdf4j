@@ -41,7 +41,7 @@
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-sail-spin</artifactId>
+			<artifactId>rdf4j-lucene-spin</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>

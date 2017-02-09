@@ -34,6 +34,10 @@ public class ElasticsearchSailSpinTest extends AbstractLuceneSailSpinTest {
 		super.setUp();
 	}
 
+	/**
+	 * @throws RepositoryException
+	 * @throws IOException
+	 */
 	@Override
 	public void tearDown()
 		throws RepositoryException, IOException
@@ -43,7 +47,7 @@ public class ElasticsearchSailSpinTest extends AbstractLuceneSailSpinTest {
 		}
 		finally {
 			try {
-				FileSystemUtils.deleteRecursively(testDir.toFile());
+				FileSystemUtils.deleteSubDirectories(testDir);
 			}
 			finally {
 				ElasticsearchTestUtils.TEST_SEMAPHORE.release();
@@ -53,7 +57,8 @@ public class ElasticsearchSailSpinTest extends AbstractLuceneSailSpinTest {
 
 	@Override
 	protected void configure(Properties parameters) {
-		parameters.setProperty(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
+		parameters.setProperty(ElasticsearchIndex.INDEX_NAME_KEY,
+				ElasticsearchTestUtils.getNextTestIndexName());
 		parameters.setProperty(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
 		parameters.setProperty(LuceneSail.LUCENE_DIR_KEY, testDir.toAbsolutePath().toString());
 		parameters.setProperty(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
