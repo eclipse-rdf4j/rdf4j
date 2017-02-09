@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  */
-package org.eclipse.rdf4j.sail.inferencer.lucene;
+package org.eclipse.rdf4j.lucene.spin;
 
 import java.io.IOException;
 import org.eclipse.rdf4j.model.IRI;
