@@ -18,6 +18,7 @@ import java.util.Properties;
 
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.lucene.spin.LuceneSpinSail;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -63,8 +64,6 @@ public abstract class AbstractLuceneSailSpinTest {
 
 	private RepositoryConnection connection;
 
-	private SearchIndex searchIndex;
-
 	@Before
 	public void setUp()
 		throws Exception
@@ -74,18 +73,18 @@ public abstract class AbstractLuceneSailSpinTest {
 
 		// add Support for SPIN function
 		SpinSail spin = new SpinSail(store);
-		spin.setEvaluationMode(TupleFunctionEvaluationMode.TRIPLE_SOURCE);
 
-		// add Lucene support
-		Properties parameters = new Properties();
-		configure(parameters);
-		searchIndex = LuceneSail.createSearchIndex(parameters);
-		spin.addQueryContextInitializer(new SearchIndexQueryContextInitializer(searchIndex));
-		repository = new SailRepository(spin);
+		// add Lucene Spin Sail support
+                LuceneSpinSail luc = new LuceneSpinSail(spin);
+		repository = new SailRepository(luc);
+                
+                // set up parameters
+                configure(luc.getParameters());
+                
 		repository.initialize();
 
 		connection = repository.getConnection();
-		populate(connection, searchIndex);
+		populate(connection);
 
 		// validate population
 		int count = countStatements(connection);
@@ -95,42 +94,26 @@ public abstract class AbstractLuceneSailSpinTest {
 
 	@After
 	public void tearDown()
-		throws IOException, RepositoryException
+		throws RepositoryException, IOException
 	{
-		try {
 			if (connection != null) {
 				connection.close();
 			}
-		}
-		finally {
-			try {
-				if (repository != null) {
-					repository.shutDown();
-				}
-			}
-			finally {
-				if (searchIndex != null) {
-					searchIndex.shutDown();
-				}
-			}
-		}
 	}
 
-	protected abstract void configure(Properties parameters);
-
-	protected void populate(RepositoryConnection repoConn, SearchIndex searchIndex)
+        //set up custom settings
+        protected abstract void configure(Properties parameters);
+        
+	protected void populate(RepositoryConnection repoConn)
 		throws Exception
 	{
 		// load resources
 		URL resourceURL = AbstractLuceneSailSpinTest.class.getClassLoader().getResource(DATA);
 		log.info("Resource URL: {}", resourceURL.toString());
 		Model model = Rio.parse(resourceURL.openStream(), resourceURL.toString(), RDFFormat.TURTLE);
-		searchIndex.begin();
 		for (Statement stmt : model) {
 			repoConn.add(stmt);
-			searchIndex.addStatement(stmt);
 		}
-		searchIndex.commit();
 	}
 
 	/**
