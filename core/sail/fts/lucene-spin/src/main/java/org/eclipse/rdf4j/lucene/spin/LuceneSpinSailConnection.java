@@ -76,14 +76,28 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 		throws SailException
 	{
 		super.addStatement(subj, pred, obj, contexts);
-		for (Resource graph : contexts) {
-			Statement st = vf.createStatement(subj, pred, obj, graph);
+
+		if (contexts.length == 0) {
+			Statement st = vf.createStatement(subj, pred, obj);
 			try {
 				idx.addStatement(st);
 			}
 			catch (IOException e) {
 				LOG.error("Error during processing statement: {}", st.toString());
 				throw new SailException(e);
+			}
+		}
+		else {
+			for (Resource graph : contexts) {
+				Statement st = vf.createStatement(subj, pred, obj, graph);
+				try {
+					idx.addStatement(st);
+					LOG.debug("add statement: {}", st.toString());
+				}
+				catch (IOException e) {
+					LOG.error("Error during processing statement: {}", st.toString());
+					throw new SailException(e);
+				}
 			}
 		}
 	}
@@ -106,39 +120,42 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	public void close()
 		throws SailException
 	{
-		super.close();
+
 		try {
 			idx.endReading();
 		}
 		catch (IOException e) {
 			LOG.warn("LuceneIndex or SearchIndex is not closed properly");
 		}
+		super.close();
 	}
 
 	@Override
 	public void commit()
 		throws SailException
 	{
-		super.commit();
+
 		try {
 			idx.commit();
 		}
 		catch (IOException e) {
 			throw new SailException(e);
 		}
+		super.commit();
 	}
 
 	@Override
 	public void rollback()
 		throws SailException
 	{
-		super.rollback();
+
 		try {
 			idx.rollback();
 		}
 		catch (IOException e) {
 			throw new SailException(e);
 		}
+		super.rollback();
 	}
 
 }
