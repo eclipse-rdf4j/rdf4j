@@ -51,8 +51,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * This test class reproduces errors described in issues #220 and #235 with 
- * simplified IDE (#739).
+ * This test class reproduces errors described in issues #220 and #235 with simplified IDE (#739).
  * 
  * @see <a href="https://github.com/eclipse/rdf4j/issues/220">issue #220</a>
  * @see <a href="https://github.com/eclipse/rdf4j/issues/235">issue #235</a>
@@ -64,7 +63,8 @@ public class NewLuceneSailSpinTest {
 
 	private static Logger log = LoggerFactory.getLogger(NewLuceneSailSpinTest.class);
 
-        private File tempDir;
+	private File tempDir;
+
 	private Repository repository;
 
 	private RepositoryConnection connection;
@@ -80,41 +80,55 @@ public class NewLuceneSailSpinTest {
 		SpinSail spin = new SpinSail(store);
 
 		// add Lucene Spin Sail support
-                LuceneSpinSail luc = new LuceneSpinSail(spin);
-                tempDir = Files.createTempDir();
-                log.debug("data file: {}", tempDir.getAbsolutePath());
-                luc.setDataDir(tempDir);
+		LuceneSpinSail luc = new LuceneSpinSail(spin);
+		tempDir = Files.createTempDir();
+		log.debug("data file: {}", tempDir.getAbsolutePath());
+		luc.setDataDir(tempDir);
 		repository = new SailRepository(luc);
-                
-                // set up parameters
-                configure(luc.getParameters());
-                
+
+		// set up parameters
+		configure(luc.getParameters());
+
 		repository.initialize();
+		// local connection used only for population
+		try (RepositoryConnection localConn = repository.getConnection()) {
+			localConn.begin();
+			populate(localConn);
+			localConn.commit();
+		}
 
+		// local connection for verification only
+		try (RepositoryConnection localConn = repository.getConnection()) {
+			// validate population
+			//localConn.begin();
+			int count = countStatements(localConn);
+			log.info("storage contains {} triples", count);
+			assert count > 0;
+			//localConn.commit();
+			localConn.close();
+		}
+
+		// testing connection
 		connection = repository.getConnection();
-		populate(connection);
-
-		// validate population
-		int count = countStatements(connection);
-		log.info("storage contains {} triples", count);
-		assert count > 0;
+		connection.begin();
+		assert connection.isActive() : "connection is not active";
 	}
 
 	@After
 	public void tearDown()
 		throws RepositoryException, IOException
 	{
-			if (connection != null) {
-				connection.close();
-			}
-                        FileUtils.deleteDirectory(tempDir);
+		if (connection != null) {
+			connection.close();
+		}
+		FileUtils.deleteDirectory(tempDir);
 	}
 
-        
 	protected void populate(RepositoryConnection repoConn)
 		throws Exception
 	{
 		// load resources
+		assert repoConn.isActive();
 		URL resourceURL = NewLuceneSailSpinTest.class.getClassLoader().getResource(DATA);
 		log.info("Resource URL: {}", resourceURL.toString());
 		Model model = Rio.parse(resourceURL.openStream(), resourceURL.toString(), RDFFormat.TURTLE);
@@ -252,22 +266,20 @@ public class NewLuceneSailSpinTest {
 
 	@Test
 	public void testDistanceFunction()
-			throws Exception
+		throws Exception
 	{
 		String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
 				+ "prefix search: <" + LuceneSailSchema.NAMESPACE + ">"
 				+ "select ?toUri ?fromUri ?dist where {(?from ?range ?units geo:asWKT search:distance)"
 				+ "search:withinDistance (?toUri ?to ?dist) ."
 				+ "?toUri a <urn:geo/Landmark>. ?fromUri geo:asWKT ?from; <urn:geo/maxDistance> ?range.}";
-		try
-		{
+		try {
 			connection.begin();
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
 			query.setBinding("units", GEOF.UOM_METRE);
-	
+
 			printTupleResult(query);
-			try(TupleQueryResult result = query.evaluate())
-			{
+			try (TupleQueryResult result = query.evaluate()) {
 				int count = countTupleResults(result);
 				Assert.assertEquals(2, count);
 			}
@@ -281,7 +293,7 @@ public class NewLuceneSailSpinTest {
 		}
 	}
 
-	public int countStatements(RepositoryConnection con)
+	public int countStatements(RepositoryConnection connection)
 		throws Exception
 	{
 		RepositoryResult<Statement> sts = connection.getStatements(null, null, null, new Resource[] {});
@@ -314,7 +326,7 @@ public class NewLuceneSailSpinTest {
 		log.info("\n=============\n" + new String(resultoutput.toByteArray()) + "\n=============");
 	}
 
-   protected void configure(Properties parameters) {
+	protected void configure(Properties parameters) {
 		parameters.setProperty(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS);
 	}
 }
