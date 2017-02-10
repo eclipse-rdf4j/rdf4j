@@ -75,7 +75,7 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 
     @Override
     public void setDataDir(File dataDir) {
-        parameters.setProperty(LuceneSail.LUCENE_DIR_KEY, dataDir.getAbsolutePath() + ".index");
+        parameters.setProperty(LuceneSail.LUCENE_DIR_KEY, dataDir.getAbsolutePath() + "/.index");
         getBaseSail().setDataDir(dataDir);
     }
 
