@@ -5,8 +5,10 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  */
-package org.eclipse.rdf4j.sail.lucene;
+package org.eclipse.rdf4j.lucene.spin;
 
+import com.google.common.io.Files;
+import java.io.File;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.MATCHES;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.QUERY;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
@@ -15,21 +17,16 @@ import static org.hamcrest.CoreMatchers.is;
 
 import java.io.IOException;
 import java.net.URL;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import org.apache.commons.io.FileUtils;
 
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
-import org.eclipse.rdf4j.query.MalformedQueryException;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -41,6 +38,7 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
+import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Assert;
@@ -51,16 +49,19 @@ import org.slf4j.LoggerFactory;
 
 /**
  * This brings all tests for new property function -based implementation of lucene search request.
+ * @see <a href="https://github.com/eclipse/rdf4j/issues/739">issue #739</a>
  */
-public abstract class AbstractLuceneSailTupleFunctionTest {
+public class LuceneSailTupleFunctionTest {
 
 	private Repository repository;
 
 	private static final String DATA = "org/eclipse/rdf4j/sail/220-example.ttl";
 
 	private RepositoryConnection connection;
+        
+        private File tempDir;
 
-	private static Logger log = LoggerFactory.getLogger(AbstractLuceneSailTupleFunctionTest.class);
+	private static Logger log = LoggerFactory.getLogger(LuceneSailTupleFunctionTest.class);
 
 	/**
 	 * Hierarchy of classes: <br/>
@@ -80,9 +81,11 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 	{
 		// load data into memory store
 		MemoryStore store = new MemoryStore();
+                tempDir = Files.createTempDir();
 
 		// activate Lucene index
 		LuceneSail lucene = new LuceneSail();
+                
 		configure(lucene);
 		lucene.setBaseSail(store);
 
@@ -94,7 +97,7 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 
 		// validate population
 		int count = countStatements(connection);
-		log.debug("storage contains {} triples", count);
+		log.trace("storage contains {} triples", count);
 		assert count > 0;
 	}
 
@@ -112,9 +115,13 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 				repository.shutDown();
 			}
 		}
+                FileUtils.deleteDirectory(tempDir);
 	}
 
-	protected abstract void configure(LuceneSail sail);
+	protected void configure(LuceneSail sail) {
+		sail.setParameter(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS);
+		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, tempDir.getAbsoluteFile().toString());
+	}
 
 	protected void populate(RepositoryConnection connection)
 		throws Exception
@@ -122,7 +129,7 @@ public abstract class AbstractLuceneSailTupleFunctionTest {
 		// process transaction
 		try {
 			// load resources
-			URL resourceURL = AbstractLuceneSailTupleFunctionTest.class.getClassLoader().getResource(DATA);
+			URL resourceURL = LuceneSailTupleFunctionTest.class.getClassLoader().getResource(DATA);
 			log.info("Resource URL: {}", resourceURL.toString());
 			connection.begin();
 
