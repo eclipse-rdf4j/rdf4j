@@ -274,7 +274,6 @@ public class NewLuceneSailSpinTest {
 				+ "search:withinDistance (?toUri ?to ?dist) ."
 				+ "?toUri a <urn:geo/Landmark>. ?fromUri geo:asWKT ?from; <urn:geo/maxDistance> ?range.}";
 		try {
-			connection.begin();
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
 			query.setBinding("units", GEOF.UOM_METRE);
 
