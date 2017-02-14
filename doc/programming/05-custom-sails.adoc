@@ -83,10 +83,31 @@ The LuceneSail can currently be used with five SearchIndex implementations:
 |                 | SearchIndex implementation                | Maven module
 | Apache Lucene 5 | org.eclipse.rdf4j.sail.lucene.LuceneIndex | org.eclipse.rdf4j:rdf4j-sail-lucene
 | ElasticSearch   | org.eclipse.rdf4j.sail.elasticsearch.ElasticSearchIndex | org.eclipse.rdf4j:rdf4j-sail-elasticsearch
-| Apache Solr     | org.eclipse.rdf4j.sail.solr.SolrIndex     | org.eclipse.rdf4j:rdf4j-sail-solr
+| Apache Solr Embedded  .3+| org.eclipse.rdf4j.sail.solr.SolrIndex  .3+| org.eclipse.rdf4j:rdf4j-sail-solr
+| Apache Solr HTTP Client
+| Apache Solr Cloud Client
 |=========================================================================================
 
 Each SearchIndex implementation can easily be extended if you need to add extra features or store/access data with a different schema.
+
+The following example uses a local Solr instance running on the default port 8983. Make sure that both the Apache `httpcore` and `commons-logging` jars are in the classpath, and that the Solr core uses an appropriate schema (an example can be found in RDF4J's https://github.com/eclipse/rdf4j/blob/master/core/sail/fts/solr/solr/cores/embedded/conf/schema.xml[embedded solr] source code on GitHub).
+
+[source,java]
+----
+import org.eclipse.rdf4j.sail.solr.SolrIndex;
+....
+LuceneSail luceneSail = new LuceneSail();
+luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, SolrIndex.class.getName());
+luceneSail.setParameter(SolrIndex.SERVER_KEY, "http://localhost:8983/solr/rdf4j");
+----
+
+If needed, the Solr Client can be accessed via: 
+
+[source,java]
+----
+SolrIndex index = (SolrIndex) luceneSail.getLuceneIndex();
+SolrClient client = index.getClient();
+----
 
 == Reasoning and Validation suport with SPIN
 
