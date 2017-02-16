@@ -243,6 +243,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	private void parse(InputSource inputSource)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
+		clear();
+		
 		try {
 			documentURI = inputSource.getSystemId();
 
