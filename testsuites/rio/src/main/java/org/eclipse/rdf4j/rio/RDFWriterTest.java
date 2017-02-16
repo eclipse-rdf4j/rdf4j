@@ -1650,4 +1650,25 @@ public abstract class RDFWriterTest {
 		assertTrue(parsedOutput.contains(uri1, uri1, uri2));
 		assertEquals(1, parsedOutput.contexts().size());
 	}
+	
+	@Test
+	public void testSuccessBNodeParsesAreDistinct() throws Exception
+	{
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, bnode));
+		rdfWriter.endRDF();
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertEquals(1, parsedOutput.size());
+		ByteArrayInputStream inputReader2 = new ByteArrayInputStream(outputWriter.toByteArray());
+		rdfParser.parse(inputReader2, "");
+		assertEquals(2, parsedOutput.size());
+	}
 }

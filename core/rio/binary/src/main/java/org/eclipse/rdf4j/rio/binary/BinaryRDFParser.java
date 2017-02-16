@@ -65,30 +65,32 @@ public class BinaryRDFParser extends AbstractRDFParser {
 	public void parse(InputStream in, String baseURI)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
-		if (in == null) {
-			throw new IllegalArgumentException("Input stream must not be null");
-		}
-
-		this.in = new DataInputStream(new BufferedInputStream(in));
-
-		// Check magic number
-		byte[] magicNumber = IOUtil.readBytes(in, MAGIC_NUMBER.length);
-		if (!Arrays.equals(magicNumber, MAGIC_NUMBER)) {
-			reportFatalError("File does not contain a binary RDF document");
-		}
-
-		// Check format version (parser is backward-compatible with version 1 and
-		// version 2)
-		int formatVersion = this.in.readInt();
-		if (formatVersion != FORMAT_VERSION) {
-			reportFatalError("Incompatible format version: " + formatVersion);
-		}
-
-		if (rdfHandler != null) {
-			rdfHandler.startRDF();
-		}
-
+		clear();
+		
 		try {
+			if (in == null) {
+				throw new IllegalArgumentException("Input stream must not be null");
+			}
+
+			this.in = new DataInputStream(new BufferedInputStream(in));
+
+			// Check magic number
+			byte[] magicNumber = IOUtil.readBytes(in, MAGIC_NUMBER.length);
+			if (!Arrays.equals(magicNumber, MAGIC_NUMBER)) {
+				reportFatalError("File does not contain a binary RDF document");
+			}
+
+			// Check format version (parser is backward-compatible with version 1 and
+			// version 2)
+			int formatVersion = this.in.readInt();
+			if (formatVersion != FORMAT_VERSION) {
+				reportFatalError("Incompatible format version: " + formatVersion);
+			}
+
+			if (rdfHandler != null) {
+				rdfHandler.startRDF();
+			}
+
 			loop: while (true) {
 				int recordType = this.in.readByte();
 
