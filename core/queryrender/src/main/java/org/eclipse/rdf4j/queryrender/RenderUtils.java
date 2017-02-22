@@ -78,7 +78,7 @@ public final class RenderUtils {
 			builder.append("\"\"\"").append(escape(aLit.getLabel())).append("\"\"\"");
 
 			if (Literals.isLanguageLiteral(aLit)) {
-				builder.append("@").append(aLit.getLanguage());
+				aLit.getLanguage().ifPresent(lang -> builder.append("@").append(lang));
 			}
 			else {
 				builder.append("^^<").append(aLit.getDatatype().toString()).append(">");
