@@ -23,8 +23,11 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -290,6 +293,38 @@ public class LuceneSailSpinTest {
 		finally {
 			connection.commit();
 		}
+	}
+
+	/**
+	 * Try to reproduce Exception java.lang.IllegalStateException: Multiple Documents for term .... Try to add
+	 * already loaded datasets from 220-example.ttl <br/>
+	 * <code>
+	* <urn:test.org/data/rec2> a t:Data ;
+	*  rdfs:label "Sed ornare, leo" ;
+	*  t:number 2 .
+	* </code>
+	 * 
+	 * @throws Exception
+	 */
+	@Test
+	public void doubleLoading()
+		throws Exception
+	{
+		ValueFactory vf = connection.getValueFactory();
+		String NS = "urn:test.org/onto#";
+
+		connection.add(vf.createIRI("urn:test.org/data/rec2"), RDF.TYPE, vf.createIRI(NS, "Data"),
+				(Resource)null);
+		//connection.add(vf.createIRI("urn:test.org/data/rec2"), RDFS.LABEL,
+		//		vf.createLiteral("Sed ornare, leo"), (Resource)null);
+
+		//		connection.add(vf.createIRI("urn:test.org/data/rec2"), vf.createIRI(NS, "number"),
+		//				vf.createLiteral(2), (Resource)null);
+
+		connection.add(vf.createIRI("urn:test.org/data/rec2"), vf.createIRI(NS, "feature0010"),
+				vf.createLiteral("Some test"), (Resource)null);
+
+		connection.commit();
 	}
 
 	public int countStatements(RepositoryConnection connection)
