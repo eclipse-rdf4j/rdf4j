@@ -500,7 +500,7 @@ The following code evaluates a graph query on a repository:
 [source,java,linenum]
 ----
 import org.eclipse.rdf4j.query.GraphQueryResult;
-GraphQueryResult graphResult = con.prepareGraphQuery("CONSTRUCT { ?s ?p ?o } WHERE {?s ?p ?o }".evaluate();
+GraphQueryResult graphResult = con.prepareGraphQuery("CONSTRUCT { ?s ?p ?o } WHERE {?s ?p ?o }").evaluate();
 ----
 
 A {javadoc}query/GraphQueryResult.html[GraphQueryResult] is similar to `TupleQueryResult` in that is an object that iterates over the query solutions. However, for graph queries the query solutions are RDF statements, so a `GraphQueryResult` iterates over `Statement` objects:
