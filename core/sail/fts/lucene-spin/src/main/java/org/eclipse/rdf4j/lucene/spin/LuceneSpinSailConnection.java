@@ -1,104 +1,148 @@
-/**
- * Copyright (c) 2017 Eclipse RDF4J contributors.
+/*******************************************************************************
+ * Copyright (c) 2017 Eclipse RDF4J contributors, Aduna, and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- */
+ *******************************************************************************/
 package org.eclipse.rdf4j.lucene.spin;
 
 import java.io.IOException;
+import java.util.Iterator;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
-import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
-import org.eclipse.rdf4j.sail.lucene.LuceneIndex;
-import org.eclipse.rdf4j.sail.lucene.SearchIndex;
+import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.AddRemoveOperation;
+import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.ClearContextOperation;
+import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.Operation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer;
+import org.eclipse.rdf4j.sail.lucene.LuceneSailConnection;
+import org.eclipse.rdf4j.sail.lucene.SearchIndex;
+
 /**
- * Implementation of {@link SailConnection} with support of {@link LuceneIndex}.
+ * This connection inherits Lucene index supporting methods from {@link LuceneSailConnection}.
  * 
+ * @author sauermann
+ * @author christian.huetter
  * @author github.com/jgrzebyta
  */
 public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 
-	private SearchIndex idx;
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
-	private ValueFactory vf;
+	private final SearchIndex luceneIndex;
 
-	private static final Logger LOG = LoggerFactory.getLogger(LuceneSpinSailConnection.class);
+	/**
+	 * the buffer that collects operations
+	 */
+	final private LuceneSailBuffer buffer = new LuceneSailBuffer();
 
-	public LuceneSpinSailConnection(NotifyingSailConnection wrappedCon, ValueFactory vf, SearchIndex si) {
-		super(wrappedCon);
-		this.vf = vf;
-		this.idx = si;
+	/**
+	 * The listener that listens to the underlying connection. It is disabled during clearContext operations.
+	 */
+	protected final SailConnectionListener connectionListener = new SailConnectionListener() {
+
+		@Override
+		public void statementAdded(Statement statement) {
+			// we only consider statements that contain literals
+			if (statement.getObject() instanceof Literal) {
+				if (statement == null)
+					return;
+				// we further only index statements where the Literal's datatype is
+				// accepted
+				Literal literal = (Literal)statement.getObject();
+				if (luceneIndex.accept(literal))
+					buffer.add(statement);
+			}
+		}
+
+		@Override
+		public void statementRemoved(Statement statement) {
+			// we only consider statements that contain literals
+			if (statement.getObject() instanceof Literal) {
+				if (statement == null)
+					return;
+				// we further only indexed statements where the Literal's datatype
+				// is accepted
+				Literal literal = (Literal)statement.getObject();
+				if (luceneIndex.accept(literal))
+					buffer.remove(statement);
+			}
+		}
+	};
+
+	/**
+	 * To remember if the iterator was already closed and only free resources once
+	 */
+	private final AtomicBoolean closed = new AtomicBoolean(false);
+
+	public LuceneSpinSailConnection(NotifyingSailConnection wrappedConnection, SearchIndex luceneIndex) {
+		super(wrappedConnection);
+		this.luceneIndex = luceneIndex;
+
+		/*
+		 * Using SailConnectionListener, see <a href="#whySailConnectionListener">above</a>
+		 */
+
+		wrappedConnection.addConnectionListener(connectionListener);
 	}
 
 	@Override
-	public void clear(Resource... contexts)
+	public synchronized void addStatement(Resource arg0, IRI arg1, Value arg2, Resource... arg3)
 		throws SailException
 	{
-		super.clear(contexts);
-		try {
-			idx.clearContexts(contexts);
-		}
-		catch (IOException e) {
-			throw new SailException(e);
-		}
+		super.addStatement(arg0, arg1, arg2, arg3);
 	}
 
 	@Override
-	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
+	public void close()
 		throws SailException
 	{
-		super.removeStatements(subj, pred, obj, contexts);
-		for (Resource graph : contexts) {
-			Statement st = vf.createStatement(subj, pred, obj, graph);
+		if (closed.compareAndSet(false, true)) {
 			try {
-				idx.removeStatement(st);
+				super.close();
 			}
-			catch (IOException e) {
-				LOG.error("Error during processing statement: {}", st.toString());
-				throw new SailException(e);
-			}
-		}
-	}
-
-	@Override
-	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
-		super.addStatement(subj, pred, obj, contexts);
-
-		if (contexts.length == 0) {
-			Statement st = vf.createStatement(subj, pred, obj);
-			try {
-				idx.addStatement(st);
-			}
-			catch (IOException e) {
-				LOG.error("Error during processing statement: {}", st.toString());
-				throw new SailException(e);
-			}
-		}
-		else {
-			for (Resource graph : contexts) {
-				Statement st = vf.createStatement(subj, pred, obj, graph);
+			finally {
 				try {
-					idx.addStatement(st);
-					LOG.debug("add statement: {}", st.toString());
+					luceneIndex.endReading();
 				}
 				catch (IOException e) {
-					LOG.error("Error during processing statement: {}", st.toString());
-					throw new SailException(e);
+					logger.warn("could not close IndexReader or IndexSearcher " + e, e);
 				}
+				// remember if you were closed before, some sloppy programmers
+				// may call close() twice.
 			}
+		}
+	}
+
+	// //////////////////////////////// Methods related to indexing
+
+	@Override
+	public synchronized void clear(Resource... arg0)
+		throws SailException
+	{
+		// remove the connection listener, this is safe as the changing methods
+		// are synchronized
+		// during the clear(), no other operation can be invoked
+		getWrappedConnection().removeConnectionListener(connectionListener);
+		try {
+			super.clear(arg0);
+			buffer.clear(arg0);
+		}
+		finally {
+			getWrappedConnection().addConnectionListener(connectionListener);
 		}
 	}
 
@@ -107,55 +151,111 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 		throws SailException
 	{
 		super.begin();
+		buffer.reset();
 		try {
-			idx.begin();
+			luceneIndex.begin();
 		}
 		catch (IOException e) {
 			throw new SailException(e);
 		}
-
-	}
-
-	@Override
-	public void close()
-		throws SailException
-	{
-
-		try {
-			idx.endReading();
-		}
-		catch (IOException e) {
-			LOG.warn("LuceneIndex or SearchIndex is not closed properly");
-		}
-		super.close();
 	}
 
 	@Override
 	public void commit()
 		throws SailException
 	{
+		super.commit();
 
+		logger.debug("Committing Lucene transaction with {} operations.", buffer.operations().size());
 		try {
-			idx.commit();
+			try {
+				// preprocess buffer
+				buffer.optimize();
+
+				// run operations and remove them from buffer
+				for (Iterator<Operation> i = buffer.operations().iterator(); i.hasNext();) {
+					Operation op = i.next();
+					if (op instanceof LuceneSailBuffer.AddRemoveOperation) {
+						AddRemoveOperation addremove = (AddRemoveOperation)op;
+						// add/remove in one call
+						addRemoveStatements(addremove.getAdded(), addremove.getRemoved());
+					}
+					else if (op instanceof LuceneSailBuffer.ClearContextOperation) {
+						// clear context
+						clearContexts(((ClearContextOperation)op).getContexts());
+					}
+					else if (op instanceof LuceneSailBuffer.ClearOperation) {
+						logger.debug("clearing index...");
+						luceneIndex.clear();
+					}
+					else
+						throw new RuntimeException(
+								"Cannot interpret operation " + op + " of type " + op.getClass().getName());
+					i.remove();
+				}
+			}
+			catch (Exception e) {
+				logger.error("Committing operations in lucenesail, encountered exception " + e
+						+ ". Only some operations were stored, " + buffer.operations().size()
+						+ " operations are discarded. Lucene Index is now corrupt.", e);
+				throw new SailException(e);
+			}
+		}
+		finally {
+			buffer.reset();
+		}
+	}
+
+	private void addRemoveStatements(Set<Statement> toAdd, Set<Statement> toRemove)
+		throws IOException
+	{
+		logger.debug("indexing {}/removing {} statements...", toAdd.size(), toRemove.size());
+		luceneIndex.begin();
+		try {
+			luceneIndex.addRemoveStatements(toAdd, toRemove);
+			luceneIndex.commit();
 		}
 		catch (IOException e) {
-			throw new SailException(e);
+			logger.error("Rolling back", e);
+			luceneIndex.rollback();
+			throw e;
 		}
-		super.commit();
+	}
+
+	private void clearContexts(Resource... contexts)
+		throws IOException
+	{
+		logger.debug("clearing contexts...");
+		luceneIndex.begin();
+		try {
+			luceneIndex.clearContexts(contexts);
+			luceneIndex.commit();
+		}
+		catch (IOException e) {
+			logger.error("Rolling back", e);
+			luceneIndex.rollback();
+			throw e;
+		}
+	}
+
+	@Override
+	public synchronized void removeStatements(Resource arg0, IRI arg1, Value arg2, Resource... arg3)
+		throws SailException
+	{
+		super.removeStatements(arg0, arg1, arg2, arg3);
 	}
 
 	@Override
 	public void rollback()
 		throws SailException
 	{
-
+		super.rollback();
+		buffer.reset();
 		try {
-			idx.rollback();
+			luceneIndex.rollback();
 		}
 		catch (IOException e) {
 			throw new SailException(e);
 		}
-		super.rollback();
 	}
-
 }
