@@ -262,22 +262,20 @@ public abstract class AbstractLuceneSailSpinTest {
 
 	@Test
 	public void testDistanceFunction()
-			throws Exception
+		throws Exception
 	{
 		String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
 				+ "prefix search: <" + LuceneSailSchema.NAMESPACE + ">"
 				+ "select ?toUri ?fromUri ?dist where {(?from ?range ?units geo:asWKT search:distance)"
 				+ "search:withinDistance (?toUri ?to ?dist) ."
 				+ "?toUri a <urn:geo/Landmark>. ?fromUri geo:asWKT ?from; <urn:geo/maxDistance> ?range.}";
-		try
-		{
+		try {
 			connection.begin();
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
 			query.setBinding("units", GEOF.UOM_METRE);
-	
+
 			printTupleResult(query);
-			try(TupleQueryResult result = query.evaluate())
-			{
+			try (TupleQueryResult result = query.evaluate()) {
 				int count = countTupleResults(result);
 				Assert.assertThat(count, is(2));
 			}
@@ -288,6 +286,42 @@ public abstract class AbstractLuceneSailSpinTest {
 		}
 		finally {
 			connection.commit();
+		}
+	}
+
+	/**
+	 * Complex query: <code>
+	 * 
+	 * </code>
+	 * 
+	 * @throws Exception
+	 */
+	@Test
+	public void complexQuery()
+		throws Exception
+	{
+		StringBuilder sb = new StringBuilder();
+		sb.append("prefix t: <urn:test.org/onto#> \n");
+		sb.append("prefix kw: <urn:test.org/key-words/> \n\n");
+		sb.append("select ?term_string ?sub ?score where { \n");
+		sb.append("  ?pred_map rdfs:label \"keyWord\" ; \n");
+		sb.append("  t:column ?pred . \n");
+		sb.append("  [] ?pred ?term . \n");
+		sb.append("  bind(str(?term) as ?term_string) . \n");
+		sb.append(
+				"  (?term_string <" + ALL_MATCHES + "> <" + SCORE + ">) <" + SEARCH + "> (?sub ?score) . \n");
+		sb.append("  ?sub a t:Data .");
+		sb.append("}");
+
+		log.debug("SPARQL query:\n=======\n{}\n=======\n", sb.toString());
+
+		TupleQuery query = connection.prepareTupleQuery(sb.toString());
+		try {
+			printTupleResult(query);
+		}
+		catch (Exception e) {
+			e.printStackTrace();
+			throw new RuntimeException(e);
 		}
 	}
 
@@ -317,7 +351,9 @@ public abstract class AbstractLuceneSailSpinTest {
 		log.info("\n=============\n" + new String(resultoutput.toByteArray()) + "\n=============");
 	}
 
-	protected void printTupleResult(TupleQuery query) {
+	protected void printTupleResult(TupleQuery query)
+		throws Exception
+	{
 		ByteArrayOutputStream resultoutput = new ByteArrayOutputStream();
 		query.evaluate(new SPARQLResultsCSVWriter(resultoutput));
 		log.info("tuple result:");
