@@ -290,9 +290,19 @@ public abstract class AbstractLuceneSailSpinTest {
 	}
 
 	/**
-	 * Complex query: <code>
-	 * 
-	 * </code>
+	 * Example for issue #771. Complex query: <br\> <code>
+	* prefix t: <urn:test.org/onto#> 
+	* sb.append("prefix kw: <urn:test.org/key-words/> 
+	*
+	* select ?term_string ?sub ?score where { 
+	*  ?pred_map rdfs:label "keyWord" ; 
+	*   t:column ?pred . 
+	*   [] ?pred ?term . 
+	*   bind(str(?term) as ?term_string) . 
+	*   (?term_string search:allMaches search:score) search:search (?sub ?score) . 
+	*  ?sub a t:Data .
+	* }
+	* </code>
 	 * 
 	 * @throws Exception
 	 */
