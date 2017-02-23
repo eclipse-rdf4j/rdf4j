@@ -94,7 +94,7 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 		if (si == null) {
 			throw new SailException("Index is not created");
 		}
-		return new LuceneSpinSailConnection(connection, getValueFactory(), si);
+		return new LuceneSpinSailConnection(connection, si);
 
 	}
 

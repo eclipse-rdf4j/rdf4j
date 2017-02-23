@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -76,6 +75,9 @@ public class LuceneSailSpinTest {
 	public void setUp()
 		throws Exception
 	{
+
+		//activate sail debug mode
+		// System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 		// load data into memory store
 		MemoryStore store = new MemoryStore();
 
@@ -122,6 +124,9 @@ public class LuceneSailSpinTest {
 		throws RepositoryException, IOException
 	{
 		if (connection != null) {
+			if (connection.isActive()) {
+				connection.commit();
+			}
 			connection.close();
 		}
 		FileUtils.deleteDirectory(tempDir);
