@@ -326,6 +326,7 @@ public abstract class AbstractLuceneSailSpinTest {
 		log.debug("SPARQL query:\n=======\n{}\n=======\n", sb.toString());
 
 		TupleQuery query = connection.prepareTupleQuery(sb.toString());
+		log.info("parsed query: \n{}\n", query.toString());
 		try {
 			printTupleResult(query);
 		}
