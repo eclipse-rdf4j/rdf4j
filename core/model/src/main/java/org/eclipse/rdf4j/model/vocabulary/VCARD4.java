@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
  * Constants for the vCard Ontology.
  *
  * @see <a href="https://www.w3.org/TR/2014/NOTE-vcard-rdf-20140522/">vCard Ontology</a>
+ * @see <a href="https://www.w3.org/2006/vcard/ns.ttl">vCard OWL file</a>
  *
  * @author Bart Hanssens
  */
