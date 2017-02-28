@@ -12,9 +12,11 @@ import static org.junit.Assert.fail;
 
 import java.io.InputStream;
 import java.io.StringReader;
+import java.util.Collections;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -24,12 +26,11 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /**
  * Unit tests for N-Triples Parser.
- * 
+ *
  * @author Peter Ansell
  */
 public abstract class AbstractNTriplesParserUnitTest {
@@ -189,7 +190,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 						"<urn:test:subject> <urn:test:predicate> \" \\t \\b \\n \\r \\f \\\" \\' \\\\ \" . "),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals(" \t \b \n \r \f \" \' \\ ", model.objectLiteral().get().getLabel());
+		assertEquals(" \t \b \n \r \f \" \' \\ ", Models.objectLiteral(model).get().getLabel());
 	}
 
 	@Test
@@ -204,7 +205,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 						"<urn:test:subject> <urn:test:predicate> <urn:test:object> .#endoflinecomment\n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
 
 	@Test
@@ -219,7 +220,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 						"<urn:test:subject> <urn:test:predicate> <urn:test:object> . #endoflinecomment\n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
 
 	@Test
@@ -234,7 +235,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 						"<urn:test:subject> <urn:test:predicate> <urn:test:object> .# endoflinecomment\n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
 
 	@Test
@@ -249,7 +250,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 						"<urn:test:subject> <urn:test:predicate> <urn:test:object> . # endoflinecomment\n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
 
 	@Test
@@ -319,7 +320,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 				new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> .#\n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
 
 	@Test
@@ -333,7 +334,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 				new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> . #\n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
 
 	@Test
@@ -347,7 +348,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 				new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> .# \n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
 
 	@Test
@@ -361,7 +362,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 				new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> . # \n"),
 				"http://example/");
 		assertEquals(1, model.size());
-		assertEquals("urn:test:object", model.objectString().get());
+		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
 
 	@Test
