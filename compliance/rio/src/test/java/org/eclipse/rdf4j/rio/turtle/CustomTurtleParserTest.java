@@ -13,10 +13,10 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.Collections;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.NamespaceImpl;
@@ -40,13 +40,13 @@ import org.junit.rules.Timeout;
 
 /**
  * Custom tests for Turtle Parser
- * 
+ *
  * @author Peter Ansell
  */
 public class CustomTurtleParserTest {
 
 	@Rule
-	public Timeout timeout = new Timeout(1000000);
+	public Timeout timeout = Timeout.millis(1000000);
 
 	private ValueFactory vf;
 
@@ -183,8 +183,8 @@ public class CustomTurtleParserTest {
 		String okLiteralString = "Literal \n without \n new line at the beginning. \n ";
 		String errLiteralString = "\n Literal \n with \n new line at the beginning. \n ";
 
-		URI mySubject = vf.createURI(namespace, "Subject");
-		URI myPredicate = vf.createURI(namespace, "Predicate");
+		IRI mySubject = vf.createIRI(namespace, "Subject");
+		IRI myPredicate = vf.createIRI(namespace, "Predicate");
 		Literal myOkObject = vf.createLiteral(okLiteralString);
 		Literal myErrObject = vf.createLiteral(errLiteralString);
 
@@ -301,7 +301,7 @@ public class CustomTurtleParserTest {
 		Model model = Rio.parse(new StringReader("<urn:a> a _:c2; <urn:b> <urn:c> ."), "", RDFFormat.TURTLE);
 
 		assertEquals(2, model.size());
-		assertTrue(model.contains(vf.createURI("urn:a"), vf.createURI("urn:b"), vf.createURI("urn:c")));
+		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:b"), vf.createIRI("urn:c")));
 	}
 
 	@Test
@@ -311,7 +311,7 @@ public class CustomTurtleParserTest {
 		Model model = Rio.parse(new StringReader("<urn:a> a _:c2;<urn:b> <urn:c> ."), "", RDFFormat.TURTLE);
 
 		assertEquals(2, model.size());
-		assertTrue(model.contains(vf.createURI("urn:a"), vf.createURI("urn:b"), vf.createURI("urn:c")));
+		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:b"), vf.createIRI("urn:c")));
 	}
 
 	@Test
@@ -411,8 +411,8 @@ public class CustomTurtleParserTest {
 				RDFFormat.TURTLE);
 
 		assertEquals(1, model.size());
-		assertTrue(model.contains(vf.createURI("urn:a"), vf.createURI("urn:b"),
-				vf.createLiteral("testliteral", vf.createURI("urn:datatype"))));
+		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:b"),
+				vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
 	}
 
 	@Test
@@ -423,8 +423,8 @@ public class CustomTurtleParserTest {
 				RDFFormat.TURTLE);
 
 		assertEquals(1, model.size());
-		assertTrue(model.contains(vf.createURI("urn:a"), vf.createURI("urn:b"),
-				vf.createLiteral("testliteral", vf.createURI("urn:datatype"))));
+		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:b"),
+				vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
 	}
 
 	@Test
@@ -435,8 +435,8 @@ public class CustomTurtleParserTest {
 				RDFFormat.TURTLE);
 
 		assertEquals(1, model.size());
-		assertTrue(model.contains(vf.createURI("urn:a"), vf.createURI("urn:b"),
-				vf.createLiteral("testliteral", vf.createURI("urn:datatype"))));
+		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:b"),
+				vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
 	}
 
 	@Test
@@ -447,8 +447,8 @@ public class CustomTurtleParserTest {
 				RDFFormat.TURTLE);
 
 		assertEquals(1, model.size());
-		assertTrue(model.contains(vf.createURI("urn:a"), vf.createURI("urn:b"),
-				vf.createLiteral("testliteral", vf.createURI("urn:datatype"))));
+		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:b"),
+				vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
 	}
 
 	@Test
@@ -460,8 +460,8 @@ public class CustomTurtleParserTest {
 				RDFFormat.TURTLE);
 
 		assertEquals(1, model.size());
-		assertTrue(model.contains(vf.createURI("urn:a"), vf.createURI("urn:b"),
-				vf.createLiteral("testliteral", vf.createURI("urn:datatype"))));
+		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:b"),
+				vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
 	}
 
 	@Test
@@ -504,7 +504,7 @@ public class CustomTurtleParserTest {
 				RDFFormat.TURTLE, aConfig, vf, new ParseErrorLogger());
 
 		assertEquals(1, model.size());
-		assertTrue(model.contains(vf.createURI("urn:a"), vf.createURI("urn:not_skos:broader"),
-				vf.createURI("urn:b")));
+		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:not_skos:broader"),
+				vf.createIRI("urn:b")));
 	}
 }
