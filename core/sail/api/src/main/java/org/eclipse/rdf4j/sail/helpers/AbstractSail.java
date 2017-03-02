@@ -130,6 +130,15 @@ public abstract class AbstractSail implements Sail {
 	 * Methods *
 	 *---------*/
 
+	/**
+	 * Set connection timeout on shutdown (in ms).
+	 * 
+	 * @param connectionTimeOut timeout (in ms)
+	 */
+	public void setConnectionTimeOut(long connectionTimeOut) {
+		this.connectionTimeOut = connectionTimeOut;
+	}
+
 	@Override
 	public void setDataDir(File dataDir) {
 		if (isInitialized()) {
@@ -212,7 +221,7 @@ public abstract class AbstractSail implements Sail {
 				if (!activeConnections.isEmpty()) {
 					logger.debug("Waiting for active connections to close before shutting down...");
 					try {
-						activeConnections.wait(DEFAULT_CONNECTION_TIMEOUT);
+						activeConnections.wait(connectionTimeOut);
 					}
 					catch (InterruptedException e) {
 						// ignore and continue
