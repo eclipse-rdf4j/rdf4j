@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.hash;
 
-import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
@@ -23,20 +22,31 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
  * @author jeen
  */
 public abstract class HashFunction implements Function {
-
+private final String HEX = "0123456789abcdef";
+	
+	/**
+	 * Calculate hash value, represented as hexadecimal string.
+	 * 
+	 * @param text text
+	 * @param algorithm name of the hash algorithm
+	 * @return hexadecimal string
+	 * @throws NoSuchAlgorithmException 
+	 */
 	protected String hash(String text, String algorithm)
 		throws NoSuchAlgorithmException
 	{
 		byte[] hash = MessageDigest.getInstance(algorithm).digest(text.getBytes());
-		BigInteger bi = new BigInteger(1, hash);
-		String result = bi.toString(16);
-		if (result.length() % 2 != 0) {
-			return "0" + result;
+
+		// convert to hexadecimal representation, with leading zeros
+		char[] hex = new char[hash.length * 2];
+		for (int i = 0, j = 0; i < hex.length; ) {
+			hex[i++] = HEX.charAt((hash[j] & 0xF0) >>> 4);
+			hex[i++] = HEX.charAt(hash[j++] & 0x0F);
 		}
-		return result;
+		return new String(hex);
 	}
 
+	@Override
 	public abstract Literal evaluate(ValueFactory valueFactory, Value... args)
 		throws ValueExprEvaluationException;
-
 }
