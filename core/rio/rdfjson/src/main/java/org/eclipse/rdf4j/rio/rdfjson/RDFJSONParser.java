@@ -154,7 +154,7 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 	public void parse(final Reader reader, final String baseUri)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
-		if (rdfHandler == null) {
+		if (rdfHandler != null) {
 			rdfHandler.startRDF();
 		}
 		JsonParser jp = null;
