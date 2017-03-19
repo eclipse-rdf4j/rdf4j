@@ -11,7 +11,10 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Locale;
@@ -947,5 +950,16 @@ public abstract class AbstractParserHandlingTest {
 		result.add(vf.createStatement(vf.createBNode(), RDFS.COMMENT,
 				vf.createLiteral(languageValue, languageTag)));
 		return result;
+	}
+
+	@Test(expected = RDFParseException.class)
+	public void testNullRdfHandlerReader() throws IOException {
+		getParser().parse(new InputStreamReader(new ByteArrayInputStream("".getBytes())) , "");
+
+	}
+
+	@Test(expected = RDFParseException.class)
+	public void testNullRdfHandlerInputStream() throws IOException {
+		getParser().parse(new ByteArrayInputStream("".getBytes()), "");
 	}
 }
