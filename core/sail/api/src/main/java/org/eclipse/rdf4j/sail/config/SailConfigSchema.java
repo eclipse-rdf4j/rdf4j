@@ -32,10 +32,15 @@ public class SailConfigSchema {
 	/** <tt>http://www.openrdf.org/config/sail#iterationCacheSyncTreshold</tt> */
 	public final static IRI ITERATION_CACHE_SYNC_THRESHOLD;
 
+	/** <tt>http://www.openrdf.org/config/sail#connectionTimeOut</tt> */
+	public final static IRI CONNECTION_TIME_OUT;
+	
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 		SAILTYPE = factory.createIRI(NAMESPACE, "sailType");
 		DELEGATE = factory.createIRI(NAMESPACE, "delegate");
 		ITERATION_CACHE_SYNC_THRESHOLD = factory.createIRI(NAMESPACE, "iterationCacheSyncTreshold");
+		CONNECTION_TIME_OUT = factory.createIRI(NAMESPACE, "connectionTimeOut");
 	}
 }
