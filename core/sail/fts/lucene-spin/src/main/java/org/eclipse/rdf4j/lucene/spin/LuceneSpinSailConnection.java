@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.sail.lucene.SearchIndex;
  * 
  * @author sauermann
  * @author christian.huetter
- * @author github.com/jgrzebyta
+ * @author jacek grzebyta
  */
 public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 

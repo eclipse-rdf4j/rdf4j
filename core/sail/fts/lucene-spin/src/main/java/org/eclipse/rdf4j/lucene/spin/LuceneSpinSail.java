@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
  * statements adding/removing. Technically this sail binds {@link SearchIndex} using
  * .addQueryContextInitializer and wraps connection from baseSail by wrapped which modify SearchIndex.
  *
- * @author github.com/jgrzebyta
+ * @author jacek grzebyta
  */
 public class LuceneSpinSail extends NotifyingSailWrapper {
 

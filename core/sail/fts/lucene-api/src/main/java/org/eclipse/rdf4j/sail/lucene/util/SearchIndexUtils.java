@@ -13,23 +13,23 @@ import static org.eclipse.rdf4j.sail.lucene.LuceneSail.INDEX_CLASS_KEY;
 import org.eclipse.rdf4j.sail.lucene.SearchIndex;
 
 /**
- *
- * @author githib.com/jgrzebyta
+ * @author jacek grzebyta
  */
 public class SearchIndexUtils {
 
-    /**
-     * The method is relocated to
-     *
-     * @param parameters
-     * @return
-     * @throws Exception
-     */
-    public static SearchIndex createSearchIndex(Properties parameters)
-            throws Exception {
-        String indexClassName = parameters.getProperty(INDEX_CLASS_KEY, DEFAULT_INDEX_CLASS);
-        SearchIndex index = (SearchIndex) Class.forName(indexClassName).newInstance();
-        index.initialize(parameters);
-        return index;
-    }
+	/**
+	 * The method is relocated to
+	 *
+	 * @param parameters
+	 * @return
+	 * @throws Exception
+	 */
+	public static SearchIndex createSearchIndex(Properties parameters)
+		throws Exception
+	{
+		String indexClassName = parameters.getProperty(INDEX_CLASS_KEY, DEFAULT_INDEX_CLASS);
+		SearchIndex index = (SearchIndex)Class.forName(indexClassName).newInstance();
+		index.initialize(parameters);
+		return index;
+	}
 }
