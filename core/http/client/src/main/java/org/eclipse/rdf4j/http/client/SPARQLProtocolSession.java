@@ -630,6 +630,7 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 						String.valueOf(namedGraphURI)));
 			}
 		}
+		queryParams.addAll(getExtraMethodParameters(ql, includeInferred, maxQueryTime, bindings));
 
 		return queryParams;
 	}
@@ -697,6 +698,37 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 				queryParams.add(new BasicNameValuePair(Protocol.USING_NAMED_GRAPH_PARAM_NAME,
 						String.valueOf(namedGraphURI)));
 			}
+		}
+
+		queryParams.addAll(getExtraMethodParameters(ql, includeInferred, maxQueryTime, bindings));
+
+		return queryParams;
+	}
+
+	protected List<NameValuePair> getExtraMethodParameters(QueryLanguage ql, boolean includeInferred,
+			int maxQueryTime, Binding... bindings)
+	{
+		/**
+		 * Some SPARQL endpoints make use of these non standard parameters
+		 */
+
+		List<NameValuePair> queryParams = new ArrayList<NameValuePair>();
+		if (ql != null) {
+			queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
+		}
+
+		queryParams.add(new BasicNameValuePair(Protocol.INCLUDE_INFERRED_PARAM_NAME,
+				Boolean.toString(includeInferred)));
+
+		if (maxQueryTime > 0) {
+			queryParams.add(
+					new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));
+		}
+
+		for (int i = 0; i < bindings.length; i++) {
+			String paramName = Protocol.BINDING_PREFIX + bindings[i].getName();
+			String paramValue = Protocol.encodeValue(bindings[i].getValue());
+			queryParams.add(new BasicNameValuePair(paramName, paramValue));
 		}
 
 		return queryParams;
