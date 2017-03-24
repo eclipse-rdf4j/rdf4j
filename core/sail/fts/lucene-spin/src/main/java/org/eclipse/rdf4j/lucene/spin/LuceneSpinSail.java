@@ -40,7 +40,7 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	public LuceneSpinSail() {
 	}
 
-	public LuceneSpinSail(NotifyingSail baseSail) {
+	public LuceneSpinSail(SpinSail baseSail) {
 		super(baseSail);
 	}
 
@@ -78,8 +78,8 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 
 	@Override
 	public void setDataDir(File dataDir) {
+		super.setDataDir(dataDir);
 		parameters.setProperty(LuceneSail.LUCENE_DIR_KEY, dataDir.getAbsolutePath() + "/index");
-		getBaseSail().setDataDir(dataDir);
 	}
 
 	/**
@@ -89,13 +89,11 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	public NotifyingSailConnection getConnection()
 		throws SailException
 	{
-
-		NotifyingSailConnection connection = super.getConnection();
 		if (si == null) {
 			throw new SailException("Index is not created");
 		}
-		return new LuceneSpinSailConnection(connection, si);
-
+		// the connection from the super is created only when the index exists
+		return new LuceneSpinSailConnection(super.getConnection(), si);
 	}
 
 }

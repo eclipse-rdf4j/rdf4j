@@ -43,12 +43,15 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.ClassRule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * This brings all tests for new property function -based implementation of lucene search request.
+ * 
  * @see <a href="https://github.com/eclipse/rdf4j/issues/739">issue #739</a>
  */
 public class LuceneSailTupleFunctionTest {
@@ -58,8 +61,9 @@ public class LuceneSailTupleFunctionTest {
 	private static final String DATA = "org/eclipse/rdf4j/sail/220-example.ttl";
 
 	private RepositoryConnection connection;
-        
-        private File tempDir;
+
+	@ClassRule
+	public static TemporaryFolder tempDir = new TemporaryFolder();
 
 	private static Logger log = LoggerFactory.getLogger(LuceneSailTupleFunctionTest.class);
 
@@ -81,11 +85,10 @@ public class LuceneSailTupleFunctionTest {
 	{
 		// load data into memory store
 		MemoryStore store = new MemoryStore();
-                tempDir = Files.createTempDir();
 
 		// activate Lucene index
 		LuceneSail lucene = new LuceneSail();
-                
+
 		configure(lucene);
 		lucene.setBaseSail(store);
 
@@ -115,12 +118,13 @@ public class LuceneSailTupleFunctionTest {
 				repository.shutDown();
 			}
 		}
-                FileUtils.deleteDirectory(tempDir);
 	}
 
-	protected void configure(LuceneSail sail) {
+	protected void configure(LuceneSail sail)
+		throws IOException
+	{
 		sail.setParameter(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS);
-		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, tempDir.getAbsoluteFile().toString());
+		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, tempDir.newFolder().getAbsolutePath());
 	}
 
 	protected void populate(RepositoryConnection connection)
@@ -346,20 +350,18 @@ public class LuceneSailTupleFunctionTest {
 
 	@Test
 	public void testDistanceFunction()
-			throws Exception
+		throws Exception
 	{
 		String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
 				+ "select ?toUri ?fromUri ?dist where {?toUri a <urn:geo/Landmark>; geo:asWKT ?to. ?fromUri geo:asWKT ?from; <urn:geo/maxDistance> ?range."
 				+ " bind(geof:distance(?from, ?to, ?units) as ?dist)" + " filter(?dist < ?range)" + " }";
-		try
-		{
+		try {
 			connection.begin();
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
 			query.setBinding("units", GEOF.UOM_METRE);
-	
+
 			printTupleResult(query);
-			try(TupleQueryResult result = query.evaluate())
-			{
+			try (TupleQueryResult result = query.evaluate()) {
 				int count = countTupleResults(result);
 				Assert.assertThat(count, is(2));
 			}
@@ -403,14 +405,14 @@ public class LuceneSailTupleFunctionTest {
 		return Iterations.asList(results).size();
 	}
 
-	protected void printGraphResult(GraphQuery query) {
+	public void printGraphResult(GraphQuery query) {
 		ByteArrayOutputStream resultoutput = new ByteArrayOutputStream();
 		query.evaluate(new TurtleWriter(resultoutput));
 		log.info("graph result:");
 		log.info("\n=============\n" + new String(resultoutput.toByteArray()) + "\n=============");
 	}
 
-	protected void printTupleResult(TupleQuery query) {
+	public void printTupleResult(TupleQuery query) {
 		ByteArrayOutputStream resultoutput = new ByteArrayOutputStream();
 		query.evaluate(new SPARQLResultsCSVWriter(resultoutput));
 		log.info("tuple result:");
