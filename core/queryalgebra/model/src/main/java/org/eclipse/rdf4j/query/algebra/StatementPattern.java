@@ -277,10 +277,10 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	@Override
 	public int hashCode() {
 		int result = subjectVar.hashCode();
-		result ^= predicateVar.hashCode();
-		result ^= objectVar.hashCode();
+		result = 31 * result + predicateVar.hashCode();
+		result = 31 * result + objectVar.hashCode();
 		if (contextVar != null) {
-			result ^= contextVar.hashCode();
+			result = 31 * result + contextVar.hashCode();
 		}
 		if (scope == Scope.NAMED_CONTEXTS) {
 			result = ~result;

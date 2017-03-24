@@ -91,6 +91,17 @@ public class ArbitraryLengthPathTest extends TestCase {
 		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, sparql).evaluate());
 	}
 
+	@Test
+	public void testDirection()
+		throws Exception
+	{
+		ValueFactory vf = con.getValueFactory();
+		con.add(vf.createIRI("urn:test:a"), vf.createIRI("urn:test:rel"), vf.createIRI("urn:test:b"));
+		con.add(vf.createIRI("urn:test:b"), vf.createIRI("urn:test:rel"), vf.createIRI("urn:test:a"));
+		String sparql = "ASK { <urn:test:a> <urn:test:rel>* <urn:test:b> . <urn:test:b> <urn:test:rel>* <urn:test:a> }";
+		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, sparql).evaluate());
+	}
+
 	private void populate(int n)
 		throws RepositoryException
 	{
