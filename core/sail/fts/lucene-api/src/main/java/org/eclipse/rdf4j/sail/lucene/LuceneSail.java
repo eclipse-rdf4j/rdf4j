@@ -197,9 +197,9 @@ public class LuceneSail extends NotifyingSailWrapper {
 	final private Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	/**
-	 * Set the parameter "reindexQuery=" to configure the statements to index over. Default value is
-	 * "SELECT ?s ?p ?o ?c WHERE {{?s ?p ?o} UNION {GRAPH ?c {?s ?p ?o.}}} ORDER BY ?s" . NB: the query must
-	 * contain the bindings ?s, ?p, ?o and ?c and must be ordered by ?s.
+	 * Set the parameter "reindexQuery=" to configure the statements to index over. Default value is "SELECT
+	 * ?s ?p ?o ?c WHERE {{?s ?p ?o} UNION {GRAPH ?c {?s ?p ?o.}}} ORDER BY ?s" . NB: the query must contain
+	 * the bindings ?s, ?p, ?o and ?c and must be ordered by ?s.
 	 */
 	public static final String REINDEX_QUERY_KEY = "reindexQuery";
 
@@ -388,27 +388,25 @@ public class LuceneSail extends NotifyingSailWrapper {
 		}
 	}
 
-        /**
-         * The method is relocated to {@link SearchIndexUtils#createSearchIndex(java.util.Properties) }.
-         * @param parameters
-         * @return
-         * @throws Exception
-         * @deprecated
-         */
-        @Deprecated
+	/**
+	 * The method is relocated to {@link SearchIndexUtils#createSearchIndex(java.util.Properties) }.
+	 * 
+	 * @param parameters
+	 * @return
+	 * @throws Exception
+	 * @deprecated
+	 */
+	@Deprecated
 	protected static SearchIndex createSearchIndex(Properties parameters)
 		throws Exception
 	{
-		String indexClassName = parameters.getProperty(INDEX_CLASS_KEY, DEFAULT_INDEX_CLASS);
-		SearchIndex index = (SearchIndex)Class.forName(indexClassName).newInstance();
-		index.initialize(parameters);
-		return index;
+		return SearchIndexUtils.createSearchIndex(parameters);
 	}
 
 	protected void initializeLuceneIndex()
 		throws Exception
 	{
-		SearchIndex index = createSearchIndex(parameters);
+		SearchIndex index = SearchIndexUtils.createSearchIndex(parameters);
 		setLuceneIndex(index);
 	}
 
@@ -607,8 +605,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	protected Collection<SearchQueryInterpreter> getSearchQueryInterpreters() {
-		return Arrays.<SearchQueryInterpreter> asList(
-				new QuerySpecBuilder(incompleteQueryFails),
+		return Arrays.<SearchQueryInterpreter> asList(new QuerySpecBuilder(incompleteQueryFails),
 				new DistanceQuerySpecBuilder(luceneIndex), new GeoRelationQuerySpecBuilder(luceneIndex));
 	}
 }

@@ -8,17 +8,23 @@
 package org.eclipse.rdf4j.sail.lucene.util;
 
 import java.util.Properties;
+import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSail.DEFAULT_INDEX_CLASS;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSail.INDEX_CLASS_KEY;
 import org.eclipse.rdf4j.sail.lucene.SearchIndex;
 
 /**
+ * This is utility class with tool useful for manipulation on the {@link SearchIndex}.
+ * 
  * @author jacek grzebyta
+ * @version 2.3
  */
 public class SearchIndexUtils {
 
 	/**
-	 * The method is relocated to
+	 * The method creates instance of {@link SearchIndex}. The type of instantiated class depends on the value
+	 * of {@link LuceneSail#INDEX_CLASS_KEY} parameter. By default it is
+	 * <code>org.eclipse.rdf4j.sail.lucene.LuceneIndex</code>.
 	 *
 	 * @param parameters
 	 * @return

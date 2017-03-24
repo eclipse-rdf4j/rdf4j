@@ -56,6 +56,8 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public abstract class AbstractGenericLuceneTest {
 
@@ -87,6 +89,8 @@ public abstract class AbstractGenericLuceneTest {
 	public static final IRI PREDICATE_2 = vf.createIRI("urn:predicate2");
 
 	public static final IRI PREDICATE_3 = vf.createIRI("urn:predicate3");
+
+	private static final Logger LOG = LoggerFactory.getLogger(AbstractGenericLuceneTest.class);
 
 	protected LuceneSail sail;
 
@@ -159,8 +163,6 @@ public abstract class AbstractGenericLuceneTest {
 		}
 	}
 
-
-
 	@Test
 	public void testComplexQueryTwo()
 		throws MalformedQueryException, RepositoryException, QueryEvaluationException
@@ -176,21 +178,19 @@ public abstract class AbstractGenericLuceneTest {
 
 		// fire a query for all subjects with a given term
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
-		TupleQueryResult result = query.evaluate();
 
 		// check the results
-		assertTrue(result.hasNext());
-		BindingSet bindings = result.next();
-		assertEquals(SUBJECT_3, (IRI)bindings.getValue("Resource"));
-		assertEquals(SUBJECT_1, (IRI)bindings.getValue("Matching"));
-		assertNotNull(bindings.getValue("Score"));
+		try (TupleQueryResult result = query.evaluate()) {
+			// check the results
+			assertTrue(result.hasNext());
+			BindingSet bindings = result.next();
+			assertEquals(SUBJECT_3, (IRI)bindings.getValue("Resource"));
+			assertEquals(SUBJECT_1, (IRI)bindings.getValue("Matching"));
+			assertNotNull(bindings.getValue("Score"));
 
-		assertFalse(result.hasNext());
-
-		result.close();
+			assertFalse(result.hasNext());
+		}
 	}
-
-	
 
 	private void evaluate(String[] queries, ArrayList<List<Map<String, String>>> expectedResults)
 		throws MalformedQueryException, RepositoryException, QueryEvaluationException
@@ -201,70 +201,73 @@ public abstract class AbstractGenericLuceneTest {
 
 			// fire the query
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, serql);
-			TupleQueryResult tqr = query.evaluate();
-
+			int actualResults;
+			Set<Integer> matched;
 			// check the results
-			int actualResults = 0;
-			Set<Integer> matched = new HashSet<Integer>();
-			while (tqr.hasNext()) {
-				BindingSet bs = tqr.next();
-				actualResults++;
+			try (TupleQueryResult tqr = query.evaluate()) {
+				// check the results
+				actualResults = 0;
+				matched = new HashSet<>();
+				while (tqr.hasNext()) {
+					BindingSet bs = tqr.next();
+					actualResults++;
 
-				boolean matches;
-				for (int resultSetID = 0; resultSetID < expectedResultSet.size(); resultSetID++) {
-					// ignore results that matched before
-					if (matched.contains(resultSetID))
-						continue;
-
-					// assume it matches
-					matches = true;
-
-					// get the result we compare with now
-					Map<String, String> expectedResult = new HashMap<String, String>(
-							expectedResultSet.get(resultSetID));
-
-					// get all var names
-					Collection<String> vars = new ArrayList<String>(expectedResult.keySet());
-
-					// check if all actual results are expected
-					for (String var : vars) {
-						String expectedVal = expectedResult.get(var);
-						Value actualVal = bs.getValue(var);
-
-						if (expectedVal == null) {
-							// don't care about the actual value, as long as there is
-							// one
-							if (actualVal == null) {
-								matches = false;
-								break;
-							}
-						}
-						else {
-							// compare the values
-							if ((actualVal == null)
-									|| (expectedVal.compareTo(actualVal.stringValue()) != 0))
-							{
-								matches = false;
-								break;
-							}
+					boolean matches;
+					for (int resultSetID = 0; resultSetID < expectedResultSet.size(); resultSetID++) {
+						// ignore results that matched before
+						if (matched.contains(resultSetID)) {
+							continue;
 						}
 
-						// remove the matched result so that we do not match it twice
-						expectedResult.remove(var);
-					}
+						// assume it matches
+						matches = true;
 
-					// check if expected results were existing
-					if (expectedResult.size() != 0) {
-						matches = false;
-					}
+						// get the result we compare with now
+						Map<String, String> expectedResult = new HashMap<>(
+								expectedResultSet.get(resultSetID));
 
-					if (matches) {
-						matched.add(resultSetID);
-						break;
+						// get all var names
+						Collection<String> vars = new ArrayList<>(expectedResult.keySet());
+
+						// check if all actual results are expected
+						for (String var : vars) {
+							String expectedVal = expectedResult.get(var);
+							Value actualVal = bs.getValue(var);
+
+							if (expectedVal == null) {
+								// don't care about the actual value, as long as there is
+								// one
+								if (actualVal == null) {
+									matches = false;
+									break;
+								}
+							}
+							else {
+								// compare the values
+								if ((actualVal == null)
+										|| (expectedVal.compareTo(actualVal.stringValue()) != 0))
+								{
+									matches = false;
+									break;
+								}
+							}
+
+							// remove the matched result so that we do not match it twice
+							expectedResult.remove(var);
+						}
+
+						// check if expected results were existing
+						if (!expectedResult.isEmpty()) {
+							matches = false;
+						}
+
+						if (matches) {
+							matched.add(resultSetID);
+							break;
+						}
 					}
 				}
 			}
-			tqr.close();
 
 			// the number of matched expected results must be equal to the number
 			// of actual results
@@ -288,51 +291,49 @@ public abstract class AbstractGenericLuceneTest {
 						+ "> {} \n" + "    <" + QUERY + "> {\"five\"}; \n" + "    <" + SCORE + "> {Score}; \n"
 						+ "    <" + SNIPPET + "> {Snippet}" };
 
-		ArrayList<List<Map<String, String>>> results = new ArrayList<List<Map<String, String>>>();
-		ArrayList<Map<String, String>> resultSet = null;
-		Map<String, String> result = null;
+		ArrayList<List<Map<String, String>>> allResults = new ArrayList<>();
 
 		// create a new result set
-		resultSet = new ArrayList<Map<String, String>>();
+		ArrayList<Map<String, String>> resultSet = new ArrayList<>();
 
 		// one possible result
-		result = new HashMap<String, String>();
-		result.put("Resource", SUBJECT_1.stringValue());
-		result.put("Score", null); // null means: ignore the value
-		result.put("Snippet", "<B>one</B>");
-		resultSet.add(result);
+		Map<String, String> result1 = new HashMap<>();
+		result1.put("Resource", SUBJECT_1.stringValue());
+		result1.put("Score", null); // null means: ignore the value
+		result1.put("Snippet", "<B>one</B>");
+		resultSet.add(result1);
 
 		// another possible result
-		result = new HashMap<String, String>();
-		result.put("Resource", SUBJECT_2.stringValue());
-		result.put("Score", null); // null means: ignore the value
-		result.put("Snippet", "<B>one</B>");
-		resultSet.add(result);
+		Map<String, String> result2 = new HashMap<>();
+		result2.put("Resource", SUBJECT_2.stringValue());
+		result2.put("Score", null); // null means: ignore the value
+		result2.put("Snippet", "<B>one</B>");
+		resultSet.add(result2);
 
 		// another possible result
-		result = new HashMap<String, String>();
-		result.put("Resource", SUBJECT_3.stringValue());
-		result.put("Score", null); // null means: ignore the value
-		result.put("Snippet", "<B>one</B>");
-		resultSet.add(result);
+		Map<String, String> result3 = new HashMap<>();
+		result3.put("Resource", SUBJECT_3.stringValue());
+		result3.put("Score", null); // null means: ignore the value
+		result3.put("Snippet", "<B>one</B>");
+		resultSet.add(result3);
 
 		// add the results of for the first query
-		results.add(resultSet);
+		allResults.add(resultSet);
 
-		// create a new result set
-		resultSet = new ArrayList<Map<String, String>>();
+		// recreate a result set
+		resultSet = new ArrayList<>();
 
 		// one possible result
-		result = new HashMap<String, String>();
+		Map<String, String> result = new HashMap<>();
 		result.put("Resource", SUBJECT_1.stringValue());
 		result.put("Score", null); // null means: ignore the value
 		result.put("Snippet", "<B>five</B>");
 		resultSet.add(result);
 
 		// add the results of for the first query
-		results.add(resultSet);
+		allResults.add(resultSet);
 
-		evaluate(queries, results);
+		evaluate(queries, allResults);
 	}
 
 	@Test
@@ -353,32 +354,33 @@ public abstract class AbstractGenericLuceneTest {
 
 		// fire the query
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
-		TupleQueryResult result = query.evaluate();
+		try (TupleQueryResult result = query.evaluate()) {
 
-		// check the results
-		BindingSet bindings = null;
+			// check the results
+			BindingSet bindings = null;
 
-		// the first result is subject 1 and has a score
-		int results = 0;
-		Set<IRI> expectedSubject = new HashSet<IRI>();
-		expectedSubject.add(SUBJECT_1);
-		expectedSubject.add(SUBJECT_2);
-		while (result.hasNext()) {
-			results++;
-			bindings = result.next();
+			// the first result is subject 1 and has a score
+			int results = 0;
+			Set<IRI> expectedSubject = new HashSet<IRI>();
+			expectedSubject.add(SUBJECT_1);
+			expectedSubject.add(SUBJECT_2);
+			while (result.hasNext()) {
+				results++;
+				bindings = result.next();
 
-			// the resource should be among the set of expected subjects, if so,
-			// remove it from the set
-			assertTrue(expectedSubject.remove(bindings.getValue("Resource")));
+				// the resource should be among the set of expected subjects, if so,
+				// remove it from the set
+				assertTrue(expectedSubject.remove(bindings.getValue("Resource")));
 
-			// there should be a score
-			assertNotNull(bindings.getValue("Score"));
+				// there should be a score
+				assertNotNull(bindings.getValue("Score"));
+			}
+
+			// there should have been only 2 results
+			assertEquals(2, results);
+
+			result.close();
 		}
-
-		// there should have been only 2 results
-		assertEquals(2, results);
-
-		result.close();
 	}
 
 	/**
@@ -389,36 +391,37 @@ public abstract class AbstractGenericLuceneTest {
 	public void testSnippetLimitedToPredicate()
 		throws MalformedQueryException, RepositoryException, QueryEvaluationException
 	{
-		// more test-data
-		RepositoryConnection myconnection = repository.getConnection();
-		myconnection.begin();
-		// we use the string 'charly' as test-case. the snippets should contain
-		// "come" and "unicorn"
-		// and 'poor' should not be returned if we limit on predicate1
-		// and watch http://www.youtube.com/watch?v=Q5im0Ssyyus like 25mio others
-		myconnection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral("come charly lets go to candy mountain"));
-		myconnection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral("but the unicorn charly said to goaway"));
-		myconnection.add(SUBJECT_1, PREDICATE_2, vf.createLiteral("there was poor charly without a kidney"));
-		myconnection.commit();
-		myconnection.close();
+		try (RepositoryConnection localConnection = repository.getConnection()) {
+			localConnection.begin();
+			// we use the string 'charly' as test-case. the snippets should contain
+			// "come" and "unicorn"
+			// and 'poor' should not be returned if we limit on predicate1
+			// and watch http://www.youtube.com/watch?v=Q5im0Ssyyus like 25mio others
+			localConnection.add(SUBJECT_1, PREDICATE_1,
+					vf.createLiteral("come charly lets go to candy mountain"));
+			localConnection.add(SUBJECT_1, PREDICATE_1,
+					vf.createLiteral("but the unicorn charly said to goaway"));
+			localConnection.add(SUBJECT_1, PREDICATE_2,
+					vf.createLiteral("there was poor charly without a kidney"));
+			localConnection.commit();
+		}
 
-		{
-			// prepare the query
-			// search for the term "charly", but only in predicate 1
-			StringBuilder buffer = new StringBuilder();
-			buffer.append("SELECT \n");
-			buffer.append("  Resource, Score, Snippet \n");
-			buffer.append("FROM \n");
-			buffer.append("  {Resource} <" + MATCHES + "> {} ");
-			buffer.append("    <" + QUERY + "> {\"charly\"}; ");
-			buffer.append("    <" + PROPERTY + "> {<" + PREDICATE_1 + ">}; ");
-			buffer.append("    <" + SNIPPET + "> {Snippet}; ");
-			buffer.append("    <" + SCORE + "> {Score} ");
-			String q = buffer.toString();
+		// prepare the query
+		// search for the term "charly", but only in predicate 1
+		StringBuilder buffer = new StringBuilder();
+		buffer.append("SELECT \n");
+		buffer.append("  Resource, Score, Snippet \n");
+		buffer.append("FROM \n");
+		buffer.append("  {Resource} <" + MATCHES + "> {} ");
+		buffer.append("    <" + QUERY + "> {\"charly\"}; ");
+		buffer.append("    <" + PROPERTY + "> {<" + PREDICATE_1 + ">}; ");
+		buffer.append("    <" + SNIPPET + "> {Snippet}; ");
+		buffer.append("    <" + SCORE + "> {Score} ");
+		String q = buffer.toString();
 
-			// fire the query
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
-			TupleQueryResult result = query.evaluate();
+		// fire the query
+		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
+		try (TupleQueryResult result = query.evaluate()) {
 
 			// check the results
 			BindingSet bindings = null;
@@ -444,12 +447,14 @@ public abstract class AbstractGenericLuceneTest {
 						i.remove();
 					}
 				}
-				if (snippet.contains(notexpected))
+				if (snippet.contains(notexpected)) {
 					fail("snippet '" + snippet + "' contained value '" + notexpected + "' from predicate "
 							+ PREDICATE_2);
-				if (!foundexpected)
+				}
+				if (!foundexpected) {
 					fail("did not find any of the expected strings " + expectedSnippetPart
 							+ " in the snippet " + snippet);
+				}
 
 				// there should be a score
 				assertNotNull(bindings.getValue("Score"));
@@ -460,28 +465,42 @@ public abstract class AbstractGenericLuceneTest {
 					expectedSnippetPart.isEmpty());
 
 			assertEquals("there should have been 2 results", 2, results);
-
-			result.close();
 		}
-		/**
-		 * DO THE SAME, BUT WIHTOUT PROPERTY RESTRICTION, JUST TO CHECK
-		 */
-		{
-			// prepare the query
-			// search for the term "charly" in all predicates
-			StringBuilder buffer = new StringBuilder();
-			buffer.append("SELECT \n");
-			buffer.append("  Resource, Score, Snippet \n");
-			buffer.append("FROM \n");
-			buffer.append("  {Resource} <" + MATCHES + "> {} ");
-			buffer.append("    <" + QUERY + "> {\"charly\"}; ");
-			buffer.append("    <" + SNIPPET + "> {Snippet}; ");
-			buffer.append("    <" + SCORE + "> {Score} ");
-			String q = buffer.toString();
+	}
 
-			// fire the query
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
-			TupleQueryResult result = query.evaluate();
+	@Test
+	public void testCharlyTerm()
+		throws Exception
+	{
+
+		try (RepositoryConnection localConnection = repository.getConnection()) {
+			localConnection.begin();
+			// we use the string 'charly' as test-case. the snippets should contain
+			// "come" and "unicorn"
+			// and 'poor' should not be returned if we limit on predicate1
+			// and watch http://www.youtube.com/watch?v=Q5im0Ssyyus like 25mio others
+			localConnection.add(SUBJECT_1, PREDICATE_1,
+					vf.createLiteral("come charly lets go to candy mountain"));
+			localConnection.add(SUBJECT_1, PREDICATE_1,
+					vf.createLiteral("but the unicorn charly said to goaway"));
+			localConnection.add(SUBJECT_1, PREDICATE_2,
+					vf.createLiteral("there was poor charly without a kidney"));
+			localConnection.commit();
+		}
+		// search for the term "charly" in all predicates
+		StringBuilder buffer = new StringBuilder();
+		buffer.append("SELECT \n");
+		buffer.append("  Resource, Score, Snippet \n");
+		buffer.append("FROM \n");
+		buffer.append("  {Resource} <" + MATCHES + "> {} ");
+		buffer.append("    <" + QUERY + "> {\"charly\"}; ");
+		buffer.append("    <" + SNIPPET + "> {Snippet}; ");
+		buffer.append("    <" + SCORE + "> {Score} ");
+		String q = buffer.toString();
+
+		// fire the query
+		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
+		try (TupleQueryResult result = query.evaluate()) {
 
 			// check the results
 			BindingSet bindings = null;
@@ -508,9 +527,10 @@ public abstract class AbstractGenericLuceneTest {
 						i.remove();
 					}
 				}
-				if (!foundexpected)
+				if (!foundexpected) {
 					fail("did not find any of the expected strings " + expectedSnippetPart
 							+ " in the snippet " + snippet);
+				}
 
 				// there should be a score
 				assertNotNull(bindings.getValue("Score"));
@@ -521,8 +541,6 @@ public abstract class AbstractGenericLuceneTest {
 					expectedSnippetPart.isEmpty());
 
 			assertEquals("there should have been 3 results", 3, results);
-
-			result.close();
 		}
 	}
 
@@ -548,31 +566,34 @@ public abstract class AbstractGenericLuceneTest {
 		int r = 0;
 		int n = 0;
 		GraphQuery gq = connection.prepareGraphQuery(QueryLanguage.SERQL, query.toString());
-		GraphQueryResult result = gq.evaluate();
-		while (result.hasNext()) {
-			Statement statement = result.next();
-			n++;
+		try (GraphQueryResult result = gq.evaluate()) {
+			while (result.hasNext()) {
+				Statement statement = result.next();
+				n++;
 
-			if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(PREDICATE_3)
-					&& statement.getObject().equals(SUBJECT_1))
-			{
-				r |= 1;
-				continue;
+				if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(PREDICATE_3)
+						&& statement.getObject().equals(SUBJECT_1))
+				{
+					r |= 1;
+					continue;
+				}
+				if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(PREDICATE_3)
+						&& statement.getObject().equals(SUBJECT_2))
+				{
+					r |= 2;
+					continue;
+				}
+				if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(score)) {
+					r |= 4;
+					continue;
+				}
 			}
-			if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(PREDICATE_3)
-					&& statement.getObject().equals(SUBJECT_2))
-			{
-				r |= 2;
-				continue;
-			}
-			if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(score)) {
-				r |= 4;
-				continue;
-			}
+
+			assertEquals(3, n);
+			assertEquals(7, r);
+
 		}
 
-		assertEquals(3, n);
-		assertEquals(7, r);
 	}
 
 	@Test
@@ -583,16 +604,15 @@ public abstract class AbstractGenericLuceneTest {
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, QUERY_STRING);
 		query.setBinding("Subject", SUBJECT_1);
 		query.setBinding("Query", vf.createLiteral("one"));
-		TupleQueryResult result = query.evaluate();
-
 		// check that this subject and only this subject is returned
-		assertTrue(result.hasNext());
-		BindingSet bindings = result.next();
-		assertEquals(SUBJECT_1, (IRI)bindings.getValue("Subject"));
-		assertNotNull(bindings.getValue("Score"));
-		assertFalse(result.hasNext());
-
-		result.close();
+		try (TupleQueryResult result = query.evaluate()) {
+			// check that this subject and only this subject is returned
+			assertTrue(result.hasNext());
+			BindingSet bindings = result.next();
+			assertEquals(SUBJECT_1, (IRI)bindings.getValue("Subject"));
+			assertNotNull(bindings.getValue("Score"));
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Test
@@ -614,15 +634,18 @@ public abstract class AbstractGenericLuceneTest {
 
 		// fire a query with the subject pre-specified
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
-		TupleQueryResult result = query.evaluate();
-		while (result.hasNext()) {
-			System.out.println(result.next());
+		try (TupleQueryResult result = query.evaluate()) {
+			while (result.hasNext()) {
+				System.out.println(result.next());
+			}
 		}
-
-		// check that this subject and only this subject is returned
-		result.close();
 	}
 
+	/**
+	 * Tests adding data to two contexts (graphs).
+	 * 
+	 * @throws Exception
+	 */
 	@Test
 	public void testContextHandling()
 		throws Exception
@@ -652,55 +675,6 @@ public abstract class AbstractGenericLuceneTest {
 		assertNoQueryResult("sfiveponecone");
 		assertQueryResult("sfiveponectwo", PREDICATE_1, SUBJECT_5);
 		assertQueryResult("sfiveptwoctwo", PREDICATE_2, SUBJECT_5);
-	}
-
-	@Test
-	public void testConcurrentReadingAndWriting()
-		throws Exception
-	{
-
-		connection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral("sfourponecone"), CONTEXT_1);
-		connection.add(SUBJECT_2, PREDICATE_1, vf.createLiteral("sfourponecone"), CONTEXT_1);
-
-		connection.commit();
-		// prepare the query
-
-		{
-			String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY
-					+ "> {\"sfourponecone\"} ";
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
-			TupleQueryResult result = query.evaluate();
-
-			// check the results
-			assertTrue(result.hasNext());
-			@SuppressWarnings("unused")
-			BindingSet bindings = result.next();
-
-			connection.add(SUBJECT_3, PREDICATE_1, vf.createLiteral("sfourponecone"), CONTEXT_1);
-
-			assertTrue(result.hasNext());
-			bindings = result.next();
-			result.close();
-			connection.commit();
-		}
-		{
-			String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY
-					+ "> {\"sfourponecone\"} ";
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
-			TupleQueryResult result = query.evaluate();
-
-			// check the results
-			assertTrue(result.hasNext());
-			@SuppressWarnings("unused")
-			BindingSet bindings = result.next();
-
-			connection.add(SUBJECT_3, PREDICATE_1, vf.createLiteral("blubbb"), CONTEXT_1);
-			connection.commit();
-
-			assertTrue(result.hasNext());
-			bindings = result.next();
-			result.close();
-		}
 	}
 
 	/**
@@ -756,35 +730,39 @@ public abstract class AbstractGenericLuceneTest {
 
 		// fire the query
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
-		TupleQueryResult result = query.evaluate();
-
 		// check the results
-		BindingSet bindings = null;
+		try (TupleQueryResult result = query.evaluate()) {
+			// check the results
+			BindingSet bindings = null;
 
-		// the first result is subject 1 and has a score
-		int results = 0;
-		Set<IRI> expectedSubject = new HashSet<IRI>();
-		expectedSubject.add(SUBJECT_1);
-		expectedSubject.add(SUBJECT_2);
-		expectedSubject.add(SUBJECT_3);
-		while (result.hasNext()) {
-			results++;
-			bindings = result.next();
+			// the first result is subject 1 and has a score
+			int results = 0;
+			Set<IRI> expectedSubject = new HashSet<IRI>();
+			expectedSubject.add(SUBJECT_1);
+			expectedSubject.add(SUBJECT_2);
+			expectedSubject.add(SUBJECT_3);
+			while (result.hasNext()) {
+				results++;
+				bindings = result.next();
 
-			// the resource should be among the set of expected subjects, if so,
-			// remove it from the set
-			assertTrue(expectedSubject.remove((IRI)bindings.getValue("Resource")));
+				// the resource should be among the set of expected subjects, if so,
+				// remove it from the set
+				assertTrue(expectedSubject.remove((IRI)bindings.getValue("Resource")));
 
-			// there should be a score
-			assertNotNull(bindings.getValue("Score"));
+				// there should be a score
+				assertNotNull(bindings.getValue("Score"));
+			}
+
+			// there should have been 3 results
+			assertEquals(3, results);
 		}
-
-		// there should have been 3 results
-		assertEquals(3, results);
-
-		result.close();
 	}
 
+	/**
+	 * Checks if reindexing does not corrupt the new index and if complex query still is evaluated properly.
+	 * 
+	 * @throws Exception
+	 */
 	@Test
 	public void testReindexing()
 		throws Exception
@@ -808,28 +786,26 @@ public abstract class AbstractGenericLuceneTest {
 
 		// fire the query
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
-		TupleQueryResult result = query.evaluate();
+		try (TupleQueryResult result = query.evaluate()) {
+			int results = 0;
+			Map<IRI, IRI> expectedSubject = new HashMap<IRI, IRI>();
+			expectedSubject.put(SUBJECT_1, PREDICATE_1);
+			expectedSubject.put(SUBJECT_2, PREDICATE_1);
+			expectedSubject.put(SUBJECT_3, PREDICATE_2);
+			while (result.hasNext()) {
+				results++;
+				BindingSet bindings = result.next();
 
-		int results = 0;
-		Map<IRI, IRI> expectedSubject = new HashMap<IRI, IRI>();
-		expectedSubject.put(SUBJECT_1, PREDICATE_1);
-		expectedSubject.put(SUBJECT_2, PREDICATE_1);
-		expectedSubject.put(SUBJECT_3, PREDICATE_2);
-		while (result.hasNext()) {
-			results++;
-			BindingSet bindings = result.next();
+				// the resource should be among the set of expected subjects, if so,
+				// remove it from the set
+				Value subject = bindings.getValue("Resource");
+				IRI expectedProperty = expectedSubject.remove(subject);
+				assertEquals("For subject " + subject, expectedProperty, bindings.getValue("Property"));
+			}
 
-			// the resource should be among the set of expected subjects, if so,
-			// remove it from the set
-			Value subject = bindings.getValue("Resource");
-			IRI expectedProperty = expectedSubject.remove(subject);
-			assertEquals("For subject " + subject, expectedProperty, bindings.getValue("Property"));
+			// there should have been 3 results
+			assertEquals(3, results);
 		}
-
-		// there should have been 3 results
-		assertEquals(3, results);
-
-		result.close();
 	}
 
 	@Test
@@ -842,7 +818,10 @@ public abstract class AbstractGenericLuceneTest {
 		final Set<Throwable> exceptions = ConcurrentHashMap.newKeySet();
 		for (int i = 0; i < numThreads; i++) {
 			new Thread(new Runnable() {
+
 				private long iterationCount = 10 + Math.round(Math.random() * 100);
+
+				@Override
 				public void run() {
 					try (RepositoryConnection con = repository.getConnection()) {
 						startLatch.await();
@@ -877,8 +856,7 @@ public abstract class AbstractGenericLuceneTest {
 		String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY
 				+ "> {\"" + literal + "\"} ";
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
-		TupleQueryResult result = query.evaluate();
-		try {
+		try (TupleQueryResult result = query.evaluate()) {
 			// check the result
 			assertTrue("query for literal '" + literal + " did not return any results, expected was "
 					+ resultUri, result.hasNext());
@@ -886,9 +864,6 @@ public abstract class AbstractGenericLuceneTest {
 			assertEquals("query for literal '" + literal + " did not return the expected resource", resultUri,
 					bindings.getValue("Resource"));
 			assertFalse(result.hasNext());
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -899,15 +874,10 @@ public abstract class AbstractGenericLuceneTest {
 		String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY
 				+ "> {\"" + literal + "\"} ";
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
-		TupleQueryResult result = query.evaluate();
-		try {
-
+		try (TupleQueryResult result = query.evaluate()) {
 			// check the result
 			assertFalse("query for literal '" + literal + " did return results, which was not expected.",
 					result.hasNext());
-		}
-		finally {
-			result.close();
 		}
 	}
 

@@ -7,7 +7,6 @@
  */
 package org.eclipse.rdf4j.lucene.spin;
 
-import com.google.common.io.Files;
 import java.io.File;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.ALL_MATCHES;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
@@ -16,7 +15,6 @@ import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SEARCH;
 import java.io.IOException;
 import java.net.URL;
 import java.util.Properties;
-import org.apache.commons.io.FileUtils;
 
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -48,7 +46,9 @@ import org.eclipse.rdf4j.sail.spin.SpinSail;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.ClassRule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -65,7 +65,8 @@ public class LuceneSailSpinTest {
 
 	private static Logger log = LoggerFactory.getLogger(LuceneSailSpinTest.class);
 
-	private File tempDir;
+	@ClassRule
+	public static TemporaryFolder tempDir = new TemporaryFolder();
 
 	private Repository repository;
 
@@ -86,9 +87,9 @@ public class LuceneSailSpinTest {
 
 		// add Lucene Spin Sail support
 		LuceneSpinSail luc = new LuceneSpinSail(spin);
-		tempDir = Files.createTempDir();
-		log.debug("data file: {}", tempDir.getAbsolutePath());
-		luc.setDataDir(tempDir);
+		File tmpDirFolder = tempDir.newFolder();
+		log.debug("data file: {}", tmpDirFolder);
+		luc.setDataDir(tmpDirFolder);
 		repository = new SailRepository(luc);
 
 		// set up parameters
@@ -123,13 +124,16 @@ public class LuceneSailSpinTest {
 	public void tearDown()
 		throws RepositoryException, IOException
 	{
-		if (connection != null) {
-			if (connection.isActive()) {
-				connection.commit();
+		try {
+			if (connection != null) {
+				connection.close();
 			}
-			connection.close();
 		}
-		FileUtils.deleteDirectory(tempDir);
+		finally {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		}
 	}
 
 	protected void populate(RepositoryConnection repoConn)
@@ -351,21 +355,21 @@ public class LuceneSailSpinTest {
 		return Iterations.asList(results).size();
 	}
 
-	protected void printGraphResult(GraphQuery query) {
+	public void printGraphResult(GraphQuery query) {
 		ByteArrayOutputStream resultoutput = new ByteArrayOutputStream();
 		query.evaluate(new TurtleWriter(resultoutput));
 		log.info("graph result:");
 		log.info("\n=============\n" + new String(resultoutput.toByteArray()) + "\n=============");
 	}
 
-	protected void printTupleResult(TupleQuery query) {
+	public void printTupleResult(TupleQuery query) {
 		ByteArrayOutputStream resultoutput = new ByteArrayOutputStream();
 		query.evaluate(new SPARQLResultsCSVWriter(resultoutput));
 		log.info("tuple result:");
 		log.info("\n=============\n" + new String(resultoutput.toByteArray()) + "\n=============");
 	}
 
-	protected void configure(Properties parameters) {
+	public void configure(Properties parameters) {
 		parameters.setProperty(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS);
 	}
 }

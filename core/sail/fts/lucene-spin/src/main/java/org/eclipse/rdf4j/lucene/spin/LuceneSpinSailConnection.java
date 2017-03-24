@@ -47,7 +47,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	/**
 	 * the buffer that collects operations
 	 */
-	final private LuceneSailBuffer buffer = new LuceneSailBuffer();
+	private final LuceneSailBuffer buffer = new LuceneSailBuffer();
 
 	/**
 	 * The listener that listens to the underlying connection. It is disabled during clearContext operations.
@@ -58,8 +58,6 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 		public void statementAdded(Statement statement) {
 			// we only consider statements that contain literals
 			if (statement.getObject() instanceof Literal) {
-				if (statement == null)
-					return;
 				// we further only index statements where the Literal's datatype is
 				// accepted
 				Literal literal = (Literal)statement.getObject();
@@ -72,8 +70,6 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 		public void statementRemoved(Statement statement) {
 			// we only consider statements that contain literals
 			if (statement.getObject() instanceof Literal) {
-				if (statement == null)
-					return;
 				// we further only indexed statements where the Literal's datatype
 				// is accepted
 				Literal literal = (Literal)statement.getObject();
@@ -121,8 +117,6 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 				catch (IOException e) {
 					logger.warn("could not close IndexReader or IndexSearcher " + e, e);
 				}
-				// remember if you were closed before, some sloppy programmers
-				// may call close() twice.
 			}
 		}
 	}
