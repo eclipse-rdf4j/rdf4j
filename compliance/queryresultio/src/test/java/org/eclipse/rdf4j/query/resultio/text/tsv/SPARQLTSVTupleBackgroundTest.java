@@ -81,10 +81,10 @@ public class SPARQLTSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 		assertRegex(
 				"\\?a\n" + "<foo:bar>\n"
 						+ "(2.0(E0)?|\"2.0\"\\^\\^<http://www.w3.org/2001/XMLSchema#double>)\n" + "_:bnode3\n"
-						+ "\"''single-quoted string\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
+						+ "\"?''single-quoted string(\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?)?\n"
 						+ "\"\\\\\"\\\\\"double-quoted string\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
-						+ "\"space at the end         \"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
-						+ "\"space at the end         \"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
+						+ "\"?space at the end         (\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?)?\n"
+						+ "\"?space at the end         (\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?)?\n"
 						+ "\"\\\\\"\\\\\"double-quoted string with no datatype\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
 						+ "\"newline at the end \\\\n\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n?",
 				toString(createTupleSingleVarMultipleBindingSets()));
@@ -96,11 +96,11 @@ public class SPARQLTSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 	{
 		assertRegex(
 				"\\?a\t\\?b\t\\?c\n"
-						+ "<foo:bar>\t_:bnode\t\"baz\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
+						+ "<foo:bar>\t_:bnode\t(baz|\"baz\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?)\n"
 						+ "(1|\"1\"\\^\\^<http://www.w3.org/2001/XMLSchema#integer>)\t\t\"Hello World!\"@en\n"
-						+ "<http://example.org/test/ns/bindingA>\t\"http://example.com/other/ns/bindingB\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\t<http://example.com/other/ns/binding,C>\n"
-						+ "\"string with newline at the end       \\\\n\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\t\"string with space at the end         \"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\t\"    \"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n"
-						+ "\"''single-quoted string\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\t\"\\\\\"\\\\\"double-quoted string\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\t\"\\\\t\\\\tunencoded tab characters followed by encoded \\\\t\\\\t\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n?",
+						+ "<http://example.org/test/ns/bindingA>\t\"?http://example.com/other/ns/bindingB(\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?)?\t<http://example.com/other/ns/binding,C>\n"
+						+ "\"string with newline at the end       \\\\n\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\t\"?string with space at the end         (\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?)?\t\"?    (\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?)?\n"
+						+ "\"?''single-quoted string(\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?)?\t\"\\\\\"\\\\\"double-quoted string\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\t\"\\\\t\\\\tunencoded tab characters followed by encoded \\\\t\\\\t\"(\\^\\^<http://www.w3.org/2001/XMLSchema#string>)?\n?",
 				toString(createTupleMultipleBindingSets()));
 	}
 
