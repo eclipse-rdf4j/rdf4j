@@ -96,10 +96,10 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
-	public synchronized void addStatement(Resource arg0, IRI arg1, Value arg2, Resource... arg3)
+	public synchronized void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException
 	{
-		super.addStatement(arg0, arg1, arg2, arg3);
+		super.addStatement(subj, pred, obj, contexts);
 	}
 
 	@Override
@@ -116,6 +116,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 				}
 				catch (IOException e) {
 					logger.warn("could not close IndexReader or IndexSearcher " + e, e);
+					throw new SailException(e);
 				}
 			}
 		}
@@ -124,7 +125,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	// //////////////////////////////// Methods related to indexing
 
 	@Override
-	public synchronized void clear(Resource... arg0)
+	public synchronized void clear(Resource... resources)
 		throws SailException
 	{
 		// remove the connection listener, this is safe as the changing methods
@@ -132,8 +133,8 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 		// during the clear(), no other operation can be invoked
 		getWrappedConnection().removeConnectionListener(connectionListener);
 		try {
-			super.clear(arg0);
-			buffer.clear(arg0);
+			super.clear(resources);
+			buffer.clear(resources);
 		}
 		finally {
 			getWrappedConnection().addConnectionListener(connectionListener);
@@ -182,9 +183,10 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 						logger.debug("clearing index...");
 						luceneIndex.clear();
 					}
-					else
-						throw new RuntimeException(
+					else {
+						throw new SailException(
 								"Cannot interpret operation " + op + " of type " + op.getClass().getName());
+					}
 					i.remove();
 				}
 			}
