@@ -7,8 +7,6 @@
  */
 package org.eclipse.rdf4j.lucene.spin;
 
-import com.google.common.io.Files;
-import java.io.File;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.MATCHES;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.QUERY;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
@@ -17,7 +15,6 @@ import static org.hamcrest.CoreMatchers.is;
 
 import java.io.IOException;
 import java.net.URL;
-import org.apache.commons.io.FileUtils;
 
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.eclipse.rdf4j.common.iteration.Iterations;
