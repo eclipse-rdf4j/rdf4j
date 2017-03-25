@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -324,16 +325,21 @@ public class LuceneSailSpinTest {
 
 		connection.add(vf.createIRI("urn:test.org/data/rec2"), RDF.TYPE, vf.createIRI(NS, "Data"),
 				(Resource)null);
-		//connection.add(vf.createIRI("urn:test.org/data/rec2"), RDFS.LABEL,
-		//		vf.createLiteral("Sed ornare, leo"), (Resource)null);
+		connection.add(vf.createIRI("urn:test.org/data/rec2"), RDFS.LABEL,
+				vf.createLiteral("Sed ornare, leo"), (Resource)null);
 
-		//		connection.add(vf.createIRI("urn:test.org/data/rec2"), vf.createIRI(NS, "number"),
-		//				vf.createLiteral(2), (Resource)null);
+		connection.add(vf.createIRI("urn:test.org/data/rec2"), vf.createIRI(NS, "number"),
+				vf.createLiteral(2), (Resource)null);
 
 		connection.add(vf.createIRI("urn:test.org/data/rec2"), vf.createIRI(NS, "feature0010"),
 				vf.createLiteral("Some test"), (Resource)null);
 
 		connection.commit();
+
+		RepositoryResult<Statement> testResults = connection.getStatements(
+				vf.createIRI("urn:test.org/data/rec2"), RDFS.LABEL, null, (Resource)null);
+		int count = Iterations.asList(testResults).size();
+		Assert.assertEquals(1, count);
 	}
 
 	public int countStatements(RepositoryConnection connection)
