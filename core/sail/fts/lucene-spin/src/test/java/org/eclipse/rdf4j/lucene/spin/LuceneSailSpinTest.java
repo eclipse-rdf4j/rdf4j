@@ -308,6 +308,9 @@ public class LuceneSailSpinTest {
 	/**
 	 * Try to reproduce Exception java.lang.IllegalStateException: Multiple Documents for term .... Try to add
 	 * already loaded datasets from 220-example.ttl <br/>
+	 * <p>
+	 * This test should cover case when evaluated SPARQL returns several the same triples.
+	 * </p>
 	 * <code>
 	* <urn:test.org/data/rec2> a t:Data ;
 	*  rdfs:label "Sed ornare, leo" ;
