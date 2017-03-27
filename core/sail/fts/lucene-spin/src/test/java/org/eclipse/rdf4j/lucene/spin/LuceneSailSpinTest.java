@@ -47,7 +47,7 @@ import org.eclipse.rdf4j.sail.spin.SpinSail;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
-import org.junit.ClassRule;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
@@ -66,8 +66,8 @@ public class LuceneSailSpinTest {
 
 	private static Logger log = LoggerFactory.getLogger(LuceneSailSpinTest.class);
 
-	@ClassRule
-	public static TemporaryFolder tempDir = new TemporaryFolder();
+	@Rule
+	public TemporaryFolder tempDir = new TemporaryFolder();
 
 	private Repository repository;
 
@@ -110,7 +110,7 @@ public class LuceneSailSpinTest {
 			//localConn.begin();
 			int count = countStatements(localConn);
 			log.trace("storage contains {} triples", count);
-			assert count > 0;
+			Assert.assertTrue(count > 0);
 			//localConn.commit();
 			localConn.close();
 		}
@@ -118,7 +118,7 @@ public class LuceneSailSpinTest {
 		// testing connection
 		connection = repository.getConnection();
 		connection.begin();
-		assert connection.isActive() : "connection is not active";
+		Assert.assertTrue("connection is not active", connection.isActive());
 	}
 
 	@After

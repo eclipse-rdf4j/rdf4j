@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.lucene.spin;
 
 import java.io.File;
 import java.util.Properties;
-import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
@@ -79,7 +78,9 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	@Override
 	public void setDataDir(File dataDir) {
 		super.setDataDir(dataDir);
-		parameters.setProperty(LuceneSail.LUCENE_DIR_KEY, dataDir.getAbsolutePath() + "/index");
+		while (!parameters.containsKey(LuceneSail.LUCENE_DIR_KEY)) {
+			parameters.setProperty(LuceneSail.LUCENE_DIR_KEY, dataDir.getAbsolutePath() + "/index");
+		}
 	}
 
 	/**
