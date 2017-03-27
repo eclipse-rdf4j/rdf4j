@@ -120,12 +120,12 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 				if (startVarFixed && endVarFixed && currentLength > 2) {
 					v1 = getVarValue(startVar, startVarFixed, nextElement);
-					v2 = nextElement.getValue("END_" + JOINVAR_PREFIX + pathExpression.hashCode());
+					v2 = nextElement.getValue("END_" + JOINVAR_PREFIX + this.hashCode());
 				}
 				else if (startVarFixed && endVarFixed && currentLength == 2) {
 					v1 = getVarValue(startVar, startVarFixed, nextElement);
 					v2 = nextElement.getValue(
-							JOINVAR_PREFIX + (currentLength - 1) + "-" + pathExpression.hashCode());
+							JOINVAR_PREFIX + (currentLength - 1) + "-" + this.hashCode());
 				}
 				else {
 					v1 = getVarValue(startVar, startVarFixed, nextElement);
@@ -271,7 +271,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 			if (startVarFixed && endVarFixed) {
 				Var replacement = createAnonVar(
-						JOINVAR_PREFIX + currentLength + "-" + pathExpression.hashCode());
+						JOINVAR_PREFIX + currentLength + "-" + this.hashCode());
 
 				VarReplacer replacer = new VarReplacer(endVar, replacement, 0, false);
 				pathExprClone.visit(replacer);
@@ -290,8 +290,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 				if (startVarFixed && endVarFixed) {
 
 					Var startReplacement = createAnonVar(
-							JOINVAR_PREFIX + currentLength + "-" + pathExpression.hashCode());
-					Var endReplacement = createAnonVar("END_" + JOINVAR_PREFIX + pathExpression.hashCode());
+							JOINVAR_PREFIX + currentLength + "-" + this.hashCode());
+					Var endReplacement = createAnonVar("END_" + JOINVAR_PREFIX + this.hashCode());
 					startReplacement.setAnonymous(false);
 					endReplacement.setAnonymous(false);
 
@@ -317,7 +317,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 					}
 
 					Var replacement = createAnonVar(
-							JOINVAR_PREFIX + currentLength + "-" + pathExpression.hashCode());
+							JOINVAR_PREFIX + currentLength + "-" + this.hashCode());
 					replacement.setValue(v);
 
 					VarReplacer replacer = new VarReplacer(toBeReplaced, replacement, 0, false);
