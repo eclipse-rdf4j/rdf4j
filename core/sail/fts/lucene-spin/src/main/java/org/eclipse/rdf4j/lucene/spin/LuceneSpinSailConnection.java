@@ -163,39 +163,37 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 
 		logger.debug("Committing Lucene transaction with {} operations.", buffer.operations().size());
 		try {
-			try {
-				// preprocess buffer
-				buffer.optimize();
+			// preprocess buffer
+			buffer.optimize();
 
-				// run operations and remove them from buffer
-				for (Iterator<Operation> i = buffer.operations().iterator(); i.hasNext();) {
-					Operation op = i.next();
-					if (op instanceof LuceneSailBuffer.AddRemoveOperation) {
-						AddRemoveOperation addremove = (AddRemoveOperation)op;
-						// add/remove in one call
-						addRemoveStatements(addremove.getAdded(), addremove.getRemoved());
-					}
-					else if (op instanceof LuceneSailBuffer.ClearContextOperation) {
-						// clear context
-						clearContexts(((ClearContextOperation)op).getContexts());
-					}
-					else if (op instanceof LuceneSailBuffer.ClearOperation) {
-						logger.debug("clearing index...");
-						luceneIndex.clear();
-					}
-					else {
-						throw new SailException(
-								"Cannot interpret operation " + op + " of type " + op.getClass().getName());
-					}
-					i.remove();
+			// run operations and remove them from buffer
+			for (Iterator<Operation> i = buffer.operations().iterator(); i.hasNext();) {
+				Operation op = i.next();
+				if (op instanceof LuceneSailBuffer.AddRemoveOperation) {
+					AddRemoveOperation addremove = (AddRemoveOperation)op;
+					// add/remove in one call
+					addRemoveStatements(addremove.getAdded(), addremove.getRemoved());
 				}
+				else if (op instanceof LuceneSailBuffer.ClearContextOperation) {
+					// clear context
+					clearContexts(((ClearContextOperation)op).getContexts());
+				}
+				else if (op instanceof LuceneSailBuffer.ClearOperation) {
+					logger.debug("clearing index...");
+					luceneIndex.clear();
+				}
+				else {
+					throw new SailException(
+							"Cannot interpret operation " + op + " of type " + op.getClass().getName());
+				}
+				i.remove();
 			}
-			catch (Exception e) {
-				logger.error("Committing operations in lucenesail, encountered exception " + e
-						+ ". Only some operations were stored, " + buffer.operations().size()
-						+ " operations are discarded. Lucene Index is now corrupt.", e);
-				throw new SailException(e);
-			}
+		}
+		catch (Exception e) {
+			logger.error("Committing operations in lucenesail, encountered exception " + e
+					+ ". Only some operations were stored, " + buffer.operations().size()
+					+ " operations are discarded. Lucene Index is now corrupt.", e);
+			throw new SailException(e);
 		}
 		finally {
 			buffer.reset();
