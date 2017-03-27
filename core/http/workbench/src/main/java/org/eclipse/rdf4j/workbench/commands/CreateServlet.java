@@ -136,6 +136,7 @@ public class CreateServlet extends TransformationServlet {
 						() -> new RepositoryException(
 								"could not find instance of Repository class in config"));
 		final RepositoryConfig repConfig = RepositoryConfig.create(graph, res);
+		repConfig.setID(manager.getNewRepositoryID(repConfig.getID()));
 		repConfig.validate();
 		RepositoryConfigUtil.updateRepositoryConfigs(systemRepo, repConfig);
 		return repConfig;
