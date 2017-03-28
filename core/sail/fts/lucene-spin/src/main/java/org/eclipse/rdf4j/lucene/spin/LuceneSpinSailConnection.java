@@ -232,11 +232,14 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 		}
 	}
 
+	/**
+	 * {@inheritDoc }
+	 */
 	@Override
-	public synchronized void removeStatements(Resource arg0, IRI arg1, Value arg2, Resource... arg3)
+	public synchronized void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException
 	{
-		super.removeStatements(arg0, arg1, arg2, arg3);
+		super.removeStatements(subj, pred, obj, contexts);
 	}
 
 	@Override
