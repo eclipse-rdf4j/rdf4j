@@ -270,9 +270,10 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 					logger.debug("clearing index...");
 					luceneIndex.clear();
 				}
-				else
+				else {
 					throw new SailException(
 							"Cannot interpret operation " + op + " of type " + op.getClass().getName());
+				}
 				i.remove();
 			}
 		}
