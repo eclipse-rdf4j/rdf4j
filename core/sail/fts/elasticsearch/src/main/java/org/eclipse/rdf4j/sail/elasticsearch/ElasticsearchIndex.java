@@ -71,11 +71,11 @@ import org.slf4j.LoggerFactory;
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
 import com.google.common.collect.Iterables;
-import com.spatial4j.core.context.SpatialContext;
-import com.spatial4j.core.context.SpatialContextFactory;
-import com.spatial4j.core.distance.DistanceUtils;
-import com.spatial4j.core.shape.Point;
-import com.spatial4j.core.shape.Shape;
+import org.locationtech.spatial4j.core.context.SpatialContext;
+import org.locationtech.spatial4j.core.context.SpatialContextFactory;
+import org.locationtech.spatial4j.core.distance.DistanceUtils;
+import org.locationtech.spatial4j.core.shape.Point;
+import org.locationtech.spatial4j.core.shape.Shape;
 
 /**
  * @see LuceneSail

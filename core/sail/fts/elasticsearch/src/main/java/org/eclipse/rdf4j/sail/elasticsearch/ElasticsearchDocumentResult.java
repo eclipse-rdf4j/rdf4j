@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.elasticsearch.search.SearchHit;
 
 import com.google.common.base.Function;
-import com.spatial4j.core.context.SpatialContext;
+import org.locationtech.spatial4j.core.context.SpatialContext;
 
 public class ElasticsearchDocumentResult implements DocumentResult {
 
