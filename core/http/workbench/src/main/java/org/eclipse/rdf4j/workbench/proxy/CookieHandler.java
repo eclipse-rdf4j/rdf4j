@@ -60,7 +60,7 @@ public class CookieHandler {
 
 	private void initCookie(final Cookie cookie, final HttpServletRequest req) {
 		final String context = req.getContextPath();
-		cookie.setPath(null == context ? "/" : context);
+		cookie.setPath(context.isEmpty() ? "/" : context);
 		if (maxAge != null) {
 			cookie.setMaxAge(Integer.parseInt(maxAge));
 		}
