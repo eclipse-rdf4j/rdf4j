@@ -75,7 +75,7 @@ public class ConfigTemplate {
 			if (!variableMap.containsKey(var)) {
 				variableMap.put(var, tokens.subList(1, tokens.size()));
 				int start = matcher.start();
-				String before = template.substring(start - 3, start);
+				String before = template.substring(Math.max(start - 3, 0), start);
 				int end = matcher.end();
 				if (("'''".equals(before) || "\"\"\"".equals(before))
 						&& before.equals(template.substring(end, end + 3)))
@@ -105,7 +105,7 @@ public class ConfigTemplate {
 			if (!value.isEmpty() && multilineMap.containsKey(var)) {
 				value = escapeMultilineQuotes(multilineMap.get(var), value);
 			}
-			matcher.appendReplacement(result, value);
+			matcher.appendReplacement(result, Matcher.quoteReplacement(value));
 		}
 		matcher.appendTail(result);
 		return result.toString();
