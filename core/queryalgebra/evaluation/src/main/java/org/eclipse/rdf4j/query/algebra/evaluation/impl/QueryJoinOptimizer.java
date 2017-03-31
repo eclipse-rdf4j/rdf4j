@@ -202,7 +202,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			List<TupleExpr> subselects = new ArrayList<TupleExpr>();
 
 			for (TupleExpr expr : expressions) {
-				if (TupleExprs.containsProjection(expr)) {
+				if (TupleExprs.containsSubquery(expr)) {
 					subselects.add(expr);
 				}
 			}

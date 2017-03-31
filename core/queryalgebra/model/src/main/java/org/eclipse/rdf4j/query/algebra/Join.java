@@ -42,7 +42,7 @@ public class Join extends BinaryTupleOperator {
 	 */
 	@Deprecated
 	public boolean hasSubSelectInRightArg() {
-		return TupleExprs.containsProjection(rightArg);
+		return TupleExprs.containsSubquery(rightArg);
 	}
 
 	public Set<String> getBindingNames() {

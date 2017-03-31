@@ -29,6 +29,36 @@ import org.eclipse.rdf4j.query.algebra.Var;
 public class TupleExprs {
 
 	/**
+	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection} with the subquery flag set to
+	 * true (default). If the supplied TupleExpr is a {@link Join} or contains a {@link Join}, projections
+	 * inside that Join's arguments will not be taken into account.
+	 *
+	 * @param t
+	 *        a tuple expression.
+	 * @return <code>true</code> if the TupleExpr contains a subquery projection (outside of a Join),
+	 *         <code>false</code> otherwise.
+	 */
+	public static boolean containsSubquery(TupleExpr t) {
+		Deque<TupleExpr> queue = new ArrayDeque<>();
+		queue.add(t);
+		while (!queue.isEmpty()) {
+			TupleExpr n = queue.removeFirst();
+			if (n instanceof Projection && ((Projection)n).isSubquery()) {
+				return true;
+			}
+			else if (n instanceof Join) {
+				// projections already inside a Join need not be
+				// taken into account
+				return false;
+			}
+			else {
+				queue.addAll(getChildren(n));
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection}. If the supplied TupleExpr is
 	 * a {@link Join} or contains a {@link Join}, projections inside that Join's arguments will not be taken
 	 * into account.
@@ -37,7 +67,9 @@ public class TupleExprs {
 	 *        a tuple expression.
 	 * @return <code>true</code> if the TupleExpr contains a projection (outside of a Join),
 	 *         <code>false</code> otherwise.
+	 * @deprecated Since 2.3. Use {@link TupleExprs#containsSubQuery(TupleExpr)} instead.
 	 */
+	@Deprecated
 	public static boolean containsProjection(TupleExpr t) {
 		Deque<TupleExpr> queue = new ArrayDeque<>();
 		queue.add(t);

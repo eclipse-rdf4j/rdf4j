@@ -22,6 +22,8 @@ public class Projection extends UnaryTupleOperator {
 
 	private Var projectionContext = null;
 
+	private boolean subquery = true;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -36,6 +38,11 @@ public class Projection extends UnaryTupleOperator {
 	public Projection(TupleExpr arg, ProjectionElemList elements) {
 		this(arg);
 		setProjectionElemList(elements);
+	}
+
+	public Projection(TupleExpr arg, ProjectionElemList elements, boolean subquery) {
+		this(arg, elements);
+		this.subquery = subquery;
 	}
 
 	/*---------*
@@ -121,6 +128,14 @@ public class Projection extends UnaryTupleOperator {
 	 */
 	public void setProjectionContext(Var projectionContext) {
 		this.projectionContext = projectionContext;
+	}
+
+	public boolean isSubquery() {
+		return subquery;
+	}
+
+	public void setSubquery(boolean subquery) {
+		this.subquery = subquery;
 	}
 
 }
