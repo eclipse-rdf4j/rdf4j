@@ -105,12 +105,14 @@ public class Create implements Command {
 									() -> new RepositoryConfigException("missing repository node"));
 					final RepositoryConfig repConfig = RepositoryConfig.create(graph, repositoryNode);
 					repConfig.validate();
-					boolean proceed = RepositoryConfigUtil.hasRepositoryConfig(systemRepo, repConfig.getID())
-							? consoleIO.askProceed(
-									"WARNING: you are about to overwrite the configuration of an existing repository!",
-									false)
-							: true;
-					if (proceed) {
+					String overwrite = "WARNING: you are about to overwrite the configuration of an existing repository!";
+					boolean proceedOverwrite = RepositoryConfigUtil.hasRepositoryConfig(systemRepo,
+							repConfig.getID()) ? consoleIO.askProceed(overwrite, false) : true;
+					String suggested = this.state.getManager().getNewRepositoryID(repConfig.getID());
+					String invalid = "WARNING: There are potentially incompatible characters in the repository id.";
+					boolean proceedInvalid = !suggested.startsWith(repConfig.getID())
+							? consoleIO.askProceed(invalid, false) : true;
+					if (proceedInvalid && proceedOverwrite) {
 						try {
 							RepositoryConfigUtil.updateRepositoryConfigs(systemRepo, repConfig);
 							consoleIO.writeln("Repository created");
