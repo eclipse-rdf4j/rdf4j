@@ -27,6 +27,7 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 	private String type;
 
 	private long iterationCacheSyncThreshold;
+	private long connectionTimeOut;
 
 	/**
 	 * Create a new RepositoryConfigImpl.
@@ -71,6 +72,10 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 					vf.createLiteral(iterationCacheSyncThreshold));
 		}
 
+		if (connectionTimeOut > 0) {
+			m.add(implNode, SailConfigSchema.CONNECTION_TIME_OUT,
+					vf.createLiteral(connectionTimeOut));
+		}
 		return implNode;
 	}
 
@@ -83,6 +88,9 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 			Models.objectLiteral(
 					m.filter(implNode, SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD, null)).ifPresent(
 							lit -> setIterationCacheSyncThreshold(lit.longValue()));
+			Models.objectLiteral(
+					m.filter(implNode, SailConfigSchema.CONNECTION_TIME_OUT, null)).ifPresent(
+							lit -> setConnectionTimeOut(lit.longValue()));
 		}
 		catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
@@ -102,5 +110,23 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 	 */
 	public void setIterationCacheSyncThreshold(long iterationCacheSyncThreshold) {
 		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
+	}
+	
+	/**
+	 * Get the connection timeout (in ms).
+	 * 
+	 * @return connection timeout (in ms)
+	 */
+	public long getConnectionTimeOut() {
+		return connectionTimeOut;
+	}
+
+	/**
+	 * Set the connection timeout (in ms).
+	 * 
+	 * @param connectionTimeOut timeout (in ms)
+	 */
+	public void setConnectionTimeOut(long connectionTimeOut) {
+		this.connectionTimeOut = connectionTimeOut;
 	}
 }

@@ -18,6 +18,7 @@ import java.io.PrintStream;
 import java.net.URL;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.Locale;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.hamcrest.CoreMatchers;
 import org.hamcrest.Matchers;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -44,16 +46,28 @@ public class RDFXMLParserTest {
 
 	private ParseErrorCollector el;
 
+	private Locale platformLocale;
+
 	@Before
 	public void setUp()
 		throws Exception
 	{
+		platformLocale = Locale.getDefault();
+		
+		Locale.setDefault(Locale.ENGLISH);
 		vf = SimpleValueFactory.getInstance();
 		parser = new RDFXMLParser();
 		sc = new StatementCollector();
 		parser.setRDFHandler(sc);
 		el = new ParseErrorCollector();
 		parser.setParseErrorListener(el);
+	}
+
+	@After
+	public void tearDown()
+		throws Exception
+	{
+		Locale.setDefault(platformLocale);
 	}
 
 	@Test
@@ -121,7 +135,8 @@ public class RDFXMLParserTest {
 	public void testFatalErrorPrologContent()
 		throws Exception
 	{
-		// Temporarily override System.err to verify that nothing is being printed to it for this test
+		// Temporarily override System.err to verify that nothing is being
+		// printed to it for this test
 		PrintStream oldErr = System.err;
 		ByteArrayOutputStream tempErr = new ByteArrayOutputStream();
 		System.setErr(new PrintStream(tempErr));
@@ -134,13 +149,14 @@ public class RDFXMLParserTest {
 			parser.parse(in, "");
 		}
 		catch (RDFParseException e) {
-			// FIXME exact error message is locale-dependent. Just fall through, error is expected. See #280.
-			//			assertEquals("Content is not allowed in prolog. [line 1, column 1]", e.getMessage());
+			assertEquals("Content is not allowed in prolog. [line 1, column 1]", e.getMessage());
 		}
 		finally {
-			// Reset System Error output to ensure that we don't interfere with other tests
+			// Reset System Error output to ensure that we don't interfere with
+			// other tests
 			System.setErr(oldErr);
-			// Reset System Out output to ensure that we don't interfere with other tests
+			// Reset System Out output to ensure that we don't interfere with
+			// other tests
 			System.setOut(oldOut);
 		}
 		// Verify nothing was printed to System.err during test

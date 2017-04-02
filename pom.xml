@@ -53,6 +53,7 @@
 		<module>testsuites</module>
 		<module>compliance</module>
 		<module>bom</module>
+		<module>benchmark</module>
 	</modules>
 
 	<profiles>
