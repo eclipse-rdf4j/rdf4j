@@ -33,7 +33,7 @@ import org.junit.rules.Timeout;
 public abstract class AbstractModelTest {
 
 	@Rule
-	public Timeout timeout = new Timeout(10000);
+	public Timeout timeout = Timeout.millis(10000);
 
 	@Rule
 	public ExpectedException thrown = ExpectedException.none();

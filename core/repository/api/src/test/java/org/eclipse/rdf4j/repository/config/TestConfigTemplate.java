@@ -9,6 +9,9 @@ package org.eclipse.rdf4j.repository.config;
 
 import static org.junit.Assert.assertEquals;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import org.junit.Test;
 
 /**
@@ -46,5 +49,21 @@ public class TestConfigTemplate {
 	@Test(expected = IllegalArgumentException.class)
 	public final void testInvalidDelimiterThrowsException() {
 		ConfigTemplate.escapeMultilineQuotes("'", "any value");
+	}
+
+	@Test
+	public final void testSimpleCharacters() {
+		ConfigTemplate temp = new ConfigTemplate("{%value%}");
+		Map<String, String> map = new LinkedHashMap<String, String>();
+		map.put("value", "sob");
+		assertEquals("sob", temp.render(map));
+	}
+
+	@Test
+	public final void testSpecialCharacters() {
+		ConfigTemplate temp = new ConfigTemplate("{%value%}");
+		Map<String, String> map = new LinkedHashMap<String, String>();
+		map.put("value", "$0b");
+		assertEquals("$0b", temp.render(map));
 	}
 }

@@ -9,7 +9,7 @@
 package org.eclipse.rdf4j.benchmark;
 
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingSchemaCachingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
@@ -19,12 +19,12 @@ public class ForwardChainingSchemaCachingRDFSInferencerBenchmark extends Initial
 
 	@Override
 	SailRepository getSail(SailRepository schema) {
-		return new SailRepository(new ForwardChainingSchemaCachingRDFSInferencer(new MemoryStore(), schema));
+		return new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore(), schema));
 	}
 
 	@Override
 	Class getSailClass() {
-		return ForwardChainingSchemaCachingRDFSInferencer.class;
+		return SchemaCachingRDFSInferencer.class;
 	}
 
 }
