@@ -53,7 +53,7 @@ var workbench;
             function StringMap() {
             }
             return StringMap;
-        }());
+        })();
         /**
          * Scans the given URI for duplicate query parameter names, and removes
          * all but the last occurrence for any duplicate case.
