@@ -91,7 +91,7 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 		for (int i = 1, n = join.getNumberOfArguments(); i < n; i++) {
 
 			TupleExpr rightArg = join.getArg(i);
-			if (TupleExprs.containsProjection(rightArg)
+			if (TupleExprs.containsSubquery(rightArg)
 					|| (rightArg instanceof OwnedTupleExpr && ((OwnedTupleExpr)rightArg).hasQuery()))
 			{
 				TupleExpr leftArg = join.getArg(i - 1);
