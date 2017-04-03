@@ -21,21 +21,24 @@ module workbench {
  */
 function checkOverwrite() {
     var submit = false;
+    var id = workbench.create.id.val();
     $.ajax({
-        url: '../' + workbench.create.id.val() + '/info',
+        url: '../' + id + '/info',
         async: false,
-        success: function() {
-            submit = confirm(
-                'WARNING: You are about to overwrite the ' +
+        success: function () {
+            submit = confirm('WARNING: You are about to overwrite the ' +
                 'configuration of an existing repository!');
         },
         statusCode: {
-            500:
-            function() {
+            500: function () {
                 submit = true;
             }
         }
     });
+    if (submit && !id.match(/^[a-z0-9._-]+$/)) {
+        submit = confirm('WARNING: There are potentially incompatible ' +
+            'characters in the repository id.');
+    }
     if (submit) {
         $("form[action='create']").submit();
     }
