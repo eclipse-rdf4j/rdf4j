@@ -482,7 +482,7 @@ public class SHACL {
 	public static final IRI NAME;
 
 	/** sh:namespace */
-	public static final IRI NAMESPACE;
+	public static final IRI NAMESPACE_PROP;
 
 	/** sh:node */
 	public static final IRI NODE;
@@ -518,7 +518,7 @@ public class SHACL {
 	public static final IRI PATTERN;
 
 	/** sh:prefix */
-	public static final IRI PREFIX;
+	public static final IRI PREFIX_PROP;
 
 	/** sh:prefixes */
 	public static final IRI PREFIXES;
@@ -771,7 +771,7 @@ public class SHACL {
 		MIN_INCLUSIVE = factory.createIRI(NAMESPACE, "minInclusive");
 		MIN_LENGTH = factory.createIRI(NAMESPACE, "minLength");
 		NAME = factory.createIRI(NAMESPACE, "name");
-		NAMESPACE = factory.createIRI(NAMESPACE, "namespace");
+		NAMESPACE_PROP = factory.createIRI(NAMESPACE, "namespace");
 		NODE = factory.createIRI(NAMESPACE, "node");
 		NODE_KIND_PROP = factory.createIRI(NAMESPACE, "nodeKind");
 		NODE_VALIDATOR = factory.createIRI(NAMESPACE, "nodeValidator");
@@ -783,7 +783,7 @@ public class SHACL {
 		PARAMETER_PROP = factory.createIRI(NAMESPACE, "parameter");
 		PATH = factory.createIRI(NAMESPACE, "path");
 		PATTERN = factory.createIRI(NAMESPACE, "pattern");
-		PREFIX = factory.createIRI(NAMESPACE, "prefix");
+		PREFIX_PROP = factory.createIRI(NAMESPACE, "prefix");
 		PREFIXES = factory.createIRI(NAMESPACE, "prefixes");
 		PROPERTY = factory.createIRI(NAMESPACE, "property");
 		PROPERTY_VALIDATOR = factory.createIRI(NAMESPACE, "propertyValidator");
