@@ -11,6 +11,7 @@
  * out if it is.
  */
 function checkIsSafeToDelete(event) {
+	event.preventDefault();
 	var id = $('#id').val();
 	var submitForm = false;
 	var feedback = $('#delete-feedback');
@@ -45,5 +46,4 @@ function checkIsSafeToDelete(event) {
 					}
 				}
 			});
-	return false;
 }
