@@ -24,7 +24,6 @@ function checkOverwrite() {
     var id = workbench.create.id.val();
     $.ajax({
         url: '../' + id + '/info',
-        async: false,
         success: function () {
             submit = confirm('WARNING: You are about to overwrite the ' +
                 'configuration of an existing repository!');
@@ -33,15 +32,17 @@ function checkOverwrite() {
             500: function () {
                 submit = true;
             }
-        }
+        },
+		complete : function(xhr, status) {
+            if (submit && !id.match(/^[a-z0-9._-]+$/)) {
+                submit = confirm('WARNING: There are potentially incompatible ' +
+                    'characters in the repository id.');
+            }
+            if (submit) {
+                $("form[action='create']").submit();
+            }
+		}
     });
-    if (submit && !id.match(/^[a-z0-9._-]+$/)) {
-        submit = confirm('WARNING: There are potentially incompatible ' +
-            'characters in the repository id.');
-    }
-    if (submit) {
-        $("form[action='create']").submit();
-    }
 }
 
 workbench.addLoad(function createPageLoaded() {
