@@ -13,7 +13,7 @@
 function checkIsSafeToDelete(event) {
 	var id = $('#id').val();
 	var submitForm = false;
-    var feedback = $('#delete-feedback');
+	var feedback = $('#delete-feedback');
 	$
 			.ajax({
 				dataType : 'json',
@@ -35,14 +35,14 @@ function checkIsSafeToDelete(event) {
 					}
 				},
 				success : function(data) {
-                    feedback.text('');
+					feedback.text('');
 					submitForm = data.safe;
 					if (!submitForm) {
 						submitForm = confirm('WARNING: You are about to delete a repository that has been proxied by another repository!');
 					}
-                    if (submitForm) {
-                        $(event.target).closest('form')[0].submit();
-                    }
+					if (submitForm) {
+						$(event.target).closest('form')[0].submit();
+					}
 				}
 			});
 	return false;
