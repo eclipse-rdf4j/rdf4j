@@ -118,6 +118,9 @@ class ServerValidator {
 				reader.close();
 			}
 		}
+		catch (NumberFormatException e) {
+			LOGGER.warn(e.toString(), e);
+		}
 		catch (MalformedURLException e) {
 			LOGGER.warn(e.toString(), e);
 		}
