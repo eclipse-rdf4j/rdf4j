@@ -41,7 +41,7 @@ function checkOverwrite() {
             if (submit) {
                 $("form[action='create']").submit();
             }
-		}
+        }
     });
 }
 
