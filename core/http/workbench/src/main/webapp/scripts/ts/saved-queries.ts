@@ -12,7 +12,9 @@ module workbench {
         declare var YASQE: any;
         
         export function deleteQuery(savedBy: string, name: string, urn: string) {
-            var currentUser = workbench.getCookie("server-user");
+            var encoded = workbench.getCookie("server-user-password");
+            var decoded = encoded && window.atob ? window.atob(encoded) : encoded;
+            var currentUser = decoded && decoded.substring(0, decoded.indexOf(':'));
             if ((!savedBy || currentUser == savedBy)) {
                 if (confirm("'"
                     + name
