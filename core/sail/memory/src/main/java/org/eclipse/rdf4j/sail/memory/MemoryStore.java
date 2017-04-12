@@ -382,7 +382,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	public void notifySailChanged(SailChangedEvent event) {
 		super.notifySailChanged(event);
 		synchronized (syncSemaphore) {
-			contentsChanged = true;
+			contentsChanged = contentsChanged || event.statementsAdded() || event.statementsRemoved();
 		}
 	}
 
