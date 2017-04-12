@@ -31,16 +31,12 @@ import org.apache.http.NameValuePair;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.AuthCache;
-import org.apache.http.client.CookieStore;
 import org.apache.http.client.CredentialsProvider;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpUriRequest;
-import org.apache.http.client.params.ClientPNames;
-import org.apache.http.client.params.CookiePolicy;
-import org.apache.http.client.protocol.ClientContext;
 import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.entity.ContentType;
@@ -176,7 +172,7 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 
 	private final HttpClientContext httpContext;
 
-	private final HttpParams params = new BasicHttpParams();
+	private HttpParams params;
 
 	private ParserConfig parserConfig = new ParserConfig();
 
@@ -197,10 +193,7 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 		this.httpContext = new HttpClientContext();
 		this.executor = executor;
 		valueFactory = SimpleValueFactory.getInstance();
-		params.setBooleanParameter(ClientPNames.HANDLE_REDIRECTS, true);
-		CookieStore cookieStore = new BasicCookieStore();
-		httpContext.setAttribute(ClientContext.COOKIE_STORE, cookieStore);
-		params.setParameter(ClientPNames.COOKIE_POLICY, CookiePolicy.RFC_2109);
+		httpContext.setCookieStore(new BasicCookieStore());
 
 		// parser used for processing server response data should be lenient
 		parserConfig.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
@@ -1114,7 +1107,9 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 		throws IOException, RDF4JException
 	{
 		boolean consume = true;
-		method.setParams(params);
+		if (params != null) {
+			method.setParams(params);
+		}
 		HttpResponse response = httpClient.execute(method, httpContext);
 
 		try {
@@ -1225,6 +1220,9 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 	 * Gets the http connection read timeout in milliseconds.
 	 */
 	public long getConnectionTimeout() {
+		if (params == null) {
+			return 0;
+		}
 		return (long)params.getIntParameter(CoreConnectionPNames.SO_TIMEOUT, 0);
 	}
 
@@ -1235,6 +1233,9 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 	 *        timeout in milliseconds. Zero sets to infinity.
 	 */
 	public void setConnectionTimeout(long timeout) {
+		if (params == null) {
+			params = new BasicHttpParams();
+		}
 		params.setIntParameter(CoreConnectionPNames.SO_TIMEOUT, (int)timeout);
 	}
 }
