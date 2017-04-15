@@ -30,7 +30,10 @@
 		<module>http</module>
 		<module>runtime</module>
 		<module>runtime-osgi</module>
-		<module>assembly</module> <!-- this module should always be last in the list -->
+		<module>assembly</module>
+		<module>shacl</module>
+		<module>shacl</module>
+		<!-- this module should always be last in the list -->
 	</modules>
 
 	<name>RDF4J Core</name>
