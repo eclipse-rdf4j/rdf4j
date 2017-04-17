@@ -1071,6 +1071,7 @@ The following table summarizes the MIME types for various document formats that 
 |Turtle |text/turtle
 |N3 	|text/rdf+n3
 |N-Quads |text/x-nquads
+|JSON-LD |application/ld+json
 |RDF/JSON |application/rdf+json
 |TriX 	|application/trix
 |TriG 	|application/x-trig
