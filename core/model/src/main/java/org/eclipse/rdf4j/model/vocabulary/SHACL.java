@@ -108,7 +108,7 @@ public class SHACL {
 	public static final IRI IRI;
 
 	/** sh:IRIOrLiteral */
-	public static final IRI IRIOR_LITERAL;
+	public static final IRI IRI_OR_LITERAL;
 
 	/** sh:InConstraintComponent */
 	public static final IRI IN_CONSTRAINT_COMPONENT;
@@ -276,46 +276,46 @@ public class SHACL {
 	public static final IRI RESULT_ANNOTATION;
 
 	/** sh:SPARQLAskExecutable */
-	public static final IRI SPARQLASK_EXECUTABLE;
+	public static final IRI SPARQL_ASK_EXECUTABLE;
 
 	/** sh:SPARQLAskValidator */
-	public static final IRI SPARQLASK_VALIDATOR;
+	public static final IRI SPARQL_ASK_VALIDATOR;
 
 	/** sh:SPARQLConstraint */
-	public static final IRI SPARQLCONSTRAINT;
+	public static final IRI SPARQL_CONSTRAINT;
 
 	/** sh:SPARQLConstraintComponent */
-	public static final IRI SPARQLCONSTRAINT_COMPONENT;
+	public static final IRI SPARQL_CONSTRAINT_COMPONENT;
 
 	/** sh:SPARQLConstraintComponent-sparql */
-	public static final IRI SPARQLCONSTRAINT_COMPONENT_SPARQL;
+	public static final IRI SPARQL_CONSTRAINT_COMPONENT_SPARQL;
 
 	/** sh:SPARQLConstructExecutable */
-	public static final IRI SPARQLCONSTRUCT_EXECUTABLE;
+	public static final IRI SPARQL_CONSTRUCT_EXECUTABLE;
 
 	/** sh:SPARQLExecutable */
-	public static final IRI SPARQLEXECUTABLE;
+	public static final IRI SPARQL_EXECUTABLE;
 
 	/** sh:SPARQLFunction */
-	public static final IRI SPARQLFUNCTION;
+	public static final IRI SPARQL_FUNCTION;
 
 	/** sh:SPARQLSelectExecutable */
-	public static final IRI SPARQLSELECT_EXECUTABLE;
+	public static final IRI SPARQL_SELECT_EXECUTABLE;
 
 	/** sh:SPARQLSelectValidator */
-	public static final IRI SPARQLSELECT_VALIDATOR;
+	public static final IRI SPARQL_SELECT_VALIDATOR;
 
 	/** sh:SPARQLTarget */
-	public static final IRI SPARQLTARGET;
+	public static final IRI SPARQL_TARGET;
 
 	/** sh:SPARQLTargetType */
-	public static final IRI SPARQLTARGET_TYPE;
+	public static final IRI SPARQL_TARGET_TYPE;
 
 	/** sh:SPARQLUpdateExecutable */
-	public static final IRI SPARQLUPDATE_EXECUTABLE;
+	public static final IRI SPARQL_UPDATE_EXECUTABLE;
 
 	/** sh:SPARQLValuesDeriver */
-	public static final IRI SPARQLVALUES_DERIVER;
+	public static final IRI SPARQL_VALUES_DERIVER;
 
 	/** sh:Severity */
 	public static final IRI SEVERITY;
@@ -646,7 +646,7 @@ public class SHACL {
 		HAS_VALUE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "HasValueConstraintComponent");
 		HAS_VALUE_CONSTRAINT_COMPONENT_HAS_VALUE = factory.createIRI(NAMESPACE, "HasValueConstraintComponent-hasValue");
 		IRI = factory.createIRI(NAMESPACE, "IRI");
-		IRIOR_LITERAL = factory.createIRI(NAMESPACE, "IRIOrLiteral");
+		IRI_OR_LITERAL = factory.createIRI(NAMESPACE, "IRIOrLiteral");
 		IN_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "InConstraintComponent");
 		IN_CONSTRAINT_COMPONENT_IN = factory.createIRI(NAMESPACE, "InConstraintComponent-in");
 		INFO = factory.createIRI(NAMESPACE, "Info");
@@ -702,20 +702,20 @@ public class SHACL {
 		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPE = factory.createIRI(NAMESPACE, "QualifiedMinCountConstraintComponent-qualifiedValueShape");
 		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPES_DISJOINT = factory.createIRI(NAMESPACE, "QualifiedMinCountConstraintComponent-qualifiedValueShapesDisjoint");
 		RESULT_ANNOTATION = factory.createIRI(NAMESPACE, "ResultAnnotation");
-		SPARQLASK_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLAskExecutable");
-		SPARQLASK_VALIDATOR = factory.createIRI(NAMESPACE, "SPARQLAskValidator");
-		SPARQLCONSTRAINT = factory.createIRI(NAMESPACE, "SPARQLConstraint");
-		SPARQLCONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "SPARQLConstraintComponent");
-		SPARQLCONSTRAINT_COMPONENT_SPARQL = factory.createIRI(NAMESPACE, "SPARQLConstraintComponent-sparql");
-		SPARQLCONSTRUCT_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLConstructExecutable");
-		SPARQLEXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLExecutable");
-		SPARQLFUNCTION = factory.createIRI(NAMESPACE, "SPARQLFunction");
-		SPARQLSELECT_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLSelectExecutable");
-		SPARQLSELECT_VALIDATOR = factory.createIRI(NAMESPACE, "SPARQLSelectValidator");
-		SPARQLTARGET = factory.createIRI(NAMESPACE, "SPARQLTarget");
-		SPARQLTARGET_TYPE = factory.createIRI(NAMESPACE, "SPARQLTargetType");
-		SPARQLUPDATE_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLUpdateExecutable");
-		SPARQLVALUES_DERIVER = factory.createIRI(NAMESPACE, "SPARQLValuesDeriver");
+		SPARQL_ASK_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLAskExecutable");
+		SPARQL_ASK_VALIDATOR = factory.createIRI(NAMESPACE, "SPARQLAskValidator");
+		SPARQL_CONSTRAINT = factory.createIRI(NAMESPACE, "SPARQLConstraint");
+		SPARQL_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "SPARQLConstraintComponent");
+		SPARQL_CONSTRAINT_COMPONENT_SPARQL = factory.createIRI(NAMESPACE, "SPARQLConstraintComponent-sparql");
+		SPARQL_CONSTRUCT_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLConstructExecutable");
+		SPARQL_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLExecutable");
+		SPARQL_FUNCTION = factory.createIRI(NAMESPACE, "SPARQLFunction");
+		SPARQL_SELECT_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLSelectExecutable");
+		SPARQL_SELECT_VALIDATOR = factory.createIRI(NAMESPACE, "SPARQLSelectValidator");
+		SPARQL_TARGET = factory.createIRI(NAMESPACE, "SPARQLTarget");
+		SPARQL_TARGET_TYPE = factory.createIRI(NAMESPACE, "SPARQLTargetType");
+		SPARQL_UPDATE_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLUpdateExecutable");
+		SPARQL_VALUES_DERIVER = factory.createIRI(NAMESPACE, "SPARQLValuesDeriver");
 		SEVERITY = factory.createIRI(NAMESPACE, "Severity");
 		SHAPE = factory.createIRI(NAMESPACE, "Shape");
 		TARGET = factory.createIRI(NAMESPACE, "Target");
