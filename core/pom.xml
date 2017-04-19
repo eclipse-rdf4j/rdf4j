@@ -32,7 +32,6 @@
 		<module>runtime-osgi</module>
 		<module>assembly</module>
 		<module>shacl</module>
-		<module>shacl</module>
 		<!-- this module should always be last in the list -->
 	</modules>
 
