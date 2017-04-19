@@ -1,24 +1,12 @@
-/**
- * Copyright (c) 2017 Eclipse RDF4J contributors.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Distribution License v1.0
- * which accompanies this distribution, and is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
  */
 package org.eclipse.rdf4j.lucene.spin;
 
-import java.io.File;
-import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.ALL_MATCHES;
-import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
-import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SEARCH;
-
-import java.io.IOException;
-import java.net.URL;
-import java.util.Properties;
-
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
@@ -29,24 +17,15 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.resultio.text.csv.SPARQLResultsCSVWriter;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
-import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailSchema;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.spin.SpinSail;
-import org.junit.After;
+import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.ALL_MATCHES;
+import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
+import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SEARCH;
 import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,96 +35,14 @@ import org.slf4j.LoggerFactory;
  * @see <a href="https://github.com/eclipse/rdf4j/issues/220">issue #220</a>
  * @see <a href="https://github.com/eclipse/rdf4j/issues/235">issue #235</a>
  * @see <a href="https://github.com/eclipse/rdf4j/issues/739">issue #739</a>
+ * @author Jacek Grzebyta
+ * @author Mark Hale
  */
-public class LuceneSailSpinTest {
+public abstract class AbstractLuceneSailSpinTest {
 
-	private static final String DATA = "org/eclipse/rdf4j/sail/220-example.ttl";
+	private static final Logger log = LoggerFactory.getLogger(AbstractLuceneSailSpinTest.class);
 
-	private static Logger log = LoggerFactory.getLogger(LuceneSailSpinTest.class);
-
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
-
-	private Repository repository;
-
-	private RepositoryConnection connection;
-
-	@Before
-	public void setUp()
-		throws Exception
-	{
-
-		//activate sail debug mode
-		// System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
-		// load data into memory store
-		MemoryStore store = new MemoryStore();
-
-		// add Support for SPIN function
-		SpinSail spin = new SpinSail(store);
-
-		// add Lucene Spin Sail support
-		LuceneSpinSail luc = new LuceneSpinSail(spin);
-		File tmpDirFolder = tempDir.newFolder();
-		log.debug("data file: {}", tmpDirFolder);
-		luc.setDataDir(tmpDirFolder);
-		repository = new SailRepository(luc);
-
-		// set up parameters
-		configure(luc.getParameters());
-
-		repository.initialize();
-		// local connection used only for population
-		try (RepositoryConnection localConn = repository.getConnection()) {
-			localConn.begin();
-			populate(localConn);
-			localConn.commit();
-		}
-
-		// local connection for verification only
-		try (RepositoryConnection localConn = repository.getConnection()) {
-			// validate population. Transaction is not required
-			//localConn.begin();
-			int count = countStatements(localConn);
-			log.trace("storage contains {} triples", count);
-			Assert.assertTrue(count > 0);
-			//localConn.commit();
-			localConn.close();
-		}
-
-		// testing connection
-		connection = repository.getConnection();
-		connection.begin();
-		Assert.assertTrue("connection is not active", connection.isActive());
-	}
-
-	@After
-	public void tearDown()
-		throws RepositoryException, IOException
-	{
-		try {
-			if (connection != null) {
-				connection.close();
-			}
-		}
-		finally {
-			if (repository != null) {
-				repository.shutDown();
-			}
-		}
-	}
-
-	protected void populate(RepositoryConnection repoConn)
-		throws Exception
-	{
-		// load resources
-		assert repoConn.isActive();
-		URL resourceURL = LuceneSailSpinTest.class.getClassLoader().getResource(DATA);
-		log.debug("Resource URL: {}", resourceURL.toString());
-		Model model = Rio.parse(resourceURL.openStream(), resourceURL.toString(), RDFFormat.TURTLE);
-		for (Statement stmt : model) {
-			repoConn.add(stmt);
-		}
-	}
+	public abstract RepositoryConnection getConnection();
 
 	/**
 	 * Positive control test: ie valid SPARQL query
@@ -158,7 +55,7 @@ public class LuceneSailSpinTest {
 	{
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("select ?s ?p ?o where { ?s ?p ?o } limit 10");
-		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
+		TupleQuery query = getConnection().prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
 		try (TupleQueryResult res = query.evaluate()) {
 			int count = countTupleResults(res);
 			log.info("count statements: {}", count);
@@ -187,7 +84,7 @@ public class LuceneSailSpinTest {
 		buffer.append("}\n");
 		log.info("Request query: \n====================\n{}\n======================\n", buffer.toString());
 
-		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
+		TupleQuery query = getConnection().prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
 		log.debug("query class: {}", query.getClass());
 		//log.debug("query representation: \n{}", query);
 		//printTupleResult(query);
@@ -222,7 +119,7 @@ public class LuceneSailSpinTest {
 		buffer.append("}\n");
 		log.info("Request query: \n====================\n{}\n======================\n", buffer.toString());
 
-		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
+		TupleQuery query = getConnection().prepareTupleQuery(QueryLanguage.SPARQL, buffer.toString());
 		printTupleResult(query);
 		try (TupleQueryResult res = query.evaluate()) {
 			int count = countTupleResults(res);
@@ -266,7 +163,7 @@ public class LuceneSailSpinTest {
 		buffer.append(" }");
 		log.info("Request query: \n====================\n{}\n======================\n", buffer.toString());
 
-		GraphQuery query = connection.prepareGraphQuery(QueryLanguage.SPARQL, buffer.toString());
+		GraphQuery query = getConnection().prepareGraphQuery(QueryLanguage.SPARQL, buffer.toString());
 		printGraphResult(query);
 		try (GraphQueryResult res = query.evaluate()) {
 			int cnt = countGraphResults(res);
@@ -278,6 +175,7 @@ public class LuceneSailSpinTest {
 	public void testDistanceFunction()
 		throws Exception
 	{
+		RepositoryConnection connection = getConnection();
 		String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
 				+ "prefix search: <" + LuceneSailSchema.NAMESPACE + ">"
 				+ "select ?toUri ?fromUri ?dist where {(?from ?range ?units geo:asWKT search:distance)"
@@ -335,7 +233,4 @@ public class LuceneSailSpinTest {
 		log.info("\n=============\n" + new String(resultoutput.toByteArray()) + "\n=============");
 	}
 
-	public void configure(Properties parameters) {
-		parameters.setProperty(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS);
-	}
 }
