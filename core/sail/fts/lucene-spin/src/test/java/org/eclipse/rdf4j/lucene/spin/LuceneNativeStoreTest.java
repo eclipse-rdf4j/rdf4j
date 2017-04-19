@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.lucene.spin;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
+import java.nio.file.Path;
 import java.util.Properties;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -60,6 +61,7 @@ public class LuceneNativeStoreTest extends AbstractLuceneSailSpinTest {
 	{
 		// repository folder
 		File tmpDirFolder = tempDir.newFolder();
+		log.debug("data file: {}", tmpDirFolder);
 
 		//activate sail debug mode
 		// System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
@@ -71,13 +73,10 @@ public class LuceneNativeStoreTest extends AbstractLuceneSailSpinTest {
 
 		// add Lucene Spin Sail support
 		LuceneSpinSail luc = new LuceneSpinSail(spin);
-
-		log.debug("data file: {}", tmpDirFolder);
-		luc.setDataDir(tmpDirFolder);
 		repository = new SailRepository(luc);
 
 		// set up parameters
-		configure(luc.getParameters());
+		configure(luc.getParameters(), store.getDataDir());
 
 		repository.initialize();
 		// local connection used only for population
@@ -133,7 +132,8 @@ public class LuceneNativeStoreTest extends AbstractLuceneSailSpinTest {
 		}
 	}
 
-	public void configure(Properties parameters) {
+	public void configure(Properties parameters, File store) {
 		parameters.setProperty(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS);
+		parameters.setProperty(LuceneSail.LUCENE_DIR_KEY, store.getAbsolutePath() + "/lucene-index");
 	}
 }
