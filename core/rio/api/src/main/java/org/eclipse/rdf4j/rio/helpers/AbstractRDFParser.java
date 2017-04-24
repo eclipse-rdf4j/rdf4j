@@ -365,11 +365,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 */
 	@Deprecated
 	protected void clearBNodeIDMap() {
-		baseURI = null;
-		nextBNodePrefix = createUniqueBNodePrefix();
-		namespaceTable.clear();
-
-		initializeNamespaceTableFromConfiguration();
+		clear();
 	}
 
 	/**
