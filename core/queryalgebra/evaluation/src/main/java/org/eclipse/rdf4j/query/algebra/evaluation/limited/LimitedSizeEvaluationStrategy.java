@@ -152,7 +152,7 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 			return new ServiceJoinIterator(leftIter, (Service)join.getRightArg(), bindings, this);
 		}
 
-		if (TupleExprs.containsProjection(join.getRightArg())) {
+		if (TupleExprs.containsSubquery(join.getRightArg())) {
 			return new LimitedSizeHashJoinIteration(this, join, bindings, used, maxSize);
 		}
 		else {
