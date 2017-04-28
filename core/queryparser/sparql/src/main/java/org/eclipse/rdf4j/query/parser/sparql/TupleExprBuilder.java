@@ -1700,7 +1700,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						pelist.addElement(pe);
 					}
 
-					result = new Distinct(new Projection(union, pelist));
+					result = new Distinct(new Projection(union, pelist, false));
 				}
 				else {
 					// upperbound is abitrary-length

@@ -58,7 +58,7 @@ public class CookieHandler {
 		LOGGER.info("name: {}\nvalue: {}", name, value);
 		LOGGER.info("un-encoded value: {}\n--", raw);
 		final Cookie cookie = new Cookie(name, value);
-		if (null == req.getContextPath()) {
+		if (req.getContextPath().isEmpty()) {
 			cookie.setPath("/");
 		}
 		else {
@@ -96,7 +96,7 @@ public class CookieHandler {
 
 	public void addCookie(WorkbenchRequest req, HttpServletResponse resp, String name, String value) {
 		final Cookie cookie = new Cookie(name, value);
-		if (null == req.getContextPath()) {
+		if (req.getContextPath().isEmpty()) {
 			cookie.setPath("/");
 		}
 		else {
