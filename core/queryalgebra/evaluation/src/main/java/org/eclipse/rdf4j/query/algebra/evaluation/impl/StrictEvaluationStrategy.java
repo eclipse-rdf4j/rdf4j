@@ -911,7 +911,7 @@ public class StrictEvaluationStrategy
 			return new ServiceJoinIterator(leftIter, (Service)join.getRightArg(), bindings, this);
 		}
 
-		if (TupleExprs.containsProjection(join.getRightArg())) {
+		if (TupleExprs.containsSubquery(join.getRightArg())) {
 			return new HashJoinIteration(this, join, bindings);
 		}
 		else {
@@ -923,7 +923,7 @@ public class StrictEvaluationStrategy
 			final BindingSet bindings)
 		throws QueryEvaluationException
 	{
-		if (TupleExprs.containsProjection(leftJoin.getRightArg())) {
+		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 			return new HashJoinIteration(this, leftJoin, bindings);
 		}
 
