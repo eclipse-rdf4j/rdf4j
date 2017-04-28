@@ -61,7 +61,6 @@ public class ParsedURITest {
 	@Test
 	public void jarUriWithFileStringifiesToOriginalForm() {
 		ParsedURI uri = new ParsedURI("jar:file:///some-file.jar!/another-file");
-		System.out.println(uri.getScheme());
 		assertEquals("jar:file:///some-file.jar!/another-file", uri.toString());
 	}
 

@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  */
-package org.eclipse.rdf4j.sail.lucene;
+package org.eclipse.rdf4j.sail.lucene.fn;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -24,6 +24,11 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lucene.LuceneSailSchema;
+import org.eclipse.rdf4j.sail.lucene.QuerySpec;
+import org.eclipse.rdf4j.sail.lucene.SearchIndex;
+import org.eclipse.rdf4j.sail.lucene.SearchIndexQueryContextInitializer;
+import org.eclipse.rdf4j.sail.lucene.SearchQueryEvaluator;
 
 /**
  * Arguments:
