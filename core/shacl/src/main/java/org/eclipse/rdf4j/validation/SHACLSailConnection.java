@@ -14,7 +14,7 @@ import java.util.List;
 /**
  * Created by heshanjayasinghe on 4/23/17.
  */
-public class SHACLConnection extends NotifyingSailConnectionWrapper implements SailConnectionListener {
+public class SHACLSailConnection extends NotifyingSailConnectionWrapper implements SailConnectionListener {
 
     private  SHACLSail sail;
     List<Statement> addedStatement = new ArrayList<Statement>();
@@ -26,11 +26,11 @@ public class SHACLConnection extends NotifyingSailConnectionWrapper implements S
      */
 
 
-    public SHACLConnection(NotifyingSailConnection wrappedCon) {
+    public SHACLSailConnection(NotifyingSailConnection wrappedCon) {
         super(wrappedCon);
     }
 
-    public SHACLConnection(SHACLSail shaclSail) {
+    public SHACLSailConnection(SHACLSail shaclSail) {
         super(null);
         this.sail = shaclSail;
     }
@@ -53,5 +53,11 @@ public class SHACLConnection extends NotifyingSailConnectionWrapper implements S
     @Override
     public void commit() throws SailException {
         super.commit();
+        MoreDataCacheLayer getMoreDataCacheLayer = new MoreDataCacheLayer(this);
+        sail.shapes.forEach(shape -> shape.validate(addedStatement, getMoreDataCacheLayer));
+    }
+
+    public void addShaclViolationListener(ShaclViolationListener shaclViolationListener) {
+
     }
 }
