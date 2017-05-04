@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.rio.helpers;
 
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Collection;
@@ -360,10 +361,11 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * the document has been parsed completely, but subclasses can clear the map at other moments too, for
 	 * example when a bnode scope ends.
 	 * 
-	 * @deprecated Map is no longer used.
+	 * @deprecated Map is no longer used, call {@link #clear()} instead.
 	 */
 	@Deprecated
 	protected void clearBNodeIDMap() {
+		clear();
 	}
 
 	/**
@@ -431,8 +433,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 		throws RDFParseException
 	{
 		// If we are preserving blank node ids then we do not prefix them to
-		// make
-		// them globally unique
+		// make them globally unique
 		if (preserveBNodeIDs()) {
 			return valueFactory.createBNode(nodeID);
 		}
@@ -446,13 +447,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 			if (nodeID.length() > 32) {
 				// we only hash the node ID if it is longer than the hash string
 				// itself would be.
-				byte[] chars = null;
-				try {
-					chars = nodeID.getBytes("UTF-8");
-				}
-				catch (UnsupportedEncodingException e) {
-					throw new RuntimeException(e);
-				}
+				byte[] chars = nodeID.getBytes(StandardCharsets.UTF_8);
 
 				// we use an MD5 hash rather than the node ID itself to get a
 				// fixed-length generated id, rather than

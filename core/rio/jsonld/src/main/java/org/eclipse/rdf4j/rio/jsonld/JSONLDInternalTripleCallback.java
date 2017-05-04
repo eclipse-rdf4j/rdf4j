@@ -9,7 +9,10 @@ package org.eclipse.rdf4j.rio.jsonld;
 
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -44,6 +47,10 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 
 	private final ParseErrorListener parseErrorListener;
 
+	private final Function<String, BNode> namedBNodeCreator;
+
+	private final Supplier<BNode> anonymousBNodeCreator;
+
 	public JSONLDInternalTripleCallback() {
 		this(new StatementCollector(new LinkedHashModel()));
 	}
@@ -53,16 +60,20 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 	}
 
 	public JSONLDInternalTripleCallback(RDFHandler nextHandler, ValueFactory vf) {
-		this(nextHandler, vf, new ParserConfig(), new ParseErrorLogger());
+		this(nextHandler, vf, new ParserConfig(), new ParseErrorLogger(), nodeID -> vf.createBNode(nodeID),
+				() -> vf.createBNode());
 	}
 
 	public JSONLDInternalTripleCallback(RDFHandler nextHandler, ValueFactory vf, ParserConfig parserConfig,
-			ParseErrorListener parseErrorListener)
+			ParseErrorListener parseErrorListener, Function<String, BNode> namedBNodeCreator,
+			Supplier<BNode> anonymousBNodeCreator)
 	{
 		this.handler = nextHandler;
 		this.vf = vf;
 		this.parserConfig = parserConfig;
 		this.parseErrorListener = parseErrorListener;
+		this.namedBNodeCreator = namedBNodeCreator;
+		this.anonymousBNodeCreator = anonymousBNodeCreator;
 	}
 
 	private void triple(String s, String p, String o, String graph) {
@@ -96,10 +107,10 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 	private Resource createResource(String resource) {
 		// Blank node without any given identifier
 		if (resource.equals("_:")) {
-			return vf.createBNode();
+			return anonymousBNodeCreator.get();
 		}
 		else if (resource.startsWith("_:")) {
-			return vf.createBNode(resource.substring(2));
+			return namedBNodeCreator.apply(resource.substring(2));
 		}
 		else {
 			return vf.createIRI(resource);
