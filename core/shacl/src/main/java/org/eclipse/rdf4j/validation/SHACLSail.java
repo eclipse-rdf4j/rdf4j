@@ -1,7 +1,7 @@
 package org.eclipse.rdf4j.validation;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.main;
+import org.eclipse.rdf4j.Main;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.shape.Shape;
-
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -33,13 +32,13 @@ public class SHACLSail extends NotifyingSailWrapper {
 
     @Override
     public NotifyingSailConnection getConnection() throws SailException {
-        return new SHACLConnection(this);
+        return new SHACLSailConnection(this);
     }
 
     public void setShaclRules(SailRepository shaclRules){
         try(SailRepositoryConnection connection = shaclRules.getConnection()){
             ValueFactory vf = connection.getValueFactory();
-            RepositoryResult<Statement> nodeShape = connection.getStatements(null, RDF.TYPE,vf.createIRI(main.SH,"NodeShape"));
+            RepositoryResult<Statement> nodeShape = connection.getStatements(null, RDF.TYPE,vf.createIRI(Main.SH,"NodeShape"));
             List<Resource> collect = Iterations.stream(nodeShape).map(Statement::getSubject).collect(Collectors.toList());
 
             collect.forEach(System.out::println);

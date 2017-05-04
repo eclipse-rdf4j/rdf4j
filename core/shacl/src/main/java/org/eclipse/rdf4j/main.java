@@ -5,8 +5,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.validation.SHACLConnection;
 import org.eclipse.rdf4j.validation.SHACLSail;
+import org.eclipse.rdf4j.validation.SHACLSailConnection;
+import org.eclipse.rdf4j.validation.ShaclViolationListener;
 
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -15,7 +16,7 @@ import java.io.IOException;
 /**
  * Created by heshanjayasinghe on 4/30/17.
  */
-public class main {
+public class Main {
 
     public static final String SH = "http://www.w3.org/ns/shacl#";
 
@@ -36,27 +37,22 @@ public class main {
             e.printStackTrace();
         }
 
-
         SHACLSail shaclSail = new SHACLSail();
 
         shaclSail.setShaclRules(shaclRules);
 
+        SHACLSailConnection connection = (SHACLSailConnection) shaclSail.getConnection();
 
-
-        SHACLConnection connection = (SHACLConnection) shaclSail.getConnection();
-
-//        connection.addShaclViolationListener(new ShaclViolationListener() {
-//            @Override
-//            public void violation(String errror) {
-//                System.out.println(errror);
-//            }
-//        });
+        connection.addShaclViolationListener(new ShaclViolationListener() {
+            @Override
+            public void violation(String errror) {
+                System.out.println(errror);
+            }
+        });
 
         connection.begin();
 
-
         connection.commit();
-
 
     }
 }
