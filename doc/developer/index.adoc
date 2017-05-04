@@ -33,7 +33,7 @@ The _master_ and _develop_ versions always matches the pattern *MAJOR*.*MINOR*-S
 
 The _master_ version always has the same major and minor number as the latest
 release while the _develop_ version uses the next expected major/minor
-release number, such as 2.1-SNAPSHOT 2.2-SNAPSHOT respectively
+release number, such as 2.1-SNAPSHOT and 2.2-SNAPSHOT respectively
 (after a 2.1.x release, but before any 2.2.x releases are made public).
 
 == Workflow
@@ -49,27 +49,39 @@ For example: `issues/#276-rdfxml-sax` is the branch for a fix for GitHub issue h
 Once a issue is complete and tested, a Pull Request should be created for
 peer review.
 
-=== Pull Request Patch
+=== Patch Requests
 
 If the change is a bug fix, contains no new features, and
 does not change any public or protected APIs (class or method signatures in the
-core module, i.e. code included in the release archive) then the Pull Request should
-target the _master_ branch. Once the Pull Request is created it should be reviewed
-and any modifications can be made to the issue branch as recommended.
-Once a Pull Request has been approved it can be schedule for a patch release by
-updating the https://github.com/eclipse/rdf4j/projects/3[patch release project board].
-Only when a Pull Request is approved *and* scheduled for the next patch release it can be merged
-into the _master_ branch then the issue branch can be closed.
+core module, i.e. code included in the release archive) then
 
-=== Feature issues
+1. the Pull Request should target the _master_ branch. Once the Pull Request is created
+2. it should be reviewed and any modifications can be made to the issue branch as recommended.
+3. Once a Pull Request has been approved it can be
+4. scheduled for a patch release (if not already) by updating the milestone label.
+5. Only when a Pull Request is approved *and* scheduled for the next patch release it can be merged
+into the _master_ branch then
+6. the issue branch can be closed.
+7. After a PR has been merged into the _master_ branch, the _master_ branch should
+then be merged into the _develop_ branch and any conflicts (such as due to new
+features) should be resolved.
+This can be done from the command line from a clean checkout as follows:
 
-Pull Requests that don't qualify for a patch release should target the _develop_
-branch or a relevant feature branch.
-Once a Pull Request has been approved it can be schedule for a major/minor release
-by updating the https://github.com/eclipse/rdf4j/projects/2[minor release project board]
-or the https://github.com/eclipse/rdf4j/projects/4[major release project board].
-Only when a Pull Request is approved *and* scheduled for the next minor release it can be merged
-into the _develop_ branch, only then can the issue/feature branch can be closed.
+    git checkout develop
+    git pull origin master
+    git push origin develop
+
+=== Feature Requests
+
+Pull Requests that don't qualify for a patch release should
+
+1. target the _develop_ branch or a relevant feature branch.
+2. Once a Pull Request has been approved it can be
+3. scheduled for a major/minor release by updating the milestone label.
+4. Only when a Pull Request is approved *and* scheduled for the next minor release it can be merged
+into the _develop_ branch, only then can
+5. the issue/feature branch can be closed.
+
 Minor and major releases require a formal https://www.eclipse.org/projects/handbook/#release-review[release review], and because this is the case, they need to be planned well in advance, and the project lead needs to manage what can go into each release, and prepare necessary documentation (both technical and legal) for review.
 For this reason approved Pull Requests may stay open for some time until a
 release plan that incorporates these changes is in place.
@@ -81,10 +93,11 @@ when complete, tagging this release branch with the version number before
 release deployment. Once release deployment is complete, the release branch
 is deleted.
 
-It is important that the _master_ branch is always in a release ready state, so
+IMPORTANT: It is important that the _master_ branch is always in a release ready state, so
 a patch release from the _master_ branch can be done in an ad-hoc fashion,
-without the need for a formal review. Plans to do a patch release are announced
-by the project lead on the
+without the need for a formal review.
+
+Plans to do a patch release are announced by the project lead on the
 https://dev.eclipse.org/mailman/listinfo/rdf4j-dev[rdf4j-dev@eclipse.org mailinglist],
 usually about a week in advance, with an open invitation for contributors to
 propose additional fixes to include, which are done as Pull Requests to the
@@ -227,6 +240,12 @@ RDF4J has two separate distributions:
 1. the SDK and onejar archives, downloadable via http://www.rdf4j.org/download .
 2. the Maven artifacts, available via http://search.maven.org[The Central Repository].
 
+RDF4j has three separate announcements:
+
+1. the github https://github.com/eclipse/rdf4j/releases[releases tab],
+2. the http://rdf4j.org/wp-admin/edit.php[rdf4j.org website], and
+3. the https://groups.google.com/forum/#!forum/rdf4j-users[rdf4j-user mailling list].
+
 === Building and uploading Maven artifacts
 
 We use the https://hudson.eclipse.org/rdf4j[Eclipse RDF4J Hudson CI instance] to build and deploy new releases to the Central Repository. To do this, simply log in to Hudson, and start the job named `rdf4j-deploy-release-ossrh-central`. The job will ask for the release tag as an input parameter, e.g. '2.2.1'. 
@@ -300,8 +319,8 @@ branch, and when complete, tagging this release branch with the version number
 before release deployment. Once release deployment is complete, the release
 branch is deleted.
 
-It is important that only features and fixes that have already been scheduled
-for release be merged into the _develop_ branch, so that there is no confusion
+IMPORTANT: It is important that only features and fixes that have already been scheduled
+for release (via milestone labels) be merged into the _develop_ branch, so that there is no confusion
 as to what will be included in the next minor release.
 
 The steps to create a minor release are very similar to the patch release
