@@ -141,23 +141,25 @@ public class NTriplesParser extends AbstractRDFParser {
 	public synchronized void parse(Reader reader, String baseURI)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
-		if (reader == null) {
-			throw new IllegalArgumentException("Reader can not be 'null'");
-		}
-		if (baseURI == null) {
-			throw new IllegalArgumentException("base URI can not be 'null'");
-		}
-
-		if (rdfHandler != null) {
-			rdfHandler.startRDF();
-		}
-
-		this.reader = reader;
-		lineNo = 1;
-
-		reportLocation(lineNo, 1);
-
+		clear();
+		
 		try {
+			if (reader == null) {
+				throw new IllegalArgumentException("Reader can not be 'null'");
+			}
+			if (baseURI == null) {
+				throw new IllegalArgumentException("base URI can not be 'null'");
+			}
+
+			if (rdfHandler != null) {
+				rdfHandler.startRDF();
+			}
+
+			this.reader = reader;
+			lineNo = 1;
+
+			reportLocation(lineNo, 1);
+
 			int c = readCodePoint();
 			c = skipWhitespace(c);
 
