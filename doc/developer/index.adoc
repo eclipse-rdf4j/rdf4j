@@ -48,23 +48,31 @@ For example: `issues/#276-rdfxml-sax` is the branch for a fix for GitHub issue h
 
 Once a issue is complete and tested, a Pull Request should be created for
 peer review.
+If the issue is part of a larger feature, the PR should be branched from
+(and target) the corresponding `features/` branch.
+If the issue is a new feature in and of itself, the PR should be branched from
+(and target) the _develop_ branch.
+If the issue is a bug fix, the PR should be branched from
+(and target) the _master_ branch.
 
 === Patch Requests
 
 If the change is a bug fix, contains no new features, and
-does not change any public or protected APIs (class or method signatures in the
-core module, i.e. code included in the release archive) then
+does not change any public or protected APIs then
 
-1. the Pull Request should target the _master_ branch. Once the Pull Request is created
-2. it should be reviewed and any modifications can be made to the issue branch as recommended.
-3. Once a Pull Request has been approved it can be
-4. scheduled for a patch release (if not already) by updating the milestone label.
-5. Only when a Pull Request is approved *and* scheduled for the next patch release it can be merged
+1. Create an _issue_ branch by forking the _master_ branch.
+2. Make the necessary changes and verify the codebase.
+3. Create a Pull Request that targets the _master_ branch.
+4. Peers and project committers now have a chance to review the PR and make suggestions.
+5. Any modifications can be made to the _issue_ branch as recommended.
+6. Once any necessary changes have been made, project committers can mark the PR as approved.
+7. Project committers should then determine what patch release this fix will be included in by updating the milestone label.
+8. Only when a Pull Request is approved *and* scheduled for the next patch release it should be merged
 into the _master_ branch then
-6. the issue branch can be closed.
-7. After a PR has been merged into the _master_ branch, the _master_ branch should
-then be merged into the _develop_ branch and any conflicts (such as due to new
-features) should be resolved.
+9. the issue branch can be delete (if desired).
+10. After a PR has been merged into the _master_ branch, the _master_ branch should
+then be merged into the _develop_ branch by the project committer that merged the PR,
+any conflicts (such as due to new features) should be resolved.
 This can be done from the command line from a clean checkout as follows:
 
     git checkout develop
@@ -73,18 +81,25 @@ This can be done from the command line from a clean checkout as follows:
 
 === Feature Requests
 
-Pull Requests that don't qualify for a patch release should
+Pull Requests that add a self contained new features to the public API follow
+the same steps as a Patch Request but should fork and target the _develop_ branch.
+However, Pull Requests that make changes to a feature that has not been
+scheduled for the next minor release, should fork and target the corresponding
+`features/` branch.
+Only PRs that have been scheduled for the next minor release
+should be merged into the _develop_ branch.
 
-1. target the _develop_ branch or a relevant feature branch.
-2. Once a Pull Request has been approved it can be
-3. scheduled for a major/minor release by updating the milestone label.
-4. Only when a Pull Request is approved *and* scheduled for the next minor release it can be merged
-into the _develop_ branch, only then can
-5. the issue/feature branch can be closed.
+Project committers that are contributing to a `features/` branch should periodically
+pull changes from the _develop_ branch to minimize conflicts later on.
+Once a features is complete another PR should be created using the `features/`
+branch and target the _develop_ branch.
+Then follow similar steps to a patch request to schedule and merge into _develop_.
 
 Minor and major releases require a formal https://www.eclipse.org/projects/handbook/#release-review[release review], and because this is the case, they need to be planned well in advance, and the project lead needs to manage what can go into each release, and prepare necessary documentation (both technical and legal) for review.
-For this reason approved Pull Requests may stay open for some time until a
-release plan that incorporates these changes is in place.
+For this reason approved Pull Requests may stay open (not scheduled or merged)
+for some time until a release plan that incorporates these changes and any
+required documentation is in place.
+The comment section in the PR can be used to keep everyone informed of the progress.
 
 == Patch releases
 
@@ -93,9 +108,9 @@ when complete, tagging this release branch with the version number before
 release deployment. Once release deployment is complete, the release branch
 is deleted.
 
-IMPORTANT: It is important that the _master_ branch is always in a release ready state, so
-a patch release from the _master_ branch can be done in an ad-hoc fashion,
-without the need for a formal review.
+IMPORTANT: It is important that the _master_ branch is always in a release ready state
+(build passes, no new features, docs are upto date), so a patch release from the
+_master_ branch can be done in an ad-hoc fashion, without the need for a formal review.
 
 Plans to do a patch release are announced by the project lead on the
 https://dev.eclipse.org/mailman/listinfo/rdf4j-dev[rdf4j-dev@eclipse.org mailinglist],
@@ -143,7 +158,7 @@ Finally, commit the version number changes:
 4. Tag the version and push the tag upstream:
 +
     git tag 2.2.1
-    git push -u origin 2.2.1
+    git push origin 2.2.1
 
 == Hotfix releases
 
@@ -183,7 +198,7 @@ Finally, commit the version number changes:
 
 4. Push the newly created branch, as follows:
 +
-    git push -u origin releases/2.1.6
+    git push origin releases/2.1.6
 
 Bug fixes are typically added to a hotfix release branch by https://git-scm.com/docs/git-cherry-pick[cherry-picking] the relevant commits from the _master_ branch. 
 
@@ -227,7 +242,7 @@ Finally, commit the changes and push:
 2. Tag the version and push the tag upstream:
 +
     git tag 2.1.6
-    git push -u origin 2.1.6
+    git push origin 2.1.6
 
 Once the release is complete, the hotfix branch needs to be deleted. Although this can of course be done from the command line, it is cumbersome, and we recommend using a decent Git client (like SourceTree) that can do this for you.
 
