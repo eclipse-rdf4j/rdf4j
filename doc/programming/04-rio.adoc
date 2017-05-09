@@ -18,7 +18,7 @@ Let’s say we have a Turtle file, available at http://example.org/example.ttl:
 
 [source,java,linenum]
 ----
-java.net.URL documentUrl = new URL(“http://example.org/example.ttl”);
+java.net.URL documentUrl = new URL("http://example.org/example.ttl");
 InputStream inputStream = documentUrl.openStream();
 ----
 
@@ -57,6 +57,9 @@ catch (RDFParseException e) {
 catch (RDFHandlerException e) {
   // handle a problem encountered by the RDFHandler
 }
+finally {
+  inputStream.close();
+}
 ----
 
 After the `parse()` method has executed (and provided no exception has occurred), the collection model will be filled by the StatementCollector. As an aside: you do not have to provide the StatementCollector with a list in advance, you can also use an empty constructor and then just get the collection, using `StatementCollector.getStatements()`.
@@ -66,6 +69,40 @@ The {javadoc}rio/Rio.html[Rio utility class] provides additional helper methods,
 [source,java,linenum]
 ----
 Model results = Rio.parse(inputStream, documentUrl.toString(), RDFFormat.TURTLE);
+----
+
+== Iterating through all the triples in a file
+
+RDF files can also be parsed in a background thread and iterated through as a query result. This allows files
+that are too big to fit into memory (at once) to be parsed sequentially using a familiar API (specifically, the
+{javadoc}query/GraphQueryResult.html[GraphQueryResult] interface).
+
+Using the same Turtle file from above:
+[source,java,linenum]
+----
+java.net.URL documentUrl = new URL("http://example.org/example.ttl");
+InputStream inputStream = documentUrl.openStream();
+----
+
+We now have an open `InputStream` to our RDF file. Instead of using a parser directly, we can use
+the {javadoc}query/QueryResults.html[QueryResults].parseGraphBackground() function:
+
+[source,java,linenum]
+----
+String baseURI = documentUrl.toString();
+RDFFormat format = RDFFormat.TURTLE;
+try (GraphQueryResult res = QueryResults.parseGraphBackground(inputStream, baseURI, format)) {
+  while (res.hasNext()) {
+    Statement st = res.next();
+    // ... do something with the resulting statement here.
+  }
+}
+catch (RDF4JException e) {
+  // handle unrecoverable error
+}
+finally {
+  inputStream.close();
+}
 ----
 
 == Using your own RDFHandler: counting statements
@@ -102,6 +139,9 @@ try {
 }
 catch (Exception e) {
   // oh no!
+}
+finally {
+  inputStream.close();
 }
 int numberOfStatements = myCounter.getCountedStatements();
 ----
@@ -151,6 +191,9 @@ try {
 catch (RDFHandlerException e) {
  // oh no, do something!
 }
+finally {
+  out.close();
+}
 ----
 
 Again, the Rio helper class provides convenience methods which you can use to make this a one step process. If the collection is a `Model` and the desired output format supports namespaces, then the namespaces from the model will also be serialised.
@@ -159,7 +202,12 @@ Again, the Rio helper class provides convenience methods which you can use to ma
 ----
 Model model; // a collection of several RDF statements
 FileOutputStream out = new FileOutputStream("/path/to/file.rdf")
-Rio.write(myGraph, out, RDFFormat.RDFXML);
+try {
+  Rio.write(model, out, RDFFormat.RDFXML);
+}
+finally {
+  out.close();
+}
 ----
 
 Since we have now seen how to read RDF using a parser and how to write using a writer, we can now convert RDF files from one syntax to another, simply by using a parser for the input syntax, collecting the statements, and then writing them again using a writer for the intended output syntax. However, you may notice that this approach may be problematic for very large files: we are collecting all statements into main memory (in a Model object).
@@ -190,6 +238,9 @@ catch (RDFParseException e) {
 }
 catch (RDFHandlerException e) {
   // handle a problem encountered by the RDFHandler
+}
+finally {
+  inputStream.close();
 }
 ----
 
