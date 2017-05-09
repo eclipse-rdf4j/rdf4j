@@ -42,7 +42,10 @@ RDF4J uses a git branching model where feature development takes place on branch
 These branches should have the prefix `features/` to indicate they are either
 not complete or have not been scheduled for the next minor release.
 
-Every issue, no matter how small, gets its own branch while under development. Issue branch names are always prefixed with `issues/`, followed by the issue number in the GitHub issue tracker, followed by one or two dash-separated keywords for the issue.
+Every issue, no matter how small, gets its own branch while under development.
+The milestone label of the issue is set to the *planned* release version for the
+issue, but that could change by the time a PR is merged.
+Issue branch names are always prefixed with `issues/`, followed by the issue number in the GitHub issue tracker, followed by one or two dash-separated keywords for the issue.
 
 For example: `issues/#276-rdfxml-sax` is the branch for a fix for GitHub issue https://github.com/eclipse/rdf4j/issues/276[#276], which has to do with RDF/XML and the SAX parser.
 
@@ -54,6 +57,8 @@ If the issue is a new feature in and of itself, the PR should be branched from
 (and target) the _develop_ branch.
 If the issue is a bug fix, the PR should be branched from
 (and target) the _master_ branch.
+The milestone label of the PR (and issue) are updated as part of the review
+process and later merged into the target branch.
 
 === Patch Requests
 
@@ -66,7 +71,7 @@ does not change any public or protected APIs then
 4. Peers and project committers now have a chance to review the PR and make suggestions.
 5. Any modifications can be made to the _issue_ branch as recommended.
 6. Once any necessary changes have been made, project committers can mark the PR as approved.
-7. Project committers should then determine what patch release this fix will be included in by updating the milestone label.
+7. Project committers should then determine what patch release this fix will be included in by updating the milestone label of both the PR and the issue.
 8. Only when a Pull Request is approved *and* scheduled for the next patch release it should be merged
 into the _master_ branch then
 9. the issue branch can be delete (if desired).
@@ -294,7 +299,8 @@ Once this completes, the SDK and onejar can be found in `core/assembly/target`. 
 
 Minor and major releases require a formal https://www.eclipse.org/projects/handbook/#release-review[release review], and because this is the case, they need to be planned well in advance, and the project lead needs to manage what can go into each release, and prepare necessary documentation (both technical and legal) for review.
 
-We plan each release about 8 weeks in advance. At this stage, the final feature set is not etched in stone but a number of priority features/improvements is identified (via discussion on the mailinglist and/or via issue tracker comments and PRs) and scheduled. A first draft of a release plan is created by the project lead on the https://projects.eclipse.org/projects/technology.rdf4j[Eclipse RDF4J project site], and the necessary milestones are created in the https://github.com/eclipse/rdf4j/issues[RDF4J issue tracker]. In addition, the https://github.com/eclipse/rdf4j/projects/2[next minor release planning board] is updated.
+We plan each release about 8 weeks in advance. At this stage, the final feature set is not etched in stone but a number of priority features/improvements is identified (via discussion on the mailinglist and/or via issue tracker comments and PRs) and scheduled. A first draft of a release plan is created by the project lead on the https://projects.eclipse.org/projects/technology.rdf4j[Eclipse RDF4J project site], and the necessary milestones are created in the https://github.com/eclipse/rdf4j/issues[RDF4J issue tracker].
+In addition, the https://github.com/eclipse/rdf4j/pulls[RDF4J Pull Requests] milestones are updated as the code is ready for inclusion.
 
 === Review planning and application
 
@@ -335,8 +341,8 @@ before release deployment. Once release deployment is complete, the release
 branch is deleted.
 
 IMPORTANT: It is important that only features and fixes that have already been scheduled
-for release (via milestone labels) be merged into the _develop_ branch, so that there is no confusion
-as to what will be included in the next minor release.
+for release (via PR milestone labels) be merged into the _develop_ branch, so
+that there is no confusion as to what will be included in the next minor release.
 
 The steps to create a minor release are very similar to the patch release
 steps, but are based on the _develop_ branch (not the _master_ branch).
