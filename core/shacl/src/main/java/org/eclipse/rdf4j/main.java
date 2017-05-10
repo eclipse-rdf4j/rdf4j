@@ -1,17 +1,15 @@
 package org.eclipse.rdf4j;
 
-import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.validation.SHACLSail;
-import org.eclipse.rdf4j.validation.SHACLSailConnection;
-import org.eclipse.rdf4j.validation.ShaclViolationListener;
 
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 
 /**
  * Created by heshanjayasinghe on 4/30/17.
@@ -22,37 +20,31 @@ public class Main {
 
     public static void main(String[] args) {
 
-        SailRepository shaclRules = new SailRepository(new MemoryStore());
 
-        shaclRules.initialize();
-        ValueFactory vf = shaclRules.getValueFactory();
+        SailRepository shaclSail = new SailRepository(new SHACLSail(new MemoryStore()));
+        shaclSail.initialize();
 
-        try (SailRepositoryConnection connection = shaclRules.getConnection()) {
-            connection.begin();
-            connection.add(new FileInputStream("shacl.ttl"), "", RDFFormat.TURTLE);
-            connection.commit();
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
+        try (SailRepositoryConnection conn = shaclSail.getConnection()) {
+            String filename = "shacl.ttl";
+            try (InputStream input = SHACLSail.class.getResourceAsStream("/" + filename)) {
+                // add the RDF data from the inputstream directly to our database
+                conn.add(input, "", RDFFormat.TURTLE );
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            // let's check that our data is actually in the database
+            try (RepositoryResult<Statement> result = conn.getStatements(null, null, null)) {
+                while (result.hasNext()) {
+                    Statement st = result.next();
+                    System.out.println("db contains: " + st);
+                }
+            }
+        }
+        finally {
+            shaclSail.shutDown();
         }
 
-        SHACLSail shaclSail = new SHACLSail();
-
-        shaclSail.setShaclRules(shaclRules);
-
-        SHACLSailConnection connection = (SHACLSailConnection) shaclSail.getConnection();
-
-        connection.addShaclViolationListener(new ShaclViolationListener() {
-            @Override
-            public void violation(String errror) {
-                System.out.println(errror);
-            }
-        });
-
-        connection.begin();
-
-        connection.commit();
 
     }
 }
