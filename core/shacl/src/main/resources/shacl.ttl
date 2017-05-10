@@ -1,0 +1,16 @@
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+
+sh:
+	a owl:Ontology ;
+	rdfs:label "W3C Shapes Constraint Language (SHACL) Vocabulary"@en ;
+	rdfs:comment "This vocabulary defines terms used in SHACL, the W3C Shapes Constraint Language."@en ;
+	sh:declare [
+		sh:prefix "sh" ;
+		sh:namespace "http://www.w3.org/ns/shacl#" ;
+	] ;
+	sh:suggestedShapesGraph <http://www.w3.org/ns/shacl-shacl#> .
