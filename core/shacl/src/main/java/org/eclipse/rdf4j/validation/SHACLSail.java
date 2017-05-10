@@ -1,7 +1,7 @@
 package org.eclipse.rdf4j.validation;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.Main;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -9,6 +9,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
@@ -25,6 +26,10 @@ public class SHACLSail extends NotifyingSailWrapper {
 
     List<Shape> shapes;
 
+    public SHACLSail(NotifyingSail memoryStore) {
+        super(memoryStore);
+    }
+
     @Override
     public void setBaseSail(Sail baseSail) {
         super.setBaseSail(baseSail);
@@ -32,8 +37,17 @@ public class SHACLSail extends NotifyingSailWrapper {
 
     @Override
     public NotifyingSailConnection getConnection() throws SailException {
-        return new SHACLSailConnection(this);
+        try {
+            NotifyingSailConnection con = super.getConnection();
+            return new SHACLSailConnection(this, con);
+        }
+        catch (ClassCastException e) {
+            throw new SailException(e.getMessage(), e);
+        }
+       // return new SHACLSailConnection(this);
     }
+    
+
 
     public void setShaclRules(SailRepository shaclRules){
         try(SailRepositoryConnection connection = shaclRules.getConnection()){
