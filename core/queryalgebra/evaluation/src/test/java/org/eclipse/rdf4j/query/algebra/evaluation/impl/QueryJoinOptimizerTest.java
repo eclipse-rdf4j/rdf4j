@@ -13,10 +13,16 @@ import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
+import org.junit.Assert;
 import org.junit.Test;
 
 /**
@@ -57,6 +63,36 @@ public class QueryJoinOptimizerTest {
 				+ "  ex:s ?sp ?so. " + "  ?ps ex:p ?po. " + "  ?os ?op 'ex:o'. " + " }" + " ?x ?y ?z. " + "}";
 
 		testOptimizer(expectedQuery, query);
+	}
+
+	@Test
+	public void testSES2116JoinBind()
+		throws Exception
+	{
+
+		StringBuilder qb = new StringBuilder();
+		qb.append("SELECT ?subject ?name ?row {\n"
+				+ "  ?subject <http://localhost/table_1> ?uri .\n" + "  BIND(STR(?uri) AS ?name)\n"
+				+ "  ?table <http://linked.opendata.cz/ontology/odcs/tabular/hasRow> ?row .\n"
+				+ "  ?table <http://linked.opendata.cz/ontology/odcs/tabular/symbolicName> ?name .\n" + "}");
+
+		SPARQLParser parser = new SPARQLParser();
+		ParsedQuery q = parser.parseQuery(qb.toString(), null);
+		QueryJoinOptimizer opt = new QueryJoinOptimizer();
+		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
+		opt.optimize(optRoot, null, null);
+		TupleExpr leaf = findLeaf(optRoot);
+		Assert.assertTrue("Extension must be evaluated before StatementPattern", leaf.getParentNode() instanceof Extension);
+	}
+
+	private TupleExpr findLeaf(TupleExpr expr) {
+		if (expr instanceof UnaryTupleOperator) {
+			return findLeaf(((UnaryTupleOperator)expr).getArg());
+		} else if (expr instanceof BinaryTupleOperator) {
+			return findLeaf(((BinaryTupleOperator)expr).getLeftArg());
+		} else {
+			return expr;
+		}
 	}
 
 	private void testOptimizer(String expectedQuery, String actualQuery)
