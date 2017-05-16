@@ -12,7 +12,7 @@ In this document the Eclipse RDF4J project workflow and developer best practices
 RDF4J strives to apply http://www.semver.org/[Semantic Versioning] principles to its development:
 
 1. We use a `MAJOR.MINOR.PATCH` versioning template.
-2. A *PATCH* release (2.1.5, 2.1.6, etc.) is a release that contains only bug fixes that are backwards compatible.
+2. A *PATCH* release (2.2.1, 2.2.2, etc.) is a release that contains only bug fixes that are backwards compatible.
 3. A *MINOR* release (2.0, 2.1, 2.2, etc.) is a release that can contain improvements and new features but makes no backward-incompatible changes to existing functionality.
 4. A *MAJOR* release (1.0, 2.0, 3.0, etc) is a release that can contain changes to the public API that are not backward compatible.
 
@@ -26,29 +26,158 @@ These conditions are to ensure that existing user code will continue to work whe
 
 For patch releases we never allow changes in the public API, unless the change is specifically to fix a bug that aligns the actual behavior of the code with the publicly documented behavior.
 
+Only release branches (more on those later) include the full major.minor.patch
+version numbers included with releases. The major and minor version of the _master_ and
+_develop_ branches do not include a patch number and always have a SNAPSHOT tag.
+The _master_ and _develop_ versions always matches the pattern *MAJOR*.*MINOR*-SNAPSHOT.
+
+The _master_ version always has the same major and minor number as the latest
+release while the _develop_ version uses the next expected major/minor
+release number, such as 2.1-SNAPSHOT and 2.2-SNAPSHOT respectively
+(after a 2.1.x release, but before any 2.2.x releases are made public).
+
 == Workflow
 
-RDF4J uses a git branching model where feature development takes place on branches from the master branch. This is where all development for the next (minor or major) release happens.
-
-Every issue, no matter how small, gets its own branch while under development. Issue branch names are always prefixed with `issues/`, followed by the issue number in the GitHub issue tracker, followed by one or two dash-separated keywords for the issue.
+Every issue, no matter how small, gets its own branch while under development.
+The milestone label of the issue is set to the *planned* release version for the
+issue, but that could change by the time a PR is merged.
+Issue branch names are always prefixed with `issues/`, followed by the issue number in the GitHub issue tracker, followed by one or two dash-separated keywords for the issue.
 
 For example: `issues/#276-rdfxml-sax` is the branch for a fix for GitHub issue https://github.com/eclipse/rdf4j/issues/276[#276], which has to do with RDF/XML and the SAX parser.
 
-Once a feature/fix is complete, tested, and reviewed (via a Pull Request), it is merged into master, and the issue branch is closed.
+RDF4J uses a git branching model where collaborative feature development takes
+place on branches from the _develop_ branch. This is where all development for
+the next (minor or major) release happens.
+These branches should have the prefix `features/` to indicate they are either
+not complete or have not been scheduled for the next minor release.
+
+Once a issue is complete and tested, a Pull Request should be created for
+peer review.
+If the issue is part of a larger feature, the PR should be branched from
+(and target) the corresponding `features/` branch.
+If the issue is a new feature in and of itself, the PR should be branched from
+(and target) the _develop_ branch.
+If the issue is a bug fix, the PR should be branched from
+(and target) the _master_ branch.
+The milestone label of the PR (and issue) are updated as part of the review
+process and later merged into the target branch.
+
+=== Patch Requests
+
+If the change is a bug fix, contains no new features, and
+does not change any public or protected APIs then
+
+1. Create an _issue_ branch by forking the _master_ branch.
+2. Make the necessary changes and verify the codebase.
+3. Create a Pull Request that targets the _master_ branch.
+4. Peers and project committers now have a chance to review the PR and make suggestions.
+5. Any modifications can be made to the _issue_ branch as recommended.
+6. Once any necessary changes have been made, project committers can mark the PR as approved.
+7. Project committers should then determine what patch release this fix will be included in by updating the milestone label of both the PR and the issue.
+8. Only when a Pull Request is approved *and* scheduled for the next patch release it should be merged
+into the _master_ branch then
+9. the issue branch can be delete (if desired).
+10. After a PR has been merged into the _master_ branch, the _master_ branch should
+then be merged into the _develop_ branch by the project committer that merged the PR,
+any conflicts (such as due to new features) should be resolved.
+This can be done from the command line from a clean checkout as follows:
+
+    git checkout develop
+    git pull origin master
+    git push origin develop
+
+=== Feature Requests
+
+Pull Requests that add a self contained new features to the public API follow
+the same steps as a Patch Request but should fork and target the _develop_ branch.
+However, Pull Requests that make changes to a feature that has not been
+scheduled for the next minor release, should fork and target the corresponding
+`features/` branch.
+Only PRs that have been scheduled for the next minor release
+should be merged into the _develop_ branch.
+
+Project committers that are contributing to a `features/` branch should periodically
+pull changes from the _develop_ branch to minimize conflicts later on.
+Once a features is complete another PR should be created using the `features/`
+branch and target the _develop_ branch.
+Then follow similar steps to a patch request to schedule and merge into _develop_.
+
+Minor and major releases require a formal https://www.eclipse.org/projects/handbook/#release-review[release review], and because this is the case, they need to be planned well in advance, and the project lead needs to manage what can go into each release, and prepare necessary documentation (both technical and legal) for review.
+For this reason approved Pull Requests may stay open (not scheduled or merged)
+for some time until a release plan that incorporates these changes and any
+required documentation is in place.
+The comment section in the PR can be used to keep everyone informed of the progress.
 
 == Patch releases
 
-Patch releases are created by cherry-picking desired bug fixes from the master branch into a release branch, and when complete, tagging this release branch with the version number before release deployment. Once release deployment is complete, the release branch is merged back into the master branch, and then deleted.
+Patch releases are created by branching the _master_ branch into a release branch, and
+when complete, tagging this release branch with the version number before
+release deployment. Once release deployment is complete, the release branch
+is deleted.
 
-A patch release can be done in an ad-hoc fashion, without the need for a formal review. Plans to do a patch release are announced by the project lead on the https://dev.eclipse.org/mailman/listinfo/rdf4j-dev[rdf4j-dev@eclipse.org mailinglist], usually about a week in advance, with an open invitation for contributers to propose additional fixes to include.
+IMPORTANT: It is important that the _master_ branch is always in a release ready state
+(build passes, no new features, docs are upto date), so a patch release from the
+_master_ branch can be done in an ad-hoc fashion, without the need for a formal review.
 
-=== Creating a release branch
+Plans to do a patch release are announced by the project lead on the
+https://dev.eclipse.org/mailman/listinfo/rdf4j-dev[rdf4j-dev@eclipse.org mailinglist],
+usually about a week in advance, with an open invitation for contributors to
+propose additional fixes to include, which are done as Pull Requests to the
+_master_ branch.
 
-A patch release uses its immediate predecessor release as its basis. This means we need to create a release branch not by simply branching from the current master branch, but by branching from a specific release tag. To create a patch release branch, follow these steps:
+=== Creating a patch release branch
+
+Any fixes to be included in the a patch release must be merged into the _master_
+branch first.
+A patch release branch should differ from the _master_ branch, at the time of
+release, only by the version number - a patch release branch has a patch number
+version, while the _master_ branch has a SNAPSHOT version.
+To create a patch release branch, follow these steps:
+
+1. Check out the _master_ branch.
++
+E.g. if we're preparing a release 2.2.1, the _master_ branch will have the version 2.2-SNAPSHOT:
++
+    git checkout master
+
+2. Create a new release branch, named `releases/<version>`:
++
+    git checkout -b releases/2.2.1
+
+3. Fix maven version numbers in the release branch.
++
+We need to set the project version to `2.2.1` by using:
++
+    mvn versions:set
++
+This will ask for the new version number. Enter `2.2.1` to indicate that this is the release branch for 2.2.1 release.
++
+After this is done, execute
++
+    mvn versions:commit
++
+which will remove backup files.
++
+Finally, commit the version number changes:
++
+    git commit -s -a -m "release branch for 2.2.1"
+
+4. Tag the version and push the tag upstream:
++
+    git tag 2.2.1
+    git push origin 2.2.1
+
+== Hotfix releases
+
+Hotfix release are patch releases that target an prior minor version (not the
+latest stable release). These are needed when a critical bug was found in a
+production deployment using an earlier version.
+
+A Hotfix release use a preceding release as its basis. This means we need to create a release branch not by simply branching from the current _master_ branch, but by branching from a specific release tag. To create a patch release branch, follow these steps:
 
 1. Check out the tag of the previous release.
 +
-E.g. if we're preparing a release 2.1.6, the previous release is 2.1.5, so we do:
+E.g. if we're preparing a release 2.1.6, the preceding release is 2.1.5, so we do:
 +
     git checkout 2.1.5
 
@@ -76,11 +205,9 @@ Finally, commit the version number changes:
 
 4. Push the newly created branch, as follows:
 +
-    git push -u origin releases/2.1.6
+    git push origin releases/2.1.6
 
-=== Cherry-picking fixes
-
-Bug fixes are typically added to a patch release branch by https://git-scm.com/docs/git-cherry-pick[cherry-picking] the relevant commits from the master branch. 
+Bug fixes are typically added to a hotfix release branch by https://git-scm.com/docs/git-cherry-pick[cherry-picking] the relevant commits from the _master_ branch. 
 
 This works as follows:
 
@@ -96,11 +223,7 @@ The commit number (5d13554) is what you're after.
 +
     git cherry-pick -m 1 5d13554
 +
-The `-m 1` flag is necessary because this is a merge-commit, which has two parents: we need inform git which parent commit it needs to use as the base (we select 1, which is the master branch, to ensure that _only_ changes introduced by this fix are included).
-
-4. Push your changes and update the https://github.com/eclipse/rdf4j/projects/3[patch release project board].
-
-=== Tagging and finalizing the release
+The `-m 1` flag is necessary because this is a merge-commit, which has two parents: we need inform git which parent commit it needs to use as the base (we select 1, which is the _master_ branch, to ensure that _only_ changes introduced by this fix are included).
 
 Once all fixes are applied to the release branch, and the build is stable (NB verify by executing `mvn clean verify`), we can tag and finalize the release:
 
@@ -126,7 +249,11 @@ Finally, commit the changes and push:
 2. Tag the version and push the tag upstream:
 +
     git tag 2.1.6
-    git push -u origin 2.1.6
+    git push origin 2.1.6
+
+Once the release is complete, the hotfix branch needs to be deleted. Although this can of course be done from the command line, it is cumbersome, and we recommend using a decent Git client (like SourceTree) that can do this for you.
+
+Note that, although the branch is deleted, the release tag is still in place, for future use of further hotfix releases.
 
 == Release distribution deployment
 
@@ -135,9 +262,15 @@ RDF4J has two separate distributions:
 1. the SDK and onejar archives, downloadable via http://www.rdf4j.org/download .
 2. the Maven artifacts, available via http://search.maven.org[The Central Repository].
 
+RDF4j has three separate announcements:
+
+1. the github https://github.com/eclipse/rdf4j/releases[releases tab],
+2. the http://rdf4j.org/wp-admin/edit.php[rdf4j.org website], and
+3. the https://groups.google.com/forum/#!forum/rdf4j-users[rdf4j-user mailling list].
+
 === Building and uploading Maven artifacts
 
-We use the https://hudson.eclipse.org/rdf4j[Eclipse RDF4J Hudson CI instance] to build and deploy new releases to the Central Repository. To do this, simply log in to Hudson, and start the job named `rdf4j-deploy-release-ossrh-central`. The job will ask for the release tag as an input parameter, e.g. '2.1.6'. 
+We use the https://hudson.eclipse.org/rdf4j[Eclipse RDF4J Hudson CI instance] to build and deploy new releases to the Central Repository. To do this, simply log in to Hudson, and start the job named `rdf4j-deploy-release-ossrh-central`. The job will ask for the release tag as an input parameter, e.g. '2.2.1'. 
 
 This Hudson job will automatically check out the release tag, build the project, and upload all artifacts to https://oss.sonatype.org/[OSS Sonatype]. After successful upload, it will also automatically invoke synchronization with the Central Repository. Note that after successful completion, the artifacts may not be available on the Central Repository for several hours. 
 
@@ -164,31 +297,16 @@ Once this completes, the SDK and onejar can be found in `core/assembly/target`. 
 2. Go to remote directory `/home/data/httpd/download.eclipse.org/rdf4j`. 
 3. Upload the SDK and onejar archives to this directory (NB we currently only distribute the SDK zip file, not the tar.gz file)
 
-=== Closing the release branch
-
-Once the release is complete, the project lead merges the release branch back into the master branch, and then deletes it. 
-
-On merge, usually conflicts will occur on all `pom.xml` files - this is due to version number updates in the release branch. These conflicts can be easily resolved by just selecting all pom files and indicating that the conflict should be resolved by just using the master ("mine") version.
-
-Once the branch is merged, it needs to be deleted. Although this can of course be done from the command line, it is cumbersome, and we recommend using a decent Git client (like SourceTree) that can do this for you.
-
-Note that, although the branch is deleted, the release tag is still in place, for future use of further patch release branches.
-
 == Minor and Major releases
 
-The technical steps involved in creating a minor or major release are almost identical to those for creating a patch release. The main difference is that a release branch is usually not created until a few days before the planned release, and it is created directly from the master branch, not from the tag of the previous release. For this reason, it also does not involve cherry-picking fixes.
+Minor and major releases require a formal https://www.eclipse.org/projects/handbook/#release-review[release review], and because this is the case, they need to be planned well in advance, and the project lead needs to manage what can go into each release, and prepare necessary documentation (both technical and legal) for review.
 
-However, minor and major releases require a formal https://www.eclipse.org/projects/handbook/#release-review[release review], and because this is the case, they need to be planned well in advance, and the project lead needs to manage what can go into each release, and prepare necessary documentation (both technical and legal) for review.
-
-=== Release planning
-
-We plan each release about 8 weeks in advance. At this stage, the final feature set is not etched in stone but a number of priority features/improvements is identified (via discussion on the mailinglist and/or via issue tracker comments and PRs) and scheduled. A first draft of a release plan is created by the project lead on the https://projects.eclipse.org/projects/technology.rdf4j[Eclipse RDF4J project site], and the necessary milestones are created in the https://github.com/eclipse/rdf4j/issues[RDF4J issue tracker]. In addition, the https://github.com/eclipse/rdf4j/projects/2[next minor release planning board] is updated. 
-
-=== Scheduling a release date
-
-A release can only be done once its review is succesfully concluded. Eclipse release review are announced in regular cycles, and always complete on the first or third Wednesday of each month. For this reason, we schedule our releases to happen on a first or third Thursday.
+We plan each release about 8 weeks in advance. At this stage, the final feature set is not etched in stone but a number of priority features/improvements is identified (via discussion on the mailinglist and/or via issue tracker comments and PRs) and scheduled. A first draft of a release plan is created by the project lead on the https://projects.eclipse.org/projects/technology.rdf4j[Eclipse RDF4J project site], and the necessary milestones are created in the https://github.com/eclipse/rdf4j/issues[RDF4J issue tracker].
+In addition, the https://github.com/eclipse/rdf4j/pulls[RDF4J Pull Requests] milestones are updated as the code is ready for inclusion.
 
 === Review planning and application
+
+A release can only be done once its review is successfully concluded. Eclipse release review are announced in regular cycles, and always complete on the first or third Wednesday of each month. For this reason, we schedule our releases to happen on a first or third Thursday.
 
 A release review runs for a week. Although mostly a formality, it does need some careful preparation and planning. It needs to be formally applied for, and this application in turn requires that several pieces of documentation are in order:
 
@@ -216,6 +334,27 @@ Jeen Broekstra
 When IP log approval and review approval have been given, the review can be scheduled. To do this, emo@eclipse.org needs to be notified. This can happen through the https://projects.eclipse.org/projects/technology.rdf4j/governance[eclipse project governance page] (accessible through the project site), which will show a link at the top of the page for the planned release.
 
 For more detailed information about the release review process, see the https://www.eclipse.org/projects/handbook/[Eclipse Project Handbook].
+
+=== Branching minor releases
+
+Minor releases are created by branching the _develop_ branch into a release
+branch, and when complete, tagging this release branch with the version number
+before release deployment. Once release deployment is complete, the release
+branch is deleted.
+
+IMPORTANT: It is important that only features and fixes that have already been scheduled
+for release (via PR milestone labels) be merged into the _develop_ branch, so
+that there is no confusion as to what will be included in the next minor release.
+
+The steps to create a minor release are very similar to the patch release
+steps, but are based on the _develop_ branch (not the _master_ branch).
+
+Once a minor release is published the _develop_ branch should be merged into the
+_master_ branch (along with the _develop_ branch's version). This will increment the
+_master_ version to the latest major/minor SNAPSHOT version.
+Then the _develop_ minor version should be incremented to the next SNAPSHOT
+version and any approved features that are scheduled for this next minor
+version should be merged into _develop_ branch.
 
 == Further reading
 
