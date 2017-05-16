@@ -8,12 +8,23 @@
 package org.eclipse.rdf4j.lucene.spin;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.Reader;
+import java.io.StringReader;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+import static org.eclipse.rdf4j.sail.lucene.LuceneSail.INDEXEDFIELDS;
 import org.eclipse.rdf4j.sail.lucene.SearchIndex;
 import org.eclipse.rdf4j.sail.lucene.SearchIndexQueryContextInitializer;
 import org.eclipse.rdf4j.sail.lucene.util.SearchIndexUtils;
@@ -35,6 +46,10 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	private SearchIndex si;
 
 	private Properties parameters = new Properties();
+
+	private Set<IRI> indexedFields;
+
+	private Map<IRI, IRI> indexedFieldsMapping;
 
 	public LuceneSpinSail() {
 	}
@@ -58,6 +73,30 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	public void initialize()
 		throws SailException
 	{
+		// Add support for indexed fields
+		if (parameters.containsKey(INDEXEDFIELDS)) {
+			String indexedfieldsString = parameters.getProperty(INDEXEDFIELDS);
+			Properties prop = new Properties();
+			try (Reader reader = new StringReader(indexedfieldsString)) {
+				prop.load(reader);
+			}
+			catch (IOException e) {
+				throw new SailException("Could read " + INDEXEDFIELDS + ": " + indexedfieldsString, e);
+			}
+			ValueFactory vf = getValueFactory();
+			indexedFields = new HashSet<>();
+			indexedFieldsMapping = new HashMap<>();
+			for (Object key : prop.keySet()) {
+				String keyStr = key.toString();
+				if (keyStr.startsWith("index.")) {
+					indexedFields.add(vf.createIRI(prop.getProperty(keyStr)));
+				}
+				else {
+					indexedFieldsMapping.put(vf.createIRI(keyStr), vf.createIRI(prop.getProperty(keyStr)));
+				}
+			}
+		}
+
 		((SpinSail)getBaseSail()).setEvaluationMode(TupleFunctionEvaluationMode.TRIPLE_SOURCE);
 		parameters.setProperty(LuceneSail.INDEX_CLASS_KEY,
 				getParameters().getProperty(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS));
@@ -94,7 +133,38 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 			throw new SailException("Index is not created");
 		}
 		// the connection from the super is created only when the index exists
-		return new LuceneSpinSailConnection(super.getConnection(), si);
+		return new LuceneSpinSailConnection(super.getConnection(), si, this);
+	}
+
+	/**
+	 * Copy of {@link LuceneSail#mapStatement(org.eclipse.rdf4j.model.Statement) }
+	 * 
+	 * @param statement
+	 * @return
+	 */
+	public Statement mapStatement(Statement statement) {
+		IRI p = statement.getPredicate();
+		boolean predicateChanged = false;
+		Map<IRI, IRI> nextIndexedFieldsMapping = indexedFieldsMapping;
+		if (nextIndexedFieldsMapping != null) {
+			IRI res = nextIndexedFieldsMapping.get(p);
+			if (res != null) {
+				p = res;
+				predicateChanged = true;
+			}
+		}
+		Set<IRI> nextIndexedFields = indexedFields;
+		if (nextIndexedFields != null && !nextIndexedFields.contains(p)) {
+			return null;
+		}
+
+		if (predicateChanged) {
+			return getValueFactory().createStatement(statement.getSubject(), p, statement.getObject(),
+					statement.getContext());
+		}
+		else {
+			return statement;
+		}
 	}
 
 }
