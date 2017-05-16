@@ -44,6 +44,8 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 
 	private final SearchIndex luceneIndex;
 
+	private final LuceneSpinSail sail;
+
 	/**
 	 * the buffer that collects operations
 	 */
@@ -58,6 +60,14 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 		public void statementAdded(Statement statement) {
 			// we only consider statements that contain literals
 			if (statement.getObject() instanceof Literal) {
+
+				statement = sail.mapStatement(statement);
+
+				// process only mapped/indexable statements
+				if (statement == null) {
+					return;
+				}
+
 				// we further only index statements where the Literal's datatype is
 				// accepted
 				Literal literal = (Literal)statement.getObject();
@@ -70,6 +80,12 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 		public void statementRemoved(Statement statement) {
 			// we only consider statements that contain literals
 			if (statement.getObject() instanceof Literal) {
+
+				// process oly mapped/indexable statements
+				statement = sail.mapStatement(statement);
+				if (statement == null) {
+					return;
+				}
 				// we further only indexed statements where the Literal's datatype
 				// is accepted
 				Literal literal = (Literal)statement.getObject();
@@ -84,9 +100,12 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	 */
 	private final AtomicBoolean closed = new AtomicBoolean(false);
 
-	public LuceneSpinSailConnection(NotifyingSailConnection wrappedConnection, SearchIndex luceneIndex) {
+	public LuceneSpinSailConnection(NotifyingSailConnection wrappedConnection, SearchIndex luceneIndex,
+			LuceneSpinSail sail)
+	{
 		super(wrappedConnection);
 		this.luceneIndex = luceneIndex;
+		this.sail = sail;
 
 		/*
 		 * Using SailConnectionListener, see <a href="#whySailConnectionListener">above</a>
