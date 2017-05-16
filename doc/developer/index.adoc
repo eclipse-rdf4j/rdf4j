@@ -38,16 +38,18 @@ release number, such as 2.1-SNAPSHOT and 2.2-SNAPSHOT respectively
 
 == Workflow
 
-RDF4J uses a git branching model where feature development takes place on branches from the _develop_ branch. This is where all development for the next (minor or major) release happens.
-These branches should have the prefix `features/` to indicate they are either
-not complete or have not been scheduled for the next minor release.
-
 Every issue, no matter how small, gets its own branch while under development.
 The milestone label of the issue is set to the *planned* release version for the
 issue, but that could change by the time a PR is merged.
 Issue branch names are always prefixed with `issues/`, followed by the issue number in the GitHub issue tracker, followed by one or two dash-separated keywords for the issue.
 
 For example: `issues/#276-rdfxml-sax` is the branch for a fix for GitHub issue https://github.com/eclipse/rdf4j/issues/276[#276], which has to do with RDF/XML and the SAX parser.
+
+RDF4J uses a git branching model where collaborative feature development takes
+place on branches from the _develop_ branch. This is where all development for
+the next (minor or major) release happens.
+These branches should have the prefix `features/` to indicate they are either
+not complete or have not been scheduled for the next minor release.
 
 Once a issue is complete and tested, a Pull Request should be created for
 peer review.
