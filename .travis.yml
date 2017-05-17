@@ -1,7 +1,8 @@
+install: true
 language: java
 jdk:
   - oraclejdk8
-script: mvn verify
+script: mvn clean verify
 branches:
   only:
   - master
