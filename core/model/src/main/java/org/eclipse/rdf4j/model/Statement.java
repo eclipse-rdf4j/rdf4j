@@ -52,12 +52,14 @@ public interface Statement extends Serializable {
 	 * @return <tt>true</tt> if the other object is an instance of {@link Statement} and if their subjects,
 	 *         predicates, objects and contexts are equal.
 	 */
+	@Override
 	public boolean equals(Object other);
 
 	/**
-	 * The hash code of a statement.
+	 * Return a hash code value for the statement.
 	 * 
 	 * @return A hash code for the statement.
 	 */
+	@Override
 	public int hashCode();
 }

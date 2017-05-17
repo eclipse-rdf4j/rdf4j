@@ -60,8 +60,7 @@ public interface Literal extends Value {
 	public boolean equals(Object other);
 
 	/**
-	 * Returns the literal's hash code. The hash code of a literal is defined as the hash code of its label:
-	 * <tt>label.hashCode()</tt>.
+	 * Returns hash code value of the Literal. 
 	 * 
 	 * @return A hash code for the literal.
 	 */

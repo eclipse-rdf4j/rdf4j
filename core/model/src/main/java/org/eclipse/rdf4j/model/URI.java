@@ -54,8 +54,7 @@ public interface URI extends Resource {
 	public boolean equals(Object o);
 
 	/**
-	 * The hash code of an URI is defined as the hash code of its String-representation:
-	 * <tt>toString().hashCode</tt>.
+	 * The hash code of an URI.
 	 * 
 	 * @return A hash code for the URI.
 	 */
