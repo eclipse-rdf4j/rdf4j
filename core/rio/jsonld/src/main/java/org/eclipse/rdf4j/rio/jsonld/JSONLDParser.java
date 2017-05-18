@@ -58,13 +58,16 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 	public void parse(final InputStream in, final String baseURI)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
-		final JSONLDInternalTripleCallback callback = new JSONLDInternalTripleCallback(getRDFHandler(),
-				valueFactory, getParserConfig(), getParseErrorListener());
-
-		final JsonLdOptions options = new JsonLdOptions(baseURI);
-		options.useNamespaces = true;
+		clear();
 
 		try {
+			final JSONLDInternalTripleCallback callback = new JSONLDInternalTripleCallback(getRDFHandler(),
+					valueFactory, getParserConfig(), getParseErrorListener(), nodeID -> createBNode(nodeID),
+					() -> createBNode());
+
+			final JsonLdOptions options = new JsonLdOptions(baseURI);
+			options.useNamespaces = true;
+
 			JsonLdProcessor.toRDF(JsonUtils.fromInputStream(in), callback, options);
 		}
 		catch (final JsonLdError e) {
@@ -79,19 +82,25 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 			}
 			throw e;
 		}
+		finally {
+			clear();
+		}
 	}
 
 	@Override
 	public void parse(final Reader reader, final String baseURI)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
-		final JSONLDInternalTripleCallback callback = new JSONLDInternalTripleCallback(getRDFHandler(),
-				valueFactory, getParserConfig(), getParseErrorListener());
-
-		final JsonLdOptions options = new JsonLdOptions(baseURI);
-		options.useNamespaces = true;
+		clear();
 
 		try {
+			final JSONLDInternalTripleCallback callback = new JSONLDInternalTripleCallback(getRDFHandler(),
+					valueFactory, getParserConfig(), getParseErrorListener(), nodeID -> createBNode(nodeID),
+					() -> createBNode());
+
+			final JsonLdOptions options = new JsonLdOptions(baseURI);
+			options.useNamespaces = true;
+
 			JsonLdProcessor.toRDF(JsonUtils.fromReader(reader), callback, options);
 		}
 		catch (final JsonLdError e) {
@@ -105,6 +114,9 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 				throw (RDFParseException)e.getCause();
 			}
 			throw e;
+		}
+		finally {
+			clear();
 		}
 	}
 

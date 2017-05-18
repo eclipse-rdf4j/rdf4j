@@ -12,7 +12,7 @@ import static org.junit.Assert.assertEquals;
 import java.io.IOException;
 import java.util.Iterator;
 
-import org.eclipse.rdf4j.model.Graph;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -40,12 +40,13 @@ public class JSONLDInternalTripleCallbackTest {
 		final String expectedString = "(http://nonexistent.com/abox#Document1823812, http://www.w3.org/1999/02/22-rdf-syntax-ns#type, http://nonexistent.com/tbox#Document) [null]";
 		final Object input = JsonUtils.fromString(inputstring);
 
-		final Graph graph = new LinkedHashModel();
+		final Model graph = new LinkedHashModel();
 		final ParseErrorCollector parseErrorListener = new ParseErrorCollector();
 		final ParserConfig parserConfig = new ParserConfig();
 		final JSONLDInternalTripleCallback callback = new JSONLDInternalTripleCallback(
 				new StatementCollector(graph), SimpleValueFactory.getInstance(), parserConfig,
-				parseErrorListener);
+				parseErrorListener, nodeID -> SimpleValueFactory.getInstance().createBNode(nodeID),
+				() -> SimpleValueFactory.getInstance().createBNode());
 
 		JsonLdProcessor.toRDF(input, callback);
 

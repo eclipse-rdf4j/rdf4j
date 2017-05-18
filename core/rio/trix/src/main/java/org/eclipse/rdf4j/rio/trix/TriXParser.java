@@ -163,11 +163,13 @@ public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 	private void parse(InputSource inputStreamOrReader)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
-		if (rdfHandler != null) {
-			rdfHandler.startRDF();
-		}
-
+		clear();
+		
 		try {
+			if (rdfHandler != null) {
+				rdfHandler.startRDF();
+			}
+
 			XMLReader xmlReader;
 
 			if (getParserConfig().isSet(XMLParserSettings.CUSTOM_XML_READER)) {
