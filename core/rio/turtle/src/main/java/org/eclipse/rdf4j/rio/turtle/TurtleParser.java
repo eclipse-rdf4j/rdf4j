@@ -13,6 +13,7 @@ import java.io.InputStreamReader;
 import java.io.PushbackReader;
 import java.io.Reader;
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
@@ -140,7 +141,7 @@ public class TurtleParser extends AbstractRDFParser {
 		// Note: baseURI will be checked in parse(Reader, String)
 
 		try {
-			parse(new InputStreamReader(new BOMInputStream(in, false), "UTF-8"), baseURI);
+			parse(new InputStreamReader(new BOMInputStream(in, false), StandardCharsets.UTF_8), baseURI);
 		} catch (UnsupportedEncodingException e) {
 			// Every platform should support the UTF-8 encoding...
 			throw new RuntimeException(e);
@@ -170,29 +171,31 @@ public class TurtleParser extends AbstractRDFParser {
 	 */
 	public synchronized void parse(Reader reader, String baseURI)
 			throws IOException, RDFParseException, RDFHandlerException {
-		if (reader == null) {
-			throw new IllegalArgumentException("Reader must not be 'null'");
-		}
-		if (baseURI == null) {
-			throw new IllegalArgumentException("base URI must not be 'null'");
-		}
-
-		if (rdfHandler != null) {
-			rdfHandler.startRDF();
-		}
-
-		// Start counting lines at 1:
-		lineNumber = 1;
-
-		// Allow at most 8 characters to be pushed back:
-		this.reader = new PushbackReader(reader, 8);
-
-		// Store normalized base URI
-		setBaseURI(baseURI);
-
-		reportLocation();
-
+		clear();
+		
 		try {
+			if (reader == null) {
+				throw new IllegalArgumentException("Reader must not be 'null'");
+			}
+			if (baseURI == null) {
+				throw new IllegalArgumentException("base URI must not be 'null'");
+			}
+
+			if (rdfHandler != null) {
+				rdfHandler.startRDF();
+			}
+
+			// Start counting lines at 1:
+			lineNumber = 1;
+
+			// Allow at most 8 characters to be pushed back:
+			this.reader = new PushbackReader(reader, 8);
+
+			// Store normalized base URI
+			setBaseURI(baseURI);
+
+			reportLocation();
+
 			int c = skipWSC();
 
 			while (c != -1) {
@@ -1326,14 +1329,18 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Appends the characters from codepoint into the string builder. This is the same
-	 * as Character#toChars but prevents the additional char array garbage for BMP codepoints.
-	 * @param dst the destination in which to append the characters
-	 * @param codePoint the codepoint to be appended
+	 * Appends the characters from codepoint into the string builder. This is
+	 * the same as Character#toChars but prevents the additional char array
+	 * garbage for BMP codepoints.
+	 * 
+	 * @param dst
+	 *            the destination in which to append the characters
+	 * @param codePoint
+	 *            the codepoint to be appended
 	 */
 	private static void appendCodepoint(StringBuilder dst, int codePoint) {
 		if (Character.isBmpCodePoint(codePoint)) {
-			dst.append((char)codePoint);
+			dst.append((char) codePoint);
 		} else if (Character.isValidCodePoint(codePoint)) {
 			dst.append(Character.highSurrogate(codePoint));
 			dst.append(Character.lowSurrogate(codePoint));
