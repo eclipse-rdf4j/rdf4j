@@ -5,6 +5,7 @@ script: mvn verify
 branches:
   only:
   - master
+  - develop
   - /^releases.*$/
 env:
   - MAVEN_OPTS=-Xmx1024M
