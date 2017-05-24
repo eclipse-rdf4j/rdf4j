@@ -12,7 +12,7 @@
 	<xsl:include href="template.xsl" />
 
 	<xsl:template match="sparql:sparql">
-		<form action="delete" method="post" onsubmit="return checkIsSafeToDelete();">
+		<form action="delete" method="post" onsubmit="checkIsSafeToDelete(event);">
 			<table class="dataentry">
 				<tbody>
 					<tr>
