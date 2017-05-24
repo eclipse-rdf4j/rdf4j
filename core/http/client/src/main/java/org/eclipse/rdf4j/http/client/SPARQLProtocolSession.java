@@ -1144,8 +1144,11 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 						else if (errInfo.getErrorType() == ErrorType.UNSUPPORTED_QUERY_LANGUAGE) {
 							throw new UnsupportedQueryLanguageException(errInfo.getErrorMessage());
 						}
-						else {
+						else if (errInfo.toString().length() > 0){
 							throw new RepositoryException(errInfo.toString());
+						}
+						else {
+							throw new RepositoryException(response.getStatusLine().getReasonPhrase());
 						}
 				}
 			}
