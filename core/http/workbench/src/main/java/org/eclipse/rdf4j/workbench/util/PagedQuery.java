@@ -25,17 +25,11 @@ public class PagedQuery {
 
 	private static final Pattern LIMIT_OR_OFFSET = Pattern.compile("((limit)|(offset))\\s+\\d+", FLAGS);
 
-	private static final Pattern SPLITTER = Pattern.compile("\\s");
-
-	private static final Pattern OFFSET_PATTERN = Pattern.compile("\\boffset\\s+\\d+\\b", FLAGS);
-
-	private static final Pattern LIMIT_PATTERN = Pattern.compile("\\blimit\\s+\\d+\\b", FLAGS);
-
 	private static final Pattern SERQL_NAMESPACE = Pattern.compile("\\busing namespace\\b", FLAGS);
 
 	private final String modifiedQuery;
 
-	private final boolean hasLimitAndOffset;
+	private final boolean inlineLimitAndOffset;
 
 	private int limitSubstitute, offsetSubstitute;
 
@@ -68,41 +62,19 @@ public class PagedQuery {
 
 		String rval = query;
 
+		/*
+		 * the matcher on the pattern will have a group for "limit l#" as well as a group for l#, similarly
+		 * for "offset o#" and o#. If either exists, disable paging.
+		 */
+		final Matcher matcher = LIMIT_OR_OFFSET.matcher(query);
 		// requestLimit <= 0 actually means don't limit display
-		hasLimitAndOffset = requestLimit > 0;
-		if (hasLimitAndOffset) {
-			/*
-			 * the matcher on the pattern will have a group for "limit l#" as well as a group for l#,
-			 * similarly for "offset o#" and o#. If either doesn't exist, it can be appended at the end.
-			 */
-			int queryLimit = -1;
-			int queryOffset = -1;
-			final Matcher matcher = LIMIT_OR_OFFSET.matcher(query);
-			while (matcher.find()) {
-				final String clause = matcher.group().toLowerCase();
-				final int value = Integer.parseInt(SPLITTER.split(clause)[1]);
-				if (clause.startsWith("limit")) {
-					if (query.indexOf('}', matcher.end()) < 0) {
-						queryLimit = value;
-					}
-				}
-				else {
-					queryOffset = value;
-				}
-			}
-
-			final boolean queryLimitExists = (queryLimit >= 0);
-			final boolean queryOffsetExists = (queryOffset >= 0);
-			final int maxQueryCount = getMaxQueryResultCount(queryLimit, queryOffset, queryLimitExists,
-					queryOffsetExists);
-			// gracefully handle malicious value
-			final int offset = (requestOffset < 0) ? 0 : requestOffset;
-			final int maxRequestCount = requestLimit + offset;
-			limitSubstitute = (maxRequestCount < maxQueryCount) ? requestLimit : queryLimit - offset;
-			offsetSubstitute = queryOffsetExists ? queryOffset + offset : offset;
-			rval = modifyLimit(language, rval, queryLimit, queryLimitExists, queryOffsetExists,
-					limitSubstitute);
-			rval = modifyOffset(language, offset, rval, queryOffsetExists);
+		inlineLimitAndOffset = requestLimit > 0 && !matcher.find();
+		// gracefully handle malicious value
+		offsetSubstitute = (requestOffset < 0) ? 0 : requestOffset;
+		limitSubstitute = requestLimit;
+		if (inlineLimitAndOffset) {
+			rval = modifyLimit(language, rval, limitSubstitute);
+			rval = modifyOffset(language, offsetSubstitute, rval);
 			LOGGER.debug("Modified Query: {}", rval);
 		}
 
@@ -110,7 +82,7 @@ public class PagedQuery {
 	}
 
 	public boolean isPaged() {
-		return this.hasLimitAndOffset;
+		return this.inlineLimitAndOffset;
 	}
 
 	public int getLimit() {
@@ -126,42 +98,19 @@ public class PagedQuery {
 		return this.modifiedQuery;
 	}
 
-	private static int getMaxQueryResultCount(final int queryLimit, final int queryOffset,
-			final boolean queryLimitExists, final boolean queryOffsetExists)
-	{
-		final int maxQueryCount = queryLimitExists ? (queryLimit + (queryOffsetExists ? queryOffset : 0))
-				: Integer.MAX_VALUE;
-		return maxQueryCount;
-	}
-
-	private String modifyOffset(final QueryLanguage language, final int offset, final String query,
-			final boolean queryOffsetExists)
-	{
+	private String modifyOffset(final QueryLanguage language, final int offset, final String query) {
 		String rval = query;
-		if (queryOffsetExists) {
-			if (offsetSubstitute != offset) {
-				// do a clause replacement
-				final Matcher offsetMatcher = OFFSET_PATTERN.matcher(rval);
-				final StringBuffer buffer = new StringBuffer();
-				offsetMatcher.find();
-				offsetMatcher.appendReplacement(buffer, "offset " + offsetSubstitute);
-				offsetMatcher.appendTail(buffer);
-				rval = buffer.toString();
+		final String newOffsetClause = "offset " + offset;
+		if (QueryLanguage.SPARQL == language) {
+			if (offset > 0) {
+				rval = ensureNewlineAndAppend(rval, newOffsetClause);
 			}
 		}
 		else {
-			final String newOffsetClause = "offset " + offset;
-			if (QueryLanguage.SPARQL == language) {
-				if (offset > 0) {
-					rval = ensureNewlineAndAppend(rval, newOffsetClause);
-				}
-			}
-			else {
-				/*
-				 * SeRQL, add the clause before before the namespace section
-				 */
-				rval = insertAtMatchOnOwnLine(SERQL_NAMESPACE, rval, newOffsetClause);
-			}
+			/*
+			 * SeRQL, add the clause before before the namespace section
+			 */
+			rval = insertAtMatchOnOwnLine(SERQL_NAMESPACE, rval, newOffsetClause);
 		}
 		return rval;
 	}
@@ -176,8 +125,8 @@ public class PagedQuery {
 		return buffer.append(append).toString();
 	}
 
-	private static String modifyLimit(final QueryLanguage language, final String query, final int queryLimit,
-			final boolean queryLimitExists, final boolean queryOffsetExists, final int limitSubstitute)
+	private static String modifyLimit(final QueryLanguage language, final String query,
+			final int limitSubstitute)
 	{
 		String rval = query;
 
@@ -187,29 +136,11 @@ public class PagedQuery {
 		 * and LIMIT must precede OFFSET. This code makes no attempt to correct if the user places them out of
 		 * order in the query.
 		 */
-		if (queryLimitExists) {
-			if (limitSubstitute != queryLimit) {
-				// do a clause replacement
-				final Matcher limitMatcher = LIMIT_PATTERN.matcher(rval);
-				final StringBuffer buffer = new StringBuffer();
-				limitMatcher.find();
-				limitMatcher.appendReplacement(buffer, "limit " + limitSubstitute);
-				limitMatcher.appendTail(buffer);
-				rval = buffer.toString();
-			}
+		if (QueryLanguage.SPARQL == language) {
+			rval = ensureNewlineAndAppend(rval, "limit " + limitSubstitute);
 		}
 		else {
-			final String newLimitClause = "limit " + limitSubstitute;
-			if (QueryLanguage.SPARQL == language) {
-				rval = ensureNewlineAndAppend(rval, newLimitClause);
-			}
-			else {
-				/*
-				 * SeRQL, add the clause before any offset clause or the namespace section
-				 */
-				final Pattern pattern = queryOffsetExists ? OFFSET_PATTERN : SERQL_NAMESPACE;
-				rval = insertAtMatchOnOwnLine(pattern, rval, newLimitClause);
-			}
+			rval = insertAtMatchOnOwnLine(SERQL_NAMESPACE, rval, "limit " + limitSubstitute);
 		}
 		return rval;
 	}

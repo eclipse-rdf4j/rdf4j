@@ -106,7 +106,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		if (nextHttpClientBuilder != null) {
 			return nextHttpClientBuilder.build();
 		}
-		return HttpClients.createSystem();
+		return HttpClientBuilder.create().useSystemProperties().disableAutomaticRetries().build();
 	}
 
 	@Override
