@@ -26,16 +26,21 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.http.HTTPMemServer;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
+import org.eclipse.rdf4j.sail.memory.config.MemoryStoreFactory;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -100,6 +105,12 @@ public class SPARQLServiceEvaluationTest {
 		localRepository = new SailRepository(new MemoryStore());
 		localRepository.initialize();
 
+		prepareLocalRepository();
+	}
+
+	private void prepareLocalRepository()
+		throws IOException
+	{
 		loadDataSet(localRepository, "/testdata-query/defaultgraph.ttl");
 
 		f = localRepository.getValueFactory();
@@ -198,5 +209,24 @@ public class SPARQLServiceEvaluationTest {
 		finally {
 			conn.close();
 		}
+	}
+
+	/**
+	 * The provided FederatedServiceResolver should finds it way to the {@link EvaluationStrategy}
+	 */
+	@Test
+	public void testRepositoryConfigurationSetup()
+		throws Exception
+	{
+		tearDown();
+		MemoryStoreFactory factory = new MemoryStoreFactory();
+		MemoryStoreConfig config = new MemoryStoreConfig();
+		config.setEvaluationStrategyFactoryClassName(StrictEvaluationStrategyFactory.class.getName());
+		Sail sail = factory.getSail(config);
+		localRepository = new SailRepository(sail);
+		localRepository.setFederatedServiceResolver(new FederatedServiceResolverImpl());
+		localRepository.initialize();
+		prepareLocalRepository();
+		testSimpleServiceQuery();
 	}
 }

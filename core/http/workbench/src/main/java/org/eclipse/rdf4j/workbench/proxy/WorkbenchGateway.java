@@ -178,10 +178,8 @@ public class WorkbenchGateway extends AbstractServlet {
 		// Valid server was submitted by form. Set cookie and redirect to
 		// repository selection page.
 		this.cookies.addNewCookie(req, resp, SERVER_COOKIE, server);
-		final String user = getOptionalParameter(req, SERVER_USER);
-		this.cookies.addNewCookie(req, resp, SERVER_USER, user);
-		final String password = getOptionalParameter(req, SERVER_PASSWORD);
-		this.cookies.addNewCookie(req, resp, SERVER_PASSWORD, password);
+		final String user_password = getOptionalParameter(req, SERVER_USER_PASSWORD);
+		this.cookies.addNewCookie(req, resp, SERVER_USER_PASSWORD, user_password);
 		final StringBuilder uri = new StringBuilder(req.getRequestURI());
 		uri.setLength(uri.length() - req.getPathInfo().length());
 		resetCache();

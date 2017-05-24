@@ -199,7 +199,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 			if (dependentServiceResolver == null) {
 				dependentServiceResolver = new FederatedServiceResolverImpl();
 			}
-			return serviceResolver = dependentServiceResolver;
+			setFederatedServiceResolver(dependentServiceResolver);
 		}
 		return serviceResolver;
 	}
@@ -213,6 +213,9 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 */
 	public synchronized void setFederatedServiceResolver(FederatedServiceResolver resolver) {
 		this.serviceResolver = resolver;
+		if (resolver != null && evalStratFactory instanceof FederatedServiceResolverClient) {
+			((FederatedServiceResolverClient)evalStratFactory).setFederatedServiceResolver(resolver);
+		}
 	}
 
 	/**
