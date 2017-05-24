@@ -217,6 +217,7 @@ public class WorkbenchServlet extends AbstractServlet {
 			if (repository == null) {
 				final String noId = config.getInitParameter(NO_REPOSITORY);
 				if (noId == null || !noId.equals(repoID)) {
+					resp.setHeader("Cache-Control", "no-cache, no-store");
 					throw new BadRequestException("No such repository: " + repoID);
 				}
 			}
