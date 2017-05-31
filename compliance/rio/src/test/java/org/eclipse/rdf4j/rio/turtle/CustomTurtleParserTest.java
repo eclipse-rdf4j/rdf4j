@@ -7,19 +7,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.Collections;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.NamespaceImpl;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -206,7 +212,7 @@ public class CustomTurtleParserTest {
 	public void testSupportedSettings()
 		throws Exception
 	{
-		assertEquals(12, parser.getSupportedSettings().size());
+		assertEquals(13, parser.getSupportedSettings().size());
 	}
 
 	@Test
@@ -506,5 +512,25 @@ public class CustomTurtleParserTest {
 		assertEquals(1, model.size());
 		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:not_skos:broader"),
 				vf.createIRI("urn:b")));
+	}
+
+	@Test
+	public void test780IRISpace()
+		throws Exception
+	{
+		String ttl = "_:b25978837	a <http://purl.bioontology.org/ontology/UATC/\\u0020SERINE\\u0020\\u0020> .";
+		try {
+			Rio.parse(new StringReader(ttl), "", RDFFormat.TURTLE);
+			fail();
+		}
+		catch (RDFParseException e) {
+			// Invalid IRI
+		}
+		Model model = Rio.parse(new StringReader(ttl), "", RDFFormat.TURTLE,
+				new ParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false),
+				SimpleValueFactory.getInstance(), new ParseErrorLogger());
+		assertEquals(1, model.size());
+		model.filter(null, RDF.TYPE, null).objects().forEach(obj -> assertEquals(
+				"http://purl.bioontology.org/ontology/UATC/%20SERINE%20%20", obj.stringValue()));
 	}
 }

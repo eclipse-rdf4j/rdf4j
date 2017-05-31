@@ -198,6 +198,9 @@ public abstract class AbstractRDFParser implements RDFParser {
 		// Supported in RDFParserBase.resolveURI
 		result.add(BasicParserSettings.VERIFY_RELATIVE_URIS);
 
+		// Supported in createURI
+		result.add(BasicParserSettings.VERIFY_URI_SYNTAX);
+
 		// Supported in RDFParserBase.createBNode(String)
 		result.add(BasicParserSettings.PRESERVE_BNODE_IDS);
 
@@ -376,7 +379,15 @@ public abstract class AbstractRDFParser implements RDFParser {
 		throws RDFParseException
 	{
 		// Resolve relative URIs against base URI
-		ParsedIRI uri = ParsedIRI.create(uriSpec);
+		ParsedIRI uri;
+		try {
+			uri = new ParsedIRI(uriSpec);
+		}
+		catch (URISyntaxException e) {
+			reportError("Invalid IRI '" + uriSpec,
+					BasicParserSettings.VERIFY_URI_SYNTAX);
+			uri = ParsedIRI.create(uriSpec);
+		}
 
 		if (!uri.isAbsolute()) {
 			if (baseURI == null) {
@@ -403,6 +414,15 @@ public abstract class AbstractRDFParser implements RDFParser {
 	protected IRI createURI(String uri)
 		throws RDFParseException
 	{
+		if (getParserConfig().get(BasicParserSettings.VERIFY_URI_SYNTAX)) {
+			try {
+				new ParsedIRI(uri);
+			}
+			catch (URISyntaxException e) {
+				reportError(e.getMessage(),
+						BasicParserSettings.VERIFY_URI_SYNTAX);
+			}
+		}
 		try {
 			return valueFactory.createIRI(uri);
 		}
