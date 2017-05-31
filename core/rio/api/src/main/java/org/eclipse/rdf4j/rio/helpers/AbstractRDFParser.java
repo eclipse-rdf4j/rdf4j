@@ -376,15 +376,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 		throws RDFParseException
 	{
 		// Resolve relative URIs against base URI
-		ParsedIRI uri;
-		try {
-			uri = new ParsedIRI(uriSpec);
-		}
-		catch (URISyntaxException e) {
-			reportError("Invalid base IRI '" + uriSpec,
-					BasicParserSettings.VERIFY_URI_SYNTAX);
-			uri = ParsedIRI.create(uriSpec);
-		}
+		ParsedIRI uri = ParsedIRI.create(uriSpec);
 
 		if (!uri.isAbsolute()) {
 			if (baseURI == null) {
