@@ -684,6 +684,13 @@ public class ParsedIRITest {
 	}
 
 	@Test
+	public void testDeseret()
+		throws URISyntaxException
+	{
+		assertURI2IRI("http://www.example.org/U+10400/%F0%90%90%80", "http://www.example.org/U+10400/\uD801\uDC00");
+	}
+
+	@Test
 	public void testPunycodeEncoding()
 		throws URISyntaxException
 	{
@@ -696,8 +703,8 @@ public class ParsedIRITest {
 	private void assertURI2IRI(String uri, String iri)
 		throws URISyntaxException
 	{
-		assertEquals(iri, new ParsedIRI(uri).normalize().toString());
 		assertEquals(uri, new ParsedIRI(iri).toASCIIString());
+		assertEquals(iri, new ParsedIRI(uri).normalize().toString());
 	}
 
 	@Test
