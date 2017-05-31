@@ -104,26 +104,27 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	private static int EOF = '\n';
 
-	private static String[] iprivate = { "\uE000-\uF8FF", "\uF0000-\uFFFFD", "\u100000-\u10FFFD" };
+	private static String[] iprivate = unicodeToString(
+			new String[] { "U+E000-F8FF", "U+F0000-FFFFD", "U+100000-10FFFD" });
 
-	private static String[] ucschar = {
-			"\u00A0-\uD7FF",
-			"\uF900-\uFDCF",
-			"\uFDF0-\uFFEF",
-			"\u10000-\u1FFFD",
-			"\u20000-\u2FFFD",
-			"\u30000-\u3FFFD",
-			"\u40000-\u4FFFD",
-			"\u50000-\u5FFFD",
-			"\u60000-\u6FFFD",
-			"\u70000-\u7FFFD",
-			"\u80000-\u8FFFD",
-			"\u90000-\u9FFFD",
-			"\uA0000-\uAFFFD",
-			"\uB0000-\uBFFFD",
-			"\uC0000-\uCFFFD",
-			"\uD0000-\uDFFFD",
-			"\uE1000-\uEFFFD" };
+	private static String[] ucschar = unicodeToString(new String[] {
+			"U+00A0-D7FF",
+			"U+F900-FDCF",
+			"U+FDF0-FFEF",
+			"U+10000-1FFFD",
+			"U+20000-2FFFD",
+			"U+30000-3FFFD",
+			"U+40000-4FFFD",
+			"U+50000-5FFFD",
+			"U+60000-6FFFD",
+			"U+70000-7FFFD",
+			"U+80000-8FFFD",
+			"U+90000-9FFFD",
+			"U+A0000-AFFFD",
+			"U+B0000-BFFFD",
+			"U+C0000-CFFFD",
+			"U+D0000-DFFFD",
+			"U+E1000-EFFFD" });
 
 	private static String[] ALPHA = { "A-Z", "a-z" };
 
@@ -158,6 +159,29 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	private static String[] common_pct = pctEncode(common);
 
+	/**
+	 * Decodes U+ 32bit hex values into 16bit characters with Java surrogates
+	 */
+	private static String[] unicodeToString(String[] encodings) {
+		StringBuilder sb = new StringBuilder(5);
+		String[] decodings = new String[encodings.length];
+		for (int i = 0; i < encodings.length; i++) {
+			String encoded = encodings[i];
+			if (encoded.startsWith("U+")) {
+				int idx = encoded.indexOf('-');
+				int start = Integer.parseInt(encoded.substring(2, idx), 16);
+				int end = Integer.parseInt(encoded.substring(idx + 1), 16);
+				sb.setLength(0);
+				sb.appendCodePoint(start).append('-').appendCodePoint(end);
+				decodings[i] = sb.toString();
+			}
+			else {
+				decodings[i] = encoded;
+			}
+		}
+		return decodings;
+	}
+
 	private static String[] union(String[]... src) {
 		int len = 0;
 		for (String[] s : src) {
@@ -183,22 +207,9 @@ public class ParsedIRI implements Cloneable, Serializable {
 			if (str.length() == 1) {
 				list.add(str); // character
 			}
-			else if (str.length() == 2) {
-				assert Character.isSurrogatePair(str.charAt(0), str.charAt(1));
-				list.add(str); // character
-			}
 			else if (str.length() == 3 && str.charAt(1) == '-') {
 				for (char chr = str.charAt(0), end = str.charAt(2); chr <= end; chr++) {
 					list.add(Character.toString(chr)); // range
-				}
-			}
-			else if (str.length() == 5 && str.charAt(2) == '-') {
-				assert Character.isSurrogatePair(str.charAt(0), str.charAt(1));
-				assert Character.isSurrogatePair(str.charAt(3), str.charAt(4));
-				int start = Character.toCodePoint(str.charAt(0), str.charAt(1));
-				int end = Character.toCodePoint(str.charAt(3), str.charAt(4));
-				for (int cp = start; cp < end; cp++) {
-					list.add(new StringBuilder().appendCodePoint(cp).toString());
 				}
 			}
 			else {
@@ -582,7 +593,8 @@ public class ParsedIRI implements Cloneable, Serializable {
 		ParsedIRI normalized = new ParsedIRI(_scheme, _userInfo, _host, _port, _path, _query, _fragment);
 		if (this.iri.equals(normalized.iri)) {
 			return this;
-		} else {
+		}
+		else {
 			return normalized;
 		}
 	}
@@ -887,7 +899,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			fragment = parsePctEncoded(fchar);
 		}
 		if (pos != iri.length()) {
-			throw error("Unexpected trailing character");
+			throw error("Unexpected character");
 		}
 	}
 
@@ -1031,25 +1043,15 @@ public class ParsedIRI implements Cloneable, Serializable {
 	}
 
 	private boolean isMember(String range, int chr) {
-		if (range.length() == 1) {
-			return range.equals(Character.toString(Character.toChars(chr)[0]));
-		}
-		else if (range.length() == 2) {
-			return range.equals(new String(Character.toChars(chr)));
-		}
-		else if (range.length() == 3 && range.charAt(1) == '-') {
+		if (3 == range.codePointCount(0, range.length())) {
 			int start = range.codePointAt(0);
-			int end = range.codePointAt(2);
-			return start <= chr && chr <= end;
-		}
-		else if (range.length() == 5 && range.charAt(2) == '-') {
-			int start = range.codePointAt(0);
-			int end = range.codePointAt(3);
+			assert '-' == range.charAt(range.offsetByCodePoints(0, 1));
+			int end = range.codePointAt(range.offsetByCodePoints(0, 2));
 			return start <= chr && chr <= end;
 		}
 		else {
-			assert false;
-			return false;
+			assert 1 == range.codePointCount(0, range.length());
+			return chr == range.codePointAt(0);
 		}
 	}
 
@@ -1085,8 +1087,8 @@ public class ParsedIRI implements Cloneable, Serializable {
 	}
 
 	private URISyntaxException error(String reason) {
-		int end = Math.min(pos + 10, iri.length());
-		return new URISyntaxException(iri, reason + ": \"" + iri.substring(pos, end) + "\"", pos);
+		int cp = iri.codePointAt(pos);
+		return new URISyntaxException(iri, reason + " U+" + Integer.toHexString(cp).toUpperCase(), pos);
 	}
 
 	private void appendAscii(StringBuilder sb, String input) {
