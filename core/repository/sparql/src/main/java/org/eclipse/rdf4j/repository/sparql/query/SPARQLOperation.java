@@ -15,7 +15,7 @@ import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 
 import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.common.net.ParsedURI;
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -48,7 +48,7 @@ public abstract class SPARQLOperation implements Operation {
 		this.url = url;
 		this.operation = operation;
 		this.client = client;
-		boolean abs = base != null && base.length() > 0 && new ParsedURI(base).isAbsolute();
+		boolean abs = base != null && base.length() > 0 && ParsedIRI.create(base).isAbsolute();
 		if (abs && !operation.toUpperCase().contains("BASE")) {
 			this.operation = "BASE <" + base + "> " + operation;
 		}
