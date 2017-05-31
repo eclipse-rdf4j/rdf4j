@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Stack;
 
-import org.eclipse.rdf4j.common.net.ParsedURI;
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.xml.XMLUtil;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.ParseLocationListener;
@@ -60,7 +60,7 @@ class SAXFilter implements ContentHandler {
 	/**
 	 * The document's URI.
 	 */
-	private ParsedURI documentURI;
+	private ParsedIRI documentURI;
 
 	/**
 	 * Flag indicating whether the parser parses stand-alone RDF documents. In stand-alone documents, the
@@ -320,7 +320,7 @@ class SAXFilter implements ContentHandler {
 		elInfoStack.push(deferredElement);
 		rdfContextStackHeight++;
 
-		rdfParser.setBaseURI(deferredElement.baseURI);
+		rdfParser.setBaseURI(deferredElement.baseURI.toString());
 		rdfParser.setXMLLang(deferredElement.xmlLang);
 
 		rdfParser.startElement(deferredElement.namespaceURI, deferredElement.localName, deferredElement.qName,
@@ -383,7 +383,7 @@ class SAXFilter implements ContentHandler {
 			// Check for any deferred start elements
 			if (deferredElement != null) {
 				// Start element still deferred, this is an empty element
-				rdfParser.setBaseURI(deferredElement.baseURI);
+				rdfParser.setBaseURI(deferredElement.baseURI.toString());
 				rdfParser.setXMLLang(deferredElement.xmlLang);
 
 				rdfParser.emptyElement(deferredElement.namespaceURI, deferredElement.localName,
@@ -547,10 +547,8 @@ class SAXFilter implements ContentHandler {
 		unknownPrefixesInXMLLiteral.clear();
 	}
 
-	private ParsedURI createBaseURI(String uriString) {
-		ParsedURI uri = new ParsedURI(uriString);
-		uri.normalize();
-		return uri;
+	private ParsedIRI createBaseURI(String uriString) {
+		return ParsedIRI.create(uriString).normalize();
 	}
 
 	/*---------------------------------*
@@ -675,7 +673,7 @@ class SAXFilter implements ContentHandler {
 
 		private Map<String, String> namespaceMap;
 
-		public ParsedURI baseURI;
+		public ParsedIRI baseURI;
 
 		public String xmlLang;
 

@@ -12,15 +12,10 @@ import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.net.URLDecoder;
-import java.net.URLEncoder;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
 import javax.xml.parsers.ParserConfigurationException;
-
-import junit.framework.TestCase;
-import junit.framework.TestSuite;
 
 import org.apache.xml.security.c14n.CanonicalizationException;
 import org.apache.xml.security.c14n.Canonicalizer;
@@ -45,6 +40,9 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.xml.sax.SAXException;
+
+import junit.framework.TestCase;
+import junit.framework.TestSuite;
 
 /**
  * JUnit test for the RDF/XML parser that uses the test manifest that is available
@@ -318,32 +316,10 @@ public abstract class RDFXMLParserTestCase {
 	private static URL url(String uri)
 		throws MalformedURLException
 	{
-		if (!uri.startsWith("injar:"))
-			return new URL(uri);
-		int start = uri.indexOf(':') + 3;
-		int end = uri.indexOf('/', start);
-		String encoded = uri.substring(start, end);
-		try {
-			String jar = URLDecoder.decode(encoded, "UTF-8");
-			return new URL("jar:" + jar + '!' + uri.substring(end));
-		}
-		catch (UnsupportedEncodingException e) {
-			throw new AssertionError(e);
-		}
+		return new URL(uri);
 	}
 
 	private static String base(String uri) {
-		if (!uri.startsWith("jar:"))
-			return uri;
-		int start = uri.indexOf(':') + 1;
-		int end = uri.lastIndexOf('!');
-		String jar = uri.substring(start, end);
-		try {
-			String encoded = URLEncoder.encode(jar, "UTF-8");
-			return "injar://" + encoded + uri.substring(end + 1);
-		}
-		catch (UnsupportedEncodingException e) {
-			throw new AssertionError(e);
-		}
+		return uri;
 	}
 }
