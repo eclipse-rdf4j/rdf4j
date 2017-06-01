@@ -24,7 +24,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.StringTokenizer;
 
 import org.eclipse.rdf4j.common.text.StringUtil;
 
@@ -728,14 +727,11 @@ public class ParsedIRI implements Cloneable, Serializable {
 			}
 		}
 
-		ParsedIRI result = new ParsedIRI(scheme, userInfo, host, port, path, query, fragment);
-
 		if (normalize || path.indexOf("/./") >= 0 || path.indexOf("/../") >= 0) {
-			return result.normalize();
+			path = pathSegmentNormalization(path);
 		}
-		else {
-			return result;
-		}
+
+		return new ParsedIRI(scheme, userInfo, host, port, path, query, fragment);
 	}
 
 	/**
@@ -1282,15 +1278,9 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 		// Split the path into its segments
 
-		LinkedList<String> segments = new LinkedList<String>();
-
-		StringTokenizer st = new StringTokenizer(_path, "/");
-
-		while (st.hasMoreTokens()) {
-			String segment = st.nextToken();
-			if (!segments.isEmpty() || !segment.equals("..") && !segment.equals(".")) {
-				segments.add(segment);
-			}
+		LinkedList<String> segments = new LinkedList<String>(Arrays.asList(_path.split("/")));
+		if (_path.startsWith("/")) {
+			segments.remove(0);
 		}
 
 		boolean lastSegmentRemoved = false;
