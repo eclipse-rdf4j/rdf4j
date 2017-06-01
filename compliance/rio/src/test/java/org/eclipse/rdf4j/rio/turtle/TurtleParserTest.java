@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.rio.turtle;
 
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
 
 import junit.framework.Test;
@@ -28,16 +27,11 @@ public class TurtleParserTest extends TurtleParserTestCase {
 	@Override
 	protected RDFParser createTurtleParser() {
 		RDFParser result = new TurtleParser();
-		// localName_with_assigned_nfc_PN_CHARS_BASE_character_boundaries contains illegal trailing character
-		result.set(BasicParserSettings.VERIFY_URI_SYNTAX, false);
 		return result;
 	}
 
 	@Override
 	protected RDFParser createNTriplesParser() {
-		NTriplesParser result = new NTriplesParser();
-		// localName_with_assigned_nfc_PN_CHARS_BASE_character_boundaries contains illegal trailing character
-		result.set(BasicParserSettings.VERIFY_URI_SYNTAX, false);
-		return result;
+		return new NTriplesParser();
 	}
 }
