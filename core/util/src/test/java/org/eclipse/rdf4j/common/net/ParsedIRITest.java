@@ -102,7 +102,7 @@ public class ParsedIRITest {
 		throws URISyntaxException
 	{
 		ParsedIRI uri = new ParsedIRI("jar:file:///some-file.jar!/some-nested-file");
-		assertEquals("jar:file:/some-file.jar!/another-file", uri.resolve("another-file").toString());
+		assertEquals("jar:file:///some-file.jar!/another-file", uri.resolve("another-file").toString());
 	}
 
 	@Test
@@ -406,11 +406,20 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void testResolveOpaque() throws URISyntaxException {
+	public void testResolveOpaque()
+		throws URISyntaxException
+	{
 		assertResolves("", "urn:test:foo#bar", "urn:test:foo");
 		assertResolves("", "urn:test:foo", "urn:test:foo");
 		assertResolves("#bar", "urn:test:foo", "urn:test:foo#bar");
 		assertResolves("#bat", "urn:test:foo#bar", "urn:test:foo#bat");
+	}
+
+	@Test
+	public void testDoubleSlash()
+		throws URISyntaxException
+	{
+		assertResolves("../xyz", "http://ab//de//ghi", "http://ab//de/xyz");
 	}
 
 	private void assertResolves(String relative, String base, String absolute)
@@ -687,7 +696,8 @@ public class ParsedIRITest {
 	public void testDeseret()
 		throws URISyntaxException
 	{
-		assertURI2IRI("http://www.example.org/U+10400/%F0%90%90%80", "http://www.example.org/U+10400/\uD801\uDC00");
+		assertURI2IRI("http://www.example.org/U+10400/%F0%90%90%80",
+				"http://www.example.org/U+10400/\uD801\uDC00");
 	}
 
 	@Test
