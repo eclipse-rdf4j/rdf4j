@@ -298,12 +298,12 @@ public abstract class AbstractRDFParser implements RDFParser {
 	}
 
 	/**
-	 * Parses and normalizes the supplied URI-string and sets it as the base URI for resolving relative URIs.
+	 * Parses the supplied URI-string and sets it as the base URI for resolving relative URIs.
 	 */
 	protected void setBaseURI(String uriSpec) {
-		// Store normalized base URI
+		// Store base URI
 		if (this.baseURI == null || !this.baseURI.toString().equals(uriSpec)) {
-			this.baseURI = ParsedIRI.create(uriSpec).normalize();
+			this.baseURI = ParsedIRI.create(uriSpec);
 		}
 	}
 
