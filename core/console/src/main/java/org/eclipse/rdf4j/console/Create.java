@@ -104,6 +104,7 @@ public class Create implements Command {
 							graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY)).orElseThrow(
 									() -> new RepositoryConfigException("missing repository node"));
 					final RepositoryConfig repConfig = RepositoryConfig.create(graph, repositoryNode);
+					repConfig.setID(this.state.getManager().getNewRepositoryID(repConfig.getID()));
 					repConfig.validate();
 					String overwrite = "WARNING: you are about to overwrite the configuration of an existing repository!";
 					boolean proceedOverwrite = RepositoryConfigUtil.hasRepositoryConfig(systemRepo,
