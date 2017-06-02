@@ -12,16 +12,16 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 /**
  * Created by heshanjayasinghe on 4/23/17.
  */
-public class SHACLSailConnection extends NotifyingSailConnectionWrapper
+public class ShaclSailConnection extends NotifyingSailConnectionWrapper
 		implements SailConnectionListener {
 
-	private SHACLSail sail;
+	private ShaclSail sail;
 	private boolean statementsRemoved;
 	private Model newStatements;
 
 
 
-	public SHACLSailConnection(SHACLSail shaclSail, NotifyingSailConnection connection) {
+	public ShaclSailConnection(ShaclSail shaclSail, NotifyingSailConnection connection) {
 		super(connection);
 		this.sail = shaclSail;
 

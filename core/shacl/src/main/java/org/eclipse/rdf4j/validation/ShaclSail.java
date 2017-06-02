@@ -22,11 +22,11 @@ import java.util.stream.Collectors;
 /**
  * Created by heshanjayasinghe on 4/23/17.
  */
-public class SHACLSail extends NotifyingSailWrapper {
+public class ShaclSail extends NotifyingSailWrapper {
 
     List<Shape> shapes;
 
-    public SHACLSail(NotifyingSail memoryStore) {
+    public ShaclSail(NotifyingSail memoryStore) {
         super(memoryStore);
     }
 
@@ -39,7 +39,7 @@ public class SHACLSail extends NotifyingSailWrapper {
     public NotifyingSailConnection getConnection() throws SailException {
         try {
             NotifyingSailConnection con = super.getConnection();
-            return new SHACLSailConnection(this, con);
+            return new ShaclSailConnection(this, con);
         }
         catch (ClassCastException e) {
             throw new SailException(e.getMessage(), e);
