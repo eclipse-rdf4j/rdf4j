@@ -1,6 +1,5 @@
 package org.eclipse.rdf4j.validation;
 
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.SailConnection;
 
 /**
@@ -8,7 +7,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
  */
 public interface shaclNotifyingSailConnection extends SailConnection {
 
-    public void statementAdded(Statement st);
+    public void addConnectionListener(shaclSailConnectionListener listener);
 
-    public void statementRemoved(Statement st);
+    public void removeConnectionListener(shaclSailConnectionListener listener);
 }

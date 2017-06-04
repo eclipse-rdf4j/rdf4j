@@ -6,11 +6,9 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.validation.MoreDataCacheLayer;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Created by heshanjayasinghe on 4/23/17.
@@ -51,9 +49,9 @@ public class Shape {
     }
 
 
-    public boolean validate(List<Statement> addedStatement, MoreDataCacheLayer getMoreDataCacheLayer){
-        List<Boolean> collect = shapes.stream().map(shape -> shape.validate(addedStatement)).collect(Collectors.toList());
-
-        return false;
-    }
+//    public boolean validate(List<Statement> addedStatement, MoreDataCacheLayer getMoreDataCacheLayer){
+//        List<Boolean> collect = shapes.stream().map(shape -> shape.validate(addedStatement)).collect(Collectors.toList());
+//
+//        return false;
+//    }
 }
