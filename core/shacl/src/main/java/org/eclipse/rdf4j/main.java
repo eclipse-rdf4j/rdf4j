@@ -1,7 +1,9 @@
 package org.eclipse.rdf4j;
 
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -9,9 +11,8 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.helpers.AbstractSail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.validation.ShaclAbstractSail;
+import org.eclipse.rdf4j.validation.ShaclAbstractFowardChainingInferencerConnection;
 import org.eclipse.rdf4j.validation.ShaclNotifyingSailConneectionBase;
 import org.eclipse.rdf4j.validation.ShaclSail;
 
@@ -21,7 +22,7 @@ import java.io.InputStream;
 /**
  * Created by heshanjayasinghe on 4/30/17.
  */
-public class Main extends ShaclNotifyingSailConneectionBase {
+public class Main{
 
     public static final String SH = "http://www.w3.org/ns/shacl#";
 
@@ -29,24 +30,19 @@ public class Main extends ShaclNotifyingSailConneectionBase {
 //        super(shaclSail, connection);
 //    }
 
-    public Main(AbstractSail abstractSail) {
-        super(abstractSail);
 
-    }
 
 
     public static void main(String[] args) {
 
         SailRepository sailrepo = new SailRepository(new ShaclSail(new MemoryStore()));
-        ShaclAbstractSail abstractSail = new ShaclAbstractSail();
-        abstractSail.initialize();
-        Main mainInstance = new Main(abstractSail);
+        sailrepo.initialize();
+        Main mainInstance = new Main();
         mainInstance.addStatement(sailrepo);
-       // mainInstance.removeStatement(sailrepo);
+        //mainInstance.removeStatement(sailrepo);
         //mainInstance.printStatements(sailrepo);
 
     }
-
 
 
     private void addStatement(SailRepository sailrepo){
@@ -56,8 +52,15 @@ public class Main extends ShaclNotifyingSailConneectionBase {
                 connection.begin();
 
                 ValueFactory valueFactory = connection.getValueFactory();
-                notifyStatementAdded(valueFactory.createStatement(OWL.THING, RDFS.COMMENT, RDF.REST));
-               // valueFactory.createStatement(OWL.THING, RDFS.COMMENT, RDF.REST);
+                ShaclNotifyingSailConneectionBase notifyingSailConneectionBase = new ShaclNotifyingSailConneectionBase();
+                notifyingSailConneectionBase.addConnectionListener(new ShaclAbstractFowardChainingInferencerConnection() {
+                    @Override
+                    protected Model createModel() {
+                        return new TreeModel();
+                    }
+                });
+                notifyingSailConneectionBase.notifyStatementAdded(valueFactory.createStatement(OWL.THING, RDFS.COMMENT, RDF.REST));
+                //valueFactory.createStatement(OWL.THING, RDFS.COMMENT, RDF.REST);
                 //connection.add(OWL.THING, RDFS.COMMENT, RDF.REST);
 
                 connection.commit();
@@ -86,7 +89,14 @@ public class Main extends ShaclNotifyingSailConneectionBase {
                 connection.begin();
 
                 ValueFactory valueFactory = connection.getValueFactory();
-                notifyStatementRemoved(valueFactory.createStatement(OWL.THING, RDFS.COMMENT, RDF.REST));
+                ShaclNotifyingSailConneectionBase notifyingSailConneectionBase = new ShaclNotifyingSailConneectionBase();
+                notifyingSailConneectionBase.addConnectionListener(new ShaclAbstractFowardChainingInferencerConnection() {
+                    @Override
+                    protected Model createModel() {
+                        return new TreeModel();
+                    }
+                });
+                notifyingSailConneectionBase.notifyStatementRemoved(valueFactory.createStatement(OWL.THING, RDFS.COMMENT, RDF.REST));
                 // valueFactory.createStatement(OWL.THING, RDFS.COMMENT, RDF.REST);
                 //connection.add(OWL.THING, RDFS.COMMENT, RDF.REST);
 

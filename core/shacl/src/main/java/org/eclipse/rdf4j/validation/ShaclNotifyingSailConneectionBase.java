@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.validation;
 
+import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.*;
 import org.eclipse.rdf4j.model.impl.TreeModel;
@@ -8,8 +9,8 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.helpers.AbstractSail;
-import org.eclipse.rdf4j.sail.helpers.AbstractSailConnection;
+import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
+import org.eclipse.rdf4j.sail.UpdateContext;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,59 +18,32 @@ import java.util.List;
 /**
  * Created by heshanjayasinghe on 6/1/17.
  */
-public class ShaclNotifyingSailConneectionBase extends AbstractSailConnection implements shaclNotifyingSailConnection {
+public class ShaclNotifyingSailConneectionBase implements shaclNotifyingSailConnection {
 
-    private List<shaclNotifyingSailConnection> listeners;
+    private List<shaclSailConnectionListener> listeners;
     private boolean statementsRemoved;
     private Model newStatements;
 
-    public ShaclNotifyingSailConneectionBase(AbstractSail abstractSail) {
-        super(abstractSail);
-        listeners = new ArrayList<shaclNotifyingSailConnection>(0);
+    public ShaclNotifyingSailConneectionBase() {
+        listeners = new ArrayList<shaclSailConnectionListener>(0);
     }
 
 
-    protected void notifyStatementAdded(Statement st) {
+    public void notifyStatementAdded(Statement st) {
         synchronized (listeners) {
-            for (shaclNotifyingSailConnection listener : listeners) {
+            for (shaclSailConnectionListener listener : listeners) {
                 listener.statementAdded(st);
 
             }
-         //   addStatement(st.getSubject(),st.getPredicate(),st.getObject(),st.getContext());
-            System.out.println("Statement added :"+st);
-
         }
     }
 
-    protected void notifyStatementRemoved(Statement st) {
+    public void notifyStatementRemoved(Statement st) {
         synchronized (listeners) {
-            for (shaclNotifyingSailConnection listener : listeners) {
+            for (shaclSailConnectionListener listener : listeners) {
                 listener.statementRemoved(st);
 
             }
-           // removeStatements(st.getSubject(),st.getPredicate(),st.getObject(),st.getContext());
-            System.out.println("Statement removed :"+st);
-        }
-    }
-
-    @Override
-    public void statementAdded(Statement statement) {
-        if (statementsRemoved) {
-            return;
-        }
-
-        if (newStatements == null) {
-            newStatements = createModel();
-        }
-        newStatements.add(statement);
-    }
-
-    @Override
-    public void statementRemoved(Statement statement) {
-        boolean removed = (newStatements != null) ? newStatements.remove(statement) : false;
-        if (!removed) {
-            statementsRemoved = true;
-            newStatements = null;
         }
     }
 
@@ -77,83 +51,145 @@ public class ShaclNotifyingSailConneectionBase extends AbstractSailConnection im
         return new TreeModel();
     };
 
+
+
     @Override
-    protected void closeInternal() throws SailException {
+    public void addConnectionListener(shaclSailConnectionListener listener) {
+        synchronized (listeners) {
+            listeners.add(listener);
+        }
+    }
+
+    @Override
+    public void removeConnectionListener(shaclSailConnectionListener listener) {
+        synchronized (listeners) {
+            listeners.remove(listener);
+        }
+    }
+
+
+    @Override
+    public boolean isOpen() throws SailException {
+        return false;
+    }
+
+    @Override
+    public void close() throws SailException {
 
     }
 
     @Override
-    protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+    public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
         return null;
     }
 
     @Override
-    protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
+    public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
         return null;
     }
 
     @Override
-    protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+    public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
         return null;
     }
 
     @Override
-    protected long sizeInternal(Resource... contexts) throws SailException {
+    public long size(Resource... contexts) throws SailException {
         return 0;
     }
 
     @Override
-    protected void startTransactionInternal() throws SailException {
+    public void begin() throws SailException {
 
     }
 
     @Override
-    protected void commitInternal() throws SailException {
+    public void begin(IsolationLevel level) throws UnknownSailTransactionStateException, SailException {
 
     }
 
     @Override
-    protected void rollbackInternal() throws SailException {
+    public void flush() throws SailException {
 
     }
 
     @Override
-    protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+    public void prepare() throws SailException {
 
     }
 
     @Override
-    protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+    public void commit() throws SailException {
 
     }
 
     @Override
-    protected void clearInternal(Resource... contexts) throws SailException {
+    public void rollback() throws SailException {
 
     }
 
     @Override
-    protected CloseableIteration<? extends Namespace, SailException> getNamespacesInternal() throws SailException {
+    public boolean isActive() throws UnknownSailTransactionStateException {
+        return false;
+    }
+
+    @Override
+    public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+
+    }
+
+    @Override
+    public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+
+    }
+
+    @Override
+    public void startUpdate(UpdateContext op) throws SailException {
+
+    }
+
+    @Override
+    public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+
+    }
+
+    @Override
+    public void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+
+    }
+
+    @Override
+    public void endUpdate(UpdateContext op) throws SailException {
+
+    }
+
+    @Override
+    public void clear(Resource... contexts) throws SailException {
+
+    }
+
+    @Override
+    public CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
         return null;
     }
 
     @Override
-    protected String getNamespaceInternal(String prefix) throws SailException {
+    public String getNamespace(String prefix) throws SailException {
         return null;
     }
 
     @Override
-    protected void setNamespaceInternal(String prefix, String name) throws SailException {
+    public void setNamespace(String prefix, String name) throws SailException {
 
     }
 
     @Override
-    protected void removeNamespaceInternal(String prefix) throws SailException {
+    public void removeNamespace(String prefix) throws SailException {
 
     }
 
     @Override
-    protected void clearNamespacesInternal() throws SailException {
+    public void clearNamespaces() throws SailException {
 
     }
 }

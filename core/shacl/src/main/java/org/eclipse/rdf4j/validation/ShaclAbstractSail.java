@@ -10,8 +10,6 @@ import org.eclipse.rdf4j.sail.helpers.AbstractSail;
  */
 public class ShaclAbstractSail extends AbstractSail{
 
-
-
     @Override
     public boolean isWritable() throws SailException {
         return false;
