@@ -15,7 +15,6 @@ public abstract class AbstractShaclFowardChainingInferencerConnection implements
     @Override
     public void statementAdded(Statement st) {
         if (statementsRemoved) {
-            // No need to record, starting from scratch anyway
             return;
         }
 
@@ -32,7 +31,6 @@ public abstract class AbstractShaclFowardChainingInferencerConnection implements
     public void statementRemoved(Statement st) {
         boolean removed = (newStatements != null) ? newStatements.remove(st) : false;
         if (!removed) {
-            // trigger full rebuild
             statementsRemoved = true;
             newStatements = null;
         }

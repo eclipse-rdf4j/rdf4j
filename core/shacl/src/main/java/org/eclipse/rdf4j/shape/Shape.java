@@ -1,6 +1,5 @@
 package org.eclipse.rdf4j.shape;
 
-import org.eclipse.rdf4j.Main;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;

@@ -14,7 +14,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper{
 
 	private ShaclSail sail;
 
-
 	public ShaclSailConnection(ShaclSail shaclSail, NotifyingSailConnection connection) {
 		super(connection);
 		this.sail = shaclSail;
@@ -34,6 +33,5 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper{
 	protected Model createModel(){
 		return new TreeModel();
 	};
-
 
 }
