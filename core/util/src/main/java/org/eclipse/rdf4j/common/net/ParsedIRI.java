@@ -145,6 +145,8 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	private static String[] uchar = union(unreserved, sub_delims, new String[] { ":" });
 
+	private static String[] hchar = union(unreserved, sub_delims);
+
 	private static String[] pchar = union(unreserved, sub_delims, new String[] { ":", "@" });
 
 	private static String[] qchar = union(pchar, iprivate, new String[] { "/", "?" });
@@ -856,13 +858,16 @@ public class ParsedIRI implements Cloneable, Serializable {
 		if ("jar".equalsIgnoreCase(scheme)) {
 			scheme = scheme + ':' + parseScheme();
 		}
-		if ('/' == peek(0) && '/' == peek(1)) {
+		int peek = peek();
+		if ('/' == peek && '/' == peek(1)) {
 			advance(2);
-			userInfo = parseUserInfo();
+			if (iri.indexOf('@') >= 0) {
+				userInfo = parseUserInfo();
+			}
 			host = parseHost();
-			if (':' == peek(0)) {
+			if (':' == peek()) {
 				advance(1);
-				String p = parseMember(DIGIT);
+				String p = parseMember(DIGIT, '/');
 				if (p.length() > 0) {
 					port = Integer.parseInt(p);
 				}
@@ -870,29 +875,30 @@ public class ParsedIRI implements Cloneable, Serializable {
 					port = -1;
 				}
 			}
-			if ('/' == peek(0) || '?' == peek(0) || '#' == peek(0) || EOF == peek(0)) {
+			int next = peek();
+			if ('/' == next || '?' == next || '#' == next || EOF == next) {
 				path = parsePath();
 			}
 			else {
 				error("absolute or empty path expected");
 			}
 		}
-		else if ('/' == peek(0) || '?' == peek(0) || '#' == peek(0) || EOF == peek(0)) {
+		else if ('/' == peek || '?' == peek || '#' == peek || EOF == peek) {
 			path = parsePath();
 		}
-		else if ('%' == peek(0) || ':' != peek(0) && isMember(pchar, peek(0))) {
+		else if ('%' == peek || ':' != peek && isMember(pchar, peek)) {
 			path = parsePath();
 		}
-		else if (scheme != null && ':' == peek(0)) {
+		else if (scheme != null && ':' == peek) {
 			path = parsePath();
 		}
-		if ('?' == peek(0)) {
+		if ('?' == peek()) {
 			advance(1);
-			query = parsePctEncoded(qchar);
+			query = parsePctEncoded(qchar, '#', EOF);
 		}
-		if ('#' == peek(0)) {
+		if ('#' == peek()) {
 			advance(1);
-			fragment = parsePctEncoded(fchar);
+			fragment = parsePctEncoded(fchar, '#', EOF);
 		}
 		if (pos != iri.length()) {
 			throw error("Unexpected character");
@@ -931,10 +937,10 @@ public class ParsedIRI implements Cloneable, Serializable {
 	private String parseScheme()
 		throws URISyntaxException
 	{
-		if (isMember(ALPHA, peek(0))) {
+		if (isMember(ALPHA, peek())) {
 			int start = pos;
-			String scheme = parseMember(schar);
-			if (':' == peek(0)) {
+			String scheme = parseMember(schar, ':');
+			if (':' == peek()) {
 				advance(1);
 				return scheme;
 			}
@@ -949,8 +955,8 @@ public class ParsedIRI implements Cloneable, Serializable {
 		throws URISyntaxException
 	{
 		int start = pos;
-		String userinfo = parsePctEncoded(uchar);
-		if ('@' == peek(0)) {
+		String userinfo = parsePctEncoded(uchar, '@', '/');
+		if ('@' == peek()) {
 			advance(1);
 			return userinfo;
 		}
@@ -964,10 +970,10 @@ public class ParsedIRI implements Cloneable, Serializable {
 		throws URISyntaxException
 	{
 		int start = pos;
-		if ('[' == peek(0)) {
+		if ('[' == peek()) {
 			advance(1); // IP-Literal
-			parseMember(uchar);
-			if (']' == peek(0)) {
+			parseMember(uchar, ']');
+			if (']' == peek()) {
 				advance(1);
 				return iri.substring(start, pos);
 			}
@@ -975,13 +981,13 @@ public class ParsedIRI implements Cloneable, Serializable {
 				throw error("Invalid host IP address");
 			}
 		}
-		else if (isMember(DIGIT, peek(0))) {
+		else if (isMember(DIGIT, peek())) {
 			for (int i = 0; i < 4; i++) {
-				int octet = Integer.parseInt(parseMember(DIGIT));
+				int octet = Integer.parseInt(parseMember(DIGIT, '.'));
 				if (octet < 0 || octet > 255) {
 					throw error("Invalid IPv4 address");
 				}
-				if ('.' == peek(0)) {
+				if ('.' == peek()) {
 					advance(1);
 				}
 				else {
@@ -991,42 +997,41 @@ public class ParsedIRI implements Cloneable, Serializable {
 			return iri.substring(start, pos);
 		}
 		else {
-			return parsePctEncoded(union(unreserved, sub_delims));
+			return parsePctEncoded(hchar, ':', '/');
 		}
 	}
 
 	private String parsePath()
 		throws URISyntaxException
 	{
-		int start = pos;
-		if ('/' != peek(0)) {
-			parsePctEncoded(pchar);
-		}
-		while ('/' == peek(0)) {
-			advance(1);
-			parsePctEncoded(pchar);
-		}
-		return iri.substring(start, pos);
+		return parsePctEncoded(fchar, '?', '#');
 	}
 
-	private String parsePctEncoded(String[] set)
+	private String parsePctEncoded(String[] set, int end1, int end2)
 		throws URISyntaxException
 	{
-		if ('%' != peek(0) && !isMember(set, peek(0))) {
-			return "";
-		}
 		int start = pos;
-		while ('%' == peek(0) || isMember(set, peek(0))) {
-			if ('%' == peek(0)) {
+		while (true) {
+			int chr = peek();
+			if (chr == EOF || chr == end1 || chr == end2) {
+				break; // optimize end character
+			}
+			else if (('a' <= chr && chr <= 'z') || ('A' <= chr && chr <= 'Z') || ('0' <= chr && chr <= '9')) {
+				advance(1);
+			}
+			else if ('%' == chr) {
 				if (isMember(HEXDIG, peek(1)) && isMember(HEXDIG, peek(2))) {
 					advance(3);
 				}
 				else {
-					throw error("Illegal Percent encoding");
+					throw error("Illegal percent encoding");
 				}
 			}
-			else {
+			else if (isMember(set, chr)) {
 				advance(1);
+			}
+			else {
+				break;
 			}
 		}
 		return iri.substring(start, pos);
@@ -1051,17 +1056,32 @@ public class ParsedIRI implements Cloneable, Serializable {
 		}
 	}
 
-	private String parseMember(String[] set)
+	private String parseMember(String[] set, int end)
 		throws URISyntaxException
 	{
-		if (!isMember(set, peek(0))) {
-			return "";
-		}
 		int start = pos;
-		while (isMember(set, peek(0))) {
-			advance(1);
+		while (true) {
+			int chr = peek();
+			if (chr == EOF || chr == end) {
+				break;
+			}
+			else if (isMember(set, chr)) {
+				advance(1);
+			}
+			else {
+				break;
+			}
 		}
 		return iri.substring(start, pos);
+	}
+
+	private int peek() {
+		if (pos < iri.length()) {
+			return iri.codePointAt(pos);
+		}
+		else {
+			return EOF;
+		}
 	}
 
 	private int peek(int ahead) {
