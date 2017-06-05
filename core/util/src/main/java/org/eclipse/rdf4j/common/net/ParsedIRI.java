@@ -322,10 +322,6 @@ public class ParsedIRI implements Cloneable, Serializable {
 	/**
 	 * Constructs a hierarchical IRI from the given components.
 	 * <p>
-	 * If a scheme is given then the path, if also given, must either be empty or begin with a slash character
-	 * ({@code '/'}). Otherwise a component of the new IRI may be left undefined by passing {@code null} for
-	 * the corresponding parameter or, in the case of the {@code port} parameter, by passing {@code -1}.
-	 * <p>
 	 * This constructor first builds a IRI string from the given components according to the rules specified
 	 * in <a href="http://www.ietf.org/rfc/rfc3987.txt">RFC&nbsp;3987</a>
 	 * </p>
@@ -353,7 +349,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		this.userInfo = userInfo;
 		this.host = host;
 		this.port = port;
-		this.path = scheme != null && path == null ? "" : path;
+		this.path = path == null ? "" : path;
 		this.query = query;
 		this.fragment = fragment;
 	}
