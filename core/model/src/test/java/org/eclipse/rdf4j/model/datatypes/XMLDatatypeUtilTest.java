@@ -198,8 +198,24 @@ public class XMLDatatypeUtilTest {
 			"⻐:⻘⻨" // random chinese chars, if this sequence happens to mean something, this is unintended
 	};
 
-	/** ivalid xsd:QName values */
+	/** invalid xsd:QName values */
 	private static final String[] INVALID_QNAMES = { "1:bar", "foo:1bar", "foo:bar:baz", "foo", "_:bar" };
+
+	/** http://www.datypic.com/sc/xsd/t-xsd_anyURI.html */
+	private static final String[] VALID_URI = {
+			"http://datypic.com",
+			"mailto:info@datypic.com",
+			"../%C3%A9dition.html",
+			"../édition.html",
+			"http://datypic.com/prod.html#shirt",
+			" http://datypic.com/prod.html#shirt ",
+			"../prod.html#shirt",
+			"urn:example:org",
+			"" };
+
+	private static final String[] INVALID_URI = {
+			"http://datypic.com#frag1#frag2",
+			"http://datypic.com#f% rag" };
 
 	@Test
 	public void testNormalize() {
@@ -251,6 +267,8 @@ public class XMLDatatypeUtilTest {
 		testValidation(VALID_QNAMES, XMLSchema.QNAME, true);
 		testValidation(INVALID_QNAMES, XMLSchema.QNAME, false);
 
+		testValidation(VALID_URI, XMLSchema.ANYURI, true);
+		testValidation(INVALID_URI, XMLSchema.ANYURI, false);
 	}
 
 	private void testValidation(String[] values, IRI datatype, boolean validValues) {
