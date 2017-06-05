@@ -2,9 +2,11 @@ package org.eclipse.rdf4j.validation;
 
 import org.eclipse.rdf4j.Main;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -39,12 +41,18 @@ public class ShaclSail extends NotifyingSailWrapper {
     public NotifyingSailConnection getConnection() throws SailException {
         try {
             NotifyingSailConnection con = super.getConnection();
-            return new ShaclSailConnection(this, con);
+            ShaclSailConnection shaclSailConnection = new ShaclSailConnection(this,con);
+            shaclSailConnection.addConnectionListener(new AbstractShaclFowardChainingInferencerConnection() {
+                @Override
+                protected Model createModel() {
+                    return new TreeModel();
+                }
+            });
+            return shaclSailConnection;
         }
         catch (ClassCastException e) {
             throw new SailException(e.getMessage(), e);
         }
-       // return new SHACLSailConnection(this);
     }
     
 

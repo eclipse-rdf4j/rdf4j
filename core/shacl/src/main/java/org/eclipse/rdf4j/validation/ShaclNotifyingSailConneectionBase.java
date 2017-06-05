@@ -3,11 +3,11 @@ package org.eclipse.rdf4j.validation;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.*;
-import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.eclipse.rdf4j.sail.UpdateContext;
@@ -18,20 +18,20 @@ import java.util.List;
 /**
  * Created by heshanjayasinghe on 6/1/17.
  */
-public class ShaclNotifyingSailConneectionBase implements shaclNotifyingSailConnection {
+public class ShaclNotifyingSailConneectionBase implements ShaclNotifyingSailConnection {
 
-    private List<shaclSailConnectionListener> listeners;
+    private List<SailConnectionListener> listeners;
     private boolean statementsRemoved;
     private Model newStatements;
 
     public ShaclNotifyingSailConneectionBase() {
-        listeners = new ArrayList<shaclSailConnectionListener>(0);
+        listeners = new ArrayList<SailConnectionListener>(0);
     }
 
 
     public void notifyStatementAdded(Statement st) {
         synchronized (listeners) {
-            for (shaclSailConnectionListener listener : listeners) {
+            for (SailConnectionListener listener : listeners) {
                 listener.statementAdded(st);
 
             }
@@ -40,28 +40,22 @@ public class ShaclNotifyingSailConneectionBase implements shaclNotifyingSailConn
 
     public void notifyStatementRemoved(Statement st) {
         synchronized (listeners) {
-            for (shaclSailConnectionListener listener : listeners) {
+            for (SailConnectionListener listener : listeners) {
                 listener.statementRemoved(st);
 
             }
         }
     }
 
-    protected Model createModel(){
-        return new TreeModel();
-    };
-
-
-
     @Override
-    public void addConnectionListener(shaclSailConnectionListener listener) {
+    public void addConnectionListener(SailConnectionListener listener) {
         synchronized (listeners) {
             listeners.add(listener);
         }
     }
 
     @Override
-    public void removeConnectionListener(shaclSailConnectionListener listener) {
+    public void removeConnectionListener(SailConnectionListener listener) {
         synchronized (listeners) {
             listeners.remove(listener);
         }

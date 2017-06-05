@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.validation.ShaclAbstractFowardChainingInferencerConnection;
+import org.eclipse.rdf4j.validation.AbstractShaclFowardChainingInferencerConnection;
 import org.eclipse.rdf4j.validation.ShaclNotifyingSailConneectionBase;
 import org.eclipse.rdf4j.validation.ShaclSail;
 
@@ -38,9 +38,9 @@ public class Main{
         SailRepository sailrepo = new SailRepository(new ShaclSail(new MemoryStore()));
         sailrepo.initialize();
         Main mainInstance = new Main();
-        mainInstance.addStatement(sailrepo);
+        //mainInstance.addStatement(sailrepo);
         //mainInstance.removeStatement(sailrepo);
-        //mainInstance.printStatements(sailrepo);
+        mainInstance.printStatements(sailrepo);
 
     }
 
@@ -53,7 +53,7 @@ public class Main{
 
                 ValueFactory valueFactory = connection.getValueFactory();
                 ShaclNotifyingSailConneectionBase notifyingSailConneectionBase = new ShaclNotifyingSailConneectionBase();
-                notifyingSailConneectionBase.addConnectionListener(new ShaclAbstractFowardChainingInferencerConnection() {
+                notifyingSailConneectionBase.addConnectionListener(new AbstractShaclFowardChainingInferencerConnection() {
                     @Override
                     protected Model createModel() {
                         return new TreeModel();
@@ -90,7 +90,7 @@ public class Main{
 
                 ValueFactory valueFactory = connection.getValueFactory();
                 ShaclNotifyingSailConneectionBase notifyingSailConneectionBase = new ShaclNotifyingSailConneectionBase();
-                notifyingSailConneectionBase.addConnectionListener(new ShaclAbstractFowardChainingInferencerConnection() {
+                notifyingSailConneectionBase.addConnectionListener(new AbstractShaclFowardChainingInferencerConnection() {
                     @Override
                     protected Model createModel() {
                         return new TreeModel();
