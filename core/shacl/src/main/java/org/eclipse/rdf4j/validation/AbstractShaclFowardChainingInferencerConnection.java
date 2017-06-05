@@ -2,11 +2,12 @@ package org.eclipse.rdf4j.validation;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.sail.SailConnectionListener;
 
 /**
  * Created by heshanjayasinghe on 6/3/17.
  */
-public abstract class ShaclAbstractFowardChainingInferencerConnection implements shaclSailConnectionListener {
+public abstract class AbstractShaclFowardChainingInferencerConnection implements SailConnectionListener {
 
     private Model newStatements;
     private boolean statementsRemoved;
@@ -22,7 +23,7 @@ public abstract class ShaclAbstractFowardChainingInferencerConnection implements
             newStatements = createModel();
         }
         newStatements.add(st);
-        System.out.println("statement added");
+        System.out.println("statement added : "+st);
     }
 
     protected abstract Model createModel();
@@ -35,6 +36,6 @@ public abstract class ShaclAbstractFowardChainingInferencerConnection implements
             statementsRemoved = true;
             newStatements = null;
         }
-        System.out.println("statement removed");
+        System.out.println("statement removed : "+st);
     }
 }
