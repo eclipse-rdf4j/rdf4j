@@ -29,11 +29,10 @@ public class SyntaxTreeBuilder/*@bgen(jjtree)*/implements SyntaxTreeBuilderTreeC
         public static ASTQueryContainer parseQuery(String query)
                 throws TokenMgrError, ParseException
         {
-                SyntaxTreeBuilder stb = new SyntaxTreeBuilder( new StringReader(query) );
+                SyntaxTreeBuilder stb = new SyntaxTreeBuilder( new UnicodeEscapeStream(new StringReader(query), 1) );
 
                 // Set size of tab to 1 to force tokenmanager to report correct column
                 // index for substring splitting of service graph pattern.
-                stb.jj_input_stream.setTabSize(1);
 
                 ASTQueryContainer container = stb.QueryContainer();
                 container.setSourceString(query);
@@ -51,11 +50,10 @@ public class SyntaxTreeBuilder/*@bgen(jjtree)*/implements SyntaxTreeBuilderTreeC
         public static ASTUpdateSequence parseUpdateSequence(String sequence)
                 throws TokenMgrError, ParseException
         {
-                SyntaxTreeBuilder stb = new SyntaxTreeBuilder( new StringReader(sequence) );
+                SyntaxTreeBuilder stb = new SyntaxTreeBuilder( new UnicodeEscapeStream(new StringReader(sequence), 1) );
 
                 // Set size of tab to 1 to force tokenmanager to report correct column
                 // index for substring splitting of service graph pattern.
-                stb.jj_input_stream.setTabSize(1);
 
                 ASTUpdateSequence seq = stb.UpdateSequence();
                 seq.setSourceString(sequence);
@@ -8159,6 +8157,11 @@ public class SyntaxTreeBuilder/*@bgen(jjtree)*/implements SyntaxTreeBuilderTreeC
     finally { jj_save(6, xla); }
   }
 
+  private boolean jj_3R_67() {
+    if (jj_scan_token(LBRACK)) return true;
+    return false;
+  }
+
   private boolean jj_3R_61() {
     Token xsp;
     xsp = jj_scanpos;
@@ -8648,14 +8651,8 @@ public class SyntaxTreeBuilder/*@bgen(jjtree)*/implements SyntaxTreeBuilderTreeC
     return false;
   }
 
-  private boolean jj_3R_67() {
-    if (jj_scan_token(LBRACK)) return true;
-    return false;
-  }
-
   /** Generated Token Manager. */
   public SyntaxTreeBuilderTokenManager token_source;
-  JavaCharStream jj_input_stream;
   /** Current token. */
   public Token token;
   /** Next token. */
@@ -8701,14 +8698,9 @@ public class SyntaxTreeBuilder/*@bgen(jjtree)*/implements SyntaxTreeBuilderTreeC
   private boolean jj_rescan = false;
   private int jj_gc = 0;
 
-  /** Constructor with InputStream. */
-  public SyntaxTreeBuilder(java.io.InputStream stream) {
-     this(stream, null);
-  }
-  /** Constructor with InputStream and supplied encoding */
-  public SyntaxTreeBuilder(java.io.InputStream stream, String encoding) {
-    try { jj_input_stream = new JavaCharStream(stream, encoding, 1, 1); } catch(java.io.UnsupportedEncodingException e) { throw new RuntimeException(e); }
-    token_source = new SyntaxTreeBuilderTokenManager(jj_input_stream);
+  /** Constructor with user supplied CharStream. */
+  public SyntaxTreeBuilder(CharStream stream) {
+    token_source = new SyntaxTreeBuilderTokenManager(stream);
     token = new Token();
     jj_ntk = -1;
     jj_gen = 0;
@@ -8717,36 +8709,8 @@ public class SyntaxTreeBuilder/*@bgen(jjtree)*/implements SyntaxTreeBuilderTreeC
   }
 
   /** Reinitialise. */
-  public void ReInit(java.io.InputStream stream) {
-     ReInit(stream, null);
-  }
-  /** Reinitialise. */
-  public void ReInit(java.io.InputStream stream, String encoding) {
-    try { jj_input_stream.ReInit(stream, encoding, 1, 1); } catch(java.io.UnsupportedEncodingException e) { throw new RuntimeException(e); }
-    token_source.ReInit(jj_input_stream);
-    token = new Token();
-    jj_ntk = -1;
-    jjtree.reset();
-    jj_gen = 0;
-    for (int i = 0; i < 174; i++) jj_la1[i] = -1;
-    for (int i = 0; i < jj_2_rtns.length; i++) jj_2_rtns[i] = new JJCalls();
-  }
-
-  /** Constructor. */
-  public SyntaxTreeBuilder(java.io.Reader stream) {
-    jj_input_stream = new JavaCharStream(stream, 1, 1);
-    token_source = new SyntaxTreeBuilderTokenManager(jj_input_stream);
-    token = new Token();
-    jj_ntk = -1;
-    jj_gen = 0;
-    for (int i = 0; i < 174; i++) jj_la1[i] = -1;
-    for (int i = 0; i < jj_2_rtns.length; i++) jj_2_rtns[i] = new JJCalls();
-  }
-
-  /** Reinitialise. */
-  public void ReInit(java.io.Reader stream) {
-    jj_input_stream.ReInit(stream, 1, 1);
-    token_source.ReInit(jj_input_stream);
+  public void ReInit(CharStream stream) {
+    token_source.ReInit(stream);
     token = new Token();
     jj_ntk = -1;
     jjtree.reset();
@@ -8865,18 +8829,21 @@ public class SyntaxTreeBuilder/*@bgen(jjtree)*/implements SyntaxTreeBuilderTreeC
       for (int i = 0; i < jj_endpos; i++) {
         jj_expentry[i] = jj_lasttokens[i];
       }
-      jj_entries_loop: for (java.util.Iterator<?> it = jj_expentries.iterator(); it.hasNext();) {
+      boolean exists = false;
+      for (java.util.Iterator<?> it = jj_expentries.iterator(); it.hasNext();) {
+        exists = true;
         int[] oldentry = (int[])(it.next());
         if (oldentry.length == jj_expentry.length) {
           for (int i = 0; i < jj_expentry.length; i++) {
             if (oldentry[i] != jj_expentry[i]) {
-              continue jj_entries_loop;
+              exists = false;
+              break;
             }
           }
-          jj_expentries.add(jj_expentry);
-          break jj_entries_loop;
+          if (exists) break;
         }
       }
+      if (!exists) jj_expentries.add(jj_expentry);
       if (pos != 0) jj_lasttokens[(jj_endpos = pos) - 1] = kind;
     }
   }
