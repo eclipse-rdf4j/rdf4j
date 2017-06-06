@@ -19,6 +19,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Modify;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -299,6 +300,14 @@ public class SPARQLParserTest {
 
 		assertFalse(leftArg.getObjectVar().equals(rightArg.getObjectVar()));
 		assertNotEquals(leftArg.getObjectVar().getName(), rightArg.getObjectVar().getName());
+	}
+
+	@Test
+	public void testLongUnicode() throws Exception {
+		ParsedUpdate ru = parser.parseUpdate("insert data {<urn:test:foo> <urn:test:bar> \"\\U0001F61F\" .}", "urn:test");
+		InsertData insertData = (InsertData) ru.getUpdateExprs().get(0);
+		String[] lines = insertData.getDataBlock().split("\n");
+		assertEquals("\uD83D\uDE1F", lines[lines.length -1].replaceAll(".*\"(.*)\".*", "$1"));
 	}
 
 }
