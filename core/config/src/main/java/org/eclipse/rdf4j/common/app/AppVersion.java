@@ -44,6 +44,11 @@ public class AppVersion implements Comparable<AppVersion> {
 	private String modifier;
 
 	/**
+	 * The version's build, if any.
+	 */
+	private String build;
+
+	/**
 	 * Construct an uninitialized AppVersion.
 	 */
 	public AppVersion() {
@@ -83,11 +88,16 @@ public class AppVersion implements Comparable<AppVersion> {
 	 * <tt>1.0.1M1-SNAPSHOT</tt>.
 	 */
 	public AppVersion(int major, int minor, int patch, int milestone, String modifier) {
+		this(major, minor, patch, milestone, modifier, null);
+	}
+
+	public AppVersion(int major, int minor, int patch, int milestone, String modifier, String build) {
 		this.major = major;
 		this.minor = minor;
 		this.patch = patch;
 		this.milestone = milestone;
 		this.modifier = modifier;
+		this.build = build;
 	}
 
 	/**
@@ -264,6 +274,7 @@ public class AppVersion implements Comparable<AppVersion> {
 		int patchSeparator = versionString.indexOf('.', minorSeparator + 1);
 		int milestoneSeparator = versionString.indexOf('M', Math.max(minorSeparator, patchSeparator));
 		int modifierSeparator = versionString.indexOf('-', Math.max(minorSeparator, milestoneSeparator));
+		int buildSeparator = versionString.indexOf('+', Math.max(Math.max(minorSeparator, milestoneSeparator), modifierSeparator));
 
 		if (minorSeparator == -1) {
 			throw new NumberFormatException("Illegal version string: " + versionString);
@@ -272,20 +283,34 @@ public class AppVersion implements Comparable<AppVersion> {
 		final boolean hasPatch = patchSeparator > -1;
 		final boolean hasMilestone = milestoneSeparator > -1;
 		final boolean hasModifier = modifierSeparator > -1;
+		final boolean hasBuild = buildSeparator > -1;
 
 		String major = versionString.substring(0, minorSeparator);
 		String minor = null;
 		String patch = null;
 		String milestone = null;
 		String modifier = null;
+		String build = null;
+
+		if (hasBuild) {
+			build = versionString.substring(buildSeparator + 1);
+		}
 
 		if (hasModifier) {
-			modifier = versionString.substring(modifierSeparator + 1);
+			if (hasBuild) {
+				modifier = versionString.substring(modifierSeparator + 1, buildSeparator);
+			}
+			else {
+				modifier = versionString.substring(modifierSeparator + 1);
+			}
 		}
 
 		if (hasMilestone) {
 			if (hasModifier) {
 				milestone = versionString.substring(milestoneSeparator + 1, modifierSeparator);
+			}
+			else if (hasBuild) {
+				milestone = versionString.substring(milestoneSeparator + 1, buildSeparator);
 			}
 			else {
 				milestone = versionString.substring(milestoneSeparator + 1);
@@ -300,6 +325,9 @@ public class AppVersion implements Comparable<AppVersion> {
 			else if (hasModifier) {
 				patch = versionString.substring(patchSeparator + 1, modifierSeparator);
 			}
+			else if (hasBuild) {
+				patch = versionString.substring(patchSeparator + 1, buildSeparator);
+			}
 			else {
 				patch = versionString.substring(patchSeparator + 1);
 			}
@@ -312,6 +340,9 @@ public class AppVersion implements Comparable<AppVersion> {
 			else if (hasModifier) {
 				minor = versionString.substring(minorSeparator + 1, modifierSeparator);
 			}
+			else if (hasBuild) {
+				minor = versionString.substring(minorSeparator + 1, buildSeparator);
+			}
 			else {
 				minor = versionString.substring(minorSeparator + 1);
 			}
@@ -322,7 +353,7 @@ public class AppVersion implements Comparable<AppVersion> {
 		int minorInt = Integer.parseInt(minor);
 		int patchInt = patch == null ? -1 : Integer.parseInt(patch);
 		int milestoneInt = milestone == null ? -1 : Integer.parseInt(milestone);
-		return new AppVersion(majorInt, minorInt, patchInt, milestoneInt, modifier);
+		return new AppVersion(majorInt, minorInt, patchInt, milestoneInt, modifier, build);
 	}
 
 	/**
@@ -349,6 +380,13 @@ public class AppVersion implements Comparable<AppVersion> {
 				sb.append('-');
 			}
 			sb.append(modifier);
+		}
+
+		if (build != null) {
+			if (sb.length() > 0) {
+				sb.append('+');
+			}
+			sb.append(build);
 		}
 
 		return sb.toString();

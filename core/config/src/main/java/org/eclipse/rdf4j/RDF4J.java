@@ -14,9 +14,18 @@ import org.eclipse.rdf4j.common.io.MavenUtil;
  */
 public class RDF4J {
 
-	private static final String VERSION = MavenUtil.loadVersion("org.eclipse.rdf4j", "rdf4j-config", "dev");
+	private static final String VERSION = loadVersion();
 
 	public final static String getVersion() {
 		return VERSION;
+	}
+
+	private static String loadVersion() {
+		String impl = RDF4J.class.getPackage().getImplementationVersion();
+		if (impl == null) {
+			return MavenUtil.loadVersion("org.eclipse.rdf4j", "rdf4j-config", "dev");
+		} else {
+			return impl;
+		}
 	}
 }
