@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.model.datatypes;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.net.URISyntaxException;
 import java.util.StringTokenizer;
 
 import javax.xml.datatype.DatatypeConfigurationException;
@@ -18,6 +19,7 @@ import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
 import javax.xml.namespace.QName;
 
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
@@ -268,6 +270,9 @@ public class XMLDatatypeUtil {
 		}
 		else if (datatype.equals(XMLSchema.QNAME)) {
 			result = isValidQName(value);
+		}
+		else if (datatype.equals(XMLSchema.ANYURI)) {
+			result = isValidAnyURI(value);
 		}
 
 		return result;
@@ -652,6 +657,25 @@ public class XMLDatatypeUtil {
 		return true;
 	}
 
+	/**
+	 * Determines if the supplied value is an Internationalized Resource Identifier Reference (IRI). An anyURI
+	 * value can be absolute or relative, and may have an optional fragment identifier (i.e., it may be an IRI
+	 * Reference). This type should be used when the value fulfills the role of an IRI, as defined in
+	 * [RFC&nbsp;3987] or its successor(s) in the IETF Standards Track.
+	 *
+	 * @param value
+	 * @return <tt>true</tt> if a valid IRI, <tt>false</tt> otherwise
+	 */
+	public static boolean isValidAnyURI(String value) {
+		try {
+			new ParsedIRI(value.trim());
+			return true;
+		}
+		catch (URISyntaxException e) {
+			return false;
+		}
+	}
+
 	private static boolean isPrefixStartChar(int c) {
 		return ASCIIUtil.isLetter(c) || c >= 0x00C0 && c <= 0x00D6 || c >= 0x00D8 && c <= 0x00F6
 				|| c >= 0x00F8 && c <= 0x02FF || c >= 0x0370 && c <= 0x037D || c >= 0x037F && c <= 0x1FFF
@@ -757,6 +781,9 @@ public class XMLDatatypeUtil {
 		}
 		else if (datatype.equals(XMLSchema.DATETIME)) {
 			result = normalizeDateTime(value);
+		}
+		else if (datatype.equals(XMLSchema.ANYURI)) {
+			result = collapseWhiteSpace(value);
 		}
 
 		return result;
