@@ -223,6 +223,6 @@ public class RDFXMLParserCustomTest {
 	public void testSupportedSettings()
 		throws Exception
 	{
-		assertEquals(21, Rio.createParser(RDFFormat.RDFXML).getSupportedSettings().size());
+		assertEquals(22, Rio.createParser(RDFFormat.RDFXML).getSupportedSettings().size());
 	}
 }
