@@ -478,6 +478,12 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 		super.setBaseURI(baseURI);
 	}
 
+	@Override
+	protected void setBaseURI(String baseURI) {
+		// Note: we need to override this method to allow SAXFilter to access it
+		super.setBaseURI(baseURI);
+	}
+
 	void setXMLLang(String xmlLang) {
 		if ("".equals(xmlLang)) {
 			this.xmlLang = null;
