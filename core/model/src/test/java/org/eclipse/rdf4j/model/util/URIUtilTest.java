@@ -25,7 +25,7 @@ public class URIUtilTest {
 		assertTrue(URIUtil.isCorrectURISplit("http://www.example.org/page#", "1"));
 		assertTrue(URIUtil.isCorrectURISplit("http://www.example.org/page#", "1/2"));
 		assertTrue(URIUtil.isCorrectURISplit("http://www.example.org/page#", "1:2"));
-		assertTrue(URIUtil.isCorrectURISplit("http://www.example.org/page#", "1#2"));
+		assertFalse(URIUtil.isCorrectURISplit("http://www.example.org/page#", "1#2"));
 		assertTrue(URIUtil.isCorrectURISplit("http://www.example.org/page/", ""));
 		assertTrue(URIUtil.isCorrectURISplit("http://www.example.org/page/", "1"));
 		assertTrue(URIUtil.isCorrectURISplit("http://www.example.org/page/", "1:2"));
