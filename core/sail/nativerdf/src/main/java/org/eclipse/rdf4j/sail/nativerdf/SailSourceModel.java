@@ -239,7 +239,7 @@ class SailSourceModel extends AbstractModel {
 		if (subj == null || pred == null || obj == null)
 			throw new UnsupportedOperationException("Incomplete statement");
 		try {
-			if (contains(dataset, subj, pred, obj, contexts)) {
+			if (contains(subj, pred, obj, contexts)) {
 				logger.trace("already contains statement {} {} {} {}", subj, pred, obj, contexts);
 				return false;
 			}
@@ -383,7 +383,7 @@ class SailSourceModel extends AbstractModel {
 		}
 	}
 
-	private SailSink sink()
+	private synchronized SailSink sink()
 		throws SailException
 	{
 		if (sink == null) {
@@ -392,7 +392,7 @@ class SailSourceModel extends AbstractModel {
 		return sink;
 	}
 
-	private SailDataset dataset()
+	private synchronized SailDataset dataset()
 		throws SailException
 	{
 		if (sink != null) {

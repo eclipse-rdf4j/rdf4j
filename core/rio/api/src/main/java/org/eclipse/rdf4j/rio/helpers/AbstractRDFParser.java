@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import java.io.UnsupportedEncodingException;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -20,6 +20,7 @@ import java.util.UUID;
 
 import javax.xml.bind.annotation.adapters.HexBinaryAdapter;
 
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.net.ParsedURI;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -74,7 +75,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	/**
 	 * The base URI for resolving relative URIs.
 	 */
-	private ParsedURI baseURI;
+	private ParsedIRI baseURI;
 
 	/**
 	 * Enables a consistent global mapping of blank node identifiers without using a map, but concatenating
@@ -197,6 +198,9 @@ public abstract class AbstractRDFParser implements RDFParser {
 		// Supported in RDFParserBase.resolveURI
 		result.add(BasicParserSettings.VERIFY_RELATIVE_URIS);
 
+		// Supported in createURI
+		result.add(BasicParserSettings.VERIFY_URI_SYNTAX);
+
 		// Supported in RDFParserBase.createBNode(String)
 		result.add(BasicParserSettings.PRESERVE_BNODE_IDS);
 
@@ -294,20 +298,20 @@ public abstract class AbstractRDFParser implements RDFParser {
 	}
 
 	/**
-	 * Parses and normalizes the supplied URI-string and sets it as the base URI for resolving relative URIs.
+	 * Parses the supplied URI-string and sets it as the base URI for resolving relative URIs.
 	 */
 	protected void setBaseURI(String uriSpec) {
-		// Store normalized base URI
-		ParsedURI baseURI = new ParsedURI(uriSpec);
-		baseURI.normalize();
-		setBaseURI(baseURI);
+		// Store base URI
+		if (this.baseURI == null || !this.baseURI.toString().equals(uriSpec)) {
+			this.baseURI = ParsedIRI.create(uriSpec);
+		}
 	}
 
 	/**
 	 * Sets the base URI for resolving relative URIs.
 	 */
 	protected void setBaseURI(ParsedURI baseURI) {
-		this.baseURI = baseURI;
+		setBaseURI(baseURI.toString());
 	}
 
 	/**
@@ -375,15 +379,23 @@ public abstract class AbstractRDFParser implements RDFParser {
 		throws RDFParseException
 	{
 		// Resolve relative URIs against base URI
-		ParsedURI uri = new ParsedURI(uriSpec);
+		ParsedIRI uri;
+		try {
+			uri = new ParsedIRI(uriSpec);
+		}
+		catch (URISyntaxException e) {
+			reportError("Invalid IRI '" + uriSpec,
+					BasicParserSettings.VERIFY_URI_SYNTAX);
+			uri = ParsedIRI.create(uriSpec);
+		}
 
-		if (uri.isRelative()) {
+		if (!uri.isAbsolute()) {
 			if (baseURI == null) {
 				reportFatalError("Unable to resolve URIs, no base URI has been set");
 			}
 
 			if (getParserConfig().get(BasicParserSettings.VERIFY_RELATIVE_URIS)) {
-				if (uri.isRelative() && !uri.isSelfReference() && baseURI.isOpaque()) {
+				if (!uri.isAbsolute() && uriSpec.length() > 0 && !uriSpec.startsWith("#") && baseURI.isOpaque()) {
 					reportError("Relative URI '" + uriSpec
 							+ "' cannot be resolved using the opaque base URI '" + baseURI + "'",
 							BasicParserSettings.VERIFY_RELATIVE_URIS);
@@ -402,6 +414,15 @@ public abstract class AbstractRDFParser implements RDFParser {
 	protected IRI createURI(String uri)
 		throws RDFParseException
 	{
+		if (getParserConfig().get(BasicParserSettings.VERIFY_URI_SYNTAX)) {
+			try {
+				new ParsedIRI(uri);
+			}
+			catch (URISyntaxException e) {
+				reportError(e.getMessage(),
+						BasicParserSettings.VERIFY_URI_SYNTAX);
+			}
+		}
 		try {
 			return valueFactory.createIRI(uri);
 		}

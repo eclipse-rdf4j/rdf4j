@@ -251,6 +251,12 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public static final String ANALYZER_CLASS_KEY = "analyzer";
 
 	/**
+	 * Set this key as sail parameter to configure {@link org.apache.lucene.search.similarities.Similarity}
+	 * class implementation to use for text analysis.
+	 */
+	public static final String SIMILARITY_CLASS_KEY = "similarity";
+
+	/**
 	 * Set this key as sail parameter to influence whether incomplete queries are treated as failure
 	 * (Malformed queries) or whether they are ignored. Set to either "true" or "false". When ommitted in the
 	 * properties, true is default (failure on incomplete queries). see {@link #isIncompleteQueryFails()}

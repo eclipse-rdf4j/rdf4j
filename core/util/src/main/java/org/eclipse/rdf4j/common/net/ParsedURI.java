@@ -18,7 +18,9 @@ import org.eclipse.rdf4j.common.text.StringUtil;
  * resolve relative URIs correctly.
  * <p>
  * Note: this implementation is not guaranteed to handle ipv6 addresses correctly (yet).
+ * @deprecated use {@link ParsedIRI} instead
  */
+@Deprecated
 public class ParsedURI implements java.lang.Cloneable {
 
 	/*

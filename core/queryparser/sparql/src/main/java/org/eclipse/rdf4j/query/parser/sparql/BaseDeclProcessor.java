@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
+import java.net.URISyntaxException;
+
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.net.ParsedURI;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBaseDecl;
@@ -44,12 +47,17 @@ public class BaseDeclProcessor {
 	public static void process(ASTOperationContainer qc, String externalBaseURI)
 		throws MalformedQueryException
 	{
-		ParsedURI parsedBaseURI = null;
+		ParsedIRI parsedBaseURI = null;
 
 		// Use the query model's own base URI, if available
 		ASTBaseDecl baseDecl = qc.getBaseDecl();
 		if (baseDecl != null) {
-			parsedBaseURI = new ParsedURI(baseDecl.getIRI());
+			try {
+				parsedBaseURI = new ParsedIRI(baseDecl.getIRI());
+			}
+			catch (URISyntaxException e) {
+				throw new MalformedQueryException(e);
+			}
 
 			if (!parsedBaseURI.isAbsolute()) {
 				throw new MalformedQueryException("BASE IRI is not an absolute IRI: " + externalBaseURI);
@@ -57,7 +65,12 @@ public class BaseDeclProcessor {
 		}
 		else if (externalBaseURI != null) {
 			// Use external base URI if the query doesn't contain one itself
-			parsedBaseURI = new ParsedURI(externalBaseURI);
+			try {
+				parsedBaseURI = new ParsedIRI(externalBaseURI);
+			}
+			catch (URISyntaxException e) {
+				throw new MalformedQueryException(e);
+			}
 
 			if (!parsedBaseURI.isAbsolute()) {
 				throw new IllegalArgumentException(
@@ -98,9 +111,13 @@ public class BaseDeclProcessor {
 
 	private static class RelativeIRIResolver extends AbstractASTVisitor {
 
-		private ParsedURI parsedBaseURI;
+		private ParsedIRI parsedBaseURI;
 
 		public RelativeIRIResolver(ParsedURI parsedBaseURI) {
+			this(ParsedIRI.create(parsedBaseURI.toString()));
+		}
+
+		public RelativeIRIResolver(ParsedIRI parsedBaseURI) {
 			this.parsedBaseURI = parsedBaseURI;
 		}
 
@@ -108,8 +125,7 @@ public class BaseDeclProcessor {
 		public Object visit(ASTIRI node, Object data)
 			throws VisitorException
 		{
-			ParsedURI resolvedURI = parsedBaseURI.resolve(node.getValue());
-			node.setValue(resolvedURI.toString());
+			node.setValue(parsedBaseURI.resolve(node.getValue()));
 
 			return super.visit(node, data);
 		}
