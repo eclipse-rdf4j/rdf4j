@@ -196,9 +196,9 @@ public class LuceneSail extends NotifyingSailWrapper {
 	final private Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	/**
-	 * Set the parameter "reindexQuery=" to configure the statements to index over. Default value is
-	 * "SELECT ?s ?p ?o ?c WHERE {{?s ?p ?o} UNION {GRAPH ?c {?s ?p ?o.}}} ORDER BY ?s" . NB: the query must
-	 * contain the bindings ?s, ?p, ?o and ?c and must be ordered by ?s.
+	 * Set the parameter "reindexQuery=" to configure the statements to index over. Default value is "SELECT
+	 * ?s ?p ?o ?c WHERE {{?s ?p ?o} UNION {GRAPH ?c {?s ?p ?o.}}} ORDER BY ?s" . NB: the query must contain
+	 * the bindings ?s, ?p, ?o and ?c and must be ordered by ?s.
 	 */
 	public static final String REINDEX_QUERY_KEY = "reindexQuery";
 
@@ -248,6 +248,12 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 * analysis.
 	 */
 	public static final String ANALYZER_CLASS_KEY = "analyzer";
+
+	/**
+	 * Set this key as sail parameter to configure {@link org.apache.lucene.search.similarities.Similarity}
+	 * class implementation to use for text analysis.
+	 */
+	public static final String SIMILARITY_CLASS_KEY = "similarity";
 
 	/**
 	 * Set this key as sail parameter to influence whether incomplete queries are treated as failure
@@ -598,8 +604,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	protected Collection<SearchQueryInterpreter> getSearchQueryInterpreters() {
-		return Arrays.<SearchQueryInterpreter> asList(
-				new QuerySpecBuilder(incompleteQueryFails),
+		return Arrays.<SearchQueryInterpreter> asList(new QuerySpecBuilder(incompleteQueryFails),
 				new DistanceQuerySpecBuilder(luceneIndex), new GeoRelationQuerySpecBuilder(luceneIndex));
 	}
 }
