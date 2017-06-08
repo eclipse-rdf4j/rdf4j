@@ -91,11 +91,13 @@ public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
 							ReadByte() });
 					int cp = Integer.parseInt(hex, 16);
 					char[] chrs = Character.toChars(cp); // length of 1 or 2
-					buffer[bufpos] = chrs[0];
+					buffer[bufpos] = c = chrs[0];
 					if (chrs.length > 1) {
 						if (++bufpos == available)
 							AdjustBuffSize();
 						buffer[bufpos] = chrs[1];
+						UpdateLineColumn(c);
+						backup(1);
 					}
 					column += hex.length();
 				}
