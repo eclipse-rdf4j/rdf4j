@@ -16,6 +16,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -62,8 +63,29 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 		return parameters;
 	}
 
+	/**
+	 * Replaces existing parameters.
+	 * <p>
+	 * By default parameters field is instantiated in constructor. Using this method replaces the existing
+	 * field. If you wish only add missing parameters use {@link #addAbsentParameters(java.util.Properties)}.
+	 * </p>
+	 * 
+	 * @param parameters
+	 */
 	public void setParameters(Properties parameters) {
 		this.parameters = parameters;
+	}
+
+	/**
+	 * Add only absent parameters from argument.
+	 * 
+	 * @see Properties#putIfAbsent(java.lang.Object, java.lang.Object)
+	 * @param parameters
+	 */
+	public void addAbsentParameters(Properties parameters) {
+		parameters.forEach((Object k, Object v) -> {
+			LuceneSpinSail.this.parameters.putIfAbsent(k, v);
+		});
 	}
 
 	/**
