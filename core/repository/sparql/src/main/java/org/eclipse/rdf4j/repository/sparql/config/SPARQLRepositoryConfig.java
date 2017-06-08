@@ -41,6 +41,7 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 	}
 
 	public SPARQLRepositoryConfig(String queryEndpointUrl) {
+		this();
 		setQueryEndpointUrl(queryEndpointUrl);
 	}
 

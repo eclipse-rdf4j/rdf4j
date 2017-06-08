@@ -7,13 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
-import junit.framework.Test;
-
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
-import org.eclipse.rdf4j.rio.turtle.TurtleParser;
-import org.eclipse.rdf4j.rio.turtle.TurtleParserTestCase;
+
+import junit.framework.Test;
 
 /**
  * JUnit test for the Turtle parser that uses the tests that are available

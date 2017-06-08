@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -297,7 +298,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 					if (isXMLLiteral) {
 						writeAttribute(RDF.NAMESPACE, "parseType", "Literal");
 					}
-					else {
+					else if (!datatype.equals(XMLSchema.STRING)) {
 						writeAttribute(RDF.NAMESPACE, "datatype", datatype.toString());
 					}
 				}

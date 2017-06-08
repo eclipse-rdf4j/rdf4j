@@ -13,6 +13,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -217,6 +218,7 @@ public class WorkbenchServlet extends AbstractServlet {
 			if (repository == null) {
 				final String noId = config.getInitParameter(NO_REPOSITORY);
 				if (noId == null || !noId.equals(repoID)) {
+					resp.setHeader("Cache-Control", "no-cache, no-store");
 					throw new BadRequestException("No such repository: " + repoID);
 				}
 			}
@@ -254,10 +256,21 @@ public class WorkbenchServlet extends AbstractServlet {
 			final RemoteRepositoryManager rrm = (RemoteRepositoryManager)manager;
 			LOGGER.info("RemoteRepositoryManager URL: {}", rrm.getLocation());
 			final CookieHandler cookies = new CookieHandler(config);
-			final String user = cookies.getCookieNullIfEmpty(req, resp, WorkbenchGateway.SERVER_USER);
-			final String password = cookies.getCookieNullIfEmpty(req, resp, WorkbenchGateway.SERVER_PASSWORD);
-			LOGGER.info("Setting user '{}' and password '{}'.", user, password);
-			rrm.setUsernameAndPassword(user, password);
+			final String user_password = cookies.getCookieNullIfEmpty(req, resp, WorkbenchGateway.SERVER_USER_PASSWORD);
+			if (user_password == null) {
+				rrm.setUsernameAndPassword(null, null);
+			} else {
+				String decoded;
+				try {
+					decoded = new String(Base64.getDecoder().decode(user_password));
+				} catch(IllegalArgumentException e) {
+					decoded = user_password; // older browsers
+				}
+				final String user = decoded.substring(0, decoded.indexOf(':'));
+				final String password = decoded.substring(decoded.indexOf(':')+1);
+				LOGGER.info("Setting user '{}' and their password.", user);
+				rrm.setUsernameAndPassword(user, password);
+			}
 			// initialize() required to push credentials to internal HTTP
 			// client.
 			rrm.initialize();
