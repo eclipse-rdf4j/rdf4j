@@ -262,11 +262,12 @@ RDF4J has two separate distributions:
 1. the SDK and onejar archives, downloadable via http://www.rdf4j.org/download .
 2. the Maven artifacts, available via http://search.maven.org[The Central Repository].
 
-RDF4j has three separate announcements:
+RDF4j has four separate announcements:
 
 1. the github https://github.com/eclipse/rdf4j/releases[releases tab],
-2. the http://rdf4j.org/wp-admin/edit.php[rdf4j.org website], and
-3. the https://groups.google.com/forum/#!forum/rdf4j-users[rdf4j-user mailling list].
+2. the http://rdf4j.org/download/[rdf4j download page],
+3. the http://rdf4j.org/wp-admin/edit.php[rdf4j.org website], and
+4. the https://groups.google.com/forum/#!forum/rdf4j-users[rdf4j-user mailling list].
 
 === Building and uploading Maven artifacts
 
