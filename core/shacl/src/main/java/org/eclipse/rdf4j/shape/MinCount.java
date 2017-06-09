@@ -4,20 +4,21 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.vocabulary.SH;
 
 import java.util.List;
 
 /**
  * Created by heshanjayasinghe on 5/4/17.
  */
-public class MinCountShape {
+public class MinCount {
 
     Integer minCount;
 
-    public MinCountShape(Resource next, SailRepositoryConnection connection) {
+    public MinCount(Resource next, SailRepositoryConnection connection) {
 
         ValueFactory vf = connection.getValueFactory();
-        minCount = Integer.parseInt(connection.getStatements(next, vf.createIRI(Main.SH, "minCount"), null, true).next().getObject().stringValue());
+        minCount = Integer.parseInt(connection.getStatements(next, vf.createIRI(SH.BASE_URI, "minCount"), null, true).next().getObject().stringValue());
 
 
     }

@@ -6,7 +6,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.validation.ShaclSail;
 
-public class Main2 {
+public class Main {
 
 
 	public static void main(String[] args) {
