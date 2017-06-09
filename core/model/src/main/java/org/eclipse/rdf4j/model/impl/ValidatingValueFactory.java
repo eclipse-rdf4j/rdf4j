@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.util.URIUtil;
 
 /**
@@ -138,8 +139,8 @@ public class ValidatingValueFactory implements ValueFactory {
 	}
 
 	public Literal createLiteral(String label, String language) {
-		if (!XMLDatatypeUtil.isValidLanguage(language)) {
-			throw new IllegalArgumentException("Not a validate language tag");
+		if (!Literals.isValidLanguageTag(language)) {
+			throw new IllegalArgumentException("Not a validate language tag: " + language);
 		}
 		return delegate.createLiteral(label, language);
 	}

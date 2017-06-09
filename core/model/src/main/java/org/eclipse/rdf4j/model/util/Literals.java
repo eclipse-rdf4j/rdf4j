@@ -15,8 +15,8 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
-import javax.xml.datatype.XMLGregorianCalendar;
 import javax.xml.datatype.Duration;
+import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -598,6 +598,25 @@ public class Literals {
 		throws IllformedLocaleException
 	{
 		return new Locale.Builder().setLanguageTag(languageTag).build().toLanguageTag().intern();
+	}
+
+	/**
+	 * Checks if the given string is a <a href="https://tools.ietf.org/html/bcp47">BCP47</a> language tag
+	 * according to the rules defined by the JDK in the {@link Locale} API.
+	 *
+	 * @param languageTag
+	 *        A language tag
+	 * @return <code>true</code> if the given language tag is well-formed according to the rules specified in
+	 *         BCP47.
+	 */
+	public static boolean isValidLanguageTag(String languageTag) {
+		try {
+			new Locale.Builder().setLanguageTag(languageTag);
+			return true;
+		}
+		catch (IllformedLocaleException e) {
+			return false;
+		}
 	}
 
 	protected Literals() {
