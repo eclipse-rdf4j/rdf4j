@@ -246,8 +246,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		// do some initialization for new indices
 		if (!DirectoryReader.indexExists(directory)) {
 			logger.debug("creating new Lucene index in directory {}", directory);
-			IndexWriterConfig indexWriterConfig = new IndexWriterConfig(analyzer);
-			indexWriterConfig.setSimilarity(similarity);
+			IndexWriterConfig indexWriterConfig = getIndexWriterConfig();
 			indexWriterConfig.setOpenMode(OpenMode.CREATE);
 			IndexWriter writer = new IndexWriter(directory, indexWriterConfig);
 			writer.close();
@@ -336,8 +335,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			throw new SailException("Index has been closed");
 		}
 		if (indexWriter == null) {
-			IndexWriterConfig indexWriterConfig = new IndexWriterConfig(analyzer);
-			indexWriterConfig.setSimilarity(similarity);
+			IndexWriterConfig indexWriterConfig = getIndexWriterConfig();
 			indexWriter = new IndexWriter(directory, indexWriterConfig);
 		}
 		return indexWriter;
@@ -1105,7 +1103,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			indexWriter.close();
 
 		// crate new writer
-		IndexWriterConfig indexWriterConfig = new IndexWriterConfig(analyzer);
+		IndexWriterConfig indexWriterConfig = getIndexWriterConfig();
 		indexWriterConfig.setOpenMode(OpenMode.CREATE);
 		indexWriter = new IndexWriter(directory, indexWriterConfig);
 		indexWriter.close();
@@ -1116,6 +1114,17 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	//
 	// Lucene helper methods
 	//
+
+	/**
+	 * Method produces {@link IndexWriterConfig} using settings.
+	 * 
+	 * @return
+	 */
+	private IndexWriterConfig getIndexWriterConfig() {
+		IndexWriterConfig cnf = new IndexWriterConfig(analyzer);
+		cnf.setSimilarity(similarity);
+		return cnf;
+	}
 
 	private static boolean isDeleted(IndexReader reader, int docId) {
 		if (reader.hasDeletions()) {
