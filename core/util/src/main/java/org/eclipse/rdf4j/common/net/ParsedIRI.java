@@ -22,6 +22,7 @@ import java.nio.charset.CharsetEncoder;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -83,150 +84,126 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	private static final long serialVersionUID = -5681843777254402303L;
 
-	private final String iri;
+	private static final Comparator<int[]> CMP = new Comparator<int[]>() {
 
-	private int pos;
+		public int compare(int[] o1, int[] o2) {
+			return o1[0] - o2[0];
+		}
+	};
 
-	private String scheme;
+	private static int EOF = 0;
 
-	private String userInfo;
+	private static int[][] iprivate = {
+			new int[] { 0xE000, 0xF8FF },
+			new int[] { 0xF0000, 0xFFFFD },
+			new int[] { 0x100000, 0x10FFFD } };
 
-	private String host;
+	private static int[][] ucschar = {
+			new int[] { 0x00A0, 0xD7FF },
+			new int[] { 0xF900, 0xFDCF },
+			new int[] { 0xFDF0, 0xFFEF },
+			new int[] { 0x10000, 0x1FFFD },
+			new int[] { 0x20000, 0x2FFFD },
+			new int[] { 0x30000, 0x3FFFD },
+			new int[] { 0x40000, 0x4FFFD },
+			new int[] { 0x50000, 0x5FFFD },
+			new int[] { 0x60000, 0x6FFFD },
+			new int[] { 0x70000, 0x7FFFD },
+			new int[] { 0x80000, 0x8FFFD },
+			new int[] { 0x90000, 0x9FFFD },
+			new int[] { 0xA0000, 0xAFFFD },
+			new int[] { 0xB0000, 0xBFFFD },
+			new int[] { 0xC0000, 0xCFFFD },
+			new int[] { 0xD0000, 0xDFFFD },
+			new int[] { 0xE1000, 0xEFFFD } };
 
-	private int port = -1;
+	private static int[][] ALPHA = { new int[] { 'A', 'Z' }, new int[] { 'a', 'z' } };
 
-	private String path;
+	private static int[][] DIGIT = { new int[] { '0', '9' } };
 
-	private String query;
+	private static int[][] sub_delims = union('!', '$', '&', '\'', '(', ')', '*', '+', ',', ';', '=');
 
-	private String fragment;
+	private static int[][] gen_delims = union(':', '/', '?', '#', '[', ']', '@');
 
-	private static int EOF = '\n';
+	private static int[][] reserved = union(gen_delims, sub_delims);
 
-	private static String[] iprivate = unicodeToString(
-			new String[] { "U+E000-F8FF", "U+F0000-FFFFD", "U+100000-10FFFD" });
+	private static int[][] unreserved_rfc3986 = union(ALPHA, DIGIT, '-', '.', '_', '~');
 
-	private static String[] ucschar = unicodeToString(new String[] {
-			"U+00A0-D7FF",
-			"U+F900-FDCF",
-			"U+FDF0-FFEF",
-			"U+10000-1FFFD",
-			"U+20000-2FFFD",
-			"U+30000-3FFFD",
-			"U+40000-4FFFD",
-			"U+50000-5FFFD",
-			"U+60000-6FFFD",
-			"U+70000-7FFFD",
-			"U+80000-8FFFD",
-			"U+90000-9FFFD",
-			"U+A0000-AFFFD",
-			"U+B0000-BFFFD",
-			"U+C0000-CFFFD",
-			"U+D0000-DFFFD",
-			"U+E1000-EFFFD" });
+	private static int[][] unreserved = union(unreserved_rfc3986, ucschar);
 
-	private static String[] ALPHA = { "A-Z", "a-z" };
+	private static int[][] schar = union(ALPHA, DIGIT, '+', '-', '.');
 
-	private static String[] DIGIT = { "0-9" };
+	private static int[][] uchar = union(unreserved, sub_delims, ':');
 
-	private static String[] HEXDIG = flatten(union(DIGIT, new String[] { "A-F", "a-f" }));
+	private static int[][] hchar = union(unreserved, sub_delims);
 
-	private static String[] sub_delims = { "!", "$", "&", "'", "(", ")", "*", "+", ",", ";", "=" };
+	private static int[][] pchar = union(unreserved, sub_delims, ':', '@');
 
-	private static String[] gen_delims = { ":", "/", "?", "#", "[", "]", "@" };
+	private static int[][] qchar = union(pchar, iprivate, '/', '?');
 
-	private static String[] reserved = union(gen_delims, sub_delims);
+	private static int[][] fchar = union(pchar, '/', '?');
 
-	private static String[] unreserved_rfc3986 = union(ALPHA, DIGIT, new String[] { "-", ".", "_", "~" });
+	private static int[] HEXDIG = flatten(
+			union(DIGIT, new int[][] { new int[] { 'A', 'F' }, new int[] { 'a', 'f' } }));
 
-	private static String[] unreserved = union(unreserved_rfc3986, ucschar);
+	private static int[] ascii = flatten(union(unreserved_rfc3986, reserved, '%'));
 
-	private static String[] schar = union(ALPHA, DIGIT, new String[] { "+", "-", "." });
-
-	private static String[] uchar = union(unreserved, sub_delims, new String[] { ":" });
-
-	private static String[] hchar = union(unreserved, sub_delims);
-
-	private static String[] pchar = union(unreserved, sub_delims, new String[] { ":", "@" });
-
-	private static String[] qchar = union(pchar, iprivate, new String[] { "/", "?" });
-
-	private static String[] fchar = union(pchar, new String[] { "/", "?" });
-
-	private static String[] ascii = flatten(union(unreserved_rfc3986, reserved, new String[] { "%" }));
-
-	private static String[] common = flatten(union(unreserved_rfc3986, reserved,
-			new String[] { "%", "<", ">", "\"", " ", "{", "}", "|", "\\", "^", "`" }));
+	private static int[] common = flatten(
+			union(unreserved_rfc3986, reserved, '%', '<', '>', '"', ' ', '{', '}', '|', '\\', '^', '`'));
 
 	private static String[] common_pct = pctEncode(common);
 
-	/**
-	 * Decodes U+ 32bit hex values into 16bit characters with Java surrogates
-	 */
-	private static String[] unicodeToString(String[] encodings) {
-		StringBuilder sb = new StringBuilder(5);
-		String[] decodings = new String[encodings.length];
-		for (int i = 0; i < encodings.length; i++) {
-			String encoded = encodings[i];
-			if (encoded.startsWith("U+")) {
-				int idx = encoded.indexOf('-');
-				int start = Integer.parseInt(encoded.substring(2, idx), 16);
-				int end = Integer.parseInt(encoded.substring(idx + 1), 16);
-				sb.setLength(0);
-				sb.appendCodePoint(start).append('-').appendCodePoint(end);
-				decodings[i] = sb.toString();
+	private static int[][] union(Object... sets) {
+		List<int[]> list = new ArrayList<>();
+		for (Object set : sets) {
+			if (set instanceof int[][]) {
+				int[][] ar = (int[][])set;
+				for (int i = 0; i < ar.length; i++) {
+					list.add(ar[i]);
+				}
+			}
+			else if (set instanceof Character) {
+				char chr = (Character)set;
+				list.add(new int[] { chr, chr });
 			}
 			else {
-				decodings[i] = encoded;
+				assert false;
 			}
 		}
-		return decodings;
-	}
-
-	private static String[] union(String[]... src) {
-		int len = 0;
-		for (String[] s : src) {
-			len += s.length;
-		}
-		if (len == 0) {
-			return new String[0];
-		}
-		String[] dest = Arrays.copyOf(src[0], len);
-		int destPos = src[0].length;
-		for (int i = 1; i < src.length; i++) {
-			System.arraycopy(src[i], 0, dest, destPos, src[i].length);
-			destPos += src[i].length;
-		}
-		Arrays.sort(dest);
+		int[][] dest = list.toArray(new int[][] {});
+		Arrays.sort(dest, CMP);
 		return dest;
 	}
 
-	private static String[] flatten(String... arrays) {
-		List<String> list = new ArrayList<>();
+	private static int[] flatten(int[]... arrays) {
+		List<Integer> list = new ArrayList<>();
 		for (int i = 0; i < arrays.length; i++) {
-			String str = arrays[i];
-			if (str.length() == 1) {
-				list.add(str); // character
+			int[] str = arrays[i];
+			if (str.length == 1) {
+				list.add(str[0]); // character
 			}
-			else if (str.length() == 3 && str.charAt(1) == '-') {
-				for (char chr = str.charAt(0), end = str.charAt(2); chr <= end; chr++) {
-					list.add(Character.toString(chr)); // range
+			else if (str.length == 2) {
+				for (int chr = str[0], end = str[1]; chr <= end; chr++) {
+					list.add(chr); // range
 				}
 			}
 			else {
 				assert false;
 			}
 		}
-		String[] chars = list.toArray(new String[list.size()]);
+		int[] chars = new int[list.size()];
+		for (int i = 0; i < chars.length; i++) {
+			chars[i] = list.get(i);
+		}
 		Arrays.sort(chars);
 		return chars;
 	}
 
-	private static String[] pctEncode(String[] unencoded) {
+	private static String[] pctEncode(int[] unencoded) {
 		CharsetEncoder encoder = Charset.forName("UTF-8").newEncoder();
 		String[] result = new String[unencoded.length];
 		for (int i = 0; i < unencoded.length; i++) {
-			String ns = Normalizer.normalize(unencoded[i], Normalizer.Form.NFC);
+			String ns = new String(Character.toChars(unencoded[i]));
 			ByteBuffer bb = null;
 			try {
 				bb = encoder.encode(CharBuffer.wrap(ns));
@@ -238,8 +215,8 @@ public class ParsedIRI implements Cloneable, Serializable {
 			while (bb.hasRemaining()) {
 				byte b = (byte)(bb.get() & 0xff);
 				sb.append('%');
-				sb.append(HEXDIG[(b >> 4) & 0x0f]);
-				sb.append(HEXDIG[(b >> 0) & 0x0f]);
+				sb.appendCodePoint(HEXDIG[(b >> 4) & 0x0f]);
+				sb.appendCodePoint(HEXDIG[(b >> 0) & 0x0f]);
 			}
 			result[i] = sb.toString();
 		}
@@ -300,6 +277,24 @@ public class ParsedIRI implements Cloneable, Serializable {
 			}
 		}
 	}
+
+	private final String iri;
+
+	private int pos;
+
+	private String scheme;
+
+	private String userInfo;
+
+	private String host;
+
+	private int port = -1;
+
+	private String path;
+
+	private String query;
+
+	private String fragment;
 
 	/**
 	 * Constructs a ParsedIRI by parsing the given string.
@@ -1003,7 +998,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		return parsePctEncoded(fchar, '?', '#');
 	}
 
-	private String parsePctEncoded(String[] set, int end1, int end2)
+	private String parsePctEncoded(int[][] set, int end1, int end2)
 		throws URISyntaxException
 	{
 		int start = pos;
@@ -1016,7 +1011,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 				advance(1);
 			}
 			else if ('%' == chr) {
-				if (isMember(HEXDIG, peek(1)) && isMember(HEXDIG, peek(2))) {
+				if (Arrays.binarySearch(HEXDIG, peek(1)) >= 0 && Arrays.binarySearch(HEXDIG, peek(2)) >= 0) {
 					advance(3);
 				}
 				else {
@@ -1033,26 +1028,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 		return iri.substring(start, pos);
 	}
 
-	private boolean isMember(String[] set, int chr) {
-		int idx = Arrays.binarySearch(set, new String(Character.toChars(chr)));
-		int i = idx < 0 ? Math.max(Math.min(-1 - idx, set.length - 1), 0) : idx;
-		return isMember(set[i], chr) || i > 0 && isMember(set[i - 1], chr);
-	}
-
-	private boolean isMember(String range, int chr) {
-		if (3 == range.codePointCount(0, range.length())) {
-			int start = range.codePointAt(0);
-			assert '-' == range.charAt(range.offsetByCodePoints(0, 1));
-			int end = range.codePointAt(range.offsetByCodePoints(0, 2));
-			return start <= chr && chr <= end;
-		}
-		else {
-			assert 1 == range.codePointCount(0, range.length());
-			return chr == range.codePointAt(0);
-		}
-	}
-
-	private String parseMember(String[] set, int end)
+	private String parseMember(int[][] set, int end)
 		throws URISyntaxException
 	{
 		int start = pos;
@@ -1069,6 +1045,21 @@ public class ParsedIRI implements Cloneable, Serializable {
 			}
 		}
 		return iri.substring(start, pos);
+	}
+
+	private boolean isMember(int[][] set, int chr) {
+		int idx = Arrays.binarySearch(set, new int[] { chr }, CMP);
+		if (idx >= 0) {
+			return true; // lower range matched exactly
+		}
+		else if (idx == -1) {
+			return false; // insertion point is 0, below lowest range
+		}
+		else {
+			int i = -idx - 2; // range just before insertion point
+			assert set[i][0] <= chr && set[i].length == 2;
+			return chr <= set[i][1];
+		}
 	}
 
 	private int peek() {
@@ -1106,7 +1097,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	private void appendAscii(StringBuilder sb, String input) {
 		for (int c = 0, n = input.codePointCount(0, input.length()); c < n; c++) {
 			int chr = input.codePointAt(input.offsetByCodePoints(0, c));
-			if (isMember(ascii, chr)) {
+			if (Arrays.binarySearch(ascii, chr) >= 0) {
 				sb.appendCodePoint(chr);
 			}
 			else {
@@ -1217,8 +1208,8 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	private String normalizePctEncoding(String encoded) {
 		int cidx = Arrays.binarySearch(common_pct, encoded);
-		if (cidx >= 0 && isMember(unreserved, common[cidx].codePointAt(0))) {
-			return common[cidx]; // quickly decode unreserved encodings
+		if (cidx >= 0 && isMember(unreserved, common[cidx])) {
+			return new String(Character.toChars(common[cidx])); // quickly decode unreserved encodings
 		}
 		else if (cidx >= 0) {
 			return encoded; // pass through reserved encodings
