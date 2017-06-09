@@ -5,6 +5,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.vocabulary.SH;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,7 +17,7 @@ public class Shape {
     Resource id;
     SailRepositoryConnection connection;
     Resource targetClass;
-    List<MinCountShape> shapes = new ArrayList<>();
+    List<MinCount> shapes = new ArrayList<>();
 
 
     public Shape(Resource id, SailRepositoryConnection connection) {
@@ -24,16 +25,16 @@ public class Shape {
         this.connection = connection;
         ValueFactory vf = connection.getValueFactory();
 
-        if(connection.hasStatement(id, vf.createIRI(Main.SH, "targetClass"), null, true)){
-            targetClass = (Resource) connection.getStatements(id, vf.createIRI(Main.SH, "targetClass"), null).next().getObject();
+        if(connection.hasStatement(id, vf.createIRI(SH.BASE_URI, "targetClass"), null, true)){
+            targetClass = (Resource) connection.getStatements(id, vf.createIRI(SH.BASE_URI, "targetClass"), null).next().getObject();
         }
 
-        RepositoryResult<Statement> property = connection.getStatements(id, vf.createIRI(Main.SH, "property"), null);
+        RepositoryResult<Statement> property = connection.getStatements(id, vf.createIRI(SH.BASE_URI, "property"), null);
         while(property.hasNext()){
             Resource next = (Resource) property.next().getObject();
 
-            if(connection.hasStatement(next, vf.createIRI(Main.SH, "minCount"), null, true)){
-                shapes.add(new MinCountShape(next, connection));
+            if(connection.hasStatement(next, vf.createIRI(SH.BASE_URI, "minCount"), null, true)){
+                shapes.add(new MinCount(next, connection));
             }
         }
     }

@@ -1,12 +1,10 @@
 package org.eclipse.rdf4j.validation;
 
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.NotifyingSail;
-import org.eclipse.rdf4j.sail.NotifyingSailConnection;
-import org.eclipse.rdf4j.sail.Sail;
-import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.*;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.shape.Shape;
 
@@ -18,6 +16,8 @@ import java.util.List;
 public class ShaclSail extends NotifyingSailWrapper {
 
     List<Shape> shapes;
+    private Model newStatements;
+    private boolean statementsRemoved;
 
     public ShaclSail(NotifyingSail memoryStore) {
         super(memoryStore);
@@ -33,12 +33,36 @@ public class ShaclSail extends NotifyingSailWrapper {
         try {
             NotifyingSailConnection con = super.getConnection();
             ShaclSailConnection shaclSailConnection = new ShaclSailConnection(this,con);
-            shaclSailConnection.addConnectionListener(new AbstractShaclFowardChainingInferencerConnection() {
+            shaclSailConnection.addConnectionListener(new SailConnectionListener() {
+
                 @Override
-                protected Model createModel() {
+                public void statementAdded(Statement statement) {
+                    if (statementsRemoved) {
+                        return;
+                    }
+                    if (newStatements == null) {
+                        newStatements = createModel();
+                    }
+                    newStatements.add(statement);
+                    System.out.println("statement added : "+statement);
+                }
+
+                private Model createModel() {
                     return new TreeModel();
                 }
-            });
+
+                @Override
+                public void statementRemoved(Statement statement) {
+                    boolean removed = (newStatements != null) ? newStatements.remove(statement) : false;
+                    if (!removed) {
+                        statementsRemoved = true;
+                        newStatements = null;
+                    }
+                    System.out.println("statement removed : "+statement);
+                }
+            }
+
+            );
             return shaclSailConnection;
         }
         catch (ClassCastException e) {
