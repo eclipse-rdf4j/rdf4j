@@ -140,20 +140,35 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	/**
+	 * Constructor for keeping backwards compatibility.
+	 * 
+	 * @param directory
+	 * @param analyzer
+	 */
+	public LuceneIndex(Directory directory, Analyzer analyzer)
+		throws IOException
+	{
+		this(directory, analyzer, new DefaultSimilarity());
+	}
+
+	/**
 	 * Creates a new LuceneIndex.
 	 * 
 	 * @param directory
 	 *        The Directory in which an index can be found and/or in which index files are written.
 	 * @param analyzer
 	 *        The Analyzer that will be used for tokenizing strings to index and queries.
+	 * @param similarity
+	 *        The Similarity that will be used for scoring.
 	 * @throws IOException
 	 *         When the Directory could not be unlocked.
 	 */
-	public LuceneIndex(Directory directory, Analyzer analyzer)
+	public LuceneIndex(Directory directory, Analyzer analyzer, Similarity similarity)
 		throws IOException
 	{
 		this.directory = directory;
 		this.analyzer = analyzer;
+		this.similarity = similarity;
 		this.geoStrategyMapper = createSpatialStrategyMapper(Collections.<String, String> emptyMap());
 
 		postInit();
