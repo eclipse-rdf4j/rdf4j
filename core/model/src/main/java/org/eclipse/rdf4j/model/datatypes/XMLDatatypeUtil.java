@@ -10,8 +10,6 @@ package org.eclipse.rdf4j.model.datatypes;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.URISyntaxException;
-import java.util.IllformedLocaleException;
-import java.util.Locale;
 import java.util.StringTokenizer;
 
 import javax.xml.datatype.DatatypeConfigurationException;
@@ -24,6 +22,7 @@ import javax.xml.namespace.QName;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
@@ -277,7 +276,7 @@ public class XMLDatatypeUtil {
 			result = isValidAnyURI(value);
 		}
 		else if (datatype.equals(XMLSchema.LANGUAGE)) {
-			result = isValidLanguage(value);
+			result = Literals.isValidLanguageTag(value);
 		}
 
 		return result;
@@ -677,15 +676,6 @@ public class XMLDatatypeUtil {
 			return true;
 		}
 		catch (URISyntaxException e) {
-			return false;
-		}
-	}
-
-	public static boolean isValidLanguage(String value) {
-		try {
-			new Locale.Builder().setLanguageTag(value);
-			return true;
-		} catch (IllformedLocaleException e) {
 			return false;
 		}
 	}
