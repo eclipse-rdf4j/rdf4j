@@ -337,6 +337,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		}
 		if (indexWriter == null) {
 			IndexWriterConfig indexWriterConfig = new IndexWriterConfig(analyzer);
+			indexWriterConfig.setSimilarity(similarity);
 			indexWriter = new IndexWriter(directory, indexWriterConfig);
 		}
 		return indexWriter;
