@@ -1,7 +1,9 @@
 package org.eclipse.rdf4j.AST;
 
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.vocabulary.SH;
 
@@ -11,11 +13,11 @@ import java.util.List;
 /**
  * Created by heshanjayasinghe on 6/10/17.
  */
-public class Shape implements ExNode {
+public class Shape {
     Resource id;
     SailRepositoryConnection connection;
     TargetClass targetClass;
-    List<PropertyShape> property = new ArrayList<>();
+    List<PropertyShape> propertyShapes = new ArrayList<>();
 
 
     public Shape(Resource id, SailRepositoryConnection connection) {
@@ -27,14 +29,33 @@ public class Shape implements ExNode {
             targetClass = (TargetClass) connection.getStatements(id, vf.createIRI(SH.BASE_URI, "targetClass"), null).next().getObject();
         }
 
-//        RepositoryResult<Statement> property = connection.getStatements(id, vf.createIRI(SH.BASE_URI, "property"), null);
-//        while(property.hasNext()){
-//            Resource next = (Resource) property.next().getObject();
-//
-//            if(connection.hasStatement(next, vf.createIRI(SH.BASE_URI, "minCount"), null, true)){
-//                shapes.add(new MinCountShape(next, connection));
-//            }
-//        }
+        RepositoryResult<Statement> property = connection.getStatements(id, vf.createIRI(SH.BASE_URI, "property"), null);
+        while(property.hasNext()){
+            Resource next = (Resource) property.next().getObject();
+
+            if(connection.hasStatement(next, vf.createIRI(SH.BASE_URI, "minCount"), null, true)){
+                propertyShapes.add(new PropertyShape(next, connection));
+            }
+        }
+    }
+
+    static class Factory{
+
+        List<Shape> getShapes(Resource propertyShapeId, SailRepositoryConnection connection){
+            List<Shape> ret = new ArrayList<>();
+
+            if(hasTargetClass(propertyShapeId, connection)){
+                ret.add(new TargetClass(propertyShapeId, connection));
+            }
+
+            return ret;
+
+        }
+
+        private boolean hasTargetClass(Resource propertyShapeId, SailRepositoryConnection connection) {
+            return true;
+        }
+
     }
 
     @Override

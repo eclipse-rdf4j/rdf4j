@@ -17,7 +17,7 @@ public class Shape {
     Resource id;
     SailRepositoryConnection connection;
     Resource targetClass;
-    List<MinCount> shapes = new ArrayList<>();
+    List<MinCountShape> shapes = new ArrayList<>();
 
 
     public Shape(Resource id, SailRepositoryConnection connection) {
@@ -34,7 +34,7 @@ public class Shape {
             Resource next = (Resource) property.next().getObject();
 
             if(connection.hasStatement(next, vf.createIRI(SH.BASE_URI, "minCount"), null, true)){
-                shapes.add(new MinCount(next, connection));
+                shapes.add(new MinCountShape(next, connection));
             }
         }
     }

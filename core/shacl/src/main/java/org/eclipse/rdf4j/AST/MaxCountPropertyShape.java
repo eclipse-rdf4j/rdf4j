@@ -8,15 +8,21 @@ import org.eclipse.rdf4j.vocabulary.SH;
 /**
  * Created by heshanjayasinghe on 6/10/17.
  */
-public class MaxCount {
+public class MaxCountPropertyShape extends PathPropertyShape{
 
     Integer maxCount;
 
-    public MaxCount(Resource next, SailRepositoryConnection connection) {
-
+    public MaxCountPropertyShape(Resource next, SailRepositoryConnection connection) {
+        super(next,connection);
         ValueFactory vf = connection.getValueFactory();
         maxCount = Integer.parseInt(connection.getStatements(next, vf.createIRI(SH.BASE_URI, "maxCount"), null, true).next().getObject().stringValue());
 
+    }
 
+    @Override
+    public String toString() {
+        return "MaxCountPropertyShape{" +
+                "maxCount=" + maxCount +
+                '}';
     }
 }

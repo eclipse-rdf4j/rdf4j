@@ -1,13 +1,15 @@
 package org.eclipse.rdf4j.AST;
 
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+
 /**
  * Created by heshanjayasinghe on 6/10/17.
  */
-public class TargetClass {
-    ExNode exnode;
+public class TargetClass extends Shape {
+    Resource targetclass;
 
-    TargetClass(ExNode exnode){
-        this.exnode = exnode;
+    public TargetClass(Resource id, SailRepositoryConnection connection) {
+        super(id, connection);
     }
-
 }
