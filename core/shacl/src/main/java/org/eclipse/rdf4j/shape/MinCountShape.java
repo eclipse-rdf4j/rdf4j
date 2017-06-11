@@ -11,11 +11,11 @@ import java.util.List;
 /**
  * Created by heshanjayasinghe on 5/4/17.
  */
-public class MinCount {
+public class MinCountShape {
 
     Integer minCount;
 
-    public MinCount(Resource next, SailRepositoryConnection connection) {
+    public MinCountShape(Resource next, SailRepositoryConnection connection) {
 
         ValueFactory vf = connection.getValueFactory();
         minCount = Integer.parseInt(connection.getStatements(next, vf.createIRI(SH.BASE_URI, "minCount"), null, true).next().getObject().stringValue());
