@@ -10,6 +10,7 @@ public class SH {
 
     public final static String NS = BASE_URI;
 
+   // public final static Property minCount = ResourceFactory.createProperty(NS + "minCount");
 
 
 }
