@@ -8,7 +8,7 @@ import org.eclipse.rdf4j.vocabulary.SH;
 /**
  * Created by heshanjayasinghe on 6/10/17.
  */
-public class Path {
+public class Path implements Resource {
     Resource path;
 
     public Path(Resource next, SailRepositoryConnection connection) {
@@ -24,5 +24,10 @@ public class Path {
         return "Path{" +
                 "path=" + path +
                 '}';
+    }
+
+    @Override
+    public String stringValue() {
+        return null;
     }
 }

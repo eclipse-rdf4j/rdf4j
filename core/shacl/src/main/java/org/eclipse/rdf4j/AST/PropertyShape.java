@@ -9,35 +9,54 @@ import java.util.List;
 /**
  * Created by heshanjayasinghe on 6/10/17.
  */
-public class PropertyShape {
+public class PropertyShape{
+    Resource id;
+    SailRepositoryConnection connection;
 
-    public PropertyShape(Resource next,SailRepositoryConnection connection) {
-    }
+
+    public PropertyShape(Resource id,SailRepositoryConnection connection) {
+        this.id = id;
+        this.connection = connection;
+        }
+
 
     static class Factory{
+        List<PropertyShape> ret;
+        List< PropertyShape > getProprtyShapes(Resource propertyShapeId, SailRepositoryConnection connection){
+            ret = new ArrayList<>();
 
-        List< PropertyShape > getShapes(Resource propertyShapeId, SailRepositoryConnection connection){
-            List<PropertyShape> ret = new ArrayList<>();
-
-            if(hasMinCount(propertyShapeId, connection)){
+            if(!hasMinCount(propertyShapeId, connection)){
                 ret.add(new MinCountPropertyShape(propertyShapeId, connection));
             }
 
-            if(hasMaxCount(propertyShapeId, connection)){
+            if(!hasMaxCount(propertyShapeId, connection)){
                 ret.add(new MaxCountPropertyShape(propertyShapeId, connection));
             }
 
-            return ret;
+//            if(!haspath(propertyShapeId, connection)){
+//                ret.add((Path)new PathPropertyShape(propertyShapeId, connection).getPaths());
+//            }
 
+            return ret;
         }
 
         private boolean hasMaxCount(Resource propertyShapeId,SailRepositoryConnection connection) {
-            return true;
+            for (PropertyShape propertyShape:ret) {
+                if(propertyShape instanceof MaxCountPropertyShape)
+                    return true;
+            }
+            return false;
         }
 
         private boolean hasMinCount(Resource propertyShapeId, SailRepositoryConnection connection) {
-            return true;
+            for (PropertyShape propertyShape:ret) {
+                if(propertyShape instanceof MinCountPropertyShape)
+                    return true;
+            }
+            return false;
         }
 
     }
+
+
 }
