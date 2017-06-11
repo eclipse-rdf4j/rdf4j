@@ -31,16 +31,16 @@ public class Shape {
     static class Factory{
         Shape shape;
         Shape getShapes(Resource id, SailRepositoryConnection connection){
-            if(hasShape()){
-                new Shape(id ,connection);
+            if(!hasShape()){
+                shape = new Shape(id ,connection);
             }
             return shape;
         }
 
         private boolean hasShape() {
             if (shape == null)
-                return true;
-            return false;
+                return false;
+            return true;
         }
 
 
