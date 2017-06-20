@@ -10,13 +10,18 @@ import org.eclipse.rdf4j.vocabulary.SH;
  */
 public class Path implements Resource {
     Resource path;
+    Resource id;
+    SailRepositoryConnection connection;
 
     public Path(Resource next, SailRepositoryConnection connection) {
         super();
+        this.id = id;
+        this.connection = connection;
 
         ValueFactory vf = connection.getValueFactory();
-        path = (Resource) connection.getStatements(next, vf.createIRI(SH.BASE_URI, "path"), null, true).next().getObject();
-
+        if(connection.hasStatement(id, vf.createIRI(SH.BASE_URI, "path"), null, true)) {
+            path = (Resource) connection.getStatements(next, vf.createIRI(SH.BASE_URI, "path"), null, true).next().getObject();
+        }
     }
 
     @Override
