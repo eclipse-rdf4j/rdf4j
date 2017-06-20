@@ -9,7 +9,7 @@ import org.eclipse.rdf4j.vocabulary.SH;
  * Created by heshanjayasinghe on 6/11/17.
  */
 public class PathPropertyShape extends PropertyShape {
-    Path path;
+    public Path path;
 
     public PathPropertyShape(Resource id, SailRepositoryConnection connection) {
         super(id, connection);

@@ -34,4 +34,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper{
 		return new TreeModel();
 	};
 
+	/*public void validate(){
+		Plan plan = createPlan(sail.shapes,this);
+
+		plan.validate(this);
+	}*/
+
 }

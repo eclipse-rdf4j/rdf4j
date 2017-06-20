@@ -20,7 +20,7 @@ public class PropertyShape{
         }
 
 
-    static class Factory{
+    public static class Factory{
         List<PropertyShape> ret;
         List< PropertyShape > getProprtyShapes(Resource propertyShapeId, SailRepositoryConnection connection){
             ret = new ArrayList<>();
