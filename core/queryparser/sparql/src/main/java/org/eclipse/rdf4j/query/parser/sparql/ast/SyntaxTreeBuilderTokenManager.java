@@ -3315,25 +3315,23 @@ static final long[] jjtoSkip = {
 static final long[] jjtoSpecial = {
    0x8L, 0x0L, 0x0L, 
 };
-protected JavaCharStream input_stream;
+protected CharStream input_stream;
 private final int[] jjrounds = new int[157];
 private final int[] jjstateSet = new int[314];
 protected char curChar;
 /** Constructor. */
-public SyntaxTreeBuilderTokenManager(JavaCharStream stream){
-   if (JavaCharStream.staticFlag)
-      throw new Error("ERROR: Cannot use a static CharStream class with a non-static lexical analyzer.");
+public SyntaxTreeBuilderTokenManager(CharStream stream){
    input_stream = stream;
 }
 
 /** Constructor. */
-public SyntaxTreeBuilderTokenManager(JavaCharStream stream, int lexState){
+public SyntaxTreeBuilderTokenManager(CharStream stream, int lexState){
    this(stream);
    SwitchTo(lexState);
 }
 
 /** Reinitialise parser. */
-public void ReInit(JavaCharStream stream)
+public void ReInit(CharStream stream)
 {
    jjmatchedPos = jjnewStateCnt = 0;
    curLexState = defaultLexState;
@@ -3349,7 +3347,7 @@ private void ReInitRounds()
 }
 
 /** Reinitialise parser. */
-public void ReInit(JavaCharStream stream, int lexState)
+public void ReInit(CharStream stream, int lexState)
 {
    ReInit(stream);
    SwitchTo(lexState);

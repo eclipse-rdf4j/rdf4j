@@ -80,8 +80,10 @@ var workbench;
 workbench
     .addLoad(function () {
     document.getElementById('noscript-message').style.display = 'none';
-    var user = workbench.getCookie('server-user');
-    if (user.length == 0 || user == '""') {
+    var encoded = workbench.getCookie("server-user-password");
+    var decoded = encoded && window.atob ? window.atob(encoded) : encoded;
+    var user = decoded && decoded.substring(0, decoded.indexOf(':'));
+    if (!user || user == '""') {
         user = '<span class="disabled">None</span>';
     }
     var selectedUser = document.getElementById('selected-user');

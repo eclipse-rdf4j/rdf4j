@@ -243,6 +243,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	private void parse(InputSource inputSource)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
+		clear();
+		
 		try {
 			documentURI = inputSource.getSystemId();
 
@@ -472,6 +474,12 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 
 	@Override
 	protected void setBaseURI(ParsedURI baseURI) {
+		// Note: we need to override this method to allow SAXFilter to access it
+		super.setBaseURI(baseURI);
+	}
+
+	@Override
+	protected void setBaseURI(String baseURI) {
 		// Note: we need to override this method to allow SAXFilter to access it
 		super.setBaseURI(baseURI);
 	}

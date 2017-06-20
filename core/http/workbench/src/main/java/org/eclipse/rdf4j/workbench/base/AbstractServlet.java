@@ -38,9 +38,13 @@ public abstract class AbstractServlet implements Servlet {
 
 	protected final Logger log = LoggerFactory.getLogger(this.getClass());
 
+	@Deprecated
 	protected static final String SERVER_USER = "server-user";
 
+	@Deprecated
 	protected static final String SERVER_PASSWORD = "server-password";
+
+	protected static final String SERVER_USER_PASSWORD = "server-user-password";
 
 	protected static final String ACCEPT = "Accept";
 

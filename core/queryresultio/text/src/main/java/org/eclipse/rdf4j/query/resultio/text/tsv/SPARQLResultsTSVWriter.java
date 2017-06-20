@@ -187,21 +187,35 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 			}
 		}
 
-		writer.write("\"");
+		String encoded = encodeString(label);
 
-		writer.write(encodeString(label));
-
-		writer.write("\"");
 
 		if (Literals.isLanguageLiteral(lit)) {
+			writer.write("\"");
+			writer.write(encoded);
+			writer.write("\"");
 			// Append the literal's language
 			writer.write("@");
 			writer.write(lit.getLanguage().get());
 		}
 		else if (!XMLSchema.STRING.equals(datatype) || !xsdStringToPlainLiteral()) {
+			writer.write("\"");
+			writer.write(encoded);
+			writer.write("\"");
 			// Append the literal's datatype
 			writer.write("^^");
 			writeURI(datatype);
+		}
+		else if (encoded.equals(label) && label.charAt(0) != '<' && label.charAt(0) != '_'
+				&& !label.matches("^[\\+\\-]?[\\d\\.].*"))
+		{
+			// no need to include double quotes
+			writer.write(encoded);
+		}
+		else {
+			writer.write("\"");
+			writer.write(encoded);
+			writer.write("\"");
 		}
 	}
 

@@ -16,6 +16,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -88,9 +89,18 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				// Reorder the (recursive) join arguments to a more optimal sequence
 				List<TupleExpr> orderedJoinArgs = new ArrayList<TupleExpr>(joinArgs.size());
 
+				// Reorder the subselects and extensions to a more optimal sequence
+				List<TupleExpr> priorityArgs = new ArrayList<TupleExpr>(joinArgs.size());
+
 				// first get all subselects and order them
 				List<TupleExpr> orderedSubselects = reorderSubselects(getSubSelects(joinArgs));
 				joinArgs.removeAll(orderedSubselects);
+				priorityArgs.addAll(orderedSubselects);
+
+				// second get all extensions (BIND clause)
+				List<Extension> orderedExtensions = getExtensions(joinArgs);
+				joinArgs.removeAll(orderedExtensions);
+				priorityArgs.addAll(orderedExtensions);
 
 				// We order all remaining join arguments based on cardinality and
 				// variable frequency statistics
@@ -131,11 +141,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 
 				// Build new join hierarchy
-				TupleExpr subselectJoins = null;
-				if (orderedSubselects.size() > 0) {
-					subselectJoins = orderedSubselects.get(0);
-					for (int i = 1; i < orderedSubselects.size(); i++) {
-						subselectJoins = new Join(subselectJoins, orderedSubselects.get(i));
+				TupleExpr priorityJoins = null;
+				if (priorityArgs.size() > 0) {
+					priorityJoins = priorityArgs.get(0);
+					for (int i = 1; i < priorityArgs.size(); i++) {
+						priorityJoins = new Join(priorityJoins, priorityArgs.get(i));
 					}
 				}
 
@@ -149,8 +159,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						replacement = new Join(orderedJoinArgs.get(i), replacement);
 					}
 
-					if (subselectJoins != null) {
-						replacement = new Join(subselectJoins, replacement);
+					if (priorityJoins != null) {
+						replacement = new Join(priorityJoins, replacement);
 					}
 
 					// Replace old join hierarchy
@@ -158,8 +168,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 				}
 				else {
-					// only subselect joins involved in this query.
-					node.replaceWith(subselectJoins);
+					// only subselect/priority joins involved in this query.
+					node.replaceWith(priorityJoins);
 				}
 			}
 			finally {
@@ -198,11 +208,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return varFreqMap;
 		}
 
+		protected List<Extension> getExtensions(List<TupleExpr> expressions) {
+			List<Extension> extensions = new ArrayList<Extension>();
+			for (TupleExpr expr : expressions) {
+				if (expr instanceof Extension) {
+					extensions.add((Extension)expr);
+				}
+			}
+			return extensions;
+		}
+
 		protected List<TupleExpr> getSubSelects(List<TupleExpr> expressions) {
 			List<TupleExpr> subselects = new ArrayList<TupleExpr>();
 
 			for (TupleExpr expr : expressions) {
-				if (TupleExprs.containsProjection(expr)) {
+				if (TupleExprs.containsSubquery(expr)) {
 					subselects.add(expr);
 				}
 			}

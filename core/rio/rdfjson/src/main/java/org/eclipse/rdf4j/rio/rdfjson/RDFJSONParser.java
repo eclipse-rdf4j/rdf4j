@@ -69,13 +69,15 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 	public void parse(final InputStream inputStream, final String baseUri)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
-		if (this.rdfHandler != null) {
-			this.rdfHandler.startRDF();
-		}
-
 		JsonParser jp = null;
 
+		clear();
+
 		try {
+			if (this.rdfHandler != null) {
+				this.rdfHandler.startRDF();
+			}
+
 			jp = RDFJSONUtility.JSON_FACTORY.createParser(new BOMInputStream(inputStream, false));
 			rdfJsonToHandlerInternal(this.rdfHandler, this.valueFactory, jp);
 		}
@@ -154,12 +156,15 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 	public void parse(final Reader reader, final String baseUri)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
-		if (rdfHandler == null) {
-			rdfHandler.startRDF();
-		}
 		JsonParser jp = null;
 
+		clear();
+
 		try {
+			if (this.rdfHandler != null) {
+				this.rdfHandler.startRDF();
+			}
+
 			jp = RDFJSONUtility.JSON_FACTORY.createParser(reader);
 			rdfJsonToHandlerInternal(rdfHandler, valueFactory, jp);
 		}
@@ -172,6 +177,7 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 			}
 		}
 		finally {
+			clear();
 			if (jp != null) {
 				try {
 					jp.close();
@@ -198,7 +204,7 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 			final String subjStr = jp.getCurrentName();
 			Resource subject = null;
 
-			subject = subjStr.startsWith("_:") ? vf.createBNode(subjStr.substring(2)) : vf.createIRI(subjStr);
+			subject = subjStr.startsWith("_:") ? createBNode(subjStr.substring(2)) : vf.createIRI(subjStr);
 			if (jp.nextToken() != JsonToken.START_OBJECT) {
 				reportFatalError("Expected subject value to start with an Object", jp.getCurrentLocation());
 			}
@@ -336,7 +342,7 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 							reportFatalError("Datatype was attached to a blank node object: subject="
 									+ subjStr + " predicate=" + predStr, jp.getCurrentLocation());
 						}
-						object = vf.createBNode(nextValue.substring(2));
+						object = createBNode(nextValue.substring(2));
 					}
 					else if (RDFJSONUtility.URI.equals(nextType)) {
 						if (nextLanguage != null) {
@@ -354,12 +360,12 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 					if (!nextContexts.isEmpty()) {
 						for (final String nextContext : nextContexts) {
 							final Resource context;
-							
-							if(nextContext.equals(RDFJSONUtility.NULL)) {
+
+							if (nextContext.equals(RDFJSONUtility.NULL)) {
 								context = null;
 							}
-							else if(nextContext.startsWith("_:")) {
-								context = vf.createBNode(nextContext.substring(2));
+							else if (nextContext.startsWith("_:")) {
+								context = createBNode(nextContext.substring(2));
 							}
 							else {
 								context = vf.createIRI(nextContext);

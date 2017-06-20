@@ -214,7 +214,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 			if (dependentServiceResolver == null) {
 				dependentServiceResolver = new FederatedServiceResolverImpl();
 			}
-			return serviceResolver = dependentServiceResolver;
+			setFederatedServiceResolver(dependentServiceResolver);
 		}
 		return serviceResolver;
 	}
@@ -226,8 +226,11 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	 * @param reslover
 	 *        The SERVICE resolver to set.
 	 */
-	public synchronized void setFederatedServiceResolver(FederatedServiceResolver reslover) {
-		this.serviceResolver = reslover;
+	public synchronized void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+		this.serviceResolver = resolver;
+		if (resolver != null && evalStratFactory instanceof FederatedServiceResolverClient) {
+			((FederatedServiceResolverClient)evalStratFactory).setFederatedServiceResolver(resolver);
+		}
 	}
 
 	/**
@@ -382,7 +385,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	public void notifySailChanged(SailChangedEvent event) {
 		super.notifySailChanged(event);
 		synchronized (syncSemaphore) {
-			contentsChanged = true;
+			contentsChanged = contentsChanged || event.statementsAdded() || event.statementsRemoved();
 		}
 	}
 
