@@ -1,12 +1,12 @@
 package org.eclipse.rdf4j.validation;
 
+import org.eclipse.rdf4j.AST.Shape;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.*;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
-import org.eclipse.rdf4j.shape.Shape;
 
 import java.util.List;
 
