@@ -10,7 +10,7 @@ import org.eclipse.rdf4j.vocabulary.SH;
  */
 public class MinCountPropertyShape extends PathPropertyShape{
 
-    Integer minCount;
+    public Integer minCount;
 
     public MinCountPropertyShape(Resource next, SailRepositoryConnection connection) {
         super(next,connection);

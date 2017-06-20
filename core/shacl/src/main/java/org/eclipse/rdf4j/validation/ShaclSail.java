@@ -5,8 +5,10 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.*;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 import java.util.List;
 
@@ -18,14 +20,23 @@ public class ShaclSail extends NotifyingSailWrapper {
     List<Shape> shapes;
     private Model newStatements;
     private boolean statementsRemoved;
+    private SailRepository shacl;
 
     public ShaclSail(NotifyingSail memoryStore) {
         super(memoryStore);
     }
 
-    @Override
-    public void setBaseSail(Sail baseSail) {
-        super.setBaseSail(baseSail);
+    public ShaclSail(MemoryStore memoryStore,SailRepository shacl) {
+        super(memoryStore);
+        this.shacl = shacl;
+    }
+
+    public void initialize()throws SailException{
+        super.initialize();
+
+        try(SailRepositoryConnection connection = shacl.getConnection()){
+            shapes = new Shape.Factory().getShapes(connection);
+        }
     }
 
     @Override
