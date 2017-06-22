@@ -133,14 +133,14 @@ public class ValidatingValueFactory implements ValueFactory {
 	@Override
 	public Literal createLiteral(String label, IRI datatype) {
 		if (!XMLDatatypeUtil.isValidValue(label, datatype)) {
-			throw new IllegalArgumentException("Not a validate literal value");
+			throw new IllegalArgumentException("Not a valid literal value");
 		}
 		return delegate.createLiteral(label, datatype);
 	}
 
 	public Literal createLiteral(String label, String language) {
 		if (!Literals.isValidLanguageTag(language)) {
-			throw new IllegalArgumentException("Not a validate language tag: " + language);
+			throw new IllegalArgumentException("Not a valid language tag: " + language);
 		}
 		return delegate.createLiteral(label, language);
 	}
