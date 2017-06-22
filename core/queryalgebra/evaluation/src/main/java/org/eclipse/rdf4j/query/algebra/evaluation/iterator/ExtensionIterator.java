@@ -57,7 +57,10 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 				}
 				catch (ValueExprEvaluationException e) {
 					// silently ignore type errors in extension arguments. They should not cause the 
-					// query to fail but just result in no additional binding.
+					// query to fail but result in no bindings for this solution
+					// see https://www.w3.org/TR/sparql11-query/#assignment
+					// use null as place holder for unbound variables that must remain so
+					targetBindings.setBinding(extElem.getName(), null);
 				}
 			}
 		}
