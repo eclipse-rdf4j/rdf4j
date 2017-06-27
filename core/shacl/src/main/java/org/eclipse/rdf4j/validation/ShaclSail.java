@@ -35,7 +35,7 @@ public class ShaclSail extends NotifyingSailWrapper {
         super.initialize();
 
         try(SailRepositoryConnection connection = shacl.getConnection()){
-            shapes = new Shape.Factory().getShapes(connection);
+            shapes = Shape.Factory.getShapes(connection);
         }
     }
 

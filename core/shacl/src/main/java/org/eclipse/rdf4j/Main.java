@@ -38,7 +38,8 @@ public class Main {
 			RepositoryResult<Statement> result = connection.getStatements(null, null, null);
 				while (result.hasNext()) {
 					Statement st = result.next();
-					System.out.println("db contains: " + st);
+
+					System.out.println("db contains: " + st + " : " + st.getPredicate().getLocalName());
 				}
 
 		} catch (FileNotFoundException e) {
