@@ -22,6 +22,7 @@ import javax.xml.namespace.QName;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
@@ -273,6 +274,9 @@ public class XMLDatatypeUtil {
 		}
 		else if (datatype.equals(XMLSchema.ANYURI)) {
 			result = isValidAnyURI(value);
+		}
+		else if (datatype.equals(XMLSchema.LANGUAGE)) {
+			result = Literals.isValidLanguageTag(value);
 		}
 
 		return result;
