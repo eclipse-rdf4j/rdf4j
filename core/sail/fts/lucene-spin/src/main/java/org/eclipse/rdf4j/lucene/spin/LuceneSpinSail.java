@@ -11,12 +11,13 @@ import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.function.BiConsumer;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -138,10 +139,11 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 
 	@Override
 	public void setDataDir(File dataDir) {
-		super.setDataDir(dataDir);
 		while (!parameters.containsKey(LuceneSail.LUCENE_DIR_KEY)) {
 			parameters.setProperty(LuceneSail.LUCENE_DIR_KEY, dataDir.getAbsolutePath() + "/index");
 		}
+		Path indexPath = Paths.get(parameters.getProperty(LuceneSail.LUCENE_DIR_KEY));
+		super.setDataDir(indexPath.getParent().toFile());
 	}
 
 	/**
