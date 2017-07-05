@@ -46,8 +46,7 @@ public class Shape {
         }
 
         private static boolean hasTargetClass(Resource shapeId, SailRepositoryConnection connection) {
-            if (connection.hasStatement(shapeId, SHACL.TARGET_CLASS, null, true)) return true;
-            else return false;
+            return connection.hasStatement(shapeId, SHACL.TARGET_CLASS, null, true);
         }
     }
     }
