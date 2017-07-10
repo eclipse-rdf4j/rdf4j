@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.AST;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -11,13 +12,14 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
  */
 public class MinCountPropertyShape extends PathPropertyShape{
 
-    public Integer minCount;
+    public int minCount;
 
     public MinCountPropertyShape(Resource id, SailRepositoryConnection connection) {
         super(id,connection);
-        RepositoryResult<Statement> statement = connection.getStatements(id, SHACL.MIN_COUNT, null, true);
-        if(statement.hasNext())
-        minCount = Integer.valueOf(statement.next().getObject().stringValue());
+        try (RepositoryResult<Statement> statement = connection.getStatements(id, SHACL.MIN_COUNT, null, true)) {
+                Literal object = (Literal) statement.next().getObject();
+                minCount = object.intValue();
+        }
     }
 
     @Override
