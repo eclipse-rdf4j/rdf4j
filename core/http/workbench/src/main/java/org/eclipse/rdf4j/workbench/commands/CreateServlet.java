@@ -22,15 +22,14 @@ import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.ConfigTemplate;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.SystemRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -125,9 +124,8 @@ public class CreateServlet extends TransformationServlet {
 	private RepositoryConfig updateRepositoryConfig(final String configString)
 		throws IOException, RDF4JException
 	{
-		final Repository systemRepo = manager.getSystemRepository();
 		final Model graph = new LinkedHashModel();
-		final RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, systemRepo.getValueFactory());
+		final RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, SimpleValueFactory.getInstance());
 		rdfParser.setRDFHandler(new StatementCollector(graph));
 		rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);
 
@@ -137,7 +135,7 @@ public class CreateServlet extends TransformationServlet {
 								"could not find instance of Repository class in config"));
 		final RepositoryConfig repConfig = RepositoryConfig.create(graph, res);
 		repConfig.validate();
-		RepositoryConfigUtil.updateRepositoryConfigs(systemRepo, repConfig);
+		manager.addRepositoryConfig(repConfig);
 		return repConfig;
 	}
 
