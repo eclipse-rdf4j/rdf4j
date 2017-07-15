@@ -127,6 +127,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	/**
 	 * Gets the SYSTEM repository.
 	 */
+	@Deprecated
 	public Repository getSystemRepository() {
 		if (!isInitialized()) {
 			throw new IllegalStateException("Repository Manager is not initialized");
@@ -367,7 +368,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 			if (result != null && !result.isInitialized()) {
 				// repository exists but has been shut down. throw away the old
 				// object so we can re-read from the config.
-				initializedRepositories.remove(result);
+				initializedRepositories.remove(identity);
 				result = null;
 			}
 
@@ -525,27 +526,21 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 
 		// FIXME: uninitialized, removed repositories won't be cleaned up.
 		try {
-			RepositoryConnection cleanupCon = getSystemRepository().getConnection();
-			try {
-				synchronized (initializedRepositories) {
-					Iterator<Map.Entry<String, Repository>> iter = initializedRepositories.entrySet().iterator();
+			synchronized (initializedRepositories) {
+				Iterator<Map.Entry<String, Repository>> iter = initializedRepositories.entrySet().iterator();
 
-					while (iter.hasNext()) {
-						Map.Entry<String, Repository> entry = iter.next();
-						String repositoryID = entry.getKey();
-						Repository repository = entry.getValue();
+				while (iter.hasNext()) {
+					Map.Entry<String, Repository> entry = iter.next();
+					String repositoryID = entry.getKey();
+					Repository repository = entry.getValue();
 
-						if (!SystemRepository.ID.equals(repositoryID)) {
-							// remove from initialized repositories
-							iter.remove();
-							// refresh single repository
-							refreshRepository(cleanupCon, repositoryID, repository);
-						}
+					if (!SystemRepository.ID.equals(repositoryID)) {
+						// remove from initialized repositories
+						iter.remove();
+						// refresh single repository
+						refreshRepository(repositoryID, repository);
 					}
 				}
-			}
-			finally {
-				cleanupCon.close();
 			}
 		}
 		catch (RepositoryException re) {
@@ -576,7 +571,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 		}
 	}
 
-	void refreshRepository(RepositoryConnection con, String repositoryID, Repository repository) {
+	void refreshRepository(String repositoryID, Repository repository) {
 		logger.debug("Refreshing repository {}...", repositoryID);
 		try {
 			if (repository.isInitialized()) {
@@ -587,12 +582,12 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 			logger.error("Failed to shut down repository", e);
 		}
 
-		cleanupIfRemoved(con, repositoryID);
+		cleanupIfRemoved(repositoryID);
 	}
 
-	void cleanupIfRemoved(RepositoryConnection con, String repositoryID) {
+	void cleanupIfRemoved(String repositoryID) {
 		try {
-			if (RepositoryConfigUtil.getContext(con, repositoryID) == null) {
+			if (!hasRepositoryConfig(repositoryID)) {
 				logger.debug("Cleaning up repository {}, its configuration has been removed", repositoryID);
 
 				cleanUpRepository(repositoryID);

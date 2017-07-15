@@ -217,6 +217,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
+	@Deprecated
 	public SystemRepository getSystemRepository() {
 		return (SystemRepository)super.getSystemRepository();
 	}
@@ -225,26 +226,18 @@ public class LocalRepositoryManager extends RepositoryManager {
 	protected Repository createRepository(String id)
 		throws RepositoryConfigException, RepositoryException
 	{
-		Repository systemRepository = getSystemRepository();
+		Repository repository = null;
 
-		RepositoryConnection con = systemRepository.getConnection();
-		try {
-			Repository repository = null;
+		RepositoryConfig repConfig = getRepositoryConfig(id);
+		if (repConfig != null) {
+			repConfig.validate();
 
-			RepositoryConfig repConfig = RepositoryConfigUtil.getRepositoryConfig(systemRepository, id);
-			if (repConfig != null) {
-				repConfig.validate();
-
-				repository = createRepositoryStack(repConfig.getRepositoryImplConfig());
-				repository.setDataDir(getRepositoryDir(id));
-				repository.initialize();
-			}
-
-			return repository;
+			repository = createRepositoryStack(repConfig.getRepositoryImplConfig());
+			repository.setDataDir(getRepositoryDir(id));
+			repository.initialize();
 		}
-		finally {
-			con.close();
-		}
+
+		return repository;
 	}
 
 	/**
@@ -326,6 +319,12 @@ public class LocalRepositoryManager extends RepositoryManager {
 			// FIXME: don't fetch info through config parsing
 			throw new RepositoryException("Unable to read repository configuration", e);
 		}
+	}
+
+	public Set<String> getRepositoryIDs()
+		throws RepositoryException
+	{
+		return RepositoryConfigUtil.getRepositoryIDs(getSystemRepository());
 	}
 
 	@Override
@@ -454,7 +453,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 													"Modified repository {} has been initialized, refreshing...",
 													repositoryID);
 											// refresh single repository
-											refreshRepository(cleanupCon, repositoryID, repository);
+											refreshRepository(repositoryID, repository);
 										}
 										else {
 											logger.debug(
