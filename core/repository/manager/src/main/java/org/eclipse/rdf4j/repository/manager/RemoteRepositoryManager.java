@@ -7,29 +7,39 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.manager;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
-import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
+import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
+import org.eclipse.rdf4j.rio.Rio;
 
 /**
  * A manager for {@link Repository}s that reside on a remote server. This repository manager allows one to
@@ -213,7 +223,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	{
 		HTTPRepository result = null;
 
-		if (RepositoryConfigUtil.hasRepositoryConfig(getSystemRepository(), id)) {
+		if (hasRepositoryConfig(id)) {
 			result = new HTTPRepository(serverURL, id);
 			result.setHttpClientSessionManager(getSesameClient());
 			result.setUsernameAndPassword(username, password);
@@ -221,6 +231,25 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		}
 
 		return result;
+	}
+
+	@Override
+	public Set<String> getRepositoryIDs()
+		throws RepositoryException
+	{
+		Set<String> idSet = new LinkedHashSet<String>();
+		getAllRepositoryInfos(false).forEach(info -> {
+			idSet.add(info.getId());
+		});
+		return idSet;
+	}
+
+	@Override
+	public boolean hasRepositoryConfig(String repositoryID)
+		throws RepositoryException,
+		RepositoryConfigException
+	{
+		return getRepositoryInfo(repositoryID) != null;
 	}
 
 	@Override
@@ -299,11 +328,36 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
+	public void addRepositoryConfig(RepositoryConfig config)
+		throws RepositoryException,
+		RepositoryConfigException
+	{
+		RDF4JProtocolSession httpClient = getSesameClient().createRDF4JProtocolSession(serverURL);
+		httpClient.setUsernameAndPassword(username, password);
+		httpClient.setRepository(Protocol.getRepositoryLocation(serverURL, SystemRepository.ID));
+		Model model = new LinkedHashModel();
+		config.export(model);
+		String baseURI = Protocol.getRepositoryLocation(serverURL, config.getID());
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		Rio.write(model, baos, httpClient.getPreferredRDFFormat());
+		Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + config.getID());
+		removeRepository(config.getID());
+		try {
+			try (InputStream contents = new ByteArrayInputStream(baos.toByteArray())) {
+				httpClient.upload(contents, baseURI, httpClient.getPreferredRDFFormat(), false, true, ctx);
+			}
+		}
+		catch (IOException | QueryEvaluationException | UnauthorizedException ue) {
+			throw new RepositoryException(ue);
+		}
+	}
+
+	@Override
 	public boolean removeRepository(String repositoryID)
 		throws RepositoryException, RepositoryConfigException
 	{
 
-		boolean existingRepo = RepositoryConfigUtil.hasRepositoryConfig(getSystemRepository(), repositoryID);
+		boolean existingRepo = hasRepositoryConfig(repositoryID);
 
 		if (existingRepo) {
 			RDF4JProtocolSession httpClient = getSesameClient().createRDF4JProtocolSession(serverURL);
