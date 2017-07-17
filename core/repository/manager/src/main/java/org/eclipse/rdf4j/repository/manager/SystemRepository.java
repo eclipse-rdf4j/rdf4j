@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
  * @author Herko ter Horst
  * @author Arjohn Kampman
  */
+@Deprecated
 public class SystemRepository extends NotifyingRepositoryWrapper {
 
 	/*-----------*
