@@ -4,16 +4,22 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.plan.PlanNode;
+import org.eclipse.rdf4j.plan.Select;
+import org.eclipse.rdf4j.plan.Tuple;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.validation.ShaclSailConnection;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Created by heshanjayasinghe on 6/10/17.
  */
-public class Shape {
+public class Shape implements PlanGenerator , Iterable<Tuple> {
     Resource id;
     List<PropertyShape> propertyShapes;
     TargetClass targetClass;
@@ -22,9 +28,24 @@ public class Shape {
     public Shape(Resource id, SailRepositoryConnection connection) {
         this.id = id;
         propertyShapes = PropertyShape.Factory.getProprtyShapes(id,connection);
-//        if(connection.hasStatement(id, SHACL.TARGET_CLASS, null, true)) {
-//            targetClass = new TargetClass(id, connection);
-//        }
+
+    }
+
+    @Override
+    public Select getPlan() {
+        return null;
+    }
+
+    public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection) {
+        return propertyShapes
+           .stream()
+                .map(propertyShape -> propertyShape.getPlan())
+                .collect(Collectors.toList());
+     }
+
+    @Override
+    public Iterator<Tuple> iterator() {
+        return null;
     }
 
     public static class Factory {

@@ -28,11 +28,14 @@ public class Main {
 			rdfParser.setRDFHandler(new StatementCollector(){
 				@Override
 				public void handleStatement(Statement st) {
+					connection.begin();
 					connection.add(st);
+					connection.commit();
 				}
+
 			});
 
-			String filename = "shacl.ttl";
+			String filename = "data.ttl";
 			InputStream input = ShaclSail.class.getResourceAsStream("/" + filename);
 			rdfParser.parse(input, "");
 			RepositoryResult<Statement> result = connection.getStatements(null, null, null);
