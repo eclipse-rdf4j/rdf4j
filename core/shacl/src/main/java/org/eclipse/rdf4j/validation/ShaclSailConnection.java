@@ -28,16 +28,18 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper{
 	public void commit() throws SailException {
 		super.commit();
 
+		sail.validate(this);
+
 	}
 
 	protected Model createModel(){
 		return new TreeModel();
 	};
 
-	/*public void validate(){
-		Plan plan = createPlan(sail.shapes,this);
-
-		plan.validate(this);
-	}*/
+	public void validate(){
+//		ShaclPlan plan = createPlan(sail.shapes,this); //normal plan ekak
+//
+//		plan.validate(this);
+	}
 
 }

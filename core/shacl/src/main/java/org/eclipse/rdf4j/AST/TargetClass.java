@@ -21,4 +21,9 @@ public class TargetClass extends Shape {
             targetClass = (Resource) connection.getStatements(id, SHACL.TARGET_CLASS, null).next().getObject();
         }
     }
+
+//    @Override
+//    public Select getPlan() {
+//        return new Select(new Shape(id,connection).generatePlans());
+//    }
 }

@@ -4,9 +4,13 @@ import org.eclipse.rdf4j.AST.Shape;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.TreeModel;
+import org.eclipse.rdf4j.plan.PlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.*;
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailConnectionListener;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
@@ -36,6 +40,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
         try(SailRepositoryConnection connection = shacl.getConnection()){
             shapes = Shape.Factory.getShapes(connection);
+
         }
     }
 
@@ -93,6 +98,25 @@ public class ShaclSail extends NotifyingSailWrapper {
 //            shapes = collect.stream().map(s -> new Shape(s, connection)).collect(Collectors.toList());
 //
 //        }
+
+    }
+
+
+    public void validate(ShaclSailConnection shaclSailConnection) {
+
+        for (Shape shape : shapes) {
+            System.out.println(shape);
+            List<PlanNode> plans = shape.generatePlans(shaclSailConnection);
+
+            for (PlanNode v : plans) {
+                System.out.println(v);
+                if(!v.validate()){//plan validate logic;
+                    throw new RuntimeException("Invalid repo");
+                }
+            }
+
+        }
+
 
     }
 

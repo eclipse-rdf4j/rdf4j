@@ -7,7 +7,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 /**
  * Created by heshanjayasinghe on 6/11/17.
  */
-public class PathPropertyShape extends PropertyShape {
+public class PathPropertyShape extends PropertyShape implements PlanGenerator {
     public Path path;
 
     public PathPropertyShape(Resource id, SailRepositoryConnection connection) {
@@ -22,5 +22,9 @@ public class PathPropertyShape extends PropertyShape {
     }
 
 
+//    @Override
+//    public Select getPlan() {
+//        return new Select();
+//    }
 }
 
