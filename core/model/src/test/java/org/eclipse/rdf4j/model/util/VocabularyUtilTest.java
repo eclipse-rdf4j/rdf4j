@@ -22,15 +22,15 @@ import static org.junit.Assert.assertEquals;
  */
 public class VocabularyUtilTest {
 
-    @Test
-    public void testVocabAllIRI() throws Exception {
-	Set<IRI> dcIRIs = new HashSet<>(Arrays.asList(
-		DC.CONTRIBUTOR, DC.COVERAGE, DC.CREATOR, DC.DATE, DC.DESCRIPTION,
-		DC.FORMAT, DC.IDENTIFIER, DC.LANGUAGE, DC.PUBLISHER, DC.RELATION,
-		DC.RIGHTS, DC.SOURCE, DC.SUBJECT, DC.TITLE, DC.TYPE));
+	@Test
+	public void testVocabAllIRI() throws Exception {
+		Set<IRI> dcIRIs = new HashSet<>(Arrays.asList(
+			DC.CONTRIBUTOR, DC.COVERAGE, DC.CREATOR, DC.DATE, DC.DESCRIPTION,
+			DC.FORMAT, DC.IDENTIFIER, DC.LANGUAGE, DC.PUBLISHER, DC.RELATION,
+			DC.RIGHTS, DC.SOURCE, DC.SUBJECT, DC.TITLE, DC.TYPE));
 
-	Set<IRI> allIRIs = VocabularyUtil.getAllIRIs(DC.class);
+		Set<IRI> allIRIs = VocabularyUtil.getAllIRIs(DC.class);
 
-	assertEquals(dcIRIs, allIRIs);
-    }
+		assertEquals(dcIRIs, allIRIs);
+	}
 }

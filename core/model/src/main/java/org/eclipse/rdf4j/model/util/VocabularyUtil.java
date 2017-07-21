@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.model.util;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -20,24 +19,24 @@ import org.eclipse.rdf4j.model.IRI;
  * @author Bart Hanssens
  */
 public class VocabularyUtil {
-    /**
-     * Get all the {@link IRI IRIs} of the classes and properties of a vocabulary.
-     *
-     * @param vocabulary RDF vocabulary
-     * @return set of IRIs
-     */
-    public static Set<IRI> getAllIRIs(Class vocabulary) {
-	Set<IRI> iris = new HashSet<>();
+	/**
+	 * Get all the {@link IRI IRIs} of the classes and properties of a vocabulary.
+	 *
+	 * @param vocabulary RDF vocabulary
+	 * @return set of IRIs
+	 */
+	public static Set<IRI> getAllIRIs(Class vocabulary) {
+		Set<IRI> iris = new HashSet<>();
 
-	for (Field f : vocabulary.getFields()) {
-	    if (f.getType().equals(IRI.class) && Modifier.isPublic(f.getModifiers())) {
-		try {
-		    iris.add((IRI) f.get(f));
-		} catch (IllegalArgumentException | IllegalAccessException ex) {
-		    // should not happen
+		for (Field f : vocabulary.getFields()) {
+			if (f.getType().equals(IRI.class)) {
+				try {
+					iris.add((IRI) f.get(vocabulary));
+				} catch (IllegalAccessException ex) {
+					// should not happen
+				}
+			}
 		}
-	    }
+		return iris;
 	}
-	return iris;
-    }
 }
