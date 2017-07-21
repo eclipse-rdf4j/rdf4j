@@ -686,7 +686,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		}
 	}
 
-	private void handleConstraintViolation(ConstraintViolation violation)
+	protected void handleConstraintViolation(ConstraintViolation violation)
 		throws ConstraintViolationException
 	{
 		switch (violation.getLevel()) {
