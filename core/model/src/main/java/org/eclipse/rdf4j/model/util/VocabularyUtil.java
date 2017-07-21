@@ -19,26 +19,25 @@ import org.eclipse.rdf4j.model.IRI;
  * 
  * @author Bart Hanssens
  */
-public class VocabUtil {
-    
+public class VocabularyUtil {
     /**
      * Get all the {@link IRI IRIs} of the classes and properties of a vocabulary.
-     *  
+     *
      * @param vocabulary RDF vocabulary
      * @return set of IRIs
      */
-    public static Set<IRI> getVocabularyIRIs(Class vocabulary) {
-        Set<IRI> iris = new HashSet<>();
-        
-        for(Field f : vocabulary.getFields ()) {
-            if (f.getType().equals(IRI.class) && Modifier.isPublic(f.getModifiers())) {
-                try {
-                    iris.add((IRI) f.get(f));
-                } catch (IllegalArgumentException|IllegalAccessException ex) {
-                   // should not happen
-                }
-            }
-        }
-        return iris;
+    public static Set<IRI> getAllIRIs(Class vocabulary) {
+	Set<IRI> iris = new HashSet<>();
+
+	for (Field f : vocabulary.getFields()) {
+	    if (f.getType().equals(IRI.class) && Modifier.isPublic(f.getModifiers())) {
+		try {
+		    iris.add((IRI) f.get(f));
+		} catch (IllegalArgumentException | IllegalAccessException ex) {
+		    // should not happen
+		}
+	    }
+	}
+	return iris;
     }
 }
