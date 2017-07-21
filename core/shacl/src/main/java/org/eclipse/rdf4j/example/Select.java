@@ -33,7 +33,7 @@ public class Select implements PlanNode {
                 String string = dataSource.strings[counter];
                 counter++;
                 Tuple tuple = new Tuple();
-                tuple.line.add(string);
+               // tuple.line.add(string);
                 return tuple;
             }
         };
