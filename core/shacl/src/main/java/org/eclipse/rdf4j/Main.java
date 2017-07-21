@@ -5,9 +5,6 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.validation.ShaclSail;
 
@@ -18,32 +15,15 @@ import java.io.InputStream;
 public class Main {
 
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws IOException {
 
 		SailRepository shacl = new SailRepository(new MemoryStore());
 		shacl.initialize();
 
 		try (SailRepositoryConnection connection = shacl.getConnection()) {
-			RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
-			rdfParser.setRDFHandler(new StatementCollector(){
-				@Override
-				public void handleStatement(Statement st) {
-					connection.begin();
-					connection.add(st);
-					connection.commit();
-				}
-
-			});
-
 			String filename = "data.ttl";
-			InputStream input = ShaclSail.class.getResourceAsStream("/" + filename);
-			rdfParser.parse(input, "");
-			RepositoryResult<Statement> result = connection.getStatements(null, null, null);
-				while (result.hasNext()) {
-					Statement st = result.next();
-
-					System.out.println("db contains: " + st + " : " + st.getPredicate().getLocalName());
-				}
+			InputStream input = SailRepository.class.getResourceAsStream("/" + filename);
+			connection.add(input, "", RDFFormat.TURTLE);
 
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
@@ -53,7 +33,17 @@ public class Main {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore(),shacl);
 		shaclSail.initialize();
+		SailRepository sailRepository = new SailRepository(shaclSail);
+		SailRepositoryConnection sailRepositoryConnection = sailRepository.getConnection();
+		RepositoryResult<Statement> result = shacl.getConnection().getStatements(null, null, null);
+		while (result.hasNext()) {
+			Statement st = result.next();
+			sailRepositoryConnection.begin();
+			sailRepositoryConnection.add(st);
+			sailRepositoryConnection.commit();
+		}
 		System.out.println("done");
 
 	}
+
 }
