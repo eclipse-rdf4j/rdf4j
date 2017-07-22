@@ -20,7 +20,7 @@ import static org.junit.Assert.assertEquals;
 /**
  * @author Bart Hanssens
  */
-public class VocabularyUtilTest {
+public class VocabulariesTest {
 
 	@Test
 	public void testVocabAllIRI() throws Exception {
@@ -29,7 +29,7 @@ public class VocabularyUtilTest {
 			DC.FORMAT, DC.IDENTIFIER, DC.LANGUAGE, DC.PUBLISHER, DC.RELATION,
 			DC.RIGHTS, DC.SOURCE, DC.SUBJECT, DC.TITLE, DC.TYPE));
 
-		Set<IRI> allIRIs = VocabularyUtil.getAllIRIs(DC.class);
+		Set<IRI> allIRIs = Vocabularies.getAllIRIs(DC.class);
 
 		assertEquals(dcIRIs, allIRIs);
 	}
