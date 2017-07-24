@@ -8,7 +8,13 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
+
+import org.eclipse.rdf4j.model.Namespace;
+
 import org.eclipse.rdf4j.model.ValueFactory;
+
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
@@ -16,8 +22,21 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
  */
 public class DOAP {
 
+	/**
+	 * The recommended prefix for the DOAP namespace: "doap"
+	 */
+	public static final String PREFIX = "doap";
+	
+	/**
+	 * The DOAP namespace: http://usefulinc.com/ns/doap#
+	 */
 	public static final String NAMESPACE = "http://usefulinc.com/ns/doap#";
 
+	/**
+	 * An immutable {@link Namespace} constant that represents the DOAP namespace.
+	 */
+	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	
 	/**
 	 * Classes
 	 */
