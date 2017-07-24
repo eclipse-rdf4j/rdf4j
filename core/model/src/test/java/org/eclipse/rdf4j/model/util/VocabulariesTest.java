@@ -29,7 +29,7 @@ public class VocabulariesTest {
 			DC.FORMAT, DC.IDENTIFIER, DC.LANGUAGE, DC.PUBLISHER, DC.RELATION,
 			DC.RIGHTS, DC.SOURCE, DC.SUBJECT, DC.TITLE, DC.TYPE));
 
-		Set<IRI> allIRIs = Vocabularies.getAllIRIs(DC.class);
+		Set<IRI> allIRIs = Vocabularies.getIRIs(DC.class);
 
 		assertEquals(dcIRIs, allIRIs);
 	}
