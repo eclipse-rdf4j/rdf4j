@@ -8,56 +8,19 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.Collection;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
-
-import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 
 /**
  * An iteration to access a materialized {@link Collection} of BindingSets.
  * 
  * @author Andreas Schwarte
+ * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration}
  */
-public class CollectionIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
+@Deprecated
+public class CollectionIteration<E, X extends Exception>
+		extends org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration<E, X>
+{
 
-	protected final Collection<E> collection;
-
-	protected Iterator<E> iterator;
-
-	/**
-	 * @param collection
-	 */
 	public CollectionIteration(Collection<E> collection) {
-		super();
-		this.collection = collection;
-		iterator = collection.iterator();
+		super(collection);
 	}
-
-	@Override
-	public boolean hasNext()
-		throws X
-	{
-		if (isClosed()) {
-			return false;
-		}
-		return iterator.hasNext();
-	}
-
-	@Override
-	public E next()
-		throws X
-	{
-		if (isClosed()) {
-			throw new NoSuchElementException("The iteration has been closed.");
-		}
-		return iterator.next();
-	}
-
-	@Override
-	public void remove()
-		throws X
-	{
-		throw new UnsupportedOperationException("Remove not supported on CollectionIteration");
-	}
-
 }

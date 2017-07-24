@@ -8,7 +8,11 @@
 package org.eclipse.rdf4j.repository.manager;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
 
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -17,9 +21,12 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
+import org.eclipse.rdf4j.repository.config.RepositoryFactory;
+import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
+import org.eclipse.rdf4j.repository.config.RepositoryRegistry;
 import org.eclipse.rdf4j.repository.event.base.NotifyingRepositoryWrapper;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,6 +43,8 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 	/*-----------*
 	 * Constants *
 	 *-----------*/
+
+	private static final String CONFIG_SYSTEM_TTL = "org/eclipse/rdf4j/repository/config/system.ttl";
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -56,6 +65,7 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 		throws RepositoryException
 	{
 		super();
+		super.setDelegate(createDelegate());
 		setDataDir(systemDir);
 	}
 
@@ -63,19 +73,37 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 		throws RepositoryException
 	{
 		super();
+		super.setDelegate(createDelegate());
 	}
 
 	/*---------*
 	 * Methods *
 	 *---------*/
 
-	@Override
-	public void setDataDir(File systemDir) {
-		Repository delegate = super.getDelegate();
-		if (delegate != null) {
-			delegate.shutDown();
+	private Repository createDelegate() {
+		RepositoryConfig repoConfig = getSystemConfig();
+		if (repoConfig == null) {
+			throw new RepositoryConfigException("Could not find SYSTEM configuration");
 		}
-		super.setDelegate(new SailRepository(new MemoryStore(systemDir)));
+		repoConfig.validate();
+		RepositoryImplConfig config = repoConfig.getRepositoryImplConfig();
+		RepositoryFactory factory = RepositoryRegistry.getInstance().get(config.getType()).orElseThrow(
+				() -> new RepositoryConfigException("Repository type not in classpath: " + config.getType()));
+		return factory.getRepository(config);
+	}
+
+	private RepositoryConfig getSystemConfig() {
+		URL ttl = this.getClass().getClassLoader().getResource(CONFIG_SYSTEM_TTL);
+		if (ttl == null) {
+			return null;
+		}
+		try (InputStream in = ttl.openStream()) {
+			Model model = Rio.parse(in, ttl.toString(), RDFFormat.TURTLE);
+			return RepositoryConfigUtil.getRepositoryConfig(model, ID);
+		}
+		catch (IOException e) {
+			throw new RepositoryConfigException(e);
+		}
 	}
 
 	@Override
