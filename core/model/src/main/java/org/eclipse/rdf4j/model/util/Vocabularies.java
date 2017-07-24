@@ -25,7 +25,7 @@ public class Vocabularies {
 	 * @param vocabulary RDF vocabulary
 	 * @return set of IRIs
 	 */
-	public static Set<IRI> getAllIRIs(Class vocabulary) {
+	public static Set<IRI> getIRIs(Class vocabulary) {
 		Set<IRI> iris = new LinkedHashSet<>();
 
 		for (Field f : vocabulary.getFields()) {
@@ -34,6 +34,7 @@ public class Vocabularies {
 					iris.add((IRI) f.get(vocabulary));
 				} catch (IllegalAccessException ex) {
 					// should not happen
+					throw new RuntimeException("Cannot access vocabulary field", ex);
 				}
 			}
 		}
