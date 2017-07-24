@@ -7,13 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.federation;
 
-import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.http.client.HttpClientDependent;
-import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
-import org.eclipse.rdf4j.http.client.SessionManagerDependent;
-import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
-
 /**
  * The {@link FederatedServiceResolverImpl} is used to manage a set of {@link FederatedService} instances,
  * which are used to evaluate SERVICE expressions for particular service Urls.
@@ -23,78 +16,11 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * 
  * @author Andreas Schwarte
  * @author James Leigh
+ * @deprecated since 2.3 use
+ *             {@link org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver}
  */
-public class FederatedServiceResolverImpl extends AbstractFederatedServiceResolver
-		implements FederatedServiceResolver, HttpClientDependent, SessionManagerDependent
+@Deprecated
+public class FederatedServiceResolverImpl
+		extends org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver
 {
-
-	public FederatedServiceResolverImpl() {
-		super();
-	}
-
-	/** independent life cycle */
-	private volatile HttpClientSessionManager client;
-
-	/** dependent life cycle */
-	private volatile SharedHttpClientSessionManager dependentClient;
-
-	public HttpClientSessionManager getHttpClientSessionManager() {
-		HttpClientSessionManager result = client;
-		if (result == null) {
-			synchronized (this) {
-				result = client;
-				if (result == null) {
-					result = client = dependentClient = new SharedHttpClientSessionManager();
-				}
-			}
-		}
-		return result;
-	}
-
-	public void setHttpClientSessionManager(HttpClientSessionManager client) {
-		synchronized (this) {
-			this.client = client;
-			// If they set a client, we need to check whether we need to
-			// shutdown any existing dependentClient
-			SharedHttpClientSessionManager toCloseDependentClient = dependentClient;
-			dependentClient = null;
-			if (toCloseDependentClient != null) {
-				toCloseDependentClient.shutDown();
-			}
-		}
-	}
-
-	public HttpClient getHttpClient() {
-		return getHttpClientSessionManager().getHttpClient();
-	}
-
-	public void setHttpClient(HttpClient httpClient) {
-		SharedHttpClientSessionManager toSetDependentClient = dependentClient;
-		if (toSetDependentClient == null) {
-			getHttpClientSessionManager();
-			toSetDependentClient = dependentClient;
-		}
-		// The strange lifecycle results in the possibility that the
-		// dependentClient will be null due to a call to setSesameClient, so add
-		// a null guard here for that possibility
-		if (toSetDependentClient != null) {
-			toSetDependentClient.setHttpClient(httpClient);
-		}
-	}
-
-	@Override
-	protected FederatedService createService(String serviceUrl)
-		throws QueryEvaluationException
-	{
-		return new SPARQLFederatedService(serviceUrl, getHttpClientSessionManager());
-	}
-
-	@Override
-	public void shutDown() {
-		super.shutDown();
-		if (dependentClient != null) {
-			dependentClient.shutDown();
-			dependentClient = null;
-		}
-	}
 }

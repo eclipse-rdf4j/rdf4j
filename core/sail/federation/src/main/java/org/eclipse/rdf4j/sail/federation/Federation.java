@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.sail.federation;
 
 import java.io.File;
-import java.lang.reflect.UndeclaredThrowableException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -35,13 +34,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.RepositoryResolver;
+import org.eclipse.rdf4j.repository.RepositoryResolverClient;
 import org.eclipse.rdf4j.repository.filters.RepositoryBloomFilter;
-import org.eclipse.rdf4j.repository.sail.config.RepositoryResolver;
-import org.eclipse.rdf4j.repository.sail.config.RepositoryResolverClient;
+import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -82,7 +81,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	private volatile FederatedServiceResolver serviceResolver;
 
 	/** dependent life cycle */
-	private volatile FederatedServiceResolverImpl dependentServiceResolver;
+	private volatile SPARQLServiceResolver dependentServiceResolver;
 
 	@Override
 	public File getDataDir() {
@@ -178,7 +177,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	public synchronized FederatedServiceResolver getFederatedServiceResolver() {
 		if (serviceResolver == null) {
 			if (dependentServiceResolver == null) {
-				dependentServiceResolver = new FederatedServiceResolverImpl();
+				dependentServiceResolver = new SPARQLServiceResolver();
 			}
 			return serviceResolver = dependentServiceResolver;
 		}
@@ -289,7 +288,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 		}
 		finally {
 			try {
-				FederatedServiceResolverImpl toCloseServiceResolver = dependentServiceResolver;
+				SPARQLServiceResolver toCloseServiceResolver = dependentServiceResolver;
 				dependentServiceResolver = null;
 				if (toCloseServiceResolver != null) {
 					toCloseServiceResolver.shutDown();

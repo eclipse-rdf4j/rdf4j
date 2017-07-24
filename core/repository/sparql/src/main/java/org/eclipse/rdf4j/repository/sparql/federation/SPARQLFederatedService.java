@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.query.algebra.evaluation.federation;
+package org.eclipse.rdf4j.repository.sparql.federation;
 
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
@@ -14,14 +14,20 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
  * Federated Service wrapping the {@link SPARQLRepository} to communicate with a SPARQL endpoint.
  * 
  * @author Andreas Schwarte
- * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.sparql.federation.SPARQLFederatedService}
  */
-@Deprecated
-public class SPARQLFederatedService
-		extends org.eclipse.rdf4j.repository.sparql.federation.SPARQLFederatedService
-{
+public class SPARQLFederatedService extends RepositoryFederatedService {
 
+	private static SPARQLRepository createSPARQLRepository(String serviceUrl, HttpClientSessionManager client) {
+		SPARQLRepository rep = new SPARQLRepository(serviceUrl);
+		rep.setHttpClientSessionManager(client);
+		return rep;
+	}
+
+	/**
+	 * @param serviceUrl
+	 *        the serviceUrl use to initialize the inner {@link SPARQLRepository}
+	 */
 	public SPARQLFederatedService(String serviceUrl, HttpClientSessionManager client) {
-		super(serviceUrl, client);
+		super(createSPARQLRepository(serviceUrl, client));
 	}
 }
