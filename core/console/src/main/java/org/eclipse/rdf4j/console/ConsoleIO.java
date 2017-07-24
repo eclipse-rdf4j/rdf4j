@@ -53,7 +53,11 @@ class ConsoleIO {
 			}
 			write("> ");
 		}
-		String line = input.readLine().trim();
+		String line = input.readLine();
+		if (line == null) {
+			return null;
+		}
+		line = line.trim();
 		if (line.endsWith(".")) {
 			line = line.substring(0, line.length() - 1);
 		}
