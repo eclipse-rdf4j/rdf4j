@@ -18,9 +18,9 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
@@ -64,7 +64,7 @@ public class RepositoryManagerFederator {
 	 */
 	public RepositoryManagerFederator(RepositoryManager manager) {
 		this.manager = manager;
-		this.valueFactory = manager.getSystemRepository().getValueFactory();
+		this.valueFactory = SimpleValueFactory.getInstance();
 	}
 
 	/**
@@ -103,31 +103,25 @@ public class RepositoryManagerFederator {
 		addToGraph(graph, fedRepoNode, RepositoryConfigSchema.REPOSITORYID,
 				valueFactory.createLiteral(fedID));
 		addToGraph(graph, fedRepoNode, RDFS.LABEL, valueFactory.createLiteral(description));
-		RepositoryConnection con = manager.getSystemRepository().getConnection();
-		try {
-			addImplementation(members, graph, fedRepoNode, con, readonly, distinct);
-		}
-		finally {
-			con.close();
-		}
+		addImplementation(members, graph, fedRepoNode, readonly, distinct);
 		RepositoryConfig fedConfig = RepositoryConfig.create(graph, fedRepoNode);
 		fedConfig.validate();
 		manager.addRepositoryConfig(fedConfig);
 	}
 
 	private void addImplementation(Collection<String> members, Model graph, BNode fedRepoNode,
-			RepositoryConnection con, boolean readonly, boolean distinct)
+			boolean readonly, boolean distinct)
 		throws RDF4JException, MalformedURLException
 	{
 		BNode implRoot = valueFactory.createBNode();
 		addToGraph(graph, fedRepoNode, RepositoryConfigSchema.REPOSITORYIMPL, implRoot);
 		addToGraph(graph, implRoot, RepositoryConfigSchema.REPOSITORYTYPE,
 				valueFactory.createLiteral(SailRepositoryFactory.REPOSITORY_TYPE));
-		addSail(members, graph, implRoot, con, readonly, distinct);
+		addSail(members, graph, implRoot, readonly, distinct);
 	}
 
-	private void addSail(Collection<String> members, Model graph, BNode implRoot, RepositoryConnection con,
-			boolean readonly, boolean distinct)
+	private void addSail(Collection<String> members, Model graph, BNode implRoot, boolean readonly,
+			boolean distinct)
 		throws RDF4JException, MalformedURLException
 	{
 		BNode sailRoot = valueFactory.createBNode();
@@ -137,11 +131,11 @@ public class RepositoryManagerFederator {
 		addToGraph(graph, sailRoot, FederationConfig.READ_ONLY, valueFactory.createLiteral(readonly));
 		addToGraph(graph, sailRoot, FederationConfig.DISTINCT, valueFactory.createLiteral(distinct));
 		for (String member : members) {
-			addMember(graph, sailRoot, member, con);
+			addMember(graph, sailRoot, member);
 		}
 	}
 
-	private void addMember(Model graph, BNode sailRoot, String identifier, RepositoryConnection con)
+	private void addMember(Model graph, BNode sailRoot, String identifier)
 		throws RDF4JException, MalformedURLException
 	{
 		LOGGER.debug("Adding member: {}", identifier);
@@ -156,7 +150,7 @@ public class RepositoryManagerFederator {
 		addToGraph(graph, memberNode, RepositoryConfigSchema.REPOSITORYTYPE,
 				valueFactory.createLiteral(memberRepoType));
 		addToGraph(graph, memberNode, getLocationPredicate(memberRepoType),
-				getMemberLocator(identifier, con, memberRepoType));
+				getMemberLocator(identifier, memberRepoType));
 		LOGGER.debug("Added member {}: ", identifier);
 	}
 
@@ -174,7 +168,7 @@ public class RepositoryManagerFederator {
 		return predicate;
 	}
 
-	private Value getMemberLocator(String identifier, RepositoryConnection con, String memberRepoType)
+	private Value getMemberLocator(String identifier, String memberRepoType)
 		throws MalformedURLException, RepositoryConfigException, RDF4JException
 	{
 		Value locator;

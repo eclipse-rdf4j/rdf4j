@@ -19,14 +19,13 @@ import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
@@ -81,8 +80,7 @@ public class AbstractCommandTest {
 	protected void addRepository(InputStream configStream, URL data)
 		throws UnsupportedEncodingException, IOException, RDF4JException
 	{
-		Repository systemRepo = manager.getSystemRepository();
-		RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, systemRepo.getValueFactory());
+		RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, SimpleValueFactory.getInstance());
 		Model graph = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(graph));
 		rdfParser.parse(new StringReader(IOUtil.readString(new InputStreamReader(configStream, "UTF-8"))),
@@ -93,7 +91,7 @@ public class AbstractCommandTest {
 						() -> new RepositoryConfigException("could not find subject resource"));
 		RepositoryConfig repoConfig = RepositoryConfig.create(graph, repositoryNode);
 		repoConfig.validate();
-		RepositoryConfigUtil.updateRepositoryConfigs(systemRepo, repoConfig);
+		manager.addRepositoryConfig(repoConfig);
 		if (null != data) { // null if we didn't provide a data file
 			final String repId = Models.objectLiteral(
 					graph.filter(repositoryNode, RepositoryConfigSchema.REPOSITORYID, null)).orElseThrow(
