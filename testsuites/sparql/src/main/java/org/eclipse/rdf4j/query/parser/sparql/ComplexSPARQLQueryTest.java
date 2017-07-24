@@ -2333,6 +2333,48 @@ public abstract class ComplexSPARQLQueryTest {
 
 	}
 
+	@Test
+	public void testSES2250BindErrors() throws Exception {
+		StringBuilder ub = new StringBuilder();
+		ub.append("insert data { <urn:test:subj> <urn:test:pred> _:blank }");
+
+		conn.prepareUpdate(QueryLanguage.SPARQL, ub.toString()).execute();
+
+		StringBuilder qb = new StringBuilder();
+		qb.append("SELECT * {\n"
+				+ "    ?s1 ?p1 ?blank . "
+				+ "    FILTER(isBlank(?blank))"
+				+ "    BIND (iri(?blank) as ?biri)"
+				+ "    ?biri ?p2 ?o2 ."
+				+ "}");
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb.toString());
+		try (TupleQueryResult evaluate = tq.evaluate();) {
+			assertFalse("The query should not return a result", evaluate.hasNext());
+		}
+	}
+
+	@Test
+	public void testSES2250BindErrorsInPath() throws Exception {
+		StringBuilder ub = new StringBuilder();
+		ub.append("insert data { <urn:test:subj> <urn:test:pred> _:blank }");
+
+		conn.prepareUpdate(QueryLanguage.SPARQL, ub.toString()).execute();
+
+		StringBuilder qb = new StringBuilder();
+		qb.append("SELECT * {\n"
+				+ "    ?s1 ?p1 ?blank . "
+				+ "    FILTER(isBlank(?blank))"
+				+ "    BIND (iri(?blank) as ?biri)"
+				+ "    ?biri <urn:test:pred>* ?o2 ."
+				+ "}");
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb.toString());
+		try (TupleQueryResult evaluate = tq.evaluate();) {
+			assertFalse("The query should not return a result", evaluate.hasNext());
+		}
+	}
+
 	private boolean containsSolution(List<BindingSet> result, Binding... solution) {
 		final MapBindingSet bs = new MapBindingSet();
 		for (Binding b : solution) {

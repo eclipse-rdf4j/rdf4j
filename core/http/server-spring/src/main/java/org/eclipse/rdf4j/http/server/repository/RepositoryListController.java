@@ -18,16 +18,14 @@ import javax.servlet.http.HttpServletResponse;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.springframework.context.ApplicationContextException;
 import org.springframework.web.servlet.ModelAndView;
@@ -39,19 +37,6 @@ import org.springframework.web.servlet.mvc.AbstractController;
  * @author Herko ter Horst
  */
 public class RepositoryListController extends AbstractController {
-
-	private static final String REPOSITORY_LIST_QUERY;
-
-	static {
-		StringBuilder query = new StringBuilder(256);
-		query.append(
-				"SELECT id, title, \"true\"^^xsd:boolean as \"readable\", \"true\"^^xsd:boolean as \"writable\"");
-		query.append("FROM {} rdf:type {sys:Repository};");
-		query.append("        [rdfs:label {title}];");
-		query.append("        sys:repositoryID {id} ");
-		query.append("USING NAMESPACE sys = <http://www.openrdf.org/config/repository#>");
-		REPOSITORY_LIST_QUERY = query.toString();
-	}
 
 	private RepositoryManager repositoryManager;
 
@@ -72,52 +57,36 @@ public class RepositoryListController extends AbstractController {
 		Map<String, Object> model = new HashMap<String, Object>();
 
 		if (METHOD_GET.equals(request.getMethod())) {
-			Repository systemRepository = repositoryManager.getSystemRepository();
-			ValueFactory vf = systemRepository.getValueFactory();
+			ValueFactory vf = SimpleValueFactory.getInstance();
 
 			try {
-				RepositoryConnection con = systemRepository.getConnection();
-				try {
-					// FIXME: The query result is cached here as we need to close the
-					// connection before returning. Would be much better to stream
-					// the
-					// query result directly to the client.
+				List<String> bindingNames = new ArrayList<String>();
+				List<BindingSet> bindingSets = new ArrayList<BindingSet>();
 
-					List<String> bindingNames = new ArrayList<String>();
-					List<BindingSet> bindingSets = new ArrayList<BindingSet>();
-
-					TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SERQL,
-							REPOSITORY_LIST_QUERY).evaluate();
-					try {
-						// Determine the repository's URI
-						StringBuffer requestURL = request.getRequestURL();
-						if (requestURL.charAt(requestURL.length() - 1) != '/') {
-							requestURL.append('/');
-						}
-						String namespace = requestURL.toString();
-
-						while (queryResult.hasNext()) {
-							QueryBindingSet bindings = new QueryBindingSet(queryResult.next());
-
-							String id = bindings.getValue("id").stringValue();
-							bindings.addBinding("uri", vf.createIRI(namespace, id));
-
-							bindingSets.add(bindings);
-						}
-
-						bindingNames.add("uri");
-						bindingNames.addAll(queryResult.getBindingNames());
-					}
-					finally {
-						queryResult.close();
-					}
-					model.put(QueryResultView.QUERY_RESULT_KEY,
-							new IteratingTupleQueryResult(bindingNames, bindingSets));
-
+				// Determine the repository's URI
+				StringBuffer requestURL = request.getRequestURL();
+				if (requestURL.charAt(requestURL.length() - 1) != '/') {
+					requestURL.append('/');
 				}
-				finally {
-					con.close();
-				}
+				String namespace = requestURL.toString();
+
+				repositoryManager.getAllRepositoryInfos(false).forEach(info -> {
+					QueryBindingSet bindings = new QueryBindingSet();
+					bindings.addBinding("uri", vf.createIRI(namespace, info.getId()));
+					bindings.addBinding("id", vf.createLiteral(info.getId()));
+					bindings.addBinding("title", vf.createLiteral(info.getDescription()));
+					bindings.addBinding("readable", vf.createLiteral(true));
+					bindings.addBinding("writable", vf.createLiteral(true));
+					bindingSets.add(bindings);
+				});
+
+				bindingNames.add("uri");
+				bindingNames.add("id");
+				bindingNames.add("title");
+				bindingNames.add("readable");
+				bindingNames.add("writable");
+				model.put(QueryResultView.QUERY_RESULT_KEY,
+						new IteratingTupleQueryResult(bindingNames, bindingSets));
 			}
 			catch (RepositoryException e) {
 				throw new ServerHTTPException(e.getMessage(), e);
