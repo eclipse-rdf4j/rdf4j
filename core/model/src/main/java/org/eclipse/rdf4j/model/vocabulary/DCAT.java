@@ -23,15 +23,15 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 public class DCAT {
 
 	/**
-	 * The DCAT namespace: http://www.w3.org/ns/dcat#
-	 */
-	public static final String NAMESPACE = "http://www.w3.org/ns/dcat#";
-
-	/**
 	 * Recommended prefix for the Data Catalog Vocabulary namespace: "dcat"
 	 */
 	public static final String PREFIX = "dcat";
 
+	/**
+	 * The DCAT namespace: http://www.w3.org/ns/dcat#
+	 */
+	public static final String NAMESPACE = "http://www.w3.org/ns/dcat#";
+	
 	/**
 	 * An immutable {@link Namespace} constant that represents the Data Catalog Vocabulary namespace.
 	 */

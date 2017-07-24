@@ -347,7 +347,7 @@ public class StrictEvaluationStrategy
 		if (serviceRef.hasValue())
 			serviceUri = serviceRef.getValue().stringValue();
 		else {
-			if (bindings != null && bindings.hasBinding(serviceRef.getName())) {
+			if (bindings != null && bindings.getValue(serviceRef.getName()) != null) {
 				serviceUri = bindings.getBinding(serviceRef.getName()).getValue().stringValue();
 			}
 			else {
@@ -464,6 +464,13 @@ public class StrictEvaluationStrategy
 		CloseableIteration<? extends Statement, QueryEvaluationException> stIter2 = null;
 		CloseableIteration<? extends Statement, QueryEvaluationException> stIter3 = null;
 		ConvertingIteration<Statement, BindingSet, QueryEvaluationException> result = null;
+
+		if (isUnbound(subjVar, bindings) || isUnbound(predVar, bindings) || isUnbound(objVar, bindings)
+				|| isUnbound(conVar, bindings))
+		{
+			// the variable must remain unbound for this solution see https://www.w3.org/TR/sparql11-query/#assignment
+			return new EmptyIteration<BindingSet, QueryEvaluationException>();
+		}
 
 		boolean allGood = false;
 		try {
@@ -646,6 +653,15 @@ public class StrictEvaluationStrategy
 					}
 				}
 			}
+		}
+	}
+
+	protected boolean isUnbound(Var var, BindingSet bindings) {
+		if (var == null) {
+			return false;
+		}
+		else {
+			return bindings.hasBinding(var.getName()) && bindings.getValue(var.getName()) == null;
 		}
 	}
 
