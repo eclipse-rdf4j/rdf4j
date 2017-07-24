@@ -56,12 +56,27 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 		throws RepositoryException
 	{
 		super();
-		super.setDelegate(new SailRepository(new MemoryStore(systemDir)));
+		setDataDir(systemDir);
+	}
+
+	SystemRepository()
+		throws RepositoryException
+	{
+		super();
 	}
 
 	/*---------*
 	 * Methods *
 	 *---------*/
+
+	@Override
+	public void setDataDir(File systemDir) {
+		Repository delegate = super.getDelegate();
+		if (delegate != null) {
+			delegate.shutDown();
+		}
+		super.setDelegate(new SailRepository(new MemoryStore(systemDir)));
+	}
 
 	@Override
 	public void initialize()

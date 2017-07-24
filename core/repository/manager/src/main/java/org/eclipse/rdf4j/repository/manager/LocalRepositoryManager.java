@@ -403,6 +403,10 @@ public class LocalRepositoryManager extends RepositoryManager {
 		throws RepositoryException,
 		RepositoryConfigException
 	{
+		addRepositoryConfig(config, true);
+	}
+
+	private synchronized void addRepositoryConfig(RepositoryConfig config, boolean updateSystem) {
 		File dataDir = getRepositoryDir(config.getID());
 		if (!dataDir.exists()) {
 			dataDir.mkdirs();
@@ -425,7 +429,9 @@ public class LocalRepositoryManager extends RepositoryManager {
 		catch (IOException e) {
 			throw new RepositoryConfigException(e);
 		}
-		super.addRepositoryConfig(config);
+		if (updateSystem) {
+			super.addRepositoryConfig(config);
+		}
 		part.renameTo(configFile);
 	}
 
@@ -434,7 +440,11 @@ public class LocalRepositoryManager extends RepositoryManager {
 		throws RepositoryException,
 		RepositoryConfigException
 	{
-		boolean removed = super.removeRepository(repositoryID);
+		return removeRepository(repositoryID, true);
+	}
+
+	private boolean removeRepository(String repositoryID, boolean updateSystem) {
+		boolean removed = updateSystem ? super.removeRepository(repositoryID) : false;
 		File dataDir = getRepositoryDir(repositoryID);
 		if (dataDir.isDirectory()) {
 			logger.debug("Cleaning up data dir {} for repository {}", dataDir.getAbsolutePath(),
@@ -445,6 +455,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 			catch (IOException e) {
 				throw new RepositoryConfigException(e);
 			}
+			return true;
 		}
 		return removed;
 	}
@@ -578,6 +589,9 @@ public class LocalRepositoryManager extends RepositoryManager {
 								try {
 									if (isRepositoryConfigContext(cleanupCon, context)) {
 										String repositoryID = getRepositoryID(cleanupCon, context);
+										if (SystemRepository.ID.equals(repositoryID)) {
+											continue;
+										}
 										logger.debug("Reacting to modified repository config for {}",
 												repositoryID);
 										Repository repository = removeInitializedRepository(repositoryID);
@@ -612,6 +626,22 @@ public class LocalRepositoryManager extends RepositoryManager {
 					catch (RepositoryException re) {
 						logger.error("Failed to process repository configuration changes", re);
 					}
+				}
+			}
+			// update config.ttl files with what is now in SYSTEM repository
+			SystemRepository systemRepository = getSystemRepository();
+			for (String repositoryID : RepositoryConfigUtil.getRepositoryIDs(systemRepository)) {
+				if (!SystemRepository.ID.equals(repositoryID)) {
+					addRepositoryConfig(
+							RepositoryConfigUtil.getRepositoryConfig(con.getRepository(), repositoryID),
+							false);
+				}
+			}
+			for (String repositoryID : getRepositoryIDs()) {
+				if (!SystemRepository.ID.equals(repositoryID)
+						&& !RepositoryConfigUtil.hasRepositoryConfig(systemRepository, repositoryID))
+				{
+					removeRepository(repositoryID, false);
 				}
 			}
 		}

@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.repository.manager;
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsEqual.equalTo;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
@@ -17,6 +18,9 @@ import static org.junit.Assert.assertTrue;
 import java.io.File;
 import java.io.IOException;
 
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.Repository;
@@ -24,6 +28,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.sail.config.ProxyRepositoryConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
@@ -191,5 +196,67 @@ public class LocalRepositoryManagerTest {
 		manager.removeRepository(PROXY_ID);
 		assertThat(manager.hasRepositoryConfig(PROXY_ID), is(equalTo(false)));
 		assertThat(manager.isSafeToRemove(TEST_REPO), is(equalTo(true)));
+	}
+
+	@Test
+	public void testAddToSystemRepository() {
+		RepositoryConfig config = manager.getRepositoryConfig(TEST_REPO);
+		manager.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
+		manager.shutDown();
+		manager = new LocalRepositoryManager(datadir);
+		manager.initialize();
+		try (RepositoryConnection con = manager.getSystemRepository().getConnection()) {
+			Model model = new TreeModel();
+			config.setID("changed");
+			config.export(model, con.getValueFactory().createBNode());
+			con.begin();
+			con.add(model, con.getValueFactory().createBNode());
+			con.commit();
+		}
+		assertTrue(manager.hasRepositoryConfig("changed"));
+	}
+
+	@Test
+	public void testModifySystemRepository() {
+		RepositoryConfig config = manager.getRepositoryConfig(TEST_REPO);
+		manager.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
+		manager.shutDown();
+		manager = new LocalRepositoryManager(datadir);
+		manager.initialize();
+		try (RepositoryConnection con = manager.getSystemRepository().getConnection()) {
+			Model model = new TreeModel();
+			config.setTitle("Changed");
+			config.export(model, con.getValueFactory().createBNode());
+			Resource ctx = RepositoryConfigUtil.getContext(con, config.getID());
+			con.begin();
+			con.clear(ctx);
+			con.add(model, ctx == null ? con.getValueFactory().createBNode() : ctx);
+			con.commit();
+		}
+		assertEquals("Changed", manager.getRepositoryConfig(TEST_REPO).getTitle());
+	}
+
+	@Test
+	public void testRemoveFromSystemRepository() {
+		RepositoryConfig config = manager.getRepositoryConfig(TEST_REPO);
+		manager.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
+		manager.shutDown();
+		manager = new LocalRepositoryManager(datadir);
+		manager.initialize();
+		try (RepositoryConnection con = manager.getSystemRepository().getConnection()) {
+			Model model = new TreeModel();
+			config.setID("changed");
+			config.export(model, con.getValueFactory().createBNode());
+			con.begin();
+			con.add(model, con.getValueFactory().createBNode());
+			con.commit();
+		}
+		assertTrue(manager.hasRepositoryConfig("changed"));
+		try (RepositoryConnection con = manager.getSystemRepository().getConnection()) {
+			con.begin();
+			con.clear(RepositoryConfigUtil.getContext(con, config.getID()));
+			con.commit();
+		}
+		assertFalse(manager.hasRepositoryConfig(config.getID()));
 	}
 }

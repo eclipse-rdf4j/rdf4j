@@ -253,7 +253,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	{
 		// update SYSTEM repository if there is one for 2.2 compatibility
 		Repository systemRepository = getSystemRepository();
-		if (systemRepository != null) {
+		if (systemRepository != null && !SystemRepository.ID.equals(config.getID())) {
 			RepositoryConfigUtil.updateRepositoryConfigs(systemRepository, config);
 		}
 	}
