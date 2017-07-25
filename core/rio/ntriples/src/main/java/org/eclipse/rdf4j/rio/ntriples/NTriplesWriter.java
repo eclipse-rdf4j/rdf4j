@@ -46,9 +46,9 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 
 	protected boolean writingStarted;
 
-	private Boolean xsdStringToPlainLiteral;
+	private boolean xsdStringToPlainLiteral = true;
 
-	private Boolean escapeUnicode;
+	private boolean escapeUnicode;
 
 	/*--------------*
 	 * Constructors *
@@ -191,11 +191,11 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-	private void writeIRI(IRI Iri)
+	private void writeIRI(IRI iri)
 		throws IOException
 	{
 		writer.append("<");
-		writeString(Iri.stringValue());
+		writeString(iri.stringValue());
 		writer.append(">");
 	}
 
