@@ -33,7 +33,6 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.util.NonSerializables;
 
 /**
  * Model implementation for a {@link org.eclipse.rdf4j.sail.SailConnection}. All
