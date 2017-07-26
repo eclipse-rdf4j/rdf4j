@@ -103,7 +103,7 @@ public class URIUtil {
 
 		if (lastNsChar == '#') {
 			// correct split if namespace has no other '#'
-			return namespace.lastIndexOf('#', nsLength - 2) == -1;
+			return namespace.lastIndexOf('#', nsLength - 2) == -1 && localName.indexOf('#') == -1;
 		}
 		else if (lastNsChar == '/') {
 			// correct split if local name has no '/' and URI contains no '#'
