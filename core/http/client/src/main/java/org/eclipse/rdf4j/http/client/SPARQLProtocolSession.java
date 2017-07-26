@@ -94,8 +94,6 @@ import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Joiner;
-
 /**
  * The SPARQLProtocolSession provides low level HTTP methods for communication with SPARQL endpoints. All
  * methods are compliant to the <a href="https://www.w3.org/TR/sparql11-protocol/">SPARQL 1.1 Protocol W3C
@@ -150,11 +148,6 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 	private final int maximumUrlLength;
 
 	final Logger logger = LoggerFactory.getLogger(this.getClass());
-
-	/**
-	 * shared instance of a {@link Joiner} for creating a comma-separated string.
-	 */
-	private static final Joiner commaJoiner = Joiner.on(", ");
 
 	/*-----------*
 	 * Variables *
@@ -828,7 +821,7 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 			}
 		}
 
-		method.addHeader(ACCEPT_PARAM_NAME, commaJoiner.join(acceptValues));
+		method.addHeader(ACCEPT_PARAM_NAME, String.join(", ", acceptValues));
 
 		try {
 			return executeOK(method);
@@ -966,7 +959,7 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 		List<String> acceptParams = RDFFormat.getAcceptParams(rdfFormats, requireContext,
 				getPreferredRDFFormat());
 
-		method.addHeader(ACCEPT_PARAM_NAME, commaJoiner.join(acceptParams));
+		method.addHeader(ACCEPT_PARAM_NAME, String.join(", ", acceptParams));
 
 		try {
 			return executeOK(method);
@@ -1047,7 +1040,7 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 			}
 		}
 
-		method.addHeader(ACCEPT_PARAM_NAME, commaJoiner.join(acceptValues));
+		method.addHeader(ACCEPT_PARAM_NAME, String.join(", ", acceptValues));
 
 		return executeOK(method);
 	}
