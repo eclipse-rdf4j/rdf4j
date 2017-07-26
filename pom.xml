@@ -49,6 +49,8 @@
 	</licenses>
 
 	<modules>
+		<module>client</module>
+		<module>store</module>
 		<module>core</module>
 		<module>testsuites</module>
 		<module>compliance</module>
