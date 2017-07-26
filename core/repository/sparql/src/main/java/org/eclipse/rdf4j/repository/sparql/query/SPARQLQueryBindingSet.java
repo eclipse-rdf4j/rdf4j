@@ -88,7 +88,6 @@ public class SPARQLQueryBindingSet extends AbstractBindingSet {
 	}
 
 	public void setBinding(String name, Value value) {
-		assert value != null : "null value for variable " + name;
 		bindings.put(name, value);
 	}
 

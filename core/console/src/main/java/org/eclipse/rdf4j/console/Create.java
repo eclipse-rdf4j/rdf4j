@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.Repository;
@@ -94,10 +95,9 @@ public class Create implements Command {
 				boolean eof = inputParameters(valueMap, variableMap, configTemplate.getMultilineMap());
 				if (!eof) {
 					final String configString = configTemplate.render(valueMap);
-					final Repository systemRepo = this.state.getManager().getSystemRepository();
 					final Model graph = new LinkedHashModel();
 					final RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE,
-							systemRepo.getValueFactory());
+							SimpleValueFactory.getInstance());
 					rdfParser.setRDFHandler(new StatementCollector(graph));
 					rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);
 					final Resource repositoryNode = Models.subject(
@@ -106,7 +106,7 @@ public class Create implements Command {
 					final RepositoryConfig repConfig = RepositoryConfig.create(graph, repositoryNode);
 					repConfig.validate();
 					String overwrite = "WARNING: you are about to overwrite the configuration of an existing repository!";
-					boolean proceedOverwrite = RepositoryConfigUtil.hasRepositoryConfig(systemRepo,
+					boolean proceedOverwrite = this.state.getManager().hasRepositoryConfig(
 							repConfig.getID()) ? consoleIO.askProceed(overwrite, false) : true;
 					String suggested = this.state.getManager().getNewRepositoryID(repConfig.getID());
 					String invalid = "WARNING: There are potentially incompatible characters in the repository id.";
@@ -114,12 +114,12 @@ public class Create implements Command {
 							? consoleIO.askProceed(invalid, false) : true;
 					if (proceedInvalid && proceedOverwrite) {
 						try {
-							RepositoryConfigUtil.updateRepositoryConfigs(systemRepo, repConfig);
+							this.state.getManager().addRepositoryConfig(repConfig);
 							consoleIO.writeln("Repository created");
 						}
 						catch (RepositoryReadOnlyException e) {
-							if (lockRemover.tryToRemoveLock(systemRepo)) {
-								RepositoryConfigUtil.updateRepositoryConfigs(systemRepo, repConfig);
+							if (lockRemover.tryToRemoveLock(this.state.getManager().getSystemRepository())) {
+								this.state.getManager().addRepositoryConfig(repConfig);
 								consoleIO.writeln("Repository created");
 							}
 							else {
