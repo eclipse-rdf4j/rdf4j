@@ -35,10 +35,18 @@ public class NQuadsWriterFactory implements RDFWriterFactory {
 		return new NQuadsWriter(out);
 	}
 
+	public RDFWriter getWriter(OutputStream out, String baseURI) {
+		return getWriter(out);
+	}
+
 	/**
 	 * Returns a new instance of {@link NQuadsWriter}.
 	 */
 	public RDFWriter getWriter(Writer writer) {
 		return new NQuadsWriter(writer);
+	}
+
+	public RDFWriter getWriter(Writer writer, String baseURI) {
+		return getWriter(writer);
 	}
 }
