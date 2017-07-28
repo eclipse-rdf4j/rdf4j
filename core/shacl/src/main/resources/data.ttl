@@ -6,7 +6,11 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-
-ex:person1
+ex:Håvard
 	a ex:Person ;
-	ex:ssn "a" .
+	ex:name "Håvard" .
+
+ex:Heshan
+	a ex:Person ;
+	ex:name "heshan" .
+

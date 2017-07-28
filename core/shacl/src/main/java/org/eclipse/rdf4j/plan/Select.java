@@ -1,47 +1,70 @@
 package org.eclipse.rdf4j.plan;
 
-import java.util.Collection;
-import java.util.Iterator;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.validation.ShaclSailConnection;
 
 /**
  * Created by heshanjayasinghe on 7/18/17.
  */
 public class Select implements PlanNode {
-    PlanNode planNode;
 
-    public Select(PlanNode planNode) {
-        this.planNode = planNode;
+    ShaclSailConnection shaclSailConnection;
+    Resource type;
+
+    public Select(ShaclSailConnection shaclSailConnection, Resource type) {
+        this.shaclSailConnection =shaclSailConnection;
+        this.type=type;
     }
 
 
     @Override
-    public Iterator<Tuple> iterator() {
+    public CloseableIteration<Tuple,SailException> iterator(){
+        CloseableIteration<? extends Statement, SailException> statements = shaclSailConnection.getStatements(null, RDF.TYPE, type, false);
+        return new CloseableIteration<Tuple,SailException>() {
 
-        return new Iterator<Tuple>() {
+            @Override
+            public void close() throws SailException {
+                statements.close();
+            }
 
             int counter = 0;
 
             @Override
             public boolean hasNext() {
-
-               return ((Collection<?>)planNode).size() >counter;
+               return statements.hasNext();
             }
 
             @Override
             public Tuple next() {
 
-//                String string = dataSource.strings[counter];
-//                PlanNode elements = ((Collection<?>)planNode).
-               counter++;
+                Statement next = statements.next();
                 Tuple tuple = new Tuple();
-//                tuple.line.add(string);
+                tuple.line.add(next.getSubject());
+
+               counter++;
+
                 return tuple;
+            }
+
+            @Override
+            public void remove() throws SailException {
+
             }
         };
     }
 
     @Override
     public boolean validate() {
-        return false;
+//        for (PlanNode pnode : planNodes) {
+//            System.out.println(pnode);
+//            if(!pnode.validate()){//plan validate logic;
+//                return false;
+//            }
+//        }
+        return true;
     }
 }

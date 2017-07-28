@@ -6,20 +6,18 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.plan.PlanNode;
 import org.eclipse.rdf4j.plan.Select;
-import org.eclipse.rdf4j.plan.Tuple;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.validation.ShaclSailConnection;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
  * Created by heshanjayasinghe on 6/10/17.
  */
-public class Shape implements PlanGenerator , Iterable<Tuple> {
+public class Shape implements PlanGenerator  {
     Resource id;
     List<PropertyShape> propertyShapes;
     TargetClass targetClass;
@@ -32,21 +30,27 @@ public class Shape implements PlanGenerator , Iterable<Tuple> {
     }
 
     @Override
-    public Select getPlan() {
+    public Select getPlan(ShaclSailConnection shaclSailConnection,Shape shape) {
+       // return new Select(shaclSailConnection.sail.newStatements.);
         return null;
     }
 
-    public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection) {
+    public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, Shape shape) {
         return propertyShapes
            .stream()
-                .map(propertyShape -> propertyShape.getPlan())
+                .map(pathpropertyShape -> pathpropertyShape.getPlan(shaclSailConnection,shape))
                 .collect(Collectors.toList());
      }
 
-    @Override
-    public Iterator<Tuple> iterator() {
-        return null;
-    }
+//    @Override
+//    public Iterator<Tuple> iterator() {
+//        return null;
+//    }
+//
+//    @Override
+//    public boolean validate() {
+//        return false;
+//    }
 
     public static class Factory {
 

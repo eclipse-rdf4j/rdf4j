@@ -6,6 +6,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.plan.Select;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.validation.ShaclSailConnection;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,7 +14,7 @@ import java.util.List;
 /**
  * Created by heshanjayasinghe on 6/10/17.
  */
-public class PropertyShape implements PlanGenerator{
+public class PropertyShape implements PlanGenerator {
     Resource id;
     SailRepositoryConnection connection;
 
@@ -24,9 +25,20 @@ public class PropertyShape implements PlanGenerator{
     }
 
     @Override
-    public Select getPlan() {
+    public Select getPlan(ShaclSailConnection shaclSailConnection,Shape shape) {
+
         throw  new IllegalStateException("Should never get here!!!");
     }
+
+//    @Override
+//    public boolean validate() {
+//        return true;
+//    }
+//
+//    @Override
+//    public Iterator<Tuple> iterator() {
+//        return null;
+//    }
 
 
     public static class Factory {
@@ -42,15 +54,7 @@ public class PropertyShape implements PlanGenerator{
                     ret.add(new MinCountPropertyShape(propertyShapeId, connection));
                     System.out.println("okkkkkk");
                 }
-
                 System.out.println(ret.size());
-//            if (!hasMaxCount(propertyShapeId, connection, ret)) {
-//                ret.add(new MaxCountPropertyShape(propertyShapeId, connection));
-//            }
-
-//            if(!haspath(propertyShapeId, connection)){
-//                ret.add((Path)new PathPropertyShape(propertyShapeId, connection).getPaths());
-//            }
             }
                 return ret;
 

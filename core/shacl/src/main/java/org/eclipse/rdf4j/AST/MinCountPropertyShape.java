@@ -8,6 +8,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.plan.*;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.validation.ShaclSailConnection;
 
 import java.util.Iterator;
 
@@ -35,10 +36,10 @@ public class MinCountPropertyShape extends PathPropertyShape implements Iterable
     }
 
 
-    public Select getPlan(Condition condition) {
+    public Select getPlan(ShaclSailConnection shaclSailConnection,Condition condition,Shape shape) {
+        PlanNode instancesOfTargetClass = shape.getPlan(shaclSailConnection,shape);
+        PlanNode properties = (PlanNode) super.getPlan(shaclSailConnection,shape);
 
-        PlanNode properties = (PlanNode) super.getPlan();
-        PlanNode instancesOfTargetClass = shape.getPlan();
 
         PlanNode join =  new OuterLeftJoin(instancesOfTargetClass, properties); //condition
 
@@ -47,17 +48,17 @@ public class MinCountPropertyShape extends PathPropertyShape implements Iterable
         PlanNode count = new Count(groupBy); //condition
 
 
-        Select validate = ValidateMinCount(count, minCount);
-
-
-        return validate;
+//        Select validate = ValidateMinCount(count, minCount);
+//        return validate;
+        return null;
     }
 
-    private Select ValidateMinCount(PlanNode count, int minCount) {
-        PlanNode minCountValidator = new MinCountValidator(count,minCount);
-        minCountValidator.validate();
-        return new Select(count);
-    }
+//    private Select ValidateMinCount(PlanNode count, int minCount) {
+//        PlanNode minCountValidator = new MinCountValidator(count,minCount);
+//        minCountValidator.validate();
+//       // return new Select(count);
+//        return  new Select(count);
+//    }
 
 
     @Override

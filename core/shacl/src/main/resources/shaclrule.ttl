@@ -14,7 +14,7 @@ ex:PersonShape
 	a sh:Shape ;
 	sh:targetClass ex:Person ;
 	sh:property [
-		sh:path ex:ssn ;
+		sh:path ex:name ;
 		sh:minCount 1 ;
 
 	] .
