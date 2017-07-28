@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j;
 
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -46,10 +47,10 @@ public class Main {
 			RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
 			rdfParser.setRDFHandler(new StatementCollector(){
 				@Override
-				public void handleStatement(Statement st) {
-					//sailRepositoryConnection.begin();
-					sailRepositoryConnection.add(st);
-					//sailRepositoryConnection.commit();
+				public void handleStatement(Statement statement) {
+					sailRepositoryConnection.begin();
+					sailRepositoryConnection.add(statement);
+					sailRepositoryConnection.commit();
 					//sailRepositoryConnection.close();
 				}
 
@@ -57,13 +58,13 @@ public class Main {
 
 			String filename = "data.ttl";
 			InputStream input = ShaclSail.class.getResourceAsStream("/" + filename);
-			rdfParser.parse(input, "");
-//			RepositoryResult<Statement> result = sailRepositoryConnection.getStatements(null, null, null);
-//			while (result.hasNext()) {
-//				Statement st = result.next();
-//
-//				System.out.println("db contains: " + st + " : " + st.getPredicate().getLocalName());
-//			}
+			rdfParser.parse(input, SHACL.NAMESPACE);
+			RepositoryResult<Statement> result = sailRepositoryConnection.getStatements(null, null, null);
+			while (result.hasNext()) {
+				Statement st = result.next();
+
+				System.out.println("db contains: " + st + " : " + st.getPredicate().getLocalName());
+			}
 
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();

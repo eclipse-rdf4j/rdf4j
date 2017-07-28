@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.validation;
 
+import org.eclipse.rdf4j.AST.Shape;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.TreeModel;
@@ -12,7 +13,7 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
  */
 public class ShaclSailConnection extends NotifyingSailConnectionWrapper{
 
-	private ShaclSail sail;
+	public ShaclSail sail;
 
 	public ShaclSailConnection(ShaclSail shaclSail, NotifyingSailConnection connection) {
 		super(connection);
@@ -28,7 +29,20 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper{
 	public void commit() throws SailException {
 		super.commit();
 
-		sail.validate(this);
+		//sail.validate(this);
+
+		for (Shape shape : sail.shapes) {
+				shape.getPlan(this,shape);
+		}
+//            System.out.println(shape);
+//            List<PlanNode> plans = shape.generatePlans(shaclSailConnection,shape);
+//
+//            for (PlanNode v : plans) {
+//                System.out.println(v);
+//                if(!v.validate()){//plan validate logic;
+//                    throw new RuntimeException("Invalid repo");
+//                }
+//            }
 
 	}
 

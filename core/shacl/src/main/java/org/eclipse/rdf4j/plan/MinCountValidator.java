@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.plan;
 
-import java.util.Iterator;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Created by heshanjayasinghe on 7/20/17.
@@ -20,7 +21,7 @@ public class MinCountValidator implements PlanNode{
     }
 
     @Override
-    public Iterator<Tuple> iterator() {
+    public CloseableIteration<Tuple, SailException> iterator() {
         return null;
     }
 

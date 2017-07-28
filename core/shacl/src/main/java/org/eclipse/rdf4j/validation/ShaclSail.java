@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.validation;
 
+import org.eclipse.rdf4j.AST.PropertyShape;
 import org.eclipse.rdf4j.AST.Shape;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Model;
@@ -9,7 +10,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.plan.PlanNode;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -28,8 +28,9 @@ import java.util.stream.Collectors;
  */
 public class ShaclSail extends NotifyingSailWrapper {
 
-    List<Shape> shapes;
-    private Model newStatements;
+    public List<Shape> shapes;
+    public List<PropertyShape> propertyShapes;
+    public Model newStatements;
     private boolean statementsRemoved;
     private SailRepository shacl;
 
@@ -47,7 +48,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 
         try(SailRepositoryConnection connection = shacl.getConnection()){
             shapes = Shape.Factory.getShapes(connection);
-
         }
     }
 
@@ -110,23 +110,19 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 
     public void validate(ShaclSailConnection shaclSailConnection) {
-//        try(SailRepositoryConnection connection = shacl.getConnection()){
-//            shapes = Shape.Factory.getShapes(connection);
+
+//        for (Shape shape : shapes) {
+//            System.out.println(shape);
+//            List<PlanNode> plans = shape.generatePlans(shaclSailConnection,shape);
+//
+//            for (PlanNode v : plans) {
+//                System.out.println(v);
+//                if(!v.validate()){//plan validate logic;
+//                    throw new RuntimeException("Invalid repo");
+//                }
+//            }
 //
 //        }
-
-        for (Shape shape : shapes) {
-            System.out.println(shape);
-            List<PlanNode> plans = shape.generatePlans(shaclSailConnection);
-
-            for (PlanNode v : plans) {
-                System.out.println(v);
-                if(!v.validate()){//plan validate logic;
-                    throw new RuntimeException("Invalid repo");
-                }
-            }
-
-        }
 
 
     }

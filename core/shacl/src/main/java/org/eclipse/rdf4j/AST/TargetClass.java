@@ -2,12 +2,14 @@ package org.eclipse.rdf4j.AST;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.plan.Select;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.validation.ShaclSailConnection;
 
 /**
  * Created by heshanjayasinghe on 6/10/17.
  */
-public class TargetClass extends Shape {
+public class TargetClass extends Shape implements PlanGenerator{
     Resource id;
     SailRepositoryConnection connection;
     Resource targetClass;
@@ -22,8 +24,14 @@ public class TargetClass extends Shape {
         }
     }
 
-//    @Override
-//    public Select getPlan() {
-//        return new Select(new Shape(id,connection).generatePlans());
-//    }
+    @Override
+    public Select getPlan(ShaclSailConnection shaclSailConnection,Shape shape) {
+      //  return null;
+        Select select =new Select(shaclSailConnection,targetClass);
+        if (select.iterator().hasNext()){
+            select.iterator().next();
+        }
+       // return new Select(shape.generatePlans(shaclSailConnection,shape));
+        return select;
+    }
 }
