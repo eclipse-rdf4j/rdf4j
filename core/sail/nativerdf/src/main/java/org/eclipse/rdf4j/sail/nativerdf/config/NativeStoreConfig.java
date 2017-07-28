@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.nativerdf.config;
 
 import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.FORCE_SYNC;
+import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.NAMESPACE;
 import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.NAMESPACE_CACHE_SIZE;
 import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.NAMESPACE_ID_CACHE_SIZE;
 import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.TRIPLE_INDEXES;
@@ -119,6 +120,7 @@ public class NativeStoreConfig extends BaseSailConfig {
 		Resource implNode = super.export(m);
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
+		m.setNamespace("ns", NAMESPACE);
 		if (tripleIndexes != null) {
 			m.add(implNode, TRIPLE_INDEXES, vf.createLiteral(tripleIndexes));
 		}

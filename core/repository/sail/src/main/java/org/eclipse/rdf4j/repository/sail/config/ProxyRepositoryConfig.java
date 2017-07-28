@@ -50,6 +50,7 @@ public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 	public Resource export(Model model) {
 		Resource implNode = super.export(model);
 		if (null != this.proxiedID) {
+			model.setNamespace("proxy", ProxyRepositorySchema.NAMESPACE);
 			model.add(implNode, ProxyRepositorySchema.PROXIED_ID,
 					SimpleValueFactory.getInstance().createLiteral(this.proxiedID));
 		}

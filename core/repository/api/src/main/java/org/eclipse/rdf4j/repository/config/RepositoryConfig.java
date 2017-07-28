@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.config;
 
+import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.NAMESPACE;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORY;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYID;
 import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYIMPL;
@@ -19,6 +20,7 @@ import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
  * @author Arjohn Kampman
@@ -131,6 +133,9 @@ public class RepositoryConfig {
 	 */
 	public void export(Model model, Resource repositoryNode) {
 		ValueFactory vf = SimpleValueFactory.getInstance();
+		model.setNamespace(RDFS.NS);
+		model.setNamespace(XMLSchema.NS);
+		model.setNamespace("rep", NAMESPACE);
 		model.add(repositoryNode, RDF.TYPE, REPOSITORY);
 
 		if (id != null) {
