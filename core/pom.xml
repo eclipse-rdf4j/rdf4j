@@ -36,6 +36,29 @@
 	<name>RDF4J Core</name>
 	<description>Core modules for RDF4J</description>
 
+	<build>
+		<pluginManagement>
+			<plugins>
+                                <plugin>
+                                        <groupId>org.apache.maven.plugins</groupId>
+                                        <artifactId>maven-jar-plugin</artifactId>
+                                        <version>2.3.1</version>
+                                        <configuration>
+                                                <archive>
+                                                        <manifestEntries>
+								<Implementation-Title>${project.name}</Implementation-Title>
+								<Implementation-Vendor-Id>${project.groupId}</Implementation-Vendor-Id>
+								<Implementation-Vendor>${project.organization.name}</Implementation-Vendor>
+								<Implementation-Version>${project.version}+${buildNumber}</Implementation-Version>
+								<Implementation-Build>${buildNumber}</Implementation-Build>
+                                                        </manifestEntries>
+                                                </archive>
+                                        </configuration>
+                                </plugin>
+			</plugins>
+		</pluginManagement>
+	</build>
+
 	<profiles>
 		<profile>
 			<id>assembly</id>
