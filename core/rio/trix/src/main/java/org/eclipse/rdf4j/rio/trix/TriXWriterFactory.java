@@ -38,7 +38,21 @@ public class TriXWriterFactory implements RDFWriterFactory {
 	/**
 	 * Returns a new instance of {@link TriXWriter}.
 	 */
+	public RDFWriter getWriter(OutputStream out, String baseURI) {
+		return new TriXWriter(out);
+	}
+
+	/**
+	 * Returns a new instance of {@link TriXWriter}.
+	 */
 	public RDFWriter getWriter(Writer writer) {
+		return new TriXWriter(writer);
+	}
+
+	/**
+	 * Returns a new instance of {@link TriXWriter}.
+	 */
+	public RDFWriter getWriter(Writer writer, String baseURI) {
 		return new TriXWriter(writer);
 	}
 }

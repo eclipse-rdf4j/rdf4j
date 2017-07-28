@@ -14,6 +14,7 @@ import java.io.OutputStream;
 import java.io.Writer;
 import java.util.Stack;
 
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -134,6 +135,16 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	}
 
 	/**
+	 * Creates a new RDFXMLPrintWriter that will write to the supplied OutputStream.
+	 *
+	 * @param out
+	 *        The OutputStream to write the RDF/XML document to.
+	 */
+	public RDFXMLPrettyWriter(OutputStream out, ParsedIRI baseIRI) {
+		super(out, baseIRI);
+	}
+
+	/**
 	 * Creates a new RDFXMLPrintWriter that will write to the supplied Writer.
 	 * 
 	 * @param out
@@ -141,6 +152,16 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	 */
 	public RDFXMLPrettyWriter(Writer out) {
 		super(out);
+	}
+
+	/**
+	 * Creates a new RDFXMLPrintWriter that will write to the supplied Writer.
+	 *
+	 * @param out
+	 *        The Writer to write the RDF/XML document to.
+	 */
+	public RDFXMLPrettyWriter(Writer writer, ParsedIRI baseIRI) {
+		super(writer, baseIRI);
 	}
 
 	/*---------*

@@ -49,6 +49,8 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 
 	private final StatementCollector statementCollector = new StatementCollector(model);
 
+	private final String baseURI;
+
 	private final Writer writer;
 
 	/**
@@ -58,7 +60,17 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	 *        The OutputStream to write to.
 	 */
 	public JSONLDWriter(OutputStream outputStream) {
-		this(new BufferedWriter(new OutputStreamWriter(outputStream, Charset.forName("UTF-8"))));
+		this(outputStream, null);
+	}
+
+	/**
+	 * Create a SesameJSONLDWriter using a {@link java.io.OutputStream}
+	 *
+	 * @param outputStream
+	 *        The OutputStream to write to.
+	 */
+	public JSONLDWriter(OutputStream outputStream, String baseURI) {
+		this(new BufferedWriter(new OutputStreamWriter(outputStream, Charset.forName("UTF-8"))), baseURI);
 	}
 
 	/**
@@ -68,6 +80,17 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	 *        The Writer to write to.
 	 */
 	public JSONLDWriter(Writer writer) {
+		this(writer, null);
+	}
+
+	/**
+	 * Create a SesameJSONLDWriter using a {@link java.io.Writer}
+	 *
+	 * @param writer
+	 *        The Writer to write to.
+	 */
+	public JSONLDWriter(Writer writer, String baseURI) {
+		this.baseURI = baseURI;
 		this.writer = writer;
 	}
 
@@ -103,6 +126,9 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 			opts.setUseNativeTypes(getWriterConfig().get(JSONLDSettings.USE_NATIVE_TYPES));
 			// opts.optimize = getWriterConfig().get(JSONLDSettings.OPTIMIZE);
 
+			if (baseURI != null && getWriterConfig().get(BasicWriterSettings.BASE_DIRECTIVE)) {
+				opts.setBase(baseURI);
+			}
 			if (mode == JSONLDMode.EXPAND) {
 				output = JsonLdProcessor.expand(output, opts);
 			}
