@@ -15,7 +15,7 @@ public class Main2 {
         MinCountPropertyShape minCountPropertyShape = new MinCountPropertyShape(null,null);
         minCountPropertyShape.minCount = 1;
         Path path = new Path(null,null);
-        path.path = vf.createIRI("http://example.org/ssn");
+       // path.path = vf.createIRI("http://example.org/ssn");
         minCountPropertyShape.path =path;
     }
 }

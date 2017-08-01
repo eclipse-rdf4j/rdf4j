@@ -30,7 +30,7 @@ public class Shape implements PlanGenerator  {
     }
 
     @Override
-    public Select getPlan(ShaclSailConnection shaclSailConnection,Shape shape) {
+    public Select getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
        // return new Select(shaclSailConnection.sail.newStatements.);
         return null;
     }

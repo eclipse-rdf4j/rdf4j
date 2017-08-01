@@ -8,5 +8,5 @@ import org.eclipse.rdf4j.validation.ShaclSailConnection;
  * Created by heshanjayasinghe on 7/11/17.
  */
 public interface PlanGenerator {
-    Select getPlan(ShaclSailConnection shaclSailConnection,Shape shape);
+    Select getPlan(ShaclSailConnection shaclSailConnection, Shape shape);
 }
