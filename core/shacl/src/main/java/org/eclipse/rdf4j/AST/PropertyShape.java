@@ -25,7 +25,7 @@ public class PropertyShape implements PlanGenerator {
     }
 
     @Override
-    public Select getPlan(ShaclSailConnection shaclSailConnection,Shape shape) {
+    public  Select getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
 
         throw  new IllegalStateException("Should never get here!!!");
     }

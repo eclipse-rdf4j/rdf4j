@@ -32,8 +32,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper{
 		//sail.validate(this);
 
 		for (Shape shape : sail.shapes) {
-				shape.getPlan(this,shape);
+			//	shape.getPlan(this,shape);
+				shape.generatePlans(this,shape);
 		}
+
 //            System.out.println(shape);
 //            List<PlanNode> plans = shape.generatePlans(shaclSailConnection,shape);
 //

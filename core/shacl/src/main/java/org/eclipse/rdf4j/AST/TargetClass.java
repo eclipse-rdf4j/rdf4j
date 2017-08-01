@@ -25,13 +25,13 @@ public class TargetClass extends Shape implements PlanGenerator{
     }
 
     @Override
-    public Select getPlan(ShaclSailConnection shaclSailConnection,Shape shape) {
+    public Select getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
       //  return null;
         Select select =new Select(shaclSailConnection,targetClass);
-        if (select.iterator().hasNext()){
-            select.iterator().next();
-        }
-       // return new Select(shape.generatePlans(shaclSailConnection,shape));
+//        if (select.iterator().hasNext()){
+//            select.iterator().next();
+//        }
+      //  return new Select(shape.generatePlans(shaclSailConnection,shape));
         return select;
     }
 }

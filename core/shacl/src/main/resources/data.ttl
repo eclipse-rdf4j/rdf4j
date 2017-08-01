@@ -8,9 +8,9 @@
 
 ex:Håvard
 	a ex:Person ;
-	ex:name "Håvard" .
+	ex:name "Håvard Ottestad" .
 
 ex:Heshan
 	a ex:Person ;
-	ex:name "heshan" .
+	ex:name "heshan Jayasinghe" .
 

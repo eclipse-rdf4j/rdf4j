@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.validation.ShaclSailConnection;
  */
 public class Select implements PlanNode {
 
-    ShaclSailConnection shaclSailConnection;
+    public ShaclSailConnection shaclSailConnection;
     Resource type;
 
     public Select(ShaclSailConnection shaclSailConnection, Resource type) {
@@ -56,6 +56,16 @@ public class Select implements PlanNode {
             }
         };
     }
+
+//    public MinCountPropertyShape getmincount(){
+//        List<PropertyShape> propertyShapes = shaclSailConnection.sail.shapes;
+//        for (PropertyShape propertyShape : propertyShapes) {
+//            shape.getPlan(this,shape);
+//        }
+//
+//
+//    }
+
 
     @Override
     public boolean validate() {
