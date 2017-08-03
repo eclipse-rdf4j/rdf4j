@@ -7,12 +7,11 @@ import org.eclipse.rdf4j.sail.SailException;
  * Created by heshanjayasinghe on 7/17/17.
  */
 public class GroupBy implements PlanNode{
-    private final Condition condition;
-    PlanNode above;
+    PlanNode leftjoinnode;
 
-    public GroupBy(PlanNode outerLeftJoin, Condition condition){
-        above = outerLeftJoin;
-        this.condition = condition;
+    public GroupBy(PlanNode outerLeftJoin){
+        leftjoinnode = outerLeftJoin;
+       // Iterator<Tuple> aboveIterator = (Iterator<Tuple>) leftjoinnode.iterator();
     }
 
     @Override

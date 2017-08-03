@@ -41,13 +41,13 @@ public class MinCountPropertyShape extends PathPropertyShape implements Iterable
         PlanNode instancesOfTargetClass = shape.getPlan(shaclSailConnection,shape);
         PlanNode properties = super.getPlan(shaclSailConnection,shape);
 
-        Tuple targetclasstuple = instancesOfTargetClass.iterator().next();
-        Tuple propertyTuple = ((Select) properties).shaclSailConnection.sail.newStatements;
+        //Tuple targetclasstuple = instancesOfTargetClass.iterator().next();
+       // Tuple propertyTuple = ((Select) properties).shaclSailConnection.sail.newStatements;
         PlanNode join =  new OuterLeftJoin(instancesOfTargetClass, properties); //condition
 
-     //   PlanNode groupBy = new GroupBy(join, condition); //condition
+        PlanNode groupBy = new GroupBy(join); //condition
 
-     //   PlanNode count = new Count(groupBy); //condition
+        PlanNode count = new Count(groupBy); //condition
 
 
 //        Select validate = ValidateMinCount(count, minCount);
