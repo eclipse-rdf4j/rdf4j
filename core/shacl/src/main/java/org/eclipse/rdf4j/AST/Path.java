@@ -8,7 +8,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 /**
  * Created by heshanjayasinghe on 6/10/17.
  */
-public class Path implements Resource {
+public class Path {
     Resource path;
     Resource id;
     SailRepositoryConnection connection;
@@ -31,8 +31,5 @@ public class Path implements Resource {
                 '}';
     }
 
-    @Override
-    public String stringValue() {
-        return null;
-    }
+
 }

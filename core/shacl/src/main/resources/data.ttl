@@ -6,11 +6,13 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-ex:Håvard
-	a ex:Person ;
-	ex:name "Håvard Ottestad" .
+ex:Håvard a ex:Person ;
+	ex:name "Håvard Ottestad";
+	ex:name "Håvardeeeee Ottestad" .
 
 ex:Heshan
 	a ex:Person ;
 	ex:name "heshan Jayasinghe" .
+	
+
 

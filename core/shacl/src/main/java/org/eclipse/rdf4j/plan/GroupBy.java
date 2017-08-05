@@ -3,6 +3,8 @@ package org.eclipse.rdf4j.plan;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
+import java.util.Iterator;
+
 /**
  * Created by heshanjayasinghe on 7/17/17.
  */
@@ -11,7 +13,7 @@ public class GroupBy implements PlanNode{
 
     public GroupBy(PlanNode outerLeftJoin){
         leftjoinnode = outerLeftJoin;
-       // Iterator<Tuple> aboveIterator = (Iterator<Tuple>) leftjoinnode.iterator();
+        Iterator<Tuple> aboveIterator = (Iterator<Tuple>) leftjoinnode.iterator();
     }
 
     @Override

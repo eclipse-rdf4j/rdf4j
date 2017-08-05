@@ -60,11 +60,11 @@ public class Main {
 			InputStream input = ShaclSail.class.getResourceAsStream("/" + filename);
 			rdfParser.parse(input, SHACL.NAMESPACE);
 			RepositoryResult<Statement> result = sailRepositoryConnection.getStatements(null, null, null);
-//			while (result.hasNext()) {
-//				Statement st = result.next();
-//
-//				System.out.println("db contains: " + st + " : " + st.getPredicate().getLocalName());
-//			}
+			while (result.hasNext()) {
+				Statement st = result.next();
+
+				System.out.println("db contains: " + st + " : " + st.getPredicate().getLocalName());
+			}
 
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();

@@ -10,12 +10,10 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.validation.ShaclSailConnection;
 
-import java.util.Iterator;
-
 /**
  * Created by heshanjayasinghe on 6/10/17.
  */
-public class MinCountPropertyShape extends PathPropertyShape implements Iterable<Tuple> {
+public class MinCountPropertyShape extends PathPropertyShape  {
 
     public int minCount;
     Shape shape;
@@ -63,10 +61,6 @@ public class MinCountPropertyShape extends PathPropertyShape implements Iterable
 //    }
 
 
-    @Override
-    public Iterator<Tuple> iterator() {
-        return null;
-    }
 
 
 

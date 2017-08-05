@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.AST;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.plan.Select;
@@ -23,10 +24,9 @@ public class PathPropertyShape extends PropertyShape implements PlanGenerator {
 
     }
 
-
-    @Override
     public Select getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
-        Select select =new Select(shaclSailConnection,path);
+        Select select =new Select(shaclSailConnection, null, (IRI) path.path, null);
+
         //new MinCountPropertyShape(shape.id,)
       //  List<PropertyShape> propertyShapes = shape.propertyShapes;
 //        Tuple tuple = new Tuple();
