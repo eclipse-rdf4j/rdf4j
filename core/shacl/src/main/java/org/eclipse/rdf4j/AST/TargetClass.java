@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.AST;
 
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.plan.Select;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -27,7 +28,7 @@ public class TargetClass extends Shape implements PlanGenerator{
     @Override
     public Select getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
       //  return null;
-        Select select =new Select(shaclSailConnection,targetClass);
+        Select select =new Select(shaclSailConnection,null, RDF.TYPE,targetClass);
 //        if (select.iterator().hasNext()){
 //            select.iterator().next();
 //        }
