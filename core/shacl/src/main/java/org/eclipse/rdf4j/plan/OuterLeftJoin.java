@@ -24,50 +24,35 @@ public class OuterLeftJoin implements PlanNode {
         ArrayList<Tuple> tuplelist = new ArrayList<Tuple>();
         while (targetclass.iterator().hasNext()){
             while (properties.iterator().hasNext()){
-               // int statementlength = ((MemIRI) properties.iterator().next().line.listIterator().next()).subjectStatements.statements.length;
                 if (targetclass.iterator().next().line.get(0).stringValue().equals(properties.iterator().next().line.get(0).stringValue())){
                     Tuple tuple = new Tuple();
                     tuple.line.add((Value) targetclass.iterator().next().getlist().get(0));
                     tuple.line.add((Value) properties.iterator().next().getlist().get(0));
                     tuple.line.add((Value) properties.iterator().next().getlist().get(2));
+                    tuplelist.add(tuple);
                 }
-
-
-//                targetclass.iterator().next().line;
-//                properties.iterator().next();
-//                if (targetclass.iterator())
             }
         }
-//        while (targetclass.iterator().hasNext()){
-//          //  while(properties.iterator().next()) {
-//                Tuple targetclasstuple = targetclass.iterator().next();
-//                Tuple properytuple = properties.iterator().next();
-//                //Tuple propertyTuple = ((Select) properties).shaclSailConnection.sail.
-//          //  }
-//
-//        }
-       // CloseableIteration<String[], SailException> leftJointuple = (CloseableIteration<String[], SailException>) list.listIterator();
+
+        CloseableIteration<Tuple, SailException> leftJointuple = (CloseableIteration<Tuple, SailException>) tuplelist.listIterator();
         return new CloseableIteration<Tuple,SailException>() {
 
             @Override
             public void close() throws SailException {
-                tuplelist.close();
+                leftJointuple.close();
             }
 
             int counter = 0;
 
             @Override
             public boolean hasNext() {
-                return tuplelist.hasNext();
+                return leftJointuple.hasNext();
             }
 
             @Override
             public Tuple next() {
 
-                Statement next = leftJointuple.next();
-                Tuple tuple = new Tuple();
-                tuple.line.add(next.getSubject());
-
+                Tuple tuple = leftJointuple.next();
                 counter++;
 
                 return tuple;
