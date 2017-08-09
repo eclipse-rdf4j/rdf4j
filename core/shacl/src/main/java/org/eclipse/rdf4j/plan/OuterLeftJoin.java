@@ -23,12 +23,14 @@ public class OuterLeftJoin implements PlanNode {
     public CloseableIteration<Tuple, SailException> iterator() {
         ArrayList<Tuple> tuplelist = new ArrayList<Tuple>();
         while (targetclass.iterator().hasNext()){
+            Tuple targetclassNext = targetclass.iterator().next();
             while (properties.iterator().hasNext()){
-                if (targetclass.iterator().next().line.get(0).stringValue().equals(properties.iterator().next().line.get(0).stringValue())){
+                Tuple next = properties.iterator().next();
+                if (targetclassNext.line.get(0).stringValue().equals(next.line.get(0).stringValue())){
                     Tuple tuple = new Tuple();
-                    tuple.line.add((Value) targetclass.iterator().next().getlist().get(0));
-                    tuple.line.add((Value) properties.iterator().next().getlist().get(0));
-                    tuple.line.add((Value) properties.iterator().next().getlist().get(2));
+                    tuple.line.add((Value) targetclassNext.getlist().get(0));
+                    tuple.line.add((Value) next.getlist().get(0));
+                    tuple.line.add((Value) next.getlist().get(2));
                     tuplelist.add(tuple);
                 }
             }
