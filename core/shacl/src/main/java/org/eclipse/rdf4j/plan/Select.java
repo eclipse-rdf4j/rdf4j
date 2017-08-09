@@ -18,6 +18,7 @@ public class Select implements PlanNode {
     Resource subject;
     IRI predicate;
     Value object;
+    CloseableIteration<? extends Statement, SailException> statements;
 
 
     public Select(ShaclSailConnection shaclSailConnection, Resource type) {
@@ -30,13 +31,14 @@ public class Select implements PlanNode {
         this.subject =subject;
         this.predicate=predicate;
         this.object=object;
+        statements = shaclSailConnection.getStatements(subject, predicate, object, false);
     }
 
 
     @Override
     public CloseableIteration<Tuple,SailException> iterator(){
        // CloseableIteration<? extends Statement, SailException> statements = shaclSailConnection.getStatements(null, RDF.TYPE, type, false);
-        CloseableIteration<? extends Statement, SailException> statements = shaclSailConnection.getStatements(subject, predicate, object, false);
+
         return new CloseableIteration<Tuple,SailException>() {
 
             @Override
