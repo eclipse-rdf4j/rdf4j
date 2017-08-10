@@ -36,35 +36,32 @@ public class OuterLeftJoin implements PlanNode {
             }
         }
 
-        CloseableIteration<Tuple, SailException> leftJointuple = (CloseableIteration<Tuple, SailException>) tuplelist.listIterator();
-        return new CloseableIteration<Tuple,SailException>() {
-
+        return new CloseableIteration<Tuple, SailException>() {
+            int counter = 0;
             @Override
             public void close() throws SailException {
-                leftJointuple.close();
-            }
 
-            int counter = 0;
-
-            @Override
-            public boolean hasNext() {
-                return leftJointuple.hasNext();
             }
 
             @Override
-            public Tuple next() {
+            public boolean hasNext() throws SailException {
+                return tuplelist.size()>=counter;
+            }
 
-                Tuple tuple = leftJointuple.next();
-                counter++;
-
-                return tuple;
+            @Override
+            public Tuple next() throws SailException {
+                Tuple tuple = tuplelist.get(counter);
+                counter++ ;
+                return  tuple;
             }
 
             @Override
             public void remove() throws SailException {
 
             }
+
         };
+
 
    }
 
