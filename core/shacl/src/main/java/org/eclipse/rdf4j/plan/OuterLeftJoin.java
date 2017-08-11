@@ -62,7 +62,6 @@ public class OuterLeftJoin implements PlanNode {
 
         };
 
-
    }
 
     @Override

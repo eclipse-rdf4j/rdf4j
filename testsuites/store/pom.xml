@@ -43,5 +43,20 @@
 			<artifactId>junit</artifactId>
 			<scope>compile</scope>
 		</dependency>
+        <dependency>
+            <groupId>org.eclipse.rdf4j</groupId>
+            <artifactId>rdf4j-shacl</artifactId>
+            <version>2.3-SNAPSHOT</version>
+        </dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-shacl</artifactId>
+			<version>2.3-SNAPSHOT</version>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-shacl</artifactId>
+			<version>2.3-SNAPSHOT</version>
+		</dependency>
 	</dependencies>
 </project>
