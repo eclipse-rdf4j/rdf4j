@@ -41,7 +41,8 @@ public abstract class AbstractSail implements Sail {
 	/**
 	 * Default connection timeout on shutdown: 20,000 milliseconds.
 	 */
-	protected final static long DEFAULT_CONNECTION_TIMEOUT = 20000L;
+	// FIXME	protected final static long DEFAULT_CONNECTION_TIMEOUT = 20000L;
+	protected final static long DEFAULT_CONNECTION_TIMEOUT = 200L;
 
 	/**
 	 * default transaction isolation level, set to {@link IsolationLevels#READ_COMMITTED }.
@@ -133,7 +134,8 @@ public abstract class AbstractSail implements Sail {
 	/**
 	 * Set connection timeout on shutdown (in ms).
 	 * 
-	 * @param connectionTimeOut timeout (in ms)
+	 * @param connectionTimeOut
+	 *        timeout (in ms)
 	 */
 	public void setConnectionTimeOut(long connectionTimeOut) {
 		this.connectionTimeOut = connectionTimeOut;
