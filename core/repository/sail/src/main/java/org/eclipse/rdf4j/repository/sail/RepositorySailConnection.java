@@ -10,7 +10,6 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -30,11 +29,8 @@ public class RepositorySailConnection implements SailConnection, NotifyingSailCo
 
 	private final RepositoryConnection conn;
 
-	private final ValueFactory vf;
-
 	public RepositorySailConnection(final RepositoryConnection conn) {
 		this.conn = conn;
-		this.vf = conn.getValueFactory();
 	}
 
 	@Override
