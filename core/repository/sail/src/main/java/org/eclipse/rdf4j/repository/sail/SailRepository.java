@@ -88,6 +88,14 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	public void setDataDir(File dataDir) {
 		sail.setDataDir(dataDir);
 	}
+	
+	/*
+	 *  added for RepositorySail(non-Javadoc)
+	 */
+//	public Sail getSail(){
+//		return this.sail;
+//	}
+	
 
 	@Override
 	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
