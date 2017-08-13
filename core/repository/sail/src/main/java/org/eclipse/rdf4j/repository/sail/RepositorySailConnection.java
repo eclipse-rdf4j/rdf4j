@@ -1,15 +1,10 @@
 package org.eclipse.rdf4j.repository.sail;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
 import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIterationBase;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -30,6 +25,8 @@ import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.eclipse.rdf4j.sail.UpdateContext;
 
 public class RepositorySailConnection implements SailConnection, NotifyingSailConnection {
+
+	private final List<SailConnectionListener> listeners = new ArrayList<SailConnectionListener>();
 
 	private final RepositoryConnection conn;
 
@@ -60,21 +57,20 @@ public class RepositorySailConnection implements SailConnection, NotifyingSailCo
 			Dataset dataset, BindingSet bindings, boolean includeInferred)
 		throws SailException
 	{
-		// TODO Auto-generated method stub
-		return null;
+		// FIXME: check if this method has meaning here
+		throw new SailException("not supported method!");
 	}
 
 	@Override
 	public CloseableIteration<? extends Resource, SailException> getContextIDs()
 		throws SailException
 	{
-		//		ResourceIterator<Resource> it = new ResourceIterator<>();
-		//		RepositoryResult<Resource> ids = conn.getContextIDs();
-		//		while (ids.hasNext()) {
-		//			it.add(ids.next());
-		//		}
-		//		return it;
-		return null;
+		final SailResult<Resource> it = new SailResult<>();
+		final RepositoryResult<Resource> ids = conn.getContextIDs();
+		while (ids.hasNext()) {
+			it.add(ids.next());
+		}
+		return it;
 	}
 
 	@Override
@@ -82,8 +78,12 @@ public class RepositorySailConnection implements SailConnection, NotifyingSailCo
 			Value obj, boolean includeInferred, Resource... contexts)
 		throws SailException
 	{
-		// TODO Auto-generated method stub
-		return null;
+		final SailResult<Statement> it = new SailResult<>();
+		final RepositoryResult<Statement> statements = conn.getStatements(subj, pred, obj, contexts);
+		while (statements.hasNext()) {
+			it.add(statements.next());
+		}
+		return it;
 	}
 
 	@Override
@@ -111,21 +111,22 @@ public class RepositorySailConnection implements SailConnection, NotifyingSailCo
 	public void flush()
 		throws SailException
 	{
-		// TODO Auto-generated method stub
+		// FIXME: see how to implement this one
+		throw new SailException("not implemented");
 	}
 
 	@Override
 	public void prepare()
 		throws SailException
 	{
-		// TODO Auto-generated method stub
+		// FIXME: see how to implement this one
+		throw new SailException("not implemented");
 	}
 
 	@Override
 	public void commit()
 		throws SailException
 	{
-		// TODO Auto-generated method stub
 		conn.commit();
 	}
 
@@ -133,7 +134,6 @@ public class RepositorySailConnection implements SailConnection, NotifyingSailCo
 	public void rollback()
 		throws SailException
 	{
-		// TODO Auto-generated method stub
 		conn.rollback();
 	}
 
@@ -148,8 +148,6 @@ public class RepositorySailConnection implements SailConnection, NotifyingSailCo
 	public void addStatement(final Resource subj, final IRI pred, final Value obj, final Resource... contexts)
 		throws SailException
 	{
-		//		final Statement statement = vf.createStatement(subj, pred, obj);
-		//		conn.add(statement, contexts);
 		conn.add(subj, pred, obj, contexts);
 	}
 
@@ -162,25 +160,28 @@ public class RepositorySailConnection implements SailConnection, NotifyingSailCo
 	}
 
 	@Override
-	public void startUpdate(UpdateContext op)
+	public void startUpdate(final UpdateContext op)
 		throws SailException
 	{
-		// TODO Auto-generated method stub
+		// FIXME: see how to implement this one
+		throw new SailException("not implemented");
 	}
 
 	@Override
-	public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
+	public void addStatement(final UpdateContext op, final Resource subj, final IRI pred, final Value obj,
+			final Resource... contexts)
 		throws SailException
 	{
-		// FIXME
+		// FIXME: how can we use the UpdateContext here?
 		this.addStatement(subj, pred, obj, contexts);
 	}
 
 	@Override
-	public void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
+	public void removeStatement(final UpdateContext op, final Resource subj, final IRI pred, final Value obj,
+			final Resource... contexts)
 		throws SailException
 	{
-		// FIXME
+		// FIXME: check how UpdateContext should be used here
 		this.removeStatements(subj, pred, obj, contexts);
 	}
 
@@ -188,8 +189,8 @@ public class RepositorySailConnection implements SailConnection, NotifyingSailCo
 	public void endUpdate(UpdateContext op)
 		throws SailException
 	{
-		// TODO Auto-generated method stub
-
+		// FIXME: see how to implement this one
+		throw new SailException("not implemented");
 	}
 
 	@Override
@@ -200,12 +201,15 @@ public class RepositorySailConnection implements SailConnection, NotifyingSailCo
 	}
 
 	@Override
-	public CloseableIteration<? extends Namespace, SailException> getNamespaces()
+	public CloseableIteration<Namespace, SailException> getNamespaces()
 		throws SailException
 	{
-		// TODO Auto-generated method stub
-		return null;
-		//		conn.getNamespaces()
+		final SailResult<Namespace> list = new SailResult<Namespace>();
+		final RepositoryResult<Namespace> results = conn.getNamespaces();
+		while (results.hasNext()) {
+			list.add(results.next());
+		}
+		return list;
 	}
 
 	@Override
@@ -237,53 +241,13 @@ public class RepositorySailConnection implements SailConnection, NotifyingSailCo
 	}
 
 	@Override
-	public void addConnectionListener(SailConnectionListener listener) {
-		// TODO Auto-generated method stub
-
+	public void addConnectionListener(final SailConnectionListener listener) {
+		listeners.add(listener);
 	}
 
 	@Override
-	public void removeConnectionListener(SailConnectionListener listener) {
-		// TODO Auto-generated method stub
-
-	}
-
-}
-
-class ResourceIterator<E> extends AbstractCloseableIteration<E, Exception> {
-
-	private final List<E> list = new ArrayList<>();
-
-	private Iterator<E> it;
-
-	public ResourceIterator() {
-		it = list.iterator();
-	}
-
-	public void add(final E element) {
-		list.add(element);
-		it = list.iterator();
-	}
-
-	@Override
-	public boolean hasNext()
-		throws Exception
-	{
-		return it.hasNext();
-	}
-
-	@Override
-	public E next()
-		throws Exception
-	{
-		return it.next();
-	}
-
-	@Override
-	public void remove()
-		throws Exception
-	{
-		it.remove();
+	public void removeConnectionListener(final SailConnectionListener listener) {
+		listeners.remove(listener);
 	}
 
 }
