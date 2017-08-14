@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.model.util.Models;
  * @see org.eclipse.rdf4j.model.util.Models the Models utility class
  */
 @SuppressWarnings("deprecation")
-public interface Model extends Graph, Set<Statement>, Serializable {
+public interface Model extends Graph, Set<Statement>, Serializable, NamespaceAware {
 
 	/**
 	 * Returns an unmodifiable view of this model. This method provides "read-only" access to this model.
@@ -39,25 +39,6 @@ public interface Model extends Graph, Set<Statement>, Serializable {
 	 * @return an unmodifiable view of the specified set.
 	 */
 	public Model unmodifiable();
-
-	/**
-	 * Gets the map that contains the assigned namespaces.
-	 * 
-	 * @return Map of prefix to namespace
-	 */
-	public Set<Namespace> getNamespaces();
-
-	/**
-	 * Gets the namespace that is associated with the specified prefix, if any.
-	 * 
-	 * @param prefix
-	 *        A namespace prefix.
-	 * @return The namespace name that is associated with the specified prefix, or {@link Optional#empty()} if
-	 *         there is no such namespace.
-	 */
-	public default Optional<Namespace> getNamespace(String prefix) {
-		return getNamespaces().stream().filter(t -> t.getPrefix().equals(prefix)).findAny();
-	}
 
 	/**
 	 * Sets the prefix for a namespace. This will replace any existing namespace associated to the prefix.

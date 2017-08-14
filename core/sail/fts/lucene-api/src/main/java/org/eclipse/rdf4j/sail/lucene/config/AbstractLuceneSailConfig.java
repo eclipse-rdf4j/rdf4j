@@ -83,6 +83,7 @@ public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImp
 		Resource implNode = super.export(m);
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
+		m.setNamespace("sl", LuceneSailConfigSchema.NAMESPACE);
 		if (indexDir != null) {
 			m.add(implNode, INDEX_DIR, SimpleValueFactory.getInstance().createLiteral(indexDir));
 		}

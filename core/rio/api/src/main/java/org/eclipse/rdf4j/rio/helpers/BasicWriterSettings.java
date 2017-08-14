@@ -57,6 +57,14 @@ public class BasicWriterSettings {
 			Boolean.TRUE);
 
 	/**
+	 * Boolean setting for writer to determine whether it should include a base directive.
+	 * <p>
+	 * Defaults to true
+	 */
+	public static final RioSetting<Boolean> BASE_DIRECTIVE = new RioSettingImpl<Boolean>(
+			"org.eclipse.rdf4j.rio.basedirective", "Serialize base directive", Boolean.TRUE);
+
+	/**
 	 * Private default constructor.
 	 */
 	private BasicWriterSettings() {

@@ -9,7 +9,9 @@ package org.eclipse.rdf4j.rio.turtle;
 
 import java.io.OutputStream;
 import java.io.Writer;
+import java.net.URISyntaxException;
 
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
@@ -35,10 +37,22 @@ public class TurtleWriterFactory implements RDFWriterFactory {
 		return new TurtleWriter(out);
 	}
 
+	public RDFWriter getWriter(OutputStream out, String baseURI)
+		throws URISyntaxException
+	{
+		return new TurtleWriter(out, new ParsedIRI(baseURI));
+	}
+
 	/**
 	 * Returns a new instance of {@link TurtleWriter}.
 	 */
 	public RDFWriter getWriter(Writer writer) {
 		return new TurtleWriter(writer);
+	}
+
+	public RDFWriter getWriter(Writer writer, String baseURI)
+		throws URISyntaxException
+	{
+		return new TurtleWriter(writer, new ParsedIRI(baseURI));
 	}
 }

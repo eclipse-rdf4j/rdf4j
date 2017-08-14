@@ -32,8 +32,18 @@ public class JSONLDWriterFactory implements RDFWriterFactory {
 	}
 
 	@Override
+	public RDFWriter getWriter(OutputStream out, String baseURI) {
+		return new JSONLDWriter(out, baseURI);
+	}
+
+	@Override
 	public RDFWriter getWriter(Writer writer) {
 		return new JSONLDWriter(writer);
+	}
+
+	@Override
+	public RDFWriter getWriter(Writer writer, String baseURI) {
+		return new JSONLDWriter(writer, baseURI);
 	}
 
 }

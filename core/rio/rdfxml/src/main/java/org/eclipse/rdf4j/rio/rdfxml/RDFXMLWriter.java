@@ -15,6 +15,7 @@ import java.nio.charset.Charset;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.xml.XMLUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
 
 /**
@@ -40,6 +42,8 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	/*-----------*
 	 * Variables *
 	 *-----------*/
+
+	protected ParsedIRI baseIRI;
 
 	protected Writer writer;
 
@@ -62,7 +66,17 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	 *        The OutputStream to write the RDF/XML document to.
 	 */
 	public RDFXMLWriter(OutputStream out) {
-		this(new OutputStreamWriter(out, Charset.forName("UTF-8")));
+		this(out, null);
+	}
+
+	/**
+	 * Creates a new RDFXMLWriter that will write to the supplied OutputStream.
+	 *
+	 * @param out
+	 *        The OutputStream to write the RDF/XML document to.
+	 */
+	public RDFXMLWriter(OutputStream out, ParsedIRI baseIRI) {
+		this(new OutputStreamWriter(out, Charset.forName("UTF-8")), baseIRI);
 	}
 
 	/**
@@ -72,6 +86,17 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	 *        The Writer to write the RDF/XML document to.
 	 */
 	public RDFXMLWriter(Writer writer) {
+		this(writer, null);
+	}
+
+	/**
+	 * Creates a new RDFXMLWriter that will write to the supplied Writer.
+	 *
+	 * @param writer
+	 *        The Writer to write the RDF/XML document to.
+	 */
+	public RDFXMLWriter(Writer writer, ParsedIRI baseIRI) {
+		this.baseIRI = baseIRI;
 		this.writer = writer;
 		namespaceTable = new LinkedHashMap<String, String>();
 		writingStarted = false;
@@ -130,6 +155,14 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 					writer.write(prefix);
 					writer.write("=\"");
 					writer.write(XMLUtil.escapeDoubleQuotedAttValue(name));
+					writer.write("\"");
+				}
+
+				if (baseIRI != null && getWriterConfig().get(BasicWriterSettings.BASE_DIRECTIVE)) {
+					writeNewLine();
+					writeIndent();
+					writer.write("xml:base=\"");
+					writer.write(baseIRI.toString());
 					writer.write("\"");
 				}
 
@@ -252,6 +285,9 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 					BNode bNode = (BNode)subj;
 					writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
 				}
+				else if (baseIRI != null) {
+					writeAttribute(RDF.NAMESPACE, "about", baseIRI.relativize(subj.stringValue()));
+				}
 				else {
 					IRI uri = (IRI)subj;
 					writeAttribute(RDF.NAMESPACE, "about", uri.toString());
@@ -273,6 +309,9 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 				if (objRes instanceof BNode) {
 					BNode bNode = (BNode)objRes;
 					writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
+				}
+				else if (baseIRI != null) {
+					writeAttribute(RDF.NAMESPACE, "resource", baseIRI.relativize(objRes.stringValue()));
 				}
 				else {
 					IRI uri = (IRI)objRes;

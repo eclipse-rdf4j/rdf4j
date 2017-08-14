@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Writer;
 
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -50,6 +51,16 @@ public class TriGWriter extends TurtleWriter {
 	}
 
 	/**
+	 * Creates a new TriGWriter that will write to the supplied OutputStream.
+	 *
+	 * @param out
+	 *        The OutputStream to write the TriG document to.
+	 */
+	public TriGWriter(OutputStream out, ParsedIRI baseIRI) {
+		super(out, baseIRI);
+	}
+
+	/**
 	 * Creates a new TriGWriter that will write to the supplied Writer.
 	 * 
 	 * @param writer
@@ -57,6 +68,16 @@ public class TriGWriter extends TurtleWriter {
 	 */
 	public TriGWriter(Writer writer) {
 		super(writer);
+	}
+
+	/**
+	 * Creates a new TriGWriter that will write to the supplied Writer.
+	 *
+	 * @param writer
+	 *        The Writer to write the TriG document to.
+	 */
+	public TriGWriter(Writer writer, ParsedIRI baseIRI) {
+		super(writer,baseIRI);
 	}
 
 	/*---------*

@@ -35,10 +35,21 @@ public class BinaryRDFWriterFactory implements RDFWriterFactory {
 		return new BinaryRDFWriter(out);
 	}
 
+	public RDFWriter getWriter(OutputStream out, String baseURI) {
+		return new BinaryRDFWriter(out);
+	}
+
 	/**
-	 * Returns a new instance of {@link BinaryRDFWriter}.
+	 * throws UnsupportedOperationException
 	 */
 	public RDFWriter getWriter(Writer writer) {
+		throw new UnsupportedOperationException();
+	}
+
+	/**
+	 * throws UnsupportedOperationException
+	 */
+	public RDFWriter getWriter(Writer writer, String baseURI) {
 		throw new UnsupportedOperationException();
 	}
 }

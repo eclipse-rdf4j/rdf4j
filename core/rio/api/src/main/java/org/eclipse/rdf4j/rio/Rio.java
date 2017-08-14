@@ -14,11 +14,13 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Reader;
 import java.io.Writer;
+import java.net.URISyntaxException;
 import java.util.Optional;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.NamespaceAware;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -144,6 +146,26 @@ public class Rio {
 	 * 
 	 * @throws UnsupportedRDFormatException
 	 *         If no writer is available for the specified RDF format.
+	 * @throws URISyntaxException
+	 *         If the baseURI is invalid
+	 */
+	public static RDFWriter createWriter(RDFFormat format, OutputStream out, String baseURI)
+		throws UnsupportedRDFormatException,
+		URISyntaxException
+	{
+		RDFWriterFactory factory = RDFWriterRegistry.getInstance().get(format).orElseThrow(
+				Rio.unsupportedFormat(format));
+
+		return factory.getWriter(out, baseURI);
+	}
+
+	/**
+	 * Convenience methods for creating RDFWriter objects. This method uses the registry returned by
+	 * {@link RDFWriterRegistry#getInstance()} to get a factory for the specified format and uses this factory
+	 * to create the appropriate writer.
+	 * 
+	 * @throws UnsupportedRDFormatException
+	 *         If no writer is available for the specified RDF format.
 	 */
 	public static RDFWriter createWriter(RDFFormat format, Writer writer)
 		throws UnsupportedRDFormatException
@@ -152,6 +174,26 @@ public class Rio {
 				Rio.unsupportedFormat(format));
 
 		return factory.getWriter(writer);
+	}
+
+	/**
+	 * Convenience methods for creating RDFWriter objects. This method uses the registry returned by
+	 * {@link RDFWriterRegistry#getInstance()} to get a factory for the specified format and uses this factory
+	 * to create the appropriate writer.
+	 * 
+	 * @throws UnsupportedRDFormatException
+	 *         If no writer is available for the specified RDF format.
+	 * @throws URISyntaxException
+	 *         If the baseURI is invalid
+	 */
+	public static RDFWriter createWriter(RDFFormat format, Writer writer, String baseURI)
+		throws UnsupportedRDFormatException,
+		URISyntaxException
+	{
+		RDFWriterFactory factory = RDFWriterRegistry.getInstance().get(format).orElseThrow(
+				Rio.unsupportedFormat(format));
+
+		return factory.getWriter(writer, baseURI);
 	}
 
 	/**
@@ -325,6 +367,33 @@ public class Rio {
 	}
 
 	/**
+	 * Writes the given statements to the given {@link OutputStream} in the given format.
+	 * <p>
+	 * If the collection is a {@link Model}, its namespaces will also be written.
+	 * 
+	 * @param model
+	 *        A collection of statements, such as a {@link Model}, to be written.
+	 * @param output
+	 *        The {@link OutputStream} to write the statements to.
+	 * @param baseURI
+	 *        The base URI to relativize IRIs against.
+	 * @param dataFormat
+	 *        The {@link RDFFormat} to use when writing the statements.
+	 * @throws RDFHandlerException
+	 *         Thrown if there is an error writing the statements.
+	 * @throws URISyntaxException
+	 *         If the baseURI is invalid 
+	 * @throws UnsupportedRDFormatException
+	 *         If no {@link RDFWriter} is available for the specified RDF format.
+	 */
+	public static void write(Iterable<Statement> model, OutputStream output, String baseURI,
+			RDFFormat dataFormat)
+		throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException
+	{
+		write(model, output, baseURI, dataFormat, new WriterConfig());
+	}
+
+	/**
 	 * Writes the given statements to the given {@link Writer} in the given format.
 	 * <p>
 	 * If the collection is a {@link Model}, its namespaces will also be written.
@@ -344,6 +413,32 @@ public class Rio {
 		throws RDFHandlerException
 	{
 		write(model, output, dataFormat, new WriterConfig());
+	}
+
+	/**
+	 * Writes the given statements to the given {@link Writer} in the given format.
+	 * <p>
+	 * If the collection is a {@link Model}, its namespaces will also be written.
+	 * 
+	 * @param model
+	 *        A collection of statements, such as a {@link Model}, to be written.
+	 * @param output
+	 *        The {@link Writer} to write the statements to.
+	 * @param baseURI
+	 *        The base URI to relativize IRIs against.
+	 * @param dataFormat
+	 *        The {@link RDFFormat} to use when writing the statements.
+	 * @throws RDFHandlerException
+	 *         Thrown if there is an error writing the statements.
+	 * @throws URISyntaxException
+	 *         If the baseURI is invalid
+	 * @throws UnsupportedRDFormatException
+	 *         If no {@link RDFWriter} is available for the specified RDF format.
+	 */
+	public static void write(Iterable<Statement> model, Writer output, String baseURI, RDFFormat dataFormat)
+		throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException
+	{
+		write(model, output, baseURI, dataFormat, new WriterConfig());
 	}
 
 	/**
@@ -369,6 +464,37 @@ public class Rio {
 		throws RDFHandlerException
 	{
 		final RDFWriter writer = Rio.createWriter(dataFormat, output);
+		writer.setWriterConfig(settings);
+		write(model, writer);
+	}
+
+	/**
+	 * Writes the given statements to the given {@link OutputStream} in the given format.
+	 * <p>
+	 * If the collection is a {@link Model}, its namespaces will also be written.
+	 * 
+	 * @param model
+	 *        A collection of statements, such as a {@link Model}, to be written.
+	 * @param output
+	 *        The {@link OutputStream} to write the statements to.
+	 * @param baseURI
+	 *        The base URI to relativize IRIs against.
+	 * @param dataFormat
+	 *        The {@link RDFFormat} to use when writing the statements.
+	 * @param settings
+	 *        The {@link WriterConfig} containing settings for configuring the writer.
+	 * @throws RDFHandlerException
+	 *         Thrown if there is an error writing the statements.
+	 * @throws URISyntaxException
+	 *         If the baseURI is invalid
+	 * @throws UnsupportedRDFormatException
+	 *         If no {@link RDFWriter} is available for the specified RDF format.
+	 */
+	public static void write(Iterable<Statement> model, OutputStream output, String baseURI,
+			RDFFormat dataFormat, WriterConfig settings)
+		throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException
+	{
+		final RDFWriter writer = Rio.createWriter(dataFormat, output, baseURI);
 		writer.setWriterConfig(settings);
 		write(model, writer);
 	}
@@ -401,6 +527,37 @@ public class Rio {
 	}
 
 	/**
+	 * Writes the given statements to the given {@link Writer} in the given format.
+	 * <p>
+	 * If the collection is a {@link Model}, its namespaces will also be written.
+	 * 
+	 * @param model
+	 *        A collection of statements, such as a {@link Model}, to be written.
+	 * @param output
+	 *        The {@link Writer} to write the statements to.
+	 * @param baseURI
+	 *        The base URI to relativize IRIs against.
+	 * @param dataFormat
+	 *        The {@link RDFFormat} to use when writing the statements.
+	 * @param settings
+	 *        The {@link WriterConfig} containing settings for configuring the writer.
+	 * @throws RDFHandlerException
+	 *         Thrown if there is an error writing the statements.
+	 * @throws URISyntaxException
+	 *         If the baseURI is invalid
+	 * @throws UnsupportedRDFormatException
+	 *         If no {@link RDFWriter} is available for the specified RDF format.
+	 */
+	public static void write(Iterable<Statement> model, Writer output, String baseURI, RDFFormat dataFormat,
+			WriterConfig settings)
+		throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException
+	{
+		final RDFWriter writer = Rio.createWriter(dataFormat, output, baseURI);
+		writer.setWriterConfig(settings);
+		write(model, writer);
+	}
+
+	/**
 	 * Writes the given statements to the given {@link RDFHandler}.
 	 * <p>
 	 * If the collection is a {@link Model}, its namespaces will also be written.
@@ -415,8 +572,8 @@ public class Rio {
 	{
 		writer.startRDF();
 
-		if (model instanceof Model) {
-			for (Namespace nextNamespace : ((Model)model).getNamespaces()) {
+		if (model instanceof NamespaceAware) {
+			for (Namespace nextNamespace : ((NamespaceAware)model).getNamespaces()) {
 				writer.handleNamespace(nextNamespace.getPrefix(), nextNamespace.getName());
 			}
 		}
