@@ -26,6 +26,8 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
+	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/sparql#";
+
 	public static final IRI QUERY_ENDPOINT = vf.createIRI(
 			"http://www.openrdf.org/config/repository/sparql#query-endpoint");
 
@@ -80,6 +82,7 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
 
+		m.setNamespace("sparql", NAMESPACE);
 		if (getQueryEndpointUrl() != null) {
 			m.add(implNode, QUERY_ENDPOINT, vf.createIRI(getQueryEndpointUrl()));
 		}

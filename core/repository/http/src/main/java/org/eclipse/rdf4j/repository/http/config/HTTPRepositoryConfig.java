@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.http.config;
 
+import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.NAMESPACE;
 import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.PASSWORD;
 import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.REPOSITORYURL;
 import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.USERNAME;
@@ -78,6 +79,7 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 		Resource implNode = super.export(graph);
 
 		if (url != null) {
+			graph.setNamespace("http", NAMESPACE);
 			graph.add(implNode, REPOSITORYURL, SimpleValueFactory.getInstance().createIRI(url));
 		}
 		// if (username != null) {

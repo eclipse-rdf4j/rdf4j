@@ -109,6 +109,7 @@ public class FederationConfig extends AbstractSailImplConfig {
 	public Resource export(Model model) {
 		ValueFactory valueFactory = SimpleValueFactory.getInstance();
 		Resource self = super.export(model);
+		model.setNamespace("sf", NAMESPACE);
 		for (RepositoryImplConfig member : getMembers()) {
 			model.add(self, MEMBER, member.export(model));
 		}

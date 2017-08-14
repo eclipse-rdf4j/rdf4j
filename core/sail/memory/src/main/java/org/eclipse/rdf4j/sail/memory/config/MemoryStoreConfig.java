@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.config;
 
+import static org.eclipse.rdf4j.sail.memory.config.MemoryStoreSchema.NAMESPACE;
 import static org.eclipse.rdf4j.sail.memory.config.MemoryStoreSchema.PERSIST;
 import static org.eclipse.rdf4j.sail.memory.config.MemoryStoreSchema.SYNC_DELAY;
 
@@ -62,6 +63,7 @@ public class MemoryStoreConfig extends BaseSailConfig {
 	public Resource export(Model graph) {
 		Resource implNode = super.export(graph);
 
+		graph.setNamespace("ms", NAMESPACE);
 		if (persist) {
 			graph.add(implNode, PERSIST, BooleanLiteral.TRUE);
 		}

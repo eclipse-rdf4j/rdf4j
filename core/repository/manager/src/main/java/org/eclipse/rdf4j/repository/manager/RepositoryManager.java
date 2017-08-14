@@ -15,13 +15,16 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
@@ -53,6 +56,8 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 *-----------*/
 
 	protected Map<String, Repository> initializedRepositories;
+
+	private boolean initialized;
 
 	/*--------------*
 	 * Constructors *
@@ -86,10 +91,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * @return true iff the repository manager has been initialized.
 	 */
 	public boolean isInitialized() {
-		synchronized (initializedRepositories) {
-			Repository repo = initializedRepositories.get(SystemRepository.ID);
-			return repo != null && repo.isInitialized();
-		}
+		return initialized;
 	}
 
 	/**
@@ -114,15 +116,15 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	public void initialize()
 		throws RepositoryException
 	{
-		Repository systemRepository = createSystemRepository();
-
-		synchronized (initializedRepositories) {
-			initializedRepositories.put(SystemRepository.ID, systemRepository);
-		}
+		initialized = true;
 	}
 
-	protected abstract Repository createSystemRepository()
-		throws RepositoryException;
+	@Deprecated
+	protected Repository createSystemRepository()
+		throws RepositoryException
+	{
+		return null;
+	}
 
 	/**
 	 * Gets the SYSTEM repository.
@@ -133,7 +135,15 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 			throw new IllegalStateException("Repository Manager is not initialized");
 		}
 		synchronized (initializedRepositories) {
-			return initializedRepositories.get(SystemRepository.ID);
+			Repository systemRepository = initializedRepositories.get(SystemRepository.ID);
+			if (systemRepository != null && systemRepository.isInitialized()) {
+				return systemRepository;
+			}
+			systemRepository = createSystemRepository();
+			if (systemRepository != null) {
+				initializedRepositories.put(SystemRepository.ID, systemRepository);
+			}
+			return systemRepository;
 		}
 	}
 
@@ -198,19 +208,29 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	public Set<String> getRepositoryIDs()
 		throws RepositoryException
 	{
-		return RepositoryConfigUtil.getRepositoryIDs(getSystemRepository());
+		Set<String> idSet = new LinkedHashSet<String>();
+		getAllRepositoryInfos(false).forEach(info -> {
+			idSet.add(info.getId());
+		});
+		return idSet;
 	}
 
 	public boolean hasRepositoryConfig(String repositoryID)
 		throws RepositoryException, RepositoryConfigException
 	{
-		return RepositoryConfigUtil.hasRepositoryConfig(getSystemRepository(), repositoryID);
+		return getRepositoryInfo(repositoryID) != null;
 	}
 
 	public RepositoryConfig getRepositoryConfig(String repositoryID)
 		throws RepositoryConfigException, RepositoryException
 	{
-		return RepositoryConfigUtil.getRepositoryConfig(getSystemRepository(), repositoryID);
+		Repository systemRepository = getSystemRepository();
+		if (systemRepository == null) {
+			return null;
+		}
+		else {
+			return RepositoryConfigUtil.getRepositoryConfig(systemRepository, repositoryID);
+		}
 	}
 
 	/**
@@ -231,7 +251,11 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	public void addRepositoryConfig(RepositoryConfig config)
 		throws RepositoryException, RepositoryConfigException
 	{
-		RepositoryConfigUtil.updateRepositoryConfigs(getSystemRepository(), config);
+		// update SYSTEM repository if there is one for 2.2 compatibility
+		Repository systemRepository = getSystemRepository();
+		if (systemRepository != null && !SystemRepository.ID.equals(config.getID())) {
+			RepositoryConfigUtil.updateRepositoryConfigs(systemRepository, config);
+		}
 	}
 
 	/**
@@ -254,10 +278,14 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 		throws RepositoryException, RepositoryConfigException
 	{
 		logger.debug("Removing repository configuration for {}.", repositoryID);
-		boolean isRemoved = false;
+		boolean isRemoved = hasRepositoryConfig(repositoryID);
 
 		synchronized (initializedRepositories) {
-			isRemoved = RepositoryConfigUtil.removeRepositoryConfigs(getSystemRepository(), repositoryID);
+			// update SYSTEM repository if there is one for 2.2 compatibility
+			Repository systemRepository = getSystemRepository();
+			if (systemRepository != null) {
+				RepositoryConfigUtil.removeRepositoryConfigs(systemRepository, repositoryID);
+			}
 
 			if (isRemoved) {
 				logger.debug("Shutdown repository {} after removal of configuration.", repositoryID);
@@ -292,14 +320,16 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	public boolean isSafeToRemove(String repositoryID)
 		throws RepositoryException
 	{
-		RepositoryConnection connection = this.getSystemRepository().getConnection();
-		try {
-			return !connection.hasStatement(null, ProxyRepositorySchema.PROXIED_ID,
-					connection.getValueFactory().createLiteral(repositoryID), false);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		for (String id : getRepositoryIDs()) {
+			RepositoryConfig config = getRepositoryConfig(id);
+			Model model = new LinkedHashModel();
+			config.export(model, vf.createBNode());
+			if (model.contains(null, ProxyRepositorySchema.PROXIED_ID, vf.createLiteral(repositoryID))) {
+				return false;
+			}
 		}
-		finally {
-			connection.close();
-		}
+		return true;
 	}
 
 	/**
@@ -321,10 +351,14 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 		throws RepositoryException, RepositoryConfigException
 	{
 		logger.debug("Removing repository {}.", repositoryID);
-		boolean isRemoved = false;
+		boolean isRemoved = hasRepositoryConfig(repositoryID);
 
 		synchronized (initializedRepositories) {
-			isRemoved = RepositoryConfigUtil.removeRepositoryConfigs(getSystemRepository(), repositoryID);
+			// update SYSTEM repository if there is one for 2.2 compatibility
+			Repository systemRepository = getSystemRepository();
+			if (systemRepository != null) {
+				RepositoryConfigUtil.removeRepositoryConfigs(systemRepository, repositoryID);
+			}
 
 			if (isRemoved) {
 				logger.debug("Shutdown repository {} after removal of configuration.", repositoryID);
@@ -372,6 +406,9 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 				result = null;
 			}
 
+			if (result == null && SystemRepository.ID.equals(identity)) {
+				result = getSystemRepository();
+			}
 			if (result == null) {
 				// First call (or old object thrown away), create and initialize the
 				// repository.
@@ -493,8 +530,17 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * @throws RepositoryException
 	 *         When not able to retrieve existing configurations
 	 */
-	public abstract RepositoryInfo getRepositoryInfo(String id)
-		throws RepositoryException;
+	public RepositoryInfo getRepositoryInfo(String id)
+		throws RepositoryException
+	{
+		for (RepositoryInfo repInfo : getAllRepositoryInfos()) {
+			if (repInfo.getId().equals(id)) {
+				return repInfo;
+			}
+		}
+
+		return null;
+	}
 
 	public Collection<RepositoryInfo> getAllRepositoryInfos()
 		throws RepositoryException
@@ -568,6 +614,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 			}
 
 			initializedRepositories.clear();
+			initialized = false;
 		}
 	}
 
@@ -617,8 +664,11 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 *        the ID of the repository to clean up
 	 * @throws IOException
 	 */
-	protected abstract void cleanUpRepository(String repositoryID)
-		throws IOException;
+	@Deprecated
+	protected void cleanUpRepository(String repositoryID)
+		throws IOException
+	{
+	}
 
 	/**
 	 * Gets the URL of the server or directory.
