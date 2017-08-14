@@ -55,6 +55,7 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		Resource implNode = super.export(graph);
 
 		if (evalStratFactoryClassName != null) {
+			graph.setNamespace("sb", NAMESPACE);
 			graph.add(implNode, EVALUATION_STRATEGY_FACTORY,
 					SimpleValueFactory.getInstance().createLiteral(evalStratFactoryClassName));
 		}

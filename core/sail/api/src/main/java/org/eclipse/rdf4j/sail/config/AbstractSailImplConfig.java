@@ -63,6 +63,7 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		BNode implNode = vf.createBNode();
 
+		m.setNamespace("sail", SailConfigSchema.NAMESPACE);
 		if (type != null) {
 			m.add(implNode, SAILTYPE, vf.createLiteral(type));
 		}

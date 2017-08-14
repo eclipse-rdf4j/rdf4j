@@ -35,10 +35,18 @@ public class NTriplesWriterFactory implements RDFWriterFactory {
 		return new NTriplesWriter(out);
 	}
 
+	public RDFWriter getWriter(OutputStream out, String baseURI) {
+		return getWriter(out);
+	}
+
 	/**
 	 * Returns a new instance of {@link NTriplesWriter}.
 	 */
 	public RDFWriter getWriter(Writer writer) {
 		return new NTriplesWriter(writer);
+	}
+
+	public RDFWriter getWriter(Writer writer, String baseURI) {
+		return getWriter(writer);
 	}
 }

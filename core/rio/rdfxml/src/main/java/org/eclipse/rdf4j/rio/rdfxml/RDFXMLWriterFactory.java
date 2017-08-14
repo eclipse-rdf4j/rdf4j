@@ -9,7 +9,9 @@ package org.eclipse.rdf4j.rio.rdfxml;
 
 import java.io.OutputStream;
 import java.io.Writer;
+import java.net.URISyntaxException;
 
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
@@ -37,8 +39,30 @@ public class RDFXMLWriterFactory implements RDFWriterFactory {
 
 	/**
 	 * Returns a new instance of {@link RDFXMLWriter}.
+	 *
+	 * @throws URISyntaxException
+	 */
+	public RDFWriter getWriter(OutputStream out, String baseURI)
+		throws URISyntaxException
+	{
+		return new RDFXMLWriter(out, new ParsedIRI(baseURI));
+	}
+
+	/**
+	 * Returns a new instance of {@link RDFXMLWriter}.
 	 */
 	public RDFWriter getWriter(Writer writer) {
 		return new RDFXMLWriter(writer);
+	}
+
+	/**
+	 * Returns a new instance of {@link RDFXMLWriter}.
+	 *
+	 * @throws URISyntaxException
+	 */
+	public RDFWriter getWriter(Writer writer, String baseURI)
+		throws URISyntaxException
+	{
+		return new RDFXMLWriter(writer, new ParsedIRI(baseURI));
 	}
 }
