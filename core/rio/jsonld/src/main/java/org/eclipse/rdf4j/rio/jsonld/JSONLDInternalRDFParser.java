@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.NamespaceAware;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -95,8 +96,8 @@ class JSONLDInternalRDFParser implements com.github.jsonldjava.core.RDFParser {
 			handleStatement(result, (Statement)input);
 		}
 		else if (input instanceof Graph) {
-			if (input instanceof Model) {
-				final Set<Namespace> namespaces = ((Model)input).getNamespaces();
+			if (input instanceof NamespaceAware) {
+				final Set<Namespace> namespaces = ((NamespaceAware)input).getNamespaces();
 				for (final Namespace nextNs : namespaces) {
 					result.setNamespace(nextNs.getName(), nextNs.getPrefix());
 				}
