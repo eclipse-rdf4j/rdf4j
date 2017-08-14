@@ -21,16 +21,16 @@ import java.util.Set;
 
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.RepositoryResolver;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
-import org.eclipse.rdf4j.repository.sail.config.ProxyRepositorySchema;
-import org.eclipse.rdf4j.repository.sail.config.RepositoryResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,6 +50,15 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 *-----------*/
 
 	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+
+	/**
+	 * The {@link org.eclipse.rdf4j.repository.sail.ProxyRepository} schema namespace (
+	 * <tt>http://www.openrdf.org/config/repository/proxy#</tt>).
+	 */
+	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/proxy#";
+
+	/** <tt>http://www.openrdf.org/config/repository/proxy#proxiedID</tt> */
+	public final static IRI PROXIED_ID = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "proxiedID");
 
 	/*-----------*
 	 * Variables *
@@ -325,7 +334,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 			RepositoryConfig config = getRepositoryConfig(id);
 			Model model = new LinkedHashModel();
 			config.export(model, vf.createBNode());
-			if (model.contains(null, ProxyRepositorySchema.PROXIED_ID, vf.createLiteral(repositoryID))) {
+			if (model.contains(null, PROXIED_ID, vf.createLiteral(repositoryID))) {
 				return false;
 			}
 		}

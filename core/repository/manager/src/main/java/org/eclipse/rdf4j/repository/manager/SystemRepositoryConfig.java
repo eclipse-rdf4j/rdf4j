@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
 /**
  * @author Arjohn Kampman
  */
+@Deprecated
 public class SystemRepositoryConfig extends AbstractRepositoryImplConfig {
 
 	public SystemRepositoryConfig() {

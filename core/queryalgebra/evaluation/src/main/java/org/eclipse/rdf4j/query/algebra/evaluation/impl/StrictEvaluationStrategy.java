@@ -132,7 +132,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.OrderIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.SPARQLMinusIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.SilentIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.EvaluationStrategies;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
@@ -396,10 +395,7 @@ public class StrictEvaluationStrategy
 			CloseableIteration<BindingSet, QueryEvaluationException> result = fs.select(service, freeVars,
 					bindings, baseUri);
 
-			if (service.isSilent())
-				return new SilentIteration(result);
-			else
-				return result;
+			return result;
 
 		}
 		catch (QueryEvaluationException e) {

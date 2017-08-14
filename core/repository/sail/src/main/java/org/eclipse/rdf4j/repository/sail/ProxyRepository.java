@@ -15,13 +15,13 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.base.AbstractRepository;
-import org.eclipse.rdf4j.repository.sail.config.RepositoryResolver;
-import org.eclipse.rdf4j.repository.sail.config.RepositoryResolverClient;
+import org.eclipse.rdf4j.repository.RepositoryResolver;
+import org.eclipse.rdf4j.repository.RepositoryResolverClient;
 
 /**
  * <p>
  * {@link org.eclipse.rdf4j.repository.Repository} implementation that takes a
- * {@link org.eclipse.rdf4j.repository.sail.config.RepositoryResolver} instance and the id of a managed
+ * {@link org.eclipse.rdf4j.repository.RepositoryResolver} instance and the id of a managed
  * repository, and delegate all calls through to the given repository.
  * </p>
  * <p>

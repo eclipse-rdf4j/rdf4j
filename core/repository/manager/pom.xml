@@ -28,15 +28,23 @@
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-repository-sail</artifactId>
 			<version>${project.version}</version>
+			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-sail-api</artifactId>
 			<version>${project.version}</version>
+			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-sail-memory</artifactId>
+			<version>${project.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-repository-sparql</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
@@ -87,6 +95,11 @@
                         <plugin>
                                 <groupId>com.github.siom79.japicmp</groupId>
                                 <artifactId>japicmp-maven-plugin</artifactId>
+				<configuration>
+					<parameter>
+						<ignoreMissingClasses>true</ignoreMissingClasses>
+					</parameter>
+				</configuration>
                         </plugin>
 			<plugin>
 				<groupId>org.codehaus.mojo</groupId>

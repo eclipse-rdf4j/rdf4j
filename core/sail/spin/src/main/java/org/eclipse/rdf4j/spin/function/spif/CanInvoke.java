@@ -41,7 +41,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryPreparer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.AbstractFederatedServiceResolver;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
@@ -59,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
+import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.spin.SpinFunctionInterpreter;
 import org.eclipse.rdf4j.sail.spin.SpinInferencing;
 import org.eclipse.rdf4j.sail.spin.SpinMagicPropertyInterpreter;
@@ -172,7 +172,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 
 				private final TupleFunctionRegistry tupleFunctionRegistry = TupleFunctionRegistry.getInstance();
 
-				private final AbstractFederatedServiceResolver serviceResolver = new FederatedServiceResolverImpl();
+				private final AbstractFederatedServiceResolver serviceResolver = new SPARQLServiceResolver();
 
 				@Override
 				protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(

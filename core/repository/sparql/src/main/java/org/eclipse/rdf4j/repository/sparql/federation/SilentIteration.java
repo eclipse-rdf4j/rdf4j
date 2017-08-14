@@ -5,31 +5,41 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.query.algebra.evaluation.federation;
+package org.eclipse.rdf4j.repository.sparql.federation;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
- * Base class for any join parallel join executor. Note that this class extends {@link LookAheadIteration} and
- * thus any implementation of this class is applicable for pipelining when used in a different thread (access
- * to shared variables is synchronized).
+ * Wrap an inner iteration and suppress exceptions silently
  * 
  * @author Andreas Schwarte
- * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase}
  */
-@Deprecated
-public abstract class JoinExecutorBase<T>
-		extends org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase<T>
-{
+public class SilentIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
-	public JoinExecutorBase(CloseableIteration<T, QueryEvaluationException> leftIter, TupleExpr rightArg,
-			BindingSet bindings)
+	protected CloseableIteration<BindingSet, QueryEvaluationException> iter;
+
+	public SilentIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter) {
+		super();
+		this.iter = iter;
+	}
+
+	@Override
+	protected BindingSet getNextElement()
 		throws QueryEvaluationException
 	{
-		super(leftIter, rightArg, bindings);
+
+		try {
+			if (iter.hasNext())
+				return iter.next();
+		}
+		catch (Exception e) {
+			// suppress
+		}
+
+		return null;
 	}
+
 }
