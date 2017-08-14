@@ -11,16 +11,13 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
-import java.lang.reflect.GenericArrayType;
 import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.StringTokenizer;
 
 import org.eclipse.rdf4j.common.io.IndentingWriter;
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -30,7 +27,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
@@ -50,6 +46,8 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	/*-----------*
 	 * Variables *
 	 *-----------*/
+
+	protected ParsedIRI baseIRI;
 
 	protected IndentingWriter writer;
 
@@ -80,7 +78,17 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 *        The OutputStream to write the Turtle document to.
 	 */
 	public TurtleWriter(OutputStream out) {
-		this(new OutputStreamWriter(out, Charset.forName("UTF-8")));
+		this(out, null);
+	}
+
+	/**
+	 * Creates a new TurtleWriter that will write to the supplied OutputStream.
+	 *
+	 * @param out
+	 *        The OutputStream to write the Turtle document to.
+	 */
+	public TurtleWriter(OutputStream out, ParsedIRI baseIRI) {
+		this(new OutputStreamWriter(out, Charset.forName("UTF-8")), baseIRI);
 	}
 
 	/**
@@ -90,6 +98,17 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 *        The Writer to write the Turtle document to.
 	 */
 	public TurtleWriter(Writer writer) {
+		this(writer, null);
+	}
+
+	/**
+	 * Creates a new TurtleWriter that will write to the supplied Writer.
+	 *
+	 * @param writer
+	 *        The Writer to write the Turtle document to.
+	 */
+	public TurtleWriter(Writer writer, ParsedIRI baseIRI) {
+		this.baseIRI = baseIRI;
 		this.writer = new IndentingWriter(writer);
 		namespaceTable = new LinkedHashMap<String, String>();
 		writingStarted = false;
@@ -122,6 +141,10 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 
 		try {
+			if (baseIRI != null && getWriterConfig().get(BasicWriterSettings.BASE_DIRECTIVE)) {
+				writeBase(baseIRI.toString());
+			}
+
 			// Write namespace declarations
 			for (Map.Entry<String, String> entry : namespaceTable.entrySet()) {
 				String name = entry.getKey();
@@ -397,6 +420,15 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		writer.writeEOL();
 	}
 
+	protected void writeBase(String baseURI)
+		throws IOException
+	{
+		writer.write("@base <");
+		writer.write(TurtleUtil.encodeURIString(baseURI));
+		writer.write("> .");
+		writer.writeEOL();
+	}
+
 	protected void writeNamespace(String prefix, String name)
 		throws IOException
 	{
@@ -511,6 +543,12 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			writer.write(prefix);
 			writer.write(":");
 			writer.write(uriString.substring(splitIdx));
+		}
+		else if (baseIRI != null) {
+			// Write relative URI
+			writer.write("<");
+			writer.write(TurtleUtil.encodeURIString(baseIRI.relativize(uriString)));
+			writer.write(">");
 		}
 		else {
 			// Write full URI
