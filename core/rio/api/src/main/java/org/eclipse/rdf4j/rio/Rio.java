@@ -19,6 +19,7 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.NamespaceAware;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -415,8 +416,8 @@ public class Rio {
 	{
 		writer.startRDF();
 
-		if (model instanceof Model) {
-			for (Namespace nextNamespace : ((Model)model).getNamespaces()) {
+		if (model instanceof NamespaceAware) {
+			for (Namespace nextNamespace : ((NamespaceAware)model).getNamespaces()) {
 				writer.handleNamespace(nextNamespace.getPrefix(), nextNamespace.getName());
 			}
 		}
