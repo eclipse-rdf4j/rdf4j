@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.repository.sparql.federation.SilentIteration;
 
 /**
  * A federated service that can evaluate {@link TupleFunction}s.
@@ -87,8 +88,10 @@ public class TupleFunctionFederatedService implements FederatedService {
 			final Set<String> projectionVars, BindingSet bindings, String baseUri)
 		throws QueryEvaluationException
 	{
-		final CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(service,
-				new SingletonIteration<BindingSet, QueryEvaluationException>(bindings), baseUri);
+		final CloseableIteration<BindingSet, QueryEvaluationException> iter, eval;
+		eval = evaluate(service, new SingletonIteration<BindingSet, QueryEvaluationException>(bindings),
+				baseUri);
+		iter = service.isSilent() ? new SilentIteration(eval) : eval;
 		if (service.getBindingNames().equals(projectionVars)) {
 			return iter;
 		}

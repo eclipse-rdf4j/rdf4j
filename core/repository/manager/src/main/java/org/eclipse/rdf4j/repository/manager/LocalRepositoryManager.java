@@ -42,11 +42,11 @@ import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
 import org.eclipse.rdf4j.repository.DelegatingRepository;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.RepositoryResolverClient;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.config.DelegatingRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -57,7 +57,7 @@ import org.eclipse.rdf4j.repository.config.RepositoryFactory;
 import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryRegistry;
 import org.eclipse.rdf4j.repository.event.base.RepositoryConnectionListenerAdapter;
-import org.eclipse.rdf4j.repository.sail.config.RepositoryResolverClient;
+import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 
@@ -92,7 +92,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	private volatile SharedHttpClientSessionManager client;
 
 	/** dependent life cycle */
-	private volatile FederatedServiceResolverImpl serviceResolver;
+	private volatile SPARQLServiceResolver serviceResolver;
 
 	private boolean upgraded;
 
@@ -184,12 +184,12 @@ public class LocalRepositoryManager extends RepositoryManager {
 	 * @return Returns the serviceResolver.
 	 */
 	protected FederatedServiceResolver getFederatedServiceResolver() {
-		FederatedServiceResolverImpl result = serviceResolver;
+		SPARQLServiceResolver result = serviceResolver;
 		if (result == null) {
 			synchronized (this) {
 				result = serviceResolver;
 				if (result == null) {
-					result = serviceResolver = new FederatedServiceResolverImpl();
+					result = serviceResolver = new SPARQLServiceResolver();
 					result.setHttpClientSessionManager(getSesameClient());
 				}
 			}
@@ -204,7 +204,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 		}
 		finally {
 			try {
-				FederatedServiceResolverImpl toCloseServiceResolver = serviceResolver;
+				SPARQLServiceResolver toCloseServiceResolver = serviceResolver;
 				serviceResolver = null;
 				if (toCloseServiceResolver != null) {
 					toCloseServiceResolver.shutDown();

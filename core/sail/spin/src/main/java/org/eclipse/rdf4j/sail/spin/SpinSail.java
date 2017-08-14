@@ -17,9 +17,9 @@ import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryContextInitializer;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
+import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
@@ -35,7 +35,7 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 
 	private TupleFunctionRegistry tupleFunctionRegistry = TupleFunctionRegistry.getInstance();
 
-	private FederatedServiceResolver serviceResolver = new FederatedServiceResolverImpl();
+	private FederatedServiceResolver serviceResolver = new SPARQLServiceResolver();
 
 	private SpinParser parser = new SpinParser();
 

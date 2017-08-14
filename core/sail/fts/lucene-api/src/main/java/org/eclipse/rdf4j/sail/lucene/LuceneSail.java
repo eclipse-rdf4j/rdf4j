@@ -33,10 +33,10 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
@@ -276,7 +276,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	private TupleFunctionRegistry tupleFunctionRegistry = TupleFunctionRegistry.getInstance();
 
-	private FederatedServiceResolver serviceResolver = new FederatedServiceResolverImpl();
+	private FederatedServiceResolver serviceResolver = new SPARQLServiceResolver();
 
 	private Set<IRI> indexedFields;
 

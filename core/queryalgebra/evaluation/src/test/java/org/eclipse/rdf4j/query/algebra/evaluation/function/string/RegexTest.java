@@ -20,10 +20,10 @@ import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -35,11 +35,11 @@ public class RegexTest {
 
 	private ValueFactory vf = SimpleValueFactory.getInstance();
 
-	private FederatedServiceResolverImpl serviceResolver;
+	private SPARQLServiceResolver serviceResolver;
 
 	@Before
 	public void setUp() {
-		serviceResolver = new FederatedServiceResolverImpl();
+		serviceResolver = new SPARQLServiceResolver();
 	}
 
 	@After

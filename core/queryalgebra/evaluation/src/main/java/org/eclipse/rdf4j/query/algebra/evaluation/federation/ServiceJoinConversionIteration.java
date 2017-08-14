@@ -7,63 +7,28 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.federation;
 
-import java.util.Iterator;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
-import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
 /**
  * Inserts original bindings into the result, uses ?__rowIdx to resolve original bindings. See
  * {@link ServiceJoinIterator} and {@link SPARQLFederatedService}.
  * 
  * @author Andreas Schwarte
+ * @deprecated since 2.3 use
+ *             {@link org.eclipse.rdf4j.repository.sparql.federation.ServiceJoinConversionIteration}
  */
+@Deprecated
 public class ServiceJoinConversionIteration
-		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException>
+		extends org.eclipse.rdf4j.repository.sparql.federation.ServiceJoinConversionIteration
 {
-
-	protected final List<BindingSet> bindings;
 
 	public ServiceJoinConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
 			List<BindingSet> bindings)
 	{
-		super(iter);
-		this.bindings = bindings;
-	}
-
-	@Override
-	protected BindingSet convert(BindingSet bIn)
-		throws QueryEvaluationException
-	{
-
-		// overestimate the capacity
-		QueryBindingSet res = new QueryBindingSet(bIn.size() + bindings.size());
-
-		int bIndex = -1;
-		Iterator<Binding> bIter = bIn.iterator();
-		while (bIter.hasNext()) {
-			Binding b = bIter.next();
-			String name = b.getName();
-			if (name.equals("__rowIdx")) {
-				bIndex = Integer.parseInt(b.getValue().stringValue());
-				continue;
-			}
-			res.addBinding(b.getName(), b.getValue());
-		}
-
-		// should never occur: in such case we would have to create the cross product (which
-		// is dealt with in another place)
-		if (bIndex == -1)
-			throw new QueryEvaluationException(
-					"Invalid join. Probably this is due to non-standard behavior of the SPARQL endpoint. "
-							+ "Please report to the developers.");
-
-		res.addAll(bindings.get(bIndex));
-		return res;
+		super(iter, bindings);
 	}
 }

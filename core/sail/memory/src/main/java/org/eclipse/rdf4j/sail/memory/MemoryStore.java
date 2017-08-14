@@ -15,11 +15,12 @@ import java.util.TimerTask;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverImpl;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailChangedEvent;
 import org.eclipse.rdf4j.sail.SailException;
@@ -113,7 +114,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	private FederatedServiceResolver serviceResolver;
 
 	/** dependent life cycle */
-	private FederatedServiceResolverImpl dependentServiceResolver;
+	private SPARQLServiceResolver dependentServiceResolver;
 
 	/*--------------*
 	 * Constructors *
@@ -212,7 +213,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	public synchronized FederatedServiceResolver getFederatedServiceResolver() {
 		if (serviceResolver == null) {
 			if (dependentServiceResolver == null) {
-				dependentServiceResolver = new FederatedServiceResolverImpl();
+				dependentServiceResolver = new SPARQLServiceResolver();
 			}
 			setFederatedServiceResolver(dependentServiceResolver);
 		}

@@ -5,14 +5,20 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.repository.sail.config;
+package org.eclipse.rdf4j.repository;
+
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 
 /**
- * Interface used by factory classes that need access to other repositories by their id's.
+ * Gets local repositories using a simple identifier string.
  * 
  * @author Dale Visser
- * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.RepositoryResolverClient}
+ * @since 2.3
  */
-@Deprecated
-public interface RepositoryResolverClient extends org.eclipse.rdf4j.repository.RepositoryResolverClient {
+public interface RepositoryResolver {
+
+	Repository getRepository(String memberID)
+		throws RepositoryException, RepositoryConfigException;
 }
