@@ -10,16 +10,15 @@ package org.eclipse.rdf4j.http.client;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.utils.HttpClientUtils;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.impl.client.HttpClients;
 import org.eclipse.rdf4j.http.client.util.HttpClientBuilders;
-
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 /**
  * A Manager for HTTP sessions that uses a shared {@link HttpClient} to manage HTTP connections.
@@ -27,6 +26,8 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
  * @author James Leigh
  */
 public class SharedHttpClientSessionManager implements HttpClientSessionManager, HttpClientDependent {
+
+	private static final AtomicLong threadCount = new AtomicLong();
 
 	/** independent life cycle */
 	private volatile HttpClient httpClient;
@@ -46,8 +47,16 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	 *--------------*/
 
 	public SharedHttpClientSessionManager() {
-		this.executor = Executors.newCachedThreadPool(
-				new ThreadFactoryBuilder().setNameFormat("rdf4j-sesameclientimpl-%d").build());
+		final ThreadFactory backingThreadFactory = Executors.defaultThreadFactory();
+		this.executor = Executors.newCachedThreadPool(new ThreadFactory() {
+
+			public Thread newThread(Runnable runnable) {
+				Thread thread = backingThreadFactory.newThread(runnable);
+				thread.setName(String.format("rdf4j-sesameclientimpl-%d", threadCount.getAndIncrement()));
+				thread.setDaemon(true);
+				return thread;
+			}
+		});
 	}
 
 	public SharedHttpClientSessionManager(CloseableHttpClient dependentClient,

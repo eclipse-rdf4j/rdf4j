@@ -5,10 +5,12 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.util;
+package org.eclipse.rdf4j.sail.model;
 
 import java.util.Map;
 import java.util.UUID;
+
+import org.eclipse.rdf4j.util.UUIDable;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
