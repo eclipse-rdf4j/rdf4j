@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.Repository;
@@ -30,6 +31,56 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 
 public class RepositoryConfigUtil {
 
+	public static RepositoryConfig getRepositoryConfig(Model model, String repositoryID) {
+		Statement idStatement = getIDStatement(model, repositoryID);
+		if (idStatement == null) {
+			// No such config
+			return null;
+		}
+		Resource repositoryNode = idStatement.getSubject();
+		Resource context = idStatement.getContext();
+		Model contextGraph = model.filter(null, null, null, context);
+		return RepositoryConfig.create(contextGraph, repositoryNode);
+	}
+
+	public static Model getRepositoryConfigModel(Model model, String repositoryID) {
+		Statement idStatement = getIDStatement(model, repositoryID);
+		if (idStatement == null) {
+			// No such config
+			return null;
+		}
+		return model.filter(null, null, null, idStatement.getContext());
+	}
+
+	public static Set<String> getRepositoryIDs(Model model)
+		throws RepositoryException
+	{
+		Set<String> idSet = new LinkedHashSet<String>();
+		model.filter(null, REPOSITORYID, null).forEach(idStatement -> {
+			if (idStatement.getObject() instanceof Literal) {
+				Literal idLiteral = (Literal)idStatement.getObject();
+				idSet.add(idLiteral.getLabel());
+			}
+		});
+		return idSet;
+	}
+
+	private static Statement getIDStatement(Model model, String repositoryID) {
+		Literal idLiteral = SimpleValueFactory.getInstance().createLiteral(repositoryID);
+		Model idStatementList = model.filter(null, REPOSITORYID, idLiteral);
+
+		if (idStatementList.size() == 1) {
+			return idStatementList.iterator().next();
+		}
+		else if (idStatementList.isEmpty()) {
+			return null;
+		}
+		else {
+			throw new RepositoryConfigException("Multiple ID-statements for repository ID " + repositoryID);
+		}
+	}
+
+	@Deprecated
 	public static Set<String> getRepositoryIDs(Repository repository)
 		throws RepositoryException
 	{
@@ -71,6 +122,7 @@ public class RepositoryConfigUtil {
 	 *         if an error occurred while trying to retrieve information from the (system) repository
 	 * @throws RepositoryConfigException
 	 */
+	@Deprecated
 	public static boolean hasRepositoryConfig(Repository repository, String repositoryID)
 		throws RepositoryException, RepositoryConfigException
 	{
@@ -83,6 +135,7 @@ public class RepositoryConfigUtil {
 		}
 	}
 
+	@Deprecated
 	public static RepositoryConfig getRepositoryConfig(Repository repository, String repositoryID)
 		throws RepositoryConfigException, RepositoryException
 	{
@@ -125,6 +178,7 @@ public class RepositoryConfigUtil {
 	 *         When access to the Repository's RepositoryConnection causes a RepositoryException.
 	 * @throws RepositoryConfigException
 	 */
+	@Deprecated
 	public static void updateRepositoryConfigs(Repository repository, RepositoryConfig... configs)
 		throws RepositoryException, RepositoryConfigException
 	{
@@ -152,6 +206,7 @@ public class RepositoryConfigUtil {
 	 * @throws RepositoryException
 	 * @throws RepositoryConfigException
 	 */
+	@Deprecated
 	public static void updateRepositoryConfigs(RepositoryConnection con, RepositoryConfig... configs)
 		throws RepositoryException, RepositoryConfigException
 	{
@@ -191,6 +246,7 @@ public class RepositoryConfigUtil {
 	 *         Whenever access to the Repository's RepositoryConnection causes a RepositoryException.
 	 * @throws RepositoryConfigException
 	 */
+	@Deprecated
 	public static boolean removeRepositoryConfigs(Repository repository, String... repositoryIDs)
 		throws RepositoryException, RepositoryConfigException
 	{
@@ -218,6 +274,7 @@ public class RepositoryConfigUtil {
 		return changed;
 	}
 
+	@Deprecated
 	public static Resource getContext(RepositoryConnection con, String repositoryID)
 		throws RepositoryException, RepositoryConfigException
 	{

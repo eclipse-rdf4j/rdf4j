@@ -162,6 +162,7 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
+		m.setNamespace("cgqi", CustomGraphQueryInferencerSchema.NAMESPACE);
 		if (null != language) {
 			m.add(implNode, QUERY_LANGUAGE,
 					SimpleValueFactory.getInstance().createLiteral(language.getName()));

@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail.config;
 
+import static org.eclipse.rdf4j.repository.sail.config.SailRepositorySchema.NAMESPACE;
 import static org.eclipse.rdf4j.repository.sail.config.SailRepositorySchema.SAILIMPL;
 import static org.eclipse.rdf4j.sail.config.SailConfigSchema.SAILTYPE;
 
@@ -69,6 +70,7 @@ public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
 		Resource repImplNode = super.export(model);
 
 		if (sailImplConfig != null) {
+			model.setNamespace("sr", NAMESPACE);
 			Resource sailImplNode = sailImplConfig.export(model);
 			model.add(repImplNode, SAILIMPL, sailImplNode);
 		}
