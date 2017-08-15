@@ -292,6 +292,11 @@
 					<manifestLocation>${project.build.directory}/manifest/</manifestLocation>
 					<instructions>
 						<Export-Package>!*text-base,!*prop-base,org.eclipse.rdf4j.*</Export-Package>
+						<Import-Package>
+							org.apache.lucene.*;resolution:=optional,
+							com.spatial4j.*;resolution:=optional,
+							*
+						</Import-Package>
 						<Embed-Dependency>
 							*;
 							groupId=org.eclipse.rdf4j;
