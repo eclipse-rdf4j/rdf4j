@@ -37,10 +37,6 @@
                                 <groupId>com.github.siom79.japicmp</groupId>
                                 <artifactId>japicmp-maven-plugin</artifactId>
                         </plugin>
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>buildnumber-maven-plugin</artifactId>
-			</plugin>
 		</plugins>
 	</build>
 </project>

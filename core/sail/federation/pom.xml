@@ -67,12 +67,4 @@ The Federation SAIL allows multiple datasets to be virtually combined into a sin
 		</dependency>
 
 	</dependencies>
-	<build>
-		<plugins>
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>buildnumber-maven-plugin</artifactId>
-			</plugin>
-		</plugins>
-	</build>
 </project>
