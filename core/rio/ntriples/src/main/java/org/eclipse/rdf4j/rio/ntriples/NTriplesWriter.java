@@ -16,7 +16,13 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -39,6 +45,10 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	protected final Writer writer;
 
 	protected boolean writingStarted;
+
+	private boolean xsdStringToPlainLiteral = true;
+
+	private boolean escapeUnicode;
 
 	/*--------------*
 	 * Constructors *
@@ -83,6 +93,8 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 
 		writingStarted = true;
+		xsdStringToPlainLiteral = getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
+		escapeUnicode = getWriterConfig().get(NTriplesWriterSettings.ESCAPE_UNICODE);
 	}
 
 	@Override
@@ -118,13 +130,11 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 
 		try {
-			NTriplesUtil.append(st.getSubject(), writer);
+			writeValue(st.getSubject());
 			writer.write(" ");
-			NTriplesUtil.append(st.getPredicate(), writer);
+			writeIRI(st.getPredicate());
 			writer.write(" ");
-			NTriplesUtil.append(st.getObject(), writer,
-					getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL),
-					getWriterConfig().get(NTriplesWriterSettings.ESCAPE_UNICODE));
+			writeValue(st.getObject());
 
 			writer.write(" .\n");
 		}
@@ -155,5 +165,111 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 		result.add(NTriplesWriterSettings.ESCAPE_UNICODE);
 
 		return result;
+	}
+
+	/**
+	 * Writes the N-Triples representation of the given {@link Value}.
+	 *
+	 * @param value
+	 *        The value to write.
+	 * @throws IOException
+	 */
+	protected void writeValue(Value value)
+		throws IOException
+	{
+		if (value instanceof IRI) {
+			writeIRI((IRI)value);
+		}
+		else if (value instanceof BNode) {
+			writeBNode((BNode)value);
+		}
+		else if (value instanceof Literal) {
+			writeLiteral((Literal)value);
+		}
+		else {
+			throw new IllegalArgumentException("Unknown value type: " + value.getClass());
+		}
+	}
+
+	private void writeIRI(IRI iri)
+		throws IOException
+	{
+		writer.append("<");
+		writeString(iri.stringValue());
+		writer.append(">");
+	}
+
+	private void writeBNode(BNode bNode)
+		throws IOException
+	{
+		String nextId = bNode.getID();
+		writer.append("_:");
+
+		if (nextId.isEmpty()) {
+			writer.append("genid");
+			writer.append(Integer.toHexString(bNode.hashCode()));
+		}
+		else {
+			if (!NTriplesUtil.isLetter(nextId.charAt(0))) {
+				writer.append("genid");
+				writer.append(Integer.toHexString(nextId.charAt(0)));
+			}
+
+			for (int i = 0; i < nextId.length(); i++) {
+				if (NTriplesUtil.isLetterOrNumber(nextId.charAt(i))) {
+					writer.append(nextId.charAt(i));
+				}
+				else {
+					// Append the character as its hex representation
+					writer.append(Integer.toHexString(nextId.charAt(i)));
+				}
+			}
+		}
+	}
+
+	/**
+	 * Write the N-Triples representation of the given {@link Literal}, optionally ignoring the xsd:string
+	 * datatype as it is implied for RDF-1.1.
+	 *
+	 * @param lit
+	 *        The literal to write.
+	 * @throws IOException
+	 */
+	private void writeLiteral(Literal lit)
+		throws IOException
+	{
+		// Do some character escaping on the label:
+		writer.append("\"");
+		writeString(lit.getLabel());
+		writer.append("\"");
+
+		if (Literals.isLanguageLiteral(lit)) {
+			// Append the literal's language
+			writer.append("@");
+			writer.append(lit.getLanguage().get());
+		}
+		else {
+			// SES-1917 : In RDF-1.1, all literals have a type, and if they are not
+			// language literals we display the type for backwards compatibility
+			IRI datatype = lit.getDatatype();
+			if (!datatype.equals(XMLSchema.STRING) || !xsdStringToPlainLiteral) {
+				writer.append("^^");
+				writeIRI(lit.getDatatype());
+			}
+		}
+	}
+
+	/**
+	 * Writes a Unicode string to an N-Triples compatible character sequence. Any special characters are
+	 * escaped using backslashes (<tt>"</tt> becomes <tt>\"</tt>, etc.), and non-ascii/non-printable
+	 * characters are escaped using Unicode escapes (<tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>) if the
+	 * writer config is enabled.
+	 *
+	 * @throws IOException
+	 */
+	private void writeString(String label)
+		throws IOException
+	{
+		NTriplesUtil.escapeString(label, writer, escapeUnicode);
 	}
 }

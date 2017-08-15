@@ -14,9 +14,6 @@ import java.io.Writer;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
-import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
-import org.eclipse.rdf4j.rio.ntriples.NTriplesUtil;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesWriter;
 
 /**
@@ -49,21 +46,19 @@ public class NQuadsWriter extends NTriplesWriter {
 
 		try {
 			// SUBJECT
-			NTriplesUtil.append(st.getSubject(), writer);
+			writeValue(st.getSubject());
 			writer.write(" ");
 
 			// PREDICATE
-			NTriplesUtil.append(st.getPredicate(), writer);
+			writeValue(st.getPredicate());
 			writer.write(" ");
 
 			// OBJECT
-			NTriplesUtil.append(st.getObject(), writer,
-					getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL),
-					getWriterConfig().get(NTriplesWriterSettings.ESCAPE_UNICODE));
+			writeValue(st.getObject());
 
 			if (null != st.getContext()) {
 				writer.write(" ");
-				NTriplesUtil.append(st.getContext(), writer);
+				writeValue(st.getContext());
 			}
 
 			writer.write(" .\n");
