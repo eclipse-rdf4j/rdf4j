@@ -14,7 +14,7 @@
         
 
         <logger name="org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailSpinTest">
-            <level value="warn"/>
+            <level value="info"/>
         </logger>
 
         

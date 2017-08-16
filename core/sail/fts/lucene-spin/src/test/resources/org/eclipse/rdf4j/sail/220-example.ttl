@@ -1,8 +1,23 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix geo: <http://www.opengis.net/ont/geosparql#> .
-
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+ 
 @prefix t: <urn:test.org/onto#> .
+@prefix kw: <urn:test.org/key-words/> .
+@prefix kw-data: <urn:test.org/key-words/data/> .
+ 
+ 
+ 
+<urn:test.org/mock-data/predicate16> rdfs:label "keyWord" ;
+    t:column kw:keyWord .
+
+kw-data:data1 kw:keyWord "Donec"^^xsd:string . 
+kw-data:data2 kw:keyWord "viverra"^^xsd:string .
+kw-data:data3 kw:keyWord "ornare"^^xsd:string .
+
+
+
 
 
 
