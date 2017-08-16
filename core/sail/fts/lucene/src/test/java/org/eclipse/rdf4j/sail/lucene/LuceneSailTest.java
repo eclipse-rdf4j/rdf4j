@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.junit.Test;
 
-public class LuceneSailTest extends AbstractLuceneSailTest {
+public class LuceneSailTest extends AbstractGenericLuceneTest {
 
 	private LuceneIndex index;
 

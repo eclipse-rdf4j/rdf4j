@@ -87,6 +87,8 @@ import com.spatial4j.core.context.SpatialContext;
 import com.spatial4j.core.context.SpatialContextFactory;
 import com.spatial4j.core.shape.Point;
 import com.spatial4j.core.shape.Shape;
+import org.apache.lucene.search.similarities.DefaultSimilarity;
+import org.apache.lucene.search.similarities.Similarity;
 
 /**
  * A LuceneIndex is a one-stop-shop abstraction of a Lucene index. It takes care of proper synchronization of
@@ -118,6 +120,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	private volatile Analyzer queryAnalyzer;
 
+	private volatile Similarity similarity;
+
 	/**
 	 * The IndexWriter that can be used to alter the index' contents. Created lazily.
 	 */
@@ -136,20 +140,35 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	/**
+	 * Constructor for keeping backwards compatibility.
+	 * 
+	 * @param directory
+	 * @param analyzer
+	 */
+	public LuceneIndex(Directory directory, Analyzer analyzer)
+		throws IOException
+	{
+		this(directory, analyzer, new DefaultSimilarity());
+	}
+
+	/**
 	 * Creates a new LuceneIndex.
 	 * 
 	 * @param directory
 	 *        The Directory in which an index can be found and/or in which index files are written.
 	 * @param analyzer
 	 *        The Analyzer that will be used for tokenizing strings to index and queries.
+	 * @param similarity
+	 *        The Similarity that will be used for scoring.
 	 * @throws IOException
 	 *         When the Directory could not be unlocked.
 	 */
-	public LuceneIndex(Directory directory, Analyzer analyzer)
+	public LuceneIndex(Directory directory, Analyzer analyzer, Similarity similarity)
 		throws IOException
 	{
 		this.directory = directory;
 		this.analyzer = analyzer;
+		this.similarity = similarity;
 		this.geoStrategyMapper = createSpatialStrategyMapper(Collections.<String, String> emptyMap());
 
 		postInit();
@@ -162,6 +181,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		super.initialize(parameters);
 		this.directory = createDirectory(parameters);
 		this.analyzer = createAnalyzer(parameters);
+		this.similarity = createSimilarity(parameters);
 		// slightly hacky cast to cope with the fact that Properties is
 		// Map<Object,Object>
 		// even though it is effectively Map<String,String>
@@ -203,6 +223,21 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		return analyzer;
 	}
 
+	protected Similarity createSimilarity(Properties parameters)
+		throws Exception
+	{
+		Similarity similarity;
+		if (parameters.containsKey(LuceneSail.SIMILARITY_CLASS_KEY)) {
+			similarity = (Similarity)Class.forName(
+					parameters.getProperty(LuceneSail.SIMILARITY_CLASS_KEY)).newInstance();
+		}
+		else {
+			similarity = new DefaultSimilarity();
+		}
+
+		return similarity;
+	}
+
 	private void postInit()
 		throws IOException
 	{
@@ -211,7 +246,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		// do some initialization for new indices
 		if (!DirectoryReader.indexExists(directory)) {
 			logger.debug("creating new Lucene index in directory {}", directory);
-			IndexWriterConfig indexWriterConfig = new IndexWriterConfig(analyzer);
+			IndexWriterConfig indexWriterConfig = getIndexWriterConfig();
 			indexWriterConfig.setOpenMode(OpenMode.CREATE);
 			IndexWriter writer = new IndexWriter(directory, indexWriterConfig);
 			writer.close();
@@ -274,7 +309,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		if (closed.get()) {
 			throw new SailException("Index has been closed");
 		}
-		return getCurrentMonitor().getIndexSearcher();
+		IndexSearcher indexSearcher = getCurrentMonitor().getIndexSearcher();
+		indexSearcher.setSimilarity(similarity);
+		return indexSearcher;
 	}
 
 	/**
@@ -298,7 +335,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			throw new SailException("Index has been closed");
 		}
 		if (indexWriter == null) {
-			IndexWriterConfig indexWriterConfig = new IndexWriterConfig(analyzer);
+			IndexWriterConfig indexWriterConfig = getIndexWriterConfig();
 			indexWriter = new IndexWriter(directory, indexWriterConfig);
 		}
 		return indexWriter;
@@ -1066,7 +1103,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			indexWriter.close();
 
 		// crate new writer
-		IndexWriterConfig indexWriterConfig = new IndexWriterConfig(analyzer);
+		IndexWriterConfig indexWriterConfig = getIndexWriterConfig();
 		indexWriterConfig.setOpenMode(OpenMode.CREATE);
 		indexWriter = new IndexWriter(directory, indexWriterConfig);
 		indexWriter.close();
@@ -1077,6 +1114,17 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	//
 	// Lucene helper methods
 	//
+
+	/**
+	 * Method produces {@link IndexWriterConfig} using settings.
+	 * 
+	 * @return
+	 */
+	private IndexWriterConfig getIndexWriterConfig() {
+		IndexWriterConfig cnf = new IndexWriterConfig(analyzer);
+		cnf.setSimilarity(similarity);
+		return cnf;
+	}
 
 	private static boolean isDeleted(IndexReader reader, int docId) {
 		if (reader.hasDeletions()) {
