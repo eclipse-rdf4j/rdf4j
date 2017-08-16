@@ -54,7 +54,7 @@ public class SailUpdate extends AbstractParserUpdate {
 
 		boolean localTransaction = false;
 		try {
-			if (isLocalTransaction()) {
+			if (!getConnection().isActive()) {
 				localTransaction = true;
 				beginLocalTransaction();
 			}
@@ -90,12 +90,6 @@ public class SailUpdate extends AbstractParserUpdate {
 				rollbackLocalTransaction();
 			}
 		}
-	}
-
-	private boolean isLocalTransaction()
-		throws RepositoryException
-	{
-		return !getConnection().isActive();
 	}
 
 	private void beginLocalTransaction()
