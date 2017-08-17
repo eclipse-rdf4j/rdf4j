@@ -45,10 +45,11 @@ public class MinCountPropertyShape extends PathPropertyShape  {
 
         PlanNode groupBy = new GroupBy(join); //condition
 
-        PlanNode count = new Count(groupBy); //condition
+      //  PlanNode count = new Count(groupBy); //condition
 
 
-//        Select validate = ValidateMinCount(count, minCount);
+       boolean validate = new MinCountValidator(groupBy, minCount).validate();
+        System.out.println("value: " +validate);
 //        return validate;
         return null;
     }
