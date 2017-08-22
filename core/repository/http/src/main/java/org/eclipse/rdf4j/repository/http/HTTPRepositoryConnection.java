@@ -66,6 +66,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
 import org.eclipse.rdf4j.repository.base.AbstractRepositoryConnection;
+import org.eclipse.rdf4j.repository.http.helpers.HTTPRepositoryParserSettings;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
@@ -103,12 +104,6 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	private Model toRemove;
 
-	/**
-	 * Maximum size (in number of statements) allowed for statement buffers before they are forcibly flushed.
-	 * TODO: make this setting configurable.
-	 */
-	private static final long MAX_STATEMENT_BUFFER_SIZE = 200000;
-
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -123,6 +118,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		setParserConfig(new ParserConfig());
 		getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
 		getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+                getParserConfig().set(HTTPRepositoryParserSettings.MAX_STATEMENT_BUFFER_SIZE, 
+                        HTTPRepositoryParserSettings.MAX_STATEMENT_BUFFER_SIZE.getDefaultValue());
 	}
 
 	/*---------*
@@ -632,13 +629,14 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 
 		if (isActive()) {
+                    int maxBufferSize = getParserConfig().get(HTTPRepositoryParserSettings.MAX_STATEMENT_BUFFER_SIZE);
 			switch (action) {
 				case ADD:
 					if (toRemove != null) {
 						removeModel(toRemove);
 						toRemove = null;
 					}
-					if (toAdd != null && MAX_STATEMENT_BUFFER_SIZE <= toAdd.size()) {
+					if (toAdd != null && maxBufferSize <= toAdd.size()) {
 						addModel(toAdd);
 						toAdd = null;
 					}
@@ -648,7 +646,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 						addModel(toAdd);
 						toAdd = null;
 					}
-					if (toRemove != null && MAX_STATEMENT_BUFFER_SIZE <= toRemove.size()) {
+					if (toRemove != null && maxBufferSize <= toRemove.size()) {
 						removeModel(toRemove);
 						toRemove = null;
 					}
