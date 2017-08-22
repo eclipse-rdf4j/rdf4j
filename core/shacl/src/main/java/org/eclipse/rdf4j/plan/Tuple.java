@@ -12,6 +12,12 @@ import java.util.List;
 public class Tuple {
     public List<Value> line = new ArrayList<>();
 
+    public Tuple(List<Value> list) {
+        line = list;
+    }
+
+    public Tuple(){}
+
     public List<Value> getlist (){
         return line;
     }

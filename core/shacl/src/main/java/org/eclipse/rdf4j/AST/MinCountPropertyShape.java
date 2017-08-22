@@ -43,7 +43,7 @@ public class MinCountPropertyShape extends PathPropertyShape  {
        // Tuple propertyTuple = ((Select) properties).shaclSailConnection.sail.newStatements;
         PlanNode join =  new OuterLeftJoin(instancesOfTargetClass, properties); //condition
 
-        PlanNode groupBy = new GroupBy(join); //condition
+        GroupPlanNode groupBy = new GroupBy(join); //condition
 
       //  PlanNode count = new Count(groupBy); //condition
 

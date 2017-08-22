@@ -7,12 +7,10 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 ex:Håvard a ex:Person ;
-	ex:name "Håvard Ottestad";
-	ex:name "Håvardeeeee Ottestad" .
+	ex:name "Håvard Ottestad".
 
 ex:Heshan
-	a ex:Person ;
-	ex:name "heshan Jayasinghe" .
+	a ex:Person .
 	
 
 

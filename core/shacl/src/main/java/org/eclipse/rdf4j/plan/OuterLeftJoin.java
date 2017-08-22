@@ -12,6 +12,7 @@ import java.util.ArrayList;
 public class OuterLeftJoin implements PlanNode {
     PlanNode targetclass;
     PlanNode properties;
+    ArrayList<Tuple> tuplelist =new ArrayList<Tuple>();
 
     public OuterLeftJoin(PlanNode instancesOfTargetClass, PlanNode properties) {
         this.targetclass = instancesOfTargetClass;
@@ -21,23 +22,31 @@ public class OuterLeftJoin implements PlanNode {
 
     @Override
     public CloseableIteration<Tuple, SailException> iterator() {
-        ArrayList<Tuple> tuplelist = new ArrayList<Tuple>();
-        while (targetclass.iterator().hasNext()){
-            Tuple targetclassNext = targetclass.iterator().next();
-            while (properties.iterator().hasNext()){
-                Tuple next = properties.iterator().next();
-                if (targetclassNext.line.get(0).stringValue().equals(next.line.get(0).stringValue())){
-                    Tuple tuple = new Tuple();
-                    tuple.line.add((Value) targetclassNext.getlist().get(0));
-                    tuple.line.add((Value) next.getlist().get(0));
-                    tuple.line.add((Value) next.getlist().get(2));
-                    tuplelist.add(tuple);
+        CloseableIteration<Tuple, SailException> tagetclassIterator = targetclass.iterator();
+         while (tagetclassIterator.hasNext()){
+            Tuple targetclassNext = tagetclassIterator.next();
+             CloseableIteration<Tuple, SailException> propertiesIterator = properties.iterator();
+         //   if (propertiesIterator.hasNext()) {
+                while (propertiesIterator.hasNext()) {
+                    Tuple propertiesNext = propertiesIterator.next();
+                    if (targetclassNext.line.get(0).stringValue().equals(propertiesNext.line.get(0).stringValue())) {
+                        Tuple tuple = new Tuple();
+                        tuple.line.add((Value) targetclassNext.getlist().get(0));
+                        tuple.line.add((Value) propertiesNext.getlist().get(0));
+                        tuple.line.add((Value) propertiesNext.getlist().get(2));
+                        tuplelist.add(tuple);
+                    }
                 }
-            }
+        //    }
+//            else {
+//                Tuple tuple = new Tuple();
+//                tuple.line.add((Value) targetclassNext.getlist().get(0));
+//                tuplelist.add(tuple);
+//            }
         }
-        if(tuplelist.isEmpty()){
-            return null;
-        }else {
+//        if(tuplelist.isEmpty()){
+//            return null;
+//        }else {
             return new CloseableIteration<Tuple, SailException>() {
                 int counter = 0;
 
@@ -48,7 +57,7 @@ public class OuterLeftJoin implements PlanNode {
 
                 @Override
                 public boolean hasNext() throws SailException {
-                    return tuplelist.size() >= counter;
+                    return tuplelist.size() > counter;
                 }
 
                 @Override
@@ -65,7 +74,7 @@ public class OuterLeftJoin implements PlanNode {
 
             };
         }
-   }
+ //  }
 
     @Override
     public boolean validate() {
