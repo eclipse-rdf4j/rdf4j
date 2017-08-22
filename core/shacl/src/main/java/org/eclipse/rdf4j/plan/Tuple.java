@@ -10,22 +10,23 @@ import java.util.List;
  * Created by heshanjayasinghe on 7/17/17.
  */
 public class Tuple {
-    public List<Value> line = new ArrayList<>();
+	public List<Value> line = new ArrayList<>();
 
-    public Tuple(List<Value> list) {
-        line = list;
-    }
+	public Tuple(List<Value> list) {
+		line = list;
+	}
 
-    public Tuple(){}
+	public Tuple() {
+	}
 
-    public List<Value> getlist (){
-        return line;
-    }
+	public List<Value> getlist() {
+		return line;
+	}
 
-    @Override
-    public String toString() {
-        return "Tuple{" +
-                "line=" + Arrays.toString(line.toArray()) +
-                '}';
-    }
+	@Override
+	public String toString() {
+		return "Tuple{" +
+			"line=" + Arrays.toString(line.toArray()) +
+			"}";
+	}
 }

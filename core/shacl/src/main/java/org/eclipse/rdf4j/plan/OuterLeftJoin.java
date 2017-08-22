@@ -31,9 +31,8 @@ public class OuterLeftJoin implements PlanNode {
                     Tuple propertiesNext = propertiesIterator.next();
                     if (targetclassNext.line.get(0).stringValue().equals(propertiesNext.line.get(0).stringValue())) {
                         Tuple tuple = new Tuple();
-                        tuple.line.add((Value) targetclassNext.getlist().get(0));
-                        tuple.line.add((Value) propertiesNext.getlist().get(0));
-                        tuple.line.add((Value) propertiesNext.getlist().get(2));
+                        tuple.line.addAll(targetclassNext.getlist());
+                        tuple.line.addAll(propertiesNext.getlist());
                         tuplelist.add(tuple);
                     }
                 }
