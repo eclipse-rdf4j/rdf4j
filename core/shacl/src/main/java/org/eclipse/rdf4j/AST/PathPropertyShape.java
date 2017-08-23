@@ -3,6 +3,7 @@ package org.eclipse.rdf4j.AST;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.plan.PlanNode;
 import org.eclipse.rdf4j.plan.Select;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.validation.ShaclSailConnection;
@@ -24,7 +25,7 @@ public class PathPropertyShape extends PropertyShape implements PlanGenerator {
 
     }
 
-    public Select getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+    public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
         Select select =new Select(shaclSailConnection, null, (IRI) path.path, null);
 
         //new MinCountPropertyShape(shape.id,)

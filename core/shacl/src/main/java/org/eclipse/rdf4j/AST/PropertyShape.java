@@ -3,7 +3,7 @@ package org.eclipse.rdf4j.AST;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.plan.Select;
+import org.eclipse.rdf4j.plan.PlanNode;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.validation.ShaclSailConnection;
@@ -25,7 +25,7 @@ public class PropertyShape implements PlanGenerator {
     }
 
     @Override
-    public  Select getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+    public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
 
         throw  new IllegalStateException("Should never get here!!!");
     }

@@ -4,9 +4,12 @@ import org.eclipse.rdf4j.AST.Shape;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.TreeModel;
+import org.eclipse.rdf4j.plan.PlanNode;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
+
+import java.util.List;
 
 /**
  * Created by heshanjayasinghe on 4/23/17.
@@ -33,7 +36,13 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper{
 
 		for (Shape shape : sail.shapes) {
 			//	shape.getPlan(this,shape);
-				shape.generatePlans(this,shape);
+			List<PlanNode> planNodes = shape.generatePlans(this, shape);
+			for (PlanNode planNode :planNodes){
+				boolean valid = planNode.validate();
+				if(!valid){
+					throw new SailException("invalid for shacl");
+				}
+			}
 		}
 
 //            System.out.println(shape);
