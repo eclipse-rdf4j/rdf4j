@@ -1,7 +1,6 @@
 package org.eclipse.rdf4j.plan;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.ArrayList;
@@ -26,7 +25,7 @@ public class OuterLeftJoin implements PlanNode {
          while (tagetclassIterator.hasNext()){
             Tuple targetclassNext = tagetclassIterator.next();
              CloseableIteration<Tuple, SailException> propertiesIterator = properties.iterator();
-         //   if (propertiesIterator.hasNext()) {
+            if (propertiesIterator.hasNext()) {
                 while (propertiesIterator.hasNext()) {
                     Tuple propertiesNext = propertiesIterator.next();
                     if (targetclassNext.line.get(0).stringValue().equals(propertiesNext.line.get(0).stringValue())) {
@@ -36,12 +35,13 @@ public class OuterLeftJoin implements PlanNode {
                         tuplelist.add(tuple);
                     }
                 }
-        //    }
-//            else {
-//                Tuple tuple = new Tuple();
-//                tuple.line.add((Value) targetclassNext.getlist().get(0));
-//                tuplelist.add(tuple);
-//            }
+            }
+            else {
+                Tuple tuple = new Tuple();
+                tuple.line.addAll(targetclassNext.getlist());
+               // tuple.line.add((Value) targetclassNext.getlist().get(0));
+                tuplelist.add(tuple);
+            }
         }
 //        if(tuplelist.isEmpty()){
 //            return null;
