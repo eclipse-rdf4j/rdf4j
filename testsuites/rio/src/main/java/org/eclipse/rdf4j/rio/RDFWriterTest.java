@@ -20,13 +20,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.StringReader;
-import java.io.StringWriter;
-import java.io.Writer;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
@@ -54,16 +51,6 @@ import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.SKOS;
 import org.eclipse.rdf4j.model.vocabulary.SP;
 import org.eclipse.rdf4j.model.vocabulary.SPIN;
-import org.eclipse.rdf4j.rio.ParserConfig;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.RDFHandlerException;
-import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.RDFParserFactory;
-import org.eclipse.rdf4j.rio.RDFWriter;
-import org.eclipse.rdf4j.rio.RDFWriterFactory;
-import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
@@ -79,11 +66,6 @@ public abstract class RDFWriterTest {
 
 	@Rule
 	public TemporaryFolder tempDir = new TemporaryFolder();
-
-	/**
-	 * One prng per testsuite run
-	 */
-	private static final Random prng = new SecureRandom();
 
 	protected RDFWriterFactory rdfWriterFactory;
 
@@ -155,6 +137,7 @@ public abstract class RDFWriterTest {
 		rdfWriterFactory = writerF;
 		rdfParserFactory = parserF;
 
+		Random prng = new Random(this.getClass().getName().hashCode());
 		vf = SimpleValueFactory.getInstance();
 
 		exNs = "http://example.org/";
@@ -704,6 +687,8 @@ public abstract class RDFWriterTest {
 	private void testPerformanceInternal(boolean storeParsedStatements)
 		throws Exception
 	{
+
+		Random prng = new Random(this.getClass().getName().hashCode());
 		Model model = new LinkedHashModel();
 
 		for (int i = 0; i < 10000; i++) {
@@ -1670,5 +1655,184 @@ public abstract class RDFWriterTest {
 		ByteArrayInputStream inputReader2 = new ByteArrayInputStream(outputWriter.toByteArray());
 		rdfParser.parse(inputReader2, "");
 		assertEquals(2, parsedOutput.size());
+	}
+
+	@Test
+	public void testOneCollection() throws Exception {
+		Model input = new LinkedHashModel();
+		Resource _1 = vf.createBNode();
+		Resource _2 = vf.createBNode();
+		Resource _3 = vf.createBNode();
+		input.add(uri1, uri2, _1);
+		input.add(_1, RDF.FIRST, uri3);
+		input.add(_1, RDF.REST, _2);
+		input.add(_2, RDF.FIRST, uri4);
+		input.add(_2, RDF.REST, _3);
+		input.add(_3, RDF.FIRST, uri5);
+		input.add(_3, RDF.REST, RDF.NIL);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		for (Statement st : input) {
+			rdfWriter.handleStatement(st);
+		}
+		rdfWriter.endRDF();
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertSameModel(input, parsedOutput);
+	}
+
+	@Test
+	public void testOneCollectionWithType() throws Exception {
+		Model input = new LinkedHashModel();
+		Resource _1 = vf.createBNode();
+		Resource _2 = vf.createBNode();
+		Resource _3 = vf.createBNode();
+		input.add(uri1, uri2, _1);
+		input.add(_1, RDF.TYPE, RDF.LIST);
+		input.add(_1, RDF.FIRST, uri3);
+		input.add(_1, RDF.REST, _2);
+		input.add(_2, RDF.FIRST, uri4);
+		input.add(_2, RDF.REST, _3);
+		input.add(_3, RDF.FIRST, uri5);
+		input.add(_3, RDF.REST, RDF.NIL);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		for (Statement st : input) {
+			rdfWriter.handleStatement(st);
+		}
+		rdfWriter.endRDF();
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertSameModel(input, parsedOutput);
+	}
+
+	@Test
+	public void testTwoCollections() throws Exception {
+		Model input = new LinkedHashModel();
+		Resource _1 = vf.createBNode();
+		Resource _2 = vf.createBNode();
+		Resource _3 = vf.createBNode();
+		Resource _4 = vf.createBNode();
+		Resource _5 = vf.createBNode();
+		input.add(uri1, uri2, _1);
+		input.add(_1, RDF.FIRST, uri3);
+		input.add(_1, RDF.REST, _2);
+		input.add(_2, RDF.FIRST, uri4);
+		input.add(_2, RDF.REST, RDF.NIL);
+		input.add(uri1, uri2, _3);
+		input.add(_3, RDF.FIRST, uri3);
+		input.add(_3, RDF.REST, _4);
+		input.add(_4, RDF.FIRST, uri4);
+		input.add(_4, RDF.REST, _5);
+		input.add(_5, RDF.FIRST, uri5);
+		input.add(_5, RDF.REST, RDF.NIL);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		for (Statement st : input) {
+			rdfWriter.handleStatement(st);
+		}
+		rdfWriter.endRDF();
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertSameModel(input, parsedOutput);
+	}
+
+	@Test
+	public void testNestedCollections() throws Exception {
+		Model input = new LinkedHashModel();
+		Resource _1 = vf.createBNode();
+		Resource _2 = vf.createBNode();
+		Resource _3 = vf.createBNode();
+		Resource _4 = vf.createBNode();
+		Resource _5 = vf.createBNode();
+		input.add(uri1, uri2, _1);
+		input.add(_1, RDF.FIRST, bnode);
+		input.add(_1, RDF.REST, _2);
+		input.add(_2, RDF.FIRST, _3);
+		input.add(_3, RDF.FIRST, uri3);
+		input.add(_3, RDF.REST, _4);
+		input.add(_4, RDF.FIRST, uri4);
+		input.add(_4, RDF.REST, _5);
+		input.add(_5, RDF.FIRST, uri5);
+		input.add(_5, RDF.REST, RDF.NIL);
+		input.add(_2, RDF.REST, RDF.NIL);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		for (Statement st : input) {
+			rdfWriter.handleStatement(st);
+		}
+		rdfWriter.endRDF();
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertSameModel(input, parsedOutput);
+	}
+
+	@Test
+	public void testListWithObject() throws Exception {
+		Model input = new LinkedHashModel();
+		Resource _1 = vf.createBNode();
+		input.add(uri1, uri2, _1);
+		input.add(_1, RDF.FIRST, bnode);
+		input.add(bnode, RDF.TYPE, RDFS.RESOURCE);
+		input.add(_1, RDF.REST, RDF.NIL);
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.startRDF();
+		for (Statement st : input) {
+			rdfWriter.handleStatement(st);
+		}
+		rdfWriter.endRDF();
+		System.out.println(new String(outputWriter.toByteArray()));
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+		assertSameModel(input, parsedOutput);
+	}
+
+	private void assertSameModel(Model expected, Model actual) {
+		assertEquals(expected.size(), actual.size());
+		assertEquals(expected.subjects().size(), actual.subjects().size());
+		assertEquals(expected.predicates().size(), actual.predicates().size());
+		assertEquals(expected.objects().size(), actual.objects().size());
+		Set<Value> inputNodes = new HashSet<>(expected.subjects());
+		inputNodes.addAll(expected.objects());
+		Set<Value> outputNodes = new HashSet<>(actual.subjects());
+		outputNodes.addAll(actual.objects());
+		assertEquals(inputNodes.size(), outputNodes.size());
+		for (Statement st : expected) {
+			Resource subj = st.getSubject() instanceof IRI ? st.getSubject() : null;
+			IRI pred = st.getPredicate();
+			Value obj = st.getObject() instanceof BNode ? null : st.getObject();
+			assertTrue("Missing " + st, actual.contains(subj, pred, obj));
+			assertEquals(actual.filter(subj, pred, obj).size(), actual.filter(subj, pred, obj).size());
+		}
 	}
 }

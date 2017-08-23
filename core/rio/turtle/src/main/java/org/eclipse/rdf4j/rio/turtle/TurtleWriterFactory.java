@@ -34,25 +34,25 @@ public class TurtleWriterFactory implements RDFWriterFactory {
 	 * Returns a new instance of {@link TurtleWriter}.
 	 */
 	public RDFWriter getWriter(OutputStream out) {
-		return new TurtleWriter(out);
+		return new ArrangedWriter(new TurtleWriter(out));
 	}
 
 	public RDFWriter getWriter(OutputStream out, String baseURI)
 		throws URISyntaxException
 	{
-		return new TurtleWriter(out, new ParsedIRI(baseURI));
+		return new ArrangedWriter(new TurtleWriter(out, new ParsedIRI(baseURI)));
 	}
 
 	/**
 	 * Returns a new instance of {@link TurtleWriter}.
 	 */
 	public RDFWriter getWriter(Writer writer) {
-		return new TurtleWriter(writer);
+		return new ArrangedWriter(new TurtleWriter(writer));
 	}
 
 	public RDFWriter getWriter(Writer writer, String baseURI)
 		throws URISyntaxException
 	{
-		return new TurtleWriter(writer, new ParsedIRI(baseURI));
+		return new ArrangedWriter(new TurtleWriter(writer, new ParsedIRI(baseURI)));
 	}
 }
