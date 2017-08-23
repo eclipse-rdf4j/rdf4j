@@ -34,7 +34,7 @@ public class MinCountPropertyShape extends PathPropertyShape  {
     }
 
 
-    public Select getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+    public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
         //super.getPlan(shaclSailConnection, shape);
         PlanNode instancesOfTargetClass = shape.getPlan(shaclSailConnection,shape);
         PlanNode properties = super.getPlan(shaclSailConnection,shape);
@@ -48,10 +48,10 @@ public class MinCountPropertyShape extends PathPropertyShape  {
       //  PlanNode count = new Count(groupBy); //condition
 
 
-       boolean validate = new MinCountValidator(groupBy, minCount).validate();
-        System.out.println("value: " +validate);
+     //  boolean validate = new MinCountValidator(groupBy, minCount).validate();
+     //   System.out.println("value: " +validate);
 //        return validate;
-        return null;
+        return new MinCountValidator(groupBy, minCount);
     }
 
 //    private Select ValidateMinCount(PlanNode count, int minCount) {
