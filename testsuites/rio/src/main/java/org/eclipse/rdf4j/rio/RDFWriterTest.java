@@ -1715,6 +1715,9 @@ public abstract class RDFWriterTest {
 		Model parsedOutput = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
 		rdfParser.parse(inputReader, "");
+		// ignore rdf:List
+		input.remove(null, RDF.TYPE, RDF.LIST);
+		parsedOutput.remove(null, RDF.TYPE, RDF.LIST);
 		assertSameModel(input, parsedOutput);
 	}
 
