@@ -32,10 +32,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper{
 	public void commit() throws SailException {
 		super.commit();
 
-		//sail.validate(this);
-
 		for (Shape shape : sail.shapes) {
-			//	shape.getPlan(this,shape);
 			List<PlanNode> planNodes = shape.generatePlans(this, shape);
 			for (PlanNode planNode :planNodes){
 				boolean valid = planNode.validate();
@@ -44,27 +41,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper{
 				}
 			}
 		}
-
-//            System.out.println(shape);
-//            List<PlanNode> plans = shape.generatePlans(shaclSailConnection,shape);
-//
-//            for (PlanNode v : plans) {
-//                System.out.println(v);
-//                if(!v.validate()){//plan validate logic;
-//                    throw new RuntimeException("Invalid repo");
-//                }
-//            }
-
 	}
 
 	protected Model createModel(){
 		return new TreeModel();
 	};
-
-	public void validate(){
-//		ShaclPlan plan = createPlan(sail.shapes,this); //normal plan ekak
-//
-//		plan.validate(this);
-	}
 
 }

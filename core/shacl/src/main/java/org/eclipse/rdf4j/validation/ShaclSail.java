@@ -92,39 +92,15 @@ public class ShaclSail extends NotifyingSailWrapper {
             throw new SailException(e.getMessage(), e);
         }
     }
-    
-
 
     public void setShaclRules(SailRepository shaclRules){
         try(SailRepositoryConnection connection = shaclRules.getConnection()){
             ValueFactory vf = connection.getValueFactory();
             RepositoryResult<Statement> nodeShape = connection.getStatements(null, RDF.TYPE,SHACL.NODE_SHAPE);
             List<Resource> collect = Iterations.stream(nodeShape).map(Statement::getSubject).collect(Collectors.toList());
-
             collect.forEach(System.out::println);
             shapes = collect.stream().map(s -> new Shape(s, connection)).collect(Collectors.toList());
-
         }
-
-    }
-
-
-    public void validate(ShaclSailConnection shaclSailConnection) {
-
-//        for (Shape shape : shapes) {
-//            System.out.println(shape);
-//            List<PlanNode> plans = shape.generatePlans(shaclSailConnection,shape);
-//
-//            for (PlanNode v : plans) {
-//                System.out.println(v);
-//                if(!v.validate()){//plan validate logic;
-//                    throw new RuntimeException("Invalid repo");
-//                }
-//            }
-//
-//        }
-
-
     }
 
 }

@@ -39,13 +39,10 @@ public class OuterLeftJoin implements PlanNode {
             else {
                 Tuple tuple = new Tuple();
                 tuple.line.addAll(targetclassNext.getlist());
-               // tuple.line.add((Value) targetclassNext.getlist().get(0));
                 tuplelist.add(tuple);
             }
         }
-//        if(tuplelist.isEmpty()){
-//            return null;
-//        }else {
+
             return new CloseableIteration<Tuple, SailException>() {
                 int counter = 0;
 
@@ -73,7 +70,6 @@ public class OuterLeftJoin implements PlanNode {
 
             };
         }
- //  }
 
     @Override
     public boolean validate() {

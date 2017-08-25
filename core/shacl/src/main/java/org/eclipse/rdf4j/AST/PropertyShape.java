@@ -18,7 +18,6 @@ public class PropertyShape implements PlanGenerator {
     Resource id;
     SailRepositoryConnection connection;
 
-
     public PropertyShape(Resource id, SailRepositoryConnection connection) {
         this.id = id;
         this.connection = connection;
@@ -26,20 +25,8 @@ public class PropertyShape implements PlanGenerator {
 
     @Override
     public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
-
         throw  new IllegalStateException("Should never get here!!!");
     }
-
-//    @Override
-//    public boolean validate() {
-//        return true;
-//    }
-//
-//    @Override
-//    public Iterator<Tuple> iterator() {
-//        return null;
-//    }
-
 
     public static class Factory {
         static List<PropertyShape> ret;
@@ -57,7 +44,6 @@ public class PropertyShape implements PlanGenerator {
                 System.out.println(ret.size());
             }
                 return ret;
-
         }
 
         private static boolean hasMaxCount(Resource propertyShapeId, SailRepositoryConnection connection, List<PropertyShape> ret) {
@@ -75,23 +61,6 @@ public class PropertyShape implements PlanGenerator {
             } else {
                 return false;
             }
-
-           /* RepositoryResult<Statement> result = connection.getStatements(null, null, null);
-            boolean hasMinCount = false;
-            while (result.hasNext()) {
-                Statement st = result.next();
-                if(st.getPredicate().getLocalName().equals("minCount")){
-                    hasMinCount = true;
-                }
-                //System.out.println("db contains: " + st + " : " + st.getPredicate().getLocalName());
-            }*/
-//            for (PropertyShape propertyShape:ret) {
-//                if(propertyShape instanceof MinCountPropertyShape)
-//                    return true;
-//            }
-//            return false;
-            // }
-           // return hasMinCount;
         }
     }
 }

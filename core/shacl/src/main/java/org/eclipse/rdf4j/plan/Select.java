@@ -20,7 +20,6 @@ public class Select implements PlanNode {
     Value object;
     CloseableIteration<? extends Statement, SailException> statements;
 
-
     public Select(ShaclSailConnection shaclSailConnection, Resource type) {
         this.shaclSailConnection =shaclSailConnection;
         this.type=type;
@@ -34,11 +33,8 @@ public class Select implements PlanNode {
         statements = shaclSailConnection.getStatements(subject, predicate, object, false);
     }
 
-
     @Override
     public CloseableIteration<Tuple,SailException> iterator(){
-       // CloseableIteration<? extends Statement, SailException> statements = shaclSailConnection.getStatements(null, RDF.TYPE, type, false);
-
         return new CloseableIteration<Tuple,SailException>() {
 
             @Override
@@ -74,24 +70,8 @@ public class Select implements PlanNode {
         };
     }
 
-//    public MinCountPropertyShape getmincount(){
-//        List<PropertyShape> propertyShapes = shaclSailConnection.sail.shapes;
-//        for (PropertyShape propertyShape : propertyShapes) {
-//            shape.getPlan(this,shape);
-//        }
-//
-//
-//    }
-
-
     @Override
     public boolean validate() {
-//        for (PlanNode pnode : planNodes) {
-//            System.out.println(pnode);
-//            if(!pnode.validate()){//plan validate logic;
-//                return false;
-//            }
-//        }
         return true;
     }
 }
