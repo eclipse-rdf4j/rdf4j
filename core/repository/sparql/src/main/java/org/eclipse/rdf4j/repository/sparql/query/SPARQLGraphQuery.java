@@ -74,6 +74,6 @@ public class SPARQLGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 	}
 
 	private String getQueryString() {
-		return QueryStringUtil.getQueryString(queryString, getBindings());
+		return QueryStringUtil.getGraphQueryString(queryString, getBindings());
 	}
 }
