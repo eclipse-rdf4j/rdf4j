@@ -25,7 +25,7 @@
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-store</artifactId>
+			<artifactId>rdf4j-storage</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 

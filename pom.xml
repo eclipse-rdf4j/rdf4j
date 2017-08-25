@@ -50,7 +50,7 @@
 
 	<modules>
 		<module>client</module>
-		<module>store</module>
+		<module>storage</module>
 		<module>core</module>
 		<module>testsuites</module>
 		<module>compliance</module>
