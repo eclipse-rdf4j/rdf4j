@@ -50,6 +50,6 @@ public class SPARQLBooleanQuery extends AbstractHTTPQuery implements BooleanQuer
 	}
 
 	private String getQueryString() {
-		return QueryStringUtil.getQueryString(queryString, getBindings());
+		return QueryStringUtil.getBooleanQueryString(queryString, getBindings());
 	}
 }

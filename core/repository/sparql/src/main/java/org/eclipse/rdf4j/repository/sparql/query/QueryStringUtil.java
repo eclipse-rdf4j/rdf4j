@@ -35,8 +35,22 @@ public class QueryStringUtil {
 	 * @param queryString
 	 * @param bindings
 	 * @return the modified queryString
+	 * @deprecated since 2.3 use {@link #getTupleQueryString(String, BindingSet)}
 	 */
+	@Deprecated
 	public static String getQueryString(String queryString, BindingSet bindings) {
+		return getTupleQueryString(queryString, bindings);
+	}
+
+	/**
+	 * Retrieve a modified queryString into which all bindings of the given argument are replaced, with the
+	 * binding names included in the SELECT clause.
+	 *
+	 * @param queryString
+	 * @param bindings
+	 * @return the modified queryString
+	 */
+	public static String getTupleQueryString(String queryString, BindingSet bindings) {
 		if (bindings.size() == 0) {
 			return queryString;
 		}
@@ -59,6 +73,56 @@ public class QueryStringUtil {
 			}
 		}
 		return select + where;
+	}
+
+	/**
+	 * Retrieve a modified queryString into which all bindings of the given argument are replaced with their
+	 * value.
+	 *
+	 * @param queryString
+	 * @param bindings
+	 * @return the modified queryString
+	 */
+	public static String getUpdateString(String queryString, BindingSet bindings) {
+		return getGraphQueryString(queryString, bindings);
+	}
+
+	/**
+	 * Retrieve a modified queryString into which all bindings of the given argument are replaced with their
+	 * value.
+	 *
+	 * @param queryString
+	 * @param bindings
+	 * @return the modified queryString
+	 */
+	public static String getBooleanQueryString(String queryString, BindingSet bindings) {
+		return getGraphQueryString(queryString, bindings);
+	}
+
+	/**
+	 * Retrieve a modified queryString into which all bindings of the given argument are replaced with their
+	 * value.
+	 *
+	 * @param queryString
+	 * @param bindings
+	 * @return the modified queryString
+	 */
+	public static String getGraphQueryString(String queryString, BindingSet bindings) {
+		if (bindings.size() == 0) {
+			return queryString;
+		}
+
+		String qry = queryString;
+		for (String name : bindings.getBindingNames()) {
+			String replacement = getReplacement(bindings.getValue(name));
+			if (replacement != null) {
+				String pattern = "[\\?\\$]" + name + "(?=\\W)";
+				// we use Matcher.quoteReplacement to make sure things like newlines
+				// in literal values  are preserved
+				qry = qry.replaceAll(pattern, Matcher.quoteReplacement(replacement));
+			}
+		}
+		return qry;
 	}
 
 	private static String getReplacement(Value value) {

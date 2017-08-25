@@ -64,6 +64,6 @@ public class SPARQLUpdate extends AbstractHTTPUpdate {
 
 	@Override
 	public String getQueryString() {
-		return QueryStringUtil.getQueryString(queryString, getBindings());
+		return QueryStringUtil.getUpdateString(queryString, getBindings());
 	}
 }
