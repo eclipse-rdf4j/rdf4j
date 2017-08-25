@@ -16,40 +16,22 @@ public class GroupBy implements GroupPlanNode{
 
     public GroupBy(PlanNode outerLeftJoin){
         leftjoinnode = outerLeftJoin;
-
-
     }
 
     @Override
     public CloseableIteration<List<Tuple>, SailException> iterator() {
-
         CloseableIteration<Tuple, SailException> leftJoinIterator = leftjoinnode.iterator();
         while (leftJoinIterator.hasNext()){
             Tuple leftjointuple = leftJoinIterator.next();
             boolean status = true;
             List<List<Value>> values1 = hashMap.computeIfAbsent(leftjointuple.line.get(0), k -> new ArrayList<List<Value>>());
             values1.add(leftjointuple.line);
-//            for( Map.Entry<Value, List<Value>> entry : hashMap.entrySet() )
-//            {
-//                Value key = entry.getKey();
-//                List<Value> values = entry.getValue();
-//                if(key.stringValue().equals(leftjointuple.line.get(0))){
-//                    values.add(leftjointuple.line.get(2));
-//                    hashMap.put(leftjointuple.line.get(0), values);
-//                    status = false;
-//                }
-//            }
-//            if(status){
-//
-//            }
-
         }
 
 
         return new CloseableIteration<List<Tuple>, SailException>()  {
             Iterator<Map.Entry<Value, List<List<Value>>>> hashmapiterator = hashMap.entrySet().iterator();
 
-          //  int counter = 0;
             @Override
             public void close() throws SailException {
 
@@ -70,7 +52,6 @@ public class GroupBy implements GroupPlanNode{
 
             }
         };
-
     }
 
     @Override

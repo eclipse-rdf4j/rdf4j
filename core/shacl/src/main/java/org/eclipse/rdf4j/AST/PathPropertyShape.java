@@ -27,14 +27,6 @@ public class PathPropertyShape extends PropertyShape implements PlanGenerator {
 
     public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
         Select select =new Select(shaclSailConnection, null, (IRI) path.path, null);
-
-        //new MinCountPropertyShape(shape.id,)
-      //  List<PropertyShape> propertyShapes = shape.propertyShapes;
-//        Tuple tuple = new Tuple();
-//        Boolean hastuple =tuple.line.addAll(shape.propertyShapes);
-//        if(hastuple){
-//            return new Select( tuple.getlist());
-//        }
         return select;
     }
 }

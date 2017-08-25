@@ -31,7 +31,6 @@ public class Shape implements PlanGenerator  {
 
     @Override
     public Select getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
-       // return new Select(shaclSailConnection.sail.newStatements.);
         return null;
     }
 
@@ -42,22 +41,9 @@ public class Shape implements PlanGenerator  {
                 .collect(Collectors.toList());
      }
 
-//    @Override
-//    public Iterator<Tuple> iterator() {
-//        return null;
-//    }
-//
-//    @Override
-//    public boolean validate() {
-//        return false;
-//    }
-
     public static class Factory {
-
-
         public static List<Shape> getShapes(SailRepositoryConnection connection) {
             List<Shape> shapes = new ArrayList<>();
-
             RepositoryResult<Statement> statements = connection.getStatements(null, RDF.TYPE, SHACL.SHAPE);
             while (statements.hasNext()) {
                 Resource shapeId = statements.next().getSubject();

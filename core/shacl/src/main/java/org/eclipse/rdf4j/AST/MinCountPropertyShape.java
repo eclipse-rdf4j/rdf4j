@@ -33,36 +33,13 @@ public class MinCountPropertyShape extends PathPropertyShape  {
                 '}';
     }
 
-
     public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
-        //super.getPlan(shaclSailConnection, shape);
+
         PlanNode instancesOfTargetClass = shape.getPlan(shaclSailConnection,shape);
         PlanNode properties = super.getPlan(shaclSailConnection,shape);
-
-        //Tuple targetclasstuple = instancesOfTargetClass.iterator().next();
-       // Tuple propertyTuple = ((Select) properties).shaclSailConnection.sail.newStatements;
-        PlanNode join =  new OuterLeftJoin(instancesOfTargetClass, properties); //condition
-
-        GroupPlanNode groupBy = new GroupBy(join); //condition
-
-      //  PlanNode count = new Count(groupBy); //condition
-
-
-     //  boolean validate = new MinCountValidator(groupBy, minCount).validate();
-     //   System.out.println("value: " +validate);
-//        return validate;
+        PlanNode join =  new OuterLeftJoin(instancesOfTargetClass, properties);
+        GroupPlanNode groupBy = new GroupBy(join);
         return new MinCountValidator(groupBy, minCount);
     }
-
-//    private Select ValidateMinCount(PlanNode count, int minCount) {
-//        PlanNode minCountValidator = new MinCountValidator(count,minCount);
-//        minCountValidator.validate();
-//       // return new Select(count);
-//        return  new Select(count);
-//    }
-
-
-
-
 
 }
