@@ -45,7 +45,7 @@ public class MinCountPropertyShape extends PathPropertyShape  {
         PlanNode instancesOfTargetClass = shape.getPlan(shaclSailConnection,shape);
         PlanNode properties = super.getPlan(shaclSailConnection,shape);
         PlanNode join =  new OuterLeftJoin(instancesOfTargetClass, properties);
-        GroupPlanNode groupBy = new GroupBy(join);
+        GroupPlanNode groupBy = new GroupBy(join, instancesOfTargetClass.getCardinalityMin());
         return new MinCountValidator(groupBy, minCount);
     }
 
