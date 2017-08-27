@@ -18,35 +18,36 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.validation.ShaclSailConnection;
 
 /**
- * Created by heshanjayasinghe on 6/10/17.
+ * @author Heshan Jayasinghe
  */
-public class MinCountPropertyShape extends PathPropertyShape  {
+public class MinCountPropertyShape extends PathPropertyShape {
 
-    public int minCount;
-    Shape shape;
+	public int minCount;
 
-    public MinCountPropertyShape(Resource id, SailRepositoryConnection connection) {
-        super(id,connection);
-        try (RepositoryResult<Statement> statement = connection.getStatements(id, SHACL.MIN_COUNT, null, true)) {
-                Literal object = (Literal) statement.next().getObject();
-                minCount = object.intValue();
-        }
-    }
+	Shape shape;
 
-    @Override
-    public String toString() {
-        return "MinCountPropertyShape{" +
-                "minCount=" + minCount +
-                '}';
-    }
+	public MinCountPropertyShape(Resource id, SailRepositoryConnection connection) {
+		super(id, connection);
+		try (RepositoryResult<Statement> statement = connection.getStatements(id, SHACL.MIN_COUNT, null,
+				true))
+		{
+			Literal object = (Literal)statement.next().getObject();
+			minCount = object.intValue();
+		}
+	}
 
-    public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+	@Override
+	public String toString() {
+		return "MinCountPropertyShape{" + "minCount=" + minCount + '}';
+	}
 
-        PlanNode instancesOfTargetClass = shape.getPlan(shaclSailConnection,shape);
-        PlanNode properties = super.getPlan(shaclSailConnection,shape);
-        PlanNode join =  new OuterLeftJoin(instancesOfTargetClass, properties);
-        GroupPlanNode groupBy = new GroupBy(join, instancesOfTargetClass.getCardinalityMin());
-        return new MinCountValidator(groupBy, minCount);
-    }
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+
+		PlanNode instancesOfTargetClass = shape.getPlan(shaclSailConnection, shape);
+		PlanNode properties = super.getPlan(shaclSailConnection, shape);
+		PlanNode join = new OuterLeftJoin(instancesOfTargetClass, properties);
+		GroupPlanNode groupBy = new GroupBy(join, instancesOfTargetClass.getCardinalityMin());
+		return new MinCountValidator(groupBy, minCount);
+	}
 
 }

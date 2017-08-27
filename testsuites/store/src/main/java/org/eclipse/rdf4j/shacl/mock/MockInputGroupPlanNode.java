@@ -19,7 +19,7 @@ import java.util.List;
 /**
  * Created by havardottestad on 22/08/2017.
  */
-public class MockInputGroupPlanNode implements GroupPlanNode{
+public class MockInputGroupPlanNode implements GroupPlanNode {
 
 	List<List<Tuple>> initialData;
 
@@ -35,27 +35,45 @@ public class MockInputGroupPlanNode implements GroupPlanNode{
 	@Override
 	public CloseableIteration<List<Tuple>, SailException> iterator() {
 		return new CloseableIteration<List<Tuple>, SailException>() {
+
 			Iterator<List<Tuple>> iterator = initialData.iterator();
 
 			@Override
-			public void close() throws SailException {
+			public void close()
+					throws SailException
+			{
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			public boolean hasNext()
+					throws SailException
+			{
 				return iterator.hasNext();
 			}
 
 			@Override
-			public List<Tuple> next() throws SailException {
+			public List<Tuple> next()
+					throws SailException
+			{
 				return iterator.next();
 			}
 
 			@Override
-			public void remove() throws SailException {
+			public void remove()
+					throws SailException
+			{
 
 			}
 		};
 	}
 
+	@Override
+	public int getCardinalityMin() {
+		return 0;
+	}
+
+	@Override
+	public int getCardinalityMax() {
+		return 0;
+	}
 }

@@ -17,79 +17,88 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.validation.ShaclSailConnection;
 
 /**
- * Created by heshanjayasinghe on 7/18/17.
+ * @author Heshan Jayasinghe
  */
 public class Select implements PlanNode {
 
-    public ShaclSailConnection shaclSailConnection;
-    Resource type;
-    Resource subject;
-    IRI predicate;
-    Value object;
+	public ShaclSailConnection shaclSailConnection;
 
-    public Select(ShaclSailConnection shaclSailConnection, Resource type) {
-        this.shaclSailConnection =shaclSailConnection;
-        this.type=type;
-    }
+	Resource type;
 
-    public Select(ShaclSailConnection shaclSailConnection,Resource subject, IRI predicate, Value object) {
-        this.shaclSailConnection =shaclSailConnection;
-        this.subject =subject;
-        this.predicate=predicate;
-        this.object=object;
-    }
+	Resource subject;
 
-    @Override
-    public CloseableIteration<Tuple,SailException> iterator(){
-        return new CloseableIteration<Tuple,SailException>() {
+	IRI predicate;
 
-            CloseableIteration<? extends Statement, SailException> statements = shaclSailConnection.getStatements(subject, predicate, object, false);
+	Value object;
 
-            @Override
-            public void close() throws SailException {
-                statements.close();
-            }
+	public Select(ShaclSailConnection shaclSailConnection, Resource type) {
+		this.shaclSailConnection = shaclSailConnection;
+		this.type = type;
+	}
 
-            int counter = 0;
+	public Select(ShaclSailConnection shaclSailConnection, Resource subject, IRI predicate, Value object) {
+		this.shaclSailConnection = shaclSailConnection;
+		this.subject = subject;
+		this.predicate = predicate;
+		this.object = object;
+	}
 
-            @Override
-            public boolean hasNext() {
-               return statements.hasNext();
-            }
+	@Override
+	public CloseableIteration<Tuple, SailException> iterator() {
+		return new CloseableIteration<Tuple, SailException>() {
 
-            @Override
-            public Tuple next() {
+			CloseableIteration<? extends Statement, SailException> statements = shaclSailConnection.getStatements(
+					subject, predicate, object, false);
 
-                Statement next = statements.next();
-                Tuple tuple = new Tuple();
-                tuple.line.add(next.getSubject());
-                tuple.line.add(next.getPredicate());
-                tuple.line.add(next.getObject());
+			@Override
+			public void close()
+					throws SailException
+			{
+				statements.close();
+			}
 
-               counter++;
+			int counter = 0;
 
-                return tuple;
-            }
+			@Override
+			public boolean hasNext() {
+				return statements.hasNext();
+			}
 
-            @Override
-            public void remove() throws SailException {
+			@Override
+			public Tuple next() {
 
-            }
-        };
-    }
+				Statement next = statements.next();
+				Tuple tuple = new Tuple();
+				tuple.line.add(next.getSubject());
+				tuple.line.add(next.getPredicate());
+				tuple.line.add(next.getObject());
 
-    @Override
-    public boolean validate() {
-        return true;
-    }
+				counter++;
 
-    @Override
-    public int getCardinalityMin() {
-        return 3;
-    }
+				return tuple;
+			}
 
-    @Override
-    public int getCardinalityMax() {
-        return 3;
-    }
+			@Override
+			public void remove()
+					throws SailException
+			{
+
+			}
+		};
+	}
+
+	@Override
+	public boolean validate() {
+		return true;
+	}
+
+	@Override
+	public int getCardinalityMin() {
+		return 3;
+	}
+
+	@Override
+	public int getCardinalityMax() {
+		return 3;
+	}
 }

@@ -20,9 +20,9 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import java.util.List;
 
 /**
- * Created by heshanjayasinghe on 4/23/17.
+ * @author Heshan Jayasinghe
  */
-public class ShaclSailConnection extends NotifyingSailConnectionWrapper{
+public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 	public ShaclSail sail;
 
@@ -32,27 +32,33 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper{
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws SailException {
+	public void begin(IsolationLevel level)
+			throws SailException
+	{
 		super.begin(level);
 	}
 
 	@Override
-	public void commit() throws SailException {
+	public void commit()
+			throws SailException
+	{
 		super.commit();
 
 		for (Shape shape : sail.shapes) {
 			List<PlanNode> planNodes = shape.generatePlans(this, shape);
-			for (PlanNode planNode :planNodes){
+			for (PlanNode planNode : planNodes) {
 				boolean valid = planNode.validate();
-				if(!valid){
+				if (!valid) {
 					throw new SailException("invalid for shacl");
 				}
 			}
 		}
 	}
 
-	protected Model createModel(){
+	protected Model createModel() {
 		return new TreeModel();
-	};
+	}
+
+	;
 
 }

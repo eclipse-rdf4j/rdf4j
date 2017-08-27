@@ -17,8 +17,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Created by havardottestad on 22/08/2017.
+ * @author Håvard Ottestad
  */
+
 public class MockConsumeGroupPlanNode {
 
 	GroupPlanNode innerNode;
@@ -26,7 +27,6 @@ public class MockConsumeGroupPlanNode {
 	public MockConsumeGroupPlanNode(GroupPlanNode innerNode) {
 		this.innerNode = innerNode;
 	}
-
 
 	public List<List<Tuple>> asList() {
 
