@@ -21,9 +21,11 @@ import java.util.stream.Collectors;
 public class GroupBy implements GroupPlanNode{
     PlanNode leftjoinnode;
     HashMap<Value,List<List<Value>>> hashMap = new LinkedHashMap<>();
+    int skipTupleItems;
 
-    public GroupBy(PlanNode outerLeftJoin){
+    public GroupBy(PlanNode outerLeftJoin, int skipTupleItems){
         leftjoinnode = outerLeftJoin;
+        this.skipTupleItems = skipTupleItems;
     }
 
     @Override
@@ -33,7 +35,10 @@ public class GroupBy implements GroupPlanNode{
             Tuple leftjointuple = leftJoinIterator.next();
             boolean status = true;
             List<List<Value>> values1 = hashMap.computeIfAbsent(leftjointuple.line.get(0), k -> new ArrayList<List<Value>>());
-            values1.add(leftjointuple.line);
+            List<Value> sublist = leftjointuple.line.subList(skipTupleItems - 1, leftjointuple.line.size() - 1);
+            if(sublist.size() > 0) {
+                values1.add(sublist);
+            }
         }
 
 
@@ -65,5 +70,15 @@ public class GroupBy implements GroupPlanNode{
     @Override
     public boolean validate() {
         return false;
+    }
+
+    @Override
+    public int getCardinalityMin() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public int getCardinalityMax() {
+        throw new UnsupportedOperationException();
     }
 }

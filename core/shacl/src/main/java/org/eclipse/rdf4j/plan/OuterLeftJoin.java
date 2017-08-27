@@ -17,42 +17,42 @@ import java.util.ArrayList;
  * Created by heshanjayasinghe on 7/15/17.
  */
 public class OuterLeftJoin implements PlanNode {
-    PlanNode targetclass;
-    PlanNode properties;
+    PlanNode left;
+    PlanNode right;
     ArrayList<Tuple> tuplelist =new ArrayList<Tuple>();
 
-    public OuterLeftJoin(PlanNode instancesOfTargetClass, PlanNode properties) {
-        this.targetclass = instancesOfTargetClass;
-        this.properties = properties;
+    public OuterLeftJoin(PlanNode left, PlanNode right) {
+        this.left = left;
+        this.right = right;
     }
 
 
     @Override
     public CloseableIteration<Tuple, SailException> iterator() {
-        CloseableIteration<Tuple, SailException> tagetclassIterator = targetclass.iterator();
-         while (tagetclassIterator.hasNext()){
-            Tuple targetclassNext = tagetclassIterator.next();
-             CloseableIteration<Tuple, SailException> propertiesIterator = properties.iterator();
+        CloseableIteration<Tuple, SailException> leftIterator = left.iterator();
+         while (leftIterator.hasNext()){
+            Tuple leftNext = leftIterator.next();
+             CloseableIteration<Tuple, SailException> rightIterator = right.iterator();
              boolean hasProperty = false;
-            if (propertiesIterator.hasNext()) {
-                while (propertiesIterator.hasNext()) {
-                    Tuple propertiesNext = propertiesIterator.next();
-                    if (targetclassNext.line.get(0).stringValue().equals(propertiesNext.line.get(0).stringValue())) {
+            if (rightIterator.hasNext()) {
+                while (rightIterator.hasNext()) {
+                    Tuple rightNext = rightIterator.next();
+                    if (leftNext.line.get(0).stringValue().equals(rightNext.line.get(0).stringValue())) {
                         Tuple tuple = new Tuple();
-                        tuple.line.addAll(targetclassNext.getlist());
-                        tuple.line.addAll(propertiesNext.getlist());
+                        tuple.line.addAll(leftNext.getlist());
+                        tuple.line.addAll(rightNext.getlist());
                         tuplelist.add(tuple);
                         hasProperty = true;
-                    }else if (!propertiesIterator.hasNext() && !hasProperty){
+                    }else if (!rightIterator.hasNext() && !hasProperty){
                         Tuple tuple = new Tuple();
-                        tuple.line.addAll(targetclassNext.getlist());
+                        tuple.line.addAll(leftNext.getlist());
                         tuplelist.add(tuple);
                     }
                 }
             }
             else {
                 Tuple tuple = new Tuple();
-                tuple.line.addAll(targetclassNext.getlist());
+                tuple.line.addAll(leftNext.getlist());
                 tuplelist.add(tuple);
             }
         }
@@ -88,5 +88,15 @@ public class OuterLeftJoin implements PlanNode {
     @Override
     public boolean validate() {
         return false;
+    }
+
+    @Override
+    public int getCardinalityMin() {
+        return left.getCardinalityMin();
+    }
+
+    @Override
+    public int getCardinalityMax() {
+        return left.getCardinalityMax()+ right.getCardinalityMax();
     }
 }

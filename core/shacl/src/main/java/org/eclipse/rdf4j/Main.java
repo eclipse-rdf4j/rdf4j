@@ -53,12 +53,12 @@ public class Main {
 
 		try (SailRepositoryConnection sailRepositoryConnection = sailRepository.getConnection()) {
 			RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
+			sailRepositoryConnection.begin();
+
 			rdfParser.setRDFHandler(new StatementCollector(){
 				@Override
 				public void handleStatement(Statement statement) {
-					sailRepositoryConnection.begin();
 					sailRepositoryConnection.add(statement);
-					sailRepositoryConnection.commit();
 				}
 
 			});
@@ -66,6 +66,8 @@ public class Main {
 			String filename = "data.ttl";
 			InputStream input = ShaclSail.class.getResourceAsStream("/" + filename);
 			rdfParser.parse(input, SHACL.NAMESPACE);
+			sailRepositoryConnection.commit();
+
 			RepositoryResult<Statement> result = sailRepositoryConnection.getStatements(null, null, null);
 			while (result.hasNext()) {
 				Statement st = result.next();

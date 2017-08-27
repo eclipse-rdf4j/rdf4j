@@ -10,6 +10,7 @@ ex:Håvard a ex:Person ;
 	ex:name "Håvard Ottestad".
 
 ex:Heshan
+        ex:name "Heshan";
 	a ex:Person .
 	
 

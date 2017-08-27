@@ -16,7 +16,7 @@ import java.util.List;
 /**
  * Created by heshanjayasinghe on 8/22/17.
  */
-public interface GroupPlanNode {
+public interface GroupPlanNode extends PlanNodeCardinality{
     boolean validate();
 
     public CloseableIteration<List<Tuple>,SailException> iterator();

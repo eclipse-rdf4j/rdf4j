@@ -26,7 +26,6 @@ public class Select implements PlanNode {
     Resource subject;
     IRI predicate;
     Value object;
-    CloseableIteration<? extends Statement, SailException> statements;
 
     public Select(ShaclSailConnection shaclSailConnection, Resource type) {
         this.shaclSailConnection =shaclSailConnection;
@@ -38,12 +37,13 @@ public class Select implements PlanNode {
         this.subject =subject;
         this.predicate=predicate;
         this.object=object;
-        statements = shaclSailConnection.getStatements(subject, predicate, object, false);
     }
 
     @Override
     public CloseableIteration<Tuple,SailException> iterator(){
         return new CloseableIteration<Tuple,SailException>() {
+
+            CloseableIteration<? extends Statement, SailException> statements = shaclSailConnection.getStatements(subject, predicate, object, false);
 
             @Override
             public void close() throws SailException {
@@ -81,5 +81,15 @@ public class Select implements PlanNode {
     @Override
     public boolean validate() {
         return true;
+    }
+
+    @Override
+    public int getCardinalityMin() {
+        return 3;
+    }
+
+    @Override
+    public int getCardinalityMax() {
+        return 3;
     }
 }

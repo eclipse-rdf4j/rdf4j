@@ -30,7 +30,7 @@ public class MinCountValidator implements PlanNode{
         CloseableIteration<List<Tuple>, SailException> groupByIterator =groupby.iterator();
         while (groupByIterator.hasNext()){
             List<Tuple> tuple = groupByIterator.next();
-            if(tuple.size()>minCount){
+            if(tuple.size() < minCount){
                 return false;
             }
         }
@@ -43,5 +43,13 @@ public class MinCountValidator implements PlanNode{
     }
 
 
+    @Override
+    public int getCardinalityMin() {
+        throw new UnsupportedOperationException();
+    }
 
+    @Override
+    public int getCardinalityMax() {
+        throw new UnsupportedOperationException();
+    }
 }
