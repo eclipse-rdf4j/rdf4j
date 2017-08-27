@@ -17,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Created by havardottestad on 22/08/2017.
+ * @author Håvard Ottestad
  */
 public class MockConsumePlanNode {
 
@@ -26,7 +26,6 @@ public class MockConsumePlanNode {
 	public MockConsumePlanNode(PlanNode innerNode) {
 		this.innerNode = innerNode;
 	}
-
 
 	public List<Tuple> asList() {
 

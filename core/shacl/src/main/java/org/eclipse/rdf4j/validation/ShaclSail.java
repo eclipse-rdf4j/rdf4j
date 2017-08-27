@@ -32,83 +32,93 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Created by heshanjayasinghe on 4/23/17.
+ * @author Heshan Jayasinghe
  */
 public class ShaclSail extends NotifyingSailWrapper {
 
-    public List<Shape> shapes;
-    public List<PropertyShape> propertyShapes;
-    public Model newStatements;
-    private boolean statementsRemoved;
-    private SailRepository shacl;
+	public List<Shape> shapes;
 
-    public ShaclSail(NotifyingSail memoryStore) {
-        super(memoryStore);
-    }
+	public List<PropertyShape> propertyShapes;
 
-    public ShaclSail(MemoryStore memoryStore,SailRepository shacl) {
-        super(memoryStore);
-        this.shacl = shacl;
-    }
+	public Model newStatements;
 
-    public void initialize()throws SailException{
-        super.initialize();
+	private boolean statementsRemoved;
 
-        try(SailRepositoryConnection connection = shacl.getConnection()){
-            shapes = Shape.Factory.getShapes(connection);
-        }
-    }
+	private SailRepository shacl;
 
-    @Override
-    public NotifyingSailConnection getConnection() throws SailException {
-        try {
-            NotifyingSailConnection con = super.getConnection();
-            ShaclSailConnection shaclSailConnection = new ShaclSailConnection(this,con);
-            shaclSailConnection.addConnectionListener(new SailConnectionListener() {
+	public ShaclSail(NotifyingSail memoryStore) {
+		super(memoryStore);
+	}
 
-                @Override
-                public void statementAdded(Statement statement) {
-                    if (statementsRemoved) {
-                        return;
-                    }
-                    if (newStatements == null) {
-                        newStatements = createModel();
-                    }
-                    newStatements.add(statement);
-                    System.out.println("statement added : "+statement);
-                }
+	public ShaclSail(MemoryStore memoryStore, SailRepository shacl) {
+		super(memoryStore);
+		this.shacl = shacl;
+	}
 
-                private Model createModel() {
-                    return new TreeModel();
-                }
+	public void initialize()
+			throws SailException
+	{
+		super.initialize();
 
-                @Override
-                public void statementRemoved(Statement statement) {
-                    boolean removed = (newStatements != null) ? newStatements.remove(statement) : false;
-                    if (!removed) {
-                        statementsRemoved = true;
-                        newStatements = null;
-                    }
-                    System.out.println("statement removed : "+statement);
-                }
-            }
+		try (SailRepositoryConnection connection = shacl.getConnection()) {
+			shapes = Shape.Factory.getShapes(connection);
+		}
+	}
 
-            );
-            return shaclSailConnection;
-        }
-        catch (ClassCastException e) {
-            throw new SailException(e.getMessage(), e);
-        }
-    }
+	@Override
+	public NotifyingSailConnection getConnection()
+			throws SailException
+	{
+		try {
+			NotifyingSailConnection con = super.getConnection();
+			ShaclSailConnection shaclSailConnection = new ShaclSailConnection(this, con);
+			shaclSailConnection.addConnectionListener(new SailConnectionListener() {
 
-    public void setShaclRules(SailRepository shaclRules){
-        try(SailRepositoryConnection connection = shaclRules.getConnection()){
-            ValueFactory vf = connection.getValueFactory();
-            RepositoryResult<Statement> nodeShape = connection.getStatements(null, RDF.TYPE,SHACL.NODE_SHAPE);
-            List<Resource> collect = Iterations.stream(nodeShape).map(Statement::getSubject).collect(Collectors.toList());
-            collect.forEach(System.out::println);
-            shapes = collect.stream().map(s -> new Shape(s, connection)).collect(Collectors.toList());
-        }
-    }
+					@Override
+					public void statementAdded(Statement statement) {
+						if (statementsRemoved) {
+							return;
+						}
+						if (newStatements == null) {
+							newStatements = createModel();
+						}
+						newStatements.add(statement);
+						System.out.println("statement added : " + statement);
+					}
+
+					private Model createModel() {
+															  return new TreeModel();
+														  }
+
+					@Override
+					public void statementRemoved(Statement statement) {
+						boolean removed = (newStatements != null) ? newStatements.remove(statement) : false;
+							if (!removed) {
+								statementsRemoved = true;
+								newStatements = null;
+							}
+						System.out.println("statement removed : " + statement);
+					}
+				}
+
+			);
+			return shaclSailConnection;
+		}
+		catch (ClassCastException e) {
+			throw new SailException(e.getMessage(), e);
+		}
+	}
+
+	public void setShaclRules(SailRepository shaclRules) {
+		try (SailRepositoryConnection connection = shaclRules.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			RepositoryResult<Statement> nodeShape = connection.getStatements(null, RDF.TYPE,
+					SHACL.NODE_SHAPE);
+			List<Resource> collect = Iterations.stream(nodeShape).map(Statement::getSubject).collect(
+					Collectors.toList());
+			collect.forEach(System.out::println);
+			shapes = collect.stream().map(s -> new Shape(s, connection)).collect(Collectors.toList());
+		}
+	}
 
 }

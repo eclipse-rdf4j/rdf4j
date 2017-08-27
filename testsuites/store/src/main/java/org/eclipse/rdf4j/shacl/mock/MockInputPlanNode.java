@@ -17,7 +17,7 @@ import java.util.Iterator;
 import java.util.List;
 
 /**
- * Created by havardottestad on 22/08/2017.
+ * @author Håvard Ottestad
  */
 public class MockInputPlanNode implements PlanNode {
 
@@ -35,27 +35,45 @@ public class MockInputPlanNode implements PlanNode {
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
+
 			Iterator<Tuple> iterator = initialData.iterator();
 
-
 			@Override
-			public void close() throws SailException {
+			public void close()
+					throws SailException
+			{
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			public boolean hasNext()
+					throws SailException
+			{
 				return iterator.hasNext();
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			public Tuple next()
+					throws SailException
+			{
 				return iterator.next();
 			}
 
 			@Override
-			public void remove() throws SailException {
+			public void remove()
+					throws SailException
+			{
 
 			}
 		};
+	}
+
+	@Override
+	public int getCardinalityMin() {
+		return 0;
+	}
+
+	@Override
+	public int getCardinalityMax() {
+		return 0;
 	}
 }

@@ -15,9 +15,10 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Created by heshanjayasinghe on 7/17/17.
+ * @author Heshan Jayasinghe
  */
 public class Tuple {
+
 	public List<Value> line = new ArrayList<>();
 
 	public Tuple(List<Value> list) {
@@ -33,8 +34,6 @@ public class Tuple {
 
 	@Override
 	public String toString() {
-		return "Tuple{" +
-			"line=" + Arrays.toString(line.toArray()) +
-			"}";
+		return "Tuple{" + "line=" + Arrays.toString(line.toArray()) + "}";
 	}
 }

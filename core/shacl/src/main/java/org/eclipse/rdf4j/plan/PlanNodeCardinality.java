@@ -1,11 +1,12 @@
 package org.eclipse.rdf4j.plan;
 
 /**
- * Created by havardottestad on 27/08/2017.
+ * @author Heshan Jayasinghe
  */
-public interface  PlanNodeCardinality {
+public interface PlanNodeCardinality {
 
 	int getCardinalityMin();
+
 	int getCardinalityMax();
 
 }

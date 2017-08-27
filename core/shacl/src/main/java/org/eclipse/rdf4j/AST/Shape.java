@@ -23,49 +23,52 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Created by heshanjayasinghe on 6/10/17.
+ * @author Heshan Jayasinghe
  */
-public class Shape implements PlanGenerator  {
-    Resource id;
-    List<PropertyShape> propertyShapes;
-    TargetClass targetClass;
+public class Shape implements PlanGenerator {
 
+	Resource id;
 
-    public Shape(Resource id, SailRepositoryConnection connection) {
-        this.id = id;
-        propertyShapes = PropertyShape.Factory.getProprtyShapes(id,connection);
+	List<PropertyShape> propertyShapes;
 
-    }
+	TargetClass targetClass;
 
-    @Override
-    public Select getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
-        return null;
-    }
+	public Shape(Resource id, SailRepositoryConnection connection) {
+		this.id = id;
+		propertyShapes = PropertyShape.Factory.getProprtyShapes(id, connection);
 
-    public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, Shape shape) {
-        return propertyShapes
-           .stream()
-                .map(pathpropertyShape -> pathpropertyShape.getPlan(shaclSailConnection,shape))
-                .collect(Collectors.toList());
-     }
+	}
 
-    public static class Factory {
-        public static List<Shape> getShapes(SailRepositoryConnection connection) {
-            List<Shape> shapes = new ArrayList<>();
-            RepositoryResult<Statement> statements = connection.getStatements(null, RDF.TYPE, SHACL.SHAPE);
-            while (statements.hasNext()) {
-                Resource shapeId = statements.next().getSubject();
-                if (hasTargetClass(shapeId, connection)) {
-                    shapes.add(new TargetClass(shapeId, connection));
-                } else {
-                    shapes.add(new Shape(shapeId, connection));
-                }
-            }
-            return shapes;
-        }
+	@Override
+	public Select getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+		return null;
+	}
 
-        private static boolean hasTargetClass(Resource shapeId, SailRepositoryConnection connection) {
-            return connection.hasStatement(shapeId, SHACL.TARGET_CLASS, null, true);
-        }
-    }
-    }
+	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, Shape shape) {
+		return propertyShapes.stream().map(
+				pathpropertyShape -> pathpropertyShape.getPlan(shaclSailConnection, shape)).collect(
+				Collectors.toList());
+	}
+
+	public static class Factory {
+
+		public static List<Shape> getShapes(SailRepositoryConnection connection) {
+			List<Shape> shapes = new ArrayList<>();
+			RepositoryResult<Statement> statements = connection.getStatements(null, RDF.TYPE, SHACL.SHAPE);
+			while (statements.hasNext()) {
+				Resource shapeId = statements.next().getSubject();
+				if (hasTargetClass(shapeId, connection)) {
+					shapes.add(new TargetClass(shapeId, connection));
+				}
+				else {
+					shapes.add(new Shape(shapeId, connection));
+				}
+			}
+			return shapes;
+		}
+
+		private static boolean hasTargetClass(Resource shapeId, SailRepositoryConnection connection) {
+			return connection.hasStatement(shapeId, SHACL.TARGET_CLASS, null, true);
+		}
+	}
+}

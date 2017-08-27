@@ -14,10 +14,11 @@ import org.eclipse.rdf4j.sail.SailException;
 import java.util.List;
 
 /**
- * Created by heshanjayasinghe on 8/22/17.
+ * @author Heshan Jayasinghe
  */
-public interface GroupPlanNode extends PlanNodeCardinality{
-    boolean validate();
+public interface GroupPlanNode extends PlanNodeCardinality {
 
-    public CloseableIteration<List<Tuple>,SailException> iterator();
+	boolean validate();
+
+	public CloseableIteration<List<Tuple>, SailException> iterator();
 }

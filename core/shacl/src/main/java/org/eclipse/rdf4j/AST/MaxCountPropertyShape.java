@@ -13,23 +13,21 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 
 /**
- * Created by heshanjayasinghe on 6/10/17.
+ * @author Heshan Jayasinghe
  */
-public class MaxCountPropertyShape extends PathPropertyShape{
+public class MaxCountPropertyShape extends PathPropertyShape {
 
-    Integer maxCount;
+	Integer maxCount;
 
-    public MaxCountPropertyShape(Resource next, SailRepositoryConnection connection) {
-        super(next,connection);
-        ValueFactory vf = connection.getValueFactory();
-     //   maxCount = Integer.parseInt(connection.getStatements(next, vf.createIRI(SH.BASE_URI, "maxCount"), null, true).next().getObject().stringValue());
+	public MaxCountPropertyShape(Resource next, SailRepositoryConnection connection) {
+		super(next, connection);
+		ValueFactory vf = connection.getValueFactory();
+		//   maxCount = Integer.parseInt(connection.getStatements(next, vf.createIRI(SH.BASE_URI, "maxCount"), null, true).next().getObject().stringValue());
 
-    }
+	}
 
-    @Override
-    public String toString() {
-        return "MaxCountPropertyShape{" +
-                "maxCount=" + maxCount +
-                '}';
-    }
+	@Override
+	public String toString() {
+		return "MaxCountPropertyShape{" + "maxCount=" + maxCount + '}';
+	}
 }

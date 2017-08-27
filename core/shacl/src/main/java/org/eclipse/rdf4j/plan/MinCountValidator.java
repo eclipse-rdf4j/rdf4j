@@ -14,42 +14,43 @@ import org.eclipse.rdf4j.sail.SailException;
 import java.util.List;
 
 /**
- * Created by heshanjayasinghe on 7/20/17.
+ * @author Heshan Jayasinghe
  */
-public class MinCountValidator implements PlanNode{
-    GroupPlanNode groupby;
-    int minCount;
+public class MinCountValidator implements PlanNode {
 
-    public MinCountValidator(GroupPlanNode groupBy,int minCount) {
-        this.groupby = groupBy;
-        this.minCount = minCount;
-    }
+	GroupPlanNode groupby;
 
-    @Override
-    public boolean validate() {
-        CloseableIteration<List<Tuple>, SailException> groupByIterator =groupby.iterator();
-        while (groupByIterator.hasNext()){
-            List<Tuple> tuple = groupByIterator.next();
-            if(tuple.size() < minCount){
-                return false;
-            }
-        }
-        return true;
-    }
+	int minCount;
 
-    @Override
-    public CloseableIteration<Tuple, SailException> iterator() {
-        return null;
-    }
+	public MinCountValidator(GroupPlanNode groupBy, int minCount) {
+		this.groupby = groupBy;
+		this.minCount = minCount;
+	}
 
+	@Override
+	public boolean validate() {
+		CloseableIteration<List<Tuple>, SailException> groupByIterator = groupby.iterator();
+		while (groupByIterator.hasNext()) {
+			List<Tuple> tuple = groupByIterator.next();
+			if (tuple.size() < minCount) {
+				return false;
+			}
+		}
+		return true;
+	}
 
-    @Override
-    public int getCardinalityMin() {
-        throw new UnsupportedOperationException();
-    }
+	@Override
+	public CloseableIteration<Tuple, SailException> iterator() {
+		return null;
+	}
 
-    @Override
-    public int getCardinalityMax() {
-        throw new UnsupportedOperationException();
-    }
+	@Override
+	public int getCardinalityMin() {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public int getCardinalityMax() {
+		throw new UnsupportedOperationException();
+	}
 }

@@ -17,25 +17,26 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.validation.ShaclSailConnection;
 
 /**
- * Created by heshanjayasinghe on 6/11/17.
+ * @author Heshan Jayasinghe
  */
 public class PathPropertyShape extends PropertyShape implements PlanGenerator {
-    public Path path;
 
-    public PathPropertyShape(Resource id, SailRepositoryConnection connection) {
-        super(id, connection);
-        this.id = id;
-        this.connection = connection;
+	public Path path;
 
-        if(connection.hasStatement(id, SHACL.PATH, null, true)) {
-            path = new Path(id, connection);
-        }
+	public PathPropertyShape(Resource id, SailRepositoryConnection connection) {
+		super(id, connection);
+		this.id = id;
+		this.connection = connection;
 
-    }
+		if (connection.hasStatement(id, SHACL.PATH, null, true)) {
+			path = new Path(id, connection);
+		}
 
-    public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
-        Select select =new Select(shaclSailConnection, null, (IRI) path.path, null);
-        return select;
-    }
+	}
+
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+		Select select = new Select(shaclSailConnection, null, (IRI)path.path, null);
+		return select;
+	}
 }
 

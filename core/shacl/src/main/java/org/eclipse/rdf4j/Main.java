@@ -26,8 +26,9 @@ import java.io.InputStream;
 
 public class Main {
 
-
-	public static void main(String[] args) throws IOException {
+	public static void main(String[] args)
+			throws IOException
+	{
 
 		SailRepository shacl = new SailRepository(new MemoryStore());
 		shacl.initialize();
@@ -41,13 +42,15 @@ public class Main {
 				Statement st = result.next();
 				System.out.println("db contains: " + st + " : " + st.getPredicate().getLocalName());
 			}
-		} catch (FileNotFoundException e) {
+		}
+		catch (FileNotFoundException e) {
 			e.printStackTrace();
-		} catch (IOException e) {
+		}
+		catch (IOException e) {
 			e.printStackTrace();
 		}
 
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore(),shacl);
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore(), shacl);
 		shaclSail.initialize();
 		SailRepository sailRepository = new SailRepository(shaclSail);
 
@@ -55,9 +58,9 @@ public class Main {
 			RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
 			sailRepositoryConnection.begin();
 
-			rdfParser.setRDFHandler(new StatementCollector(){
-				@Override
-				public void handleStatement(Statement statement) {
+			rdfParser.setRDFHandler(new StatementCollector() {
+
+				@Override public void handleStatement(Statement statement) {
 					sailRepositoryConnection.add(statement);
 				}
 
@@ -75,9 +78,11 @@ public class Main {
 				System.out.println("db contains: " + st + " : " + st.getPredicate().getLocalName());
 			}
 
-		} catch (FileNotFoundException e) {
+		}
+		catch (FileNotFoundException e) {
 			e.printStackTrace();
-		} catch (IOException e) {
+		}
+		catch (IOException e) {
 			e.printStackTrace();
 		}
 		System.out.println("done");
