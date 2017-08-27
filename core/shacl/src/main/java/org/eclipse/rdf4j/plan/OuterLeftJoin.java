@@ -33,6 +33,7 @@ public class OuterLeftJoin implements PlanNode {
          while (tagetclassIterator.hasNext()){
             Tuple targetclassNext = tagetclassIterator.next();
              CloseableIteration<Tuple, SailException> propertiesIterator = properties.iterator();
+             boolean hasProperty = false;
             if (propertiesIterator.hasNext()) {
                 while (propertiesIterator.hasNext()) {
                     Tuple propertiesNext = propertiesIterator.next();
@@ -40,6 +41,11 @@ public class OuterLeftJoin implements PlanNode {
                         Tuple tuple = new Tuple();
                         tuple.line.addAll(targetclassNext.getlist());
                         tuple.line.addAll(propertiesNext.getlist());
+                        tuplelist.add(tuple);
+                        hasProperty = true;
+                    }else if (!propertiesIterator.hasNext() && !hasProperty){
+                        Tuple tuple = new Tuple();
+                        tuple.line.addAll(targetclassNext.getlist());
                         tuplelist.add(tuple);
                     }
                 }
