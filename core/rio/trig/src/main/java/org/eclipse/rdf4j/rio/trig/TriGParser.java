@@ -113,6 +113,9 @@ public class TriGParser extends TurtleParser {
 			skipWSC();
 
 			parseGraph();
+			if (getContext() == null) {
+				reportFatalError("Missing GRAPH label or subject");
+			}
 		}
 		else {
 			unread(directive);
