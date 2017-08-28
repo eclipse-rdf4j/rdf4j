@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -2763,7 +2764,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				// invalid URI
 				throw new VisitorException(e.getMessage());
 			}
-			literal = valueFactory.createLiteral(label, datatype);
+			String normalized = XMLDatatypeUtil.normalize(label, datatype);
+			literal = valueFactory.createLiteral(normalized, datatype);
 		}
 		else if (lang != null) {
 			literal = valueFactory.createLiteral(label, lang);
@@ -2779,7 +2781,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	public ValueConstant visit(ASTNumericLiteral node, Object data)
 		throws VisitorException
 	{
-		Literal literal = valueFactory.createLiteral(node.getValue(), node.getDatatype());
+		IRI datatype = node.getDatatype();
+		String label = XMLDatatypeUtil.normalize(node.getValue(), datatype);
+		Literal literal = valueFactory.createLiteral(label, datatype);
 		return new ValueConstant(literal);
 	}
 
