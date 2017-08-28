@@ -29,6 +29,8 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -299,6 +301,25 @@ public class SPARQLParserTest {
 
 		assertFalse(leftArg.getObjectVar().equals(rightArg.getObjectVar()));
 		assertNotEquals(leftArg.getObjectVar().getName(), rightArg.getObjectVar().getName());
+	}
+
+	@Test
+	public void testAdditiveExpression()
+		throws Exception
+	{
+		String ask = "ASK { ?this <urn:test:score> ?score FILTER (!(?score+5 != 0)) }";
+
+		ParsedQuery q = parser.parseQuery(ask, null);
+		q.getTupleExpr().visit(new AbstractQueryModelVisitor<Exception>() {
+
+			public void meet(ValueConstant node)
+				throws Exception
+			{
+				String label = node.getValue().stringValue();
+				assertFalse(label, label.startsWith("+"));
+			}
+		});
+
 	}
 
 }
