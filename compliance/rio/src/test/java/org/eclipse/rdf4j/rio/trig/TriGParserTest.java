@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.rio.trig;
 
 import org.eclipse.rdf4j.rio.RDFParser;
+import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.nquads.NQuadsParser;
 import org.eclipse.rdf4j.rio.trig.TriGParser;
 import org.eclipse.rdf4j.rio.trig.TriGParserTestCase;
@@ -25,7 +26,9 @@ public class TriGParserTest extends TriGParserTestCase {
 
 	@Override
 	protected RDFParser createTriGParser() {
-		return new TriGParser();
+		TriGParser parser = new TriGParser();
+		parser.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
+		return parser;
 	}
 
 	@Override
