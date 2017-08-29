@@ -61,6 +61,7 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	 */
 	public void setArg(TupleExpr arg) {
 		assert arg != null : "arg must not be null";
+		assert arg != this : "arg must not be itself";
 		arg.setParentNode(this);
 		this.arg = arg;
 	}
