@@ -375,7 +375,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					// add the aggregate operator to the group.
 					GroupElem ge = new GroupElem(alias, operator);
 					group.addGroupElement(ge);
+				}
 
+				if (!extension.getElements().isEmpty()) {
 					extension.setArg(tupleExpr);
 					tupleExpr = extension;
 				}
