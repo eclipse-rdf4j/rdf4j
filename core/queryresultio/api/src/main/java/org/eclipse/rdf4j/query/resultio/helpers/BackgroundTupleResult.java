@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.helpers;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.ArrayList;
@@ -61,28 +60,10 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 		throws QueryEvaluationException
 	{
 		try {
-			try {
-				super.handleClose();
-			}
-			finally {
-				try {
-					// After checking that we ourselves cannot possibly be generating an NPE ourselves, 
-					// attempt to close the input stream we were given
-					InputStream toClose = in;
-					if (toClose != null) {
-						toClose.close();
-					}
-				}
-				catch (NullPointerException e) {
-					// Swallow NullPointerException that Apache HTTPClient is hiding behind a NotThreadSafe annotation
-				}
-			}
-		}
-		catch (IOException e) {
-			throw new QueryEvaluationException(e);
+			super.handleClose();
 		}
 		finally {
-			queue.close();
+			queue.done();
 		}
 	}
 
