@@ -21,7 +21,7 @@ ASK WHERE {
                         	sp:arg1 [
                         		a sp:add ;
                         		sp:arg1 _:score ;
-                        		sp:arg2 5
+                        		sp:arg2 +5 # workaround for SES-2234
                         	];
                         	sp:arg2 0
                           ];
