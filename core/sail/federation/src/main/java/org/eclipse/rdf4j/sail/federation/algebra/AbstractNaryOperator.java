@@ -115,6 +115,7 @@ public abstract class AbstractNaryOperator<Expr extends QueryModelNode> extends 
 	 * Sets the <tt>idx</tt>-th argument of this n-ary tuple operator.
 	 */
 	protected final void setArg(final int idx, final Expr arg) {
+		assert arg != this : "arg must not be itself";
 		if (arg != null) {
 			// arg can be null (i.e. Regex)
 			arg.setParentNode(this);
