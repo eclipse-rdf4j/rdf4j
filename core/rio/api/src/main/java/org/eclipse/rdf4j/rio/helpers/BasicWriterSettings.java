@@ -19,10 +19,27 @@ public class BasicWriterSettings {
 	/**
 	 * Boolean setting for writer to determine whether pretty printing is preferred.
 	 * <p>
-	 * Defaults to false because it isn't always scalable.
+	 * Defaults to true
 	 */
 	public static final RioSetting<Boolean> PRETTY_PRINT = new RioSettingImpl<Boolean>(
-			"org.eclipse.rdf4j.rio.prettyprint", "Pretty print", Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.prettyprint", "Pretty print", Boolean.TRUE);
+
+	/**
+	 * Inline blanks nodes by their value and don't write any blank node labels when this setting is true.
+	 * This setting should only be used when blank nodes never appear in the context and there are no blank
+	 * node cycles.
+	 * <p>
+	 * WARNING: This setting requires all triples to be processed before being written and could use a lot of
+	 * memory in the process and should be set to false for large RDF files.
+	 * <p>
+	 * Defaults to false.
+	 *
+	 * @since 2.3
+	 */
+	public static final RioSetting<Boolean> INLINE_BLANK_NODES = new RioSettingImpl<Boolean>(
+			"org.eclipse.rdf4j.rio.inlineblanknodes",
+			"Use blank node property lists, collections, and anonymous nodes instead of blank node labels",
+			Boolean.FALSE);
 
 	/**
 	 * Boolean setting for writer to determine whether it should remove the xsd:string datatype from literals

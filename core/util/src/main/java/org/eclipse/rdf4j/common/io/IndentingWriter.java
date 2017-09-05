@@ -50,6 +50,11 @@ public class IndentingWriter extends Writer {
 	 */
 	private boolean indentationWritten = false;
 
+	/**
+	 * Number of characters written since the last call to {@link #writeEOL()}
+	 */
+	private int charactersSinceEOL;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -89,6 +94,10 @@ public class IndentingWriter extends Writer {
 		this.indentationLevel = indentationLevel;
 	}
 
+	public int getCharactersSinceEOL() {
+		return charactersSinceEOL;
+	}
+
 	public void increaseIndentation() {
 		indentationLevel++;
 	}
@@ -106,6 +115,7 @@ public class IndentingWriter extends Writer {
 	{
 		write(LINE_SEPARATOR);
 		indentationWritten = false;
+		charactersSinceEOL = 0;
 	}
 
 	@Override
@@ -133,7 +143,7 @@ public class IndentingWriter extends Writer {
 
 			indentationWritten = true;
 		}
-
+		charactersSinceEOL += len;
 		out.write(cbuf, off, len);
 	}
 }
