@@ -473,9 +473,8 @@ public class TurtleParser extends AbstractRDFParser {
 			object = parseImplicitBlank();
 		} else {
 			object = parseValue();
+			reportStatement(subject, predicate, object);
 		}
-
-		reportStatement(subject, predicate, object);
 	}
 
 	/**
@@ -489,9 +488,15 @@ public class TurtleParser extends AbstractRDFParser {
 		if (c == ')') {
 			// Empty list
 			readCodePoint();
+			if (subject != null) {
+				reportStatement(subject, predicate, RDF.NIL);
+			}
 			return RDF.NIL;
 		} else {
 			BNode listRoot = createBNode();
+			if (subject != null) {
+				reportStatement(subject, predicate, listRoot);
+			}
 
 			// Remember current subject and predicate
 			Resource oldSubject = subject;
@@ -538,6 +543,9 @@ public class TurtleParser extends AbstractRDFParser {
 		verifyCharacterOrFail(readCodePoint(), "[");
 
 		BNode bNode = createBNode();
+		if (subject != null) {
+			reportStatement(subject, predicate, bNode);
+		}
 
 		int c = readCodePoint();
 		if (c != ']') {
