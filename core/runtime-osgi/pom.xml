@@ -18,19 +18,9 @@
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-http-client</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-http-server-spring</artifactId>
 			<version>${project.version}</version>
 		</dependency>
-	<dependency>
-	    <groupId>${project.groupId}</groupId>
-	    <artifactId>rdf4j-queryalgebra-geosparql</artifactId>
-	    <version>${project.version}</version>
-	</dependency>
 	</dependencies>
 
 	<build>
@@ -90,10 +80,6 @@
 						<version>2.4.0</version>
 					</dependency>
 				</dependencies>
-			</plugin>
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>buildnumber-maven-plugin</artifactId>
 			</plugin>
 		</plugins>
 	</build>
