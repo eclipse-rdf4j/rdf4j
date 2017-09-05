@@ -30,8 +30,6 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
-import org.eclipse.rdf4j.query.algebra.ValueConstant;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -310,25 +308,6 @@ public class SPARQLParserTest {
 		InsertData insertData = (InsertData) ru.getUpdateExprs().get(0);
 		String[] lines = insertData.getDataBlock().split("\n");
 		assertEquals("\uD83D\uDE1F", lines[lines.length -1].replaceAll(".*\"(.*)\".*", "$1"));
-	}
-
-	@Test
-	public void testAdditiveExpression()
-		throws Exception
-	{
-		String ask = "ASK { ?this <urn:test:score> ?score FILTER (!(?score+5 != 0)) }";
-
-		ParsedQuery q = parser.parseQuery(ask, null);
-		q.getTupleExpr().visit(new AbstractQueryModelVisitor<Exception>() {
-
-			public void meet(ValueConstant node)
-				throws Exception
-			{
-				String label = node.getValue().stringValue();
-				assertFalse(label, label.startsWith("+"));
-			}
-		});
-
 	}
 
 }
