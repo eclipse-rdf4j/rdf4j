@@ -152,7 +152,7 @@ public abstract class TriGParserTestCase {
 			String nextBaseUrl = testBaseUrl + nextTestFile;
 
 			suite.addTest(new NegativeParserTest(nextTestUri, nextTestName, nextInputURL, nextBaseUrl,
-					createTriGParser(), FailureMode.IGNORE_FAILURE));
+					createTriGParser(), FailureMode.DO_NOT_IGNORE_FAILURE));
 		}
 
 		queryResult.close();
@@ -244,7 +244,7 @@ public abstract class TriGParserTestCase {
 			String nextBaseUrl = testBaseUrl + nextTestFile;
 
 			suite.addTest(new NegativeParserTest(nextTestUri, nextTestName, nextInputURL, nextBaseUrl,
-					createTriGParser(), FailureMode.IGNORE_FAILURE));
+					createTriGParser(), FailureMode.DO_NOT_IGNORE_FAILURE));
 		}
 
 		queryResult.close();
