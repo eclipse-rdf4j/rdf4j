@@ -75,6 +75,6 @@ public class SPARQLTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 	}
 
 	private String getQueryString() {
-		return QueryStringUtil.getQueryString(queryString, getBindings());
+		return QueryStringUtil.getTupleQueryString(queryString, getBindings());
 	}
 }
