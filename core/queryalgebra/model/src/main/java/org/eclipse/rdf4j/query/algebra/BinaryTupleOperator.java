@@ -67,6 +67,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	 */
 	public void setLeftArg(TupleExpr leftArg) {
 		assert leftArg != null : "leftArg must not be null";
+		assert leftArg != this : "leftArg must not be itself";
 		leftArg.setParentNode(this);
 		this.leftArg = leftArg;
 	}
@@ -88,6 +89,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	 */
 	public void setRightArg(TupleExpr rightArg) {
 		assert rightArg != null : "rightArg must not be null";
+		assert rightArg != this : "rightArg must not be itself";
 		rightArg.setParentNode(this);
 		this.rightArg = rightArg;
 	}

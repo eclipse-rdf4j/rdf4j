@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -19,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
@@ -63,6 +65,28 @@ public class QueryJoinOptimizerTest {
 				+ "  ex:s ?sp ?so. " + "  ?ps ex:p ?po. " + "  ?os ?op 'ex:o'. " + " }" + " ?x ?y ?z. " + "}";
 
 		testOptimizer(expectedQuery, query);
+	}
+
+	@Test
+	public void testSES2306AggregateOrderBy()
+		throws Exception
+	{
+		String select = "PREFIX ex: <ex:>\n" + "SELECT ((MIN(?x+1) + MAX(?y-1))/2 AS ?r) {\n"
+				+ "	?this ex:name ?n . ?this ex:id ?id . ?this ex:prop1 ?x . ?this ex:prop2 ?y .\n"
+				+ "} GROUP BY concat(?n, ?id) HAVING (SUM(?x) + SUM(?y) < 5) ORDER BY (COUNT(?x) + COUNT(?y))";
+
+		SPARQLParser parser = new SPARQLParser();
+		ParsedQuery q = parser.parseQuery(select, null);
+		q.getTupleExpr().visit(new AbstractQueryModelVisitor<Exception>() {
+
+			@Override
+			protected void meetUnaryTupleOperator(UnaryTupleOperator node)
+				throws Exception
+			{
+				assertNotEquals(node, node.getArg());
+				super.meetUnaryTupleOperator(node);
+			}
+		});
 	}
 
 	@Test
