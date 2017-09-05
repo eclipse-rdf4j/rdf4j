@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * @author Jeen Broekstra
+ * @author James Leigh
  */
 public class SailUpdate extends AbstractParserUpdate {
 
@@ -51,42 +52,44 @@ public class SailUpdate extends AbstractParserUpdate {
 		SailUpdateExecutor executor = new SailUpdateExecutor(con.getSailConnection(), con.getValueFactory(),
 				con.getParserConfig());
 
-		for (UpdateExpr updateExpr : updateExprs) {
+		boolean localTransaction = false;
+		try {
+			if (!getConnection().isActive()) {
+				localTransaction = true;
+				beginLocalTransaction();
+			}
+			for (UpdateExpr updateExpr : updateExprs) {
 
-			Dataset activeDataset = getMergedDataset(datasetMapping.get(updateExpr));
+				Dataset activeDataset = getMergedDataset(datasetMapping.get(updateExpr));
 
-			try {
-				boolean localTransaction = isLocalTransaction();
-				if (localTransaction) {
-					beginLocalTransaction();
+				try {
+					executor.executeUpdate(updateExpr, activeDataset, getBindings(), getIncludeInferred(),
+							getMaxExecutionTime());
 				}
-
-				executor.executeUpdate(updateExpr, activeDataset, getBindings(), getIncludeInferred(),
-						getMaxExecutionTime());
-
-				if (localTransaction) {
-					commitLocalTransaction();
+				catch (RDF4JException e) {
+					logger.warn("exception during update execution: ", e);
+					if (!updateExpr.isSilent()) {
+						throw new UpdateExecutionException(e);
+					}
+				}
+				catch (IOException e) {
+					logger.warn("exception during update execution: ", e);
+					if (!updateExpr.isSilent()) {
+						throw new UpdateExecutionException(e);
+					}
 				}
 			}
-			catch (RDF4JException e) {
-				logger.warn("exception during update execution: ", e);
-				if (!updateExpr.isSilent()) {
-					throw new UpdateExecutionException(e);
-				}
-			}
-			catch (IOException e) {
-				logger.warn("exception during update execution: ", e);
-				if (!updateExpr.isSilent()) {
-					throw new UpdateExecutionException(e);
-				}
+
+			if (localTransaction) {
+				commitLocalTransaction();
+				localTransaction = false;
 			}
 		}
-	}
-
-	private boolean isLocalTransaction()
-		throws RepositoryException
-	{
-		return !getConnection().isActive();
+		finally {
+			if (localTransaction) {
+				rollbackLocalTransaction();
+			}
+		}
 	}
 
 	private void beginLocalTransaction()
@@ -99,6 +102,13 @@ public class SailUpdate extends AbstractParserUpdate {
 		throws RepositoryException
 	{
 		getConnection().commit();
+
+	}
+
+	private void rollbackLocalTransaction()
+		throws RepositoryException
+	{
+		getConnection().rollback();
 
 	}
 }
