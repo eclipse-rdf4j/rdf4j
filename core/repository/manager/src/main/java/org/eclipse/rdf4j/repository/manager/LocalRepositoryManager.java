@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.MalformedURLException;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -59,7 +60,11 @@ import org.eclipse.rdf4j.repository.config.RepositoryRegistry;
 import org.eclipse.rdf4j.repository.event.base.RepositoryConnectionListenerAdapter;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 /**
  * An implementation of the {@link RepositoryManager} interface that operates directly on the repository data
@@ -78,6 +83,10 @@ public class LocalRepositoryManager extends RepositoryManager {
 	private static final RDFFormat CONFIG_FORMAT = RDFFormat.TURTLE;
 
 	private static final String CFG_FILE = "config." + CONFIG_FORMAT.getDefaultFileExtension();
+
+	private static final WriterConfig CFG_CONFIG = new WriterConfig().set(BasicWriterSettings.BASE_DIRECTIVE,
+			false).set(BasicWriterSettings.PRETTY_PRINT, true).set(BasicWriterSettings.INLINE_BLANK_NODES,
+					true);
 
 	/*-----------*
 	 * Variables *
@@ -424,9 +433,9 @@ public class LocalRepositoryManager extends RepositoryManager {
 		config.export(model, SimpleValueFactory.getInstance().createIRI(ns, config.getID()));
 		File part = new File(configFile.getParentFile(), configFile.getName() + ".part");
 		try (OutputStream output = new FileOutputStream(part)) {
-			Rio.write(model, output, CONFIG_FORMAT);
+			Rio.write(model, output, configFile.toURI().toString(), CONFIG_FORMAT, CFG_CONFIG);
 		}
-		catch (IOException e) {
+		catch (IOException | RDFHandlerException | UnsupportedRDFormatException | URISyntaxException e) {
 			throw new RepositoryConfigException(e);
 		}
 		if (updateSystem) {

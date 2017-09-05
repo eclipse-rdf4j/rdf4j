@@ -12,7 +12,9 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.Charset;
+import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.Map;
 import java.util.StringTokenizer;
 
@@ -26,7 +28,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
@@ -42,6 +44,18 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
  * is defined in <a href="http://www.dajobe.org/2004/01/turtle/">in this document</a>.
  */
 public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
+
+	private static final int LINE_WRAP = 80;
+
+	private static final IRI FIRST = new SimpleIRI(RDF.FIRST.stringValue()) {
+
+		private static final long serialVersionUID = -7951518099940758898L;
+	};
+
+	private static final IRI REST = new SimpleIRI(RDF.REST.stringValue()) {
+
+		private static final long serialVersionUID = -7951518099940758898L;
+	};
 
 	/*-----------*
 	 * Variables *
@@ -63,9 +77,20 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	protected IRI lastWrittenPredicate;
 
 	/**
-	 * A {@link Model} that is only used if pretty printing is enabled before startRDF is called;
+	 * Always null
 	 */
-	protected Model prettyPrintModel = null;
+	@Deprecated
+	protected Model prettyPrintModel;
+
+	private final Deque<Resource> stack = new LinkedList<Resource>();
+
+	private final Deque<IRI> path = new LinkedList<IRI>();
+
+	private Boolean xsdStringToPlainLiteral;
+
+	private Boolean prettyPrint;
+
+	private boolean inlineBNodes;
 
 	/*--------------*
 	 * Constructors *
@@ -136,11 +161,15 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 		writingStarted = true;
 
-		if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {
-			prettyPrintModel = new LinkedHashModel();
-		}
-
 		try {
+			xsdStringToPlainLiteral = getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
+			prettyPrint = getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT);
+			inlineBNodes = getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES);
+			if (prettyPrint) {
+				writer.setIndentationString("  ");
+			} else {
+				writer.setIndentationString("");
+			}
 			if (baseIRI != null && getWriterConfig().get(BasicWriterSettings.BASE_DIRECTIVE)) {
 				writeBase(baseIRI.toString());
 			}
@@ -151,9 +180,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 				String prefix = entry.getValue();
 
 				writeNamespace(prefix, name);
-				if (prettyPrintModel != null) {
-					prettyPrintModel.setNamespace(prefix, name);
-				}
 			}
 
 			if (!namespaceTable.isEmpty()) {
@@ -174,71 +200,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 
 		try {
-			if (prettyPrintModel != null) {
-				// Note: We can't guarantee ordering at this point because Resource doesn't implement Comparable<Resource>
-				for (Resource nextContext : prettyPrintModel.contexts()) {
-					for (Resource nextSubject : prettyPrintModel.subjects()) {
-						boolean canShortenSubjectBNode = true;
-						// We can almost always shorten subject IRIs, 
-						// with some known corner cases that are already embedded in the algorithm
-						// So just need to do checking for BNode subjects
-						if (nextSubject instanceof BNode) {
-							if (prettyPrintModel.contains(null, null, nextSubject)) {
-								// Cannot shorten this blank node as it is used as the object of a statement somewhere 
-								// so must be written in a non-anonymous form
-								canShortenSubjectBNode = false;
-							}
-							// Must check this for all writers, not just TriG/etc., 
-							// as Turtle writing only works right now for these statements because of the common blank node identifier
-							// The nextObjects iterator below does not take into account contexts
-							else if (prettyPrintModel.filter(nextSubject, null, null).contexts().size() > 1) {
-								// TriG section 2.3.1 specifies that we cannot shorten blank nodes shared across contexts, 
-								// and this code is shared with TriG.
-								canShortenSubjectBNode = false;
-							}
-							else if (prettyPrintModel.contains(null, null, null, nextSubject)) {
-								// Cannot anonymize if this blank node has been used as a context also
-								canShortenSubjectBNode = false;
-							}
-						}
-						for (IRI nextPredicate : prettyPrintModel.filter(nextSubject, null, null,
-								nextContext).predicates())
-						{
-							Model nextObjects = prettyPrintModel.filter(nextSubject, nextPredicate, null,
-									nextContext);
-							//if (nextObjects.size() > 1) {
-							// In this structure, cannot support shortening subject for multiple statements
-							//	canShortenSubject = false;
-							//}
-							for (Statement nextSt : nextObjects) {
-								Value nextObject = nextSt.getObject();
-								boolean canShortenObjectBNode = true;
-								if (nextObject instanceof BNode) {
-									if (prettyPrintModel.contains((BNode)nextObject, null, null)) {
-										// Cannot shorten this blank node as it is used as the subject of a statement somewhere 
-										// so must be written in a non-anonymous form
-										// NOTE: that this is only a restriction in this implementation because we write in CSPO order, 
-										// if we followed the linked chain we could be able to shorten here in some cases
-										canShortenObjectBNode = false;
-									}
-									else if (prettyPrintModel.filter(null, null, nextObject).size() > 1) {
-										// Cannot shorten BNode if any other statements reference it as an object
-										canShortenObjectBNode = false;
-									}
-									else if (prettyPrintModel.filter(null, null, null,
-											(BNode)nextObject).size() > 0)
-									{
-										// Cannot anonymize if this blank node has been used as a context also
-										canShortenObjectBNode = false;
-									}
-								}
-								handleStatementInternal(nextSt, true, canShortenSubjectBNode,
-										canShortenObjectBNode);
-							}
-						}
-					}
-				}
-			}
 			closePreviousStatement();
 			writer.flush();
 		}
@@ -301,13 +262,22 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			throw new RuntimeException("Document writing has not yet been started");
 		}
 
-		// If we are pretty-printing, all writing is buffered until endRDF is
-		// called
-		if (prettyPrintModel != null) {
-			prettyPrintModel.add(st);
+		try {
+			Resource subj = st.getSubject();
+			IRI pred = st.getPredicate();
+			if (inlineBNodes && (pred.equals(RDF.FIRST) || pred.equals(RDF.REST))) {
+				handleList(st);
+			}
+			else if (inlineBNodes && !subj.equals(lastWrittenSubject) && stack.contains(subj)) {
+				handleInlineNode(st);
+			}
+			else {
+				closeHangingResource();
+				handleStatementInternal(st, false, inlineBNodes, inlineBNodes);
+			}
 		}
-		else {
-			handleStatementInternal(st, false, false, false);
+		catch (IOException e) {
+			throw new RDFHandlerException(e);
 		}
 	}
 
@@ -329,14 +299,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	protected void handleStatementInternal(Statement st, boolean endRDFCalled, boolean canShortenSubjectBNode,
 			boolean canShortenObjectBNode)
 	{
-
-		// Avoid accidentally writing statements early, but don't lose track of
-		// them if they are sent here
-		if (prettyPrintModel != null && !endRDFCalled) {
-			prettyPrintModel.add(st);
-			return;
-		}
-
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
@@ -345,32 +307,42 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			if (subj.equals(lastWrittenSubject)) {
 				if (pred.equals(lastWrittenPredicate)) {
 					// Identical subject and predicate
-					writer.write(" , ");
+					writer.write(",");
+					wrapLine(prettyPrint);
 				}
 				else {
 					// Identical subject, new predicate
-					writer.write(" ;");
+					writer.write(";");
 					writer.writeEOL();
 
 					// Write new predicate
+					writer.decreaseIndentation();
 					writePredicate(pred);
-					writer.write(" ");
+					writer.increaseIndentation();
+					wrapLine(true);
+					path.removeLast();
+					path.addLast(pred);
 					lastWrittenPredicate = pred;
 				}
 			}
 			else {
 				// New subject
 				closePreviousStatement();
+				stack.addLast(subj);
 
 				// Write new subject:
-				writer.writeEOL();
+				if (prettyPrint) {
+					writer.writeEOL();
+				}
 				writeResource(subj, canShortenSubjectBNode);
-				writer.write(" ");
+				wrapLine(true);
+				writer.increaseIndentation();
 				lastWrittenSubject = subj;
 
 				// Write new predicate
 				writePredicate(pred);
-				writer.write(" ");
+				wrapLine(true);
+				path.addLast(pred);
 				lastWrittenPredicate = pred;
 
 				statementClosed = false;
@@ -480,7 +452,12 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	protected void writeValue(Value val, boolean canShorten)
 		throws IOException
 	{
-		if (val instanceof Resource) {
+		if (val instanceof BNode && canShorten && !val.equals(stack.peekLast())
+				&& !val.equals(lastWrittenSubject))
+		{
+			stack.addLast((BNode)val);
+		}
+		else if (val instanceof Resource) {
 			writeResource((Resource)val, canShorten);
 		}
 		else {
@@ -623,7 +600,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		String label = lit.getLabel();
 		IRI datatype = lit.getDatatype();
 
-		if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {
+		if (prettyPrint) {
 			if (XMLSchema.INTEGER.equals(datatype) || XMLSchema.DECIMAL.equals(datatype)
 					|| XMLSchema.DOUBLE.equals(datatype) || XMLSchema.BOOLEAN.equals(datatype))
 			{
@@ -657,7 +634,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			writer.write("@");
 			writer.write(lit.getLanguage().get());
 		}
-		else if (!XMLSchema.STRING.equals(datatype) || !xsdStringToPlainLiteral()) {
+		else if (!xsdStringToPlainLiteral || !XMLSchema.STRING.equals(datatype)) {
 			// Append the literal's datatype (possibly written as an abbreviated
 			// URI)
 			writer.write("^^");
@@ -668,19 +645,153 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	protected void closePreviousStatement()
 		throws IOException
 	{
+		closeNestedResources(null);
 		if (!statementClosed) {
 			// The previous statement still needs to be closed:
-			writer.write(" .");
+			writer.write(".");
 			writer.writeEOL();
 			writer.decreaseIndentation();
+			writer.decreaseIndentation();
 
+			stack.pollLast();
+			path.pollLast();
+			assert stack.isEmpty();
+			assert path.isEmpty();
 			statementClosed = true;
 			lastWrittenSubject = null;
 			lastWrittenPredicate = null;
 		}
 	}
 
-	private boolean xsdStringToPlainLiteral() {
-		return getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
+	private boolean isHanging() {
+		return !stack.isEmpty() && lastWrittenSubject != null && !lastWrittenSubject.equals(stack.peekLast());
+	}
+
+	private void closeHangingResource()
+		throws IOException
+	{
+		if (isHanging()) {
+			Value val = stack.pollLast();
+			if (val instanceof Resource) {
+				writeResource((Resource)val, inlineBNodes);
+			}
+			else {
+				writeLiteral((Literal)val);
+			}
+			assert lastWrittenSubject.equals(stack.peekLast());
+		}
+	}
+
+	private void closeNestedResources(Resource subj)
+		throws IOException
+	{
+		closeHangingResource();
+		while (stack.size() > 1 && !stack.peekLast().equals(subj)) {
+			if (prettyPrint) {
+				writer.writeEOL();
+			}
+			writer.decreaseIndentation();
+			writer.decreaseIndentation();
+			writer.write("]");
+
+			stack.pollLast();
+			path.pollLast();
+			lastWrittenSubject = stack.peekLast();
+			lastWrittenPredicate = path.peekLast();
+		}
+	}
+
+	private void handleInlineNode(Statement st)
+		throws IOException
+	{
+		Resource subj = st.getSubject();
+		IRI pred = st.getPredicate();
+		if (isHanging() && subj.equals(stack.peekLast())) {
+			// blank subject
+			lastWrittenSubject = subj;
+			writer.write("[");
+			if (prettyPrint && !RDF.TYPE.equals(pred)) {
+				writer.writeEOL();
+			}
+			else {
+				wrapLine(prettyPrint);
+			}
+			writer.increaseIndentation();
+
+			// Write new predicate
+			writePredicate(pred);
+			writer.increaseIndentation();
+			wrapLine(true);
+			path.addLast(pred);
+			lastWrittenPredicate = pred;
+			writeValue(st.getObject(), inlineBNodes);
+		}
+		else if (!subj.equals(lastWrittenSubject) && stack.contains(subj)) {
+			closeNestedResources(subj);
+			handleStatementInternal(st, false, inlineBNodes, inlineBNodes);
+		}
+		else {
+			assert false;
+		}
+	}
+
+	private void handleList(Statement st)
+		throws IOException
+	{
+		Resource subj = st.getSubject();
+		boolean first = RDF.FIRST.equals(st.getPredicate());
+		boolean rest = RDF.REST.equals(st.getPredicate()) && !RDF.NIL.equals(st.getObject());
+		boolean nil = RDF.REST.equals(st.getPredicate()) && RDF.NIL.equals(st.getObject());
+		if (first && REST != lastWrittenPredicate && isHanging()) {
+			// new collection
+			writer.write("(");
+			writer.increaseIndentation();
+			wrapLine(false);
+			lastWrittenSubject = subj;
+			path.addLast(FIRST);
+			lastWrittenPredicate = FIRST;
+			writeValue(st.getObject(), inlineBNodes);
+		}
+		else if (first && REST == lastWrittenPredicate) {
+			// item in existing collection
+			lastWrittenSubject = subj;
+			path.addLast(FIRST);
+			lastWrittenPredicate = FIRST;
+			writeValue(st.getObject(), inlineBNodes);
+		}
+		else {
+			closeNestedResources(subj);
+			if (rest && FIRST == lastWrittenPredicate) {
+				// next item
+				wrapLine(true);
+				path.removeLast(); // RDF.FIRST
+				path.addLast(REST);
+				lastWrittenPredicate = REST;
+				writeValue(st.getObject(), inlineBNodes);
+			}
+			else if (nil && FIRST == lastWrittenPredicate) {
+				writer.decreaseIndentation();
+				writer.write(")");
+				path.removeLast(); // RDF.FIRST
+				path.addLast(REST);
+				while (REST == path.peekLast()) {
+					stack.pollLast();
+					path.pollLast();
+					lastWrittenSubject = stack.peekLast();
+					lastWrittenPredicate = path.peekLast();
+				}
+			}
+			else {
+				handleStatementInternal(st, false, inlineBNodes, inlineBNodes);
+			}
+		}
+	}
+
+	private void wrapLine(boolean space) throws IOException {
+		if (prettyPrint && writer.getCharactersSinceEOL() > LINE_WRAP) {
+			writer.writeEOL();
+		} else if (space) {
+			writer.write(" ");
+		}
 	}
 }
