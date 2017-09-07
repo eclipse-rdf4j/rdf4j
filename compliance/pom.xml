@@ -17,7 +17,8 @@
 		<module>queryresultio</module>
 		<module>rio</module>
 		<module>http</module>
-		<module>lucene</module>
+		<module>elasticsearch</module>
+		<module>solr</module>
 		<module>store</module>
 		<module>serql</module>
 		<module>sparql</module>
