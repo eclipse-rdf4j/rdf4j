@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.resultio.helpers;
 
 import java.io.InputStream;
-import java.lang.reflect.UndeclaredThrowableException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -42,6 +41,8 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 
 	private final CountDownLatch bindingNamesReady = new CountDownLatch(1);
 
+	private final CountDownLatch finishedParsing = new CountDownLatch(1);
+
 	public BackgroundTupleResult(TupleQueryResultParser parser, InputStream in) {
 		this(new QueueCursor<BindingSet>(10), parser, in);
 	}
@@ -65,43 +66,47 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 		finally {
 			queue.done();
 		}
+		try {
+			finishedParsing.await();
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		} finally {
+			queue.checkException();
+		}
 	}
 
 	@Override
 	public List<String> getBindingNames() {
 		try {
 			bindingNamesReady.await();
-			queue.checkException();
 			return bindingNames;
 		}
 		catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			close();
-			throw new UndeclaredThrowableException(e);
-		}
-		catch (QueryEvaluationException e) {
-			close();
-			throw new UndeclaredThrowableException(e);
+			return Collections.emptyList();
+		} finally {
+			queue.checkException();
 		}
 	}
 
 	@Override
 	public void run() {
 		try {
-			parser.setQueryResultHandler(this);
-			parser.parseQueryResult(in);
-		}
-		catch (QueryResultHandlerException e) {
-			// parsing cancelled or interrupted
-			close();
+			try {
+				parser.setQueryResultHandler(this);
+				parser.parseQueryResult(in);
+			} finally {
+				in.close();
+			}
 		}
 		catch (Exception e) {
 			queue.toss(e);
-			close();
 		}
 		finally {
 			queue.done();
 			bindingNamesReady.countDown();
+			finishedParsing.countDown();
 		}
 	}
 
@@ -122,11 +127,8 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 		}
 		catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			close();
-			throw new TupleQueryResultHandlerException(e);
-		}
-		if (isClosed()) {
-			throw new TupleQueryResultHandlerException("Result closed");
+			queue.toss(e);
+			queue.done();
 		}
 	}
 
