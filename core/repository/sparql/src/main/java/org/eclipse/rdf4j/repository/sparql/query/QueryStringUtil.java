@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLUtil;
 
@@ -152,7 +153,8 @@ public class QueryStringUtil {
 			sb.append('@');
 			sb.append(lit.getLanguage().get());
 		}
-		else {
+		else if (!lit.getDatatype().equals(XMLSchema.STRING)) {
+			// Don't append type if it's xsd:string, this keeps it compatible with RDF 1.0
 			sb.append("^^<");
 			sb.append(lit.getDatatype().stringValue());
 			sb.append('>');
