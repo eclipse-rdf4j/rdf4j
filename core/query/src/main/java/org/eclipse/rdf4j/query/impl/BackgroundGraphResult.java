@@ -9,11 +9,9 @@ package org.eclipse.rdf4j.query.impl;
 
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.lang.reflect.UndeclaredThrowableException;
 import java.nio.charset.Charset;
 import java.util.Collections;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 
@@ -45,6 +43,8 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 
 	private final CountDownLatch namespacesReady = new CountDownLatch(1);
 
+	private final CountDownLatch finishedParsing = new CountDownLatch(1);
+
 	private final Map<String, String> namespaces = new ConcurrentHashMap<String, String>();
 
 	private final QueueCursor<Statement> queue;
@@ -65,67 +65,6 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 	}
 
 	@Override
-	public boolean hasNext()
-		throws QueryEvaluationException
-	{
-		if (isClosed()) {
-			return false;
-		}
-		if (Thread.currentThread().isInterrupted()) {
-			close();
-			return false;
-		}
-
-		boolean result = queue.hasNext();
-		if (!result) {
-			close();
-		}
-		return result;
-	}
-
-	@Override
-	public Statement next()
-		throws QueryEvaluationException
-	{
-		if (isClosed()) {
-			throw new NoSuchElementException("The iteration has been closed.");
-		}
-		if (Thread.currentThread().isInterrupted()) {
-			close();
-			throw new NoSuchElementException("The iteration has been closed.");
-		}
-
-		try {
-			return queue.next();
-		}
-		catch (NoSuchElementException e) {
-			close();
-			throw e;
-		}
-	}
-
-	@Override
-	public void remove()
-		throws QueryEvaluationException
-	{
-		if (isClosed()) {
-			throw new IllegalStateException("The iteration has been closed.");
-		}
-		if (Thread.currentThread().isInterrupted()) {
-			close();
-			throw new IllegalStateException("The iteration has been closed.");
-		}
-
-		try {
-			queue.remove();
-		}
-		catch (IllegalStateException e) {
-			close();
-			throw e;
-		}
-	}
-
-	@Override
 	protected void handleClose()
 		throws QueryEvaluationException
 	{
@@ -135,30 +74,38 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 		finally {
 			queue.done();
 		}
+		try {
+			finishedParsing.await();
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		} finally {
+			queue.checkException();
+		}
 	}
 
 	@Override
 	public void run() {
 		try {
-			parser.setRDFHandler(this);
-			if (charset == null) {
-				parser.parse(in, baseURI);
+			try {
+				parser.setRDFHandler(this);
+				if (charset == null) {
+					parser.parse(in, baseURI);
+				}
+				else {
+					parser.parse(new InputStreamReader(in, charset), baseURI);
+				}
+			} finally {
+				in.close();
 			}
-			else {
-				parser.parse(new InputStreamReader(in, charset), baseURI);
-			}
-		}
-		catch (RDFHandlerException e) {
-			// parsing was cancelled or interrupted
-			close();
 		}
 		catch (Exception e) {
 			queue.toss(e);
-			close();
 		}
 		finally {
 			queue.done();
 			namespacesReady.countDown();
+			finishedParsing.countDown();
 		}
 	}
 
@@ -178,8 +125,9 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 		}
 		catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			close();
-			throw new UndeclaredThrowableException(e);
+			return Collections.emptyMap();
+		} finally {
+			queue.checkException();
 		}
 	}
 
@@ -207,11 +155,8 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 		}
 		catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			close();
-			throw new RDFHandlerException(e);
-		}
-		if (isClosed()) {
-			throw new RDFHandlerException("Result closed");
+			queue.toss(e);
+			queue.done();
 		}
 	}
 
