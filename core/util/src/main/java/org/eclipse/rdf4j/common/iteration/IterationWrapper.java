@@ -60,6 +60,10 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 		if (isClosed()) {
 			return false;
 		}
+		else if (Thread.currentThread().isInterrupted()) {
+			close();
+			return false;
+		}
 		boolean result = wrappedIter.hasNext();
 		if (!result) {
 			close();
@@ -78,6 +82,10 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	{
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
+		}
+		else if (Thread.currentThread().isInterrupted()) {
+			close();
+			throw new NoSuchElementException("The iteration has been interrupted.");
 		}
 		try {
 			return wrappedIter.next();
@@ -102,6 +110,10 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	{
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
+		}
+		else if (Thread.currentThread().isInterrupted()) {
+			close();
+			throw new IllegalStateException("The iteration has been interrupted.");
 		}
 		try {
 			wrappedIter.remove();

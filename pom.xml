@@ -58,18 +58,6 @@
 
 	<profiles>
 		<profile>
-			<id>localBuild</id>
-			<activation>
-				<property>
-					<!-- activate if property 'hudsonBuild' is not set -->
-					<name>!hudsonBuild</name>
-				</property>
-			</activation>
-			<properties>
-				<hudson.rdf4j.proxy.opts/>
-			</properties>
-		</profile>
-		<profile>
 			<id>ossrh</id>
 			<distributionManagement>
 				<snapshotRepository>
@@ -162,12 +150,6 @@
 			</activation>
 			<properties>
 				<javadoc.opts>-Xdoclint:none</javadoc.opts>
-			</properties>
-		</profile>
-		<profile>
-			<id>eclipse-hudson-rdf4j</id>
-			<properties>
-				<hudson.rdf4j.proxy.opts>-Dhttp.proxyHost=proxy.eclipse.org -Dhttp.proxyPort=9898 -Dhttps.proxyHost=proxy.eclipse.org -Dhttps.proxyPort=9898 -Dhttp.nonProxyHosts=*.eclipse.org -Dhttps.nonProxyHosts=*.eclipse.org -Dftp.proxyHost=proxy.eclipse.org -Dftp.proxyPort=9898 -Dftp.nonProxyHosts=*.eclipse.org</hudson.rdf4j.proxy.opts>
 			</properties>
 		</profile>
 	</profiles>
@@ -706,7 +688,7 @@
 					<version>2.19.1</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
-						<argLine>-Xmx1024M ${hudson.rdf4j.proxy.opts}</argLine>
+						<argLine>-Xmx1024M</argLine>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -717,7 +699,7 @@
 						<encoding>UTF-8</encoding>
 						<forkCount>1</forkCount>
 						<reuseForks>false</reuseForks>
-						<argLine>-Xmx1024M ${hudson.rdf4j.proxy.opts}</argLine>
+						<argLine>-Xmx1024M</argLine>
 						<includes>
 							<include>**/*Test.java</include>
 						</includes>
