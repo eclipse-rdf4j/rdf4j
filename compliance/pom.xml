@@ -4,7 +4,7 @@
 
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
-		<artifactId>rdf4j</artifactId>
+		<artifactId>rdf4j-client-parent</artifactId>
 		<version>2.3-SNAPSHOT</version>
 	</parent>
 
@@ -16,13 +16,6 @@
 		<module>model</module>
 		<module>queryresultio</module>
 		<module>rio</module>
-		<module>http</module>
-		<module>elasticsearch</module>
-		<module>solr</module>
-		<module>store</module>
-		<module>serql</module>
-		<module>sparql</module>
-		<module>geosparql</module>
 	</modules>
 
 	<name>RDF4J compliance tests</name>
