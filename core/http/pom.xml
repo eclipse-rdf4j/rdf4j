@@ -12,14 +12,11 @@
 	<packaging>pom</packaging>
 
 	<name>RDF4J: HTTP</name>
-	<description>Client and server for repository communication over HTTP.</description>
+	<description>Client and protocol for repository communication over HTTP.</description>
 
 	<modules>
 		<module>protocol</module>
 		<module>client</module>
-		<module>server</module>
-		<module>server-spring</module>
-		<module>workbench</module>
 	</modules>
 
 </project>
