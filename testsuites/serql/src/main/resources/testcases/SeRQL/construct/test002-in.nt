@@ -1,4 +1,0 @@
-# Input file for SeRQL CfwQuery test
-# description: query for literals.
-<http://example.org/A> <http://example.org/propA> "Hello World!"@en.
-<http://example.org/B> <http://example.org/propA> <http://example.org/B>.

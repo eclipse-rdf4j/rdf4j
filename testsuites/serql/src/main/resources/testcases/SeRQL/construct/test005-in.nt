@@ -1,6 +1,0 @@
-# Input file for SeRQL CfwQuery test
-# description: query for a branched path.
-<http://example.org/A> <http://example.org/propA> <http://example.org/B>.
-<http://example.org/A> <http://example.org/propA> "11" .
-<http://example.org/B> <http://example.org/propB> <http://example.org/C>.
-<http://example.org/B> <http://example.org/propC> "Hello World!".

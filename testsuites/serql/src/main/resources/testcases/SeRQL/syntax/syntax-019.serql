@@ -1,4 +1,0 @@
-SELECT
-   label(O), datatype(O) AS "label(O)", P, O
-FROM
-  {S} P {O}
