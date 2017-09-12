@@ -142,8 +142,8 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 				}
 			}
 			if (isAfterLast(take)) {
-				checkException();
 				done(); // put afterLast back for others
+				checkException();
 				return null;
 			}
 			checkException();
