@@ -1,1 +1,0 @@
-# rdf:RDF should not make this an RDF file, and it should fail to parse as one even with <rdf:RDF> or </rdf:RDF> in this comment

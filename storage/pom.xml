@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
-		<artifactId>rdf4j</artifactId>
+		<artifactId>rdf4j-storage-parent</artifactId>
 		<version>2.3-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-storage</artifactId>
@@ -266,6 +266,11 @@
 		</dependency>
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-lucene-spin</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
 			<artifactId>rdf4j-spin</artifactId>
 			<version>${project.version}</version>
 			<exclusions>
@@ -353,7 +358,6 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-shade-plugin</artifactId>
-				<version>3.0.0</version>
 				<executions>
 					<execution>
 						<phase>package</phase>
@@ -369,6 +373,7 @@
 									<include>org.eclipse.rdf4j:rdf4j-repository-dataset</include>
 									<include>org.eclipse.rdf4j:rdf4j-repository-sail</include>
 									<include>org.eclipse.rdf4j:rdf4j-sail-*</include>
+									<include>org.eclipse.rdf4j:rdf4j-lucene-spin</include>
 									<include>org.eclipse.rdf4j:rdf4j-spin</include>
 								</includes>
 							</artifactSet>
