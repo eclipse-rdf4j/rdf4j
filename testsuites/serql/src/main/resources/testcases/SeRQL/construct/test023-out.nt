@@ -1,4 +1,0 @@
-<http://www.example.org/propB> <http://www.w3.org/2000/01/rdf-schema#subPropertyOf> <http://www.example.org/propA>.
-<http://www.example.org/propC> <http://www.w3.org/2000/01/rdf-schema#subPropertyOf> <http://www.example.org/propB>.
-<http://www.example.org/propD> <http://www.w3.org/2000/01/rdf-schema#subPropertyOf> <http://www.example.org/propB>.
-<http://www.example.org/propE> <http://www.w3.org/2000/01/rdf-schema#subPropertyOf> <http://www.example.org/propB>.
