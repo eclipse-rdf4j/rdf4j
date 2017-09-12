@@ -52,7 +52,6 @@
 		<module>client</module>
 		<module>storage</module>
 		<module>core</module>
-		<module>bom</module>
 	</modules>
 
 	<profiles>
