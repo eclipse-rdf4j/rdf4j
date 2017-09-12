@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.helpers;
 
-import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.UndeclaredThrowableException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -43,6 +41,8 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 
 	private final CountDownLatch bindingNamesReady = new CountDownLatch(1);
 
+	private final CountDownLatch finishedParsing = new CountDownLatch(1);
+
 	public BackgroundTupleResult(TupleQueryResultParser parser, InputStream in) {
 		this(new QueueCursor<BindingSet>(10), parser, in);
 	}
@@ -61,28 +61,18 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 		throws QueryEvaluationException
 	{
 		try {
-			try {
-				super.handleClose();
-			}
-			finally {
-				try {
-					// After checking that we ourselves cannot possibly be generating an NPE ourselves, 
-					// attempt to close the input stream we were given
-					InputStream toClose = in;
-					if (toClose != null) {
-						toClose.close();
-					}
-				}
-				catch (NullPointerException e) {
-					// Swallow NullPointerException that Apache HTTPClient is hiding behind a NotThreadSafe annotation
-				}
-			}
-		}
-		catch (IOException e) {
-			throw new QueryEvaluationException(e);
+			super.handleClose();
 		}
 		finally {
-			queue.close();
+			queue.done();
+		}
+		try {
+			finishedParsing.await();
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		} finally {
+			queue.checkException();
 		}
 	}
 
@@ -90,37 +80,33 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 	public List<String> getBindingNames() {
 		try {
 			bindingNamesReady.await();
-			queue.checkException();
 			return bindingNames;
 		}
 		catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			close();
-			throw new UndeclaredThrowableException(e);
-		}
-		catch (QueryEvaluationException e) {
-			close();
-			throw new UndeclaredThrowableException(e);
+			return Collections.emptyList();
+		} finally {
+			queue.checkException();
 		}
 	}
 
 	@Override
 	public void run() {
 		try {
-			parser.setQueryResultHandler(this);
-			parser.parseQueryResult(in);
-		}
-		catch (QueryResultHandlerException e) {
-			// parsing cancelled or interrupted
-			close();
+			try {
+				parser.setQueryResultHandler(this);
+				parser.parseQueryResult(in);
+			} finally {
+				in.close();
+			}
 		}
 		catch (Exception e) {
 			queue.toss(e);
-			close();
 		}
 		finally {
 			queue.done();
 			bindingNamesReady.countDown();
+			finishedParsing.countDown();
 		}
 	}
 
@@ -141,11 +127,8 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult
 		}
 		catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			close();
-			throw new TupleQueryResultHandlerException(e);
-		}
-		if (isClosed()) {
-			throw new TupleQueryResultHandlerException("Result closed");
+			queue.toss(e);
+			queue.done();
 		}
 	}
 
