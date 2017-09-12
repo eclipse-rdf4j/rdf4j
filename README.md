@@ -1,10 +1,11 @@
-# Welcome to the RDF4J code repository
+# Welcome to the RDF4J client repository
 
 [![Build Status](https://travis-ci.org/eclipse/rdf4j.svg?branch=master)](https://travis-ci.org/eclipse/rdf4j)
 
-This is the main code repository for the Eclipse RDF4J project. More code can be found in
-* [rdf4j-tools](https://github.com/eclipse/rdf4j-tools) containings server and console
-* [rdf4j-testsuite](https://github.com/eclipse/rdf4j-testsuite) containings common tests and benchmarks
+This is the client code repository for the Eclipse RDF4J project. More code can be found in
+* [rdf4j-storage](https://github.com/eclipse/rdf4j-storage) containing storage and indexers
+* [rdf4j-tools](https://github.com/eclipse/rdf4j-tools) containing server and console
+* [rdf4j-testsuite](https://github.com/eclipse/rdf4j-testsuite) containing common tests and benchmarks
 
 Please see [RDF4J.org](http://rdf4j.org) for detailed information about RDF4J, including
 user documentation and [downloads of the latest release](http://rdf4j.org/download).
