@@ -12,10 +12,13 @@
 	<packaging>pom</packaging>
 
 	<modules>
+		<module>manager</module>
 		<module>model</module>
 		<module>queryresultio</module>
 		<module>rio</module>
 		<module>http</module>
+		<module>elasticsearch</module>
+		<module>solr</module>
 		<module>store</module>
 		<module>serql</module>
 		<module>sparql</module>
