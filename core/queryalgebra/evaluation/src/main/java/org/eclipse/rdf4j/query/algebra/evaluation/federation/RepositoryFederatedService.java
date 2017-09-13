@@ -17,10 +17,6 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.URI;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -38,6 +34,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sparql.query.InsertBindingSetCursor;
+import org.eclipse.rdf4j.repository.sparql.query.QueryStringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -447,65 +444,12 @@ public class RepositoryFederatedService implements FederatedService {
 															// the row for post
 															// processing
 			for (String bName : relevantBindingNames) {
-				appendValueAsString(sb, b.getValue(bName)).append(" ");
+				QueryStringUtil.appendValueAsString(sb, b.getValue(bName)).append(" ");
 			}
 			sb.append(")");
 		}
 
 		sb.append(" }");
 		return sb.toString();
-	}
-
-	protected StringBuilder appendValueAsString(StringBuilder sb, Value value) {
-
-		// TODO check if there is some convenient method in Sesame!
-
-		if (value == null)
-			return sb.append("UNDEF"); // see grammar for BINDINGs def
-
-		else if (value instanceof URI)
-			return appendURI(sb, (URI)value);
-
-		else if (value instanceof Literal)
-			return appendLiteral(sb, (Literal)value);
-
-		// XXX check for other types ? BNode ?
-		throw new RuntimeException("Type not supported: " + value.getClass().getCanonicalName());
-	}
-
-	/**
-	 * Append the uri to the stringbuilder, i.e. <uri.stringValue>.
-	 * 
-	 * @param sb
-	 * @param uri
-	 * @return the StringBuilder, for convenience
-	 */
-	protected static StringBuilder appendURI(StringBuilder sb, URI uri) {
-		sb.append("<").append(uri.stringValue()).append(">");
-		return sb;
-	}
-
-	/**
-	 * Append the literal to the stringbuilder: "myLiteral"^^<dataType>
-	 * 
-	 * @param sb
-	 * @param lit
-	 * @return the StringBuilder, for convenience
-	 */
-	protected static StringBuilder appendLiteral(StringBuilder sb, Literal lit) {
-		sb.append('"');
-		sb.append(lit.getLabel().replace("\"", "\\\""));
-		sb.append('"');
-
-		if (Literals.isLanguageLiteral(lit)) {
-			sb.append('@');
-			sb.append(lit.getLanguage());
-		}
-		else {
-			sb.append("^^<");
-			sb.append(lit.getDatatype().stringValue());
-			sb.append('>');
-		}
-		return sb;
 	}
 }
