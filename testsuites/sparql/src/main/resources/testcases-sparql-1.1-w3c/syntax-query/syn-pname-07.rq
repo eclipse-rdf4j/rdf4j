@@ -1,5 +1,0 @@
-PREFIX : <http://example/>
-SELECT *
-{
-  :a :b%3D :c\~z\. .
-}

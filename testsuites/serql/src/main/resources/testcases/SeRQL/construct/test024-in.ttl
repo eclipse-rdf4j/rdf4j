@@ -1,9 +1,0 @@
-# Default graph
-@prefix dc:  <http://purl.org/dc/elements/1.1/> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-
-<test024-graph1.ttl> dc:publisher "Bob" .
-<test024-graph1.ttl> dc:date "2004-12-06T00:00:00Z"^^xsd:dateTime .
-
-<test024-graph2.ttl> dc:publisher "Bob" .
-<test024-graph2.ttl> dc:date "2005-01-10T00:00:00Z"^^xsd:dateTime .

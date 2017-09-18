@@ -1,6 +1,0 @@
-CONSTRUCT
-    {Uncle} bar:uncleOf {Nephew}
-FROM
-    {Uncle} bar:brotherOf {} bar:parentOf {Nephew}
-USING NAMESPACE
-    bar = <http://foo.org/bar#>
