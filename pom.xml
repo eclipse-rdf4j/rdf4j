@@ -4,11 +4,11 @@
 	<modelVersion>4.0.0</modelVersion>
 
 	<groupId>org.eclipse.rdf4j</groupId>
-	<artifactId>rdf4j</artifactId>
+	<artifactId>rdf4j-storage-parent</artifactId>
 	<version>2.3-SNAPSHOT</version>
 	<packaging>pom</packaging>
 
-	<name>RDF4J</name>
+	<name>RDF4J Storage Parent</name>
 	<description>An extensible framework for RDF and RDF Schema data.</description>
 	<url>http://www.rdf4j.org/</url>
 	<inceptionYear>2015</inceptionYear>
@@ -28,7 +28,7 @@
 		<developer>
 			<id>james_leigh</id>
 			<name>James Leigh</name>
-			<email>james@3roundstones.com</email>
+			<email>james@ontotext.com</email>
 		</developer>
 		<developer>
 			<id>ansell</id>
@@ -49,11 +49,25 @@
 	</licenses>
 
 	<modules>
-		<module>client</module>
+		<module>elasticsearch</module>
+		<module>evaluation</module>
+		<module>federation</module>
+		<module>geosparql</module>
+		<module>inferencer</module>
+		<module>lucene-api</module>
+		<module>lucene</module>
+		<module>lucene-spin</module>
+		<module>memory</module>
+		<module>nativerdf</module>
+		<module>repository-dataset</module>
+		<module>repository-sail</module>
+		<module>sail-api</module>
+		<module>sail-base</module>
+		<module>sail-model</module>
+		<module>sail-spin</module>
+		<module>solr</module>
+		<module>spin</module>
 		<module>storage</module>
-		<module>core</module>
-		<module>bom</module>
-		<module>benchmark</module>
 	</modules>
 
 	<profiles>
@@ -104,6 +118,13 @@
 					</plugin>
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-shade-plugin</artifactId>
+						<configuration>
+							<createSourcesJar>true</createSourcesJar>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
 						<artifactId>maven-gpg-plugin</artifactId>
 						<executions>
 							<execution>
@@ -114,6 +135,44 @@
 								</goals>
 							</execution>
 						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		<profile>
+			<id>assembly</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-source-plugin</artifactId>
+						<executions>
+							<execution>
+								<id>attach-sources</id>
+								<goals>
+									<goal>jar-no-fork</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-javadoc-plugin</artifactId>
+						<executions>
+							<execution>
+								<id>attach-javadocs</id>
+								<goals>
+									<goal>jar</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-shade-plugin</artifactId>
+						<configuration>
+							<createSourcesJar>true</createSourcesJar>
+						</configuration>
 					</plugin>
 				</plugins>
 			</build>
@@ -139,7 +198,6 @@
 				</property>
 			</activation>
 			<modules>
-				<module>testsuites</module>
 				<module>compliance</module>
 			</modules>
 		</profile>
@@ -580,11 +638,6 @@
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
-					<artifactId>maven-assembly-plugin</artifactId>
-					<version>2.4.1</version>
-				</plugin>
-				<plugin>
-					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-clean-plugin</artifactId>
 					<version>3.0.0</version>
 				</plugin>
@@ -761,7 +814,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-shade-plugin</artifactId>
-					<version>2.2</version>
+					<version>3.0.0</version>
 				</plugin>
 			</plugins>
 		</pluginManagement>
@@ -845,6 +898,16 @@
 	</build>
 
 	<repositories>
+		<repository>
+			<releases>
+				<enabled>false</enabled>
+			</releases>
+			<snapshots>
+				<enabled>true</enabled>
+			</snapshots>
+			<id>oss-sonatype-snapshots</id>
+			<url>https://oss.sonatype.org/content/repositories/snapshots</url>
+		</repository>
 		<repository>
 			<id>maven-restlet</id>
 			<name>Public online Restlet repository</name>

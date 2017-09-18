@@ -4,19 +4,14 @@
 
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
-		<artifactId>rdf4j</artifactId>
+		<artifactId>rdf4j-storage-parent</artifactId>
 		<version>2.3-SNAPSHOT</version>
 	</parent>
 
-	<artifactId>rdf4j-compliance</artifactId>
+	<artifactId>rdf4j-storage-compliance</artifactId>
 	<packaging>pom</packaging>
 
 	<modules>
-		<module>manager</module>
-		<module>model</module>
-		<module>queryresultio</module>
-		<module>rio</module>
-		<module>http</module>
 		<module>elasticsearch</module>
 		<module>solr</module>
 		<module>store</module>

@@ -1,4 +1,0 @@
-# Bad declaration.
-PREFIX ex:ex: <http://example/>
-
-ASK{}
