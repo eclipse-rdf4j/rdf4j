@@ -16,7 +16,6 @@
 		<module>solr</module>
 		<module>store</module>
 		<module>serql</module>
-		<module>sparql</module>
 		<module>geosparql</module>
 	</modules>
 
