@@ -88,7 +88,7 @@ public class FederateTest extends AbstractCommandTest {
 		addRepositories(MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID2, HTTP_MEMBER_ID, HTTP2_MEMBER_ID,
 				SPARQL_MEMBER_ID, SPARQL2_MEMBER_ID);
 		when(mockConsoleState.getManager()).thenReturn(manager);
-		when(mockConsoleIO.readln("Federation Description (optional):")).thenReturn(FED_DESCRIPTION);
+		when(mockConsoleIO.readln("Federation Description (optional): ")).thenReturn(FED_DESCRIPTION);
 	}
 
 	@After
@@ -261,7 +261,7 @@ public class FederateTest extends AbstractCommandTest {
 		throws Exception
 	{
 		assertThat(manager.hasRepositoryConfig(FED_ID), is(equalTo(true)));
-		verify(mockConsoleIO, times(1)).readln("Federation Description (optional):");
+		verify(mockConsoleIO, times(1)).readln("Federation Description (optional): ");
 		verify(mockConsoleIO, times(1)).writeln("Federation created.");
 		verify(mockConsoleIO, never()).writeError(anyString());
 		assertThat(manager.getRepositoryInfo(FED_ID).getDescription(), is(equalTo(FED_DESCRIPTION)));

@@ -7,11 +7,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.PrintStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 import org.eclipse.rdf4j.rio.RDFParseException;
+import org.jline.reader.EndOfFileException;
+import org.jline.reader.LineReader;
+import org.jline.reader.LineReaderBuilder;
+import org.jline.terminal.Terminal;
+import org.jline.terminal.TerminalBuilder;
 
 /**
  * @author Dale Visser
@@ -20,9 +25,9 @@ class ConsoleIO {
 
 	private static final String PLEASE_OPEN_FIRST = "please open a repository first";
 
-	private final BufferedReader input;
+	private final Terminal terminal;
 
-	private final PrintStream out, err;
+	private final LineReader input;
 
 	private final ConsoleState appInfo;
 
@@ -36,32 +41,51 @@ class ConsoleIO {
 
 	private boolean errorWritten;
 
-	ConsoleIO(BufferedReader input, PrintStream out, PrintStream err, ConsoleState info) {
-		this.input = input;
-		this.out = out;
-		this.err = err;
+	ConsoleIO(InputStream input, OutputStream out, ConsoleState info)
+		throws IOException
+	{
+		this.terminal = TerminalBuilder.builder().system(false).streams(input, out).build();
+		this.input = LineReaderBuilder.builder().terminal(terminal).build();
+		this.appInfo = info;
+	}
+
+	ConsoleIO(ConsoleState info)
+		throws IOException
+	{
+		this.terminal = TerminalBuilder.terminal();
+		this.input = LineReaderBuilder.builder().terminal(terminal).build();
 		this.appInfo = info;
 	}
 
 	protected String readCommand()
 		throws IOException
 	{
-		String repositoryID = appInfo.getRepositoryID();
-		if (!quiet) {
-			if (repositoryID != null) {
-				write(repositoryID);
+		try {
+			String line = input.readLine(getPrompt());
+			if (line == null) {
+				return null;
 			}
-			write("> ");
-		}
-		String line = input.readLine();
-		if (line == null) {
+			line = line.trim();
+			if (line.endsWith(".")) {
+				line = line.substring(0, line.length() - 1);
+			}
+			return line;
+		} catch (EndOfFileException e) {
 			return null;
 		}
-		line = line.trim();
-		if (line.endsWith(".")) {
-			line = line.substring(0, line.length() - 1);
+	}
+
+	private String getPrompt() {
+		String repositoryID = appInfo.getRepositoryID();
+		if (quiet) {
+			return "";
 		}
-		return line;
+		else if (repositoryID != null) {
+			return repositoryID + "> ";
+		}
+		else {
+			return "> ";
+		}
 	}
 
 	/**
@@ -70,13 +94,22 @@ class ConsoleIO {
 	protected String readMultiLineInput()
 		throws IOException
 	{
-		String line = input.readLine();
+		return readMultiLineInput("> ");
+	}
+
+	/**
+	 * Reads multiple lines from the input until a line that with a '.' on its own is read.
+	 */
+	protected String readMultiLineInput(String prompt)
+		throws IOException
+	{
+		String line = input.readLine(prompt);
 		String result = null;
 		if (line != null) {
 			final StringBuilder buf = new StringBuilder(256);
 			buf.append(line);
 			while (line != null && !(line.length() == 1 && line.endsWith("."))) {
-				line = input.readLine();
+				line = input.readLine("> ");
 				buf.append('\n');
 				buf.append(line);
 			}
@@ -94,24 +127,18 @@ class ConsoleIO {
 	protected String readln(String... message)
 		throws IOException
 	{
-		if (!quiet && message.length > 0) {
-			String prompt = message[0];
-			if (prompt != null) {
-				write(prompt + " ");
-			}
-		}
-		String result = input.readLine();
+		String prompt = !quiet && message.length > 0 && message[0] != null ? message[0] : "";
+		String result = input.readLine(prompt);
 		if (echo) {
 			writeln(result);
 		}
 		return result;
 	}
 
-	protected String readPassword(final String message)
+	protected String readPassword(final String prompt)
 		throws IOException
 	{
-		// TODO: Proper password reader
-		String result = readln(message);
+		String result = input.readLine(prompt, '*');
 		if (echo && !result.isEmpty()) {
 			writeln("************");
 		}
@@ -119,19 +146,19 @@ class ConsoleIO {
 	}
 
 	protected void write(final String string) {
-		out.print(string);
+		terminal.writer().print(string);
 	}
 
 	protected void writeln() {
-		out.println();
+		terminal.writer().println();
 	}
 
 	protected void writeln(final String string) {
-		out.println(string);
+		terminal.writer().println(string);
 	}
 
 	protected void writeError(final String errMsg) {
-		err.println(errMsg);
+		terminal.writer().println(errMsg);
 		errorWritten = true;
 	}
 
@@ -160,8 +187,7 @@ class ConsoleIO {
 		if (!force && !cautious) {
 			while (true) {
 				writeln(msg);
-				write("Proceed? (yes|no) [" + defaultString + "]: ");
-				final String reply = readln();
+				final String reply = readln("Proceed? (yes|no) [" + defaultString + "]: ");
 				if ("no".equalsIgnoreCase(reply) || "no.".equalsIgnoreCase(reply)) {
 					result = false;
 					break;

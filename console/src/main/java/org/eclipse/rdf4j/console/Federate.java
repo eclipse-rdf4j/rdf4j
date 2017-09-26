@@ -83,7 +83,7 @@ public class Federate implements Command {
 				cio.writeError(fedID + " already exists.");
 			}
 			else if (validateMembers(manager, readonly, memberIDs)) {
-				String description = cio.readln("Federation Description (optional):");
+				String description = cio.readln("Federation Description (optional): ");
 				RepositoryManagerFederator rmf = new RepositoryManagerFederator(manager);
 				rmf.addFed(fedID, description, memberIDs, readonly, distinct);
 				cio.writeln("Federation created.");
