@@ -223,7 +223,7 @@ public class LuceneIndexTest {
 	private static PostingsEnum termDocs(IndexReader reader, Term term)
 		throws IOException
 	{
-		return MultiFields.getTermDocsEnum(reader, MultiFields.getLiveDocs(reader), term.field(),
+		return MultiFields.getTermDocsEnum(reader,  term.field(),
 				term.bytes());
 	}
 
@@ -446,7 +446,7 @@ public class LuceneIndexTest {
 	}
 
 	/**
-	 * @param statement112
+	 * @param statement
 	 * @param document
 	 */
 	private void assertStatement(Statement statement, Document document) {
@@ -460,7 +460,7 @@ public class LuceneIndexTest {
 	}
 
 	/**
-	 * @param statement112
+	 * @param statement
 	 * @param document
 	 */
 	private void assertNoStatement(Statement statement, Document document) {
