@@ -1,6 +1,6 @@
 = RDF4J Workbench
 
-This chapter describes the RDF4J Workbench, a web application for interacting with RDF$J and/or other SPARQL endpoints.
+This chapter describes the RDF4J Workbench, a web application for interacting with RDF4J and/or other SPARQL endpoints.
 
 This chapter will refer to URLs on a local server served from port 8080, which is possibly the most common “out-of-the-box” configuration. That is, Workbench URLs will start with http://localhost:8080/.
 
