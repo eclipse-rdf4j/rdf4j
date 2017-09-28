@@ -121,7 +121,7 @@ class RDFSRules {
 	public static final int Rdfs13 = 19;
 
 	/**
-	 * rule X1: xxx rdf:_* yyy --> rdf:_* rdf:type rdfs:ContainerMembershipProperty This is an extra rule for
+	 * rule X1: xxx rdf:__* yyy --> rdf:__* rdf:type rdfs:ContainerMembershipProperty This is an extra rule for
 	 * list membership properties (_1, _2, _3, ...). The RDF Semantics Recommendation does not specificy a
 	 * production for this, instead these statements are considered axiomatic. Since it is an infinite set it
 	 * can not, in practice, be asserted axiomatically.
@@ -153,9 +153,9 @@ class RDFSRules {
 			"  Rdfs13",
 			"  RX1" };
 
-	private static final boolean _ = false;
+	private static final boolean __ = false;
 
-	private static final boolean X = true;
+	private static final boolean XX = true;
 
 	/**
 	 * Table of triggers for entailment rules. Each column represents the triggers for an entailment rule R,
@@ -166,26 +166,26 @@ class RDFSRules {
 	public static final boolean[][] TRIGGERS = {
 			//	    1    2_2   3_2    4b   5_2   7_1    8    9_2   11_1   12   X1
 			//	      2_1   3_1    4a   5_1    6    7_2   9_1   10   11_2   13
-			{ _, X, _, X, _, X, _, _, _, X, X, _, _, _, X, _, _, _, _, _, _ }, // 1
-			{ _, X, _, X, _, _, _, _, _, X, X, _, X, _, X, X, _, _, X, X, _ }, // 2_1
-			{ _, X, _, X, _, _, _, _, _, X, X, _, X, _, X, X, _, _, X, X, _ }, // 2_2
-			{ _, X, _, X, _, _, _, _, _, X, X, _, X, _, X, X, _, _, X, X, _ }, // 3_1
-			{ _, X, _, X, _, _, _, _, _, X, X, _, X, _, X, X, _, _, X, X, _ }, // 3_2
-			{ _, X, _, X, _, _, _, _, _, _, X, _, _, _, X, _, _, _, _, _, _ }, // 4a
-			{ _, X, _, X, _, _, _, _, _, _, X, _, _, _, X, _, _, _, _, _, _ }, // 4b
-			{ _, _, _, _, _, _, _, X, X, _, X, X, _, _, _, _, _, _, _, _, _ }, // 51
-			{ _, _, _, _, _, _, _, X, X, _, X, X, _, _, _, _, _, _, _, _, _ }, // 52
-			{ _, X, _, X, _, _, _, _, _, _, X, X, _, _, _, _, _, _, _, _, _ }, // 6
-			{ _, X, X, X, X, _, _, X, X, X, X, X, X, X, X, X, X, X, X, X, X }, // 7_1
-			{ _, X, X, X, X, _, _, X, X, X, X, X, X, X, X, X, X, X, X, X, X }, // 7_2
-			{ _, X, _, X, _, _, _, _, _, _, X, _, _, X, _, _, X, X, _, _, _ }, // 8
-			{ _, _, _, X, _, _, _, _, _, X, X, _, X, _, X, X, _, _, X, X, _ }, // 9_1
-			{ _, _, _, X, _, _, _, _, _, X, X, _, X, _, X, X, _, _, X, X, _ }, // 9_2
-			{ _, X, _, X, _, _, _, _, _, _, X, _, _, _, _, _, _, _, _, _, _ }, // 10
-			{ _, _, _, _, _, _, _, _, _, _, X, _, _, X, _, _, X, X, _, _, _ }, // 11_1
-			{ _, _, _, _, _, _, _, _, _, _, X, _, _, X, _, _, X, X, _, _, _ }, // 11_2
-			{ _, X, _, X, _, _, X, X, X, _, X, X, _, _, _, _, _, _, _, _, _ }, // 12
-			{ _, X, _, X, _, _, _, _, _, _, X, _, _, X, _, _, X, X, _, _, _ }, // 13
-			{ _, X, _, X, _, _, _, _, _, _, X, _, _, _, X, _, _, _, X, _, _ },// X1
+			{__, XX, __, XX, __, XX, __, __, __, XX, XX, __, __, __, XX, __, __, __, __, __, __}, // 1
+			{__, XX, __, XX, __, __, __, __, __, XX, XX, __, XX, __, XX, XX, __, __, XX, XX, __}, // 2_1
+			{__, XX, __, XX, __, __, __, __, __, XX, XX, __, XX, __, XX, XX, __, __, XX, XX, __}, // 2_2
+			{__, XX, __, XX, __, __, __, __, __, XX, XX, __, XX, __, XX, XX, __, __, XX, XX, __}, // 3_1
+			{__, XX, __, XX, __, __, __, __, __, XX, XX, __, XX, __, XX, XX, __, __, XX, XX, __}, // 3_2
+			{__, XX, __, XX, __, __, __, __, __, __, XX, __, __, __, XX, __, __, __, __, __, __}, // 4a
+			{__, XX, __, XX, __, __, __, __, __, __, XX, __, __, __, XX, __, __, __, __, __, __}, // 4b
+			{__, __, __, __, __, __, __, XX, XX, __, XX, XX, __, __, __, __, __, __, __, __, __}, // 51
+			{__, __, __, __, __, __, __, XX, XX, __, XX, XX, __, __, __, __, __, __, __, __, __}, // 52
+			{__, XX, __, XX, __, __, __, __, __, __, XX, XX, __, __, __, __, __, __, __, __, __}, // 6
+			{__, XX, XX, XX, XX, __, __, XX, XX, XX, XX, XX, XX, XX, XX, XX, XX, XX, XX, XX, XX}, // 7_1
+			{__, XX, XX, XX, XX, __, __, XX, XX, XX, XX, XX, XX, XX, XX, XX, XX, XX, XX, XX, XX}, // 7_2
+			{__, XX, __, XX, __, __, __, __, __, __, XX, __, __, XX, __, __, XX, XX, __, __, __}, // 8
+			{__, __, __, XX, __, __, __, __, __, XX, XX, __, XX, __, XX, XX, __, __, XX, XX, __}, // 9_1
+			{__, __, __, XX, __, __, __, __, __, XX, XX, __, XX, __, XX, XX, __, __, XX, XX, __}, // 9_2
+			{__, XX, __, XX, __, __, __, __, __, __, XX, __, __, __, __, __, __, __, __, __, __}, // 10
+			{__, __, __, __, __, __, __, __, __, __, XX, __, __, XX, __, __, XX, XX, __, __, __}, // 11_1
+			{__, __, __, __, __, __, __, __, __, __, XX, __, __, XX, __, __, XX, XX, __, __, __}, // 11_2
+			{__, XX, __, XX, __, __, XX, XX, XX, __, XX, XX, __, __, __, __, __, __, __, __, __}, // 12
+			{__, XX, __, XX, __, __, __, __, __, __, XX, __, __, XX, __, __, XX, XX, __, __, __}, // 13
+			{__, XX, __, XX, __, __, __, __, __, __, XX, __, __, __, XX, __, __, __, XX, __, __},// X1
 	};
 }

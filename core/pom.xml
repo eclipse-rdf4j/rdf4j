@@ -29,7 +29,7 @@
 		<module>console</module>
 		<module>http</module>
 		<module>runtime</module>
-		<module>runtime-osgi</module>
+		<!--<module>runtime-osgi</module>-->
 		<module>assembly</module> <!-- this module should always be last in the list -->
 	</modules>
 

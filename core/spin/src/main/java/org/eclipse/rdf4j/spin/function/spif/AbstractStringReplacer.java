@@ -50,7 +50,7 @@ abstract class AbstractStringReplacer implements Function {
 			String g = matcher.group();
 			matcher.appendReplacement(buf, transform(g));
 		}
-		matcher.appendTail(null);
+		//matcher.appendTail(null); @TODO Why is this being called with null? Not compatible with Java 9!
 		return valueFactory.createLiteral(buf.toString());
 	}
 

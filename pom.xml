@@ -146,7 +146,7 @@
 		<profile>
 			<id>doclint-java8-disable</id>
 			<activation>
-				<jdk>[1.8,)</jdk>
+				<jdk>[1.8,9,)</jdk>
 			</activation>
 			<properties>
 				<javadoc.opts>-Xdoclint:none</javadoc.opts>
@@ -591,14 +591,21 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-compiler-plugin</artifactId>
-					<version>3.6.0</version>
+					<version>3.7.0</version>
 					<configuration>
 						<fork>true</fork>
-						<source>1.8</source>
-						<target>1.8</target>
+						<source>9</source>
+						<target>9</target>
 						<encoding>utf8</encoding>
+
+
+						<compilerArgs>
+							<arg>--add-modules</arg><arg>java.xml.bind</arg>
+						</compilerArgs>
 					</configuration>
+
 				</plugin>
+
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-dependency-plugin</artifactId>
@@ -689,6 +696,8 @@
 					<configuration>
 						<encoding>UTF-8</encoding>
 						<argLine>-Xmx1024M</argLine>
+						<argLine>--add-modules java.xml.bind</argLine>
+
 					</configuration>
 				</plugin>
 				<plugin>
@@ -727,10 +736,11 @@
 					<artifactId>tomcat7-maven-plugin</artifactId>
 					<version>2.2</version>
 				</plugin>
+<!-- INCOMPATIBLE WITH JAVA 9
 				<plugin>
 					<groupId>com.github.siom79.japicmp</groupId>
 					<artifactId>japicmp-maven-plugin</artifactId>
-					<version>0.9.3</version>
+					<version>0.10.0</version>
 					<configuration>
 						<oldVersion>
 							<dependency>
@@ -758,6 +768,7 @@
 						</execution>
 					</executions>
 				</plugin>
+-->
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-shade-plugin</artifactId>
@@ -783,6 +794,7 @@
 					<shortRevisionLength>7</shortRevisionLength>
 				</configuration>
 			</plugin>
+<!-- INCOMPATIBLE WITH JAVA 9
 			<plugin>
 				<groupId>org.codehaus.mojo</groupId>
 				<artifactId>animal-sniffer-maven-plugin</artifactId>
@@ -803,6 +815,7 @@
 					</signature>
 				</configuration>
 			</plugin>
+-->
 			<plugin>
 				<!-- verify all bytecode (including third party libs) is Java 8 max -->
 				<groupId>org.apache.maven.plugins</groupId>
@@ -817,7 +830,7 @@
 						<configuration>
 							<rules>
 								<enforceBytecodeVersion>
-									<maxJdkVersion>1.8</maxJdkVersion>
+									<maxJdkVersion>9</maxJdkVersion>
 								</enforceBytecodeVersion>
 							</rules>
 							<fail>true</fail>
