@@ -1,4 +1,0 @@
-# Input file for SeRQL CfwQuery test
-# description: query for all subclasses of C
-<http://example.org/A> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/B>.
-<http://example.org/B> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/C>.

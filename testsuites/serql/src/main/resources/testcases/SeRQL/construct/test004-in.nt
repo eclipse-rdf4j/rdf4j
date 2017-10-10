@@ -1,5 +1,0 @@
-# Input file for SeRQL CfwQuery test
-# description: query for datatyped literals.
-<http://example.org/A> <http://example.org/propA> "10"^^<http://www.w3.org/2001/XMLSchema#integer>.
-<http://example.org/A> <http://example.org/propA> "Dag Wereld!".
-<http://example.org/B> <http://example.org/propA> <http://example.org/B>.

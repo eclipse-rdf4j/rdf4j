@@ -1,9 +1,0 @@
-@prefix sp: <http://spinrdf.org/sp#>.
-@prefix spin: <http://spinrdf.org/spin#>.
-@prefix ex: <ex:>.
-
-ex:testSubj1 a ex:TestClass .
-ex:testSubj2 a ex:TestClass ;
-	ex:prop 5 ;
-	ex:parentProp 6 ;
-	ex:childProp 7 .

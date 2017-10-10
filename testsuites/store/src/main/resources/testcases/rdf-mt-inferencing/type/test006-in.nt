@@ -1,3 +1,0 @@
-# Should infer A as a class with everything that follows.
-
-<http://example.org/a> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://example.org/A>.

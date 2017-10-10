@@ -1,6 +1,0 @@
-@prefix sp: <http://spinrdf.org/sp#>.
-@prefix spin: <http://spinrdf.org/spin#>.
-@prefix ex: <ex:>.
-
-ex:Lucy ex:childOf ex:John .
-ex:James ex:childOf ex:John .
