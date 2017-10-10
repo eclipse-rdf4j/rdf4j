@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
-		<artifactId>rdf4j</artifactId>
+		<artifactId>rdf4j-client-parent</artifactId>
 		<version>2.3-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-client</artifactId>
@@ -244,7 +244,6 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-shade-plugin</artifactId>
-				<version>3.0.0</version>
 				<executions>
 					<execution>
 						<phase>package</phase>

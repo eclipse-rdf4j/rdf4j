@@ -1,5 +1,0 @@
-CONSTRUCT DISTINCT
-  {<http://www.answer.org/reified-statement>} p {o}
-FROM
-  {{subject} predicate {object}} p {o}
-where p = <http://www.foo.com/predicate2>

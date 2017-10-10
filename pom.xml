@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 
 	<groupId>org.eclipse.rdf4j</groupId>
-	<artifactId>rdf4j</artifactId>
+	<artifactId>rdf4j-client-parent</artifactId>
 	<version>2.3-SNAPSHOT</version>
 	<packaging>pom</packaging>
 
@@ -28,7 +28,7 @@
 		<developer>
 			<id>james_leigh</id>
 			<name>James Leigh</name>
-			<email>james@3roundstones.com</email>
+			<email>james@ontotext.com</email>
 		</developer>
 		<developer>
 			<id>ansell</id>
@@ -50,10 +50,16 @@
 
 	<modules>
 		<module>client</module>
-		<module>storage</module>
-		<module>core</module>
-		<module>bom</module>
-		<module>benchmark</module>
+		<module>util</module>
+		<module>model</module>
+		<module>rio</module>
+		<module>queryresultio</module>
+		<module>query</module>
+		<module>queryalgebra-model</module>
+		<module>queryparser</module>
+		<module>queryrender</module>
+		<module>repository</module>
+		<module>http</module>
 	</modules>
 
 	<profiles>
@@ -104,6 +110,13 @@
 					</plugin>
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-shade-plugin</artifactId>
+						<configuration>
+							<createSourcesJar>true</createSourcesJar>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
 						<artifactId>maven-gpg-plugin</artifactId>
 						<executions>
 							<execution>
@@ -114,6 +127,44 @@
 								</goals>
 							</execution>
 						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		<profile>
+			<id>assembly</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-source-plugin</artifactId>
+						<executions>
+							<execution>
+								<id>attach-sources</id>
+								<goals>
+									<goal>jar-no-fork</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-javadoc-plugin</artifactId>
+						<executions>
+							<execution>
+								<id>attach-javadocs</id>
+								<goals>
+									<goal>jar</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-shade-plugin</artifactId>
+						<configuration>
+							<createSourcesJar>true</createSourcesJar>
+						</configuration>
 					</plugin>
 				</plugins>
 			</build>
@@ -139,7 +190,6 @@
 				</property>
 			</activation>
 			<modules>
-				<module>testsuites</module>
 				<module>compliance</module>
 			</modules>
 		</profile>
@@ -580,11 +630,6 @@
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
-					<artifactId>maven-assembly-plugin</artifactId>
-					<version>2.4.1</version>
-				</plugin>
-				<plugin>
-					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-clean-plugin</artifactId>
 					<version>3.0.0</version>
 				</plugin>
@@ -761,7 +806,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-shade-plugin</artifactId>
-					<version>2.2</version>
+					<version>3.0.0</version>
 				</plugin>
 			</plugins>
 		</pluginManagement>
@@ -845,6 +890,16 @@
 	</build>
 
 	<repositories>
+		<repository>
+			<releases>
+				<enabled>false</enabled>
+			</releases>
+			<snapshots>
+				<enabled>true</enabled>
+			</snapshots>
+			<id>oss-sonatype-snapshots</id>
+			<url>https://oss.sonatype.org/content/repositories/snapshots</url>
+		</repository>
 		<repository>
 			<id>maven-restlet</id>
 			<name>Public online Restlet repository</name>

@@ -1,5 +1,0 @@
-# Test mixture of this Tbox and the RDF Tbox.
-# rdf:first has domain rdf:List.
-
-<http://example.org/subProp> <http://www.w3.org/2000/01/rdf-schema#subPropertyOf> <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> .
-<http://example.org/A> <http://example.org/subProp> <http://example.org/First> .

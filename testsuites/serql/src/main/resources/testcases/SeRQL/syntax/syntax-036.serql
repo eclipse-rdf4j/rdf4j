@@ -1,6 +1,0 @@
-SELECT
-   S
-FROM	
-   {S} ex:property {O}
-USING NAMESPACE
-    ex = foo:bar
