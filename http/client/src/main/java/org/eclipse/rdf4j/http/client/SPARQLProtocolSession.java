@@ -69,6 +69,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+import org.eclipse.rdf4j.query.impl.BackgroundGraphResult;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParserRegistry;
@@ -78,6 +79,7 @@ import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserRegistry;
+import org.eclipse.rdf4j.query.resultio.helpers.BackgroundTupleResult;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.ParserConfig;
@@ -114,7 +116,7 @@ import org.slf4j.LoggerFactory;
  * @see RDF4JProtocolSession
  * @see <a href="https://www.w3.org/TR/sparql11-protocol/">SPARQL 1.1 Protocol (W3C Recommendation)</a>
  */
-public class SPARQLProtocolSession implements HttpClientDependent {
+public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable {
 
 	/*-----------*
 	 * Constants *
@@ -161,7 +163,7 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 
 	private HttpClient httpClient;
 
-	private final ExecutorService executor;
+	private final BackgroundResultExecutor background;
 
 	private final HttpClientContext httpContext;
 
@@ -184,7 +186,7 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 	public SPARQLProtocolSession(HttpClient client, ExecutorService executor) {
 		this.httpClient = client;
 		this.httpContext = new HttpClientContext();
-		this.executor = executor;
+		this.background = new BackgroundResultExecutor(executor);
 		valueFactory = SimpleValueFactory.getInstance();
 		httpContext.setCookieStore(new BasicCookieStore());
 
@@ -340,16 +342,16 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 		}
 	}
 
-	protected void execute(Runnable command) {
-		executor.execute(command);
-	}
-
 	public String getQueryURL() {
 		return queryURL;
 	}
 
 	public String getUpdateURL() {
 		return updateURL;
+	}
+
+	public void close() {
+		background.close();
 	}
 
 	/*------------------*
@@ -696,7 +698,7 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 	 * Parse the response in a background thread. HTTP connections are dealt with in the
 	 * {@link BackgroundTupleResult} or (in the error-case) in this method.
 	 */
-	protected BackgroundTupleResult getBackgroundTupleQueryResult(HttpUriRequest method)
+	protected TupleQueryResult getBackgroundTupleQueryResult(HttpUriRequest method)
 		throws RepositoryException, QueryInterruptedException, MalformedQueryException, IOException
 	{
 
@@ -708,7 +710,7 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 			throw new RepositoryException("No tuple query result parsers have been registered");
 		}
 
-		BackgroundTupleResult tRes = null;
+		TupleQueryResult tRes = null;
 		// send the tuple query
 		HttpResponse response = sendTupleQueryViaHttp(method, tqrFormats);
 		try {
@@ -719,21 +721,13 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 					() -> new RepositoryException(
 							"Server responded with an unsupported file format: " + mimeType));
 			TupleQueryResultParser parser = QueryResultIO.createTupleParser(format, getValueFactory());
-			tRes = new BackgroundTupleResult(parser, response.getEntity().getContent());
-			execute(tRes);
+			tRes = background.parse(parser, response.getEntity().getContent());
 			submitted = true;
 			return tRes;
 		}
 		finally {
 			if (!submitted) {
-				try {
-					if (tRes != null) {
-						tRes.close();
-					}
-				}
-				finally {
-					EntityUtils.consumeQuietly(response.getEntity());
-				}
+				EntityUtils.consumeQuietly(response.getEntity());
 			}
 		}
 	}
@@ -838,7 +832,7 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 	 * Parse the response in a background thread. HTTP connections are dealt with in the
 	 * {@link BackgroundGraphResult} or (in the error-case) in this method.
 	 */
-	protected BackgroundGraphResult getRDFBackground(HttpUriRequest method, boolean requireContext)
+	protected GraphQueryResult getRDFBackground(HttpUriRequest method, boolean requireContext)
 		throws IOException, RDFHandlerException, RepositoryException, MalformedQueryException,
 		UnauthorizedException, QueryInterruptedException
 	{
@@ -851,7 +845,7 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 			throw new RepositoryException("No tuple RDF parsers have been registered");
 		}
 
-		BackgroundGraphResult gRes = null;
+		GraphQueryResult gRes = null;
 		// send the tuple query
 		HttpResponse response = sendGraphQueryViaHttp(method, requireContext, rdfFormats);
 		try {
@@ -893,21 +887,13 @@ public class SPARQLProtocolSession implements HttpClientDependent {
 			}
 
 			String baseURI = method.getURI().toASCIIString();
-			gRes = new BackgroundGraphResult(parser, entity.getContent(), charset, baseURI);
-			execute(gRes);
+			gRes = background.parse(parser, entity.getContent(), charset, baseURI);
 			submitted = true;
 			return gRes;
 		}
 		finally {
 			if (!submitted) {
-				try {
-					if (gRes != null) {
-						gRes.close();
-					}
-				}
-				finally {
-					EntityUtils.consumeQuietly(response.getEntity());
-				}
+				EntityUtils.consumeQuietly(response.getEntity());
 			}
 		}
 

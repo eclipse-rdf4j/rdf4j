@@ -7,7 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -19,6 +21,8 @@ import org.apache.http.client.utils.HttpClientUtils;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.eclipse.rdf4j.http.client.util.HttpClientBuilders;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A Manager for HTTP sessions that uses a shared {@link HttpClient} to manage HTTP connections.
@@ -28,6 +32,8 @@ import org.eclipse.rdf4j.http.client.util.HttpClientBuilders;
 public class SharedHttpClientSessionManager implements HttpClientSessionManager, HttpClientDependent {
 
 	private static final AtomicLong threadCount = new AtomicLong();
+
+	private final Logger logger = LoggerFactory.getLogger(SharedHttpClientSessionManager.class);
 
 	/** independent life cycle */
 	private volatile HttpClient httpClient;
@@ -41,6 +47,8 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	 * Optional {@link HttpClientBuilder} to create the inner {@link #httpClient} (if not provided externally)
 	 */
 	private volatile HttpClientBuilder httpClientBuilder;
+
+	private final Map<SPARQLProtocolSession,Boolean> openSessions = new ConcurrentHashMap<>();
 
 	/*--------------*
 	 * Constructors *
@@ -120,7 +128,22 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	@Override
 	public SPARQLProtocolSession createSPARQLProtocolSession(String queryEndpointUrl, String updateEndpointUrl) {
-		SPARQLProtocolSession session = new SPARQLProtocolSession(getHttpClient(), executor);
+		SPARQLProtocolSession session = new SPARQLProtocolSession(getHttpClient(), executor) {
+
+			{
+				openSessions.put(this, true);
+			}
+
+			@Override
+			public void close() {
+				try {
+					super.close();
+				}
+				finally {
+					openSessions.remove(this);
+				}
+			}
+		};
 		session.setQueryURL(queryEndpointUrl);
 		session.setUpdateURL(updateEndpointUrl);
 		return session;
@@ -128,7 +151,22 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	@Override
 	public RDF4JProtocolSession createRDF4JProtocolSession(String serverURL) {
-		RDF4JProtocolSession session = new RDF4JProtocolSession(getHttpClient(), executor);
+		RDF4JProtocolSession session = new RDF4JProtocolSession(getHttpClient(), executor) {
+
+			{
+				openSessions.put(this, true);
+			}
+
+			@Override
+			public void close() {
+				try {
+					super.close();
+				}
+				finally {
+					openSessions.remove(this);
+				}
+			}
+		};
 		session.setServerURL(serverURL);
 		return session;
 	}
@@ -140,6 +178,14 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	@Override
 	public void shutDown() {
 		try {
+			openSessions.keySet().forEach(session -> {
+				try {
+					session.close();
+				}
+				catch (Exception e) {
+					logger.error(e.toString(), e);
+				}
+			});
 			CloseableHttpClient toCloseDependentClient = dependentClient;
 			dependentClient = null;
 			if (toCloseDependentClient != null) {

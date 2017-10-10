@@ -239,8 +239,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		throws RepositoryException
 	{
 		Model model = new LinkedHashModel();
-		try {
-			RDF4JProtocolSession httpClient = getSesameClient().createRDF4JProtocolSession(serverURL);
+		try (RDF4JProtocolSession httpClient = getSesameClient().createRDF4JProtocolSession(serverURL)) {
 			httpClient.setUsernameAndPassword(username, password);
 			httpClient.setRepository(Protocol.getRepositoryLocation(serverURL, SystemRepository.ID));
 			httpClient.getStatements(null, null, null, true, new StatementCollector(model));
@@ -257,8 +256,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	{
 		List<RepositoryInfo> result = new ArrayList<RepositoryInfo>();
 
-		try {
-			RDF4JProtocolSession httpClient = getSesameClient().createRDF4JProtocolSession(serverURL);
+		try (RDF4JProtocolSession httpClient = getSesameClient().createRDF4JProtocolSession(serverURL)) {
 			httpClient.setUsernameAndPassword(username, password);
 			TupleQueryResult responseFromServer = httpClient.getRepositoryList();
 			while (responseFromServer.hasNext()) {
@@ -318,17 +316,16 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		throws RepositoryException,
 		RepositoryConfigException
 	{
-		String baseURI = Protocol.getRepositoryLocation(serverURL, config.getID());
-		Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + config.getID());
-		RDF4JProtocolSession httpClient = getSesameClient().createRDF4JProtocolSession(serverURL);
-		httpClient.setUsernameAndPassword(username, password);
-		httpClient.setRepository(Protocol.getRepositoryLocation(serverURL, SystemRepository.ID));
-		Model model = new LinkedHashModel();
-		config.export(model, ctx);
-		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		Rio.write(model, baos, httpClient.getPreferredRDFFormat());
-		removeRepository(config.getID());
-		try {
+		try (RDF4JProtocolSession httpClient = getSesameClient().createRDF4JProtocolSession(serverURL)) {
+			String baseURI = Protocol.getRepositoryLocation(serverURL, config.getID());
+			Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + config.getID());
+			httpClient.setUsernameAndPassword(username, password);
+			httpClient.setRepository(Protocol.getRepositoryLocation(serverURL, SystemRepository.ID));
+			Model model = new LinkedHashModel();
+			config.export(model, ctx);
+			ByteArrayOutputStream baos = new ByteArrayOutputStream();
+			Rio.write(model, baos, httpClient.getPreferredRDFFormat());
+			removeRepository(config.getID());
 			try (InputStream contents = new ByteArrayInputStream(baos.toByteArray())) {
 				httpClient.upload(contents, baseURI, httpClient.getPreferredRDFFormat(), false, true, ctx);
 			}
@@ -346,10 +343,8 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		boolean existingRepo = hasRepositoryConfig(repositoryID);
 
 		if (existingRepo) {
-			RDF4JProtocolSession httpClient = getSesameClient().createRDF4JProtocolSession(serverURL);
-			httpClient.setUsernameAndPassword(username, password);
-
-			try {
+			try (RDF4JProtocolSession httpClient = getSesameClient().createRDF4JProtocolSession(serverURL)) {
+				httpClient.setUsernameAndPassword(username, password);
 				httpClient.deleteRepository(repositoryID);
 			}
 			catch (IOException e) {
