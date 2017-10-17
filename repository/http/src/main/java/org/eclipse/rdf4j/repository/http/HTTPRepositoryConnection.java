@@ -373,9 +373,9 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 				logger.warn("Rolling back transaction due to connection close", new Throwable());
 				rollback();
 			}
-			super.close();
 		}
 		finally {
+			super.close();
 			client.close();
 		}
 	}

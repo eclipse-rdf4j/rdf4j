@@ -43,25 +43,32 @@ public class BackgroundResultExecutor implements AutoCloseable {
 	/**
 	 * Force close any executing background result parsers
 	 */
+	@Override
 	public void close() {
-		for (AutoCloseable onclose : executing) {
-			try {
-				onclose.close();
-			}
-			catch (Exception e) {
-				logger.error(e.toString(), e);
+		synchronized (executing) {
+			for (AutoCloseable onclose : executing) {
+				try {
+					onclose.close();
+				}
+				catch (Exception e) {
+					logger.error(e.toString(), e);
+				}
 			}
 		}
 	}
 
 	private void autoCloseRunnable(QueryResult<?> result, Runnable runner) {
-		executing.add(result);
+		synchronized (executing) {
+			executing.add(result);
+		}
 		executor.execute(() -> {
 			try {
 				runner.run();
 			}
 			finally {
-				executing.remove(result);
+				synchronized (executing) {
+					executing.remove(result);
+				}
 			}
 		});
 	}
