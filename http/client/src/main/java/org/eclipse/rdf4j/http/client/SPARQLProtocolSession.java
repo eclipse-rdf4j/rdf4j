@@ -350,6 +350,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		return updateURL;
 	}
 
+	@Override
 	public void close() {
 		background.close();
 	}

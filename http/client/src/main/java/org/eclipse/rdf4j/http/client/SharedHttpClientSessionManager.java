@@ -127,12 +127,10 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	}
 
 	@Override
-	public SPARQLProtocolSession createSPARQLProtocolSession(String queryEndpointUrl, String updateEndpointUrl) {
+	public SPARQLProtocolSession createSPARQLProtocolSession(String queryEndpointUrl,
+			String updateEndpointUrl)
+	{
 		SPARQLProtocolSession session = new SPARQLProtocolSession(getHttpClient(), executor) {
-
-			{
-				openSessions.put(this, true);
-			}
 
 			@Override
 			public void close() {
@@ -146,16 +144,13 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		};
 		session.setQueryURL(queryEndpointUrl);
 		session.setUpdateURL(updateEndpointUrl);
+		openSessions.put(session, true);
 		return session;
 	}
 
 	@Override
 	public RDF4JProtocolSession createRDF4JProtocolSession(String serverURL) {
 		RDF4JProtocolSession session = new RDF4JProtocolSession(getHttpClient(), executor) {
-
-			{
-				openSessions.put(this, true);
-			}
 
 			@Override
 			public void close() {
@@ -168,6 +163,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 			}
 		};
 		session.setServerURL(serverURL);
+		openSessions.put(session, true);
 		return session;
 	}
 
