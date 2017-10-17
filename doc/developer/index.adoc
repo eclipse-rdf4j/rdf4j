@@ -36,6 +36,24 @@ release while the _develop_ version uses the next expected major/minor
 release number, such as 2.1-SNAPSHOT and 2.2-SNAPSHOT respectively
 (after a 2.1.x release, but before any 2.2.x releases are made public).
 
+== Subprojects
+
+RDF4J is split between five github projects. Those are:
+
+* https://github.com/eclipse/rdf4j
+* https://github.com/eclipse/rdf4j-storage
+* https://github.com/eclipse/rdf4j-tools
+* https://github.com/eclipse/rdf4j-testsuite
+* https://github.com/eclipse/rdf4j-doc
+
+Each of these github projects has their own set of Issues, Pull Requests, Releases, artifacts, milestones, and branches. Issues should be created in the coresponding subproject that most closely fits.
+
+* Parsers, writers, and client library issues should be created in https://github.com/eclipse/rdf4j/issues[rdf4j].
+* SAIL, indexers, and reasoner library issues should be created in https://github.com/eclipse/rdf4j-storage/issues[rdf4j-storage].
+* Server and application issues should be created in https://github.com/eclipse/rdf4j-tools/issues[rdf4j-tools].
+* Issues with common testsuites and benchmarks in https://github.com/eclipse/rdf4j-testsuite/issues[rdf4j-testsuite].
+* Finally, issues with the documentation should be created in https://github.com/eclipse/rdf4j-doc/issues[rdf4j-doc].
+
 == Workflow
 
 Every issue, no matter how small, gets its own branch while under development.
@@ -271,7 +289,9 @@ RDF4j has four separate announcements:
 
 === Building and uploading Maven artifacts
 
-We use the https://hudson.eclipse.org/rdf4j[Eclipse RDF4J Hudson CI instance] to build and deploy new releases to the Central Repository. To do this, simply log in to Hudson, and start the job named `rdf4j-deploy-release-ossrh-central`. The job will ask for the release tag as an input parameter, e.g. '2.2.1'. 
+We use the https://hudson.eclipse.org/rdf4j[Eclipse RDF4J Hudson CI instance] to build and deploy new releases to the Central Repository.
+To do this, simply log in to Hudson, and start the job named `rdf4j-deploy-release-ossrh-central`.
+The job will ask for the github project and release tag as an input parameters, e.g. 'rdf4j' and '2.2.1'.
 
 This Hudson job will automatically check out the release tag, build the project, and upload all artifacts to https://oss.sonatype.org/[OSS Sonatype]. After successful upload, it will also automatically invoke synchronization with the Central Repository. Note that after successful completion, the artifacts may not be available on the Central Repository for several hours. 
 
@@ -281,16 +301,14 @@ The SDK and onejar archives are hosted on https://www.eclipse.org/downloads/ . T
 
 === Building the SDK and onejar
 
-1. Check out the release tag
-2. Enter the `core` directory:
+1. Check out the release tag of https://github.com/eclipse/rdf4j[rdf4j]
+2. From the root directory, execute the following:
 
-   cd core
+   mvn -Passembly clean install -DskipTests
 
-3. From the `core` directory, execute the following:
-
-   mvn -Passembly clean package
-
-Once this completes, the SDK and onejar can be found in `core/assembly/target`. Verify that the SDK is complete by inspecting its contents (in particular, check that javadoc is included).
+3. Repeat the above steps for https://github.com/eclipse/rdf4j-storage[rdf4j-storage] and https://github.com/eclipse/rdf4j-tools[rdf4j-tools].
+4. Once this completes, the SDK and onejar can be found in `assembly/target` of the rdf4j-tools subproject.
+5. Verify that the SDK is complete by inspecting its contents (in particular, check that javadoc is included).
 
 === Uploading the SDK and onejar
 
