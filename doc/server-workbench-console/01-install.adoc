@@ -21,7 +21,7 @@ After you have deployed the RDF4J Server webapp, you should be able to access it
 
 ==== UTF-8 in the Request URI (GET)
 
-There is a known issue (SES-1768) affecting the proper exploring of resources that use an extended character set. Workbench client-side code generates URI’s assuming an ISO-8859-1 character encoding, and often Tomcat comes pre-configured to expect UTF-8 encoded URI’s. It will be necessary to change the HTTP Connector configuration, or to add a separate HTTP Connector that uses ISO-8859-1. For details, see here for Tomcat 6 or here for Tomcat 7.
+There is a known issue (https://github.com/eclipse/rdf4j/issues/464[464]) affecting the proper exploring of resources that use an extended character set. Workbench client-side code generates URI’s assuming an ISO-8859-1 character encoding, and often Tomcat comes pre-configured to expect UTF-8 encoded URI’s. It will be necessary to change the HTTP Connector configuration, or to add a separate HTTP Connector that uses ISO-8859-1. For details, see https://tomcat.apache.org/tomcat-6.0-doc/config/http.html[here] for Tomcat 6 or https://tomcat.apache.org/tomcat-7.0-doc/config/http.html[here] for Tomcat 7.
 
 ==== UTF-8 in the Request Body (POST)
 
