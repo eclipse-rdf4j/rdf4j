@@ -7,10 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,6 +30,8 @@ import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.common.app.AppVersion;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+import org.jline.reader.EndOfFileException;
+import org.jline.reader.UserInterruptException;
 
 /**
  * The RDF4J Console is a command-line application for interacting with RDF4J. It reads commands from standard
@@ -224,8 +224,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 		throws IOException
 	{
 		appConfig.init();
-		consoleIO = new ConsoleIO(new BufferedReader(new InputStreamReader(System.in)), System.out,
-				System.err, this);
+		consoleIO = new ConsoleIO(this);
 		commandMap.put("federate", new Federate(consoleIO, this));
 		this.queryEvaluator = new QueryEvaluator(consoleIO, this, this);
 		LockRemover lockRemover = new LockRemover(consoleIO);
@@ -269,6 +268,9 @@ public class Console implements ConsoleState, ConsoleParameters {
 					exitFlag = true;
 				}
 			}
+		}
+		catch (UserInterruptException | EndOfFileException e) {
+			exitCode = 0;
 		}
 		finally {
 			disconnect.execute(false);

@@ -104,8 +104,8 @@ public class Connect implements Command {
 				// Ask user for credentials
 				try {
 					consoleIO.writeln("Authentication required");
-					final String username = consoleIO.readln("Username:");
-					final String password = consoleIO.readPassword("Password:");
+					final String username = consoleIO.readln("Username: ");
+					final String password = consoleIO.readPassword("Password: ");
 					connectRemote(url, username, password);
 				}
 				catch (IOException ioe) {

@@ -11,8 +11,9 @@ import static org.hamcrest.CoreMatchers.equalTo;
 import static org.junit.Assert.assertThat;
 import static org.mockito.Mockito.mock;
 
-import java.io.BufferedReader;
-import java.io.PrintStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -22,12 +23,13 @@ public class ConsoleIOTest {
 	private ConsoleIO io;
 
 	@Before
-	public void initConsoleObject() {
-		BufferedReader input = mock(BufferedReader.class);
-		PrintStream out = mock(PrintStream.class);
-		PrintStream err = mock(PrintStream.class);
+	public void initConsoleObject()
+		throws IOException
+	{
+		InputStream input = mock(InputStream.class);
+		OutputStream out = mock(OutputStream.class);
 		ConsoleState info = mock(ConsoleState.class);
-		io = new ConsoleIO(input, out, err, info);
+		io = new ConsoleIO(input, out, info);
 	}
 
 	@Test

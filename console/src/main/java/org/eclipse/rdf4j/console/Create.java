@@ -25,17 +25,17 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
 import org.eclipse.rdf4j.repository.config.ConfigTemplate;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+import org.jline.reader.EndOfFileException;
+import org.jline.reader.UserInterruptException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -134,8 +134,12 @@ public class Create implements Command {
 				}
 			}
 		}
+		catch (EndOfFileException | UserInterruptException e) {
+			LOGGER.error("Create repository aborted", e);
+			throw e;
+		}
 		catch (Exception e) {
-			consoleIO.writeError(e.getClass().getName() + ": " + e.getMessage());
+			consoleIO.writeError(e.toString());
 			LOGGER.error("Failed to create repository", e);
 		}
 	}
@@ -151,23 +155,24 @@ public class Create implements Command {
 		for (Map.Entry<String, List<String>> entry : variableMap.entrySet()) {
 			final String var = entry.getKey();
 			final List<String> values = entry.getValue();
-			consoleIO.write(var);
+			StringBuilder sb = new StringBuilder();
+			sb.append(var);
 			if (values.size() > 1) {
-				consoleIO.write(" (");
+				sb.append(" (");
 				for (int i = 0; i < values.size(); i++) {
 					if (i > 0) {
-						consoleIO.write("|");
+						sb.append("|");
 					}
-					consoleIO.write(values.get(i));
+					sb.append(values.get(i));
 				}
-				consoleIO.write(")");
+				sb.append(")");
 			}
 			if (!values.isEmpty()) {
-				consoleIO.write(" [" + values.get(0) + "]");
+				sb.append(" [" + values.get(0) + "]");
 			}
-			consoleIO.write(": ");
-			String value = multilineInput.containsKey(var) ? consoleIO.readMultiLineInput()
-					: consoleIO.readln();
+			String prompt = sb.append(": ").toString();
+			String value = multilineInput.containsKey(var) ? consoleIO.readMultiLineInput(prompt)
+					: consoleIO.readln(prompt);
 			eof = (value == null);
 			if (eof) {
 				break; // for loop
