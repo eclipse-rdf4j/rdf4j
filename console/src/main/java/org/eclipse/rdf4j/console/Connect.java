@@ -79,14 +79,13 @@ public class Connect implements Command {
 			// Ping server
 			final HttpClientSessionManager client = new SharedHttpClientSessionManager();
 			try {
-				RDF4JProtocolSession httpClient = client.createRDF4JProtocolSession(url);
-
-				if (user != null) {
-					httpClient.setUsernameAndPassword(user, pass);
+				try (RDF4JProtocolSession httpClient = client.createRDF4JProtocolSession(url)) {
+					if (user != null) {
+						httpClient.setUsernameAndPassword(user, pass);
+					}
+					// Ping the server
+					httpClient.getServerProtocol();
 				}
-
-				// Ping the server
-				httpClient.getServerProtocol();
 			}
 			finally {
 				client.shutDown();
