@@ -190,10 +190,10 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 		}
 
 		boolean isWritable = false;
-		final String repositoryURL = createHTTPClient().getRepositoryURL();
 
-		try {
-			final TupleQueryResult repositoryList = createHTTPClient().getRepositoryList();
+		try (RDF4JProtocolSession client = createHTTPClient()) {
+			final String repositoryURL = client.getRepositoryURL();
+			final TupleQueryResult repositoryList = client.getRepositoryList();
 			try {
 				while (repositoryList.hasNext()) {
 					final BindingSet bindingSet = repositoryList.next();
@@ -354,8 +354,8 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 			synchronized (this) {
 				result = compatibleMode;
 				if (result == null) {
-					try {
-						final String serverProtocolVersion = createHTTPClient().getServerProtocol();
+					try (RDF4JProtocolSession client = createHTTPClient()) {
+						final String serverProtocolVersion = client.getServerProtocol();
 
 						// protocol version 7 supports the new transaction
 						// handling. If the server is older, we need to run in

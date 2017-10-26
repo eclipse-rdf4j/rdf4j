@@ -368,12 +368,16 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	public void close()
 		throws RepositoryException
 	{
-		if (isActive()) {
-			logger.warn("Rolling back transaction due to connection close", new Throwable());
-			rollback();
+		try {
+			if (isActive()) {
+				logger.warn("Rolling back transaction due to connection close", new Throwable());
+				rollback();
+			}
 		}
-
-		super.close();
+		finally {
+			super.close();
+			client.close();
+		}
 	}
 
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)

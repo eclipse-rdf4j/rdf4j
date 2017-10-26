@@ -117,6 +117,18 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		client.setHttpClient(httpClient);
 	}
 
+	@Override
+	public void close()
+		throws RepositoryException
+	{
+		try {
+			super.close();
+		}
+		finally {
+			client.close();
+		}
+	}
+
 	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			RDFHandler handler, Resource... contexts)
 		throws RepositoryException, RDFHandlerException
