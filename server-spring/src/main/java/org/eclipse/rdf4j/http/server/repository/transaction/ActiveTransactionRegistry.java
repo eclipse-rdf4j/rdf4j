@@ -12,6 +12,8 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
+import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,18 +33,24 @@ public enum ActiveTransactionRegistry {
 
 	INSTANCE;
 
+	private int timeout = DEFAULT_TIMEOUT;
+
 	private final Logger logger = LoggerFactory.getLogger(ActiveTransactionRegistry.class);
 
 	/**
 	 * Configurable system property {@code rdf4j.server.txn.registry.timeout} for specifying the transaction
 	 * cache timeout (in seconds).
+	 * @deprecated since 2.3 use {@link Protocol#CACHE_TIMEOUT_PROPERTY}
 	 */
-	public static final String CACHE_TIMEOUT_PROPERTY = "rdf4j.server.txn.registry.timeout";
+	@Deprecated
+	public static final String CACHE_TIMEOUT_PROPERTY = Protocol.TIMEOUT.CACHE_PROPERTY;
 
 	/**
 	 * Default timeout setting for transaction cache entries (in seconds).
+	 * @deprecated since 2.3 use {@link Protocol#DEFAULT_TIMEOUT}
 	 */
-	public final static int DEFAULT_TIMEOUT = 60;
+	@Deprecated
+	public final static int DEFAULT_TIMEOUT = Protocol.TIMEOUT.DEFAULT;
 
 	/**
 	 * primary cache for transactions, accessible via transaction ID. Cache entries are kept until a
@@ -61,16 +69,14 @@ public enum ActiveTransactionRegistry {
 	 * private constructor.
 	 */
 	private ActiveTransactionRegistry() {
-		int timeout = DEFAULT_TIMEOUT;
-
-		final String configuredValue = System.getProperty(CACHE_TIMEOUT_PROPERTY);
+		final String configuredValue = System.getProperty(Protocol.CACHE_TIMEOUT_PROPERTY);
 		if (configuredValue != null) {
 			try {
 				timeout = Integer.parseInt(configuredValue);
 			}
 			catch (NumberFormatException e) {
 				logger.warn("Expected integer value for property {}. Timeout will default to {} seconds. ",
-						CACHE_TIMEOUT_PROPERTY, DEFAULT_TIMEOUT);
+						Protocol.CACHE_TIMEOUT_PROPERTY, Protocol.DEFAULT_TIMEOUT);
 			}
 		}
 
@@ -112,6 +118,10 @@ public enum ActiveTransactionRegistry {
 
 	}
 
+	public long getTimeout(TimeUnit unit) {
+		return unit.convert(timeout, TimeUnit.SECONDS);
+	}
+
 	/**
 	 * @param txnId
 	 * @param txn
@@ -140,6 +150,23 @@ public enum ActiveTransactionRegistry {
 			}
 			updateSecondaryCache(entry);
 			return entry;
+		}
+	}
+
+	/**
+	 * Resets transaction timeout. If transaction has already timed-out, reinsert the transaction.
+	 *
+	 * @param txn
+	 */
+	public void active(Transaction txn) {
+		synchronized (primaryCache) {
+			updateSecondaryCache(txn);
+			Transaction existingTxn = primaryCache.getIfPresent(txn.getID());
+			if (existingTxn == null) {
+				// reinstate transaction that timed-out too soon
+				primaryCache.put(txn.getID(), txn);
+				logger.debug("reinstated transaction {} ", txn.getID());
+			}
 		}
 	}
 
