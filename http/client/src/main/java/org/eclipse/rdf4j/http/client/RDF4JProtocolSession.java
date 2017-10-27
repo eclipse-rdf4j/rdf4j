@@ -21,7 +21,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -76,6 +78,8 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A {@link SPARQLProtocolSession} subclass which extends the standard SPARQL 1.1 Protocol with additional
@@ -87,12 +91,27 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
  */
 public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
+	/**
+	 * How long the client should wait before sending another PING to the server
+	 */
+	private static final long PINGDELAY = TimeUnit.MILLISECONDS.convert(Protocol.DEFAULT_TIMEOUT,
+			TimeUnit.SECONDS) / 2;
+
+	private final Logger logger = LoggerFactory.getLogger(RDF4JProtocolSession.class);
+
 	private String serverURL;
 
 	private String transactionURL;
 
-	public RDF4JProtocolSession(HttpClient client, ExecutorService executor) {
+	private ScheduledExecutorService executor;
+
+	private ScheduledFuture<?> ping;
+
+	private long pingDelay = PINGDELAY;
+
+	public RDF4JProtocolSession(HttpClient client, ScheduledExecutorService executor) {
 		super(client, executor);
+		this.executor = executor;
 
 		// we want to preserve bnode ids to allow Sesame API methods to match
 		// blank nodes.
@@ -102,6 +121,16 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		// most performant
 		setPreferredTupleQueryResultFormat(TupleQueryResultFormat.BINARY);
 		setPreferredRDFFormat(RDFFormat.BINARY);
+		try {
+			final String configuredValue = System.getProperty(Protocol.CACHE_TIMEOUT_PROPERTY);
+			if (configuredValue != null) {
+				int timeout = Integer.parseInt(configuredValue);
+				pingDelay = TimeUnit.MILLISECONDS.convert(Math.max(timeout, 1), TimeUnit.SECONDS) / 2;
+			}
+		}
+		catch (Exception e) {
+			logger.warn("Could not read integer value of system property {}", Protocol.CACHE_TIMEOUT_PROPERTY);
+		}
 	}
 
 	public void setServerURL(String serverURL) {
@@ -147,6 +176,10 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	@Override
 	public String getUpdateURL() {
 		return Protocol.getStatementsLocation(getQueryURL());
+	}
+
+	private synchronized String getTransactionURL() {
+		return transactionURL;
 	}
 
 	/*-----------------*
@@ -223,6 +256,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		checkRepositoryURL();
 
 		try {
+			String transactionURL = getTransactionURL();
 			final boolean useTransaction = transactionURL != null;
 
 			String baseLocation = useTransaction ? appendAction(transactionURL, Action.SIZE)
@@ -239,6 +273,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 			try {
 				String response = EntityUtils.toString(executeOK(method).getEntity());
+				pingTransaction();
 
 				try {
 					return Long.parseLong(response);
@@ -463,6 +498,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		checkRepositoryURL();
 
 		try {
+			String transactionURL = getTransactionURL();
 			final boolean useTransaction = transactionURL != null;
 
 			String baseLocation = useTransaction ? transactionURL
@@ -502,6 +538,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		catch (URISyntaxException e) {
 			throw new AssertionError(e);
 		}
+		pingTransaction();
 	}
 
 	public synchronized void beginTransaction(IsolationLevel isolationLevel)
@@ -533,6 +570,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 					transactionURL = response.getFirstHeader("Location").getValue();
 					if (transactionURL == null) {
 						throw new RepositoryException("no valid transaction ID received in server response.");
+					} else {
+						pingTransaction();
 					}
 				}
 				else {
@@ -569,6 +608,9 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				if (code == HttpURLConnection.HTTP_OK) {
 					// we're done.
 					transactionURL = null;
+					if (ping != null) {
+						ping.cancel(false);
+					}
 				}
 				else {
 					throw new RepositoryException("unable to commit transaction. HTTP error code " + code);
@@ -608,6 +650,9 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				if (code == HttpURLConnection.HTTP_NO_CONTENT) {
 					// we're done.
 					transactionURL = null;
+					if (ping != null) {
+						ping.cancel(false);
+					}
 				}
 				else {
 					throw new RepositoryException("unable to rollback transaction. HTTP error code " + code);
@@ -620,6 +665,45 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		finally {
 			method.reset();
 		}
+	}
+
+	private synchronized void pingTransaction() {
+		if (transactionURL == null) {
+			return;
+		}
+		if (ping != null) {
+			ping.cancel(false);
+		}
+		if (pingDelay > 0) {
+			ping = executor.schedule(() -> {
+				executeTransactionPing();
+			}, pingDelay, TimeUnit.MILLISECONDS);
+		}
+	}
+
+	void executeTransactionPing() {
+		String transactionURL = getTransactionURL();
+		if (transactionURL == null) {
+			return; // transaction has already been closed
+		}
+		HttpPost method = null;
+		try {
+			URIBuilder url = new URIBuilder(transactionURL);
+			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.PING.toString());
+			method = new HttpPost(url.build());
+			String text = EntityUtils.toString(executeOK(method).getEntity());
+			long timeout = Long.parseLong(text);
+			// clients should ping before server timeouts transaction
+			long nextPingDelay = timeout /2;
+			synchronized (this) {
+				if (pingDelay != nextPingDelay) {
+					pingDelay = nextPingDelay;
+				}
+			}
+		} catch (Exception e) {
+			logger.warn("Failed to ping transaction", e.toString());
+		}
+		pingTransaction(); // reschedule
 	}
 
 	/**
@@ -745,6 +829,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			boolean includeInferred, int maxQueryTime, Binding... bindings)
 	{
 		RequestBuilder builder = null;
+		String transactionURL = getTransactionURL();
 		if (transactionURL != null) {
 			builder = RequestBuilder.put(transactionURL);
 			builder.setHeader("Content-Type", Protocol.SPARQL_QUERY_MIME_TYPE + "; charset=utf-8");
@@ -757,6 +842,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			// in a PUT request, we carry the actual query string as the entity
 			// body rather than a parameter.
 			builder.setEntity(new StringEntity(query, UTF8));
+			pingTransaction();
 		}
 		else {
 			builder = RequestBuilder.post(getQueryURL());
@@ -778,6 +864,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			boolean includeInferred, int maxExecutionTime, Binding... bindings)
 	{
 		RequestBuilder builder = null;
+		String transactionURL = getTransactionURL();
 		if (transactionURL != null) {
 			builder = RequestBuilder.put(transactionURL);
 			builder.addHeader("Content-Type", Protocol.SPARQL_UPDATE_MIME_TYPE + "; charset=utf-8");
@@ -790,6 +877,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			// in a PUT request, we carry the only actual update string as the
 			// request body - the rest is sent as request parameters
 			builder.setEntity(new StringEntity(update, UTF8));
+			pingTransaction();
 		}
 		else {
 			builder = RequestBuilder.post(getUpdateURL());
@@ -869,6 +957,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 		checkRepositoryURL();
 
+		String transactionURL = getTransactionURL();
 		boolean useTransaction = transactionURL != null;
 
 		try {
@@ -933,6 +1022,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		catch (URISyntaxException e) {
 			throw new AssertionError(e);
 		}
+		pingTransaction();
 	}
 
 	@Override

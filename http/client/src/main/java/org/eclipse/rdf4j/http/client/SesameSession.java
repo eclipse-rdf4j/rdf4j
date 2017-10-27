@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
 
 import org.apache.http.client.HttpClient;
 
@@ -22,7 +22,7 @@ public class SesameSession extends RDF4JProtocolSession {
 	 * @deprecated use {@link RDF4JProtocolSession} instead.
 	 */
 	@Deprecated
-	public SesameSession(HttpClient client, ExecutorService executor) {
+	public SesameSession(HttpClient client, ScheduledExecutorService executor) {
 		super(client, executor);
 	}
 

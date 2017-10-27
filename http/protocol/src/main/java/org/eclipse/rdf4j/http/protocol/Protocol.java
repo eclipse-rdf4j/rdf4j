@@ -35,11 +35,44 @@ public abstract class Protocol {
 		QUERY,
 		/** SPARQL Update */
 		UPDATE,
+		/** Keep alive ping @since 2.3 */
+		PING,
 		/** commit */
 		COMMIT,
 		/** rollback */
 		ROLLBACK;
 	}
+
+	/**
+	 * Use an enum to allow ActiveTransactionRegistry enum to access the static values. This is necessary
+	 * because enum are initialize before static fields.
+	 */
+	@Deprecated
+	public static enum TIMEOUT {
+		CACHE;
+
+		/**
+		 * Configurable system property {@code rdf4j.server.txn.registry.timeout} for specifying the
+		 * transaction cache timeout (in seconds).
+		 */
+		public static final String CACHE_PROPERTY = "rdf4j.server.txn.registry.timeout";
+
+		/**
+		 * Default timeout setting for transaction cache entries (in seconds).
+		 */
+		public final static int DEFAULT = 60;
+	}
+
+	/**
+	 * Configurable system property {@code rdf4j.server.txn.registry.timeout} for specifying the transaction
+	 * cache timeout (in seconds).
+	 */
+	public static final String CACHE_TIMEOUT_PROPERTY = Protocol.TIMEOUT.CACHE_PROPERTY;
+
+	/**
+	 * Default timeout setting for transaction cache entries (in seconds).
+	 */
+	public final static int DEFAULT_TIMEOUT = Protocol.TIMEOUT.DEFAULT;
 
 	/**
 	 * Protocol version.
