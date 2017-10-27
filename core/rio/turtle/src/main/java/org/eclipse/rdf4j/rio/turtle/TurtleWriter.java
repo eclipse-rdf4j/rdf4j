@@ -590,8 +590,14 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 					|| XMLSchema.DOUBLE.equals(datatype) || XMLSchema.BOOLEAN.equals(datatype))
 			{
 				try {
-					writer.write(XMLDatatypeUtil.normalize(label, datatype));
-					return; // done
+					String normalized = XMLDatatypeUtil.normalize(label, datatype);
+					if (!normalized.equals(XMLDatatypeUtil.POSITIVE_INFINITY)
+							&& !normalized.equals(XMLDatatypeUtil.NEGATIVE_INFINITY)
+							&& !normalized.equals(XMLDatatypeUtil.NaN))
+					{
+						writer.write(normalized);
+						return; // done
+					}
 				}
 				catch (IllegalArgumentException e) {
 					// not a valid numeric typed literal. ignore error and write
