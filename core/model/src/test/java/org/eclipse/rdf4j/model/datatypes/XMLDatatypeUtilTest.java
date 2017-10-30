@@ -90,7 +90,7 @@ public class XMLDatatypeUtilTest {
 			"25:25:25" };
 
 	/** valid xsd:gYear values */
-	private static final String[] VALID_GYEAR = { "2001", "2001+02:00", "2001Z", "-2001" };
+	private static final String[] VALID_GYEAR = { "2001", "2001+02:00", "2001Z", "-2001", "-20000", "20000", "0000" };
 
 	/** invalid xsd:gYear values */
 	private static final String[] INVALID_GYEAR = { "foo", "01", "2001-01", "2001-01-01" };
