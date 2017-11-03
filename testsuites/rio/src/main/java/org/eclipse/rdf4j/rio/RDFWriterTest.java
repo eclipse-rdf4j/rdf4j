@@ -531,6 +531,40 @@ public abstract class RDFWriterTest {
 	}
 
 	@Test
+	public void testRoundTripNaN921()
+		throws RDFHandlerException, IOException, RDFParseException
+	{
+		Statement st1 = vf.createStatement(uri1, uri2, vf.createLiteral(Double.NaN));
+		Statement st2 = vf.createStatement(uri1, uri2, vf.createLiteral(Double.NEGATIVE_INFINITY));
+		Statement st3 = vf.createStatement(uri1, uri2, vf.createLiteral(Double.POSITIVE_INFINITY));
+
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.handleNamespace("ex", exNs);
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(st1);
+		rdfWriter.handleStatement(st2);
+		rdfWriter.handleStatement(st3);
+		rdfWriter.endRDF();
+
+		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig());
+		rdfParser.setValueFactory(vf);
+		Model model = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(model));
+
+		rdfParser.parse(in, "foo:bar");
+
+		assertEquals("Unexpected number of statements, found " + model.size(), 3, model.size());
+
+		assertTrue("missing statement with double " + st1.getObject(), model.contains(st1));
+		assertTrue("missing statement with double " + st2.getObject(), model.contains(st2));
+		assertTrue("missing statement with double " + st3.getObject(), model.contains(st3));
+	}
+
+	@Test
 	public void testPrefixRedefinition()
 		throws RDFHandlerException, RDFParseException, IOException
 	{
