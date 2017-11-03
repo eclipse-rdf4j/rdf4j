@@ -212,13 +212,30 @@
 		<spring.version>4.2.1.RELEASE</spring.version>
 		<httpclient.version>4.5.2</httpclient.version>
 		<httpcore.version>4.4.4</httpcore.version>
-		<jackson.version>2.8.2</jackson.version>
+		<jackson.version>2.8.8</jackson.version>
 		<jsonldjava.version>0.8.3</jsonldjava.version>
 		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
 	</properties>
 
 	<dependencyManagement>
 		<dependencies>
+			<!-- Jackson Bill-of-Materials -->
+			<dependency>
+				<groupId>com.fasterxml.jackson</groupId>
+				<artifactId>jackson-bom</artifactId>
+				<version>${jackson.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, 
+			     but in practice is still being released for 2.8.x patch versions.
+			     See https://github.com/FasterXML/jackson-bom/issues/4 -->
+			<dependency>
+				<groupId>com.fasterxml.jackson.core</groupId>
+				<artifactId>jackson-annotations</artifactId>
+				<version>${jackson.version}</version>
+			</dependency>
+			
 			<!-- Apache Commons -->
 			<dependency>
 				<groupId>commons-cli</groupId>
@@ -559,26 +576,6 @@
 				<version>${jsonldjava.version}</version>
 				<type>test-jar</type>
 				<scope>test</scope>
-			</dependency>
-			<dependency>
-				<groupId>com.fasterxml.jackson.core</groupId>
-				<artifactId>jackson-core</artifactId>
-				<version>${jackson.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>com.fasterxml.jackson.core</groupId>
-				<artifactId>jackson-databind</artifactId>
-				<version>${jackson.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>com.fasterxml.jackson.core</groupId>
-				<artifactId>jackson-annotations</artifactId>
-				<version>${jackson.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>com.fasterxml.jackson.dataformat</groupId>
-				<artifactId>jackson-dataformat-csv</artifactId>
-				<version>${jackson.version}</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>
