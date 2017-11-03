@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
 
 import org.apache.http.impl.client.CloseableHttpClient;
 
@@ -30,7 +30,7 @@ public class SesameClientImpl extends SharedHttpClientSessionManager {
 	 * @deprecated use {@link SharedHttpClientSessionManager} instead.
 	 */
 	@Deprecated
-	public SesameClientImpl(CloseableHttpClient dependentClient, ExecutorService dependentExecutorService) {
+	public SesameClientImpl(CloseableHttpClient dependentClient, ScheduledExecutorService dependentExecutorService) {
 		super(dependentClient, dependentExecutorService);
 	}
 
