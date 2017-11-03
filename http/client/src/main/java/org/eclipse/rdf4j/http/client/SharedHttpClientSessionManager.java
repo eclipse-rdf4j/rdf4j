@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.http.client;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -41,7 +41,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	/** dependent life cycle */
 	private volatile CloseableHttpClient dependentClient;
 
-	private final ExecutorService executor;
+	private final ScheduledExecutorService executor;
 
 	/**
 	 * Optional {@link HttpClientBuilder} to create the inner {@link #httpClient} (if not provided externally)
@@ -56,7 +56,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	public SharedHttpClientSessionManager() {
 		final ThreadFactory backingThreadFactory = Executors.defaultThreadFactory();
-		this.executor = Executors.newCachedThreadPool(new ThreadFactory() {
+		this.executor = Executors.newScheduledThreadPool(0, new ThreadFactory() {
 
 			public Thread newThread(Runnable runnable) {
 				Thread thread = backingThreadFactory.newThread(runnable);
@@ -68,7 +68,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	}
 
 	public SharedHttpClientSessionManager(CloseableHttpClient dependentClient,
-			ExecutorService dependentExecutorService)
+			ScheduledExecutorService dependentExecutorService)
 	{
 		this.httpClient = this.dependentClient = Objects.requireNonNull(dependentClient,
 				"HTTP client was null");
