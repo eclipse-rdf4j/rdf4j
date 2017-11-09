@@ -38,7 +38,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
  * throw the specific RepositoryException subclass UnautorizedException, the semantics of which is defined by
  * the HTTP protocol.
  * <p>
- * This repository proxy uses a <a href="http://rdf4j.org/doc/system">Sesame-specific extension of the SPARQL
+ * This repository proxy uses a <a href="http://docs.rdf4j.org/rest-api/">Sesame-specific extension of the SPARQL
  * 1.1 Protocol</a> to communicate with the server. For communicating with a non-Sesame-based SPARQL endpoint,
  * it is recommend to use {@link org.eclipse.rdf4j.repository.sparql.SPARQLRepository SPARQLRepository}
  * instead.
