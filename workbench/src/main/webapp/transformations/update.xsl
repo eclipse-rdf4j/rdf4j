@@ -21,6 +21,8 @@
 						</th>
 						<td>
 							<textarea id="update" name="update" rows="16" cols="80">
+								<xsl:text>
+								</xsl:text>
 							</textarea>
 						</td>
 						<td></td>
