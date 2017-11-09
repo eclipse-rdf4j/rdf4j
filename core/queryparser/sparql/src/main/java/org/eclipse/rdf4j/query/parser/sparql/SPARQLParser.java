@@ -80,6 +80,10 @@ public class SPARQLParser implements QueryParser {
 				BaseDeclProcessor.process(uc, baseURI);
 				WildcardProjectionProcessor.process(uc);
 
+				if (uc.getBaseDecl() != null) {
+					baseURI = uc.getBaseDecl().getIRI();
+				}
+
 				// do a special dance to handle prefix declarations in sequences: if
 				// the current
 				// operation has its own prefix declarations, use those. Otherwise,
