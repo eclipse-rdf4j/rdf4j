@@ -1862,6 +1862,29 @@ public abstract class SPARQLUpdateTest {
 		assertTrue(msg, con.hasStatement(book1, DC.TITLE, null, true, bookStore2));
 	}
 
+	@Test
+	public void testUpdateSequenceWithRelativeIRI()
+		throws Exception
+	{
+		logger.debug("executing testUpdateSequenceWithRelativeIRI");
+		String update = "base <http://example.com/resource/>\n"
+				+ "prefix em: <http://example.com/resource/ontology/>\n" //
+				+ "insert {\n" //
+				+ "  graph <relations> { ?company em:parent ?other. ?other em:subsidiary ?company }\n"
+				+ "} where {\n" //
+				+ "  values ?type {<relation/parent> <relation/acquisition>}\n"
+				+ "  [em:type ?type; em:company ?company; em:investor ?other]\n" //
+				+ "};\n" // inherit base <http://example.com/resource/>
+				+ "insert {\n" //
+				+ "  graph <relations> { ?company em:hasCompetitor ?other. ?other em:hasCompetitor ?company. }\n"
+				+ "} where {\n" //
+				+ "  [em:type <relation/competition>; em:company ?company; em:company ?other]\n"
+				+ "  filter(str(?company)<str(?other)) \n" //
+				+ "};";
+		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);
+		operation.execute();
+	}
+
 	/*
 	 * @Test public void testLoad() throws Exception { String update =
 	 * "LOAD <http://www.daml.org/2001/01/gedcom/royal92.daml>"; String ns =
