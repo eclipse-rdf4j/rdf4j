@@ -486,7 +486,7 @@ public class XMLDatatypeUtil {
 	 */
 	public static boolean isValidDate(String value) {
 
-		String regex = "-?\\d\\d\\d\\d-\\d\\d-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?";
+		String regex = "-?\\d{4,}-\\d\\d-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?";
 
 		if (value.matches(regex)) {
 			return isValidCalendarValue(value);
@@ -576,7 +576,7 @@ public class XMLDatatypeUtil {
 	 */
 	public static boolean isValidGYear(String value) {
 
-		String regex = "-?\\d\\d\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?";
+		String regex = "-?\\d{4,}(Z|(\\+|-)\\d\\d:\\d\\d)?";
 
 		if (value.matches(regex)) {
 			return isValidCalendarValue(value);
@@ -594,7 +594,7 @@ public class XMLDatatypeUtil {
 	 */
 	public static boolean isValidGYearMonth(String value) {
 
-		String regex = "-?\\d\\d\\d\\d-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?";
+		String regex = "-?\\d{4,}-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?";
 
 		if (value.matches(regex)) {
 			return isValidCalendarValue(value);
