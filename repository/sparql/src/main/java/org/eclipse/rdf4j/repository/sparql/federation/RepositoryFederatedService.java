@@ -270,20 +270,9 @@ public class RepositoryFederatedService implements FederatedService {
 
 			TupleQuery query = getConnection().prepareTupleQuery(QueryLanguage.SPARQL, queryString, baseUri);
 			TupleQueryResult res = null;
-			try {
 				query.setMaxQueryTime(60); // TODO how to retrieve max query value
 											// from actual setting?
 				res = query.evaluate();
-			}
-			catch (QueryEvaluationException q) {
-
-				closeQuietly(res);
-
-				// use fallback: endpoint might not support BINDINGS clause
-				result = new ServiceFallbackIteration(service, projectionVars, allBindings, this);
-				result = service.isSilent() ? new SilentIteration(result) : result;
-				return result;
-			}
 
 			if (relevantBindingNames.size() == 0)
 				result = new SPARQLCrossProductIteration(res, allBindings); // cross
