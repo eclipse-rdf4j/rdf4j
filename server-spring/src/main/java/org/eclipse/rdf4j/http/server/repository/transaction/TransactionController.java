@@ -26,11 +26,13 @@ import static org.eclipse.rdf4j.http.protocol.Protocol.USING_GRAPH_PARAM_NAME;
 import static org.eclipse.rdf4j.http.protocol.Protocol.USING_NAMED_GRAPH_PARAM_NAME;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -160,6 +162,11 @@ public class TransactionController extends AbstractController {
 							"Method not allowed: " + reqMethod);
 				}
 				break;
+			case PING:
+				String text = Long.toString(ActiveTransactionRegistry.INSTANCE.getTimeout(TimeUnit.MILLISECONDS));
+				Map<String, String> model = Collections.singletonMap(SimpleResponseView.CONTENT_KEY, text);
+				result = new ModelAndView(SimpleResponseView.getInstance(), model);
+				break;
 			default:
 				// TODO Action.ROLLBACK check is for backward compatibility with
 				// older 2.8.x releases only. It's not in the protocol spec.
@@ -188,6 +195,7 @@ public class TransactionController extends AbstractController {
 				}
 				break;
 		}
+		ActiveTransactionRegistry.INSTANCE.active(transaction);
 		return result;
 	}
 
