@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.nativerdf.btree;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.util.Arrays;
 import java.util.BitSet;
 
@@ -64,6 +65,11 @@ class AllocatedNodesList implements Closeable {
 	 */
 	private boolean needsSync = false;
 
+	/**
+	 * Flag indicating whether file writes should be forced to disk using {@link FileChannel#force(boolean)}.
+	 */
+	private final boolean forceSync;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -71,7 +77,7 @@ class AllocatedNodesList implements Closeable {
 	/**
 	 * Creates a new AllocatedNodelist for the specified BTree.
 	 */
-	public AllocatedNodesList(File allocNodesFile, BTree btree)
+	public AllocatedNodesList(File allocNodesFile, BTree btree, boolean forceSync)
 		throws IOException
 	{
 		if (allocNodesFile == null) {
@@ -83,6 +89,7 @@ class AllocatedNodesList implements Closeable {
 
 		this.nioFile = new NioFile(allocNodesFile);
 		this.btree = btree;
+		this.forceSync = forceSync;
 	}
 
 	/*---------*
@@ -149,6 +156,10 @@ class AllocatedNodesList implements Closeable {
 			nioFile.writeBytes(MAGIC_NUMBER, 0);
 			nioFile.writeByte(FILE_FORMAT_VERSION, MAGIC_NUMBER.length);
 			nioFile.writeBytes(data, HEADER_LENGTH);
+
+			if (forceSync) {
+				nioFile.force(false);
+			}
 
 			needsSync = false;
 		}

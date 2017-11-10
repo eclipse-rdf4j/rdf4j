@@ -317,7 +317,7 @@ public class BTree implements Closeable {
 		this.forceSync = forceSync;
 
 		File allocFile = new File(dataDir, filenamePrefix + ".alloc");
-		allocatedNodesList = new AllocatedNodesList(allocFile, this);
+		allocatedNodesList = new AllocatedNodesList(allocFile, this, forceSync);
 
 		if (nioFile.size() == 0L) {
 			// Empty file, initialize it with the specified parameters
