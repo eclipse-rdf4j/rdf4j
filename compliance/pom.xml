@@ -12,7 +12,6 @@
 	<packaging>pom</packaging>
 
 	<modules>
-		<module>elasticsearch</module>
 		<module>solr</module>
 		<module>store</module>
 		<module>serql</module>
