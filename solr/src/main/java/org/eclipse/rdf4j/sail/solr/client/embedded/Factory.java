@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.solr.client.embedded;
 
-import java.io.File;
+import java.nio.file.Path;
 
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
@@ -20,8 +20,8 @@ public class Factory implements SolrClientFactory {
 
 	@Override
 	public SolrClient create(String spec) {
-		String solrHome = SolrResourceLoader.locateSolrHome();
-		File configFile = new File(solrHome, SolrXmlConfig.SOLR_XML_FILE);
+		Path solrHome = SolrResourceLoader.locateSolrHome();
+		Path configFile = solrHome.resolve(SolrXmlConfig.SOLR_XML_FILE);
 		return new EmbeddedSolrServer(CoreContainer.createAndLoad(solrHome, configFile), "embedded");
 	}
 }
