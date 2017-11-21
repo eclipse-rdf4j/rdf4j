@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.springframework.context.ApplicationContextException;
 import org.springframework.web.servlet.ModelAndView;
@@ -74,7 +73,9 @@ public class RepositoryListController extends AbstractController {
 					QueryBindingSet bindings = new QueryBindingSet();
 					bindings.addBinding("uri", vf.createIRI(namespace, info.getId()));
 					bindings.addBinding("id", vf.createLiteral(info.getId()));
-					bindings.addBinding("title", vf.createLiteral(info.getDescription()));
+					if (info.getDescription() != null) {
+						bindings.addBinding("title", vf.createLiteral(info.getDescription()));
+					}
 					bindings.addBinding("readable", vf.createLiteral(true));
 					bindings.addBinding("writable", vf.createLiteral(true));
 					bindingSets.add(bindings);
