@@ -2157,7 +2157,7 @@ public class BTree implements Closeable {
 		}
 
 		@Override
-		public void close()
+		public synchronized void close()
 			throws IOException
 		{
 			btreeLock.readLock().lock();
