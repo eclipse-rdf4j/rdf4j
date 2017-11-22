@@ -223,8 +223,7 @@ public class LuceneIndexTest {
 	private static PostingsEnum termDocs(IndexReader reader, Term term)
 		throws IOException
 	{
-		return MultiFields.getTermDocsEnum(reader, MultiFields.getLiveDocs(reader), term.field(),
-				term.bytes());
+		return MultiFields.getTermDocsEnum(reader, term.field(), term.bytes());
 	}
 
 	private static boolean next(PostingsEnum docs)
