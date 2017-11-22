@@ -50,7 +50,7 @@ abstract class AbstractStringReplacer implements Function {
 			String g = matcher.group();
 			matcher.appendReplacement(buf, transform(g));
 		}
-		matcher.appendTail(null);
+		matcher.appendTail(buf);
 		return valueFactory.createLiteral(buf.toString());
 	}
 
