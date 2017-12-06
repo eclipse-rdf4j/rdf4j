@@ -180,7 +180,10 @@ public class SimpleLiteral implements Literal {
 	 */
 	@Override
 	public String toString() {
-		StringBuilder sb = new StringBuilder(label.length() * 2);
+		int builderCapacity = label.length() + (Literals.isLanguageLiteral(this)
+												? language.length() + 3
+												: datatype.toString().length() + 6);
+		StringBuilder sb = new StringBuilder(builderCapacity);
 
 		sb.append('"');
 		sb.append(label);
