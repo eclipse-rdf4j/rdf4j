@@ -176,27 +176,30 @@ public class SimpleLiteral implements Literal {
 	}
 
 	/**
-	 * Returns the label of the literal.
+	 * Returns the label of the literal with its language or datatype. Note that this method does not escape
+	 * the quoted label.
+	 *
+	 * @see org.eclipse.rdf4j.rio.ntriples.NTriplesUtil#toNTriplesString(Literal)
 	 */
 	@Override
 	public String toString() {
-		StringBuilder sb = new StringBuilder(label.length() * 2);
-
-		sb.append('"');
-		sb.append(label);
-		sb.append('"');
-
 		if (Literals.isLanguageLiteral(this)) {
-			sb.append('@');
-			sb.append(language);
+			StringBuilder sb = new StringBuilder(label.length() + language.length() + 3);
+			sb.append('"').append(label).append('"');
+			sb.append('@').append(language);
+			return sb.toString();
+		}
+		else if (XMLSchema.STRING.equals(datatype) || datatype == null) {
+			StringBuilder sb = new StringBuilder(label.length() + 2);
+			sb.append('"').append(label).append('"');
+			return sb.toString();
 		}
 		else {
-			sb.append("^^<");
-			sb.append(datatype.toString());
-			sb.append(">");
+			StringBuilder sb = new StringBuilder(label.length() + datatype.stringValue().length() + 6);
+			sb.append('"').append(label).append('"');
+			sb.append("^^<").append(datatype.toString()).append(">");
+			return sb.toString();
 		}
-
-		return sb.toString();
 	}
 
 	public String stringValue() {
