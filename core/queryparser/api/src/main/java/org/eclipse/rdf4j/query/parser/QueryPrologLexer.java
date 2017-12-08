@@ -203,7 +203,7 @@ public class QueryPrologLexer {
 		String comment = null;
 		Matcher matcher = COMMENT_PATTERN.matcher(input.substring(index));
 		if (matcher.find()) {
-			comment = matcher.group(1);
+			comment = matcher.group(0);
 			// the regex group includes the # => just remove it
 			comment = comment.substring(1);
 		}
