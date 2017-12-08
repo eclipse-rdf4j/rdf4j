@@ -51,7 +51,7 @@ public class LDP {
 	public static final IRI INDIRECT_CONTAINER;
 
 	/** ldp:NonRDFSource */
-	public static final IRI NON_RDFSOURCE;
+	public static final IRI NON_RDF_SOURCE;
 
 	/** ldp:Page */
 	public static final IRI PAGE;
@@ -60,7 +60,7 @@ public class LDP {
 	public static final IRI PAGE_SORT_CRITERION;
 
 	/** ldp:RDFSource */
-	public static final IRI RDFSOURCE;
+	public static final IRI RDF_SOURCE;
 
 	/** ldp:Resource */
 	public static final IRI RESOURCE;
@@ -127,6 +127,7 @@ public class LDP {
 	public static final IRI PREFER_MEMBERSHIP;
 
 	/** ldp:PreferMinimalContainer */
+	@Deprecated
 	public static final IRI PREFER_MINIMAL_CONTAINER;
 
 
@@ -137,10 +138,10 @@ public class LDP {
 		CONTAINER = factory.createIRI(NAMESPACE, "Container");
 		DIRECT_CONTAINER = factory.createIRI(NAMESPACE, "DirectContainer");
 		INDIRECT_CONTAINER = factory.createIRI(NAMESPACE, "IndirectContainer");
-		NON_RDFSOURCE = factory.createIRI(NAMESPACE, "NonRDFSource");
+		NON_RDF_SOURCE = factory.createIRI(NAMESPACE, "NonRDFSource");
 		PAGE = factory.createIRI(NAMESPACE, "Page");
 		PAGE_SORT_CRITERION = factory.createIRI(NAMESPACE, "PageSortCriterion");
-		RDFSOURCE = factory.createIRI(NAMESPACE, "RDFSource");
+		RDF_SOURCE = factory.createIRI(NAMESPACE, "RDFSource");
 		RESOURCE = factory.createIRI(NAMESPACE, "Resource");
 
 		CONSTRAINED_BY = factory.createIRI(NAMESPACE, "constrainedBy");
