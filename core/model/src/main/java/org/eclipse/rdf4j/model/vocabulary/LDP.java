@@ -167,4 +167,3 @@ public class LDP {
 		PREFER_MINIMAL_CONTAINER = factory.createIRI(NAMESPACE, "PreferMinimalContainer");
 	}
 }
-
