@@ -7,16 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -36,25 +28,22 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.elasticsearch.client.Client;
-import org.elasticsearch.common.io.FileSystemUtils;
+import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.node.Node;
-import org.elasticsearch.node.NodeBuilder;
+import org.elasticsearch.plugin.deletebyquery.DeleteByQueryPlugin;
+import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
+import org.elasticsearch.test.ESIntegTestCase;
+import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
+import org.elasticsearch.test.ESIntegTestCase.SuppressLocalMode;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 
-public class ElasticsearchIndexTest {
-
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
-
-	private Path testDir;
+@ClusterScope(numDataNodes = 1)
+@SuppressLocalMode
+public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -103,9 +92,7 @@ public class ElasticsearchIndexTest {
 
 	Statement statementContext232 = vf.createStatement(subject2, predicate2, object5, CONTEXT_2);
 
-	Node node;
-
-	Client client;
+	TransportClient client;
 
 	ElasticsearchIndex index;
 
@@ -113,16 +100,23 @@ public class ElasticsearchIndexTest {
 	public void setUp()
 		throws Exception
 	{
-		ElasticsearchTestUtils.TEST_SEMAPHORE.acquire();
-		testDir = tempDir.newFolder("es-index-test").toPath();
+		super.setUp();
+		client = (TransportClient) internalCluster().transportClient();
+
 		Properties sailProperties = new Properties();
+		sailProperties.put(ElasticsearchIndex.TRANSPORT_KEY, client.transportAddresses().get(0).toString());
+		sailProperties.put(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name",
+				client.settings().get("cluster.name"));
 		sailProperties.put(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
-		sailProperties.put(LuceneSail.LUCENE_DIR_KEY, testDir.toAbsolutePath().toString());
+		sailProperties.put(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
+		sailProperties.put(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
 		index = new ElasticsearchIndex();
 		index.initialize(sailProperties);
-		node = NodeBuilder.nodeBuilder().loadConfigSettings(false).client(true).local(true).clusterName(
-				index.getClusterName()).node();
-		client = node.client();
+	}
+
+	@Override
+	protected Collection<Class<? extends Plugin>> nodePlugins() {
+		return pluginList(DeleteByQueryPlugin.class);
 	}
 
 	@After
@@ -130,25 +124,10 @@ public class ElasticsearchIndexTest {
 		throws Exception
 	{
 		try {
-			client.close();
+			index.shutDown();
 		}
 		finally {
-			try {
-				node.close();
-			}
-			finally {
-				try {
-					index.shutDown();
-				}
-				finally {
-					try {
-						FileSystemUtils.deleteRecursively(testDir.toFile());
-					}
-					finally {
-						ElasticsearchTestUtils.TEST_SEMAPHORE.release();
-					}
-				}
-			}
+			super.tearDown();
 		}
 	}
 
@@ -156,6 +135,9 @@ public class ElasticsearchIndexTest {
 	public void testAddStatement()
 		throws IOException
 	{
+		String predicate1Field = ElasticsearchIndex.toPropertyFieldName(SearchFields.getPropertyField(predicate1));
+		String predicate2Field = ElasticsearchIndex.toPropertyFieldName(SearchFields.getPropertyField(predicate2));
+
 		// add a statement to an index
 		index.begin();
 		index.addStatement(statement11);
@@ -176,7 +158,7 @@ public class ElasticsearchIndexTest {
 		Map<String, Object> fields = client.prepareGet(doc.getIndex(), doc.getType(),
 				doc.getId()).execute().actionGet().getSource();
 		assertEquals(subject.toString(), fields.get(SearchFields.URI_FIELD_NAME));
-		assertEquals(object1.getLabel(), fields.get(predicate1.toString()));
+		assertEquals(object1.getLabel(), fields.get(predicate1Field));
 
 		assertFalse(docs.hasNext());
 
@@ -202,8 +184,8 @@ public class ElasticsearchIndexTest {
 		fields = client.prepareGet(doc.getIndex(), doc.getType(),
 				doc.getId()).execute().actionGet().getSource();
 		assertEquals(subject.toString(), fields.get(SearchFields.URI_FIELD_NAME));
-		assertEquals(object1.getLabel(), fields.get(predicate1.toString()));
-		assertEquals(object2.getLabel(), fields.get(predicate2.toString()));
+		assertEquals(object1.getLabel(), fields.get(predicate1Field));
+		assertEquals(object2.getLabel(), fields.get(predicate2Field));
 
 		assertFalse(docs.hasNext());
 
@@ -239,7 +221,7 @@ public class ElasticsearchIndexTest {
 				doc.getId()).execute().actionGet().getSource();
 		assertEquals(subject.toString(), fields.get(SearchFields.URI_FIELD_NAME));
 		assertNull(fields.get(predicate1.toString()));
-		assertEquals(object2.getLabel(), fields.get(predicate2.toString()));
+		assertEquals(object2.getLabel(), fields.get(predicate2Field));
 
 		assertFalse(docs.hasNext());
 

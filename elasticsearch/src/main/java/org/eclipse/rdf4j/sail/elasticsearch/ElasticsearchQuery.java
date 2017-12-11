@@ -65,7 +65,8 @@ public class ElasticsearchQuery implements SearchQuery {
 	 */
 	@Override
 	public void highlight(URI property) {
-		String field = (property != null) ? SearchFields.getPropertyField(property) : "*";
+		String field = (property != null)
+				? ElasticsearchIndex.toPropertyFieldName(SearchFields.getPropertyField(property)) : ElasticsearchIndex.ALL_PROPERTY_FIELDS;
 		request.addHighlightedField(field);
 		request.setHighlighterPreTags(SearchFields.HIGHLIGHTER_PRE_TAG);
 		request.setHighlighterPostTags(SearchFields.HIGHLIGHTER_POST_TAG);

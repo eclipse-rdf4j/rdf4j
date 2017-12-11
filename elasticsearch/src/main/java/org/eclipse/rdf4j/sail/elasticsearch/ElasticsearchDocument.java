@@ -11,13 +11,15 @@ import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.lucene.spatial.util.GeoHashUtils;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
-import org.elasticsearch.common.geo.GeoHashUtils;
+import org.elasticsearch.common.lucene.uid.Versions;
 import org.elasticsearch.search.SearchHit;
 
 import com.google.common.base.Function;
@@ -56,7 +58,7 @@ public class ElasticsearchDocument implements SearchDocument {
 	public ElasticsearchDocument(String id, String type, String index, String resourceId, String context,
 			Function<? super String, ? extends SpatialContext> geoContextMapper)
 	{
-		this(id, type, index, 0L, new HashMap<String, Object>(), geoContextMapper);
+		this(id, type, index, Versions.MATCH_ANY, new HashMap<String, Object>(), geoContextMapper);
 		fields.put(SearchFields.URI_FIELD_NAME, resourceId);
 		if (context != null) {
 			fields.put(SearchFields.CONTEXT_FIELD_NAME, context);
@@ -64,7 +66,8 @@ public class ElasticsearchDocument implements SearchDocument {
 	}
 
 	public ElasticsearchDocument(String id, String type, String index, long version,
-			Map<String, Object> fields, Function<? super String, ? extends SpatialContext> geoContextMapper)
+			Map<String, Object> fields,
+			Function<? super String, ? extends SpatialContext> geoContextMapper)
 	{
 		this.id = id;
 		this.type = type;
@@ -107,16 +110,22 @@ public class ElasticsearchDocument implements SearchDocument {
 
 	@Override
 	public Set<String> getPropertyNames() {
-		return ElasticsearchIndex.getPropertyFields(fields.keySet());
+		Set<String> propertyFields = ElasticsearchIndex.getPropertyFields(fields.keySet());
+		Set<String> propertyNames = new HashSet<>(propertyFields.size() + 1);
+		for (String f : propertyFields) {
+			propertyNames.add(ElasticsearchIndex.toPropertyName(f));
+		}
+		return propertyNames;
 	}
 
 	@Override
 	public void addProperty(String name) {
+		String fieldName = ElasticsearchIndex.toPropertyFieldName(name);
 		// in elastic search, fields must have an explicit value
-		if (fields.containsKey(name)) {
+		if (fields.containsKey(fieldName)) {
 			throw new IllegalStateException("Property already added: " + name);
 		}
-		fields.put(name, null);
+		fields.put(fieldName, null);
 		if (!fields.containsKey(SearchFields.TEXT_FIELD_NAME)) {
 			fields.put(SearchFields.TEXT_FIELD_NAME, null);
 		}
@@ -124,22 +133,24 @@ public class ElasticsearchDocument implements SearchDocument {
 
 	@Override
 	public void addProperty(String name, String text) {
-		addField(name, text, fields);
+		String fieldName = ElasticsearchIndex.toPropertyFieldName(name);
+		addField(fieldName, text, fields);
 		addField(SearchFields.TEXT_FIELD_NAME, text, fields);
 	}
 
 	@Override
 	public void addGeoProperty(String name, String text) {
-		addField(name, text, fields);
+		String fieldName = ElasticsearchIndex.toPropertyFieldName(name);
+		addField(fieldName, text, fields);
 		try {
 			Shape shape = geoContextMapper.apply(name).readShapeFromWkt(text);
 			if (shape instanceof Point) {
 				Point p = (Point)shape;
-				fields.put(ElasticsearchIndex.GEOPOINT_FIELD_PREFIX + name,
-						GeoHashUtils.encode(p.getY(), p.getX()));
+				fields.put(ElasticsearchIndex.toGeoPointFieldName(name),
+						GeoHashUtils.stringEncode(p.getX(), p.getY()));
 			}
 			else {
-				fields.put(ElasticsearchIndex.GEOSHAPE_FIELD_PREFIX + name,
+				fields.put(ElasticsearchIndex.toGeoShapeFieldName(name),
 						ElasticsearchSpatialSupport.getSpatialSupport().toGeoJSON(shape));
 			}
 		}
@@ -150,7 +161,8 @@ public class ElasticsearchDocument implements SearchDocument {
 
 	@Override
 	public boolean hasProperty(String name, String value) {
-		List<String> fieldValues = asStringList(fields.get(name));
+		String fieldName = ElasticsearchIndex.toPropertyFieldName(name);
+		List<String> fieldValues = asStringList(fields.get(fieldName));
 		if (fieldValues != null) {
 			for (String fieldValue : fieldValues) {
 				if (value.equals(fieldValue)) {
@@ -164,7 +176,8 @@ public class ElasticsearchDocument implements SearchDocument {
 
 	@Override
 	public List<String> getProperty(String name) {
-		return asStringList(fields.get(name));
+		String fieldName = ElasticsearchIndex.toPropertyFieldName(name);
+		return asStringList(fields.get(fieldName));
 	}
 
 	private static void addField(String name, String value, Map<String, Object> document) {

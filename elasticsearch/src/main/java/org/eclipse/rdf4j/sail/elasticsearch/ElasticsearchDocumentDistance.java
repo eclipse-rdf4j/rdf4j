@@ -11,7 +11,6 @@ import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
 import org.elasticsearch.common.geo.GeoDistance.FixedSourceDistance;
-import org.elasticsearch.common.geo.GeoHashUtils;
 import org.elasticsearch.common.geo.GeoPoint;
 import org.elasticsearch.common.unit.DistanceUnit;
 import org.elasticsearch.search.SearchHit;
@@ -44,7 +43,7 @@ public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult i
 	@Override
 	public double getDistance() {
 		String geohash = (String)((ElasticsearchDocument)getDocument()).getSource().get(geoPointField);
-		GeoPoint point = GeoHashUtils.decode(geohash);
+		GeoPoint point = GeoPoint.fromGeohash(geohash);
 		double unitDist = srcDistance.calculate(point.getLat(), point.getLon());
 		double distance;
 		if (GEOF.UOM_METRE.equals(units)) {

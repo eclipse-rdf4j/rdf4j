@@ -38,8 +38,9 @@ public class ElasticsearchDocumentScore extends ElasticsearchDocumentResult impl
 	}
 
 	@Override
-	public Iterable<String> getSnippets(String field) {
-		HighlightField highlightField = hit.getHighlightFields().get(field);
+	public Iterable<String> getSnippets(String property) {
+		HighlightField highlightField = hit.getHighlightFields().get(
+				ElasticsearchIndex.toPropertyFieldName(property));
 		if (highlightField == null) {
 			return null;
 		}

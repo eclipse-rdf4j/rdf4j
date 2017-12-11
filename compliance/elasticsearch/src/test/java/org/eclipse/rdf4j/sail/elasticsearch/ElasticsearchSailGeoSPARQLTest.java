@@ -7,75 +7,105 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
-import java.io.IOException;
-import java.nio.file.Path;
+import java.util.Collection;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailGeoSPARQLTest;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
-import org.elasticsearch.common.io.FileSystemUtils;
+import org.elasticsearch.client.transport.TransportClient;
+import org.elasticsearch.plugin.deletebyquery.DeleteByQueryPlugin;
+import org.elasticsearch.plugins.Plugin;
+import org.elasticsearch.test.ESIntegTestCase;
+import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
+import org.elasticsearch.test.ESIntegTestCase.SuppressLocalMode;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Ignore;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 
-public class ElasticsearchSailGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLTest {
+@ClusterScope(numDataNodes = 1)
+@SuppressLocalMode
+public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
-	private Path testDir;
+	AbstractLuceneSailGeoSPARQLTest delegateTest;
 
-	@Override
-	protected void configure(LuceneSail sail) {
-		sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
-		sail.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
-		sail.setParameter(LuceneSail.LUCENE_DIR_KEY, testDir.toAbsolutePath().toString());
-		sail.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
-		sail.setParameter(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
-	}
-
-	@Test
-	@Ignore // JTS is required
-	@Override
-	public void testIntersectionQuery()
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException
-	{
-		super.testIntersectionQuery();
-	}
-
-	@Test
-	@Ignore // JTS is required
-	@Override
-	public void testComplexIntersectionQuery()
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException
-	{
-		super.testComplexIntersectionQuery();
-	}
-
-	@Override
+	@Before
 	public void setUp()
 		throws Exception
 	{
-		ElasticsearchTestUtils.TEST_SEMAPHORE.acquire();
-		testDir = tempDir.newFolder("es-gs-test").toPath();
 		super.setUp();
+		TransportClient client = (TransportClient)internalCluster().transportClient();
+		delegateTest = new AbstractLuceneSailGeoSPARQLTest() {
+
+			@Override
+			protected void configure(LuceneSail sail) {
+				sail.setParameter(ElasticsearchIndex.TRANSPORT_KEY,
+						client.transportAddresses().get(0).toString());
+				sail.setParameter(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name",
+						client.settings().get("cluster.name"));
+				sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY,
+						ElasticsearchTestUtils.getNextTestIndexName());
+				sail.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
+				sail.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
+				sail.setParameter(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
+			}
+		};
+		delegateTest.setUp();
 	}
 
 	@Override
+	protected Collection<Class<? extends Plugin>> nodePlugins() {
+		return pluginList(DeleteByQueryPlugin.class);
+	}
+
+	@After
 	public void tearDown()
-		throws IOException, RepositoryException
+		throws Exception
 	{
 		try {
-			super.tearDown();
+			delegateTest.tearDown();
 		}
 		finally {
-			try {
-				FileSystemUtils.deleteRecursively(testDir.toFile());
-			} finally {
-				ElasticsearchTestUtils.TEST_SEMAPHORE.release();
-			}
+			super.tearDown();
 		}
+	}
+
+	@Test
+	public void testTriplesStored()
+		throws Exception
+	{
+		delegateTest.testTriplesStored();
+	}
+
+	@Test
+	public void testDistanceQuery()
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException
+	{
+		delegateTest.testDistanceQuery();
+	}
+
+	@Test
+	public void testComplexDistanceQuery()
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException
+	{
+		delegateTest.testComplexDistanceQuery();
+	}
+
+	@Test
+	@Ignore // JTS is required
+	public void testIntersectionQuery()
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException
+	{
+		delegateTest.testIntersectionQuery();
+	}
+
+	@Test
+	@Ignore // JTS is required
+	public void testComplexIntersectionQuery()
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException
+	{
+		delegateTest.testComplexIntersectionQuery();
 	}
 }

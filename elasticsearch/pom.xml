@@ -14,7 +14,7 @@
     <description>StackableSail implementation offering full-text search on literals, based on Elastic Search.</description>
 
     <properties>
-        <elasticsearch.version>1.7.0</elasticsearch.version>
+        <elasticsearch.version>2.4.6</elasticsearch.version>
     </properties>
 
     <dependencies>
@@ -29,5 +29,10 @@
             <artifactId>elasticsearch</artifactId>
             <version>${elasticsearch.version}</version>
         </dependency>
+		<dependency>
+		    <groupId>org.elasticsearch.plugin</groupId>
+		    <artifactId>delete-by-query</artifactId>
+            <version>${elasticsearch.version}</version>
+		</dependency>
     </dependencies>
 </project>

@@ -7,16 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class ElasticsearchTestUtils {
-
-	/**
-	 * ElasticSearch shares/exposes a number of services at the JVM level. This Semaphore ensures that only a
-	 * single one of our tests is attempting to work with the ElasticSearch APIs at one time.
-	 */
-	public static final Semaphore TEST_SEMAPHORE = new Semaphore(1);
 
 	/**
 	 * Counter used to uniquely name test indexes without using UUID's that may be causing path length issues.
