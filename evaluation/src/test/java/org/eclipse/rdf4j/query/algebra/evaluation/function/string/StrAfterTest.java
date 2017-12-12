@@ -148,7 +148,7 @@ public class StrAfterTest {
 		}
 		catch (ValueExprEvaluationException e) {
 			assertEquals(
-					"incompatible operands for STRAFTER: \"foobar\"^^<http://www.w3.org/2001/XMLSchema#string>, \"b\"^^<http://www.w3.org/2001/XMLSchema#date>",
+					"incompatible operands for STRAFTER: \"foobar\", \"b\"^^<http://www.w3.org/2001/XMLSchema#date>",
 					e.getMessage());
 		}
 	}
@@ -166,7 +166,7 @@ public class StrAfterTest {
 		}
 		catch (ValueExprEvaluationException e) {
 			assertEquals(
-					"incompatible operands for STRAFTER: \"10\"^^<http://www.w3.org/2001/XMLSchema#int>, \"b\"^^<http://www.w3.org/2001/XMLSchema#string>",
+					"incompatible operands for STRAFTER: \"10\"^^<http://www.w3.org/2001/XMLSchema#int>, \"b\"",
 					e.getMessage());
 		}
 	}
@@ -184,7 +184,7 @@ public class StrAfterTest {
 		}
 		catch (ValueExprEvaluationException e) {
 			assertEquals(
-					"incompatible operands for STRAFTER: http://example.org/foobar, \"b\"^^<http://www.w3.org/2001/XMLSchema#string>",
+					"incompatible operands for STRAFTER: http://example.org/foobar, \"b\"",
 					e.getMessage());
 		}
 	}
@@ -216,7 +216,7 @@ public class StrAfterTest {
 		}
 		catch (ValueExprEvaluationException e) {
 			assertEquals(
-					"incompatible operands for STRAFTER: \"foobar\"^^<http://www.w3.org/2001/XMLSchema#string>, \"b\"@nl",
+					"incompatible operands for STRAFTER: \"foobar\", \"b\"@nl",
 					e.getMessage());
 		}
 	}
