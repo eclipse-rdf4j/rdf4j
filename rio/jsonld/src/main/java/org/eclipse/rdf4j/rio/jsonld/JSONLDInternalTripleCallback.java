@@ -12,7 +12,6 @@ import java.util.Map.Entry;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -47,9 +46,9 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 
 	private final ParseErrorListener parseErrorListener;
 
-	private final Function<String, BNode> namedBNodeCreator;
+	private final Function<String, Resource> namedBNodeCreator;
 
-	private final Supplier<BNode> anonymousBNodeCreator;
+	private final Supplier<Resource> anonymousBNodeCreator;
 
 	public JSONLDInternalTripleCallback() {
 		this(new StatementCollector(new LinkedHashModel()));
@@ -65,8 +64,8 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 	}
 
 	public JSONLDInternalTripleCallback(RDFHandler nextHandler, ValueFactory vf, ParserConfig parserConfig,
-			ParseErrorListener parseErrorListener, Function<String, BNode> namedBNodeCreator,
-			Supplier<BNode> anonymousBNodeCreator)
+			ParseErrorListener parseErrorListener, Function<String, Resource> namedBNodeCreator,
+			Supplier<Resource> anonymousBNodeCreator)
 	{
 		this.handler = nextHandler;
 		this.vf = vf;

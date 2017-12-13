@@ -62,8 +62,8 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 
 		try {
 			final JSONLDInternalTripleCallback callback = new JSONLDInternalTripleCallback(getRDFHandler(),
-					valueFactory, getParserConfig(), getParseErrorListener(), nodeID -> createBNode(nodeID),
-					() -> createBNode());
+					valueFactory, getParserConfig(), getParseErrorListener(), nodeID -> createNode(nodeID),
+					() -> createNode());
 
 			final JsonLdOptions options = new JsonLdOptions(baseURI);
 			options.useNamespaces = true;
@@ -95,8 +95,8 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 
 		try {
 			final JSONLDInternalTripleCallback callback = new JSONLDInternalTripleCallback(getRDFHandler(),
-					valueFactory, getParserConfig(), getParseErrorListener(), nodeID -> createBNode(nodeID),
-					() -> createBNode());
+					valueFactory, getParserConfig(), getParseErrorListener(), nodeID -> createNode(nodeID),
+					() -> createNode());
 
 			final JsonLdOptions options = new JsonLdOptions(baseURI);
 			options.useNamespaces = true;
