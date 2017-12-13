@@ -21,7 +21,6 @@ import java.util.Set;
 
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -350,7 +349,7 @@ public class TurtleParser extends AbstractRDFParser {
 			c = peekCodePoint();
 			if (c == ']') {
 				c = readCodePoint();
-				subject = createBNode();
+				subject = createNode();
 				skipWSC();
 				parsePredicateObjectList();
 			} else {
@@ -493,7 +492,7 @@ public class TurtleParser extends AbstractRDFParser {
 			}
 			return RDF.NIL;
 		} else {
-			BNode listRoot = createBNode();
+			Resource listRoot = createNode();
 			if (subject != null) {
 				reportStatement(subject, predicate, listRoot);
 			}
@@ -508,11 +507,11 @@ public class TurtleParser extends AbstractRDFParser {
 
 			parseObject();
 
-			BNode bNode = listRoot;
+			Resource bNode = listRoot;
 
 			while (skipWSC() != ')') {
 				// Create another list node and link it to the previous
-				BNode newNode = createBNode();
+				Resource newNode = createNode();
 				reportStatement(bNode, RDF.REST, newNode);
 
 				// New node becomes the current
@@ -542,7 +541,7 @@ public class TurtleParser extends AbstractRDFParser {
 	protected Resource parseImplicitBlank() throws IOException, RDFParseException, RDFHandlerException {
 		verifyCharacterOrFail(readCodePoint(), "[");
 
-		BNode bNode = createBNode();
+		Resource bNode = createNode();
 		if (subject != null) {
 			reportStatement(subject, predicate, bNode);
 		}
@@ -1068,7 +1067,7 @@ public class TurtleParser extends AbstractRDFParser {
 	/**
 	 * Parses a blank node ID, e.g. <tt>_:node1</tt>.
 	 */
-	protected BNode parseNodeID() throws IOException, RDFParseException {
+	protected Resource parseNodeID() throws IOException, RDFParseException {
 		// Node ID should start with "_:"
 		verifyCharacterOrFail(readCodePoint(), "_");
 		verifyCharacterOrFail(readCodePoint(), ":");
@@ -1107,7 +1106,7 @@ public class TurtleParser extends AbstractRDFParser {
 			}
 		}
 
-		return createBNode(name.toString());
+		return createNode(name.toString());
 	}
 
 	protected void reportStatement(Resource subj, IRI pred, Value obj) throws RDFParseException, RDFHandlerException {

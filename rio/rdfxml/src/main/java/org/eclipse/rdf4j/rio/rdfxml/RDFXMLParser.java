@@ -23,7 +23,6 @@ import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.common.net.ParsedURI;
 import org.eclipse.rdf4j.common.xml.XMLReaderFactory;
 import org.eclipse.rdf4j.common.xml.XMLUtil;
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -602,7 +601,7 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 
 			if (predicate.parseCollection()) {
 				Resource lastListRes = predicate.getLastListResource();
-				BNode newListRes = createBNode();
+				Resource newListRes = createNode();
 
 				if (lastListRes == null) {
 					// first element in the list
@@ -699,11 +698,11 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 			result = resolveURI(about.getValue());
 		}
 		else if (nodeID != null) {
-			result = createBNode(nodeID.getValue());
+			result = createNode(nodeID.getValue());
 		}
 		else {
 			// No resource specified, generate a bNode
-			result = createBNode();
+			result = createNode();
 		}
 
 		return result;
@@ -777,7 +776,7 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 			String parseTypeValue = parseType.getValue();
 
 			if (parseTypeValue.equals("Resource")) {
-				BNode objectResource = createBNode();
+				Resource objectResource = createNode();
 				NodeElement subject = (NodeElement)peekStack(1);
 
 				reportStatement(subject.getResource(), propURI, objectResource);
@@ -932,11 +931,11 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 			result = resolveURI(resource.getValue());
 		}
 		else if (nodeID != null) {
-			result = createBNode(nodeID.getValue());
+			result = createNode(nodeID.getValue());
 		}
 		else {
 			// No resource specified, generate a bNode
-			result = createBNode();
+			result = createNode();
 		}
 
 		return result;
@@ -1006,7 +1005,7 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	@Override
-	protected BNode createBNode(String nodeID)
+	protected Resource createNode(String nodeID)
 		throws RDFParseException
 	{
 		if (getParserConfig().get(XMLParserSettings.FAIL_ON_INVALID_NCNAME)) {
@@ -1016,7 +1015,7 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 			}
 		}
 
-		return super.createBNode(nodeID);
+		return super.createNode(nodeID);
 	}
 
 	private Object peekStack(int distFromTop) {

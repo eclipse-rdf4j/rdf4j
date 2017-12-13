@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.model.util;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -26,6 +25,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.util.iterators.Iterators;
 
 /**
@@ -584,8 +584,8 @@ public class Models {
 	public static boolean isomorphic(Iterable<? extends Statement> model1,
 			Iterable<? extends Statement> model2)
 	{
-		Set<? extends Statement> set1 = toSet(model1);
-		Set<? extends Statement> set2 = toSet(model2);
+		Model set1 = toModel(model1);
+		Model set2 = toModel(model2);
 		// Compare the number of statements in both sets
 		if (set1.size() != set2.size()) {
 			return false;
@@ -614,8 +614,8 @@ public class Models {
 	public static boolean isSubset(Iterable<? extends Statement> model1, Iterable<? extends Statement> model2)
 	{
 		// Filter duplicates
-		Set<? extends Statement> set1 = toSet(model1);
-		Set<? extends Statement> set2 = toSet(model2);
+		Model set1 = toModel(model1);
+		Model set2 = toModel(model2);
 
 		return isSubset(set1, set2);
 	}
@@ -630,23 +630,21 @@ public class Models {
 			return false;
 		}
 
-		return isSubsetInternal(model1, model2);
+		return isSubsetInternal(toModel(model1), toModel(model2));
 	}
 
-	private static boolean isSubsetInternal(Set<? extends Statement> model1, Set<? extends Statement> model2)
+	private static boolean isSubsetInternal(Model model1, Model model2)
 	{
 		// try to create a full blank node mapping
 		return matchModels(model1, model2);
 	}
 
-	private static boolean matchModels(Set<? extends Statement> model1, Set<? extends Statement> model2) {
+	private static boolean matchModels(Model model1, Model model2) {
 		// Compare statements without blank nodes first, save the rest for later
 		List<Statement> model1BNodes = new ArrayList<Statement>(model1.size());
 
 		for (Statement st : model1) {
-			if (st.getSubject() instanceof BNode || st.getObject() instanceof BNode
-					|| st.getContext() instanceof BNode)
-			{
+			if (isBlank(st.getSubject()) || isBlank(st.getObject()) || isBlank(st.getContext())) {
 				model1BNodes.add(st);
 			}
 			else {
@@ -656,7 +654,7 @@ public class Models {
 			}
 		}
 
-		return matchModels(model1BNodes, model2, new HashMap<BNode, BNode>(), 0);
+		return matchModels(model1BNodes, model2, new HashMap<Resource, Resource>(), 0);
 	}
 
 	/**
@@ -670,8 +668,8 @@ public class Models {
 	 * @param idx
 	 * @return true if a complete mapping has been found, false otherwise.
 	 */
-	private static boolean matchModels(List<? extends Statement> model1, Iterable<? extends Statement> model2,
-			Map<BNode, BNode> bNodeMapping, int idx)
+	private static boolean matchModels(List<? extends Statement> model1, Model model2,
+			Map<Resource, Resource> bNodeMapping, int idx)
 	{
 		boolean result = false;
 
@@ -682,18 +680,18 @@ public class Models {
 
 			for (Statement st2 : matchingStats) {
 				// Map bNodes in st1 to bNodes in st2
-				Map<BNode, BNode> newBNodeMapping = new HashMap<BNode, BNode>(bNodeMapping);
+				Map<Resource, Resource> newBNodeMapping = new HashMap<Resource, Resource>(bNodeMapping);
 
-				if (st1.getSubject() instanceof BNode && st2.getSubject() instanceof BNode) {
-					newBNodeMapping.put((BNode)st1.getSubject(), (BNode)st2.getSubject());
+				if (isBlank(st1.getSubject()) && isBlank(st2.getSubject())) {
+					newBNodeMapping.put(st1.getSubject(), st2.getSubject());
 				}
 
-				if (st1.getObject() instanceof BNode && st2.getObject() instanceof BNode) {
-					newBNodeMapping.put((BNode)st1.getObject(), (BNode)st2.getObject());
+				if (isBlank(st1.getObject()) && isBlank(st2.getObject())) {
+					newBNodeMapping.put((Resource)st1.getObject(), (Resource)st2.getObject());
 				}
 
-				if (st1.getContext() instanceof BNode && st2.getContext() instanceof BNode) {
-					newBNodeMapping.put((BNode)st1.getContext(), (BNode)st2.getContext());
+				if (isBlank(st1.getContext()) && isBlank(st2.getContext())) {
+					newBNodeMapping.put(st1.getContext(), st2.getContext());
 				}
 
 				// FIXME: this recursive implementation has a high risk of
@@ -716,12 +714,17 @@ public class Models {
 		return result;
 	}
 
-	private static List<Statement> findMatchingStatements(Statement st, Iterable<? extends Statement> model,
-			Map<BNode, BNode> bNodeMapping)
+	private static List<Statement> findMatchingStatements(Statement st, Model model,
+			Map<Resource, Resource> bNodeMapping)
 	{
+		Resource s = isBlank(st.getSubject()) ? null : st.getSubject();
+		IRI p = st.getPredicate();
+		Value o = isBlank(st.getObject()) ? null : st.getObject();
+		Resource[] g = isBlank(st.getContext()) ? new Resource[0]
+				: new Resource[] { st.getContext() };
 		List<Statement> result = new ArrayList<Statement>();
 
-		for (Statement modelSt : model) {
+		for (Statement modelSt : model.filter(s, p, o, g)) {
 			if (statementsMatch(st, modelSt, bNodeMapping)) {
 				// All components possibly match
 				result.add(modelSt);
@@ -731,7 +734,7 @@ public class Models {
 		return result;
 	}
 
-	private static boolean statementsMatch(Statement st1, Statement st2, Map<BNode, BNode> bNodeMapping) {
+	private static boolean statementsMatch(Statement st1, Statement st2, Map<Resource, Resource> bNodeMapping) {
 		IRI pred1 = st1.getPredicate();
 		IRI pred2 = st2.getPredicate();
 
@@ -743,8 +746,8 @@ public class Models {
 		Resource subj1 = st1.getSubject();
 		Resource subj2 = st2.getSubject();
 
-		if (subj1 instanceof BNode && subj2 instanceof BNode) {
-			BNode mappedBNode = bNodeMapping.get(subj1);
+		if (isBlank(subj1) && isBlank(subj2)) {
+			Resource mappedBNode = bNodeMapping.get(subj1);
 
 			if (mappedBNode != null) {
 				// bNode 'subj1' was already mapped to some other bNode
@@ -772,8 +775,8 @@ public class Models {
 		Value obj1 = st1.getObject();
 		Value obj2 = st2.getObject();
 
-		if (obj1 instanceof BNode && obj2 instanceof BNode) {
-			BNode mappedBNode = bNodeMapping.get(obj1);
+		if (isBlank(obj1) && isBlank(obj2)) {
+			Resource mappedBNode = bNodeMapping.get(obj1);
 
 			if (mappedBNode != null) {
 				// bNode 'obj1' was already mapped to some other bNode
@@ -809,8 +812,8 @@ public class Models {
 			return false;
 		}
 
-		if (context1 instanceof BNode && context2 instanceof BNode) {
-			BNode mappedBNode = bNodeMapping.get(context1);
+		if (isBlank(context1) && isBlank(context2)) {
+			Resource mappedBNode = bNodeMapping.get(context1);
 
 			if (mappedBNode != null) {
 				// bNode 'context1' was already mapped to some other bNode
@@ -839,14 +842,23 @@ public class Models {
 		return true;
 	}
 
-	private static <S extends Statement> Set<S> toSet(Iterable<S> iterable) {
-		Set<S> set = null;
-		if (iterable instanceof Set) {
-			set = (Set<S>)iterable;
+	private static boolean isBlank(Value value) {
+		if (value instanceof IRI) {
+			return value.stringValue().indexOf("/.well-known/genid/") > 0;
+		}
+		else {
+			return value instanceof BNode;
+		}
+	}
+
+	private static Model toModel(Iterable<? extends Statement> iterable) {
+		Model set = null;
+		if (iterable instanceof Model) {
+			set = (Model)iterable;
 		}
 		else {
 			// Filter duplicates
-			set = new HashSet<S>();
+			set = new TreeModel();
 			Iterators.addAll(iterable.iterator(), set);
 		}
 		return set;

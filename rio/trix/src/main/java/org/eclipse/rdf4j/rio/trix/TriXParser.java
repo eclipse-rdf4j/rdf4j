@@ -327,7 +327,7 @@ public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 					valueList.add(createURI(text));
 				}
 				else if (tagName.equals(BNODE_TAG)) {
-					valueList.add(createBNode(text));
+					valueList.add(createNode(text));
 				}
 				else if (tagName.equals(PLAIN_LITERAL_TAG)) {
 					String lang = atts.get(LANGUAGE_ATT);

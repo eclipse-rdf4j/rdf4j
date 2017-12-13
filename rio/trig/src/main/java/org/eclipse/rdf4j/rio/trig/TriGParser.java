@@ -134,7 +134,7 @@ public class TriGParser extends TurtleParser {
 			skipWSC();
 			c2 = readCodePoint();
 			if (c2 == ']') {
-				contextOrSubject = createBNode();
+				contextOrSubject = createNode();
 				foundContextOrSubject = true;
 				skipWSC();
 			}
@@ -231,7 +231,7 @@ public class TriGParser extends TurtleParser {
 			c = peekCodePoint();
 			if (c == ']') {
 				c = readCodePoint();
-				subject = createBNode();
+				subject = createNode();
 				skipWSC();
 				parsePredicateObjectList();
 			}
