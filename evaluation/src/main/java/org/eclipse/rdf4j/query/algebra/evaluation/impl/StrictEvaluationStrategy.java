@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.common.iteration.OffsetIteration;
 import org.eclipse.rdf4j.common.iteration.ReducedIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -37,7 +38,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
-import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
@@ -1435,19 +1435,18 @@ public class StrictEvaluationStrategy
 
 			String uriString = lit.getLabel();
 			final String baseURI = node.getBaseURI();
-
-			if (!URIUtil.isValidURIReference(uriString)) {
-				// uri string may be a relative reference. Try appending base
-				// URI
-				if (baseURI != null) {
-					uriString = baseURI + uriString;
-					if (!URIUtil.isValidURIReference(uriString)) {
-						throw new ValueExprEvaluationException("not a valid URI reference: " + uriString);
-					}
+			try {
+				ParsedIRI iri = ParsedIRI.create(uriString);
+				if (!iri.isAbsolute() && baseURI != null) {
+					// uri string may be a relative reference.
+					uriString = ParsedIRI.create(baseURI).resolve(iri).toString();
 				}
-				else {
-					throw new ValueExprEvaluationException("not a valid URI reference: " + uriString);
+				else if (!iri.isAbsolute()) {
+					throw new ValueExprEvaluationException("not an absolute IRI reference: " + uriString);
 				}
+			}
+			catch (IllegalArgumentException e) {
+				throw new ValueExprEvaluationException("not a valid IRI reference: " + uriString);
 			}
 
 			IRI result = null;
