@@ -302,38 +302,6 @@
 			</dependency>
 			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
-				<artifactId>httpclient-osgi</artifactId>
-				<version>${httpclient.version}</version>
-				<exclusions>
-					<exclusion>
-						<groupId>commons-logging</groupId>
-						<artifactId>commons-logging</artifactId>
-					</exclusion>
-					<exclusion>
-						<!-- httpclient includes older codec -->
-						<groupId>commons-codec</groupId>
-						<artifactId>commons-codec</artifactId>
-					</exclusion>
-				</exclusions>
-			</dependency>
-			<dependency>
-				<groupId>org.apache.httpcomponents</groupId>
-				<artifactId>httpcore-osgi</artifactId>
-				<version>${httpcore.version}</version>
-				<exclusions>
-					<exclusion>
-						<groupId>commons-logging</groupId>
-						<artifactId>commons-logging</artifactId>
-					</exclusion>
-					<exclusion>
-						<!-- httpclient includes older codec -->
-						<groupId>commons-codec</groupId>
-						<artifactId>commons-codec</artifactId>
-					</exclusion>
-				</exclusions>
-			</dependency>
-			<dependency>
-				<groupId>org.apache.httpcomponents</groupId>
 				<artifactId>httpmime</artifactId>
 				<version>${httpclient.version}</version>
 				<exclusions>
@@ -483,23 +451,6 @@
 						<artifactId>commons-logging</artifactId>
 					</exclusion>
 				</exclusions>
-			</dependency>
-
-			<!-- various -->
-			<dependency>
-				<groupId>cglib</groupId>
-				<artifactId>cglib</artifactId>
-				<version>3.1</version>
-			</dependency>
-			<dependency>
-				<groupId>com.google.guava</groupId>
-				<artifactId>guava</artifactId>
-				<version>18.0</version>
-			</dependency>
-			<dependency>
-				<groupId>org.mapdb</groupId>
-				<artifactId>mapdb</artifactId>
-				<version>1.0.8</version>
 			</dependency>
 
 			<!-- Logging: SLF4J and logback -->
@@ -874,7 +825,6 @@
 					</dependency>
 				</dependencies>
 			</plugin>
-
 		</plugins>
 
 		<extensions>
