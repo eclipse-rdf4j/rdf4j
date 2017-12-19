@@ -82,6 +82,7 @@ import com.spatial4j.core.shape.Point;
 import com.spatial4j.core.shape.Shape;
 
 /**
+ * Requires an Elasticsearch cluster with the DeleteByQuery plugin.
  * @see LuceneSail
  */
 public class ElasticsearchIndex extends AbstractSearchIndex {
@@ -98,7 +99,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	public static final String DOCUMENT_TYPE_KEY = "documentType";
 
 	/**
-	 * Set the parameter "transport=" to specify the transport to use.
+	 * Set the parameter "transport=" to specify the address of the cluster to use (e.g. localhost:9300).
 	 */
 	public static final String TRANSPORT_KEY = "transport";
 
