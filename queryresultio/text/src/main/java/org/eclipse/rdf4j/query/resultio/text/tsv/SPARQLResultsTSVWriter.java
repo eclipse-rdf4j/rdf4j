@@ -189,7 +189,6 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 
 		String encoded = encodeString(label);
 
-
 		if (Literals.isLanguageLiteral(lit)) {
 			writer.write("\"");
 			writer.write(encoded);
@@ -206,8 +205,8 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 			writer.write("^^");
 			writeURI(datatype);
 		}
-		else if (encoded.equals(label) && label.charAt(0) != '<' && label.charAt(0) != '_'
-				&& !label.matches("^[\\+\\-]?[\\d\\.].*"))
+		else if (label.length() > 0 && encoded.equals(label) && label.charAt(0) != '<'
+				&& label.charAt(0) != '_' && !label.matches("^[\\+\\-]?[\\d\\.].*"))
 		{
 			// no need to include double quotes
 			writer.write(encoded);
