@@ -15,11 +15,15 @@ import org.eclipse.rdf4j.sail.config.SailFactory;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.config.AbstractLuceneSailConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author jacek grzebyta
  */
 public class LuceneSpinSailFactory implements SailFactory {
+
+	private static final Logger log = LoggerFactory.getLogger(LuceneSpinSailFactory.class);
 
 	/**
 	 * The type of repositories that are created by this factory.
@@ -57,6 +61,7 @@ public class LuceneSpinSailFactory implements SailFactory {
 
 		if (config instanceof AbstractLuceneSailConfig) {
 			AbstractLuceneSailConfig luceneConfig = (AbstractLuceneSailConfig)config;
+			log.debug("Lucene indexDir: {}", luceneConfig.getIndexDir());
 			params.setProperty(LuceneSail.LUCENE_DIR_KEY, luceneConfig.getIndexDir());
 			for (String key : luceneConfig.getParameterNames()) {
 				params.setProperty(key, luceneConfig.getParameter(key));

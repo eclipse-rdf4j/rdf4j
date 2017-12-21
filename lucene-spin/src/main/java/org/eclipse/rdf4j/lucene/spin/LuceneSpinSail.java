@@ -7,7 +7,6 @@
  */
 package org.eclipse.rdf4j.lucene.spin;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
@@ -90,6 +89,23 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	}
 
 	/**
+	 * Creates absolute path to Lucene Index. If the properties contains no absolute path to lucene index than
+	 * it is created here. The generic pattern of lisp-like pseudocode in that case is: <br/>
+	 * <code>
+	* (Paths/get (absolute datadir) + (or (getProperty parameters LuceneSail/LUCENE_DIR_KEY) "index/"))
+	* </code>
+	 * 
+	 * @return
+	 */
+	private Path getAbsoluteLuceneIndexDir() {
+		Path parametersIndexDir = Paths.get(parameters.getProperty(LuceneSail.LUCENE_DIR_KEY, "index/"));
+		if (!parametersIndexDir.isAbsolute()) {
+			parametersIndexDir = Paths.get(getDataDir().getAbsolutePath()).resolve(parametersIndexDir);
+		}
+		return parametersIndexDir;
+	}
+
+	/**
 	 * @throws SailException
 	 */
 	@Override
@@ -123,9 +139,12 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 		((SpinSail)getBaseSail()).setEvaluationMode(TupleFunctionEvaluationMode.TRIPLE_SOURCE);
 		parameters.setProperty(LuceneSail.INDEX_CLASS_KEY,
 				getParameters().getProperty(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS));
-		log.debug("index location: {}", parameters.getProperty(LuceneSail.LUCENE_DIR_KEY));
+		Path indexLocation = getAbsoluteLuceneIndexDir();
+		log.debug("index location: {}", indexLocation);
+		Properties newParameters = (Properties)this.parameters.clone();
+		newParameters.setProperty(LuceneSail.LUCENE_DIR_KEY, indexLocation.toString());
 		try {
-			si = SearchIndexUtils.createSearchIndex(parameters);
+			si = SearchIndexUtils.createSearchIndex(newParameters);
 			// bind index to SpinSail
 			((SpinSail)getBaseSail()).addQueryContextInitializer(new SearchIndexQueryContextInitializer(si));
 		}
@@ -135,15 +154,6 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 		}
 
 		super.initialize();
-	}
-
-	@Override
-	public void setDataDir(File dataDir) {
-		while (!parameters.containsKey(LuceneSail.LUCENE_DIR_KEY)) {
-			parameters.setProperty(LuceneSail.LUCENE_DIR_KEY, dataDir.getAbsolutePath() + "/index");
-		}
-		Path indexPath = Paths.get(parameters.getProperty(LuceneSail.LUCENE_DIR_KEY));
-		super.setDataDir(indexPath.getParent().toFile());
 	}
 
 	/**
