@@ -41,6 +41,9 @@
 								<option value="memory-spin-rdfs">
 									In Memory Store with RDFS+SPIN support
 								</option>
+                                                                <option value="memory-spin-rdfs-lucene">
+                                                                        In Memory Store with RDFS+SPIN+Lucene support
+                                                                </option>
 								<option value="memory-customrule">
 									In Memory Store Custom Graph Query
 									Inference
