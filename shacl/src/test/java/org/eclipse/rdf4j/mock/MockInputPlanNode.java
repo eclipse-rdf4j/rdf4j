@@ -6,10 +6,10 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.shacl.mock;
+package org.eclipse.rdf4j.mock;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.plan.GroupPlanNode;
+import org.eclipse.rdf4j.plan.PlanNode;
 import org.eclipse.rdf4j.plan.Tuple;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -17,13 +17,13 @@ import java.util.Iterator;
 import java.util.List;
 
 /**
- * Created by havardottestad on 22/08/2017.
+ * @author Håvard Ottestad
  */
-public class MockInputGroupPlanNode implements GroupPlanNode {
+public class MockInputPlanNode implements PlanNode {
 
-	List<List<Tuple>> initialData;
+	List<Tuple> initialData;
 
-	public MockInputGroupPlanNode(List<List<Tuple>> initialData) {
+	public MockInputPlanNode(List<Tuple> initialData) {
 		this.initialData = initialData;
 	}
 
@@ -33,10 +33,10 @@ public class MockInputGroupPlanNode implements GroupPlanNode {
 	}
 
 	@Override
-	public CloseableIteration<List<Tuple>, SailException> iterator() {
-		return new CloseableIteration<List<Tuple>, SailException>() {
+	public CloseableIteration<Tuple, SailException> iterator() {
+		return new CloseableIteration<Tuple, SailException>() {
 
-			Iterator<List<Tuple>> iterator = initialData.iterator();
+			Iterator<Tuple> iterator = initialData.iterator();
 
 			@Override
 			public void close()
@@ -52,7 +52,7 @@ public class MockInputGroupPlanNode implements GroupPlanNode {
 			}
 
 			@Override
-			public List<Tuple> next()
+			public Tuple next()
 					throws SailException
 			{
 				return iterator.next();

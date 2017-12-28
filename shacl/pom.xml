@@ -6,8 +6,8 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <artifactId>rdf4j-core</artifactId>
         <groupId>org.eclipse.rdf4j</groupId>
+        <artifactId>rdf4j-storage-parent</artifactId>
         <version>2.3-SNAPSHOT</version>
     </parent>
 
@@ -33,15 +33,11 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.eclipse.rdf4j</groupId>
-            <artifactId>rdf4j-benchmark</artifactId>
-            <version>2.3-SNAPSHOT</version>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>org.eclipse.rdf4j</groupId>
-            <artifactId>rdf4j-benchmark</artifactId>
-            <version>2.3-SNAPSHOT</version>
-        </dependency>
+
     </dependencies>
 
 </project>

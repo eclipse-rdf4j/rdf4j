@@ -6,10 +6,10 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.shacl.mock;
+package org.eclipse.rdf4j.mock;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.plan.GroupPlanNode;
+import org.eclipse.rdf4j.plan.PlanNode;
 import org.eclipse.rdf4j.plan.Tuple;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -19,20 +19,19 @@ import java.util.List;
 /**
  * @author Håvard Ottestad
  */
+public class MockConsumePlanNode {
 
-public class MockConsumeGroupPlanNode {
+	PlanNode innerNode;
 
-	GroupPlanNode innerNode;
-
-	public MockConsumeGroupPlanNode(GroupPlanNode innerNode) {
+	public MockConsumePlanNode(PlanNode innerNode) {
 		this.innerNode = innerNode;
 	}
 
-	public List<List<Tuple>> asList() {
+	public List<Tuple> asList() {
 
-		CloseableIteration<List<Tuple>, SailException> iterator = innerNode.iterator();
+		CloseableIteration<Tuple, SailException> iterator = innerNode.iterator();
 
-		List<List<Tuple>> ret = new ArrayList<>();
+		List<Tuple> ret = new ArrayList<>();
 
 		while (iterator.hasNext()) {
 			ret.add(iterator.next());
@@ -41,8 +40,4 @@ public class MockConsumeGroupPlanNode {
 		return ret;
 
 	}
-
 }
-
-
-
