@@ -67,6 +67,7 @@
 		<module>solr</module>
 		<module>spin</module>
 		<module>storage</module>
+		<module>shacl</module>
 	</modules>
 
 	<profiles>
