@@ -40,7 +40,7 @@ public class OuterleftjoinTest {
 		String s = join(targetclass, properties);
 		System.out.println(s);
 		assertEquals(
-				"Tuple{line=[http://example.org/Heshan, http://xmlns.com/foaf/0.1/Person, http://example.org/Heshan, \"he\"^^<http://www.w3.org/2001/XMLSchema#string>]}",
+				"Tuple{line=[http://example.org/Heshan, http://xmlns.com/foaf/0.1/Person, http://example.org/Heshan, \"he\"]}",
 				s);
 	}
 
@@ -52,8 +52,8 @@ public class OuterleftjoinTest {
 		String s = join(targetclass, properties);
 		System.out.println(s);
 		assertEquals(
-				"Tuple{line=[http://example.org/Heshan, http://xmlns.com/foaf/0.1/Person, http://example.org/Heshan, \"he\"^^<http://www.w3.org/2001/XMLSchema#string>]}\n"
-						+ "Tuple{line=[http://example.org/Heshan, http://xmlns.com/foaf/0.1/Person, http://example.org/Heshan, \"he2\"^^<http://www.w3.org/2001/XMLSchema#string>]}",
+				"Tuple{line=[http://example.org/Heshan, http://xmlns.com/foaf/0.1/Person, http://example.org/Heshan, \"he\"]}\n"
+						+ "Tuple{line=[http://example.org/Heshan, http://xmlns.com/foaf/0.1/Person, http://example.org/Heshan, \"he2\"]}",
 				s);
 
 	}
@@ -66,9 +66,9 @@ public class OuterleftjoinTest {
 		String s = join(targetclass, properties);
 		System.out.println(s);
 		assertEquals(
-				"Tuple{line=[http://example.org/Heshan, http://xmlns.com/foaf/0.1/Person, http://example.org/Heshan, \"he\"^^<http://www.w3.org/2001/XMLSchema#string>]}\n"
-						+ "Tuple{line=[http://example.org/Heshan, http://xmlns.com/foaf/0.1/Person, http://example.org/Heshan, \"he2\"^^<http://www.w3.org/2001/XMLSchema#string>]}\n"
-						+ "Tuple{line=[http://example.org/Håvard, http://xmlns.com/foaf/0.1/Person, http://example.org/Håvard, \"hå\"^^<http://www.w3.org/2001/XMLSchema#string>]}",
+				"Tuple{line=[http://example.org/Heshan, http://xmlns.com/foaf/0.1/Person, http://example.org/Heshan, \"he\"]}\n"
+						+ "Tuple{line=[http://example.org/Heshan, http://xmlns.com/foaf/0.1/Person, http://example.org/Heshan, \"he2\"]}\n"
+						+ "Tuple{line=[http://example.org/Håvard, http://xmlns.com/foaf/0.1/Person, http://example.org/Håvard, \"hå\"]}",
 				s);
 
 	}
@@ -141,16 +141,16 @@ public class OuterleftjoinTest {
 		String s = join(targetclass, properties);
 		System.out.println(s);
 		assertEquals("Tuple{line=[http://example.org/Rebecca, http://xmlns.com/foaf/0.1/Person]}\n"
-				+ "Tuple{line=[http://example.org/Håvard, http://xmlns.com/foaf/0.1/Person, http://example.org/Håvard, \"hå\"^^<http://www.w3.org/2001/XMLSchema#string>]}\n"
-				+ "Tuple{line=[http://example.org/Håvard, http://xmlns.com/foaf/0.1/Person, http://example.org/Håvard, \"hå2\"^^<http://www.w3.org/2001/XMLSchema#string>]}\n"
-				+ "Tuple{line=[http://example.org/Heshan, http://xmlns.com/foaf/0.1/Person, http://example.org/Heshan, \"he\"^^<http://www.w3.org/2001/XMLSchema#string>]}\n"
-				+ "Tuple{line=[http://example.org/Heshan, http://xmlns.com/foaf/0.1/Person, http://example.org/Heshan, \"he2\"^^<http://www.w3.org/2001/XMLSchema#string>]}\n"
+				+ "Tuple{line=[http://example.org/Håvard, http://xmlns.com/foaf/0.1/Person, http://example.org/Håvard, \"hå\"]}\n"
+				+ "Tuple{line=[http://example.org/Håvard, http://xmlns.com/foaf/0.1/Person, http://example.org/Håvard, \"hå2\"]}\n"
+				+ "Tuple{line=[http://example.org/Heshan, http://xmlns.com/foaf/0.1/Person, http://example.org/Heshan, \"he\"]}\n"
+				+ "Tuple{line=[http://example.org/Heshan, http://xmlns.com/foaf/0.1/Person, http://example.org/Heshan, \"he2\"]}\n"
 				+ "Tuple{line=[http://example.org/Anna, http://xmlns.com/foaf/0.1/Person]}\n"
-				+ "Tuple{line=[http://example.org/Peter, http://xmlns.com/foaf/0.1/Person, http://example.org/Peter, \"p\"^^<http://www.w3.org/2001/XMLSchema#string>]}\n"
-				+ "Tuple{line=[http://example.org/Peter, http://xmlns.com/foaf/0.1/Person, http://example.org/Peter, \"p2\"^^<http://www.w3.org/2001/XMLSchema#string>]}\n"
-				+ "Tuple{line=[http://example.org/Peter, http://xmlns.com/foaf/0.1/Person, http://example.org/Peter, \"p3\"^^<http://www.w3.org/2001/XMLSchema#string>]}\n"
-				+ "Tuple{line=[http://example.org/Håvard, http://xmlns.com/foaf/0.1/Agent, http://example.org/Håvard, \"hå\"^^<http://www.w3.org/2001/XMLSchema#string>]}\n"
-				+ "Tuple{line=[http://example.org/Håvard, http://xmlns.com/foaf/0.1/Agent, http://example.org/Håvard, \"hå2\"^^<http://www.w3.org/2001/XMLSchema#string>]}\n"
+				+ "Tuple{line=[http://example.org/Peter, http://xmlns.com/foaf/0.1/Person, http://example.org/Peter, \"p\"]}\n"
+				+ "Tuple{line=[http://example.org/Peter, http://xmlns.com/foaf/0.1/Person, http://example.org/Peter, \"p2\"]}\n"
+				+ "Tuple{line=[http://example.org/Peter, http://xmlns.com/foaf/0.1/Person, http://example.org/Peter, \"p3\"]}\n"
+				+ "Tuple{line=[http://example.org/Håvard, http://xmlns.com/foaf/0.1/Agent, http://example.org/Håvard, \"hå\"]}\n"
+				+ "Tuple{line=[http://example.org/Håvard, http://xmlns.com/foaf/0.1/Agent, http://example.org/Håvard, \"hå2\"]}\n"
 				+ "Tuple{line=[http://example.org/Lucy, http://xmlns.com/foaf/0.1/Person]}", s);
 
 	}
