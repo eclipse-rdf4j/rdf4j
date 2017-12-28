@@ -1,4 +1,0 @@
-@prefix : <http://foo.org/bar#> .
-
-:Bob   :exchangesKeysWith :Alice .
-:Alice :sendsMessageTo    :Bob .

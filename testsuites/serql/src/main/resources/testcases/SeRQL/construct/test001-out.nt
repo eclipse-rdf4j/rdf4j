@@ -1,5 +1,0 @@
-# expected result file for SeRQL CfwQuery test
-# Description: all subclasses of C
-<http://example.org/B> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/C>.
-<http://example.org/A> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/C>.
-<http://example.org/C> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/C>.

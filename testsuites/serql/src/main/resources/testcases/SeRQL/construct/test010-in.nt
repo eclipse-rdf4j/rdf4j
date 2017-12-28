@@ -1,5 +1,0 @@
-# Input file for SeRQL CfwQuery test
-# description: query subclasses.
-<foo:JournalPaper> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <foo:Paper> .
-<foo:Paper> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <foo:Document> .
-<foo:TechReport> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <foo:Document> .

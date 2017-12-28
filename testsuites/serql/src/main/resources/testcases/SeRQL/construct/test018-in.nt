@@ -1,7 +1,0 @@
-# Input file for SeRQL CfwQuery test
-# description: implicit join on all three variables in a triple pattern.
-<http://www.foo.com/stat1> <http://www.w3.org/2000/01/rdf-schema#label> "foo".
-<http://www.foo.com/stat1> <http://www.w3.org/2000/01/rdf-schema#label> "bar".
-<http://www.foo.com/stat1> <http://www.foo.com/stat1> <http://www.foo.com/stat1>.
-<http://www.foo.com/stat2> <http://www.w3.org/2000/01/rdf-schema#label> "foo"@nl.
-<http://www.foo.com/stat2> <http://www.w3.org/2000/01/rdf-schema#label> "bar"@nl.
