@@ -49,8 +49,6 @@ public class SimpleTest {
 			boolean ran = false;
 			for (int j = 0; j < 100; j++) {
 
-
-
 				String name = dataPath + "" + "case" + i + "/query" + j + ".rq";
 				InputStream resourceAsStream = SimpleTest.class.getClassLoader().getResourceAsStream(name);
 				if (resourceAsStream == null) {
@@ -59,7 +57,6 @@ public class SimpleTest {
 
 				ran = true;
 				System.out.println(name);
-
 
 				try (SailRepositoryConnection connection = shaclSail.getConnection()) {
 					String query = IOUtil.readString(resourceAsStream);
