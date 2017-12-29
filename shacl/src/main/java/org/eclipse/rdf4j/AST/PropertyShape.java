@@ -44,16 +44,13 @@ public class PropertyShape implements PlanGenerator {
 
 		static List<PropertyShape> getProprtyShapes(Resource ShapeId, SailRepositoryConnection connection) {
 			ret = new ArrayList<>();
-			System.out.println(ret.size());
 			RepositoryResult<Statement> propertyShapeIds = connection.getStatements(ShapeId, SHACL.PROPERTY,
 					null);
 			while (propertyShapeIds.hasNext()) {
 				Resource propertyShapeId = (Resource)propertyShapeIds.next().getObject();
 				if (hasMinCount(propertyShapeId, connection)) {
 					ret.add(new MinCountPropertyShape(propertyShapeId, connection));
-					System.out.println("okkkkkk");
 				}
-				System.out.println(ret.size());
 			}
 			return ret;
 		}
@@ -70,7 +67,6 @@ public class PropertyShape implements PlanGenerator {
 
 		private static boolean hasMinCount(Resource id, SailRepositoryConnection connection) {
 			if (connection.hasStatement(id, SHACL.MIN_COUNT, null, true)) {
-				System.out.println("Has statement");
 				return true;
 			}
 			else {

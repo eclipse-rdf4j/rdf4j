@@ -6,10 +6,6 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-<http://example.com/ns>
-	rdf:type owl:Ontology ;
-	owl:imports <http://example.com/person-ontology> .
-
 ex:PersonShape
 	a sh:Shape ;
 	sh:targetClass ex:Person ;
@@ -17,23 +13,5 @@ ex:PersonShape
 		sh:path ex:ssn ;
 		sh:minCount 2 ;
 
-	];
-	sh:property [
-		sh:path ex:ssn ;
-		sh:minCount 1 ;
-
 	] .
 
-ex:PersonShape
-	a sh:Shape ;
-	sh:targetClass ex:Person ;
-	sh:property [
-		sh:path ex:ssn ;
-		sh:minCount 3 ;
-
-	];
-	sh:property [
-		sh:path ex:ssn ;
-		sh:minCount 4 ;
-
-	] .

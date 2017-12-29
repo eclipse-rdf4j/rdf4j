@@ -11,11 +11,17 @@ package org.eclipse.rdf4j.validation;
 import org.eclipse.rdf4j.AST.Shape;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.plan.PlanNode;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 import java.util.List;
 
@@ -26,9 +32,43 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 	public ShaclSail sail;
 
-	public ShaclSailConnection(ShaclSail shaclSail, NotifyingSailConnection connection) {
+
+	Repository addedStatements;
+	Repository removedStatements;
+
+	{
+		addedStatements = new SailRepository(new MemoryStore());
+		addedStatements.initialize();
+		removedStatements = new SailRepository(new MemoryStore());
+		removedStatements.initialize();
+	}
+
+
+	ShaclSailConnection(ShaclSail shaclSail, NotifyingSailConnection connection) {
 		super(connection);
 		this.sail = shaclSail;
+
+		addConnectionListener(new SailConnectionListener() {
+
+								  @Override
+								  public void statementAdded(Statement statement) {
+									  try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
+										  addedStatementsConnection.add(statement);
+									  }
+								  }
+
+								  @Override
+								  public void statementRemoved(Statement statement) {
+									  try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
+										  addedStatementsConnection.remove(statement);
+									  }
+									  try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
+										  removedStatementsConnection.add(statement);
+									  }
+								  }
+							  }
+
+		);
 	}
 
 	@Override
