@@ -130,5 +130,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		return allValid;
 	}
 
-
+	@Override
+	synchronized public void close() throws SailException {
+		if(isActive()){
+			rollback();
+		}
+		super.close();
+	}
 }

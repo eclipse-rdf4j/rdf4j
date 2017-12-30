@@ -9,7 +9,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.Test;
 
-import static junit.framework.TestCase.*;
+import static junit.framework.TestCase.assertFalse;
+import static junit.framework.TestCase.assertNotNull;
+import static junit.framework.TestCase.assertNull;
 
 public class TrackAddedStatementsTest {
 
@@ -96,9 +98,9 @@ public class TrackAddedStatementsTest {
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 
-			try{
+			try {
 				connection.commit();
-			}catch (Throwable e){
+			} catch (Throwable e) {
 				System.out.println(e.getMessage());
 			}
 
@@ -123,9 +125,9 @@ public class TrackAddedStatementsTest {
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 
-			try{
+			try {
 				connection.commit();
-			}catch (Throwable e){
+			} catch (Throwable e) {
 				System.out.println(e.getMessage());
 			}
 
@@ -134,6 +136,35 @@ public class TrackAddedStatementsTest {
 			}
 
 		}
+
+	}
+
+	@Test
+	public void testCleanupOnClose() {
+
+		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl")));
+		shaclSail.initialize();
+
+		SailRepositoryConnection connection = shaclSail.getConnection();
+		connection.begin();
+
+		connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+
+		connection.close();
+
+		ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
+
+		assertNull(shaclSailConnection.addedStatements);
+		assertNull(shaclSailConnection.removedStatements);
+
+		try (SailRepositoryConnection connection2 = shaclSail.getConnection()) {
+
+			try (RepositoryResult<Statement> statements = connection2.getStatements(null, null, null)) {
+				assertFalse(statements.hasNext());
+			}
+
+		}
+
 
 	}
 
