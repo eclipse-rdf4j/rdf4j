@@ -21,16 +21,12 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
  */
 public class PathPropertyShape extends PropertyShape implements PlanGenerator {
 
-	public Path path;
+	Path path;
 
-	public PathPropertyShape(Resource id, SailRepositoryConnection connection) {
-		super(id, connection);
-		this.id = id;
-		this.connection = connection;
+	PathPropertyShape(Resource id, SailRepositoryConnection connection) {
+		super(id);
 
-		if (connection.hasStatement(id, SHACL.PATH, null, true)) {
-			path = new Path(id, connection);
-		}
+		path = new Path(id, connection);
 
 	}
 

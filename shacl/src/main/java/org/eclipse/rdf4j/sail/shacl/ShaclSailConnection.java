@@ -8,11 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.sail.shacl.AST.Shape;
 import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.sail.shacl.ShaclSail;
-import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -21,6 +19,8 @@ import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.AST.Shape;
+import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
 
 import java.util.List;
 
@@ -32,8 +32,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	public ShaclSail sail;
 
 
-	 Repository addedStatements;
-	 Repository removedStatements;
+	Repository addedStatements;
+	Repository removedStatements;
 
 	ShaclSailConnection(ShaclSail shaclSail, NotifyingSailConnection connection) {
 		super(connection);
@@ -44,20 +44,28 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 								  @Override
 								  public void statementAdded(Statement statement) {
 									  try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
+										  addedStatementsConnection.begin(IsolationLevels.NONE);
 										  addedStatementsConnection.add(statement);
+										  addedStatementsConnection.commit();
 									  }
 									  try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
+										  removedStatementsConnection.begin(IsolationLevels.NONE);
 										  removedStatementsConnection.remove(statement);
+										  removedStatementsConnection.commit();
 									  }
 								  }
 
 								  @Override
 								  public void statementRemoved(Statement statement) {
 									  try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
+										  addedStatementsConnection.begin(IsolationLevels.NONE);
 										  addedStatementsConnection.remove(statement);
+										  addedStatementsConnection.commit();
 									  }
 									  try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
+										  removedStatementsConnection.begin(IsolationLevels.NONE);
 										  removedStatementsConnection.add(statement);
+										  removedStatementsConnection.commit();
 									  }
 								  }
 							  }
@@ -67,8 +75,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 	@Override
 	public void begin(IsolationLevel level)
-			throws SailException
-	{
+		throws SailException {
 		assert addedStatements == null;
 		assert removedStatements == null;
 
@@ -82,17 +89,16 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 	@Override
 	public void commit()
-			throws SailException
-	{
+		throws SailException {
 		try {
 			boolean valid = validate();
-			if(!valid){
+			if (!valid) {
 				rollback();
 				throw new SailException("Failed SHACL validation");
-			}else{
+			} else {
 				super.commit();
 			}
-		}finally {
+		} finally {
 			cleanup();
 		}
 	}
@@ -104,11 +110,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	private void cleanup() {
-		if(addedStatements != null) {
+		if (addedStatements != null) {
 			addedStatements.shutDown();
 			addedStatements = null;
 		}
-		if(removedStatements != null) {
+		if (removedStatements != null) {
 			removedStatements.shutDown();
 			removedStatements = null;
 		}
@@ -132,7 +138,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 	@Override
 	synchronized public void close() throws SailException {
-		if(isActive()){
+		if (isActive()) {
 			rollback();
 		}
 		super.close();

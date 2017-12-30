@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -20,21 +21,18 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * @author Heshan Jayasinghe
  */
 public class Shape implements PlanGenerator {
 
-	Resource id;
-
 	List<PropertyShape> propertyShapes;
 
-	TargetClass targetClass;
-
 	public Shape(Resource id, SailRepositoryConnection connection) {
-		this.id = id;
 		propertyShapes = PropertyShape.Factory.getProprtyShapes(id, connection);
 
 	}
@@ -53,18 +51,18 @@ public class Shape implements PlanGenerator {
 	public static class Factory {
 
 		public static List<Shape> getShapes(SailRepositoryConnection connection) {
-			List<Shape> shapes = new ArrayList<>();
-			RepositoryResult<Statement> statements = connection.getStatements(null, RDF.TYPE, SHACL.SHAPE);
-			while (statements.hasNext()) {
-				Resource shapeId = statements.next().getSubject();
-				if (hasTargetClass(shapeId, connection)) {
-					shapes.add(new TargetClass(shapeId, connection));
-				}
-				else {
-					shapes.add(new Shape(shapeId, connection));
-				}
+			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, RDF.TYPE, SHACL.SHAPE))) {
+				return stream.map(Statement::getSubject).map(shapeId -> {
+					if (hasTargetClass(shapeId, connection)) {
+						return new TargetClass(shapeId, connection);
+					}
+					else {
+						return null; // target class shapes are the only supported shapes
+					}
+				})
+					.filter(Objects::nonNull)
+					.collect(Collectors.toList());
 			}
-			return shapes;
 		}
 
 		private static boolean hasTargetClass(Resource shapeId, SailRepositoryConnection connection) {

@@ -8,10 +8,16 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+
+import java.util.stream.Stream;
 
 /**
  * @author Heshan Jayasinghe
@@ -22,17 +28,14 @@ public class Path {
 
 	Resource id;
 
-	SailRepositoryConnection connection;
 
-	public Path(Resource next, SailRepositoryConnection connection) {
-		super();
+	public Path(Resource id, SailRepositoryConnection connection) {
 		this.id = id;
-		this.connection = connection;
 
-		ValueFactory vf = connection.getValueFactory();
-		if (connection.hasStatement(id, SHACL.PATH, null, true)) {
-			path = (Resource)connection.getStatements(next, SHACL.PATH, null, true).next().getObject();
+		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.PATH, null, true))) {
+			path = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
 		}
+
 	}
 
 	@Override

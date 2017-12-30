@@ -8,31 +8,32 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.plan.Select;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
+import java.util.stream.Stream;
+
 /**
  * @author Heshan Jayasinghe
  */
 public class TargetClass extends Shape implements PlanGenerator {
 
-	Resource id;
-
-	SailRepositoryConnection connection;
-
 	Resource targetClass;
 
 	public TargetClass(Resource id, SailRepositoryConnection connection) {
 		super(id, connection);
-		this.id = id;
-		this.connection = connection;
-		if (connection.hasStatement(id, SHACL.TARGET_CLASS, null, true)) {
-			targetClass = (Resource)connection.getStatements(id, SHACL.TARGET_CLASS, null).next().getObject();
+
+		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.TARGET_CLASS, null))) {
+			targetClass = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
 		}
+
 	}
 
 	@Override

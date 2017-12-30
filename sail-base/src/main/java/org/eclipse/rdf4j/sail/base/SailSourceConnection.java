@@ -520,6 +520,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException
 	{
+
 		verifyIsOpen();
 		verifyIsActive();
 		synchronized (datasets) {

@@ -489,6 +489,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	public final void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException
 	{
+		flushPendingUpdates(); // this should be more efficient, only need to flush if there are pending deprecations (eg. removed statements)
 		addStatement(null, subj, pred, obj, contexts);
 	}
 

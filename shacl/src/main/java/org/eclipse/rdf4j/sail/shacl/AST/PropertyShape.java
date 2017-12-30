@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -18,6 +19,9 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * @author Heshan Jayasinghe
@@ -26,11 +30,9 @@ public class PropertyShape implements PlanGenerator {
 
 	Resource id;
 
-	SailRepositoryConnection connection;
 
-	public PropertyShape(Resource id, SailRepositoryConnection connection) {
+	public PropertyShape(Resource id) {
 		this.id = id;
-		this.connection = connection;
 	}
 
 	@Override
@@ -38,40 +40,30 @@ public class PropertyShape implements PlanGenerator {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
-	public static class Factory {
-
-		static List<PropertyShape> ret;
+	static class Factory {
 
 		static List<PropertyShape> getProprtyShapes(Resource ShapeId, SailRepositoryConnection connection) {
-			ret = new ArrayList<>();
-			RepositoryResult<Statement> propertyShapeIds = connection.getStatements(ShapeId, SHACL.PROPERTY,
-					null);
-			while (propertyShapeIds.hasNext()) {
-				Resource propertyShapeId = (Resource)propertyShapeIds.next().getObject();
-				if (hasMinCount(propertyShapeId, connection)) {
-					ret.add(new MinCountPropertyShape(propertyShapeId, connection));
-				}
+
+			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(ShapeId, SHACL.PROPERTY, null))) {
+				return stream
+					.map(Statement::getObject)
+					.map(v -> (Resource) v)
+					.map(propertyShapeId -> {
+						if (hasMinCount(propertyShapeId, connection)) {
+							return new MinCountPropertyShape(propertyShapeId, connection);
+						}else {
+							return null; // unsupported property shape type
+						}
+					})
+					.filter(Objects::nonNull)
+					.collect(Collectors.toList());
 			}
-			return ret;
+
 		}
 
-		private static boolean hasMaxCount(Resource propertyShapeId, SailRepositoryConnection connection,
-				List<PropertyShape> ret)
-		{
-			for (PropertyShape propertyShape : ret) {
-				if (propertyShape instanceof MaxCountPropertyShape)
-					return true;
-			}
-			return false;
-		}
 
 		private static boolean hasMinCount(Resource id, SailRepositoryConnection connection) {
-			if (connection.hasStatement(id, SHACL.MIN_COUNT, null, true)) {
-				return true;
-			}
-			else {
-				return false;
-			}
+			return connection.hasStatement(id, SHACL.MIN_COUNT, null, true);
 		}
 	}
 }
