@@ -29,9 +29,11 @@ public class SimpleTest {
 		String path = "test-cases/" + caseName + "/";
 
 
-
 		runTestCases(path, false);
 		runTestCases(path, true);
+
+		runTestCasesSingleTransaction(path, false);
+		runTestCasesSingleTransaction(path, true);
 
 	}
 
@@ -43,8 +45,10 @@ public class SimpleTest {
 
 			SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository(path + "shacl.ttl")));
 			shaclSail.initialize();
+
 			boolean exception = false;
 			boolean ran = false;
+
 			for (int j = 0; j < 100; j++) {
 
 				String name = dataPath + "" + "case" + i + "/query" + j + ".rq";
@@ -67,6 +71,7 @@ public class SimpleTest {
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
+
 			}
 			if (ran) {
 				if (valid) {
@@ -78,7 +83,58 @@ public class SimpleTest {
 		}
 	}
 
+	private void runTestCasesSingleTransaction(String path, boolean valid) {
 
+		String dataPath = valid ? path + "valid/" : path + "invalid/";
+
+		for (int i = 0; i < 100; i++) {
+
+			SailRepository shaclSailSingleTransaction = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository(path + "shacl.ttl")));
+			shaclSailSingleTransaction.initialize();
+
+			boolean exception = false;
+			boolean ran = false;
+
+			try (SailRepositoryConnection shaclSailSingleTransactionConnection = shaclSailSingleTransaction.getConnection()) {
+				shaclSailSingleTransactionConnection.begin();
+
+				for (int j = 0; j < 100; j++) {
+
+					String name = dataPath + "" + "case" + i + "/query" + j + ".rq";
+					InputStream resourceAsStream = SimpleTest.class.getClassLoader().getResourceAsStream(name);
+					if (resourceAsStream == null) {
+						continue;
+					}
+
+					ran = true;
+					System.out.println(name);
+
+					try {
+						String query = IOUtil.readString(resourceAsStream);
+						shaclSailSingleTransactionConnection.prepareUpdate(query).execute();
+
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+				}
+
+				try {
+					shaclSailSingleTransactionConnection.commit();
+
+				} catch (RepositoryException sailException) {
+					exception = true;
+					System.out.println(sailException.getMessage());
+				}
+			}
+			if (ran) {
+				if (valid) {
+					assertFalse(exception);
+				} else {
+					assertTrue(exception);
+				}
+			}
+		}
+	}
 
 
 }
