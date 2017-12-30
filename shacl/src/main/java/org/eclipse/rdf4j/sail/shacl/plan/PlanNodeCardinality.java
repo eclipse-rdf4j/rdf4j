@@ -1,4 +1,4 @@
-package org.eclipse.rdf4j.plan;
+package org.eclipse.rdf4j.sail.shacl.plan;
 
 /**
  * @author Heshan Jayasinghe

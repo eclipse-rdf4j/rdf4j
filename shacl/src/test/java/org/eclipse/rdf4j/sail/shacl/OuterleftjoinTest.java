@@ -6,17 +6,17 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j;
+package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
-import org.eclipse.rdf4j.plan.OuterLeftJoin;
-import org.eclipse.rdf4j.plan.PlanNode;
-import org.eclipse.rdf4j.plan.Tuple;
-import org.eclipse.rdf4j.mock.MockConsumePlanNode;
-import org.eclipse.rdf4j.mock.MockInputPlanNode;
+import org.eclipse.rdf4j.sail.shacl.plan.OuterLeftJoin;
+import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.plan.Tuple;
+import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
+import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
 import org.junit.Test;
 
 import java.util.Arrays;

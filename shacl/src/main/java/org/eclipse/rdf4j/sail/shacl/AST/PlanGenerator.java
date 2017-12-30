@@ -6,10 +6,10 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.AST;
+package org.eclipse.rdf4j.sail.shacl.AST;
 
-import org.eclipse.rdf4j.plan.PlanNode;
-import org.eclipse.rdf4j.validation.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.validation.ShaclSailConnection;
 
 /**
  * @author Heshan Jayasinghe

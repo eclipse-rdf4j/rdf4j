@@ -6,19 +6,34 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.plan;
+package org.eclipse.rdf4j.sail.shacl.plan;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.model.Value;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
  * @author Heshan Jayasinghe
  */
-public interface GroupPlanNode extends PlanNodeCardinality {
+public class Tuple {
 
-	boolean validate();
+	public List<Value> line = new ArrayList<>();
 
-	public CloseableIteration<List<Tuple>, SailException> iterator();
+	public Tuple(List<Value> list) {
+		line = list;
+	}
+
+	public Tuple() {
+	}
+
+	public List<Value> getlist() {
+		return line;
+	}
+
+	@Override
+	public String toString() {
+		return "Tuple{" + "line=" + Arrays.toString(line.toArray()) + "}";
+	}
 }

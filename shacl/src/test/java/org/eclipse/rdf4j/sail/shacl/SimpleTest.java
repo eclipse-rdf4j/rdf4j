@@ -1,4 +1,4 @@
-package org.eclipse.rdf4j;
+package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -6,7 +6,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.validation.ShaclSail;
+import org.eclipse.rdf4j.sail.shacl.validation.ShaclSail;
 import org.junit.Test;
 
 import java.io.IOException;

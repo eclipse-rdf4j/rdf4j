@@ -6,14 +6,14 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.validation;
+package org.eclipse.rdf4j.sail.shacl.validation;
 
-import org.eclipse.rdf4j.AST.Shape;
+import org.eclipse.rdf4j.sail.shacl.AST.Shape;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.TreeModel;
-import org.eclipse.rdf4j.plan.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;

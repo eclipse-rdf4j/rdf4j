@@ -6,11 +6,11 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.mock;
+package org.eclipse.rdf4j.sail.shacl.mock;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.plan.GroupPlanNode;
-import org.eclipse.rdf4j.plan.Tuple;
+import org.eclipse.rdf4j.sail.shacl.plan.GroupPlanNode;
+import org.eclipse.rdf4j.sail.shacl.plan.Tuple;
 import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.Iterator;
