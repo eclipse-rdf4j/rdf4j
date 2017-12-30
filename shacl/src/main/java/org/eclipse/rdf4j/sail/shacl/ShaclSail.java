@@ -6,7 +6,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.shacl.validation;
+package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.sail.shacl.AST.Shape;
 import org.eclipse.rdf4j.repository.sail.SailRepository;

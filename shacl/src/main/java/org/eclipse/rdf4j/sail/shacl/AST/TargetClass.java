@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.plan.Select;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.validation.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
 /**
  * @author Heshan Jayasinghe

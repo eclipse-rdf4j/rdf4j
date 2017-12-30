@@ -9,7 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.validation.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
 /**
  * @author Heshan Jayasinghe

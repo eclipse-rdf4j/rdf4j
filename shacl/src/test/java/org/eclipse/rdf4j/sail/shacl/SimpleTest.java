@@ -4,9 +4,7 @@ import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.validation.ShaclSail;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -43,7 +41,7 @@ public class SimpleTest {
 
 		for (int i = 0; i < 100; i++) {
 
-			SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), getSailRepository(path + "shacl.ttl")));
+			SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository(path + "shacl.ttl")));
 			shaclSail.initialize();
 			boolean exception = false;
 			boolean ran = false;
@@ -81,16 +79,6 @@ public class SimpleTest {
 	}
 
 
-	private SailRepository getSailRepository(String resourceName) {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
-		sailRepository.initialize();
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			connection.add(SimpleTest.class.getClassLoader().getResourceAsStream(resourceName), "", RDFFormat.TURTLE);
-		} catch (IOException | NullPointerException e) {
-			System.out.println("Error reading: " + resourceName);
-			throw new RuntimeException(e);
-		}
-		return sailRepository;
-	}
+
 
 }

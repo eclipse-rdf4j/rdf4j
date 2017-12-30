@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.validation.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
 /**
  * @author Heshan Jayasinghe
