@@ -25,6 +25,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	public List<Shape> shapes;
 
+	ShaclSailConfig config = new ShaclSailConfig();
 
 	public ShaclSail(NotifyingSail baseSail, SailRepository shaclSail) {
 		super(baseSail);
@@ -41,5 +42,18 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return new ShaclSailConnection(this, super.getConnection());
 	}
 
+	public void disableValidation(){
+		config.validationEnabled = false;
+	}
+
+	public void enableValidation(){
+		config.validationEnabled = true;
+	}
+
+}
+
+class ShaclSailConfig {
+
+	boolean validationEnabled = true;
 
 }

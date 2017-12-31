@@ -35,47 +35,51 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	public Repository addedStatements;
 	public Repository removedStatements;
 
-	ShaclSailConnection(ShaclSail shaclSail, NotifyingSailConnection connection) {
+	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection) {
 		super(connection);
-		this.sail = shaclSail;
+		this.sail = sail;
 
-		addConnectionListener(new SailConnectionListener() {
+		if (sail.config.validationEnabled) {
 
-								  @Override
-								  public void statementAdded(Statement statement) {
-									  try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
-										  addedStatementsConnection.begin(IsolationLevels.NONE);
-										  addedStatementsConnection.add(statement);
-										  addedStatementsConnection.commit();
+			addConnectionListener(new SailConnectionListener() {
+
+									  @Override
+									  public void statementAdded(Statement statement) {
+										  try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
+											  addedStatementsConnection.begin(IsolationLevels.NONE);
+											  addedStatementsConnection.add(statement);
+											  addedStatementsConnection.commit();
+										  }
+										  try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
+											  removedStatementsConnection.begin(IsolationLevels.NONE);
+											  removedStatementsConnection.remove(statement);
+											  removedStatementsConnection.commit();
+										  }
 									  }
-									  try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
-										  removedStatementsConnection.begin(IsolationLevels.NONE);
-										  removedStatementsConnection.remove(statement);
-										  removedStatementsConnection.commit();
+
+									  @Override
+									  public void statementRemoved(Statement statement) {
+										  try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
+											  addedStatementsConnection.begin(IsolationLevels.NONE);
+											  addedStatementsConnection.remove(statement);
+											  addedStatementsConnection.commit();
+										  }
+										  try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
+											  removedStatementsConnection.begin(IsolationLevels.NONE);
+											  removedStatementsConnection.add(statement);
+											  removedStatementsConnection.commit();
+										  }
 									  }
 								  }
 
-								  @Override
-								  public void statementRemoved(Statement statement) {
-									  try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
-										  addedStatementsConnection.begin(IsolationLevels.NONE);
-										  addedStatementsConnection.remove(statement);
-										  addedStatementsConnection.commit();
-									  }
-									  try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
-										  removedStatementsConnection.begin(IsolationLevels.NONE);
-										  removedStatementsConnection.add(statement);
-										  removedStatementsConnection.commit();
-									  }
-								  }
-							  }
-
-		);
+			);
+		}
 	}
 
 	@Override
 	public void begin(IsolationLevel level)
 		throws SailException {
+
 		assert addedStatements == null;
 		assert removedStatements == null;
 
@@ -83,6 +87,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		addedStatements.initialize();
 		removedStatements = new SailRepository(new MemoryStore());
 		removedStatements.initialize();
+
 
 		super.begin(level);
 	}
@@ -122,6 +127,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 
 	private boolean validate() {
+
+		if (!sail.config.validationEnabled) {
+			return true;
+		}
 
 		boolean allValid = true;
 

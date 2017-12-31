@@ -18,5 +18,5 @@ public interface PlanNode extends PlanNodeCardinality {
 
 	boolean validate();
 
-	public CloseableIteration<Tuple, SailException> iterator();
+	CloseableIteration<Tuple, SailException> iterator();
 }
