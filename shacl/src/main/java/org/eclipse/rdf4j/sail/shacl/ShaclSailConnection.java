@@ -32,8 +32,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	public ShaclSail sail;
 
 
-	Repository addedStatements;
-	Repository removedStatements;
+	public Repository addedStatements;
+	public Repository removedStatements;
 
 	ShaclSailConnection(ShaclSail shaclSail, NotifyingSailConnection connection) {
 		super(connection);

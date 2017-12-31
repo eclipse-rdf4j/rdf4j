@@ -76,7 +76,7 @@ public class GroupBy implements GroupPlanNode {
 			public void remove()
 					throws SailException
 			{
-
+				throw new UnsupportedOperationException();
 			}
 		};
 	}

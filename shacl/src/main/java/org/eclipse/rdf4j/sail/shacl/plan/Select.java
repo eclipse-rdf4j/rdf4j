@@ -82,7 +82,7 @@ public class Select implements PlanNode {
 			public void remove()
 					throws SailException
 			{
-
+				throw new UnsupportedOperationException();
 			}
 		};
 	}

@@ -13,7 +13,10 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.plan.*;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -28,8 +31,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 	public int minCount;
 
-	public MinCountPropertyShape(Resource id, SailRepositoryConnection connection) {
-		super(id, connection);
+	public MinCountPropertyShape(Resource id, SailRepositoryConnection connection, Shape shape) {
+		super(id, connection, shape);
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.MIN_COUNT, null, true))) {
 			minCount = stream.map(Statement::getObject).map(v -> (Literal) v).map(Literal::intValue).findAny().get();
@@ -51,4 +54,17 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		return new MinCountValidator(groupBy, minCount);
 	}
 
+	@Override
+	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
+
+		boolean requiresEvalutation = false;
+		if(shape instanceof TargetClass){
+			Resource targetClass = ((TargetClass) shape).targetClass;
+			try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
+				requiresEvalutation = addedStatementsConnection.hasStatement(null, RDF.TYPE, targetClass, false);
+			}
+		}
+
+		return super.requiresEvalutation(addedStatements, removedStatements) | requiresEvalutation;
+	}
 }

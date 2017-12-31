@@ -91,7 +91,7 @@ public class OuterLeftJoin implements PlanNode {
 			public void remove()
 					throws SailException
 			{
-
+				throw new UnsupportedOperationException();
 			}
 
 		};

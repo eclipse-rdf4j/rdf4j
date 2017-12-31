@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.plan.Select;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -28,24 +29,31 @@ import java.util.stream.Stream;
 /**
  * @author Heshan Jayasinghe
  */
-public class Shape implements PlanGenerator {
+public class Shape implements PlanGenerator, RequiresEvalutation {
 
 	List<PropertyShape> propertyShapes;
 
 	public Shape(Resource id, SailRepositoryConnection connection) {
-		propertyShapes = PropertyShape.Factory.getProprtyShapes(id, connection);
-
+		propertyShapes = PropertyShape.Factory.getProprtyShapes(id, connection, this);
 	}
 
 	@Override
-	public Select getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
-		return null;
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+		throw new UnsupportedOperationException();
 	}
 
 	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, Shape shape) {
-		return propertyShapes.stream().map(
-				pathpropertyShape -> pathpropertyShape.getPlan(shaclSailConnection, shape)).collect(
-				Collectors.toList());
+		return propertyShapes.stream()
+			.filter(propertyShape -> propertyShape.requiresEvalutation(shaclSailConnection.addedStatements, shaclSailConnection.removedStatements))
+			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, shape))
+			.collect(Collectors.toList());
+	}
+
+	@Override
+	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
+		return propertyShapes
+			.stream()
+			.anyMatch(propertyShape -> propertyShape.requiresEvalutation(addedStatements, removedStatements));
 	}
 
 	public static class Factory {
