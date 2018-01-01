@@ -97,18 +97,5 @@ public class OuterLeftJoin implements PlanNode {
 		};
 	}
 
-	@Override
-	public boolean validate() {
-		return false;
-	}
 
-	@Override
-	public int getCardinalityMin() {
-		return left.getCardinalityMin();
-	}
-
-	@Override
-	public int getCardinalityMax() {
-		return left.getCardinalityMax() + right.getCardinalityMax();
-	}
 }

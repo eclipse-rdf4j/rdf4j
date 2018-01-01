@@ -11,12 +11,13 @@ package org.eclipse.rdf4j.sail.shacl.plan;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
+import java.util.List;
+
 /**
  * @author Heshan Jayasinghe
  */
-public interface PlanNode extends PlanNodeCardinality {
-
-	boolean validate();
+public interface PlanNode {
 
 	CloseableIteration<Tuple, SailException> iterator();
+
 }

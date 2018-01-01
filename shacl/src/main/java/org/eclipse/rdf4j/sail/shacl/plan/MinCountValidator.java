@@ -26,31 +26,22 @@ public class MinCountValidator implements PlanNode {
 		this.groupby = groupBy;
 		this.minCount = minCount;
 	}
-
-	@Override
-	public boolean validate() {
-		CloseableIteration<List<Tuple>, SailException> groupByIterator = groupby.iterator();
-		while (groupByIterator.hasNext()) {
-			List<Tuple> tuple = groupByIterator.next();
-			if (tuple.size() < minCount) {
-				return false;
-			}
-		}
-		return true;
-	}
+//
+//	@Override
+//	public boolean validate() {
+//		CloseableIteration<List<Tuple>, SailException> groupByIterator = groupby.iterator();
+//		while (groupByIterator.hasNext()) {
+//			List<Tuple> tuple = groupByIterator.next();
+//			if (tuple.size() < minCount) {
+//				return false;
+//			}
+//		}
+//		return true;
+//	}
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return null;
 	}
 
-	@Override
-	public int getCardinalityMin() {
-		throw new UnsupportedOperationException();
-	}
-
-	@Override
-	public int getCardinalityMax() {
-		throw new UnsupportedOperationException();
-	}
 }

@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -21,8 +22,11 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.Shape;
 import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.plan.Tuple;
 
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * @author Heshan Jayasinghe
@@ -137,8 +141,19 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		for (Shape shape : sail.shapes) {
 			List<PlanNode> planNodes = shape.generatePlans(this, shape);
 			for (PlanNode planNode : planNodes) {
-				boolean valid = planNode.validate();
-				allValid = allValid && valid;
+
+
+
+				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
+					List<Tuple> collect = stream.collect(Collectors.toList());
+
+					System.out.println("-----------------------------------------");
+					collect.forEach(System.out::println);
+					System.out.println("-----------------------------------------");
+
+					boolean valid = collect.size() == 0;
+					allValid = allValid && valid;
+				}
 			}
 		}
 

@@ -13,9 +13,9 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.plan.Select;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 
 /**
  * @author Heshan Jayasinghe
@@ -33,8 +33,18 @@ public class PathPropertyShape extends PropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
-		Select select = new Select(shaclSailConnection, null, (IRI)path.path, null);
+		Select select = new Select(shaclSailConnection, path.getQuery());
 		return select;
+	}
+
+	@Override
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
+		return new Select(shaclSailConnection.addedStatements, path.getQuery());
+	}
+
+	@Override
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
+		return new Select(shaclSailConnection.removedStatements, path.getQuery());
 	}
 
 

@@ -21,6 +21,9 @@ import org.eclipse.rdf4j.sail.shacl.plan.*;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
+import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
 import java.util.stream.Stream;
 
@@ -47,11 +50,22 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
 
-		PlanNode instancesOfTargetClass = shape.getPlan(shaclSailConnection, shape);
-		PlanNode properties = super.getPlan(shaclSailConnection, shape);
-		PlanNode join = new OuterLeftJoin(instancesOfTargetClass, properties);
-		GroupPlanNode groupBy = new GroupBy(join, instancesOfTargetClass.getCardinalityMin());
-		return new MinCountValidator(groupBy, minCount);
+		PlanNode planRemovedStatements = new LoggingNode(new TrimTuple(new LoggingNode(super.getPlanRemovedStatements(shaclSailConnection, shape)), 1));
+
+
+
+		PlanNode filteredPlanRemovedStatements = planRemovedStatements;
+
+		if(shape instanceof TargetClass){
+			filteredPlanRemovedStatements = new LoggingNode(((TargetClass) shape).getTypeFilterPlan(shaclSailConnection, planRemovedStatements));
+		}
+
+
+		PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(filteredPlanRemovedStatements, shaclSailConnection.addedStatements, path.getQuery()));
+
+
+		return bulkedExternalLeftOuterJoin;
+
 	}
 
 	@Override

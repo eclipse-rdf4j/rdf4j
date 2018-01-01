@@ -27,10 +27,6 @@ public class MockInputPlanNode implements PlanNode {
 		this.initialData = initialData;
 	}
 
-	@Override
-	public boolean validate() {
-		return false;
-	}
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
@@ -67,13 +63,5 @@ public class MockInputPlanNode implements PlanNode {
 		};
 	}
 
-	@Override
-	public int getCardinalityMin() {
-		return 0;
-	}
 
-	@Override
-	public int getCardinalityMax() {
-		return 0;
-	}
 }

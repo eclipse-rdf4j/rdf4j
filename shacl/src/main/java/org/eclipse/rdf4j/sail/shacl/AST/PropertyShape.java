@@ -45,6 +45,16 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 	}
 
 	@Override
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
+		throw new IllegalStateException("Should never get here!!!");
+	}
+
+	@Override
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
+		throw new IllegalStateException("Should never get here!!!");
+	}
+
+	@Override
 	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
 		return false;
 	}

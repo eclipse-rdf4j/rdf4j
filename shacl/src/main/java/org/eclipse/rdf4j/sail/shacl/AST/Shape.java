@@ -15,12 +15,9 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.plan.Select;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -39,6 +36,16 @@ public class Shape implements PlanGenerator, RequiresEvalutation {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
 		throw new UnsupportedOperationException();
 	}
 

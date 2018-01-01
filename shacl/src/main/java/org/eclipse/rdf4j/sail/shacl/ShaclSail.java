@@ -38,7 +38,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 	public NotifyingSailConnection getConnection()
 			throws SailException
 	{
-
 		return new ShaclSailConnection(this, super.getConnection());
 	}
 
