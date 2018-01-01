@@ -1,7 +1,13 @@
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.ParsedQuery;
+import org.eclipse.rdf4j.query.parser.QueryParserFactory;
+import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -31,21 +37,21 @@ public class Select implements PlanNode {
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
 
-			TupleQueryResult evaluate;
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
 			RepositoryConnection repositoryConnection;
-
 
 			{
 				if (repository != null && connection == null) {
 					repositoryConnection = repository.getConnection();
-					evaluate = repositoryConnection.prepareTupleQuery(query).evaluate();
+					bindingSet = repositoryConnection.prepareTupleQuery(query).evaluate();
 				} else {
-//					ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, "");
-//					TupleExpr tupleExpr = parsedQuery.getTupleExpr();
-//
-//					evaluate = null;
+					QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 
-					throw new UnsupportedOperationException();
+					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
+
+					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true);
+
+
 				}
 			}
 
@@ -53,9 +59,7 @@ public class Select implements PlanNode {
 			@Override
 			public void close() throws SailException {
 				try {
-					if (evaluate != null) {
-						evaluate.close();
-					}
+					bindingSet.close();
 				} finally {
 					if (repositoryConnection != null) {
 						repositoryConnection.close();
@@ -66,12 +70,12 @@ public class Select implements PlanNode {
 
 			@Override
 			public boolean hasNext() throws SailException {
-				return evaluate.hasNext();
+				return bindingSet.hasNext();
 			}
 
 			@Override
 			public Tuple next() throws SailException {
-				return new Tuple(evaluate.next());
+				return new Tuple(bindingSet.next());
 			}
 
 			@Override
