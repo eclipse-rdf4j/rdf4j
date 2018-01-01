@@ -12,7 +12,7 @@ import static junit.framework.TestCase.assertEquals;
 public class TempTest {
 
 	@Test
-	public void testAddRemoveAddRemove() {
+	public void a() {
 
 		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl")));
 		shaclSail.initialize();
@@ -20,9 +20,9 @@ public class TempTest {
 		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
 
 			connection.begin();
-//			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 //
-//			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
 
 			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
 
@@ -40,11 +40,44 @@ public class TempTest {
 
 			connection.begin();
 
-//			connection.remove(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
-//			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
-//			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("c"));
+			connection.remove(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("c"));
 			connection.remove(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
 			connection.add(RDFS.SUBCLASSOF, RDF.TYPE, RDFS.RESOURCE);
+
+
+			connection.commit();
+
+		}
+
+
+	}
+
+	@Test
+	public void b() {
+
+		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl")));
+		shaclSail.initialize();
+
+		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
+
+			connection.begin();
+//
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
+
+//			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
+//			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("yay"));
+//
+			connection.commit();
+
+			System.out.println("\n\n\n\n\n\n\n\n\n\n");
+
+			connection.begin();
+
+			connection.remove(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
 
 
 			connection.commit();
