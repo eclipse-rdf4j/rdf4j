@@ -18,7 +18,7 @@ public class LoggingNode implements PlanNode{
 		return new CloseableIteration<Tuple, SailException>() {
 
 
-				CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
 
 			@Override
@@ -30,16 +30,20 @@ public class LoggingNode implements PlanNode{
 			public boolean hasNext() throws SailException {
 				boolean hasNext = parentIterator.hasNext();
 
-				System.out.println(parent.getClass().getSimpleName()+".hasNext() : "+hasNext);
+				//System.out.println(leadingSpace()+parent.getClass().getSimpleName()+".hasNext() : "+hasNext);
 				return hasNext;
 			}
 
 			@Override
 			public Tuple next() throws SailException {
-				System.out.println(parent.getClass().getSimpleName()+".next()");
+				assert parentIterator.hasNext() : parentIterator.getClass().getSimpleName()+" does not have any more items but next was still called!!!";
 
 				Tuple next = parentIterator.next();
-				System.out.println("\t"+next.toString());
+
+				assert next != null;
+
+				System.out.println(leadingSpace()+parent.getClass().getSimpleName()+".next(): "+" "+next.toString());
+
 				return next;
 			}
 
@@ -48,5 +52,19 @@ public class LoggingNode implements PlanNode{
 
 			}
 		};
+	}
+
+	@Override
+	public int depth() {
+		return parent.depth()+1;
+	}
+
+	public String leadingSpace(){
+		StringBuilder ret = new StringBuilder();
+		int depth = depth();
+		while(--depth > 0){
+			ret.append("    ");
+		}
+		return ret.toString();
 	}
 }

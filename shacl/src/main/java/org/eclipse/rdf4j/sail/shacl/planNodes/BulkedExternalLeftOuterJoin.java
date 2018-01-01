@@ -3,28 +3,44 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.ParsedQuery;
+import org.eclipse.rdf4j.query.parser.QueryParserFactory;
+import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.plan.Tuple;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public class BulkedExternalLeftOuterJoin implements PlanNode {
 
+	ShaclSailConnection shaclSailConnection;
 	PlanNode parent;
-	Repository addedStatements;
+	Repository repository;
 	String query;
 
-	public BulkedExternalLeftOuterJoin(PlanNode parent, Repository addedStatements, String query) {
+	public BulkedExternalLeftOuterJoin(PlanNode parent, Repository repository, String query) {
 		this.parent = parent;
-		this.addedStatements = addedStatements;
+		this.repository = repository;
 		this.query = query;
+	}
+
+	public BulkedExternalLeftOuterJoin(PlanNode parent, ShaclSailConnection shaclSailConnection, String query) {
+		this.parent = parent;
+		this.query = query;
+
+		this.shaclSailConnection = shaclSailConnection;
+
 	}
 
 	@Override
@@ -62,10 +78,25 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 					.append(query)
 					.append("} order by ?a");
 
-				try (RepositoryConnection connection = addedStatements.getConnection()) {
-					try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery(newQuery.toString()).evaluate())) {
-						stream.map(Tuple::new).forEach(right::push);
+				if (repository != null) {
+					try (RepositoryConnection connection = repository.getConnection()) {
+						try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery(newQuery.toString()).evaluate())) {
+							stream.map(Tuple::new).forEach(right::push);
+						}
 					}
+				}else{
+
+					QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
+
+					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(newQuery.toString(), null);
+
+					try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = shaclSailConnection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)) {
+						while(evaluate.hasNext()){
+							BindingSet next = evaluate.next();
+							right.push(new Tuple(next));
+						}
+					}
+
 				}
 
 			}
@@ -102,7 +133,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 							Tuple rightPeek2 = right.peek();
 
-							if(rightPeek2 == null || !rightPeek2.line.get(0).equals(leftPeek.line.get(0))){
+							if (rightPeek2 == null || !rightPeek2.line.get(0).equals(leftPeek.line.get(0))) {
 								// no more to join from right, pop left so we don't print it again.
 
 								left.pop();
@@ -133,5 +164,10 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 			}
 		};
+	}
+
+	@Override
+	public int depth() {
+		return parent.depth()+1;
 	}
 }

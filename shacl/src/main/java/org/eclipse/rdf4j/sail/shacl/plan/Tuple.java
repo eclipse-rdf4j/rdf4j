@@ -16,12 +16,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
  * @author Heshan Jayasinghe
  */
-public class Tuple {
+public class Tuple implements Comparable<Tuple>{
 
 	public List<Value> line = new ArrayList<>();
 
@@ -45,5 +46,48 @@ public class Tuple {
 	@Override
 	public String toString() {
 		return "Tuple{" + "line=" + Arrays.toString(line.toArray()) + "}";
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		Tuple tuple = (Tuple) o;
+
+		if(tuple.line.size() != line.size()) return false;
+
+		for(int i = 0; i<line.size(); i++){
+			if(!line.get(i).equals(tuple.line.get(i))) return false;
+		}
+
+		return true;
+	}
+
+	@Override
+	public int hashCode() {
+
+		return Objects.hash(line);
+	}
+
+	@Override
+	public int compareTo(Tuple o) {
+
+		for(int i = 0; i < Math.min(o.line.size(), line.size()); i++){
+			int compareTo = o.line.get(i).toString().compareTo(line.get(i).toString());
+
+			if(compareTo != 0){
+				return compareTo;
+			}
+
+		}
+
+		if(o.line.size() == line.size()) return 0;
+
+
+		return o.line.size() - line.size();
 	}
 }

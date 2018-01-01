@@ -1,47 +1,46 @@
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.impl.NumericLiteral;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.plan.Tuple;
 
-public class ExternalTypeFilterNode implements PlanNode {
+public class MinCountFilter implements PlanNode {
 
-	ShaclSailConnection shaclSailConnection;
-	Resource filterOnType;
 	PlanNode parent;
+	long minCount;
 
-	public ExternalTypeFilterNode(ShaclSailConnection shaclSailConnection, Resource filterOnType, PlanNode parent) {
-		this.shaclSailConnection = shaclSailConnection;
-		this.filterOnType = filterOnType;
+
+	public MinCountFilter(PlanNode parent, long minCount) {
 		this.parent = parent;
+		this.minCount = minCount;
 	}
+
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
 
-
-			Tuple next = null;
-
-
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
+			Tuple next;
 
-			void calculateNext() {
-				while (next == null && parentIterator.hasNext()) {
+			private void calculateNext(){
+				if(next != null) return;
+
+				while(parentIterator.hasNext() && next == null){
 					Tuple temp = parentIterator.next();
 
-					Resource subject = (Resource) temp.line.get(0);
+					Literal count = (Literal) temp.line.get(1);
 
-					if (shaclSailConnection.hasStatement(subject, RDF.TYPE, filterOnType, true)) {
+					if(count.longValue() < minCount){
 						next = temp;
 					}
 
 				}
+
 			}
 
 			@Override
@@ -57,11 +56,8 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 			@Override
 			public Tuple next() throws SailException {
-				calculateNext();
-
 				Tuple temp = next;
 				next = null;
-
 				return temp;
 			}
 

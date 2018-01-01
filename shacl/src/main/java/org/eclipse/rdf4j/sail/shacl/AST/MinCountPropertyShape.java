@@ -22,8 +22,12 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
+import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.MergeNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.MinCountFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 
 import java.util.stream.Stream;
 
@@ -32,13 +36,13 @@ import java.util.stream.Stream;
  */
 public class MinCountPropertyShape extends PathPropertyShape {
 
-	public int minCount;
+	public long minCount;
 
 	public MinCountPropertyShape(Resource id, SailRepositoryConnection connection, Shape shape) {
 		super(id, connection, shape);
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.MIN_COUNT, null, true))) {
-			minCount = stream.map(Statement::getObject).map(v -> (Literal) v).map(Literal::intValue).findAny().get();
+			minCount = stream.map(Statement::getObject).map(v -> (Literal) v).map(Literal::longValue).findAny().get();
 		}
 
 	}
@@ -50,9 +54,9 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
 
+
+
 		PlanNode planRemovedStatements = new LoggingNode(new TrimTuple(new LoggingNode(super.getPlanRemovedStatements(shaclSailConnection, shape)), 1));
-
-
 
 		PlanNode filteredPlanRemovedStatements = planRemovedStatements;
 
@@ -61,10 +65,28 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		}
 
 
-		PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(filteredPlanRemovedStatements, shaclSailConnection.addedStatements, path.getQuery()));
+		PlanNode planAddedStatements = new TrimTuple(new LoggingNode(shape.getPlanAddedStatements(shaclSailConnection, shape)), 1);
+
+		PlanNode mergeNode = new LoggingNode(new MergeNode(planAddedStatements, filteredPlanRemovedStatements));
+
+		PlanNode unique = new LoggingNode(new Unique(mergeNode));
+
+		PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(unique, shaclSailConnection.addedStatements, path.getQuery()));
+
+		PlanNode groupBy = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin));
+
+		PlanNode minCountFilter = new LoggingNode(new MinCountFilter(groupBy, minCount));
+
+		PlanNode trimTuple = new LoggingNode(new TrimTuple(minCountFilter, 1));
+
+		PlanNode bulkedExternalLeftOuterJoin2 = new LoggingNode(new BulkedExternalLeftOuterJoin(trimTuple, shaclSailConnection, path.getQuery()));
+
+		PlanNode groupBy2 = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin2));
+
+		PlanNode minCountFilter2 = new LoggingNode(new MinCountFilter(groupBy2, minCount));
 
 
-		return bulkedExternalLeftOuterJoin;
+		return minCountFilter2;
 
 	}
 

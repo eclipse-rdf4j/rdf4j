@@ -20,24 +20,31 @@ public class TempTest {
 		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
 
 			connection.begin();
-			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
-
-			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
+//			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+//
+//			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
 
 			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
 
 			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
+			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("yay"));
+			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("yay2"));
 
+
+			connection.add(RDFS.SUBCLASSOF, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
+			connection.add(RDFS.SUBCLASSOF, RDFS.LABEL, connection.getValueFactory().createLiteral("c"));
 
 			connection.commit();
 
+			System.out.println("\n\n\n\n\n\n\n\n\n\n");
 
 			connection.begin();
 
-			connection.remove(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
-			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
-			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("c"));
+//			connection.remove(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
+//			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
+//			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("c"));
 			connection.remove(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
+			connection.add(RDFS.SUBCLASSOF, RDF.TYPE, RDFS.RESOURCE);
 
 
 			connection.commit();

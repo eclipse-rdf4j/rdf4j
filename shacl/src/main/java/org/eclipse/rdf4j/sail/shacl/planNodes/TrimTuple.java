@@ -55,4 +55,9 @@ public class TrimTuple implements PlanNode {
 
 
 	}
+
+	@Override
+	public int depth() {
+		return parent.depth()+1;
+	}
 }

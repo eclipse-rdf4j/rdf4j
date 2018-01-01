@@ -67,8 +67,7 @@ public class Path implements RequiresEvalutation, QueryGenerator{
 	@Override
 	public String getQuery() {
 
-		return "BIND(<"+path+"> as ?b)\n ?a ?b ?c. ";
-
+		return "?a <"+path+"> ?c. ";
 
 	}
 }

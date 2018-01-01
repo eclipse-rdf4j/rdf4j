@@ -63,5 +63,10 @@ public class MockInputPlanNode implements PlanNode {
 		};
 	}
 
+	@Override
+	public int depth() {
+		return 0;
+	}
+
 
 }

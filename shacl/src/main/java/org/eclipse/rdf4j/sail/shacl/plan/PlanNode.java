@@ -20,4 +20,6 @@ public interface PlanNode {
 
 	CloseableIteration<Tuple, SailException> iterator();
 
+	int depth();
+
 }
