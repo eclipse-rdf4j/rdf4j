@@ -68,7 +68,7 @@ public class TargetClass extends Shape implements QueryGenerator{
 
 	@Override
 	public String getQuery() {
-		return "?a ?b ?c. ?a a <"+targetClass+">";
+		return "?a a <"+targetClass+">";
 	}
 
 	public PlanNode getTypeFilterPlan(ShaclSailConnection shaclSailConnection, PlanNode parent) {

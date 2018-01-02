@@ -97,8 +97,7 @@ public class TempTest {
 		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
 
 			connection.begin();
-			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
-			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
+//			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 
 			connection.commit();
 
@@ -106,7 +105,12 @@ public class TempTest {
 
 			connection.begin();
 
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+
+
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
+//			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("c"));
 
 
 			connection.commit();

@@ -54,9 +54,9 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 
 
-		PlanNode planAddedStatements = new LoggingNode(new TrimTuple(shape.getPlanAddedStatements(shaclSailConnection, shape),1));
+		PlanNode planAddedStatements = new LoggingNode(new TrimTuple( new LoggingNode(shape.getPlanAddedStatements(shaclSailConnection, shape)),1));
 
-		PlanNode planAddedStatements1 = new LoggingNode(new TrimTuple(super.getPlanAddedStatements(shaclSailConnection, shape), 1));
+		PlanNode planAddedStatements1 = new LoggingNode(super.getPlanAddedStatements(shaclSailConnection, shape));
 
 		if(shape instanceof TargetClass){
 			planAddedStatements1 = new LoggingNode(((TargetClass) shape).getTypeFilterPlan(shaclSailConnection, planAddedStatements1));
@@ -64,7 +64,11 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		PlanNode mergeNode = new LoggingNode(new MergeNode(planAddedStatements, planAddedStatements1));
 
-		PlanNode unique = new LoggingNode(new Unique(mergeNode));
+		PlanNode groupByCount1 = new LoggingNode(new GroupByCount(mergeNode));
+
+		PlanNode trimmed = new LoggingNode(new TrimTuple(groupByCount1, 1));
+
+		PlanNode unique = new LoggingNode(new Unique(trimmed));
 
 		PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(unique, shaclSailConnection, path.getQuery()));
 
