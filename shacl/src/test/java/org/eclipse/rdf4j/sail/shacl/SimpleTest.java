@@ -19,7 +19,7 @@ public class SimpleTest {
 	@Test
 	public void minCountSimple() {
 
-		String caseName = "minCount/simple";
+		String caseName = "maxCount/simple";
 		runTests(caseName);
 
 	}

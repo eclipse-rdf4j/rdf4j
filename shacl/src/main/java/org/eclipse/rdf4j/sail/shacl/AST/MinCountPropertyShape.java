@@ -49,7 +49,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 	@Override
 	public String toString() {
-		return "MinCountPropertyShape{" + "minCount=" + minCount + '}';
+		return "MinCountPropertyShape{" + "maxCount=" + minCount + '}';
 	}
 
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {

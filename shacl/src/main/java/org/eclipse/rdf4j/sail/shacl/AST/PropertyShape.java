@@ -67,14 +67,20 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 				return stream
 					.map(Statement::getObject)
 					.map(v -> (Resource) v)
-					.map(propertyShapeId -> {
+					.flatMap(propertyShapeId -> {
+						List<PropertyShape> propertyShapes = new ArrayList<>(2);
+
 						if (hasMinCount(propertyShapeId, connection)) {
-							return new MinCountPropertyShape(propertyShapeId, connection, shape);
-						}else {
-							return null; // unsupported property shape type
+							propertyShapes.add(new MinCountPropertyShape(propertyShapeId, connection, shape));
 						}
+
+						if (hasMaxCount(propertyShapeId, connection)) {
+							propertyShapes.add(new MaxCountPropertyShape(propertyShapeId, connection, shape));
+						}
+
+						return propertyShapes.stream();
+
 					})
-					.filter(Objects::nonNull)
 					.collect(Collectors.toList());
 			}
 
@@ -84,6 +90,12 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 		private static boolean hasMinCount(Resource id, SailRepositoryConnection connection) {
 			return connection.hasStatement(id, SHACL.MIN_COUNT, null, true);
 		}
+
+		private static boolean hasMaxCount(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.MAX_COUNT, null, true);
+		}
+
+
 	}
 }
 

@@ -87,4 +87,33 @@ public class TempTest {
 
 	}
 
+
+	@Test
+	public void maxCount() {
+
+		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("shaclMax.ttl")));
+		shaclSail.initialize();
+
+		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
+
+			connection.begin();
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
+
+			connection.commit();
+
+			System.out.println("\n\n\n\n\n\n\n\n\n\n");
+
+			connection.begin();
+
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
+
+
+			connection.commit();
+
+		}
+
+
+	}
+
 }
