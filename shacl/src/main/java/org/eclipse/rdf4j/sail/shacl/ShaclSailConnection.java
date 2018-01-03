@@ -147,11 +147,15 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
 					List<Tuple> collect = stream.collect(Collectors.toList());
 
-					System.out.println("-----------------------------------------");
-					collect.forEach(System.out::println);
-					System.out.println("-----------------------------------------");
+
 
 					boolean valid = collect.size() == 0;
+					if(!valid){
+						System.out.println("-----------------------------------------");
+						collect.forEach(System.out::println);
+						System.out.println("-----------------------------------------");
+
+					}
 					allValid = allValid && valid;
 				}
 			}

@@ -6,11 +6,16 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.junit.Test;
 
 import static junit.framework.TestCase.assertEquals;
 
 public class TempTest {
+
+	{
+		LoggingNode.loggingEnabled = true;
+	}
 
 	@Test
 	public void a() {

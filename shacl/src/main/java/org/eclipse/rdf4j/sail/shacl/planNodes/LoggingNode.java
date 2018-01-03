@@ -17,90 +17,97 @@ public class LoggingNode implements PlanNode{
 
 	boolean pullAll = true;
 
+	public static boolean loggingEnabled = false;
+
 	public LoggingNode(PlanNode parent) {
 		this.parent = parent;
 	}
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+		if(!loggingEnabled){
+			return parent.iterator();
+		}else{
+			return new CloseableIteration<Tuple, SailException>() {
 
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+				CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
-			{
-				if(pullAll){
-					parentIterator = cachedIterator(parentIterator);
+				{
+					if(pullAll){
+						parentIterator = cachedIterator(parentIterator);
+					}
 				}
-			}
 
-			private CloseableIteration<Tuple, SailException> cachedIterator(CloseableIteration<Tuple, SailException> fromIterator) {
-				try (Stream<Tuple> stream = Iterations.stream(fromIterator)) {
-					List<Tuple> collect = stream.collect(Collectors.toList());
+				private CloseableIteration<Tuple, SailException> cachedIterator(CloseableIteration<Tuple, SailException> fromIterator) {
+					try (Stream<Tuple> stream = Iterations.stream(fromIterator)) {
+						List<Tuple> collect = stream.collect(Collectors.toList());
 
-					return new CloseableIteration<Tuple, SailException>() {
+						return new CloseableIteration<Tuple, SailException>() {
 
-						Iterator<Tuple> iterator = collect.iterator();
+							Iterator<Tuple> iterator = collect.iterator();
 
 
-						@Override
-						public void close() throws SailException {
+							@Override
+							public void close() throws SailException {
 
-						}
+							}
 
-						@Override
-						public boolean hasNext() throws SailException {
-							return iterator.hasNext();
-						}
+							@Override
+							public boolean hasNext() throws SailException {
+								return iterator.hasNext();
+							}
 
-						@Override
-						public Tuple next() throws SailException {
-							return iterator.next();
-						}
+							@Override
+							public Tuple next() throws SailException {
+								return iterator.next();
+							}
 
-						@Override
-						public void remove() throws SailException {
+							@Override
+							public void remove() throws SailException {
 
-						}
-					};
+							}
+						};
 
+					}
 				}
-			}
 
 
-			@Override
-			public void close() throws SailException {
+				@Override
+				public void close() throws SailException {
 
 					parentIterator.close();
 
-			}
+				}
 
-			@Override
-			public boolean hasNext() throws SailException {
-				boolean hasNext = parentIterator.hasNext();
+				@Override
+				public boolean hasNext() throws SailException {
+					boolean hasNext = parentIterator.hasNext();
 
-				//System.out.println(leadingSpace()+parent.getClass().getSimpleName()+".hasNext() : "+hasNext);
-				return hasNext;
-			}
+					//System.out.println(leadingSpace()+parent.getClass().getSimpleName()+".hasNext() : "+hasNext);
+					return hasNext;
+				}
 
-			@Override
-			public Tuple next() throws SailException {
-				assert parentIterator.hasNext() : parentIterator.getClass().getSimpleName()+" does not have any more items but next was still called!!!";
+				@Override
+				public Tuple next() throws SailException {
+					assert parentIterator.hasNext() : parentIterator.getClass().getSimpleName()+" does not have any more items but next was still called!!!";
 
-				Tuple next = parentIterator.next();
+					Tuple next = parentIterator.next();
 
-				assert next != null;
+					assert next != null;
 
-				System.out.println(leadingSpace()+parent.getClass().getSimpleName()+".next(): "+" "+next.toString());
+					System.out.println(leadingSpace()+parent.getClass().getSimpleName()+".next(): "+" "+next.toString());
 
-				return next;
-			}
+					return next;
+				}
 
-			@Override
-			public void remove() throws SailException {
+				@Override
+				public void remove() throws SailException {
 
-			}
-		};
+				}
+			};
+
+		}
 	}
 
 	@Override
@@ -108,7 +115,7 @@ public class LoggingNode implements PlanNode{
 		return parent.depth()+1;
 	}
 
-	public String leadingSpace(){
+	private String leadingSpace(){
 		StringBuilder ret = new StringBuilder();
 		int depth = depth();
 		while(--depth > 0){

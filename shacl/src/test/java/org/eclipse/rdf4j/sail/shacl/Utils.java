@@ -12,7 +12,7 @@ import java.util.UUID;
 
 public class Utils {
 
-	 static SailRepository getSailRepository(String resourceName) {
+	 public static SailRepository getSailRepository(String resourceName) {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		sailRepository.initialize();
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
