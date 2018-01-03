@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -17,11 +16,11 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.plan.*;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
+import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MergeNode;
@@ -55,12 +54,11 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
 
 
-
 		PlanNode planRemovedStatements = new LoggingNode(new TrimTuple(new LoggingNode(super.getPlanRemovedStatements(shaclSailConnection, shape)), 1));
 
 		PlanNode filteredPlanRemovedStatements = planRemovedStatements;
 
-		if(shape instanceof TargetClass){
+		if (shape instanceof TargetClass) {
 			filteredPlanRemovedStatements = new LoggingNode(((TargetClass) shape).getTypeFilterPlan(shaclSailConnection, planRemovedStatements));
 		}
 
@@ -75,7 +73,10 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		PlanNode groupBy = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin));
 
-		PlanNode minCountFilter = new LoggingNode(new MinCountFilter(groupBy, minCount));
+		DirectTupleFromFilter filteredStatements = new DirectTupleFromFilter();
+		new MinCountFilter(groupBy, null, filteredStatements, minCount);
+
+		PlanNode minCountFilter = new LoggingNode(filteredStatements);
 
 		PlanNode trimTuple = new LoggingNode(new TrimTuple(minCountFilter, 1));
 
@@ -83,7 +84,10 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		PlanNode groupBy2 = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin2));
 
-		PlanNode minCountFilter2 = new LoggingNode(new MinCountFilter(groupBy2, minCount));
+		DirectTupleFromFilter filteredStatements2 = new DirectTupleFromFilter();
+		new MinCountFilter(groupBy2, null, filteredStatements2, minCount);
+
+		PlanNode minCountFilter2 = new LoggingNode(filteredStatements2);
 
 
 		return minCountFilter2;
@@ -94,7 +98,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
 
 		boolean requiresEvalutation = false;
-		if(shape instanceof TargetClass){
+		if (shape instanceof TargetClass) {
 			Resource targetClass = ((TargetClass) shape).targetClass;
 			try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
 				requiresEvalutation = addedStatementsConnection.hasStatement(null, RDF.TYPE, targetClass, false);
