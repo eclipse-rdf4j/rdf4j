@@ -52,7 +52,7 @@ public class MergeNode implements PlanNode{
 						sortedFirst = peekList[i];
 						sortedFirstIndex = i;
 					}else{
-						if(peekList[i].compareTo(sortedFirst) < 0){
+						if(peekList[i].compareTo(sortedFirst) > 0){
 							sortedFirst = peekList[i];
 							sortedFirstIndex = i;
 						}

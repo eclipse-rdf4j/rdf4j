@@ -19,7 +19,9 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
+import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
@@ -54,7 +56,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 
 
-		PlanNode planAddedStatements = new LoggingNode(new TrimTuple( new LoggingNode(shape.getPlanAddedStatements(shaclSailConnection, shape)),1));
+		PlanNode planAddedStatements = new LoggingNode(shape.getPlanAddedStatements(shaclSailConnection, shape));
 
 		PlanNode planAddedStatements1 = new LoggingNode(super.getPlanAddedStatements(shaclSailConnection, shape));
 
@@ -66,7 +68,12 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		PlanNode groupByCount1 = new LoggingNode(new GroupByCount(mergeNode));
 
-		PlanNode trimmed = new LoggingNode(new TrimTuple(groupByCount1, 1));
+		BufferedTupleFromFilter validValues = new BufferedTupleFromFilter();
+		BufferedTupleFromFilter invalidValues = new BufferedTupleFromFilter();
+
+		new MaxCountFilter(groupByCount1, validValues, invalidValues, maxCount);
+
+		PlanNode trimmed = new LoggingNode(new TrimTuple(validValues, 1));
 
 		PlanNode unique = new LoggingNode(new Unique(trimmed));
 
@@ -74,9 +81,13 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin));
 
-		PlanNode maxCountFilter = new LoggingNode(new MaxCountFilter(groupByCount, maxCount));
+		DirectTupleFromFilter directTupleFromFilter = new DirectTupleFromFilter();
 
-		return maxCountFilter;
+	    new MaxCountFilter(groupByCount, null, directTupleFromFilter, maxCount);
+
+		PlanNode mergeNode1 = new MergeNode(new LoggingNode(directTupleFromFilter), new LoggingNode(invalidValues));
+
+		return new LoggingNode(mergeNode1);
 
 	}
 

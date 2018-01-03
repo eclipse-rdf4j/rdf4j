@@ -100,6 +100,10 @@ public class TempTest {
 			connection.begin();
 //			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 
+			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
+			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class2"));
+			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class3"));
+
 			connection.commit();
 
 			System.out.println("\n\n\n\n\n\n\n\n\n\n");
@@ -112,6 +116,10 @@ public class TempTest {
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("c"));
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("d"));
+
+			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
+
 
 
 			connection.commit();

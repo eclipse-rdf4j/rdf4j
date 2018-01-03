@@ -19,6 +19,8 @@ import org.eclipse.rdf4j.sail.shacl.plan.Tuple;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -47,9 +49,9 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
 
-			Deque<Tuple> left = new ArrayDeque<>(101);
+			LinkedList<Tuple> left = new LinkedList<>();
 
-			Deque<Tuple> right = new ArrayDeque<>(101);
+			LinkedList<Tuple> right = new LinkedList<>();
 
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
@@ -62,7 +64,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 
 				while (left.size() < 100 && parentIterator.hasNext()) {
-					left.push(parentIterator.next());
+					left.addFirst(parentIterator.next());
 				}
 
 
@@ -81,7 +83,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 				if (repository != null) {
 					try (RepositoryConnection connection = repository.getConnection()) {
 						try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery(newQuery.toString()).evaluate())) {
-							stream.map(Tuple::new).forEach(right::push);
+							stream.map(Tuple::new).forEach(right::addFirst);
 						}
 					}
 				}else{
@@ -93,7 +95,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 					try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = shaclSailConnection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)) {
 						while(evaluate.hasNext()){
 							BindingSet next = evaluate.next();
-							right.push(new Tuple(next));
+							right.addFirst(new Tuple(next));
 						}
 					}
 
@@ -119,24 +121,24 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 				if (!left.isEmpty()) {
 
-					Tuple leftPeek = left.peek();
+					Tuple leftPeek = left.peekLast();
 
 					Tuple joined = null;
 
 					if (!right.isEmpty()) {
-						Tuple rightPeek = right.peek();
+						Tuple rightPeek = right.peekLast();
 
 						if (rightPeek.line.get(0).equals(leftPeek.line.get(0))) {
 							// we have a join !
 							joined = TupleHelper.join(leftPeek, rightPeek);
-							right.pop();
+							right.removeLast();
 
-							Tuple rightPeek2 = right.peek();
+							Tuple rightPeek2 = right.peekLast();
 
 							if (rightPeek2 == null || !rightPeek2.line.get(0).equals(leftPeek.line.get(0))) {
 								// no more to join from right, pop left so we don't print it again.
 
-								left.pop();
+								left.removeLast();
 							}
 
 
@@ -148,7 +150,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 					if (joined != null) {
 						return joined;
 					} else {
-						left.pop();
+						left.removeLast();
 						return leftPeek;
 					}
 
