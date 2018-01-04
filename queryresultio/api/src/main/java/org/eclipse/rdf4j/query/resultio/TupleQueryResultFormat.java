@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.resultio;
 
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collection;
 
