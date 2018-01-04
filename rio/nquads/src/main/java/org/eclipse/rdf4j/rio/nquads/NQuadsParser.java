@@ -12,7 +12,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.UnsupportedEncodingException;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.model.Resource;
@@ -49,7 +49,7 @@ public class NQuadsParser extends NTriplesParser {
 		// Note: baseURI will be checked in parse(Reader, String)
 
 		try {
-			parse(new InputStreamReader(new BOMInputStream(inputStream, false), Charset.forName("UTF-8")),
+			parse(new InputStreamReader(new BOMInputStream(inputStream, false), StandardCharsets.UTF_8),
 					baseURI);
 		}
 		catch (UnsupportedEncodingException e) {

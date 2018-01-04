@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.query.resultio.text.csv;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -45,7 +45,7 @@ public class SPARQLResultsCSVParser extends AbstractTupleQueryResultParser imple
 	public void parse(InputStream in)
 		throws IOException, QueryResultParseException, TupleQueryResultHandlerException
 	{
-		CSVReader reader = new CSVReader(new InputStreamReader(in, Charset.forName("UTF-8")));
+		CSVReader reader = new CSVReader(new InputStreamReader(in, StandardCharsets.UTF_8));
 
 		List<String> bindingNames = null;
 

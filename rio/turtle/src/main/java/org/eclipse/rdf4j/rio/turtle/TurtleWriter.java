@@ -11,7 +11,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -98,7 +98,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Creates a new TurtleWriter that will write to the supplied OutputStream.
-	 * 
+	 *
 	 * @param out
 	 *        The OutputStream to write the Turtle document to.
 	 */
@@ -113,12 +113,12 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 *        The OutputStream to write the Turtle document to.
 	 */
 	public TurtleWriter(OutputStream out, ParsedIRI baseIRI) {
-		this(new OutputStreamWriter(out, Charset.forName("UTF-8")), baseIRI);
+		this(new OutputStreamWriter(out, StandardCharsets.UTF_8), baseIRI);
 	}
 
 	/**
 	 * Creates a new TurtleWriter that will write to the supplied Writer.
-	 * 
+	 *
 	 * @param writer
 	 *        The Writer to write the Turtle document to.
 	 */
