@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.rio.rdfjson;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.StringWriter;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -81,7 +81,7 @@ public class RDFJSONHandlingTest extends AbstractParserHandlingTest {
 		}
 		rdfjsonWriter.endRDF();
 
-		return new ByteArrayInputStream(writer.toString().getBytes(Charset.forName("UTF-8")));
+		return new ByteArrayInputStream(writer.toString().getBytes(StandardCharsets.UTF_8));
 	}
 
 }

@@ -12,7 +12,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -55,7 +55,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Create a SesameJSONLDWriter using a {@link java.io.OutputStream}
-	 * 
+	 *
 	 * @param outputStream
 	 *        The OutputStream to write to.
 	 */
@@ -70,12 +70,12 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	 *        The OutputStream to write to.
 	 */
 	public JSONLDWriter(OutputStream outputStream, String baseURI) {
-		this(new BufferedWriter(new OutputStreamWriter(outputStream, Charset.forName("UTF-8"))), baseURI);
+		this(new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8)), baseURI);
 	}
 
 	/**
 	 * Create a SesameJSONLDWriter using a {@link java.io.Writer}
-	 * 
+	 *
 	 * @param writer
 	 *        The Writer to write to.
 	 */

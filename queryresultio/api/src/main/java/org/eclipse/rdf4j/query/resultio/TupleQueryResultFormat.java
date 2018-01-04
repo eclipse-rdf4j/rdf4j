@@ -31,7 +31,7 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 * SPARQL Query Results XML Format.
 	 */
 	public static final TupleQueryResultFormat SPARQL = new TupleQueryResultFormat("SPARQL/XML",
-			Arrays.asList("application/sparql-results+xml", "application/xml"), Charset.forName("UTF-8"),
+			Arrays.asList("application/sparql-results+xml", "application/xml"), StandardCharsets.UTF_8,
 			Arrays.asList("srx", "xml"), SPARQL_RESULTS_XML_URI);
 
 	/**
@@ -44,21 +44,21 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 * SPARQL Query Results JSON Format.
 	 */
 	public static final TupleQueryResultFormat JSON = new TupleQueryResultFormat("SPARQL/JSON",
-			Arrays.asList("application/sparql-results+json", "application/json"), Charset.forName("UTF-8"),
+			Arrays.asList("application/sparql-results+json", "application/json"), StandardCharsets.UTF_8,
 			Arrays.asList("srj", "json"), SPARQL_RESULTS_JSON_URI);
 
 	/**
 	 * SPARQL Query Result CSV Format.
 	 */
 	public static final TupleQueryResultFormat CSV = new TupleQueryResultFormat("SPARQL/CSV",
-			Arrays.asList("text/csv"), Charset.forName("UTF-8"), Arrays.asList("csv"),
+			Arrays.asList("text/csv"), StandardCharsets.UTF_8, Arrays.asList("csv"),
 			SPARQL_RESULTS_CSV_URI);
 
 	/**
 	 * SPARQL Query Result TSV Format.
 	 */
 	public static final TupleQueryResultFormat TSV = new TupleQueryResultFormat("SPARQL/TSV",
-			Arrays.asList("text/tab-separated-values"), Charset.forName("UTF-8"), Arrays.asList("tsv"),
+			Arrays.asList("text/tab-separated-values"), StandardCharsets.UTF_8, Arrays.asList("tsv"),
 			SPARQL_RESULTS_TSV_URI);
 
 	/*--------------*
