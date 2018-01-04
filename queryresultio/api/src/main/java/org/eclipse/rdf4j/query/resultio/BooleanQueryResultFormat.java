@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.resultio;
 
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collection;
 
@@ -44,7 +45,7 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 	 * Plain text encoding using values "true" and "false" (case-insensitive).
 	 */
 	public static final BooleanQueryResultFormat TEXT = new BooleanQueryResultFormat("TEXT", "text/boolean",
-			Charset.forName("US-ASCII"), "txt");
+			StandardCharsets.US_ASCII, "txt");
 
 	/*--------------*
 	 * Constructors *
