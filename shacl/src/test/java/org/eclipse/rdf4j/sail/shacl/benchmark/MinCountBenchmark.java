@@ -80,28 +80,28 @@ public class MinCountBenchmark {
 	}
 
 
-	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
-	public void noShacl() {
-
-		SailRepository repository = new SailRepository(new MemoryStore());
-
-		repository.initialize();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin();
-				connection.add(statements);
-				connection.commit();
-			}
-		}
-
-	}
+//	@Benchmark
+//	@BenchmarkMode(Mode.AverageTime)
+//	@OutputTimeUnit(TimeUnit.MILLISECONDS)
+//	public void noShacl() {
+//
+//		SailRepository repository = new SailRepository(new MemoryStore());
+//
+//		repository.initialize();
+//
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			connection.begin();
+//			connection.commit();
+//		}
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			for (List<Statement> statements : allStatements) {
+//				connection.begin();
+//				connection.add(statements);
+//				connection.commit();
+//			}
+//		}
+//
+//	}
 
 
 }

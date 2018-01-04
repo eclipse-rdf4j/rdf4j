@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.shacl.AST.Shape;
 import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.plan.Tuple;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -39,6 +40,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	public Repository addedStatements;
 	public Repository removedStatements;
 
+	 private HashSet<Statement> addedStatementsSet = new HashSet<>();
+	 private HashSet<Statement> removedStatementsSet = new HashSet<>();
+
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection) {
 		super(connection);
 		this.sail = sail;
@@ -49,30 +53,36 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 									  @Override
 									  public void statementAdded(Statement statement) {
-										  try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
-											  addedStatementsConnection.begin(IsolationLevels.NONE);
-											  addedStatementsConnection.add(statement);
-											  addedStatementsConnection.commit();
-										  }
-										  try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
-											  removedStatementsConnection.begin(IsolationLevels.NONE);
-											  removedStatementsConnection.remove(statement);
-											  removedStatementsConnection.commit();
-										  }
+
+									  	addedStatementsSet.add(statement);
+									  	removedStatementsSet.remove(statement);
+
+//										  try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
+//											  addedStatementsConnection.begin(IsolationLevels.NONE);
+//											  addedStatementsConnection.add(statement);
+//											  addedStatementsConnection.commit();
+//										  }
+//										  try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
+//											  removedStatementsConnection.begin(IsolationLevels.NONE);
+//											  removedStatementsConnection.remove(statement);
+//											  removedStatementsConnection.commit();
+//										  }
 									  }
 
 									  @Override
 									  public void statementRemoved(Statement statement) {
-										  try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
-											  addedStatementsConnection.begin(IsolationLevels.NONE);
-											  addedStatementsConnection.remove(statement);
-											  addedStatementsConnection.commit();
-										  }
-										  try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
-											  removedStatementsConnection.begin(IsolationLevels.NONE);
-											  removedStatementsConnection.add(statement);
-											  removedStatementsConnection.commit();
-										  }
+									  	removedStatementsSet.add(statement);
+									  	addedStatementsSet.remove(statement);
+//										  try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
+//											  addedStatementsConnection.begin(IsolationLevels.NONE);
+//											  addedStatementsConnection.remove(statement);
+//											  addedStatementsConnection.commit();
+//										  }
+//										  try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
+//											  removedStatementsConnection.begin(IsolationLevels.NONE);
+//											  removedStatementsConnection.add(statement);
+//											  removedStatementsConnection.commit();
+//										  }
 									  }
 								  }
 
@@ -127,6 +137,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 			removedStatements.shutDown();
 			removedStatements = null;
 		}
+
+		addedStatementsSet.clear();
+		removedStatementsSet.clear();
 	}
 
 
@@ -135,6 +148,19 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		if (!sail.config.validationEnabled) {
 			return true;
 		}
+
+		try (RepositoryConnection connection = addedStatements.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.add(addedStatementsSet);
+			connection.commit();
+		}
+
+		try (RepositoryConnection connection = removedStatements.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.add(removedStatementsSet);
+			connection.commit();
+		}
+
 
 		boolean allValid = true;
 
