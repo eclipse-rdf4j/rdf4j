@@ -34,15 +34,15 @@ public class MinCountBenchmark {
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
-		for(int j = 0; j<100; j++) {
+		for(int j = 0; j<10; j++) {
 			List<Statement> statements = new ArrayList<>(101);
 			allStatements.add(statements);
 			for (int i = 0; i < 1000; i++) {
 				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i), RDF.TYPE, RDFS.RESOURCE)
+					vf.createStatement(vf.createIRI("http://example.com/" + i+"_"+j), RDF.TYPE, RDFS.RESOURCE)
 				);
 				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i), RDFS.LABEL, vf.createLiteral("label" + i))
+					vf.createStatement(vf.createIRI("http://example.com/" + i+"_"+j), RDFS.LABEL, vf.createLiteral("label" + i))
 				);
 			}
 		}
