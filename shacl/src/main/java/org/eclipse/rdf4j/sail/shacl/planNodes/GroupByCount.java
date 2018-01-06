@@ -45,7 +45,7 @@ public class GroupByCount implements PlanNode {
 
 				Value subject = tempNext.line.get(0);
 
-				while (tempNext != null && tempNext.line.get(0).equals(subject)) {
+				while (tempNext != null && (tempNext.line.get(0) == subject || tempNext.line.get(0).equals(subject))) {
 
 					if (tempNext.line.size() > 1) {
 						count++;

@@ -27,15 +27,19 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 @State(Scope.Benchmark)
-public class MinCountBenchmark {
+public class MinCountBenchmarkPrefilled {
 
 
 	private List<List<Statement>> allStatements;
 
+	SailRepository shaclRepo;
+	SailRepository memoryStoreRepo;
+	SailRepository sparqlQueryMemoryStoreRepo;
+
+
 	@Setup(Level.Invocation)
 	public void setUp() {
 		allStatements = new ArrayList<>(10);
-
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -52,11 +56,48 @@ public class MinCountBenchmark {
 			}
 		}
 
+		List<Statement> allStatements2 = new ArrayList<>(10);
+
+		for (int i = 0; i < 100000; i++) {
+			allStatements2.add(
+				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i ), RDF.TYPE, RDFS.RESOURCE)
+			);
+			allStatements2.add(
+				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i ), RDFS.LABEL, vf.createLiteral("label" + i))
+			);
+		}
+
+
+		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
+		this.shaclRepo = new SailRepository(shaclRepo);
+		this.shaclRepo.initialize();
+
+		memoryStoreRepo = new SailRepository(new MemoryStore());
+		memoryStoreRepo.initialize();
+
+
+		sparqlQueryMemoryStoreRepo = new SailRepository(new MemoryStore());
+		sparqlQueryMemoryStoreRepo.initialize();
+
+
+		shaclRepo.disableValidation();
+		try (SailRepositoryConnection connection = this.shaclRepo.getConnection()) {
+			connection.add(allStatements2);
+		}
+		shaclRepo.enableValidation();
+
+		try (SailRepositoryConnection connection = memoryStoreRepo.getConnection()) {
+			connection.add(allStatements2);
+		}
+
+		try (SailRepositoryConnection connection = sparqlQueryMemoryStoreRepo.getConnection()) {
+			connection.add(allStatements2);
+		}
 	}
 
 	@TearDown(Level.Iteration)
 	public void tearDown() {
-			allStatements.clear();
+		allStatements.clear();
 	}
 
 
@@ -65,16 +106,13 @@ public class MinCountBenchmark {
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void shacl() {
 
-		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl")));
 
-		repository.initialize();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (SailRepositoryConnection connection = shaclRepo.getConnection()) {
 			connection.begin();
 			connection.commit();
 		}
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (SailRepositoryConnection connection = shaclRepo.getConnection()) {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
@@ -90,15 +128,12 @@ public class MinCountBenchmark {
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void noShacl() {
 
-		SailRepository repository = new SailRepository(new MemoryStore());
 
-		repository.initialize();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (SailRepositoryConnection connection = memoryStoreRepo.getConnection()) {
 			connection.begin();
 			connection.commit();
 		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (SailRepositoryConnection connection = memoryStoreRepo.getConnection()) {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
@@ -109,21 +144,17 @@ public class MinCountBenchmark {
 	}
 
 
-
 	@Benchmark
 	@BenchmarkMode(Mode.AverageTime)
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void sparqlInsteadOfShacl() {
 
-		SailRepository repository = new SailRepository(new MemoryStore());
 
-		repository.initialize();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (SailRepositoryConnection connection = sparqlQueryMemoryStoreRepo.getConnection()) {
 			connection.begin();
 			connection.commit();
 		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (SailRepositoryConnection connection = sparqlQueryMemoryStoreRepo.getConnection()) {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);

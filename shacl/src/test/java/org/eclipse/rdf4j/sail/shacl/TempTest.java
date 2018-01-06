@@ -165,4 +165,46 @@ public class TempTest {
 
 	}
 
+
+	@Test
+	public void leftOuterJoin() {
+
+		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl")));
+		shaclSail.initialize();
+
+		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
+
+			connection.begin();
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.CLASS);
+
+			connection.commit();
+
+			connection.begin();
+
+			connection.remove(RDFS.RESOURCE, RDF.TYPE, RDFS.CLASS);
+
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+//
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
+
+			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
+
+			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
+			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("yay"));
+			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("yay2"));
+
+
+			connection.add(RDFS.SUBCLASSOF, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
+			connection.add(RDFS.SUBCLASSOF, RDFS.LABEL, connection.getValueFactory().createLiteral("c"));
+
+			connection.commit();
+
+
+
+		}
+
+
+	}
+
 }

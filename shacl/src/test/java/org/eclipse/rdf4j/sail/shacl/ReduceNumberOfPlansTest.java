@@ -30,12 +30,14 @@ public class ReduceNumberOfPlansTest {
 
 			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
 
+			sailConnection.fillAddedAndRemovedStatementRepositories();
 			List<PlanNode> collect = sailConnection.sail.shapes.stream().flatMap(shape -> shape.generatePlans(sailConnection, shape).stream()).collect(Collectors.toList());
 
 			assertEquals(0, collect.size());
 
 			IRI person1 = Utils.Ex.createIri();
 			connection.add(person1, RDF.TYPE, Utils.Ex.Person);
+			sailConnection.fillAddedAndRemovedStatementRepositories();
 
 			List<PlanNode> collect2 = sailConnection.sail.shapes.stream().flatMap(shape -> shape.generatePlans(sailConnection, shape).stream()).collect(Collectors.toList());
 
@@ -81,14 +83,23 @@ public class ReduceNumberOfPlansTest {
 
 
 			connection.remove(person1, Utils.Ex.ssn, vf.createLiteral("b"));
+
+			sailConnection.fillAddedAndRemovedStatementRepositories();
+
 			List<PlanNode> collect1 = sailConnection.sail.shapes.stream().flatMap(shape -> shape.generatePlans(sailConnection, shape).stream()).collect(Collectors.toList());
 			assertEquals(1, collect1.size());
 
 			connection.remove(person1, Utils.Ex.ssn, vf.createLiteral("a"));
+
+
+			sailConnection.fillAddedAndRemovedStatementRepositories();
+
 			List<PlanNode> collect2 = sailConnection.sail.shapes.stream().flatMap(shape -> shape.generatePlans(sailConnection, shape).stream()).collect(Collectors.toList());
 			assertEquals(1, collect2.size());
 
 			connection.remove(person1, Utils.Ex.name, vf.createLiteral("c"));
+			sailConnection.fillAddedAndRemovedStatementRepositories();
+
 			List<PlanNode> collect3 = sailConnection.sail.shapes.stream().flatMap(shape -> shape.generatePlans(sailConnection, shape).stream()).collect(Collectors.toList());
 			assertEquals(2, collect3.size());
 

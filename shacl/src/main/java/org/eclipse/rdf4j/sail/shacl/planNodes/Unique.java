@@ -31,7 +31,7 @@ public class Unique implements PlanNode {
 					if(previous == null){
 						next = temp;
 					}else {
-						if(!previous.equals(temp)){
+						if(!(previous == temp || previous.equals(temp))){
 							next = temp;
 						}
 					}

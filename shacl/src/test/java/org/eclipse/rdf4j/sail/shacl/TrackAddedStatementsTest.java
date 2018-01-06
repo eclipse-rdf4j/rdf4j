@@ -53,6 +53,7 @@ public class TrackAddedStatementsTest {
 			connection.begin();
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
+			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 
 			assertNotNull(shaclSailConnection.addedStatements);
 			assertNotNull(shaclSailConnection.removedStatements);
@@ -74,6 +75,7 @@ public class TrackAddedStatementsTest {
 			connection.begin();
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
+			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 
 			assertNotNull(shaclSailConnection.addedStatements);
 			assertNotNull(shaclSailConnection.removedStatements);
@@ -188,6 +190,7 @@ public class TrackAddedStatementsTest {
 
 
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
+			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 
 			assertEquals(0, size(shaclSailConnection.addedStatements));
 			assertEquals(1, size(shaclSailConnection.removedStatements));
@@ -210,20 +213,54 @@ public class TrackAddedStatementsTest {
 			//System.out.println(size(connection));
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
-			//System.out.println(size(connection));
+//			System.out.println(size(connection));
 
 			connection.remove(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
-			//System.out.println(size(connection));
+//			System.out.println(size(connection));
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 //			System.out.println(size(connection));
 
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
+			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 
 			assertEquals(1, size(shaclSailConnection.addedStatements));
 			assertEquals(0, size(shaclSailConnection.removedStatements));
 
 
+
+
+			connection.commit();
+
+			System.out.println(size(connection));
+
+
+
+		}
+	}
+
+	@Test
+	public void testAddRemove() {
+
+		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("empty.ttl")));
+		shaclSail.initialize();
+
+		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
+			connection.begin();
+//			System.out.println(size(connection));
+
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+//			System.out.println(size(connection));
+
+			connection.remove(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+//			System.out.println(size(connection));
+
+
+			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
+			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
+
+			assertEquals(0, size(shaclSailConnection.addedStatements));
+			assertEquals(0, size(shaclSailConnection.removedStatements));
 
 
 			connection.commit();
@@ -252,6 +289,7 @@ public class TrackAddedStatementsTest {
 			connection.remove(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
+			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 
 			assertEquals(0, size(shaclSailConnection.addedStatements));
 			assertEquals(1, size(shaclSailConnection.removedStatements));
@@ -274,6 +312,7 @@ public class TrackAddedStatementsTest {
 			connection.remove(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
+			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 
 			assertEquals(0, size(shaclSailConnection.addedStatements));
 			assertEquals(0, size(shaclSailConnection.removedStatements));
@@ -297,9 +336,11 @@ public class TrackAddedStatementsTest {
 			connection.remove(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
+			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 
 			assertEquals(0, size(shaclSailConnection.addedStatements));
 			assertEquals(1, size(shaclSailConnection.removedStatements));
+
 
 			connection.commit();
 
@@ -318,6 +359,7 @@ public class TrackAddedStatementsTest {
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
+			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 
 			assertEquals(1, size(shaclSailConnection.addedStatements));
 			assertEquals(0, size(shaclSailConnection.removedStatements));

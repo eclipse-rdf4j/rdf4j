@@ -9,12 +9,18 @@
 package org.eclipse.rdf4j.sail.shacl.mock;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.plan.Tuple;
 import org.eclipse.rdf4j.sail.SailException;
 
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * @author Håvard Ottestad
@@ -25,6 +31,17 @@ public class MockInputPlanNode implements PlanNode {
 
 	public MockInputPlanNode(List<Tuple> initialData) {
 		this.initialData = initialData;
+	}
+
+	public MockInputPlanNode(List<String> ... list) {
+
+		initialData = Arrays
+			.stream(list)
+			.map(strings -> strings.stream().map(SimpleValueFactory.getInstance()::createLiteral).map(l -> (Value) l).collect(Collectors.toList()))
+			.map(Tuple::new)
+			.sorted()
+			.collect(Collectors.toList());
+
 	}
 
 

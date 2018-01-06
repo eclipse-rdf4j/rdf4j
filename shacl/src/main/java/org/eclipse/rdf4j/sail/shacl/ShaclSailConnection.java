@@ -36,6 +36,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 	public ShaclSail sail;
 
+	public Stats stats;
 
 	public Repository addedStatements;
 	public Repository removedStatements;
@@ -54,8 +55,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 									  @Override
 									  public void statementAdded(Statement statement) {
 
-									  	addedStatementsSet.add(statement);
-									  	removedStatementsSet.remove(statement);
+										  System.out.println("Added: "+statement.toString());
+										  boolean add = addedStatementsSet.add(statement);
+										  if(!add){
+											  removedStatementsSet.remove(statement);
+										  }
+
 
 //										  try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
 //											  addedStatementsConnection.begin(IsolationLevels.NONE);
@@ -71,8 +76,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 									  @Override
 									  public void statementRemoved(Statement statement) {
-									  	removedStatementsSet.add(statement);
-									  	addedStatementsSet.remove(statement);
+										  System.out.println("Removed: "+statement.toString());
+
+										  boolean add = removedStatementsSet.add(statement);
+										  if(!add){
+											  	addedStatementsSet.remove(statement);
+										  }
 //										  try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
 //											  addedStatementsConnection.begin(IsolationLevels.NONE);
 //											  addedStatementsConnection.remove(statement);
@@ -97,13 +106,16 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		assert addedStatements == null;
 		assert removedStatements == null;
 
-		addedStatements = new SailRepository(new MemoryStore());
-		addedStatements.initialize();
-		removedStatements = new SailRepository(new MemoryStore());
-		removedStatements.initialize();
-
-
+		stats = new Stats();
 		super.begin(level);
+	}
+
+	private SailRepository getNewMemorySail() {
+		MemoryStore sail = new MemoryStore();
+		sail.setDefaultIsolationLevel(IsolationLevels.NONE);
+		SailRepository repository = new SailRepository(sail);
+		repository.initialize();
+		return repository;
 	}
 
 	@Override
@@ -128,7 +140,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		super.rollback();
 	}
 
-	private void cleanup() {
+	void cleanup() {
 		if (addedStatements != null) {
 			addedStatements.shutDown();
 			addedStatements = null;
@@ -140,6 +152,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 		addedStatementsSet.clear();
 		removedStatementsSet.clear();
+		stats = null;
 	}
 
 
@@ -149,18 +162,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 			return true;
 		}
 
-		try (RepositoryConnection connection = addedStatements.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.add(addedStatementsSet);
-			connection.commit();
-		}
-
-		try (RepositoryConnection connection = removedStatements.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.add(removedStatementsSet);
-			connection.commit();
-		}
-
+		fillAddedAndRemovedStatementRepositories();
 
 		boolean allValid = true;
 
@@ -190,6 +192,29 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		return allValid;
 	}
 
+	 void fillAddedAndRemovedStatementRepositories() {
+
+		 addedStatements = getNewMemorySail();
+		 removedStatements = getNewMemorySail();
+
+
+		addedStatementsSet.forEach(stats::added);
+		removedStatementsSet.forEach(stats::removed);
+
+
+		try (RepositoryConnection connection = addedStatements.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			addedStatementsSet.stream().filter(statement -> !removedStatementsSet.contains(statement)).forEach(connection::add);
+			connection.commit();
+		}
+
+		try (RepositoryConnection connection = removedStatements.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			removedStatementsSet.stream().filter(statement -> !addedStatementsSet.contains(statement)).forEach(connection::add);
+			connection.commit();
+		}
+	}
+
 	@Override
 	synchronized public void close() throws SailException {
 		if (isActive()) {
@@ -197,4 +222,29 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		}
 		super.close();
 	}
+
+
+	public class Stats{
+
+		boolean hasAdded;
+		boolean hasRemoved;
+
+		public void added(Statement statement) {
+			hasAdded = true;
+		}
+
+		public void removed(Statement statement) {
+			hasRemoved = true;
+
+		}
+
+		public boolean hasAdded() {
+			return hasAdded;
+		}
+
+		public boolean hasRemoved() {
+			return hasRemoved;
+		}
+	}
 }
+

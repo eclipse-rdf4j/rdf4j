@@ -1,11 +1,9 @@
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -24,13 +22,14 @@ import org.openjdk.jmh.annotations.TearDown;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
 
 @State(Scope.Benchmark)
-public class MinCountBenchmark {
+public class MinCountPrefilledVsEmptyBenchmark {
 
 
 	private List<List<Statement>> allStatements;
+	private SailRepository shaclRepo;
+
 
 	@Setup(Level.Invocation)
 	public void setUp() {
@@ -52,21 +51,66 @@ public class MinCountBenchmark {
 			}
 		}
 
+		List<Statement> allStatements2 = new ArrayList<>(10);
+
+		for (int i = 0; i < 1; i++) {
+			allStatements2.add(
+				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i ), RDF.TYPE, RDFS.RESOURCE)
+			);
+			allStatements2.add(
+				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i ), RDFS.LABEL, vf.createLiteral("label" + i))
+			);
+		}
+
+
+		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
+		this.shaclRepo = new SailRepository(shaclRepo);
+		this.shaclRepo.initialize();
+
+		shaclRepo.disableValidation();
+		try (SailRepositoryConnection connection = this.shaclRepo.getConnection()) {
+			connection.add(allStatements2);
+		}
+		shaclRepo.enableValidation();
+
 	}
 
 	@TearDown(Level.Iteration)
 	public void tearDown() {
-			allStatements.clear();
+		allStatements.clear();
 	}
 
 
 	@Benchmark
 	@BenchmarkMode(Mode.AverageTime)
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
-	public void shacl() {
+	public void shaclPrefilled() {
 
-		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl")));
 
+		try (SailRepositoryConnection connection = shaclRepo.getConnection()) {
+			connection.begin();
+			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = shaclRepo.getConnection()) {
+			for (List<Statement> statements : allStatements) {
+				connection.begin();
+				connection.add(statements);
+				connection.commit();
+			}
+		}
+
+	}
+
+
+
+	@Benchmark
+	@BenchmarkMode(Mode.AverageTime)
+	@OutputTimeUnit(TimeUnit.MILLISECONDS)
+	public void shaclEmpty() {
+
+		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
+		SailRepository repository = new SailRepository(shaclRepo);
 		repository.initialize();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -84,55 +128,33 @@ public class MinCountBenchmark {
 
 	}
 
-
 	@Benchmark
 	@BenchmarkMode(Mode.AverageTime)
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
-	public void noShacl() {
+	public void shaclEmptyJustInitialize() {
 
-		SailRepository repository = new SailRepository(new MemoryStore());
-
+		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
+		SailRepository repository = new SailRepository(shaclRepo);
 		repository.initialize();
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin();
-				connection.add(statements);
-				connection.commit();
-			}
-		}
 
 	}
 
 
-
 	@Benchmark
 	@BenchmarkMode(Mode.AverageTime)
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
-	public void sparqlInsteadOfShacl() {
+	public void shaclEmptyJustInitializeAndEmptyTransaction() {
 
-		SailRepository repository = new SailRepository(new MemoryStore());
-
+		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
+		SailRepository repository = new SailRepository(shaclRepo);
 		repository.initialize();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.commit();
 		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin();
-				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">. FILTER(! EXISTS {?a <" + RDFS.LABEL + "> ?c})}").evaluate())) {
-					stream.forEach(System.out::println);
-				}
-				connection.commit();
-			}
-		}
+
 
 	}
 

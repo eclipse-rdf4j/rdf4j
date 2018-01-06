@@ -9,7 +9,13 @@ public class Main {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-			.include(MinCountBenchmark.class.getSimpleName())
+			.include("MinCount")
+//			.include(MinCountBenchmark.class.getSimpleName()+".noShacl")
+
+//			.include(MinCountBenchmarkPrefilled.class.getSimpleName())
+//			.include(MinCountPrefilledVsEmptyBenchmark.class.getSimpleName()+"..shaclPrefilled$")
+//			.include(MinCountPrefilledVsEmptyBenchmark.class.getSimpleName()+"..shaclEmpty$")
+
 			.warmupIterations(10)
 			.measurementIterations(10)
 			.forks(1)

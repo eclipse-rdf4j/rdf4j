@@ -14,15 +14,13 @@ import org.eclipse.rdf4j.query.BindingSet;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 
 /**
  * @author Heshan Jayasinghe
  */
-public class Tuple implements Comparable<Tuple>{
+public class Tuple implements Comparable<Tuple> {
 
 	public List<Value> line = new ArrayList<>();
 
@@ -38,6 +36,7 @@ public class Tuple implements Comparable<Tuple>{
 			line.add(aNext.getValue());
 		}
 	}
+
 
 	public List<Value> getlist() {
 		return line;
@@ -58,10 +57,14 @@ public class Tuple implements Comparable<Tuple>{
 		}
 		Tuple tuple = (Tuple) o;
 
-		if(tuple.line.size() != line.size()) return false;
+		if (tuple.line.size() != line.size()) {
+			return false;
+		}
 
-		for(int i = 0; i<line.size(); i++){
-			if(!line.get(i).equals(tuple.line.get(i))) return false;
+		for (int i = 0; i < line.size(); i++) {
+			if (!(line.get(i) == tuple.line.get(i) || line.get(i).equals(tuple.line.get(i)))) {
+				return false;
+			}
 		}
 
 		return true;
@@ -76,18 +79,15 @@ public class Tuple implements Comparable<Tuple>{
 	@Override
 	public int compareTo(Tuple o) {
 
-		for(int i = 0; i < Math.min(o.line.size(), line.size()); i++){
-			int compareTo = o.line.get(i).toString().compareTo(line.get(i).toString());
+		for (int i = 0; i < Math.min(o.line.size(), line.size()); i++) {
+			int compareTo = line.get(i).toString().compareTo(o.line.get(i).toString());
 
-			if(compareTo != 0){
+			if (compareTo != 0) {
 				return compareTo;
 			}
 
 		}
 
-		if(o.line.size() == line.size()) return 0;
-
-
-		return o.line.size() - line.size();
+		return 0;
 	}
 }
