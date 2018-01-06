@@ -90,4 +90,9 @@ class ReadOnlyConnection extends AbstractFederationConnection {
 	{
 		// no-op
 	}
+
+	@Override
+	public boolean pendingRemovals() {
+		return false;
+	}
 }

@@ -60,6 +60,17 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		implements InferencerConnection, FederatedServiceResolverClient
 {
+	@Override
+	public boolean pendingRemovals() {
+		return explicitSinks.values().stream().anyMatch(v -> {
+
+			if(v instanceof Changeset){
+				return ((Changeset) v).hasDeprecated();
+			}
+			return false;
+		});
+
+	}
 
 	/*-----------*
 	 * Variables *
@@ -941,4 +952,6 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			}
 		}
 	}
+
+
 }

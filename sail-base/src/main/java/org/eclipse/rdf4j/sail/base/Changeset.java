@@ -353,4 +353,8 @@ abstract class Changeset implements SailSink, ModelFactory {
 	public synchronized boolean isNamespaceCleared() {
 		return namespaceCleared;
 	}
+
+	public boolean hasDeprecated() {
+		return deprecated != null && !deprecated.isEmpty();
+	}
 }
