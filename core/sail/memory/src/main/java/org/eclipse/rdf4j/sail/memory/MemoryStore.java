@@ -36,6 +36,10 @@ import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
  * not possible. When another transaction is active, calls to <tt>startTransaction()</tt> will block until the
  * active transaction is committed or rolled back.
  * 
+ * The MemoryStore is designed for datasets with fewer than 100,000 triples.
+ * The MemoryStore uses hash tables, and when these hash tables fill up it copies the values to larger hash tables. 
+ * This can cause strain on the garbage collector due to lots of memory being allocated and freed.
+ * 
  * @author Arjohn Kampman
  * @author jeen
  */

@@ -36,6 +36,11 @@ import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
 
 /**
  * A SAIL implementation using B-Tree indexing on disk for storing and querying its data.
+ *
+ * The NativeStore is designed for datasets between 100,000 and 100 million triples. 
+ * On most operating systems, if there is sufficient physical memory, the NativeStore 
+ * will act like the MemoryStore, because the read/write commands will be cached by the OS.
+ * This technique allows the NativeStore to operate quite well for millions of triples.
  * 
  * @author Arjohn Kampman
  * @author jeen
