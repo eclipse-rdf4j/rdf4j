@@ -49,6 +49,7 @@
 	</licenses>
 
 	<modules>
+		<module>elasticsearch</module>
 		<module>evaluation</module>
 		<module>federation</module>
 		<module>geosparql</module>
