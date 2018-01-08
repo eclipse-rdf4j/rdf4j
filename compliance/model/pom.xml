@@ -16,20 +16,13 @@
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-runtime</artifactId>
+			<artifactId>rdf4j-client</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-model-testsuite</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-
-		<!-- needed for SailModelTest -->
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-sail-memory</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 	</dependencies>
