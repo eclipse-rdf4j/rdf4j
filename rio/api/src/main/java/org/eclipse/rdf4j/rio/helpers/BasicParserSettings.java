@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.rio.LanguageHandler;
 import org.eclipse.rdf4j.rio.LanguageHandlerRegistry;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RioSetting;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,38 +38,49 @@ public class BasicParserSettings {
 	 * Vocabulary Prefixes of W3C Documents (Recommendations or Notes)
 	 *
 	 * @see http://www.w3.org/2011/rdfa-context/rdfa-1.1
+	 * @see http://www.w3.org/2013/json-ld-context/rdfa11
 	 */
 	private static final Set<Namespace> _DEFAULT_PREFIX;
 	static {
-		Set<Namespace> aNamespaces = new HashSet<Namespace>();
+		Set<Namespace> aNamespaces = new HashSet<>();
 
-		aNamespaces.add(new SimpleNamespace("cat", "http://www.w3.org/ns/dcat#"));
-		aNamespaces.add(new SimpleNamespace("qb", "http://purl.org/linked-data/cube#"));
+		// Vocabulary Prefixes of W3C Documents (Recommendations or Notes)
+		aNamespaces.add(new SimpleNamespace("as", "https://www.w3.org/ns/activitystreams#"));
+		aNamespaces.add(new SimpleNamespace("csvw", "http://www.w3.org/ns/csvw#"));
+		aNamespaces.add(new SimpleNamespace("dcat", "http://www.w3.org/ns/dcat#"));
+		aNamespaces.add(new SimpleNamespace("dqv", "http://www.w3.org/ns/dqv#"));
+		aNamespaces.add(new SimpleNamespace("duv", "https://www.w3.org/TR/vocab-duv#"));
 		aNamespaces.add(new SimpleNamespace("grddl", "http://www.w3.org/2003/g/data-view#"));
+		aNamespaces.add(new SimpleNamespace("ldp", "http://www.w3.org/ns/ldp#"));
 		aNamespaces.add(new SimpleNamespace("ma", "http://www.w3.org/ns/ma-ont#"));
+		aNamespaces.add(new SimpleNamespace("oa", "http://www.w3.org/ns/oa#"));
+		aNamespaces.add(new SimpleNamespace("org", "http://www.w3.org/ns/org#"));
 		aNamespaces.add(new SimpleNamespace("owl", "http://www.w3.org/2002/07/owl#"));
+		aNamespaces.add(new SimpleNamespace("prov", "http://www.w3.org/ns/prov#"));
+		aNamespaces.add(new SimpleNamespace("qb", "http://purl.org/linked-data/cube#"));
 		aNamespaces.add(new SimpleNamespace("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#"));
 		aNamespaces.add(new SimpleNamespace("rdfa", "http://www.w3.org/ns/rdfa#"));
 		aNamespaces.add(new SimpleNamespace("rdfs", "http://www.w3.org/2000/01/rdf-schema#"));
 		aNamespaces.add(new SimpleNamespace("rif", "http://www.w3.org/2007/rif#"));
 		aNamespaces.add(new SimpleNamespace("rr", "http://www.w3.org/ns/r2rml#"));
+		aNamespaces.add(new SimpleNamespace("sd", "http://www.w3.org/ns/sparql-service-description#"));
 		aNamespaces.add(new SimpleNamespace("skos", "http://www.w3.org/2004/02/skos/core#"));
 		aNamespaces.add(new SimpleNamespace("skosxl", "http://www.w3.org/2008/05/skos-xl#"));
-		aNamespaces.add(new SimpleNamespace("wdr", "http://www.w3.org/2007/05/powder#"));
+		aNamespaces.add(new SimpleNamespace("ssn", "http://www.w3.org/ns/ssn/"));
+		aNamespaces.add(new SimpleNamespace("sosa", "http://www.w3.org/ns/sosa/"));
+		aNamespaces.add(new SimpleNamespace("time", "http://www.w3.org/2006/time#"));		
 		aNamespaces.add(new SimpleNamespace("void", "http://rdfs.org/ns/void#"));
+		aNamespaces.add(new SimpleNamespace("wdr", "http://www.w3.org/2007/05/powder#"));
 		aNamespaces.add(new SimpleNamespace("wdrs", "http://www.w3.org/2007/05/powder-s#"));
 		aNamespaces.add(new SimpleNamespace("xhv", "http://www.w3.org/1999/xhtml/vocab#"));
 		aNamespaces.add(new SimpleNamespace("xml", "http://www.w3.org/XML/1998/namespace"));
 		aNamespaces.add(new SimpleNamespace("xsd", "http://www.w3.org/2001/XMLSchema#"));
-		aNamespaces.add(new SimpleNamespace("prov", "http://www.w3.org/ns/prov#"));
-		aNamespaces.add(new SimpleNamespace("sd", "http://www.w3.org/ns/sparql-service-description#"));
-		aNamespaces.add(new SimpleNamespace("org", "http://www.w3.org/ns/org#"));
-		aNamespaces.add(new SimpleNamespace("gldp", "http://www.w3.org/ns/people#"));
-		aNamespaces.add(new SimpleNamespace("cnt", "http://www.w3.org/2008/content#"));
-		aNamespaces.add(new SimpleNamespace("dcat", "http://www.w3.org/ns/dcat#"));
+
+		// Some vocabularies are currently in development at W3C
 		aNamespaces.add(new SimpleNamespace("earl", "http://www.w3.org/ns/earl#"));
-		aNamespaces.add(new SimpleNamespace("ht", "http://www.w3.org/2006/http#"));
-		aNamespaces.add(new SimpleNamespace("ptr", "http://www.w3.org/2009/pointers#"));
+		aNamespaces.add(new SimpleNamespace("odrl", "http://www.w3.org/ns/odrl/2/"));
+		
+		// Widely used Vocabulary prefixes based on the vocabulary usage on the Semantic Web
 		aNamespaces.add(new SimpleNamespace("cc", "http://creativecommons.org/ns#"));
 		aNamespaces.add(new SimpleNamespace("ctag", "http://commontag.org/ns#"));
 		aNamespaces.add(new SimpleNamespace("dc", "http://purl.org/dc/terms/"));
@@ -82,7 +94,19 @@ public class BasicParserSettings {
 		aNamespaces.add(new SimpleNamespace("sioc", "http://rdfs.org/sioc/ns#"));
 		aNamespaces.add(new SimpleNamespace("v", "http://rdf.data-vocabulary.org/#"));
 		aNamespaces.add(new SimpleNamespace("vcard", "http://www.w3.org/2006/vcard/ns#"));
-		aNamespaces.add(new SimpleNamespace("schema", "http://schema.org/"));
+		aNamespaces.add(new SimpleNamespace("schema", "http://schema.org/"));		
+
+		// Terms defined by W3C Documents
+		aNamespaces.add(new SimpleNamespace("describedby", "http://www.w3.org/2007/05/powder-s#describedby"));
+		aNamespaces.add(new SimpleNamespace("license", "http://www.w3.org/1999/xhtml/vocab#license"));
+		aNamespaces.add(new SimpleNamespace("role", "http://www.w3.org/1999/xhtml/vocab#role"));	
+
+		// JSON-LD Context
+		aNamespaces.add(new SimpleNamespace("cat", "http://www.w3.org/ns/dcat#"));
+		aNamespaces.add(new SimpleNamespace("cnt", "http://www.w3.org/2008/content#"));
+		aNamespaces.add(new SimpleNamespace("gldp", "http://www.w3.org/ns/people#"));
+		aNamespaces.add(new SimpleNamespace("ht", "http://www.w3.org/2006/http#"));
+		aNamespaces.add(new SimpleNamespace("ptr", "http://www.w3.org/2009/pointers#"));
 
 		_DEFAULT_PREFIX = Collections.unmodifiableSet(aNamespaces);
 	}
@@ -94,7 +118,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Verification is performed using registered DatatypeHandlers.
 	 * <p>
-	 * Defaults to false since 2.8.0, defaulted to true in 2.7.
+	 * Defaults to false since Sesame 2.8.0, defaulted to true in 2.7.
 	 */
 	public static final RioSetting<Boolean> VERIFY_DATATYPE_VALUES = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.verifydatatypevalues", "Verify recognised datatype values", Boolean.FALSE);
@@ -234,7 +258,6 @@ public class BasicParserSettings {
 	 * </p>
 	 * <p>
 	 * Defaults to <a href="http://www.w3.org/2011/rdfa-context/rdfa-1.1">this list</a>.
-	 * </p>
 	 * </p>
 	 */
 	public static final RioSetting<Set<Namespace>> NAMESPACES = new RioSettingImpl<Set<Namespace>>(
