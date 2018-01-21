@@ -1,0 +1,8 @@
+= Known Limitations
+Currently, the following SPARQL 1.1 features have not yet been implemented in Spanqit:
+
+- http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#propertypaths[Property Paths]
+- http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#inline-data[Values Block]
+- http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#collections[RDF Collection Syntax]
+- http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#bind[BIND]
+- `DESCRIBE` and `ASK` Queries

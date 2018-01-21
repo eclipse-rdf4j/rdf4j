@@ -1,0 +1,15 @@
+= Elements
+SPARQL elements are created using various static factory classes. Most core  elements of a query are created by the static `Spanqit` class:
+[source,java]
+----
+Variable price = Spanqit.var("price");
+System.out.println(price.getQueryString());
+// ==> ?price
+
+Prefix foaf = Spanqit.prefix("foaf", iri("http://xmlns.com/foaf/0.1/"));
+System.out.println(foaf.getQueryString());
+// ==> PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+----
+Other factory classes include the `Queries` class mentioned in the previous section, as well as the `Expressions`, `GraphPatterns`, and `Rdf` classes.
+
+TIP: All query elements created by Spanqit implement the `QueryElement` interface, which provides the `getQueryString()` method. This can be used to get the String representing the SPARQL syntax of any element.

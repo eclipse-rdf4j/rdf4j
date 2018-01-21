@@ -1,0 +1,71 @@
+= Graph Patterns
+Spanqit uses three classes to represent the SPARQL graph patterns, all of which implement the `GraphPattern` interface:
+- The `TriplePattern` class represents triple patterns.
+- The `GraphPatternNotTriple` class represents collections of graph patterns.
+- The `SubSelect` class represents a SPARQL sub query.
+
+Graph patterns are created by the more aptly named `GraphPatterns` class.
+
+:numbered:
+== Triple Patterns
+Use `GraphPatterns#tp()` to create a `TriplePattern` instance:
+[source,java]
+----
+Prefix dc = Spanqit.prefix("dc", iri("http://purl.org/dc/elements/1.1/"));
+Variable book = Spanqit.var("book");
+
+TriplePattern triple = GraphPatterns.tp(book, dc.iri("author"), Rdf.literalOf("J.R.R. Tolkien"));
+System.out.println(triple.getQueryString());
+// ==> ?book dc:author "J.R.R. Tolkien"
+----
+A `TriplePattern` instance can also be created from the `has()` and `isA()` shortcut methods of `RdfSubject`, and be expanded to contain multiple triples with the same subject via predicate-object lists and object lists:
+[source,java]
+----
+Prefix foaf = Spanqit.prefix("foaf", iri("http://xmlns.com/foaf/0.1/"));
+Variable x = Spanqit.var("x"), name = Spanqit.var("name");
+
+TriplePattern triple = x.has(foaf.iri("nick"), Rdf.literalOf("Alice"), Rdf.literalOf("Alice_"))
+    .andHas(foaf.iri("name"), name);
+System.out.println(triple.getQueryString());
+// ===> ?x foaf:nick "Alice_", "Alice" ;
+//	   foaf:name ?name .
+----
+
+:numbered:
+== Compound graph patterns
+Three methods in `GraphPatterns` exist to create `GraphPatternNotTriple` instances. `GraphPatterns#and()` creates a group graph pattern, consisting of the `GraphPattern` instances passed as parameters:
+[source,java]
+----
+Variable mbox = Spanqit.var("mbox"), x = Spanqit.var("x");
+GraphPatternNotTriple groupPattern =
+GraphPatterns.and(x.has(foaf.iri("name"), name), x.has(foaf.iri("mbox"), mbox);
+System.out.println(groupPattern.getQueryString());
+// ==> { ?x foaf:mbox ?mbox . ?x foaf:name ?name }
+----
+`GraphPatterns#union()` creates an alternative graph pattern, taking the union of the provided `GraphPattern` instances:
+[source,java]
+----
+Prefix dc10 = Spanqit.prefix("dc10", iri("http://purl.org/dc/elements/1.0/")),
+	dc11 = Spanqit.prefix("dc11", iri("http://purl.org/dc/elements/1.1/"));
+Variable book = Spanqit.var("book"), title = Spanqit.var("title");
+
+GraphPatternNotTriple union = GraphPatterns.union(book.has(dc10.iri("title"), title),
+	book.has(dc11.iri("title"), title);
+System.out.println(union.getQueryString());
+// ==> { ?book dc10:title ?title } UNION { ?book dc11:title ?title }
+----
+`GraphPatterns#optional()` creates an optional group graph pattern, consisting of the passed in `GraphPattern`s:
+[source,java]
+----
+GraphPatternNotTriple optionalPattern = GraphPatterns.optional(GraphPatterns.tp(x, foaf.iri("mbox"), mbox));
+System.out.println(optionalPattern.getQueryString());
+// ==> OPTIONAL { ?x foaf:mbox ?mbox }
+----
+
+:numbered:
+== Sub-select
+Finally, `GraphPatterns#select()` creates an instance of a `SubSelect`, which represents a SPARQL subquery:
+[source,java]
+----
+SubSelect subQuery = GraphPatterns.select();
+----
