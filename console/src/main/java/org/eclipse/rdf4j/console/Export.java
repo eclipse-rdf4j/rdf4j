@@ -148,7 +148,7 @@ public class Export implements Command {
 
 			long diff = (System.nanoTime() - startTime) / 1_000_000;
 			consoleIO.writeln("Data has been written to file (" + diff + " ms)");
-		} catch (IOException e) {
+		} catch (IOException|UnsupportedRDFormatException e) {
 			consoleIO.writeError("Failed to export data: " + e.getMessage());
 		}
 	}
