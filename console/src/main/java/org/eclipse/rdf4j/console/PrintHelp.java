@@ -34,6 +34,10 @@ public class PrintHelp implements Command {
 	protected static final String DROP = USAGE
 			+ "drop <repositoryID>   Drops the repository with the specified id\n";
 
+	protected static final String EXPORT = USAGE
+			+ "export <file> 	               Exports the entirey repository to a file\n"
+			+ "export <file> (<uri>|null)...   Exports the specified context(s) to a file\n";
+			
 	protected static final String INFO = USAGE
 			+ "info                  Shows information about the console\n";
 
@@ -99,6 +103,7 @@ public class PrintHelp implements Command {
 		topics.put("create", CREATE);
 		topics.put("disconnect", DISCONNECT);
 		topics.put("drop", DROP);
+		topics.put("export", EXPORT);
 		topics.put("federate", FEDERATE);
 		topics.put("info", INFO);
 		topics.put("load", LOAD);
@@ -140,6 +145,7 @@ public class PrintHelp implements Command {
 		consoleIO.writeln("show        Displays an overview of various resources");
 		consoleIO.writeln(
 				"load        Loads a data file into a repository, takes a file path or URL as argument");
+		consoleIO.writeln("export      Exports repository data to a file");
 		consoleIO.writeln(
 				"verify      Verifies the syntax of an RDF data file, takes a file path or URL as argument");
 		consoleIO.writeln("clear       Removes data from a repository");
