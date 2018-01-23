@@ -49,6 +49,7 @@ public class ExportTest extends AbstractCommandTest {
 		
 		addRepositories(MEMORY_MEMBER);
 		
+		when(mockConsoleIO.askProceed("File exists, continue ?", false)).thenReturn(Boolean.TRUE);
 		when(mockConsoleState.getManager()).thenReturn(manager);
 		when(mockConsoleState.getRepository()).thenReturn(manager.getRepository(MEMORY_MEMBER));
 
