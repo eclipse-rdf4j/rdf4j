@@ -70,6 +70,9 @@
 								<option value="native-spin-rdfs">
 									Native Java Store with RDFS+SPIN support
 								</option>
+                                                                <option value="native-spin-rdfs-lucene">
+									Native Java Store with RDFS+SPIN+Lucene support
+								</option>
 								<option value="remote">
 									Remote RDF Store
 								</option>
