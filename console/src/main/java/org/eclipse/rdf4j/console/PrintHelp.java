@@ -35,8 +35,8 @@ public class PrintHelp implements Command {
 			+ "drop <repositoryID>   Drops the repository with the specified id\n";
 
 	protected static final String EXPORT = USAGE
-			+ "export <file> 	               Exports the entirey repository to a file\n"
-			+ "export <file> (<uri>|null)...   Exports the specified context(s) to a file\n";
+			+ "export <file>                 Exports the entirey repository to a file\n"
+			+ "export <file> (<uri>|null)... Exports the specified context(s) to a file\n";
 			
 	protected static final String INFO = USAGE
 			+ "info                  Shows information about the console\n";

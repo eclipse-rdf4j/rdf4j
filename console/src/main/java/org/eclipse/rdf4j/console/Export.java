@@ -7,12 +7,20 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.Writer;
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.logging.Level;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
@@ -47,6 +55,26 @@ public class Export implements Command {
 		return repository.getValueFactory().createIRI(ctxID);
 	}
 	
+	/**
+	 * Get path from file or URI
+	 * 
+	 * @param file file name
+	 * @return path or null
+	 */
+	private static Path getPath(String file) {
+		Path path = null;
+		try {
+			path = Paths.get(file);
+		} catch (InvalidPathException ipe) {
+			try {
+				path = Paths.get(new URI(file));
+			} catch (URISyntaxException ex) { 
+				//
+			}
+		}
+		return path;
+	}
+	
 
 	@Override
 	public void execute(String... tokens) {
@@ -56,13 +84,12 @@ public class Export implements Command {
 			consoleIO.writeUnopenedError();
 			return;
 		}
-
 		if (tokens.length < 2) {
 			consoleIO.writeln(PrintHelp.EXPORT);
 			return;
 		} 
 		
-		String file = tokens[1];
+		String fileName = tokens[1];
 		Resource[] contexts = new Resource[]{};
 
 		if (tokens.length > 2) {
@@ -72,31 +99,48 @@ public class Export implements Command {
 					contexts[i - 2] = getContext(repository, tokens[i]);
 				} catch (IllegalArgumentException ioe) {
 					consoleIO.writeError("Illegal URI: " + tokens[i]);
-					consoleIO.writeln(PrintHelp.EXPORT);
 					return;
 				}
 			}
 		}
-		export(repository, file, contexts);
+		export(repository, fileName, contexts);
 	}
 
 	/**
+	 * Export to a file
 	 * 
-	 * @param repository
-	 * @param baseURI
-	 * @param context
-	 * @param tokens 
+	 * @param repository repository to export
+	 * @param fileName file name
+	 * @param context context(s) (if any)
 	 * @throws UnsupportedRDFormatException
 	 */
-	private void export(Repository repository, String file, Resource...contexts) {
+	private void export(Repository repository, String fileName, Resource...contexts) {
+		Path path = getPath(fileName);
+		if (path == null) {
+			consoleIO.writeError("Invalid file name");
+			return;
+		}
+		
+		if (path.toFile().exists()) {
+			try {
+				boolean overwrite = consoleIO.askProceed("File exists, continue ?", false);
+				if (!overwrite) {
+					consoleIO.writeln("Export aborted");
+					return;
+				}
+			} catch (IOException ioe) {
+				consoleIO.writeError("I/O error " + ioe.getMessage());
+			}
+		}
+		
 		try (	RepositoryConnection conn = repository.getConnection();
-				Writer w = Files.newBufferedWriter(Paths.get(file), StandardCharsets.UTF_8, 
-															StandardOpenOption.TRUNCATE_EXISTING)) {
+				Writer w = Files.newBufferedWriter(path, StandardCharsets.UTF_8, 
+							StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
 			
-			RDFFormat fmt = Rio.getWriterFormatForFileName(file).orElseThrow(() ->
-								new UnsupportedRDFormatException("No RDF parser for " + file));
+			RDFFormat fmt = Rio.getWriterFormatForFileName(fileName).orElseThrow(() ->
+								new UnsupportedRDFormatException("No RDF parser for " + fileName));
 			RDFWriter writer = Rio.createWriter(fmt, w);
-			
+
 			long startTime = System.nanoTime();
 			consoleIO.writeln("Exporting data...");
 
