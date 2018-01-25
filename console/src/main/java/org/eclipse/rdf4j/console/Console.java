@@ -214,10 +214,10 @@ public class Console implements ConsoleState, ConsoleParameters {
 	}
 
 	/**
-	 * Connect to and open repository
+	 * Connect to (and open) a repository, exit when connection fails
 	 * 
 	 * @param console
-	 * @param selectedLocationOption
+	 * @param selectedLocationOption s for server, d for local directory 
 	 * @param location
 	 * @param otherArgs 
 	 */
@@ -240,7 +240,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 	}
 
 	/**
-	 * Print usage and available options to console
+	 * Print usage / available options to console
 	 * 
 	 * @param cio
 	 * @param options 
@@ -254,7 +254,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 		cio.writeln("For bug reports and suggestions, see http://www.rdf4j.org/");
 	}
 
-	private final Map<String, Command> commandMap = new HashMap<String, Command>();
+	private final Map<String, Command> commandMap = new HashMap<>();
 
 	private final Connect connect;
 	private final Disconnect disconnect;
@@ -292,7 +292,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 	}
 
 	/**
-	 * Start the interactive console
+	 * Start the interactive console, return error code on exit
 	 * 
 	 * @throws IOException 
 	 */
@@ -358,7 +358,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 	}
 
 	/**
-	 * Parse command into array of tokens
+	 * Split a command into an array of tokens
 	 * 
 	 * @param command command to parse
 	 * @return array of strings

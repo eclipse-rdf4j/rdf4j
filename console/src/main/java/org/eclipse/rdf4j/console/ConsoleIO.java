@@ -63,9 +63,9 @@ class ConsoleIO {
 	}
 
 	/**
-	 * Read a command from console
+	 * Read a command from input
 	 * 
-	 * @return command
+	 * @return one line of input, or null on error
 	 * @throws IOException 
 	 */
 	protected String readCommand() throws IOException {
@@ -85,7 +85,9 @@ class ConsoleIO {
 	}
 
 	/**
-	 * Get command prompt
+	 * Get command prompt.
+	 * 
+	 * Contains the name of the current repository when connected.
 	 * 
 	 * @return command prompt string
 	 */
