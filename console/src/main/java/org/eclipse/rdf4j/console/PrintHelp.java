@@ -86,7 +86,7 @@ public class PrintHelp implements Command {
 			+ "  [<repoID_n>]*            The id's of 0 or mare additional repositories to federate.\n\n"
 			+ "You will be prompted to enter a description for the federated repository as well.";
 
-	private final Map<String, String> topics = new HashMap<String, String>();
+	private final Map<String, String> topics = new HashMap<>();
 
 	private final ConsoleIO consoleIO;
 
@@ -110,6 +110,7 @@ public class PrintHelp implements Command {
 		topics.put("verify", VERIFY);
 	}
 
+	@Override
 	public void execute(String... parameters) {
 		if (parameters.length < 2) {
 			printCommandOverview();

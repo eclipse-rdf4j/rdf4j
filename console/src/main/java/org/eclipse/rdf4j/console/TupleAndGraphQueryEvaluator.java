@@ -1,10 +1,10 @@
-/*******************************************************************************
+/** *****************************************************************************
  * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
+ ****************************************************************************** */
 package org.eclipse.rdf4j.console;
 
 import java.util.Collection;
@@ -36,9 +36,7 @@ import org.eclipse.rdf4j.rio.ntriples.NTriplesUtil;
 public class TupleAndGraphQueryEvaluator {
 
 	private final ConsoleIO consoleIO;
-
 	private final ConsoleState state;
-
 	private final ConsoleParameters parameters;
 
 	private static final ParserConfig nonVerifyingParserConfig;
@@ -50,16 +48,30 @@ public class TupleAndGraphQueryEvaluator {
 		nonVerifyingParserConfig.set(BasicParserSettings.VERIFY_RELATIVE_URIS, false);
 	}
 
+	/**
+	 * 
+	 * @param consoleIO
+	 * @param state
+	 * @param parameters 
+	 */
 	TupleAndGraphQueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
 		this.consoleIO = consoleIO;
 		this.state = state;
 		this.parameters = parameters;
 	}
 
+	/**
+	 * 
+	 * @param queryLn
+	 * @param queryString
+	 * @throws UnsupportedQueryLanguageException
+	 * @throws MalformedQueryException
+	 * @throws QueryEvaluationException
+	 * @throws RepositoryException 
+	 */
 	protected void evaluateTupleQuery(final QueryLanguage queryLn, final String queryString)
-		throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
-		RepositoryException
-	{
+			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
+			RepositoryException {
 		Repository repository = state.getRepository();
 		if (repository == null) {
 			consoleIO.writeUnopenedError();
@@ -78,8 +90,7 @@ public class TupleAndGraphQueryEvaluator {
 						tupleQueryResult.next();
 						resultCount++;
 					}
-				}
-				else {
+				} else {
 					int consoleWidth = parameters.getWidth();
 					final int columnWidth = (consoleWidth - 1) / bindingNames.size() - 3;
 
@@ -125,25 +136,32 @@ public class TupleAndGraphQueryEvaluator {
 				}
 				final long endTime = System.nanoTime();
 				consoleIO.writeln(resultCount + " result(s) (" + (endTime - startTime) / 1000000 + " ms)");
-			}
-			finally {
+			} finally {
 				tupleQueryResult.close();
 			}
-		}
-		finally {
+		} finally {
 			con.close();
 		}
 	}
 
+	/**
+	 * 
+	 * @param queryLn
+	 * @param queryString
+	 * @throws UnsupportedQueryLanguageException
+	 * @throws MalformedQueryException
+	 * @throws QueryEvaluationException
+	 * @throws RepositoryException 
+	 */
 	protected void evaluateGraphQuery(final QueryLanguage queryLn, final String queryString)
-		throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
-		RepositoryException
-	{
+			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
+			RepositoryException {
 		Repository repository = state.getRepository();
 		if (repository == null) {
 			consoleIO.writeUnopenedError();
 			return;
 		}
+		
 		final RepositoryConnection con = repository.getConnection();
 		con.setParserConfig(nonVerifyingParserConfig);
 		try {
@@ -151,6 +169,7 @@ public class TupleAndGraphQueryEvaluator {
 			final long startTime = System.nanoTime();
 			final Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
 			final GraphQueryResult queryResult = con.prepareGraphQuery(queryLn, queryString).evaluate();
+		
 			try {
 				int resultCount = 0;
 				while (queryResult.hasNext()) {
@@ -165,38 +184,48 @@ public class TupleAndGraphQueryEvaluator {
 				}
 				final long endTime = System.nanoTime();
 				consoleIO.writeln(resultCount + " results (" + (endTime - startTime) / 1000000 + " ms)");
-			}
-			finally {
+			} finally {
 				queryResult.close();
 			}
-		}
-		finally {
+		} finally {
 			con.close();
 		}
 	}
-
+	
+	/**
+	 * 
+	 * @param value
+	 * @param namespaces
+	 * @return 
+	 */
 	private String getStringRepForValue(final Value value, final Collection<Namespace> namespaces) {
 		String result = "";
 		if (value != null) {
 			if (parameters.isShowPrefix() && value instanceof IRI) {
-				final IRI uri = (IRI)value;
+				final IRI uri = (IRI) value;
 				final String prefix = getPrefixForNamespace(uri.getNamespace(), namespaces);
+
 				if (prefix == null) {
 					result = NTriplesUtil.toNTriplesString(value);
-				}
-				else {
+				} else {
 					result = prefix + ":" + uri.getLocalName();
 				}
-			}
-			else {
+			} else {
 				result = NTriplesUtil.toNTriplesString(value);
 			}
 		}
 		return result;
 	}
 
+	/**
+	 * 
+	 * @param namespace
+	 * @param namespaces
+	 * @return 
+	 */
 	private String getPrefixForNamespace(final String namespace, final Collection<Namespace> namespaces) {
 		String result = null;
+
 		for (Namespace ns : namespaces) {
 			if (namespace.equals(ns.getName())) {
 				result = ns.getPrefix();
@@ -205,5 +234,4 @@ public class TupleAndGraphQueryEvaluator {
 		}
 		return result;
 	}
-
 }
