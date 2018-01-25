@@ -34,8 +34,10 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.UserInterruptException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
