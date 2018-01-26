@@ -13,6 +13,8 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
 
 /**
+ * Listen to parser errors and warnings
+ * 
  * @author Dale Visser
  */
 class VerificationListener extends AbstractRDFHandler implements ParseErrorListener {
@@ -33,14 +35,29 @@ class VerificationListener extends AbstractRDFHandler implements ParseErrorListe
 	private int errors;
 	private int statements;
 
+	/**
+	 * Get number of warnings
+	 * 
+	 * @return number of warnings 
+	 */
 	public int getWarnings() {
 		return warnings;
 	}
 
+	/**
+	 * Get number of errors
+	 * 
+	 * @return number of errors
+	 */
 	public int getErrors() {
 		return errors;
 	}
 
+	/**
+	 * Get number of statements
+	 * 
+	 * @return number of statements 
+	 */
 	public int getStatements() {
 		return statements;
 	}

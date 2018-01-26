@@ -196,10 +196,13 @@ public class TupleAndGraphQueryEvaluator {
 	}
 	
 	/**
+	 * Get string representation for a value.
+	 * If the value is an IRI and is part of a known namespace, 
+	 * the prefix will be used to create a shorter string.
 	 * 
 	 * @param value
-	 * @param namespaces
-	 * @return 
+	 * @param namespaces known namespaces
+	 * @return string representation
 	 */
 	private String getStringRepForValue(final Value value, final Collection<Namespace> namespaces) {
 		String result = "";
@@ -221,10 +224,11 @@ public class TupleAndGraphQueryEvaluator {
 	}
 
 	/**
+	 * Get prefix for a namespace
 	 * 
-	 * @param namespace
-	 * @param namespaces
-	 * @return 
+	 * @param namespace namespace
+	 * @param namespaces known namespaces
+	 * @return namespace prefix or null
 	 */
 	private String getPrefixForNamespace(final String namespace, final Collection<Namespace> namespaces) {
 		String result = null;

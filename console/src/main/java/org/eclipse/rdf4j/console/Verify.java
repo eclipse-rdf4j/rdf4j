@@ -95,9 +95,11 @@ public class Verify implements Command {
 	}
 
 	/**
+	 * Parse URL or path to local file.
+	 * Only the second (index 1) token will be parsed, files will be prefixed with "file:" scheme
 	 * 
-	 * @param tokens
-	 * @return 
+	 * @param tokens array of tokens to be parsed
+	 * @return URL path as string 
 	 */
 	private String parseDataPath(String... tokens) {
 		StringBuilder dataPath = new StringBuilder(tokens[1]);
