@@ -19,15 +19,18 @@ class VerificationListener extends AbstractRDFHandler implements ParseErrorListe
 
 	private final ConsoleIO consoleIO;
 
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO 
+	 */
 	VerificationListener(ConsoleIO consoleIO) {
 		super();
 		this.consoleIO = consoleIO;
 	}
 
 	private int warnings;
-
 	private int errors;
-
 	private int statements;
 
 	public int getWarnings() {
@@ -43,8 +46,7 @@ class VerificationListener extends AbstractRDFHandler implements ParseErrorListe
 	}
 
 	@Override
-	public void handleStatement(final Statement statement)
-			throws RDFHandlerException {
+	public void handleStatement(final Statement statement) throws RDFHandlerException {
 		statements++;
 	}
 

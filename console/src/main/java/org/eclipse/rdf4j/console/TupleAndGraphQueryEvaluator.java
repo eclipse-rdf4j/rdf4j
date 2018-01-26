@@ -49,6 +49,7 @@ public class TupleAndGraphQueryEvaluator {
 	}
 
 	/**
+	 * Constructor
 	 * 
 	 * @param consoleIO
 	 * @param state
@@ -61,9 +62,10 @@ public class TupleAndGraphQueryEvaluator {
 	}
 
 	/**
+	 * Evaluate SPARQL or SERQL tuple query
 	 * 
-	 * @param queryLn
-	 * @param queryString
+	 * @param queryLn query language
+	 * @param queryString suery string
 	 * @throws UnsupportedQueryLanguageException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
@@ -145,9 +147,10 @@ public class TupleAndGraphQueryEvaluator {
 	}
 
 	/**
+	 * Evaluate SPARQL or SERQL graph query
 	 * 
-	 * @param queryLn
-	 * @param queryString
+	 * @param queryLn query language
+	 * @param queryString query string
 	 * @throws UnsupportedQueryLanguageException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException

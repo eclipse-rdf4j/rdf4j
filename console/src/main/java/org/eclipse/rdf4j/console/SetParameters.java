@@ -19,6 +19,8 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 
 /**
+ * Set parameters command
+ * 
  * @author dale
  */
 public class SetParameters implements Command {
@@ -45,6 +47,12 @@ public class SetParameters implements Command {
 
 	private final ConsoleParameters parameters;
 
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param parameters 
+	 */
 	SetParameters(ConsoleIO consoleIO, ConsoleParameters parameters) {
 		this.consoleIO = consoleIO;
 		this.parameters = parameters;
@@ -70,7 +78,7 @@ public class SetParameters implements Command {
 	}
 
 	/**
-	 * 
+	 * Show all parameters
 	 */
 	private void showAllParameters() {
 		showLogLevel();
@@ -80,8 +88,9 @@ public class SetParameters implements Command {
 	}
 
 	/**
+	 * Show parameter
 	 * 
-	 * @param key 
+	 * @param key parameter key
 	 */
 	private void showParameter(String key) {
 		if (LOG_COMMAND.equalsIgnoreCase(key)) {
@@ -98,6 +107,7 @@ public class SetParameters implements Command {
 	}
 
 	/**
+	 * Set parameter
 	 * 
 	 * @param key
 	 * @param value 
@@ -120,7 +130,7 @@ public class SetParameters implements Command {
 	}
 
 	/**
-	 * 
+	 * Show log level
 	 */
 	private void showLogLevel() {
 		Logger logbackRootLogger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
@@ -132,6 +142,7 @@ public class SetParameters implements Command {
 	}
 
 	/**
+	 * Set log level
 	 * 
 	 * @param value 
 	 */
@@ -147,13 +158,14 @@ public class SetParameters implements Command {
 	}
 
 	/**
-	 * 
+	 * Show column width
 	 */
 	private void showWidth() {
 		consoleIO.writeln("width: " + parameters.getWidth());
 	}
 
 	/**
+	 * Set column width
 	 * 
 	 * @param value 
 	 */
@@ -171,13 +183,14 @@ public class SetParameters implements Command {
 	}
 
 	/**
-	 * 
+	 * Show prefix
 	 */
 	private void showPrefix() {
 		consoleIO.writeln("showPrefix: " + parameters.isShowPrefix());
 	}
 
 	/**
+	 * Set prefix
 	 * 
 	 * @param value 
 	 */
@@ -186,13 +199,14 @@ public class SetParameters implements Command {
 	}
 
 	/**
-	 * 
+	 * Show query prefix
 	 */
 	private void showQueryPrefix() {
 		consoleIO.writeln("queryPrefix: " + parameters.isQueryPrefix());
 	}
 
 	/**
+	 * Set query prefix
 	 * 
 	 * @param value 
 	 */

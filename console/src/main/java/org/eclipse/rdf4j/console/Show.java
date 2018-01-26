@@ -66,7 +66,7 @@ public class Show implements Command {
 	}
 
 	/**
-	 * 
+	 * Show available repositories
 	 */
 	private void showRepositories() {
 		try {
@@ -98,7 +98,7 @@ public class Show implements Command {
 	}
 
 	/**
-	 * 
+	 * Show namespaces
 	 */
 	private void showNamespaces() {
 		Repository repository = state.getRepository();
@@ -136,7 +136,7 @@ public class Show implements Command {
 	}
 
 	/**
-	 * 
+	 * Show contexts
 	 */
 	private void showContexts() {
 		Repository repository = state.getRepository();

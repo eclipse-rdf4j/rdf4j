@@ -23,6 +23,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
+ * Verify command
+ * 
  * @author Dale Visser
  */
 public class Verify implements Command {
