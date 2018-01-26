@@ -12,7 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Prints help to the console.
+ * Prints available command and options to the console.
  * 
  * @author Dale Visser
  */
@@ -90,6 +90,11 @@ public class PrintHelp implements Command {
 
 	private final ConsoleIO consoleIO;
 
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO 
+	 */
 	PrintHelp(ConsoleIO consoleIO) {
 		super();
 		this.consoleIO = consoleIO;
@@ -126,6 +131,9 @@ public class PrintHelp implements Command {
 		}
 	}
 
+	/**
+	 * Print list of commands
+	 */
 	private void printCommandOverview() {
 		consoleIO.writeln("For more information on a specific command, try 'help <command>'.");
 		consoleIO.writeln("List of all commands:");

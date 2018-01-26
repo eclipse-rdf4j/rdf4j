@@ -83,11 +83,12 @@ public class Federate implements Command {
 	}
 
 	/**
+	 * Add one or more repositories to a repository federation
 	 * 
 	 * @param distinct
-	 * @param readonly
+	 * @param readonly true when all 
 	 * @param fedID
-	 * @param memberIDs 
+	 * @param memberIDs list of member
 	 */
 	private void federate(boolean distinct, boolean readonly, String fedID, Deque<String> memberIDs) {
 		if (LOGGER.isDebugEnabled()) {
@@ -117,11 +118,12 @@ public class Federate implements Command {
 	}
 
 	/**
+	 * Validate members of a federation
 	 * 
-	 * @param manager
-	 * @param readonly
-	 * @param memberIDs
-	 * @return 
+	 * @param manager repository manager
+	 * @param readonly set to true if read-only repositories are OK
+	 * @param memberIDs IDs of the federated repositories
+	 * @return true when all members are present
 	 */
 	private boolean validateMembers(RepositoryManager manager, boolean readonly, Deque<String> memberIDs) {
 		boolean result = true;
@@ -148,6 +150,7 @@ public class Federate implements Command {
 	}
 
 	/**
+	 * Log basic details about calls to federated repositories
 	 * 
 	 * @param distinct
 	 * @param readonly
@@ -157,6 +160,7 @@ public class Federate implements Command {
 	private void logCallDetails(boolean distinct, boolean readonly, String fedID, Deque<String> memberIDs) {
 		StringBuilder builder = new StringBuilder();
 		builder.append("Federate called with federation ID = " + fedID + ", and member ID's = ");
+		
 		for (String member : memberIDs) {
 			builder.append("[").append(member).append("]");
 		}
@@ -166,22 +170,24 @@ public class Federate implements Command {
 	}
 
 	/**
+	 * Get the value of an optional boolean parameter or the default
 	 * 
-	 * @param parameters
-	 * @param name
-	 * @param defaultValue
-	 * @return 
+	 * @param parameters set of parameters
+	 * @param name name of the parameter
+	 * @param defaultValue default value
+	 * @return value or default
 	 */
 	private boolean getOptionalParamValue(Deque<String> parameters, String name, boolean defaultValue) {
 		return Boolean.parseBoolean(getOptionalParamValue(parameters, name, Boolean.toString(defaultValue)));
 	}
 
 	/**
+	 * Get the value of an optional string parameter or the default
 	 * 
-	 * @param parameters
-	 * @param name
-	 * @param defaultValue
-	 * @return 
+	 * @param parameters set of parameters
+	 * @param name parameter name
+	 * @param defaultValue default string value
+	 * @return value or default
 	 */
 	private String getOptionalParamValue(Deque<String> parameters, String name, String defaultValue) {
 		String result = defaultValue;

@@ -80,8 +80,9 @@ class Load implements Command {
 	}
 
 	/**
+	 * Load data into a repository
 	 * 
-	 * @param repository
+	 * @param repository repository
 	 * @param baseURI
 	 * @param context
 	 * @param tokens 
@@ -119,10 +120,12 @@ class Load implements Command {
 	}
 
 	/**
+	 * Handle exceptions when loading data in a read-only repository.
+	 * If a lock is present and can be removed, the command will be executed again.
 	 * 
-	 * @param repository
-	 * @param caught
-	 * @param tokens 
+	 * @param repository repository
+	 * @param caught exception
+	 * @param tokens full command as series of tokens
 	 */
 	private void handleReadOnlyException(Repository repository, RepositoryReadOnlyException caught,
 			final String... tokens) {
@@ -142,12 +145,14 @@ class Load implements Command {
 	}
 
 	/**
+	 * Add data from a URL or local file.
+	 * If the dataURL is null, then the datafile will be used.
 	 * 
-	 * @param repository
-	 * @param baseURI
-	 * @param context
-	 * @param dataURL
-	 * @param dataFile
+	 * @param repository repository
+	 * @param baseURI base URI
+	 * @param context context (can be null)
+	 * @param dataURL url of the data
+	 * @param dataFile file containing data
 	 * @throws RepositoryException
 	 * @throws IOException
 	 * @throws RDFParseException 
@@ -156,9 +161,9 @@ class Load implements Command {
 			throws RepositoryException, IOException, RDFParseException {
 		Resource[] contexts = getContexts(repository, context);
 		consoleIO.writeln("Loading data...");
+		
 		final long startTime = System.nanoTime();
 		final RepositoryConnection con = repository.getConnection();
-		
 		try {
 			if (dataURL == null) {
 				con.add(dataFile, baseURI, null, contexts);
@@ -193,5 +198,4 @@ class Load implements Command {
 		}
 		return contexts;
 	}
-
 }

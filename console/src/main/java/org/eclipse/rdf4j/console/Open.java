@@ -18,6 +18,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
+ * Open command
+ * 
  * @author Dale Visser
  */
 public class Open implements Command {
@@ -56,8 +58,9 @@ public class Open implements Command {
 	private static final String OPEN_FAILURE = "Failed to open repository";
 
 	/**
+	 * Open a repository
 	 * 
-	 * @param repoID 
+	 * @param repoID repository ID 
 	 */
 	protected void openRepository(final String repoID) {
 		try {

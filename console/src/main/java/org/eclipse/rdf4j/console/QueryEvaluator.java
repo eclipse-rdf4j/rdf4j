@@ -66,9 +66,10 @@ public class QueryEvaluator {
 	}
 
 	/**
+	 * Execute a SPARQL or SERQL query, defaults to SPARQL
 	 * 
-	 * @param command
-	 * @param operation 
+	 * @param command to execute
+	 * @param operation "sparql", "serql", "base" or SPARQL query form
 	 */
 	public void executeQuery(final String command, final String operation) {
 		final List<String> sparqlQueryStart = Arrays.asList(
@@ -85,9 +86,10 @@ public class QueryEvaluator {
 	}
 
 	/**
+	 * Evaluate a SERQL or SPARQL query
 	 * 
-	 * @param queryLn
-	 * @param queryText 
+	 * @param queryLn query language
+	 * @param queryText query string
 	 */
 	private void evaluateQuery(final QueryLanguage queryLn, String queryText) {
 		try {
@@ -101,7 +103,7 @@ public class QueryEvaluator {
 
 			evaluateQuery(queryLn, queryString, query);
 		} catch (UnsupportedQueryLanguageException e) {
-			consoleIO.writeError("Unsupported query lanaguge: " + queryLn.getName());
+			consoleIO.writeError("Unsupported query language: " + queryLn.getName());
 		} catch (MalformedQueryException e) {
 			consoleIO.writeError("Malformed query: " + e.getMessage());
 		} catch (QueryInterruptedException e) {
@@ -123,10 +125,11 @@ public class QueryEvaluator {
 	}
 
 	/**
+	 * Evaluate a SPARQL or SERQL query that has already been parsed
 	 * 
-	 * @param queryLn
-	 * @param queryString
-	 * @param query
+	 * @param queryLn query language
+	 * @param queryString query string
+	 * @param query parsed query
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 * @throws RepositoryException
@@ -150,14 +153,16 @@ public class QueryEvaluator {
 	}
 
 	/**
+	 * Add namespaces prefixes to SPARQL or SERQL query
 	 * 
-	 * @param queryLn
-	 * @param queryString
-	 * @return 
+	 * @param queryLn query language
+	 * @param queryString query string
+	 * @return query string with prefixes
 	 */
 	private String addQueryPrefixes(final QueryLanguage queryLn, final String queryString) {
 		final StringBuffer result = new StringBuffer(queryString.length() + 512);
 		result.append(queryString);
+		
 		final String lowerCaseQuery = queryString.toLowerCase(Locale.ENGLISH);
 		Repository repository = state.getRepository();
 		
@@ -186,10 +191,11 @@ public class QueryEvaluator {
 	}
 
 	/**
+	 * Add namespace prefixes to query
 	 * 
-	 * @param queryLn
-	 * @param result
-	 * @param namespaces 
+	 * @param queryLn query language
+	 * @param result 
+	 * @param namespaces collection of known namespaces
 	 */
 	private void addQueryPrefixes(final QueryLanguage queryLn, final StringBuffer result,
 			final Collection<Namespace> namespaces) {
@@ -220,9 +226,10 @@ public class QueryEvaluator {
 	}
 
 	/**
+	 * Evaluate a boolean SPARQL or SERQL query
 	 * 
-	 * @param queryLn
-	 * @param queryString
+	 * @param queryLn query language
+	 * @param queryString query string
 	 * @throws UnsupportedQueryLanguageException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
@@ -251,9 +258,10 @@ public class QueryEvaluator {
 	}
 
 	/**
+	 * Execute a SPARQL or SERQL update
 	 * 
-	 * @param queryLn
-	 * @param queryString
+	 * @param queryLn query language
+	 * @param queryString query string
 	 * @throws RepositoryException
 	 * @throws UpdateExecutionException
 	 * @throws MalformedQueryException 
