@@ -547,6 +547,7 @@ public class TurtleParser extends AbstractRDFParser {
 			reportStatement(subject, predicate, bNode);
 		}
 
+		skipWSC();
 		int c = readCodePoint();
 		if (c != ']') {
 			unread(c);
