@@ -11,19 +11,16 @@ import java.io.IOException;
 
 /**
  * Abstraction of console commands.
- * 
+ *
  * @author Dale Visser
  */
 public interface Command {
 
 	/**
 	 * Execute the given parameters.
-	 * 
-	 * @param parameters
-	 *        parameters typed by user
-	 * @throws IOException
-	 *         if a problem occurs reading or writing
+	 *
+	 * @param parameters parameters typed by user
+	 * @throws IOException if a problem occurs reading or writing
 	 */
-	void execute(String... parameters)
-		throws IOException;
+	void execute(String... parameters) throws IOException;
 }

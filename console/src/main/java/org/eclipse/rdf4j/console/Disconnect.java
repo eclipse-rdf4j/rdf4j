@@ -10,22 +10,34 @@ package org.eclipse.rdf4j.console;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
 /**
+ * Disconnect command
+ * 
  * @author Dale Visser
  */
 public class Disconnect {
 
 	private final ConsoleIO consoleIO;
-
 	private final ConsoleState appInfo;
-
 	private final Close close;
 
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param appInfo
+	 * @param close 
+	 */
 	Disconnect(ConsoleIO consoleIO, ConsoleState appInfo, Close close) {
 		this.consoleIO = consoleIO;
 		this.appInfo = appInfo;
 		this.close = close;
 	}
 
+	/**
+	 * Execute the command
+	 * 
+	 * @param verbose 
+	 */
 	public void execute(boolean verbose) {
 		final RepositoryManager manager = this.appInfo.getManager();
 		if (manager == null) {

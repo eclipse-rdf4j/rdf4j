@@ -19,10 +19,13 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
+ * Load command
+ * 
  * @author Dale Visser
  */
 class Load implements Command {
@@ -30,29 +33,34 @@ class Load implements Command {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Load.class);
 
 	private final ConsoleIO consoleIO;
-
 	private final ConsoleState state;
-
 	private final LockRemover lockRemover;
 
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param state
+	 * @param lockRemover 
+	 */
 	Load(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
 		this.consoleIO = consoleIO;
 		this.state = state;
 		this.lockRemover = lockRemover;
 	}
 
+	@Override
 	public void execute(final String... tokens) {
 		Repository repository = state.getRepository();
 		if (repository == null) {
 			consoleIO.writeUnopenedError();
-		}
-		else {
+		} else {
 			if (tokens.length < 2) {
 				consoleIO.writeln(PrintHelp.LOAD);
-			}
-			else {
+			} else {
 				String baseURI = null;
 				String context = null;
+				
 				int index = 2;
 				if (tokens.length >= index + 2 && tokens[index].equalsIgnoreCase("from")) {
 					baseURI = tokens[index + 1];
@@ -64,14 +72,21 @@ class Load implements Command {
 				}
 				if (index < tokens.length) {
 					consoleIO.writeln(PrintHelp.LOAD);
-				}
-				else {
+				} else {
 					load(repository, baseURI, context, tokens);
 				}
 			}
 		}
 	}
 
+	/**
+	 * Load data into a repository
+	 * 
+	 * @param repository repository
+	 * @param baseURI
+	 * @param context
+	 * @param tokens 
+	 */
 	private void load(Repository repository, String baseURI, String context, final String... tokens) {
 		final String dataPath = tokens[1];
 		URL dataURL = null;
@@ -79,76 +94,83 @@ class Load implements Command {
 		try {
 			dataURL = new URL(dataPath);
 			// dataPath is a URI
-		}
-		catch (MalformedURLException e) {
+		} catch (MalformedURLException e) {
 			// dataPath is a file
 			dataFile = new File(dataPath);
 		}
 		try {
 			addData(repository, baseURI, context, dataURL, dataFile);
-		}
-		catch (RepositoryReadOnlyException e) {
+		} catch (RepositoryReadOnlyException e) {
 			handleReadOnlyException(repository, e, tokens);
-		}
-		catch (MalformedURLException e) {
+		} catch (MalformedURLException e) {
 			consoleIO.writeError("Malformed URL: " + dataPath);
-		}
-		catch (IllegalArgumentException e) {
+		} catch (IllegalArgumentException e) {
 			// Thrown when context URI is invalid
 			consoleIO.writeError(e.getMessage());
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			consoleIO.writeError("Failed to load data: " + e.getMessage());
-		}
-		catch (UnsupportedRDFormatException e) {
+		} catch (UnsupportedRDFormatException e) {
 			consoleIO.writeError("No parser available for this RDF format");
-		}
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			consoleIO.writeError("Malformed document: " + e.getMessage());
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			consoleIO.writeError("Unable to add data to repository: " + e.getMessage());
 			LOGGER.error("Failed to add data to repository", e);
 		}
 	}
 
+	/**
+	 * Handle exceptions when loading data in a read-only repository.
+	 * If a lock is present and can be removed, the command will be executed again.
+	 * 
+	 * @param repository repository
+	 * @param caught exception
+	 * @param tokens full command as series of tokens
+	 */
 	private void handleReadOnlyException(Repository repository, RepositoryReadOnlyException caught,
-			final String... tokens)
-	{
+			final String... tokens) {
 		try {
 			if (lockRemover.tryToRemoveLock(repository)) {
 				execute(tokens);
-			}
-			else {
+			} else {
 				consoleIO.writeError("Failed to load data");
 				LOGGER.error("Failed to load data", caught);
 			}
-		}
-		catch (RepositoryException e1) {
+		} catch (RepositoryException e1) {
 			consoleIO.writeError("Unable to restart repository: " + e1.getMessage());
 			LOGGER.error("Unable to restart repository", e1);
-		}
-		catch (IOException e1) {
+		} catch (IOException e1) {
 			consoleIO.writeError("Unable to remove lock: " + e1.getMessage());
 		}
 	}
 
+	/**
+	 * Add data from a URL or local file.
+	 * If the dataURL is null, then the datafile will be used.
+	 * 
+	 * @param repository repository
+	 * @param baseURI base URI
+	 * @param context context (can be null)
+	 * @param dataURL url of the data
+	 * @param dataFile file containing data
+	 * @throws RepositoryException
+	 * @throws IOException
+	 * @throws RDFParseException 
+	 */
 	private void addData(Repository repository, String baseURI, String context, URL dataURL, File dataFile)
-		throws RepositoryException, IOException, RDFParseException
-	{
+			throws RepositoryException, IOException, RDFParseException {
 		Resource[] contexts = getContexts(repository, context);
 		consoleIO.writeln("Loading data...");
+		
 		final long startTime = System.nanoTime();
 		final RepositoryConnection con = repository.getConnection();
 		try {
 			if (dataURL == null) {
 				con.add(dataFile, baseURI, null, contexts);
-			}
-			else {
+			} else {
 				con.add(dataURL, baseURI, null, contexts);
 			}
-		}
-		finally {
+		} finally {
 			con.close();
 		}
 		final long endTime = System.nanoTime();
@@ -156,19 +178,24 @@ class Load implements Command {
 				"Data has been added to the repository (" + (endTime - startTime) / 1000000 + " ms)");
 	}
 
+	/**
+	 * Get context as resource
+	 * 
+	 * @param repository
+	 * @param context
+	 * @return array of size one, or null
+	 */
 	private Resource[] getContexts(Repository repository, String context) {
 		Resource[] contexts = new Resource[0];
 		if (context != null) {
 			Resource contextURI;
 			if (context.startsWith("_:")) {
 				contextURI = repository.getValueFactory().createBNode(context.substring(2));
-			}
-			else {
+			} else {
 				contextURI = repository.getValueFactory().createIRI(context);
 			}
-			contexts = new Resource[] { contextURI };
+			contexts = new Resource[]{contextURI};
 		}
 		return contexts;
 	}
-
 }

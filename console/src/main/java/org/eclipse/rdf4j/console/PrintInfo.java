@@ -8,19 +8,27 @@
 package org.eclipse.rdf4j.console;
 
 /**
+ * Print command
+ * 
  * @author Dale Visser
  */
 class PrintInfo implements Command {
 
 	private final ConsoleState appInfo;
-
 	private final ConsoleIO consoleIO;
 
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param appInfo 
+	 */
 	PrintInfo(ConsoleIO consoleIO, ConsoleState appInfo) {
 		this.consoleIO = consoleIO;
 		this.appInfo = appInfo;
 	}
 
+	@Override
 	public void execute(String... parameters) {
 		consoleIO.writeln(appInfo.getApplicationName());
 		consoleIO.writeln("Data dir: " + appInfo.getDataDirectory());

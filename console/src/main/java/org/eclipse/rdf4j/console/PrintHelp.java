@@ -12,7 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Prints help to the console.
+ * Prints available command and options to the console.
  * 
  * @author Dale Visser
  */
@@ -90,10 +90,15 @@ public class PrintHelp implements Command {
 			+ "  [<repoID_n>]*            The id's of 0 or mare additional repositories to federate.\n\n"
 			+ "You will be prompted to enter a description for the federated repository as well.";
 
-	private final Map<String, String> topics = new HashMap<String, String>();
+	private final Map<String, String> topics = new HashMap<>();
 
 	private final ConsoleIO consoleIO;
 
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO 
+	 */
 	PrintHelp(ConsoleIO consoleIO) {
 		super();
 		this.consoleIO = consoleIO;
@@ -115,6 +120,7 @@ public class PrintHelp implements Command {
 		topics.put("verify", VERIFY);
 	}
 
+	@Override
 	public void execute(String... parameters) {
 		if (parameters.length < 2) {
 			printCommandOverview();
@@ -130,6 +136,9 @@ public class PrintHelp implements Command {
 		}
 	}
 
+	/**
+	 * Print list of commands
+	 */
 	private void printCommandOverview() {
 		consoleIO.writeln("For more information on a specific command, try 'help <command>'.");
 		consoleIO.writeln("List of all commands:");

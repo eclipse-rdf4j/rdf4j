@@ -36,9 +36,7 @@ import org.eclipse.rdf4j.rio.ntriples.NTriplesUtil;
 public class TupleAndGraphQueryEvaluator {
 
 	private final ConsoleIO consoleIO;
-
 	private final ConsoleState state;
-
 	private final ConsoleParameters parameters;
 
 	private static final ParserConfig nonVerifyingParserConfig;
@@ -50,16 +48,32 @@ public class TupleAndGraphQueryEvaluator {
 		nonVerifyingParserConfig.set(BasicParserSettings.VERIFY_RELATIVE_URIS, false);
 	}
 
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param state
+	 * @param parameters 
+	 */
 	TupleAndGraphQueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
 		this.consoleIO = consoleIO;
 		this.state = state;
 		this.parameters = parameters;
 	}
 
+	/**
+	 * Evaluate SPARQL or SERQL tuple query
+	 * 
+	 * @param queryLn query language
+	 * @param queryString suery string
+	 * @throws UnsupportedQueryLanguageException
+	 * @throws MalformedQueryException
+	 * @throws QueryEvaluationException
+	 * @throws RepositoryException 
+	 */
 	protected void evaluateTupleQuery(final QueryLanguage queryLn, final String queryString)
-		throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
-		RepositoryException
-	{
+			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
+			RepositoryException {
 		Repository repository = state.getRepository();
 		if (repository == null) {
 			consoleIO.writeUnopenedError();
@@ -78,8 +92,7 @@ public class TupleAndGraphQueryEvaluator {
 						tupleQueryResult.next();
 						resultCount++;
 					}
-				}
-				else {
+				} else {
 					int consoleWidth = parameters.getWidth();
 					final int columnWidth = (consoleWidth - 1) / bindingNames.size() - 3;
 
@@ -125,25 +138,33 @@ public class TupleAndGraphQueryEvaluator {
 				}
 				final long endTime = System.nanoTime();
 				consoleIO.writeln(resultCount + " result(s) (" + (endTime - startTime) / 1000000 + " ms)");
-			}
-			finally {
+			} finally {
 				tupleQueryResult.close();
 			}
-		}
-		finally {
+		} finally {
 			con.close();
 		}
 	}
 
+	/**
+	 * Evaluate SPARQL or SERQL graph query
+	 * 
+	 * @param queryLn query language
+	 * @param queryString query string
+	 * @throws UnsupportedQueryLanguageException
+	 * @throws MalformedQueryException
+	 * @throws QueryEvaluationException
+	 * @throws RepositoryException 
+	 */
 	protected void evaluateGraphQuery(final QueryLanguage queryLn, final String queryString)
-		throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
-		RepositoryException
-	{
+			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
+			RepositoryException {
 		Repository repository = state.getRepository();
 		if (repository == null) {
 			consoleIO.writeUnopenedError();
 			return;
 		}
+		
 		final RepositoryConnection con = repository.getConnection();
 		con.setParserConfig(nonVerifyingParserConfig);
 		try {
@@ -151,6 +172,7 @@ public class TupleAndGraphQueryEvaluator {
 			final long startTime = System.nanoTime();
 			final Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
 			final GraphQueryResult queryResult = con.prepareGraphQuery(queryLn, queryString).evaluate();
+		
 			try {
 				int resultCount = 0;
 				while (queryResult.hasNext()) {
@@ -165,38 +187,52 @@ public class TupleAndGraphQueryEvaluator {
 				}
 				final long endTime = System.nanoTime();
 				consoleIO.writeln(resultCount + " results (" + (endTime - startTime) / 1000000 + " ms)");
-			}
-			finally {
+			} finally {
 				queryResult.close();
 			}
-		}
-		finally {
+		} finally {
 			con.close();
 		}
 	}
-
+	
+	/**
+	 * Get string representation for a value.
+	 * If the value is an IRI and is part of a known namespace, 
+	 * the prefix will be used to create a shorter string.
+	 * 
+	 * @param value
+	 * @param namespaces known namespaces
+	 * @return string representation
+	 */
 	private String getStringRepForValue(final Value value, final Collection<Namespace> namespaces) {
 		String result = "";
 		if (value != null) {
 			if (parameters.isShowPrefix() && value instanceof IRI) {
-				final IRI uri = (IRI)value;
+				final IRI uri = (IRI) value;
 				final String prefix = getPrefixForNamespace(uri.getNamespace(), namespaces);
+
 				if (prefix == null) {
 					result = NTriplesUtil.toNTriplesString(value);
-				}
-				else {
+				} else {
 					result = prefix + ":" + uri.getLocalName();
 				}
-			}
-			else {
+			} else {
 				result = NTriplesUtil.toNTriplesString(value);
 			}
 		}
 		return result;
 	}
 
+	/**
+	 * Get prefix for a namespace
+	 * 
+	 * @param namespace namespace
+	 * @param namespaces known namespaces
+	 * @return namespace prefix or null
+	 */
 	private String getPrefixForNamespace(final String namespace, final Collection<Namespace> namespaces) {
 		String result = null;
+
 		for (Namespace ns : namespaces) {
 			if (namespace.equals(ns.getName())) {
 				result = ns.getPrefix();
@@ -205,5 +241,4 @@ public class TupleAndGraphQueryEvaluator {
 		}
 		return result;
 	}
-
 }

@@ -10,40 +10,51 @@ package org.eclipse.rdf4j.console;
 import org.eclipse.rdf4j.repository.Repository;
 
 /**
+ * Close command
+ * 
  * @author Dale Visser
  */
 public class Close implements Command {
 
 	private final ConsoleIO consoleIO;
-
 	private final ConsoleState appInfo;
 
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param appInfo 
+	 */
 	Close(ConsoleIO consoleIO, ConsoleState appInfo) {
 		this.consoleIO = consoleIO;
 		this.appInfo = appInfo;
 	}
 
+	@Override
 	public void execute(String... tokens) {
 		if (tokens.length == 1) {
 			closeRepository(true);
-		}
-		else {
+		} else {
 			consoleIO.writeln(PrintHelp.CLOSE);
 		}
 	}
 
+	/**
+	 * Close repository
+	 * 
+	 * @param verbose print more information
+	 */
 	protected void closeRepository(final boolean verbose) {
 		final Repository repository = this.appInfo.getRepository();
+		
 		if (repository == null) {
 			if (verbose) {
 				consoleIO.writeln("There are no open repositories that can be closed");
 			}
-		}
-		else {
+		} else {
 			consoleIO.writeln("Closing repository '" + this.appInfo.getRepositoryID() + "'...");
 			this.appInfo.setRepository(null);
 			this.appInfo.setRepositoryID(null);
 		}
 	}
-
 }
