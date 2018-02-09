@@ -340,7 +340,7 @@ public class NTriplesParser extends AbstractRDFParser {
 		else if (c == '_') {
 			// subject is a bNode
 			c = parseNodeID(c, sb);
-			subject = createBNode(sb.toString());
+			subject = createNode(sb.toString());
 		}
 		else if (c == -1) {
 			throwEOFException();
@@ -388,7 +388,7 @@ public class NTriplesParser extends AbstractRDFParser {
 		else if (c == '_') {
 			// object is a bNode
 			c = parseNodeID(c, sb);
-			object = createBNode(sb.toString());
+			object = createNode(sb.toString());
 		}
 		else if (c == '"') {
 			// object is a literal
