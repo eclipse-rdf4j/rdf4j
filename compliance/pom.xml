@@ -4,22 +4,18 @@
 
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
-		<artifactId>rdf4j</artifactId>
-		<version>2.2-SNAPSHOT</version>
+		<artifactId>rdf4j-client-parent</artifactId>
+		<version>2.3-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>rdf4j-compliance</artifactId>
 	<packaging>pom</packaging>
 
 	<modules>
+		<module>manager</module>
 		<module>model</module>
 		<module>queryresultio</module>
 		<module>rio</module>
-		<module>http</module>
-		<module>store</module>
-		<module>serql</module>
-		<module>sparql</module>
-		<module>geosparql</module>
 	</modules>
 
 	<name>RDF4J compliance tests</name>

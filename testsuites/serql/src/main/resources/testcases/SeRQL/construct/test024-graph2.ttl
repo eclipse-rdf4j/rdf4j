@@ -1,8 +1,0 @@
-# Graph 2. Identified in default graph by file name test024-graph2.ttl
-@prefix foaf: <http://xmlns.com/foaf/0.1/> .
-
-_:a foaf:name "Alice" .
-_:a foaf:mbox <mailto:alice@work.example> .
-
-_:b foaf:name "Bob" .
-_:b foaf:mbox <mailto:bob@newcorp.example.org> .

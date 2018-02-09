@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-compliance</artifactId>
-		<version>2.2-SNAPSHOT</version>
+		<version>2.3-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>rdf4j-rio-compliance</artifactId>
@@ -122,6 +122,26 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
+
+	<profiles>
+		<profile>
+			<id>jdk9</id>
+			<activation>
+				<jdk>[1.9,9,)</jdk>
+			</activation>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-failsafe-plugin</artifactId>
+						<configuration>
+							<argLine>--add-modules=java.xml.bind</argLine>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
 
 	<build>
 		<plugins>

@@ -1,3 +1,0 @@
-construct *
-from {x} rdfs:label {y}
-where y > "bar"

@@ -1,4 +1,0 @@
-CONSTRUCT *
-FROM CONTEXT <foo:contextA>
-     {<foo:subj>} <foo:predA> {A};
-                 [<foo:predB> {B}]
