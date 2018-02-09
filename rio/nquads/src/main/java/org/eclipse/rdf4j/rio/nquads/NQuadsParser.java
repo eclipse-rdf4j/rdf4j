@@ -182,7 +182,7 @@ public class NQuadsParser extends NTriplesParser {
 		else if (c == '_') {
 			// subject is a bNode
 			c = parseNodeID(c, sb);
-			context = createBNode(sb.toString());
+			context = createNode(sb.toString());
 		}
 		else if (c == -1) {
 			throwEOFException();

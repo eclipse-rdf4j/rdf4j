@@ -30,7 +30,6 @@ import java.io.Reader;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -238,11 +237,11 @@ public class BinaryRDFParser extends AbstractRDFParser {
 		return createURI(uri);
 	}
 
-	private BNode readBNode()
+	private Resource readBNode()
 		throws IOException, RDFParseException
 	{
 		String bnodeID = readString();
-		return createBNode(bnodeID);
+		return createNode(bnodeID);
 	}
 
 	private Literal readPlainLiteral()

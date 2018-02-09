@@ -223,6 +223,17 @@ public class BasicParserSettings {
 			"org.eclipse.rdf4j.rio.preservebnodeids", "Preserve blank node identifiers", Boolean.FALSE);
 
 	/**
+	 * Scheme and authority of new mint Skolem IRIs that should replace Blank Nodes. For example a value of
+	 * "http://example.com" might cause a blank node to be replaced with an IRI of
+	 * "http://example.com/.well-known/genid/d26a2d0e98334696f4ad70a677abc1f6"
+	 * <p>
+	 * Defaults to null (disabled).
+	 */
+	public static final RioSetting<String> SKOLEMIZE_ORIGIN = new RioSettingImpl<String>(
+			"org.eclipse.rdf4j.rio.skolemorigin",
+			"Replace blank nodes with well known genid IRIs using this scheme and authority", null);
+
+	/**
 	 * Boolean setting for parser to determine whether parser should preserve, truncate, drop, or otherwise
 	 * manipulate statements that contain long literals. The maximum length of literals if this setting is set
 	 * to truncate or drop is configured using {@link #LARGE_LITERALS_LIMIT}.
