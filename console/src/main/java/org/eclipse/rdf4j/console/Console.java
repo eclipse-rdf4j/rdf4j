@@ -241,6 +241,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 		commandMap.put("open", open);
 		commandMap.put("show", new Show(consoleIO, this));
 		commandMap.put("load", new Load(consoleIO, this, lockRemover));
+		commandMap.put("export", new Export(consoleIO, this));
 		commandMap.put("verify", new Verify(consoleIO));
 		commandMap.put("clear", new Clear(consoleIO, this, lockRemover));
 		commandMap.put("set", new SetParameters(consoleIO, this));

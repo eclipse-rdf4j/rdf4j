@@ -11,8 +11,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
-import java.io.UnsupportedEncodingException;
+
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
@@ -30,9 +31,12 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+
 import org.junit.After;
 import org.junit.Rule;
+
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
@@ -59,51 +63,90 @@ public class AbstractCommandTest {
 	protected ConsoleState mockConsoleState;
 
 	@After
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 		if (manager != null) {
 			manager.shutDown();
 		}
 	}
 
-	protected final void addRepositories(String... identities)
-		throws UnsupportedEncodingException, IOException, RDF4JException
-	{
+	/**
+	 * Load triples or quads from a resource file into the repository
+	 * 
+	 * @param repId repository ID
+	 * @param data URL of the resource
+	 * @param file name of the file
+	 * @throws IOException 
+	 * @throws UnsupportedRDFormatException
+	 */
+	protected void loadData(String repId, URL data, String file) 
+										throws IOException, UnsupportedRDFormatException {
+		RDFFormat fmt = Rio.getParserFormatForFileName(file).orElseThrow(() ->
+						new UnsupportedRDFormatException("No parser for " + file));
+		
+		try (RepositoryConnection connection = manager.getRepository(repId).getConnection()) {
+			connection.add(data, null, fmt);
+		}
+	}
+	
+	/**
+	 * Add one or more repositories to the repository manager, and load some content (if any).
+	 * 
+	 * @param identities
+	 * @throws IOException
+	 * @throws RDF4JException 
+	 */
+	protected void addRepositories(String... identities) throws IOException, RDF4JException {
+		// file types to check for
+		String[] filetypes = new String[2];
+		filetypes[0] = "ttl";
+		filetypes[1] = "trig";
+
 		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+	
 		for (String identity : identities) {
-			addRepository(classLoader.getResourceAsStream("federate/" + identity + "-config.ttl"),
-					classLoader.getResource("federate/" + identity + ".ttl"));
+			InputStream cfg = classLoader.getResourceAsStream("federate/" + identity + "-config.ttl");
+			String repID = addRepository(cfg);
+
+			for(String filetype: filetypes) {
+				String file = identity + "." + filetype;
+ 				URL res = classLoader.getResource("federate/" + file);
+				if (res != null) {
+					loadData(repID, res, file);
+				}
+			}
 		}
 	}
 
-	protected void addRepository(InputStream configStream, URL data)
-		throws UnsupportedEncodingException, IOException, RDF4JException
-	{
+	/***
+	 * Add a new repository to the manager.
+	 * 
+	 * @param configStream input stream of the repository configuration
+	 * @return ID of the repository as string
+	 * @throws IOException
+	 * @throws RDF4JException 
+	 */
+	protected String addRepository(InputStream configStream) throws IOException, RDF4JException {
 		RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, SimpleValueFactory.getInstance());
+
 		Model graph = new LinkedHashModel();
 		rdfParser.setRDFHandler(new StatementCollector(graph));
-		rdfParser.parse(new StringReader(IOUtil.readString(new InputStreamReader(configStream, "UTF-8"))),
-				RepositoryConfigSchema.NAMESPACE);
+		rdfParser.parse(new StringReader(IOUtil.readString(
+								new InputStreamReader(configStream, StandardCharsets.UTF_8))),
+						RepositoryConfigSchema.NAMESPACE);
 		configStream.close();
+		
 		Resource repositoryNode = Models.subject(
 				graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY)).orElseThrow(
 						() -> new RepositoryConfigException("could not find subject resource"));
+		
 		RepositoryConfig repoConfig = RepositoryConfig.create(graph, repositoryNode);
 		repoConfig.validate();
 		manager.addRepositoryConfig(repoConfig);
-		if (null != data) { // null if we didn't provide a data file
-			final String repId = Models.objectLiteral(
-					graph.filter(repositoryNode, RepositoryConfigSchema.REPOSITORYID, null)).orElseThrow(
-							() -> new RepositoryConfigException("missing repository id")).stringValue();
-			RepositoryConnection connection = manager.getRepository(repId).getConnection();
-			try {
-				connection.add(data, null, RDFFormat.TURTLE);
-			}
-			finally {
-				connection.close();
-			}
-		}
+		
+		String repId = Models.objectLiteral(
+			graph.filter(repositoryNode, RepositoryConfigSchema.REPOSITORYID, null)).orElseThrow(() -> 
+					new RepositoryConfigException("missing repository id")).stringValue();
+		
+		return repId;
 	}
-
 }
