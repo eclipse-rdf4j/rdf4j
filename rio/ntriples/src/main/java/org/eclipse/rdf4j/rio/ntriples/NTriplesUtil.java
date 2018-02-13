@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.rio.ntriples;
 
 import java.io.IOException;
 
+import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -319,9 +320,12 @@ public class NTriplesUtil {
 	public static void append(IRI uri, Appendable appendable)
 		throws IOException
 	{
-		appendable.append("<");
-		escapeString(uri.toString(), appendable);
-		appendable.append(">");
+		StringBuilder sb = new StringBuilder();
+		escapeString(uri.toString(), sb);
+		String s = sb.toString();
+		s = StringUtil.gsub("<", "\\u003C", s);
+		s = StringUtil.gsub(">", "\\u003E", s);
+		appendable.append("<").append(s).append(">");
 	}
 
 	/**
