@@ -470,8 +470,17 @@ public class TurtleUtil {
 	 * Encodes the supplied string for inclusion as a (relative) URI in a Turtle document.
 	 **/
 	public static String encodeURIString(String s) {
-		s = StringUtil.gsub("\\", "\\\\", s);
-		s = StringUtil.gsub(">", "\\>", s);
+		s = StringUtil.gsub("\\", "\\u005C", s);
+		s = StringUtil.gsub("\t", "\\u0009", s);
+		s = StringUtil.gsub("\n", "\\u000A", s);
+		s = StringUtil.gsub("\r", "\\u000D", s);
+		s = StringUtil.gsub("\"", "\\u0022", s);
+		s = StringUtil.gsub("`", "\\u0060", s);
+		s = StringUtil.gsub("^", "\\u005E", s);
+		s = StringUtil.gsub("|", "\\u007C", s);
+		s = StringUtil.gsub("<", "\\u003C", s);
+		s = StringUtil.gsub(">", "\\u003E", s);
+		s = StringUtil.gsub(" ", "\\u0020", s);
 		return s;
 	}
 
