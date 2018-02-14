@@ -16,7 +16,7 @@ import static org.junit.Assert.fail;
 import java.io.ByteArrayOutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 import org.junit.Test;
 
@@ -589,7 +589,7 @@ public class ParsedIRITest {
 		throws UnsupportedEncodingException
 	{
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
-		byte[] source = Character.toString(chr).getBytes(Charset.forName("UTF-8"));
+		byte[] source = Character.toString(chr).getBytes(StandardCharsets.UTF_8);
 		for (byte c : source) {
 			out.write('%');
 			char high = Character.forDigit((c >> 4) & 0xF, 16);

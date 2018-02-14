@@ -17,8 +17,8 @@ import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
-import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
+import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -200,7 +200,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	}
 
 	private static String[] pctEncode(int[] unencoded) {
-		CharsetEncoder encoder = Charset.forName("UTF-8").newEncoder();
+		CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder();
 		String[] result = new String[unencoded.length];
 		for (int i = 0; i < unencoded.length; i++) {
 			String ns = new String(Character.toChars(unencoded[i]));
