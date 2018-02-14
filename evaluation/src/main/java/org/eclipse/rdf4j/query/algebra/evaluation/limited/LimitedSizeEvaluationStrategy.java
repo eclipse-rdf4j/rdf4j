@@ -188,11 +188,16 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Order node, BindingSet bindings)
 		throws QueryEvaluationException
 	{
-		ValueComparator vcmp = new ValueComparator();
-		OrderComparator cmp = new OrderComparator(this, node, vcmp);
-		boolean reduced = isReducedOrDistinct(node);
 		long limit = getLimit(node);
-		return new LimitedSizeOrderIteration(evaluate(node.getArg(), bindings), cmp, limit, reduced, used,
-				maxSize);
+		if (maxSize < limit) {
+			ValueComparator vcmp = new ValueComparator();
+			OrderComparator cmp = new OrderComparator(this, node, vcmp);
+			boolean reduced = isReducedOrDistinct(node);
+			return new LimitedSizeOrderIteration(evaluate(node.getArg(), bindings), cmp, limit, reduced, used,
+					maxSize);
+		}
+		else {
+			return super.evaluate(node, bindings);
+		}
 	}
 }

@@ -1,0 +1,7 @@
+cluster.name: sail_test
+node.local: true
+index.store.type: memory
+index.store.fs.memory.enabled: true
+gateway.type: none
+index.number_of_shards: 1
+index.number_of_replicas: 0
