@@ -14,9 +14,9 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 
 import java.util.List;
 import java.util.Objects;
@@ -28,7 +28,7 @@ import java.util.stream.Stream;
  */
 public class Shape implements PlanGenerator, RequiresEvalutation {
 
-	List<PropertyShape> propertyShapes;
+	private List<PropertyShape> propertyShapes;
 
 	public Shape(Resource id, SailRepositoryConnection connection) {
 		propertyShapes = PropertyShape.Factory.getProprtyShapes(id, connection, this);
@@ -70,8 +70,7 @@ public class Shape implements PlanGenerator, RequiresEvalutation {
 				return stream.map(Statement::getSubject).map(shapeId -> {
 					if (hasTargetClass(shapeId, connection)) {
 						return new TargetClass(shapeId, connection);
-					}
-					else {
+					} else {
 						return null; // target class shapes are the only supported shapes
 					}
 				})

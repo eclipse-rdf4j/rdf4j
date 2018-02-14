@@ -9,15 +9,13 @@
 package org.eclipse.rdf4j.sail.shacl.mock;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.plan.Tuple;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -33,7 +31,7 @@ public class MockInputPlanNode implements PlanNode {
 		this.initialData = initialData;
 	}
 
-	public MockInputPlanNode(List<String> ... list) {
+	public MockInputPlanNode(List<String>... list) {
 
 		initialData = Arrays
 			.stream(list)
@@ -53,28 +51,24 @@ public class MockInputPlanNode implements PlanNode {
 
 			@Override
 			public void close()
-					throws SailException
-			{
+				throws SailException {
 			}
 
 			@Override
 			public boolean hasNext()
-					throws SailException
-			{
+				throws SailException {
 				return iterator.hasNext();
 			}
 
 			@Override
 			public Tuple next()
-					throws SailException
-			{
+				throws SailException {
 				return iterator.next();
 			}
 
 			@Override
 			public void remove()
-					throws SailException
-			{
+				throws SailException {
 
 			}
 		};

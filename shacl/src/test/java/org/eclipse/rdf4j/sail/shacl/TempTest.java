@@ -1,3 +1,11 @@
+/*******************************************************************************
+ * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -8,8 +16,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.junit.Test;
-
-import static junit.framework.TestCase.assertEquals;
 
 public class TempTest {
 
@@ -126,7 +132,6 @@ public class TempTest {
 			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
 
 
-
 			connection.commit();
 
 		}
@@ -199,7 +204,6 @@ public class TempTest {
 			connection.add(RDFS.SUBCLASSOF, RDFS.LABEL, connection.getValueFactory().createLiteral("c"));
 
 			connection.commit();
-
 
 
 		}

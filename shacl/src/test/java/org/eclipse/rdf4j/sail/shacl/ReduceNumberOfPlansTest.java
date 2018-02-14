@@ -1,3 +1,11 @@
+/*******************************************************************************
+ * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -5,10 +13,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.AST.Shape;
-import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.junit.Test;
 
 import java.util.List;
@@ -19,7 +25,7 @@ import static junit.framework.TestCase.assertEquals;
 public class ReduceNumberOfPlansTest {
 
 	@Test
-	public void testAddingTypeStatement(){
+	public void testAddingTypeStatement() {
 		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("reduceNumberOfPlansTest/shacl.ttl")));
 		shaclSail.initialize();
 
@@ -56,7 +62,7 @@ public class ReduceNumberOfPlansTest {
 	}
 
 	@Test
-	public void testRemovingPredicate(){
+	public void testRemovingPredicate() {
 		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("reduceNumberOfPlansTest/shacl.ttl")));
 		shaclSail.initialize();
 

@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
-import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
@@ -26,6 +25,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.LeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MergeNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MinCountFilter;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
@@ -37,13 +37,15 @@ import java.util.stream.Stream;
  */
 public class MinCountPropertyShape extends PathPropertyShape {
 
-	public long minCount;
+	private long minCount;
+	private boolean optimizeWhenNoStatementsRemoved = true;
 
-	public MinCountPropertyShape(Resource id, SailRepositoryConnection connection, Shape shape) {
+
+	MinCountPropertyShape(Resource id, SailRepositoryConnection connection, Shape shape) {
 		super(id, connection, shape);
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.MIN_COUNT, null, true))) {
-			minCount = stream.map(Statement::getObject).map(v -> (Literal) v).map(Literal::longValue).findAny().get();
+			minCount = stream.map(Statement::getObject).map(v -> (Literal) v).map(Literal::longValue).findAny().orElseThrow(() -> new RuntimeException("Expect to find sh:minCount on " + id));
 		}
 
 	}
@@ -57,9 +59,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		PlanNode topNode;
 
-		boolean optimizeWhenNoStatementsRemoved = true;
 
-		if(!optimizeWhenNoStatementsRemoved || shaclSailConnection.stats.hasRemoved()){
+		if (!optimizeWhenNoStatementsRemoved || shaclSailConnection.stats.hasRemoved()) {
 			PlanNode planRemovedStatements = new LoggingNode(new TrimTuple(new LoggingNode(super.getPlanRemovedStatements(shaclSailConnection, shape)), 1));
 
 			PlanNode filteredPlanRemovedStatements = planRemovedStatements;
@@ -80,16 +81,15 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			// Persumably BulkedExternalLeftOuterJoin will be high if super.getPlanAddedStatements has a high number of statements for other subjects that in "unique"
 			//topNode = new LoggingNode(new BulkedExternalLeftOuterJoin(unique, shaclSailConnection.addedStatements, path.getQuery()));
 
-		}else {
+		} else {
 			String query = "";
-			if(shape instanceof TargetClass){
-				query = ((TargetClass)shape).getQuery();
+			if (shape instanceof TargetClass) {
+				query = ((TargetClass) shape).getQuery();
 			}
 
-			query += "\n OPTIONAL { "+path.getQuery()+" }";
+			query += "\n OPTIONAL { " + path.getQuery() + " }";
 			topNode = new LoggingNode(new Select(shaclSailConnection.addedStatements, query));
 		}
-
 
 
 		PlanNode groupBy = new LoggingNode(new GroupByCount(topNode));
@@ -108,10 +108,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		DirectTupleFromFilter filteredStatements2 = new DirectTupleFromFilter();
 		new MinCountFilter(groupBy2, null, filteredStatements2, minCount);
 
-		PlanNode minCountFilter2 = new LoggingNode(filteredStatements2);
-
-
-		return minCountFilter2;
+		return new LoggingNode(filteredStatements2);
 
 	}
 

@@ -1,3 +1,11 @@
+/*******************************************************************************
+ * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
 import org.eclipse.rdf4j.model.Statement;
@@ -38,15 +46,15 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
-		for(int j = 0; j<10; j++) {
+		for (int j = 0; j < 10; j++) {
 			List<Statement> statements = new ArrayList<>(101);
 			allStatements.add(statements);
 			for (int i = 0; i < 100; i++) {
 				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i+"_"+j), RDF.TYPE, RDFS.RESOURCE)
+					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE)
 				);
 				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i+"_"+j), RDFS.LABEL, vf.createLiteral("label" + i))
+					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDFS.LABEL, vf.createLiteral("label" + i))
 				);
 			}
 		}
@@ -55,10 +63,10 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 		for (int i = 0; i < 1; i++) {
 			allStatements2.add(
-				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i ), RDF.TYPE, RDFS.RESOURCE)
+				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDF.TYPE, RDFS.RESOURCE)
 			);
 			allStatements2.add(
-				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i ), RDFS.LABEL, vf.createLiteral("label" + i))
+				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDFS.LABEL, vf.createLiteral("label" + i))
 			);
 		}
 
@@ -101,7 +109,6 @@ public class MinCountPrefilledVsEmptyBenchmark {
 		}
 
 	}
-
 
 
 	@Benchmark

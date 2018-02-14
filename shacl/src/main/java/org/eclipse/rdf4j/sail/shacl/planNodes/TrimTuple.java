@@ -1,9 +1,15 @@
+/*******************************************************************************
+ * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.plan.Tuple;
 
 public class TrimTuple implements PlanNode {
 
@@ -40,7 +46,7 @@ public class TrimTuple implements PlanNode {
 
 				Tuple tuple = new Tuple();
 
-				for(int i = 0; i<newLength && i<next.line.size(); i++){
+				for (int i = 0; i < newLength && i < next.line.size(); i++) {
 					tuple.line.add(next.line.get(i));
 				}
 
@@ -58,6 +64,6 @@ public class TrimTuple implements PlanNode {
 
 	@Override
 	public int depth() {
-		return parent.depth()+1;
+		return parent.depth() + 1;
 	}
 }

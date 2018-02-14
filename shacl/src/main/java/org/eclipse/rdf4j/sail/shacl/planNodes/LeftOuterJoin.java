@@ -1,9 +1,15 @@
+/*******************************************************************************
+ * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.plan.Tuple;
 
 public class LeftOuterJoin implements PlanNode {
 
@@ -61,19 +67,19 @@ public class LeftOuterJoin implements PlanNode {
 							int compareTo = nextLeft.compareTo(nextRight);
 
 							if (compareTo < 0) {
-								if(prevLeft != nextLeft){
+								if (prevLeft != nextLeft) {
 									prevLeft = nextLeft;
 									next = nextLeft;
-								}else if (leftIterator.hasNext()) {
+								} else if (leftIterator.hasNext()) {
 									nextLeft = leftIterator.next();
-								}else {
+								} else {
 									nextLeft = null;
 									break;
 								}
 							} else {
 								if (rightIterator.hasNext()) {
 									nextRight = rightIterator.next();
-								}else {
+								} else {
 									nextRight = null;
 									break;
 								}

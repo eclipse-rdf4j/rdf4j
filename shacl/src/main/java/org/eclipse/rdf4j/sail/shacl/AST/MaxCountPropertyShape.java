@@ -12,22 +12,18 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
-import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MaxCountFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MergeNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.MinCountFilter;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 
@@ -36,13 +32,13 @@ import java.util.stream.Stream;
 
 public class MaxCountPropertyShape extends PathPropertyShape {
 
-	public long maxCount;
+	private long maxCount;
 
-	public MaxCountPropertyShape(Resource id, SailRepositoryConnection connection, Shape shape) {
+	MaxCountPropertyShape(Resource id, SailRepositoryConnection connection, Shape shape) {
 		super(id, connection, shape);
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.MAX_COUNT, null, true))) {
-			maxCount = stream.map(Statement::getObject).map(v -> (Literal) v).map(Literal::longValue).findAny().get();
+			maxCount = stream.map(Statement::getObject).map(v -> (Literal) v).map(Literal::longValue).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:maxCount on " + id));
 		}
 
 	}
@@ -55,12 +51,11 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
 
 
-
 		PlanNode planAddedStatements = new LoggingNode(shape.getPlanAddedStatements(shaclSailConnection, shape));
 
 		PlanNode planAddedStatements1 = new LoggingNode(super.getPlanAddedStatements(shaclSailConnection, shape));
 
-		if(shape instanceof TargetClass){
+		if (shape instanceof TargetClass) {
 			planAddedStatements1 = new LoggingNode(((TargetClass) shape).getTypeFilterPlan(shaclSailConnection, planAddedStatements1));
 		}
 
@@ -83,7 +78,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		DirectTupleFromFilter directTupleFromFilter = new DirectTupleFromFilter();
 
-	    new MaxCountFilter(groupByCount, null, directTupleFromFilter, maxCount);
+		new MaxCountFilter(groupByCount, null, directTupleFromFilter, maxCount);
 
 		PlanNode mergeNode1 = new MergeNode(new LoggingNode(directTupleFromFilter), new LoggingNode(invalidValues));
 

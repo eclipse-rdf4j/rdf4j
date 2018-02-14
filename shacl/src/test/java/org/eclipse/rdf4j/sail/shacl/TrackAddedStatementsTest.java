@@ -1,3 +1,11 @@
+/*******************************************************************************
+ * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -12,7 +20,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.junit.Test;
 
 import static junit.framework.TestCase.assertEquals;
-import static junit.framework.TestCase.assertFalse;
 import static junit.framework.TestCase.assertNotNull;
 import static junit.framework.TestCase.assertNull;
 
@@ -188,7 +195,6 @@ public class TrackAddedStatementsTest {
 			connection.remove(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 
 
-
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
 			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 
@@ -228,12 +234,9 @@ public class TrackAddedStatementsTest {
 			assertEquals(0, size(shaclSailConnection.removedStatements));
 
 
-
-
 			connection.commit();
 
 			System.out.println(size(connection));
-
 
 
 		}
@@ -266,7 +269,6 @@ public class TrackAddedStatementsTest {
 			connection.commit();
 
 			System.out.println(size(connection));
-
 
 
 		}
@@ -370,11 +372,11 @@ public class TrackAddedStatementsTest {
 	}
 
 
-	private static long size(RepositoryConnection connection){
+	private static long size(RepositoryConnection connection) {
 		return Iterations.stream(connection.getStatements(null, null, null)).peek(System.out::println).count();
 	}
 
-	private static long size(Repository repo){
+	private static long size(Repository repo) {
 		try (RepositoryConnection connection = repo.getConnection()) {
 			return Iterations.stream(connection.getStatements(null, null, null)).peek(System.out::println).count();
 		}

@@ -13,14 +13,12 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -29,12 +27,12 @@ import java.util.stream.Stream;
  */
 public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
-	Resource id;
+	private Resource id;
 
 	Shape shape;
 
 
-	public PropertyShape(Resource id, Shape shape) {
+	PropertyShape(Resource id, Shape shape) {
 		this.id = id;
 		this.shape = shape;
 	}

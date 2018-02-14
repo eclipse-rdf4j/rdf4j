@@ -1,13 +1,21 @@
+/*******************************************************************************
+ * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
 import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
-import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.plan.Tuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -25,7 +33,7 @@ public class LeftOuterJoinTest {
 	}
 
 	@Test
-	public void testSimple(){
+	public void testSimple() {
 
 
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a"));
@@ -43,7 +51,7 @@ public class LeftOuterJoinTest {
 
 
 	@Test
-	public void testSimple2(){
+	public void testSimple2() {
 
 
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"));
@@ -61,7 +69,7 @@ public class LeftOuterJoinTest {
 
 
 	@Test
-	public void testSimple3(){
+	public void testSimple3() {
 
 
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"));
@@ -79,7 +87,7 @@ public class LeftOuterJoinTest {
 
 
 	@Test
-	public void testSimple4(){
+	public void testSimple4() {
 
 
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"));
@@ -97,7 +105,7 @@ public class LeftOuterJoinTest {
 
 
 	@Test
-	public void testSimple5(){
+	public void testSimple5() {
 
 
 		PlanNode left = new MockInputPlanNode();
@@ -114,7 +122,7 @@ public class LeftOuterJoinTest {
 	}
 
 	@Test
-	public void testSimple6(){
+	public void testSimple6() {
 
 
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"), Arrays.asList("a4"));
@@ -131,7 +139,7 @@ public class LeftOuterJoinTest {
 	}
 
 	@Test
-	public void testSimple7(){
+	public void testSimple7() {
 
 
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"));
@@ -148,7 +156,7 @@ public class LeftOuterJoinTest {
 	}
 
 	@Test
-	public void testSimple8(){
+	public void testSimple8() {
 
 
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"));
@@ -165,11 +173,11 @@ public class LeftOuterJoinTest {
 	}
 
 	@Test
-	public void testSimple9(){
+	public void testSimple9() {
 
 
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"), Arrays.asList("a4"));
-		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"),  Arrays.asList("a3", "b3"), Arrays.asList("a4", "b4"));
+		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"), Arrays.asList("a3", "b3"), Arrays.asList("a4", "b4"));
 
 		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
 
@@ -177,16 +185,16 @@ public class LeftOuterJoinTest {
 
 		tuples.forEach(System.out::println);
 
-		verify(tuples, Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"),  Arrays.asList("a3", "b3"), Arrays.asList("a4", "b4"));
+		verify(tuples, Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"), Arrays.asList("a3", "b3"), Arrays.asList("a4", "b4"));
 
 	}
 
 	@Test
-	public void testSimple10(){
+	public void testSimple10() {
 
 
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"), Arrays.asList("a4"));
-		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"),  Arrays.asList("a4", "b4"));
+		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"), Arrays.asList("a4", "b4"));
 
 		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
 
@@ -194,52 +202,17 @@ public class LeftOuterJoinTest {
 
 		tuples.forEach(System.out::println);
 
-		verify(tuples, Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"),  Arrays.asList("a3"), Arrays.asList("a4", "b4"));
-
-	}
-
-
-	@Test
-	public void testSimple11(){
-
-
-		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"), Arrays.asList("a4"));
-		PlanNode right = new MockInputPlanNode( Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"),  Arrays.asList("a4", "b4"));
-
-		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
-
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
-
-		tuples.forEach(System.out::println);
-
-		verify(tuples, Arrays.asList("a1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"),  Arrays.asList("a3"), Arrays.asList("a4", "b4"));
-
-	}
-
-	@Test
-	public void testSimple12(){
-
-
-		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"), Arrays.asList("a4"));
-		PlanNode right = new MockInputPlanNode( Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"));
-
-		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
-
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
-
-		tuples.forEach(System.out::println);
-
-		verify(tuples, Arrays.asList("a1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"),  Arrays.asList("a3"), Arrays.asList("a4"));
+		verify(tuples, Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"), Arrays.asList("a3"), Arrays.asList("a4", "b4"));
 
 	}
 
 
 	@Test
-	public void testSimple13(){
+	public void testSimple11() {
 
 
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"), Arrays.asList("a4"));
-		PlanNode right = new MockInputPlanNode( Arrays.asList("a1", "b1"), Arrays.asList("a1", "b11"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"));
+		PlanNode right = new MockInputPlanNode(Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"), Arrays.asList("a4", "b4"));
 
 		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
 
@@ -247,12 +220,47 @@ public class LeftOuterJoinTest {
 
 		tuples.forEach(System.out::println);
 
-		verify(tuples,  Arrays.asList("a1", "b1"), Arrays.asList("a1", "b11"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"),  Arrays.asList("a3"), Arrays.asList("a4"));
+		verify(tuples, Arrays.asList("a1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"), Arrays.asList("a3"), Arrays.asList("a4", "b4"));
+
+	}
+
+	@Test
+	public void testSimple12() {
+
+
+		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"), Arrays.asList("a4"));
+		PlanNode right = new MockInputPlanNode(Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"));
+
+		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
+
+		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+
+		tuples.forEach(System.out::println);
+
+		verify(tuples, Arrays.asList("a1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"), Arrays.asList("a3"), Arrays.asList("a4"));
 
 	}
 
 
-	public void verify(List<Tuple> actual, List<String> ... expect){
+	@Test
+	public void testSimple13() {
+
+
+		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"), Arrays.asList("a4"));
+		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a1", "b11"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"));
+
+		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
+
+		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+
+		tuples.forEach(System.out::println);
+
+		verify(tuples, Arrays.asList("a1", "b1"), Arrays.asList("a1", "b11"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"), Arrays.asList("a3"), Arrays.asList("a4"));
+
+	}
+
+
+	public void verify(List<Tuple> actual, List<String>... expect) {
 
 
 		Set<Tuple> collect = Arrays

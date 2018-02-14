@@ -8,39 +8,32 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.query.Query;
-import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.repository.sparql.query.SPARQLTupleQuery;
 
 import java.util.stream.Stream;
 
 /**
  * @author Heshan Jayasinghe
  */
-public class Path implements RequiresEvalutation, QueryGenerator{
+public class Path implements RequiresEvalutation, QueryGenerator {
 
-	IRI path;
+	private IRI path;
 
-	Resource id;
+	private Resource id;
 
 
 	Path(Resource id, SailRepositoryConnection connection) {
 		this.id = id;
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.PATH, null, true))) {
-			path = stream.map(Statement::getObject).map(v -> (IRI) v).findAny().get();
+			path = stream.map(Statement::getObject).map(v -> (IRI) v).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:path on " + id));
 		}
 
 	}
@@ -54,11 +47,11 @@ public class Path implements RequiresEvalutation, QueryGenerator{
 	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
 		boolean requiresEvalutation;
 		try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
-			requiresEvalutation = addedStatementsConnection.hasStatement(null,path, null, false);
+			requiresEvalutation = addedStatementsConnection.hasStatement(null, path, null, false);
 		}
 
 		try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
-			requiresEvalutation |= removedStatementsConnection.hasStatement(null,path, null, false);
+			requiresEvalutation |= removedStatementsConnection.hasStatement(null, path, null, false);
 		}
 
 		return requiresEvalutation;
@@ -67,7 +60,7 @@ public class Path implements RequiresEvalutation, QueryGenerator{
 	@Override
 	public String getQuery() {
 
-		return "?a <"+path+"> ?c. ";
+		return "?a <" + path + "> ?c. ";
 
 	}
 }

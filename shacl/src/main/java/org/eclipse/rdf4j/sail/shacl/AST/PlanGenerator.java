@@ -8,8 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 
 /**
  * @author Heshan Jayasinghe
@@ -19,6 +19,7 @@ public interface PlanGenerator {
 	PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape);
 
 	PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, Shape shape);
+
 	PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, Shape shape);
 
 

@@ -1,17 +1,23 @@
+/*******************************************************************************
+ * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.plan.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.plan.Tuple;
 
 import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public class LoggingNode implements PlanNode{
+public class LoggingNode implements PlanNode {
 
 	PlanNode parent;
 
@@ -25,16 +31,16 @@ public class LoggingNode implements PlanNode{
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		if(!loggingEnabled){
+		if (!loggingEnabled) {
 			return parent.iterator();
-		}else{
+		} else {
 			return new CloseableIteration<Tuple, SailException>() {
 
 
 				CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
 				{
-					if(pullAll){
+					if (pullAll) {
 						parentIterator = cachedIterator(parentIterator);
 					}
 				}
@@ -90,13 +96,13 @@ public class LoggingNode implements PlanNode{
 
 				@Override
 				public Tuple next() throws SailException {
-					assert parentIterator.hasNext() : parentIterator.getClass().getSimpleName()+" does not have any more items but next was still called!!!";
+					assert parentIterator.hasNext() : parentIterator.getClass().getSimpleName() + " does not have any more items but next was still called!!!";
 
 					Tuple next = parentIterator.next();
 
 					assert next != null;
 
-					System.out.println(leadingSpace()+parent.getClass().getSimpleName()+".next(): "+" "+next.toString());
+					System.out.println(leadingSpace() + parent.getClass().getSimpleName() + ".next(): " + " " + next.toString());
 
 					return next;
 				}
@@ -112,13 +118,13 @@ public class LoggingNode implements PlanNode{
 
 	@Override
 	public int depth() {
-		return parent.depth()+1;
+		return parent.depth() + 1;
 	}
 
-	private String leadingSpace(){
+	private String leadingSpace() {
 		StringBuilder ret = new StringBuilder();
 		int depth = depth();
-		while(--depth > 0){
+		while (--depth > 0) {
 			ret.append("    ");
 		}
 		return ret.toString();
