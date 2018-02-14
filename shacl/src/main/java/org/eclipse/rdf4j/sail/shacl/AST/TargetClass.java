@@ -75,4 +75,5 @@ public class TargetClass extends Shape {
 	public PlanNode getTypeFilterPlan(ShaclSailConnection shaclSailConnection, PlanNode parent) {
 		return new ExternalTypeFilterNode(shaclSailConnection, targetClass, parent);
 	}
+
 }

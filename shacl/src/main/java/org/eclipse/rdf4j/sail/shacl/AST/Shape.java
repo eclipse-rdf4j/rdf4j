@@ -31,9 +31,12 @@ import java.util.stream.Stream;
  */
 public class Shape implements PlanGenerator, RequiresEvalutation, QueryGenerator {
 
+	private Resource id;
+
 	private List<PropertyShape> propertyShapes;
 
 	public Shape(Resource id, SailRepositoryConnection connection) {
+		this.id = id;
 		propertyShapes = PropertyShape.Factory.getProprtyShapes(id, connection, this);
 	}
 
@@ -91,5 +94,10 @@ public class Shape implements PlanGenerator, RequiresEvalutation, QueryGenerator
 		private static boolean hasTargetClass(Resource shapeId, SailRepositoryConnection connection) {
 			return connection.hasStatement(shapeId, SHACL.TARGET_CLASS, null, true);
 		}
+	}
+
+	@Override
+	public String toString() {
+		return id.toString();
 	}
 }
