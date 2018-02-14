@@ -11,6 +11,9 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import org.eclipse.rdf4j.model.Literal;
 
+/**
+ * @author Håvard Ottestad
+ */
 public class MaxCountFilter extends FilterPlanNode {
 
 	private final long maxCount;

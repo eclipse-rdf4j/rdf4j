@@ -18,6 +18,9 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import java.io.IOException;
 import java.util.UUID;
 
+/**
+ * @author Håvard Ottestad
+ */
 public class Utils {
 
 	public static SailRepository getSailRepository(String resourceName) {

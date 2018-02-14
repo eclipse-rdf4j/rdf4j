@@ -34,6 +34,9 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
+/**
+ * @author Håvard Ottestad
+ */
 @State(Scope.Benchmark)
 public class MinCountBenchmark {
 

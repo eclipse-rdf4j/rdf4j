@@ -9,6 +9,9 @@
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 
+/**
+ * @author Håvard Ottestad
+ */
 public class ExistsFilter extends FilterPlanNode {
 
 	public ExistsFilter(PlanNode parent, PushBasedPlanNode trueNode, PushBasedPlanNode falseNode) {

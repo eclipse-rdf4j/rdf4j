@@ -22,6 +22,9 @@ import java.io.InputStream;
 import static junit.framework.TestCase.assertTrue;
 import static org.junit.Assert.assertFalse;
 
+/**
+ * @author Håvard Ottestad
+ */
 public class SimpleTest {
 
 

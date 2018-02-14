@@ -30,6 +30,9 @@ import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.stream.Stream;
 
+/**
+ * @author Håvard Ottestad
+ */
 public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 	private IRI predicate;

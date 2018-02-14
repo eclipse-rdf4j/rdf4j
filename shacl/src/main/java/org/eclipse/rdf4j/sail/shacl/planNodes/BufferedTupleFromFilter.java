@@ -13,6 +13,9 @@ import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.LinkedList;
 
+/**
+ * @author Håvard Ottestad
+ */
 public class BufferedTupleFromFilter implements PlanNode, PushBasedPlanNode, SupportsDepthProvider {
 
 

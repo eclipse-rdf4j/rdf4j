@@ -16,6 +16,9 @@ import org.eclipse.rdf4j.sail.SailException;
 import java.util.Arrays;
 import java.util.List;
 
+/**
+ * @author Håvard Ottestad
+ */
 public class GroupByCount implements PlanNode {
 
 	PlanNode parent;

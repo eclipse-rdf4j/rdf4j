@@ -29,7 +29,9 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 
 import java.util.stream.Stream;
 
-
+/**
+ * @author Håvard Ottestad
+ */
 public class MaxCountPropertyShape extends PathPropertyShape {
 
 	private long maxCount;

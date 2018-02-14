@@ -22,6 +22,9 @@ import java.util.stream.Collectors;
 
 import static junit.framework.TestCase.assertEquals;
 
+/**
+ * @author Håvard Ottestad
+ */
 public class ReduceNumberOfPlansTest {
 
 	@Test

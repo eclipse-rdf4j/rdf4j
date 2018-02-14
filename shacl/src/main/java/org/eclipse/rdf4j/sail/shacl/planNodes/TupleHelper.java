@@ -12,6 +12,9 @@ import org.eclipse.rdf4j.model.Value;
 
 import java.util.ArrayList;
 
+/**
+ * @author Håvard Ottestad
+ */
 public class TupleHelper {
 	public static Tuple join(Tuple leftPeek, Tuple rightPeek) {
 

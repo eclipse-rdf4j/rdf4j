@@ -17,6 +17,9 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.junit.Test;
 
+/**
+ * @author Håvard Ottestad
+ */
 public class TempTest {
 
 	{

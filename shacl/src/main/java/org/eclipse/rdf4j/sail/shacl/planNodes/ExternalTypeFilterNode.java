@@ -14,6 +14,9 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
+/**
+ * @author Håvard Ottestad
+ */
 public class ExternalTypeFilterNode implements PlanNode {
 
 	ShaclSailConnection shaclSailConnection;

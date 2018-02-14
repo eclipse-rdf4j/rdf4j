@@ -14,6 +14,9 @@ public interface SupportsDepthProvider {
 
 }
 
+/**
+ * @author Håvard Ottestad
+ */
 interface DepthProvider {
 
 	int depth();

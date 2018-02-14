@@ -31,6 +31,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * @author Håvard Ottestad
+ */
 @State(Scope.Benchmark)
 public class MinCountPrefilledVsEmptyBenchmark {
 

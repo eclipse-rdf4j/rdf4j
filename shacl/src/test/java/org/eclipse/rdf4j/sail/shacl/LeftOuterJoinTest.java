@@ -26,6 +26,9 @@ import java.util.stream.Collectors;
 
 import static junit.framework.TestCase.assertTrue;
 
+/**
+ * @author Håvard Ottestad
+ */
 public class LeftOuterJoinTest {
 
 	{

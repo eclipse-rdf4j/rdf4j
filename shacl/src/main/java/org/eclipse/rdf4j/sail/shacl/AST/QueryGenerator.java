@@ -8,6 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+/**
+ * @author Håvard Ottestad
+ */
 public interface QueryGenerator {
 	String getQuery();
 }

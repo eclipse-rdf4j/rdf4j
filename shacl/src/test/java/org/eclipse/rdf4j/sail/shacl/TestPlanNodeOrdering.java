@@ -25,6 +25,9 @@ import java.util.List;
 
 import static junit.framework.TestCase.assertEquals;
 
+/**
+ * @author Håvard Ottestad
+ */
 public class TestPlanNodeOrdering {
 
 

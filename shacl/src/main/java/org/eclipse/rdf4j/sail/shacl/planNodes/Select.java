@@ -21,6 +21,9 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
+/**
+ * @author Håvard Ottestad
+ */
 public class Select implements PlanNode {
 
 	final Repository repository;

@@ -11,6 +11,9 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
+/**
+ * @author Håvard Ottestad
+ */
 public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsDepthProvider> implements DepthProvider {
 
 	PlanNode parent;
