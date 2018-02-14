@@ -8,11 +8,15 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+import com.google.common.collect.Lists;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+
+import java.util.Arrays;
 
 /**
  * @author Håvard Ottestad
@@ -48,6 +52,7 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 					if (shaclSailConnection.hasStatement(subject, RDF.TYPE, filterOnType, true)) {
 						next = temp;
+						next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, filterOnType)));
 					}
 
 				}

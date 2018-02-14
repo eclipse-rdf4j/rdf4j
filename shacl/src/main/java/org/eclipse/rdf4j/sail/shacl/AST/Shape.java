@@ -16,8 +16,10 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
 import java.util.List;
 import java.util.Objects;
@@ -47,12 +49,12 @@ public class Shape implements PlanGenerator, RequiresEvalutation, QueryGenerator
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
-		return new Select(shaclSailConnection.addedStatements, getQuery());
+		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.addedStatements, getQuery())), 1);
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
-		return new Select(shaclSailConnection.removedStatements, getQuery());
+		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.removedStatements, getQuery())), 1);
 	}
 
 	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, Shape shape) {

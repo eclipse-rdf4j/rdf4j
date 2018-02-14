@@ -16,18 +16,21 @@ import java.util.ArrayList;
  * @author Håvard Ottestad
  */
 public class TupleHelper {
-	public static Tuple join(Tuple leftPeek, Tuple rightPeek) {
+	public static Tuple join(Tuple left, Tuple right) {
 
-		ArrayList<Value> newLine = new ArrayList<>(leftPeek.line.size() + rightPeek.line.size() - 1);
+		ArrayList<Value> newLine = new ArrayList<>(left.line.size() + right.line.size() - 1);
 
 
-		newLine.addAll(leftPeek.line);
+		newLine.addAll(left.line);
 
-		for (int i = 1; i < rightPeek.line.size(); i++) {
-			newLine.add(rightPeek.line.get(i));
+		for (int i = 1; i < right.line.size(); i++) {
+			newLine.add(right.line.get(i));
 		}
 
-		return new Tuple(newLine);
+		Tuple tuple = new Tuple(newLine);
+		tuple.addHistory(left);
+		tuple.addHistory(right);
+		return tuple;
 
 	}
 }

@@ -18,8 +18,10 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
 import java.util.stream.Stream;
 
@@ -42,13 +44,13 @@ public class TargetClass extends Shape {
 	}
 
 	@Override
-	public Select getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
-		return new Select(shaclSailConnection, getQuery());
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection, getQuery())), 1);
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
-		return new Select(shaclSailConnection.addedStatements, getQuery());
+		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.addedStatements, getQuery())), 1);
 
 	}
 
@@ -69,7 +71,7 @@ public class TargetClass extends Shape {
 
 	@Override
 	public String getQuery() {
-		return "?a a <" + targetClass + ">";
+		return "BIND(rdf:type as ?b) \n BIND(<" + targetClass + "> as ?c) \n ?a ?b ?c.";
 	}
 
 	public PlanNode getTypeFilterPlan(ShaclSailConnection shaclSailConnection, PlanNode parent) {

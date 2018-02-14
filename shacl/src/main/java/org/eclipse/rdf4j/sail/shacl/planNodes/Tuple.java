@@ -16,11 +16,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * @author Heshan Jayasinghe
  */
 public class Tuple implements Comparable<Tuple> {
+
+	private List<Tuple> history = new ArrayList<>();
 
 	public List<Value> line = new ArrayList<>();
 
@@ -28,13 +31,21 @@ public class Tuple implements Comparable<Tuple> {
 		line = list;
 	}
 
+	public Tuple(List<Value> list, Tuple historyTuple) {
+		line = list;
+		addHistory(historyTuple);
+	}
+
 	public Tuple() {
 	}
 
-	public Tuple(BindingSet next) {
-		for (Binding aNext : next) {
-			line.add(aNext.getValue());
-		}
+	public Tuple(BindingSet bindingset) {
+		bindingset
+			.getBindingNames()
+			.stream()
+			.sorted()
+			.forEach(name -> line.add(bindingset.getValue(name)));
+
 	}
 
 
@@ -44,7 +55,7 @@ public class Tuple implements Comparable<Tuple> {
 
 	@Override
 	public String toString() {
-		return "Tuple{" + "line=" + Arrays.toString(line.toArray()) + "}";
+		return "Tuple{" + "line=" + Arrays.toString(line.toArray()) +"}";
 	}
 
 	@Override
@@ -89,5 +100,15 @@ public class Tuple implements Comparable<Tuple> {
 		}
 
 		return 0;
+	}
+
+
+	public String getCause(){
+		return "[ "+ String.join(" , ", history.stream().distinct().map(Object::toString).collect(Collectors.toList()))+" ]";
+	}
+
+	public void addHistory(Tuple tuple) {
+		history.addAll(tuple.history);
+		history.add(tuple);
 	}
 }

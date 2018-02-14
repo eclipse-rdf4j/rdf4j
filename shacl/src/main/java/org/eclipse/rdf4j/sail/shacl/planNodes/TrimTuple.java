@@ -51,6 +51,7 @@ public class TrimTuple implements PlanNode {
 
 				for (int i = 0; i < newLength && i < next.line.size(); i++) {
 					tuple.line.add(next.line.get(i));
+					tuple.addHistory(next);
 				}
 
 				return tuple;

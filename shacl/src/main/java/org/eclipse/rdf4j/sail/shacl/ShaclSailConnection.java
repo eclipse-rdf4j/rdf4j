@@ -154,10 +154,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
 					List<Tuple> collect = stream.collect(Collectors.toList());
 
-
 					boolean valid = collect.size() == 0;
 					if (!valid) {
-						logger.warn("SHACL not valid. The following experimental debug results were produced: \n\tShape: {} \n\t\t{}", shape.toString(), String.join("\n\t\t", collect.stream().map(Object::toString).collect(Collectors.toList())));
+						logger.warn("SHACL not valid. The following experimental debug results were produced: \n\tShape: {} \n\t\t{}", shape.toString(), String.join("\n\t\t", collect.stream().map(a -> a.toString()+" -cause-> "+a.getCause()).collect(Collectors.toList())));
 					}
 					allValid = allValid && valid;
 				}
