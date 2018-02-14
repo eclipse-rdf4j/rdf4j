@@ -24,9 +24,11 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import java.util.stream.Stream;
 
 /**
+ * The AST (Abstract Syntax Tree) node
+ *
  * @author Heshan Jayasinghe
  */
-public class TargetClass extends Shape implements QueryGenerator {
+public class TargetClass extends Shape {
 
 	Resource targetClass;
 

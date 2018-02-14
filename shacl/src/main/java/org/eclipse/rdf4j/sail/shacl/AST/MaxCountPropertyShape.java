@@ -30,6 +30,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import java.util.stream.Stream;
 
 /**
+ * The AST (Abstract Syntax Tree) node that represents a sh:maxCount property shape restriction.
+ *
  * @author Håvard Ottestad
  */
 public class MaxCountPropertyShape extends PathPropertyShape {

@@ -23,6 +23,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
+ * The AST (Abstract Syntax Tree) node that represents a property shape without any restrictions. This node should be extended by other nodes.
+ *
  * @author Heshan Jayasinghe
  */
 public class PropertyShape implements PlanGenerator, RequiresEvalutation {

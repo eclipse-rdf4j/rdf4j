@@ -24,14 +24,42 @@ import java.util.stream.Stream;
  *
  * @author Heshan Jayasinghe
  */
-abstract public class Path implements RequiresEvalutation, QueryGenerator {
+public class SimplePath extends Path {
 
-	private Resource id;
+	private IRI path;
 
+	SimplePath(Resource id, SailRepositoryConnection connection) {
+		super(id);
 
-	Path(Resource id) {
-		this.id = id;
+		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.PATH, null, true))) {
+			path = stream.map(Statement::getObject).map(v -> (IRI) v).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:path on " + id));
+		}
 
 	}
 
+	@Override
+	public String toString() {
+		return "Path{" + "path=" + path + '}';
+	}
+
+	@Override
+	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
+		boolean requiresEvalutation;
+		try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
+			requiresEvalutation = addedStatementsConnection.hasStatement(null, path, null, false);
+		}
+
+		try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
+			requiresEvalutation |= removedStatementsConnection.hasStatement(null, path, null, false);
+		}
+
+		return requiresEvalutation;
+	}
+
+	@Override
+	public String getQuery() {
+
+		return "?a <" + path + "> ?c. ";
+
+	}
 }

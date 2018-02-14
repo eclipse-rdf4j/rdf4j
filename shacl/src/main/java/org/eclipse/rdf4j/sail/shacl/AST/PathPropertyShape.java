@@ -16,6 +16,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 
 /**
+ * The AST (Abstract Syntax Tree) node that represents the sh:path on a property shape.
+ *
  * @author Heshan Jayasinghe
  */
 public class PathPropertyShape extends PropertyShape {
@@ -25,14 +27,14 @@ public class PathPropertyShape extends PropertyShape {
 	PathPropertyShape(Resource id, SailRepositoryConnection connection, Shape shape) {
 		super(id, shape);
 
-		path = new Path(id, connection);
+		// only simple path is supported. There are also no checks. Any use of paths that are not single predicates is undefined.
+		path = new SimplePath(id, connection);
 
 	}
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
-		Select select = new Select(shaclSailConnection, path.getQuery());
-		return select;
+		return new Select(shaclSailConnection, path.getQuery());
 	}
 
 	@Override

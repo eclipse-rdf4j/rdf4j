@@ -33,11 +33,15 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import java.util.stream.Stream;
 
 /**
+ * The AST (Abstract Syntax Tree) node that represents a sh:minCount property shape restriction.
+ *
  * @author Heshan Jayasinghe
  */
 public class MinCountPropertyShape extends PathPropertyShape {
 
 	private long minCount;
+
+	// toggle for switching on and off the optimization used when no statements have been removed in a transaction
 	private boolean optimizeWhenNoStatementsRemoved = true;
 
 
@@ -58,6 +62,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
 
 		PlanNode topNode;
+
+		System.out.println();
 
 
 		if (!optimizeWhenNoStatementsRemoved || shaclSailConnection.stats.hasRemoved()) {
@@ -82,13 +88,11 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			//topNode = new LoggingNode(new BulkedExternalLeftOuterJoin(unique, shaclSailConnection.addedStatements, path.getQuery()));
 
 		} else {
-			String query = "";
-			if (shape instanceof TargetClass) {
-				query = ((TargetClass) shape).getQuery();
-			}
+			String query =shape.getQuery();
+
 
 			query += "\n OPTIONAL { " + path.getQuery() + " }";
-			topNode = new LoggingNode(new Select(shaclSailConnection.addedStatements, query));
+			topNode = new LoggingNode(new TrimTuple(new Select(shaclSailConnection.addedStatements, query), 1));
 		}
 
 
@@ -121,6 +125,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
 				requiresEvalutation = addedStatementsConnection.hasStatement(null, RDF.TYPE, targetClass, false);
 			}
+		} else {
+			requiresEvalutation = true;
 		}
 
 		return super.requiresEvalutation(addedStatements, removedStatements) | requiresEvalutation;

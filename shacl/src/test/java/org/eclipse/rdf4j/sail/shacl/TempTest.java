@@ -192,7 +192,7 @@ public class TempTest {
 			connection.remove(RDFS.RESOURCE, RDF.TYPE, RDFS.CLASS);
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
-//
+
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
 
@@ -206,6 +206,81 @@ public class TempTest {
 			connection.add(RDFS.SUBCLASSOF, RDFS.LABEL, connection.getValueFactory().createLiteral("b"));
 			connection.add(RDFS.SUBCLASSOF, RDFS.LABEL, connection.getValueFactory().createLiteral("c"));
 
+			connection.commit();
+
+
+		}
+
+
+	}
+
+	@Test(expected = RepositoryException.class)
+	public void testShapeWithoutTargetClassRemove() {
+
+		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacleNoTargetClass.ttl")));
+		shaclSail.initialize();
+
+		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
+
+			connection.begin();
+			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
+			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
+
+			connection.begin();
+			connection.remove(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
+			connection.commit();
+
+		}
+
+
+	}
+
+
+	@Test(expected = RepositoryException.class)
+	public void testShapeWithoutTargetClassAdd() {
+
+		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacleNoTargetClass.ttl")));
+		shaclSail.initialize();
+
+		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
+
+			connection.begin();
+			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
+			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
+
+			connection.begin();
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
+
+		}
+
+
+	}
+
+	@Test
+	public void testShapeWithoutTargetClassValid() {
+
+		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacleNoTargetClass.ttl")));
+		shaclSail.initialize();
+
+		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
+
+			connection.begin();
+			connection.commit();
+
+			connection.begin();
+			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
+			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
+
+			connection.begin();
+			connection.remove(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
+
+			connection.begin();
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
 			connection.commit();
 
 
