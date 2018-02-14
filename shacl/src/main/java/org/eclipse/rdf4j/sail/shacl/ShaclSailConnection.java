@@ -23,6 +23,8 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.Shape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashSet;
 import java.util.List;
@@ -33,6 +35,9 @@ import java.util.stream.Stream;
  * @author Heshan Jayasinghe
  */
 public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
+
+	private final Logger logger = LoggerFactory.getLogger(getClass());
+
 
 	public ShaclSail sail;
 
@@ -152,10 +157,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 					boolean valid = collect.size() == 0;
 					if (!valid) {
-						System.out.println("-----------------------------------------");
-						collect.forEach(System.out::println);
-						System.out.println("-----------------------------------------");
-
+						logger.warn("SHACL not valid cause by {} which is a {} with the following result: {}", planNode.toString(), planNode.getClass().getSimpleName(), String.join("\n", collect.stream().map(Object::toString).collect(Collectors.toList())));
 					}
 					allValid = allValid && valid;
 				}
