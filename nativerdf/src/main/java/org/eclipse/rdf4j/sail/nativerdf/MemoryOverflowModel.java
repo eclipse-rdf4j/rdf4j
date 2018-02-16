@@ -212,9 +212,8 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		if (disk == null) {
 			int size = size();
 			if (size >= LARGE_BLOCK && size % LARGE_BLOCK == 0) {
-				long totalMemory = RUNTIME.totalMemory();
-				long freeMemory = RUNTIME.freeMemory();
-				long used = totalMemory - freeMemory;
+				long used = RUNTIME.totalMemory() - RUNTIME.freeMemory();
+				long freeMemory = RUNTIME.maxMemory()-used;
 				if (baseline > 0) {
 					long blockSize = used - baseline;
 					if (blockSize > maxBlockSize) {
