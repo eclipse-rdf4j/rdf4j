@@ -9,8 +9,8 @@ This chapter will refer to URLs on a local server served from port 8080, which i
 .Browser Client Support Matrix 
 |===
 |Browser | Fully Working Versions | Non-Working Versions
-|Firefox | Any recent 
-|Chrome  | Any recent 	
+|Firefox | Any recent | 
+|Chrome  | Any recent |	
 |Internet Explorer | 8.0, 9.0 (Compatibility View),  10.0 (Compatibility View) | 9.0 (Other modes/views), 10.0 (Other modes/views)
 |===
 
