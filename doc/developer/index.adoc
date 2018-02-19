@@ -338,22 +338,20 @@ For more detailed information about the release review process, see the https://
 
 === Branching minor releases
 
-Minor releases are created by branching the _develop_ branch into a release
-branch, and when complete, tagging this release branch with the version number
-before release deployment. Once release deployment is complete, the release
-branch is deleted.
+Prior to a minor release, the _develop_ branch in merged into the _master_ branch
+(along with the _develop_ branch's version) to facilitate release review.
+This will increment the _master_ version to the latest major/minor SNAPSHOT version.
+After the review is complete the steps to create a minor release are the same as the patch release steps.
 
 IMPORTANT: It is important that only features and fixes that have already been scheduled
 for release (via PR milestone labels) be merged into the _develop_ branch, so
 that there is no confusion as to what will be included in the next minor release.
 
-The steps to create a minor release are very similar to the patch release
-steps, but are based on the _develop_ branch (not the _master_ branch).
+When the release has been approved, a release branch from the _master_ is created and
+tagged with the version number before release deployment.
+Once release deployment is complete, the release branch is deleted.
 
-Once a minor release is published the _develop_ branch should be merged into the
-_master_ branch (along with the _develop_ branch's version). This will increment the
-_master_ version to the latest major/minor SNAPSHOT version.
-Then the _develop_ minor version should be incremented to the next SNAPSHOT
+Once a minor release is published the _develop_ minor version should be incremented to the next SNAPSHOT
 version and any approved features that are scheduled for this next minor
 version should be merged into _develop_ branch.
 
