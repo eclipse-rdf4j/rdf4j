@@ -433,8 +433,74 @@ public abstract class AbstractRDFParser implements RDFParser {
 	}
 
 	/**
+	 * Creates a new {@link BNode} or Skolem {@link IRI} object.
+	 */
+	protected Resource createNode()
+		throws RDFParseException
+	{
+		try {
+			String origin = parserConfig.get(BasicParserSettings.SKOLEMIZE_ORIGIN);
+			if (preserveBNodeIDs() || origin == null || origin.length() == 0) {
+				return valueFactory.createBNode();
+			}
+			else {
+				String nodeId = valueFactory.createBNode().getID();
+				String path = "/.well-known/genid/" + nextBNodePrefix + nodeId;
+				String iri = ParsedIRI.create(origin).resolve(path);
+				return valueFactory.createIRI(iri);
+			}
+		}
+		catch (Exception e) {
+			reportFatalError(e);
+			return null; // required by compiler
+		}
+	}
+
+	/**
+	 * Creates a {@link BNode} or Skolem {@link IRI} object for the specified identifier.
+	 */
+	protected Resource createNode(String nodeID)
+		throws RDFParseException
+	{
+		// If we are preserving blank node ids then we do not prefix them to
+		// make them globally unique
+		if (preserveBNodeIDs()) {
+			return valueFactory.createBNode(nodeID);
+		}
+		else {
+			// Prefix the node ID with a unique UUID prefix to reduce
+			// cross-document clashes
+			// This is consistent as long as nextBNodePrefix is not modified
+			// between parser runs
+
+			String toAppend = nodeID;
+			if (nodeID.length() > 32) {
+				// we only hash the node ID if it is longer than the hash string
+				// itself would be.
+				byte[] chars = nodeID.getBytes(StandardCharsets.UTF_8);
+
+				// we use an MD5 hash rather than the node ID itself to get a
+				// fixed-length generated id, rather than
+				// an ever-growing one (see SES-2171)
+				toAppend = (new HexBinaryAdapter()).marshal(md5.digest(chars));
+			}
+
+			String origin = parserConfig.get(BasicParserSettings.SKOLEMIZE_ORIGIN);
+			if (origin == null || origin.length() == 0) {
+				return valueFactory.createBNode("genid-" + nextBNodePrefix + toAppend);
+			}
+			else {
+				String path = "/.well-known/genid/" + nextBNodePrefix + toAppend;
+				String iri = ParsedIRI.create(origin).resolve(path);
+				return valueFactory.createIRI(iri);
+			}
+		}
+	}
+
+	/**
 	 * Creates a new {@link BNode} object.
 	 */
+	@Deprecated
 	protected BNode createBNode()
 		throws RDFParseException
 	{
@@ -450,6 +516,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	/**
 	 * Creates a {@link BNode} object for the specified identifier.
 	 */
+	@Deprecated
 	protected BNode createBNode(String nodeID)
 		throws RDFParseException
 	{
@@ -476,7 +543,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 				toAppend = (new HexBinaryAdapter()).marshal(md5.digest(chars));
 			}
 
-			return valueFactory.createBNode(nextBNodePrefix + toAppend);
+			return valueFactory.createBNode("genid-" + nextBNodePrefix + toAppend);
 
 		}
 	}
@@ -729,7 +796,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	}
 
 	private final String createUniqueBNodePrefix() {
-		return "genid-" + UUID.randomUUID().toString().replaceAll("-", "") + "-";
+		return UUID.randomUUID().toString().replaceAll("-", "") + "-";
 	}
 
 }

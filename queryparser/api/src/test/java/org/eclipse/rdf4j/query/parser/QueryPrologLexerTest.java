@@ -108,6 +108,15 @@ public class QueryPrologLexerTest {
 	}
 
 	@Test
+	public void testFinalTokenWithMultilineComment2() {
+		Token t = QueryPrologLexer.getRestOfQueryToken(
+				"#comment1\n#another comment\n" + "SELECT * WHERE { ?s ?p ?o } LIMIT 1");
+		assertNotNull(t);
+		assertTrue(t.getType().equals(TokenType.REST_OF_QUERY));
+		assertEquals("SELECT * WHERE { ?s ?p ?o } LIMIT 1", t.s);
+	}
+
+	@Test
 	public void testLexWithBaseAndComment() {
 		List<Token> tokens = QueryPrologLexer.lex("BASE <foobar> # COMMENT \nSELECT * WHERE {?s ?p ?o} ");
 		assertNotNull(tokens);

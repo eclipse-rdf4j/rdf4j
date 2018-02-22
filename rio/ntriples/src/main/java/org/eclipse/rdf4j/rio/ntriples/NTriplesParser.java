@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
+import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
 
 /**
@@ -340,7 +341,7 @@ public class NTriplesParser extends AbstractRDFParser {
 		else if (c == '_') {
 			// subject is a bNode
 			c = parseNodeID(c, sb);
-			subject = createBNode(sb.toString());
+			subject = createNode(sb.toString());
 		}
 		else if (c == -1) {
 			throwEOFException();
@@ -388,7 +389,7 @@ public class NTriplesParser extends AbstractRDFParser {
 		else if (c == '_') {
 			// object is a bNode
 			c = parseNodeID(c, sb);
-			object = createBNode(sb.toString());
+			object = createNode(sb.toString());
 		}
 		else if (c == '"') {
 			// object is a literal
@@ -422,7 +423,7 @@ public class NTriplesParser extends AbstractRDFParser {
 			}
 			if (c == ' ') {
 				reportError("IRI included an unencoded space: " + new String(Character.toChars(c)),
-						NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+						BasicParserSettings.VERIFY_URI_SYNTAX);
 			}
 			uriRef.append(Character.toChars(c));
 
@@ -434,7 +435,7 @@ public class NTriplesParser extends AbstractRDFParser {
 				}
 				if (c != 'u' && c != 'U') {
 					reportError("IRI includes string escapes: '\\" + c + "'",
-							NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+							BasicParserSettings.VERIFY_URI_SYNTAX);
 				}
 				uriRef.append(Character.toChars(c));
 			}
