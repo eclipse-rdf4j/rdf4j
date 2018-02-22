@@ -169,7 +169,8 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	}
 
 	protected abstract SailStore createSailStore(File dataDir)
-		throws IOException, SailException;
+		throws IOException,
+		SailException;
 
 	synchronized Model getDelegate() {
 		if (disk == null)
@@ -196,7 +197,8 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	}
 
 	private void readObject(ObjectInputStream s)
-		throws IOException, ClassNotFoundException
+		throws IOException,
+		ClassNotFoundException
 	{
 		// Read in any hidden serialization magic
 		s.defaultReadObject();
@@ -212,15 +214,30 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		if (disk == null) {
 			int size = size();
 			if (size >= LARGE_BLOCK && size % LARGE_BLOCK == 0) {
-				long used = RUNTIME.totalMemory() - RUNTIME.freeMemory();
-				long freeMemory = RUNTIME.maxMemory()-used;
-				if (baseline > 0) {
+				// maximum heap size the JVM can allocate
+				long maxMemory = RUNTIME.maxMemory();
+				
+				// total currently allocated JVM memory
+				long totalMemory = RUNTIME.totalMemory();
+								
+				// amount of memory free in the currently allocated JVM memory
+				long freeMemory = RUNTIME.freeMemory();
+				
+				// estimated memory used
+				long used = totalMemory - freeMemory;
+				
+				// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
+				long freeToAllocateMemory = maxMemory - used;
+
+        if (baseline > 0) {
 					long blockSize = used - baseline;
 					if (blockSize > maxBlockSize) {
 						maxBlockSize = blockSize;
 					}
-					if (freeMemory < size / LARGE_BLOCK * maxBlockSize) {
-						// may not be enough free memory for another
+					// Sync if either the estimated size of the next block is larger than remaining memory, or
+					// if less than 10% of the heap is still free (this last condition to avoid GC overhead limit)
+					if (freeToAllocateMemory < Math.min(0.1 * maxMemory, maxBlockSize)) {
+						logger.debug("syncing at {} triples. max block size: {}", size, maxBlockSize);
 						overflowToDisk();
 					}
 				}
@@ -261,9 +278,10 @@ abstract class MemoryOverflowModel extends AbstractModel {
 			};
 			disk.addAll(memory);
 			memory = new TreeModel(memory.getNamespaces());
+			logger.debug("overflow synced to disk");
 		}
 		catch (IOException | SailException e) {
-			String path = dataDir != null? dataDir.getAbsolutePath() : "(unknown)";
+			String path = dataDir != null ? dataDir.getAbsolutePath() : "(unknown)";
 			logger.error("Error while writing to overflow directory " + path, e);
 		}
 	}
