@@ -22,7 +22,7 @@
 						<td>
 							<select id="type" name="type">
 								<option value="native-spin-rdfs-lucene">
-									Native Java Store RDFS+SPIN+Lucene support
+									Native Java Store with RDFS+SPIN+Lucene support
 								</option>
 							</select>
 						</td>
@@ -34,7 +34,7 @@
 						</th>
 						<td>
 							<input type="text" id="id" name="Repository ID" size="16"
-								value="native-spin-rdfs" />
+								value="native-spin-rdfs-lucene" />
 						</td>
 						<td></td>
 					</tr>
@@ -44,7 +44,7 @@
 						</th>
 						<td>
 							<input type="text" id="title" name="Repository title" size="48"
-								value="Native store with RDFS+SPIN Support" />
+								value="Native store with RDFS+SPIN+Lucene Support" />
 						</td>
 						<td></td>
 					</tr>
