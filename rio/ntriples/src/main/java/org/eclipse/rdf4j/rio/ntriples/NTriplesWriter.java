@@ -194,9 +194,7 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	private void writeIRI(IRI iri)
 		throws IOException
 	{
-		writer.append("<");
-		writeString(iri.stringValue());
-		writer.append(">");
+		NTriplesUtil.append(iri, writer);
 	}
 
 	private void writeBNode(BNode bNode)
