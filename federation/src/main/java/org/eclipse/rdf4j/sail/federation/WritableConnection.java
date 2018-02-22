@@ -72,4 +72,8 @@ class WritableConnection extends AbstractEchoWriteConnection {
 		removeStatementsInternal(null, null, null, contexts);
 	}
 
+	@Override
+	public boolean pendingRemovals() {
+		return false;
+	}
 }

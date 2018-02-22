@@ -522,4 +522,7 @@ public interface SailConnection extends AutoCloseable {
 	public void clearNamespaces()
 		throws SailException;
 
+	boolean pendingRemovals();
+
+
 }
