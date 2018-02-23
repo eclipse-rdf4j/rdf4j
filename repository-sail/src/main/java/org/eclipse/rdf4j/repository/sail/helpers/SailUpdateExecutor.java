@@ -457,6 +457,7 @@ public class SailUpdateExecutor {
 		parser.setLineNumberOffset(insertDataExpr.getLineNumberOffset());
 		parser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 		parser.getParserConfig().addNonFatalError(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES);
+		parser.getParserConfig().set(BasicParserSettings.SKOLEMIZE_ORIGIN, null);
 		try {
 			// TODO process update context somehow? dataset, base URI, etc.
 			parser.parse(new StringReader(insertDataExpr.getDataBlock()), "");

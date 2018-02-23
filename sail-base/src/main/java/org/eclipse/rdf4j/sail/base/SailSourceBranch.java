@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.impl.TreeModelFactory;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -97,7 +98,7 @@ class SailSourceBranch implements SailSource {
 	 * @param backingSource
 	 */
 	public SailSourceBranch(SailSource backingSource) {
-		this(backingSource, new TreeModelFactory(), false);
+		this(backingSource, new LinkedHashModelFactory(), false);
 	}
 
 	/**
