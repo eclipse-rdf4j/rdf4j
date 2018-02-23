@@ -360,8 +360,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	@Override
 	public void setDataDir(File dataDir) {
-		Path luceneDir = Paths.get(parameters.getProperty(LuceneSail.LUCENE_DIR_KEY, DEFAULT_LUCENE_DIR),
-				null);
+		Path luceneDir = Paths.get(parameters.getProperty(LuceneSail.LUCENE_DIR_KEY, DEFAULT_LUCENE_DIR), "");
 		this.setParameter(LuceneSail.LUCENE_DIR_KEY,
 				dataDir.getAbsoluteFile().toPath().resolve(luceneDir).toString());
 		this.getBaseSail().setDataDir(dataDir);
