@@ -37,6 +37,7 @@ import org.slf4j.LoggerFactory;
 public class Export extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Export.class);
 
+	
 	@Override
 	public  String getName() {
 		return "export";
@@ -52,16 +53,6 @@ public class Export extends ConsoleCommand {
 		return PrintHelp.USAGE
 			+ "export <file>                 Exports the entirey repository to a file\n"
 			+ "export <file> (<uri>|null)... Exports the specified context(s) to a file\n";
-	}
-	// TODO: move this util class, could be reused by Clear and other commands
-	private static Resource getContext(Repository repository, String ctxID) {
-		if (ctxID.equalsIgnoreCase("null")) {
-			return null;
-		}
-		if (ctxID.startsWith("_:")) {
-			return repository.getValueFactory().createBNode(ctxID.substring(2));
-		}
-		return repository.getValueFactory().createIRI(ctxID);
 	}
 	
 	/**
@@ -99,18 +90,13 @@ public class Export extends ConsoleCommand {
 		} 
 		
 		String fileName = tokens[1];
-		Resource[] contexts = new Resource[]{};
-
-		if (tokens.length > 2) {
-			contexts = new Resource[tokens.length - 2];
-			for (int i = 2; i < tokens.length; i++) {
-				try {
-					contexts[i - 2] = getContext(repository, tokens[i]);
-				} catch (IllegalArgumentException ioe) {
-					consoleIO.writeError("Illegal URI: " + tokens[i]);
-					return;
-				}
-			}
+		
+		Resource[] contexts;
+		try {
+			contexts = Util.getContexts(tokens, 2, repository);
+		} catch (IllegalArgumentException ioe) {
+			consoleIO.writeError(ioe.getMessage());
+			return;
 		}
 		export(repository, fileName, contexts);
 	}
@@ -167,9 +153,9 @@ public class Export extends ConsoleCommand {
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param lockRemover
 	 */
 	Export(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
 	}
+
 }

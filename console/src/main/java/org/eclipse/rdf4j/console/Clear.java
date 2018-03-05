@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.console;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -65,24 +64,12 @@ public class Clear extends ConsoleCommand {
 		if (repository == null) {
 			consoleIO.writeUnopenedError();
 		} else {
-			final ValueFactory valueFactory = repository.getValueFactory();
-			Resource[] contexts = new Resource[tokens.length - 1];
-			
-			for (int i = 1; i < tokens.length; i++) {
-				final String contextID = tokens[i];
-				if (contextID.equalsIgnoreCase("null")) {
-					contexts[i - 1] = null; // NOPMD
-				} else if (contextID.startsWith("_:")) {
-					contexts[i - 1] = valueFactory.createBNode(contextID.substring(2));
-				} else {
-					try {
-						contexts[i - 1] = valueFactory.createIRI(contextID);
-					} catch (IllegalArgumentException e) {
-						consoleIO.writeError("illegal URI: " + contextID);
-						consoleIO.writeln(getHelpLong());
-						return;
-					}
-				}
+			Resource[] contexts;
+			try {
+				contexts = Util.getContexts(tokens, 1, repository);
+			} catch (IllegalArgumentException ioe) {
+				consoleIO.writeError(ioe.getMessage());
+				return;
 			}
 			clear(repository, contexts);
 		}
