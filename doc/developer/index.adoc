@@ -289,11 +289,14 @@ RDF4j has four separate announcements:
 
 === Building and uploading Maven artifacts
 
-We use the https://hudson.eclipse.org/rdf4j[Eclipse RDF4J Hudson CI instance] to build and deploy new releases to the Central Repository.
-To do this, simply log in to Hudson, and start the job named `rdf4j-deploy-release-ossrh-central`.
-The job will ask for the github project and release tag as an input parameters, e.g. 'rdf4j' and '2.2.1'.
+We use the https://ci.eclipse.org/rdf4j[Eclipse RDF4J Jenkins CI instance] to build and deploy new releases to the Central Repository.
+To do this, log in to Jenkins, and start the job named `rdf4j-client-deploy-release-ossrh-central`.
+The job will ask for the github release tag as an input parameters, e.g. '2.2.1'.
+Do the same for `rdf4j-storage-deploy-release-ossrh-central` and `rdf4j-tools-deploy-release-ossrh-central` sequentially.
 
-This Hudson job will automatically check out the release tag, build the project, and upload all artifacts to https://oss.sonatype.org/[OSS Sonatype]. After successful upload, it will also automatically invoke synchronization with the Central Repository. Note that after successful completion, the artifacts may not be available on the Central Repository for several hours. 
+These jobs will automatically check out the release tag, build the project, and upload all artifacts to https://oss.sonatype.org/[OSS Sonatype].
+After successful upload, it will also automatically invoke synchronization with the Central Repository.
+Note that after successful completion, the artifacts may not be available on the Central Repository for several hours.
 
 === Building and uploading SDK and onejar
 
@@ -307,8 +310,9 @@ The SDK and onejar archives are hosted on https://www.eclipse.org/downloads/ . T
    mvn -Passembly clean install -DskipTests
 
 3. Repeat the above steps for https://github.com/eclipse/rdf4j-storage[rdf4j-storage] and https://github.com/eclipse/rdf4j-tools[rdf4j-tools].
-4. Once this completes, the SDK and onejar can be found in `assembly/target` of the rdf4j-tools subproject.
-5. Verify that the SDK is complete by inspecting its contents (in particular, check that javadoc is included).
+4. Run the above command a fourth time from the assembly directory of the tools project.
+5. Once this completes, the SDK and onejar can be found in `assembly/target` of the rdf4j-tools subproject.
+6. Verify that the SDK is complete by inspecting its contents (in particular, check that javadoc is included).
 
 === Uploading the SDK and onejar
 
