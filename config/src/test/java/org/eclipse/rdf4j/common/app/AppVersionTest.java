@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.common.app;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
+import org.eclipse.rdf4j.RDF4J;
 import org.junit.Test;
 
 /**
@@ -27,19 +28,77 @@ public class AppVersionTest {
 		assertEquals(0, v.getMinor());
 		assertEquals(3, v.getPatch());
 		assertNull(v.getModifier());
+	}
 
+	@Test
+	public void testCreateFromStringSnapshot()
+		throws Exception
+	{
+		AppVersion  v;
 		v = AppVersion.parse("2.8.0-beta3-SNAPSHOT");
 		assertEquals(2, v.getMajor());
 		assertEquals(8, v.getMinor());
 		assertEquals(0, v.getPatch());
 		assertEquals("beta3-SNAPSHOT", v.getModifier());
 
+	}
+
+	@Test
+	public void testCreateFromStringMilestone()
+		throws Exception
+	{
+		AppVersion  v;
 		v = AppVersion.parse("1.0M1");
 		assertEquals(1, v.getMajor());
 		assertEquals(0, v.getMinor());
 		assertEquals(-1, v.getPatch());
 		assertEquals(1, v.getMilestone());
 		assertNull(v.getModifier());
+	}
+
+	@Test
+	public void testCreateFromStringBeta()
+		throws Exception
+	{
+		AppVersion  v;
+		v = AppVersion.parse("1.0.0-beta3");
+		assertEquals(1, v.getMajor());
+		assertEquals(0, v.getMinor());
+		assertEquals(0, v.getPatch());
+		assertEquals("beta3", v.getModifier());
+	}
+
+	@Test
+	public void testCreateFromStringModifier()
+		throws Exception
+	{
+		AppVersion  v;
+		v = AppVersion.parse("1.0.0-M1");
+		assertEquals(1, v.getMajor());
+		assertEquals(0, v.getMinor());
+		assertEquals(0, v.getPatch());
+		assertEquals("M1", v.getModifier());
+	}
+
+	@Test
+	public void testCreateFromStringModifierMilestone()
+		throws Exception
+	{
+		AppVersion  v;
+		v = AppVersion.parse("1.0.0-GAMMA");
+		assertEquals(1, v.getMajor());
+		assertEquals(0, v.getMinor());
+		assertEquals(0, v.getPatch());
+		assertEquals("GAMMA", v.getModifier());
+	}
+
+	@Test
+	public void testCurrentVersion()
+		throws Exception
+	{
+		AppVersion  v;
+		v = AppVersion.parse(RDF4J.getVersion());
+		assertEquals(RDF4J.getVersion(), v.toString());
 	}
 
 	@Test
