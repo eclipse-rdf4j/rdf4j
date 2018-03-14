@@ -8,6 +8,8 @@
 package org.eclipse.rdf4j.common.app;
 
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.lang.ObjectUtil;
 
@@ -17,6 +19,8 @@ import org.eclipse.rdf4j.common.lang.ObjectUtil;
  * release, e.g. beta1 or RC1. Combined, this results in versions like 2.0 and 4.1-beta1.
  */
 public class AppVersion implements Comparable<AppVersion> {
+
+	private static final Pattern VERSION_REGEX = Pattern.compile("^\\s*(\\d+)(?:\\.(\\d+)(?:\\.(\\d+))?)?(M[^\\-\\+]*)?(?:-([^\\+]+))?(?:\\+(.+))?\\s*$");
 
 	/**
 	 * The version's major version number.
@@ -270,11 +274,15 @@ public class AppVersion implements Comparable<AppVersion> {
 			return new AppVersion(-1, -1, "dev");
 		}
 
-		int minorSeparator = versionString.indexOf('.');
-		int patchSeparator = versionString.indexOf('.', minorSeparator + 1);
-		int milestoneSeparator = versionString.indexOf('M', Math.max(minorSeparator, patchSeparator));
-		int modifierSeparator = versionString.indexOf('-', Math.max(minorSeparator, milestoneSeparator));
-		int buildSeparator = versionString.indexOf('+', Math.max(Math.max(minorSeparator, milestoneSeparator), modifierSeparator));
+		Matcher m = VERSION_REGEX.matcher(versionString);
+		if (!m.find()) {
+			throw new NumberFormatException("Illegal version string: " + versionString);
+		}
+		int minorSeparator = m.start(2)-1;
+		int patchSeparator = m.start(3)-1;
+		int milestoneSeparator = m.start(4);
+		int modifierSeparator = m.start(5)-1;
+		int buildSeparator = m.start(6)-1;
 
 		if (minorSeparator == -1) {
 			throw new NumberFormatException("Illegal version string: " + versionString);
