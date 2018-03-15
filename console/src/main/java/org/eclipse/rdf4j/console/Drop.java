@@ -12,6 +12,7 @@ import java.io.IOException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,13 +24,18 @@ public class Drop implements Command {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Drop.class);
 
 	private final ConsoleIO consoleIO;
-
 	private final ConsoleState state;
-
 	private final Close close;
-
 	private final LockRemover lockRemover;
 
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param state
+	 * @param close
+	 * @param lockRemover 
+	 */
 	Drop(ConsoleIO consoleIO, ConsoleState state, Close close, LockRemover lockRemover) {
 		this.consoleIO = consoleIO;
 		this.state = state;
@@ -37,37 +43,30 @@ public class Drop implements Command {
 		this.lockRemover = lockRemover;
 	}
 
-	public void execute(String... tokens)
-		throws IOException
-	{
+	@Override
+	public void execute(String... tokens) throws IOException {
 		if (tokens.length < 2) {
 			consoleIO.writeln(PrintHelp.DROP);
-		}
-		else {
+		} else {
 			final String repoID = tokens[1];
 			try {
 				dropRepository(repoID);
-			}
-			catch (RepositoryConfigException e) {
+			} catch (RepositoryConfigException e) {
 				consoleIO.writeError("Unable to drop repository '" + repoID + "': " + e.getMessage());
 				LOGGER.warn("Unable to drop repository '" + repoID + "'", e);
-			}
-			catch (RepositoryReadOnlyException e) {
+			} catch (RepositoryReadOnlyException e) {
 				try {
 					if (lockRemover.tryToRemoveLock(state.getManager().getSystemRepository())) {
 						execute(tokens);
-					}
-					else {
+					} else {
 						consoleIO.writeError("Failed to drop repository");
 						LOGGER.error("Failed to drop repository", e);
 					}
-				}
-				catch (RepositoryException e2) {
+				} catch (RepositoryException e2) {
 					consoleIO.writeError("Failed to restart system: " + e2.getMessage());
 					LOGGER.error("Failed to restart system", e2);
 				}
-			}
-			catch (RepositoryException e) {
+			} catch (RepositoryException e) {
 				consoleIO.writeError(
 						"Failed to update configuration in system repository: " + e.getMessage());
 				LOGGER.warn("Failed to update configuration in system repository", e);
@@ -75,9 +74,16 @@ public class Drop implements Command {
 		}
 	}
 
+	/**
+	 * Try to drop a repository after confirmation from user
+	 * 
+	 * @param repoID repository ID
+	 * @throws IOException
+	 * @throws RepositoryException
+	 * @throws RepositoryConfigException 
+	 */
 	private void dropRepository(final String repoID)
-		throws IOException, RepositoryException, RepositoryConfigException
-	{
+			throws IOException, RepositoryException, RepositoryConfigException {
 		boolean proceed = consoleIO.askProceed("WARNING: you are about to drop repository '" + repoID + "'.",
 				true);
 		if (proceed && !state.getManager().isSafeToRemove(repoID)) {
@@ -91,14 +97,11 @@ public class Drop implements Command {
 			final boolean isRemoved = state.getManager().removeRepository(repoID);
 			if (isRemoved) {
 				consoleIO.writeln("Dropped repository '" + repoID + "'");
-			}
-			else {
+			} else {
 				consoleIO.writeln("Unknown repository '" + repoID + "'");
 			}
-		}
-		else {
+		} else {
 			consoleIO.writeln("Drop aborted");
 		}
 	}
-
 }

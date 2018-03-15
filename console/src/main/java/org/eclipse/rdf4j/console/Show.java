@@ -18,10 +18,13 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
+ * Show command
+ *
  * @author Dale Visser
  */
 public class Show implements Command {
@@ -31,43 +34,47 @@ public class Show implements Command {
 	private static final String OUTPUT_SEPARATOR = "+----------";
 
 	private final ConsoleIO consoleIO;
-
 	private final ConsoleState state;
 
+	/**
+	 * Constructor
+	 *
+	 * @param consoleIO
+	 * @param state
+	 */
 	Show(ConsoleIO consoleIO, ConsoleState state) {
 		this.consoleIO = consoleIO;
 		this.state = state;
 	}
 
+	@Override
 	public void execute(String... tokens) {
 		if (tokens.length == 2) {
 			final String target = tokens[1].toLowerCase(Locale.ENGLISH);
 			if ("repositories".equals(target) || "r".equals(target)) {
 				showRepositories();
-			}
-			else if ("namespaces".equals(target) || "n".equals(target)) {
+			} else if ("namespaces".equals(target) || "n".equals(target)) {
 				showNamespaces();
-			}
-			else if ("contexts".equals(target) || "c".equals(target)) {
+			} else if ("contexts".equals(target) || "c".equals(target)) {
 				showContexts();
-			}
-			else {
+			} else {
 				consoleIO.writeError("Unknown target '" + tokens[1] + "'");
 			}
-		}
-		else {
+		} else {
 			consoleIO.writeln(PrintHelp.SHOW);
 		}
 	}
 
+	/**
+	 * Show available repositories
+	 */
 	private void showRepositories() {
 		try {
 			RepositoryManager manager = state.getManager();
 			final Set<String> repIDs = manager.getRepositoryIDs();
 			if (repIDs.isEmpty()) {
 				consoleIO.writeln("--no repositories found--");
-			}
-			else {
+			} else {
 				consoleIO.writeln(OUTPUT_SEPARATOR);
 				for (String repID : repIDs) {
 					consoleIO.write("|" + repID);
@@ -77,21 +84,22 @@ public class Show implements Command {
 						if (repInfo.getDescription() != null) {
 							consoleIO.write(" (\"" + repInfo.getDescription() + "\")");
 						}
-					}
-					catch (RepositoryException e) {
+					} catch (RepositoryException e) {
 						consoleIO.write(" [ERROR: " + e.getMessage() + "]");
 					}
 					consoleIO.writeln();
 				}
 				consoleIO.writeln(OUTPUT_SEPARATOR);
 			}
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			consoleIO.writeError("Failed to get repository list: " + e.getMessage());
 			LOGGER.error("Failed to get repository list", e);
 		}
 	}
 
+	/**
+	 * Show namespaces
+	 */
 	private void showNamespaces() {
 		Repository repository = state.getRepository();
 		if (repository == null) {
@@ -112,25 +120,24 @@ public class Show implements Command {
 							consoleIO.writeln("|" + namespace.getPrefix() + "  " + namespace.getName());
 						}
 						consoleIO.writeln(OUTPUT_SEPARATOR);
-					}
-					else {
+					} else {
 						consoleIO.writeln("--no namespaces found--");
 					}
-				}
-				finally {
+				} finally {
 					namespaces.close();
 				}
-			}
-			finally {
+			} finally {
 				con.close();
 			}
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			consoleIO.writeError(e.getMessage());
 			LOGGER.error("Failed to show namespaces", e);
 		}
 	}
 
+	/**
+	 * Show contexts
+	 */
 	private void showContexts() {
 		Repository repository = state.getRepository();
 		if (repository == null) {
@@ -150,23 +157,18 @@ public class Show implements Command {
 							consoleIO.writeln("|" + contexts.next().toString());
 						}
 						consoleIO.writeln(OUTPUT_SEPARATOR);
-					}
-					else {
+					} else {
 						consoleIO.writeln("--no contexts found--");
 					}
-				}
-				finally {
+				} finally {
 					contexts.close();
 				}
-			}
-			finally {
+			} finally {
 				con.close();
 			}
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			consoleIO.writeError(e.getMessage());
 			LOGGER.error("Failed to show contexts", e);
 		}
 	}
-
 }

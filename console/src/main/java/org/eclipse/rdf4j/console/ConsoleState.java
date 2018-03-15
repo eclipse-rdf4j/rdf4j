@@ -13,27 +13,79 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
 /**
+ * Console state interface
+ * 
  * @author Dale Visser
  */
 public interface ConsoleState {
 
+	/**
+	 * Get application name
+	 * 
+	 * @return application name 
+	 */
 	String getApplicationName();
 
+	/**
+	 * Get repository data directory
+	 * 
+	 * @return directory 
+	 */
 	File getDataDirectory();
 
+	/**
+	 * Get repository manager ID
+	 * 
+	 * @return repository manager ID 
+	 */
 	String getManagerID();
 
+	/**
+	 * Get repository ID
+	 * 
+	 * @return repository ID 
+	 */
 	String getRepositoryID();
 
+	/**
+	 * Get repository manager
+	 * 
+	 * @return repository manager
+	 */
 	RepositoryManager getManager();
 
+	/**
+	 * Set repository manager
+	 * 
+	 * @param manager repository manager
+	 */
 	void setManager(RepositoryManager manager);
 
+	/**
+	 * Set repository manager
+	 * 
+	 * @param managerID repository manager ID
+	 */
 	void setManagerID(String managerID);
 
+	/**
+	 * Get repository
+	 * 
+	 * @return repository
+	 */
 	Repository getRepository();
 
+	/**
+	 * Set repository ID
+	 * 
+	 * @param repositoryID repository ID
+	 */
 	void setRepositoryID(String repositoryID);
 
+	/**
+	 * Set repository
+	 * 
+	 * @param repository repository
+	 */
 	void setRepository(Repository repository);
 }

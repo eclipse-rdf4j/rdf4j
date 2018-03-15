@@ -15,10 +15,13 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
+ * Clear command.
+ * 
  * @author Dale Visser
  */
 public class Clear implements Command {
@@ -26,38 +29,42 @@ public class Clear implements Command {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Clear.class);
 
 	private final ConsoleIO consoleIO;
-
 	private final ConsoleState state;
-
 	private final LockRemover lockRemover;
 
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param state
+	 * @param lockRemover 
+	 */
 	Clear(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
 		this.consoleIO = consoleIO;
 		this.state = state;
 		this.lockRemover = lockRemover;
 	}
 
+	@Override
 	public void execute(String... tokens) {
 		Repository repository = state.getRepository();
+		
 		if (repository == null) {
 			consoleIO.writeUnopenedError();
-		}
-		else {
+		} else {
 			final ValueFactory valueFactory = repository.getValueFactory();
 			Resource[] contexts = new Resource[tokens.length - 1];
+			
 			for (int i = 1; i < tokens.length; i++) {
 				final String contextID = tokens[i];
 				if (contextID.equalsIgnoreCase("null")) {
 					contexts[i - 1] = null; // NOPMD
-				}
-				else if (contextID.startsWith("_:")) {
+				} else if (contextID.startsWith("_:")) {
 					contexts[i - 1] = valueFactory.createBNode(contextID.substring(2));
-				}
-				else {
+				} else {
 					try {
 						contexts[i - 1] = valueFactory.createIRI(contextID);
-					}
-					catch (IllegalArgumentException e) {
+					} catch (IllegalArgumentException e) {
 						consoleIO.writeError("illegal URI: " + contextID);
 						consoleIO.writeln(PrintHelp.CLEAR);
 						return;
@@ -68,11 +75,16 @@ public class Clear implements Command {
 		}
 	}
 
+	/**
+	 * Clear repository, either completely or only triples of specific contexts.
+	 * 
+	 * @param repository repository to be cleared
+	 * @param contexts array of contexts
+	 */
 	private void clear(Repository repository, Resource[] contexts) {
 		if (contexts.length == 0) {
 			consoleIO.writeln("Clearing repository...");
-		}
-		else {
+		} else {
 			consoleIO.writeln("Removing specified contexts...");
 		}
 		try {
@@ -82,33 +94,26 @@ public class Clear implements Command {
 				if (contexts.length == 0) {
 					con.clearNamespaces();
 				}
-			}
-			finally {
+			} finally {
 				con.close();
 			}
-		}
-		catch (RepositoryReadOnlyException e) {
+		} catch (RepositoryReadOnlyException e) {
 			try {
 				if (lockRemover.tryToRemoveLock(repository)) {
 					this.clear(repository, contexts);
-				}
-				else {
+				} else {
 					consoleIO.writeError("Failed to clear repository");
 					LOGGER.error("Failed to clear repository", e);
 				}
-			}
-			catch (RepositoryException e1) {
+			} catch (RepositoryException e1) {
 				consoleIO.writeError("Unable to restart repository: " + e1.getMessage());
 				LOGGER.error("Unable to restart repository", e1);
-			}
-			catch (IOException e1) {
+			} catch (IOException e1) {
 				consoleIO.writeError("Unable to remove lock: " + e1.getMessage());
 			}
-		}
-		catch (RepositoryException e) {
+		} catch (RepositoryException e) {
 			consoleIO.writeError("Failed to clear repository: " + e.getMessage());
 			LOGGER.error("Failed to clear repository", e);
 		}
 	}
-
 }
