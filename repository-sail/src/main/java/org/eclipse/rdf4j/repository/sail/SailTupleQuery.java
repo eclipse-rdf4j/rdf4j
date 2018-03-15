@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public class SailTupleQuery extends SailQuery implements TupleQuery {
 
-	protected SailTupleQuery(ParsedTupleQuery tupleQuery, SailRepositoryConnection sailConnection) {
+	public SailTupleQuery(ParsedTupleQuery tupleQuery, SailRepositoryConnection sailConnection) {
 		super(tupleQuery, sailConnection);
 	}
 

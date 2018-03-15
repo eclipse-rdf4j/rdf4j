@@ -227,6 +227,11 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	}
 
 	@Override
+	public boolean pendingRemovals() {
+		return false;
+	}
+
+	@Override
 	public void begin()
 		throws SailException
 	{

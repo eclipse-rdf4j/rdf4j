@@ -489,8 +489,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 	public final void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException
 	{
+		if(pendingRemovals()){
+			flushPendingUpdates();
+		}
 		addStatement(null, subj, pred, obj, contexts);
 	}
+
 
 	@Override
 	public final void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts)

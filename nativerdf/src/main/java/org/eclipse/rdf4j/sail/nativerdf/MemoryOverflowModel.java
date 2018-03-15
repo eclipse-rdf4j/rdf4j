@@ -214,7 +214,6 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		if (disk == null) {
 			int size = size();
 			if (size >= LARGE_BLOCK && size % LARGE_BLOCK == 0) {
-				
 				// maximum heap size the JVM can allocate
 				long maxMemory = RUNTIME.maxMemory();
 				
@@ -229,8 +228,8 @@ abstract class MemoryOverflowModel extends AbstractModel {
 				
 				// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
 				long freeToAllocateMemory = maxMemory - used;
-				
-				if (baseline > 0) {
+
+        if (baseline > 0) {
 					long blockSize = used - baseline;
 					if (blockSize > maxBlockSize) {
 						maxBlockSize = blockSize;
