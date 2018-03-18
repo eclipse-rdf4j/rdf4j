@@ -23,8 +23,8 @@ import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
 import java.util.Arrays;
 import java.util.LinkedList;
@@ -36,7 +36,7 @@ import java.util.stream.Stream;
 public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 	private IRI predicate;
-	ShaclSailConnection shaclSailConnection;
+	NotifyingSailConnection baseSailConnection;
 	PlanNode parent;
 	Repository repository;
 	String query;
@@ -53,11 +53,11 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 		this.predicate = predicate;
 	}
 
-	public BulkedExternalLeftOuterJoin(PlanNode parent, ShaclSailConnection shaclSailConnection, String query) {
+	public BulkedExternalLeftOuterJoin(PlanNode parent, NotifyingSailConnection baseSailConnection, String query) {
 		this.parent = parent;
 		this.query = query;
 
-		this.shaclSailConnection = shaclSailConnection;
+		this.baseSailConnection = baseSailConnection;
 
 	}
 
@@ -112,7 +112,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 						ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(newQuery.toString(), null);
 
-						try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = shaclSailConnection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)) {
+						try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = baseSailConnection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)) {
 							while (evaluate.hasNext()) {
 								BindingSet next = evaluate.next();
 								right.addFirst(new Tuple(next));

@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
@@ -74,7 +75,7 @@ public class TargetClass extends Shape {
 		return "BIND(rdf:type as ?b) \n BIND(<" + targetClass + "> as ?c) \n ?a ?b ?c.";
 	}
 
-	public PlanNode getTypeFilterPlan(ShaclSailConnection shaclSailConnection, PlanNode parent) {
+	public PlanNode getTypeFilterPlan(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
 		return new ExternalTypeFilterNode(shaclSailConnection, targetClass, parent);
 	}
 

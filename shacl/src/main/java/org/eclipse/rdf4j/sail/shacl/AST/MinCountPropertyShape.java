@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
@@ -86,11 +87,13 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			//topNode = new LoggingNode(new BulkedExternalLeftOuterJoin(unique, shaclSailConnection.addedStatements, path.getQuery()));
 
 		} else {
-			String query =shape.getQuery();
 
+			PlanNode planAddedForShape = new LoggingNode(shape.getPlanAddedStatements(shaclSailConnection, shape));
 
-			query += "\n OPTIONAL { " + path.getQuery() + " }";
-			topNode = new LoggingNode(new TrimTuple(new Select(shaclSailConnection.addedStatements, query), 1));
+			PlanNode select = new LoggingNode(new Select(shaclSailConnection.addedStatements, path.getQuery()));
+
+			topNode = new LoggingNode(new LeftOuterJoin(planAddedForShape, select));
+
 		}
 
 

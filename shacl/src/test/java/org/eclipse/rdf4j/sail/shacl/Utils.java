@@ -27,7 +27,7 @@ public class Utils {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		sailRepository.initialize();
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			connection.add(SimpleTest.class.getClassLoader().getResourceAsStream(resourceName), "", RDFFormat.TURTLE);
+			connection.add(Utils.class.getClassLoader().getResourceAsStream(resourceName), "", RDFFormat.TURTLE);
 		} catch (IOException | NullPointerException e) {
 			System.out.println("Error reading: " + resourceName);
 			throw new RuntimeException(e);

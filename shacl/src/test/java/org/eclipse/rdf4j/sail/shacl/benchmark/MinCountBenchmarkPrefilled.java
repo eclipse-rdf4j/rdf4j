@@ -21,13 +21,16 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.Utils;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
+import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Level;
+import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
+import org.openjdk.jmh.annotations.Warmup;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +41,11 @@ import java.util.stream.Stream;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
+@Warmup(iterations = 10)
+@BenchmarkMode({Mode.AverageTime, Mode.SingleShotTime})
+@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-Xmn2G"})
+@Measurement(iterations = 10)
+@OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class MinCountBenchmarkPrefilled {
 
 
@@ -104,6 +112,7 @@ public class MinCountBenchmarkPrefilled {
 		try (SailRepositoryConnection connection = sparqlQueryMemoryStoreRepo.getConnection()) {
 			connection.add(allStatements2);
 		}
+		System.gc();
 	}
 
 	@TearDown(Level.Iteration)
@@ -113,8 +122,6 @@ public class MinCountBenchmarkPrefilled {
 
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void shacl() {
 
 
@@ -135,8 +142,6 @@ public class MinCountBenchmarkPrefilled {
 
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void noShacl() {
 
 
@@ -156,8 +161,6 @@ public class MinCountBenchmarkPrefilled {
 
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void sparqlInsteadOfShacl() {
 
 

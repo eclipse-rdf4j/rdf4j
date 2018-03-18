@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 

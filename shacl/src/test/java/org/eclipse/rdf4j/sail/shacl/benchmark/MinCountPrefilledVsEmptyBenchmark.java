@@ -19,13 +19,16 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.Utils;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
+import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Level;
+import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
+import org.openjdk.jmh.annotations.Warmup;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,6 +38,11 @@ import java.util.concurrent.TimeUnit;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
+@Warmup(iterations = 10)
+@BenchmarkMode({Mode.AverageTime, Mode.SingleShotTime})
+@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-Xmn2G"})
+@Measurement(iterations = 10)
+@OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class MinCountPrefilledVsEmptyBenchmark {
 
 
@@ -83,6 +91,7 @@ public class MinCountPrefilledVsEmptyBenchmark {
 			connection.add(allStatements2);
 		}
 		shaclRepo.enableValidation();
+		System.gc();
 
 	}
 
@@ -93,8 +102,6 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void shaclPrefilled() {
 
 
@@ -115,8 +122,6 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void shaclEmpty() {
 
 		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
@@ -139,8 +144,6 @@ public class MinCountPrefilledVsEmptyBenchmark {
 	}
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void shaclEmptyJustInitialize() {
 
 		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
@@ -152,8 +155,6 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void shaclEmptyJustInitializeAndEmptyTransaction() {
 
 		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));

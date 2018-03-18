@@ -17,6 +17,8 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.shacl.AST.Shape;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * @author Heshan Jayasinghe
@@ -37,7 +39,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	@Override
 	public NotifyingSailConnection getConnection()
 		throws SailException {
-		return new ShaclSailConnection(this, super.getConnection());
+		return new ShaclSailConnection(this, super.getConnection(), super.getConnection());
 	}
 
 	public void disableValidation() {

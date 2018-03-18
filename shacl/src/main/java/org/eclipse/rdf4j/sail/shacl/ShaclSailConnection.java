@@ -38,8 +38,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
+	public NotifyingSailConnection separateConnection;
 
-	public ShaclSail sail;
+
+	public final ShaclSail sail;
 
 	public Stats stats;
 
@@ -49,8 +51,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	private HashSet<Statement> addedStatementsSet = new HashSet<>();
 	private HashSet<Statement> removedStatementsSet = new HashSet<>();
 
-	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection) {
+	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, NotifyingSailConnection separateConnection) {
 		super(connection);
+		this.separateConnection = separateConnection;
 		this.sail = sail;
 
 		if (sail.config.validationEnabled) {
@@ -87,7 +90,13 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		assert removedStatements == null;
 
 		stats = new Stats();
-		super.begin(level);
+
+		// start two transactions, synchronize on underlying sail so that we get two transactions immediatly successivley
+		synchronized (sail){
+			super.begin(level);
+			separateConnection.begin(IsolationLevels.SNAPSHOT);
+		}
+
 	}
 
 	private SailRepository getNewMemorySail() {
@@ -101,23 +110,29 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	@Override
 	public void commit()
 		throws SailException {
-		try {
-			boolean valid = validate();
-			if (!valid) {
-				rollback();
-				throw new SailException("Failed SHACL validation");
-			} else {
-				super.commit();
+		synchronized (sail) {
+			separateConnection.commit();
+			try {
+				boolean valid = validate();
+				if (!valid) {
+					rollback();
+					throw new SailException("Failed SHACL validation");
+				} else {
+					super.commit();
+				}
+			} finally {
+				cleanup();
 			}
-		} finally {
-			cleanup();
 		}
 	}
 
 	@Override
 	public void rollback() throws SailException {
-		cleanup();
-		super.rollback();
+		synchronized (sail) {
+			separateConnection.commit();
+			cleanup();
+			super.rollback();
+		}
 	}
 
 	private void cleanup() {

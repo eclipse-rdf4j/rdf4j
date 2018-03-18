@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
@@ -23,11 +24,11 @@ import java.util.Arrays;
  */
 public class ExternalTypeFilterNode implements PlanNode {
 
-	ShaclSailConnection shaclSailConnection;
+	NotifyingSailConnection shaclSailConnection;
 	Resource filterOnType;
 	PlanNode parent;
 
-	public ExternalTypeFilterNode(ShaclSailConnection shaclSailConnection, Resource filterOnType, PlanNode parent) {
+	public ExternalTypeFilterNode(NotifyingSailConnection shaclSailConnection, Resource filterOnType, PlanNode parent) {
 		this.shaclSailConnection = shaclSailConnection;
 		this.filterOnType = filterOnType;
 		this.parent = parent;

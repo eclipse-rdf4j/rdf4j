@@ -21,13 +21,16 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.Utils;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
+import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Level;
+import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
+import org.openjdk.jmh.annotations.Warmup;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,13 +41,21 @@ import java.util.stream.Stream;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-public class MinCountBenchmark {
+@Warmup(iterations = 10)
+@BenchmarkMode({Mode.AverageTime})
+@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-Xmn2G"})
+@Measurement(iterations = 10)
+@OutputTimeUnit(TimeUnit.MILLISECONDS)
+public class MinCountBenchmarkEmpty {
 
 
 	private List<List<Statement>> allStatements;
 
 	@Setup(Level.Invocation)
 	public void setUp() {
+
+
+
 		allStatements = new ArrayList<>(10);
 
 
@@ -62,6 +73,7 @@ public class MinCountBenchmark {
 				);
 			}
 		}
+		System.gc();
 
 	}
 
@@ -72,8 +84,6 @@ public class MinCountBenchmark {
 
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void shacl() {
 
 		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl")));
@@ -97,8 +107,6 @@ public class MinCountBenchmark {
 
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void noShacl() {
 
 		SailRepository repository = new SailRepository(new MemoryStore());
@@ -121,8 +129,6 @@ public class MinCountBenchmark {
 
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void sparqlInsteadOfShacl() {
 
 		SailRepository repository = new SailRepository(new MemoryStore());
