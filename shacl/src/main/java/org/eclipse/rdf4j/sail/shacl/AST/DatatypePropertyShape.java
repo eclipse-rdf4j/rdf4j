@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.DatatypeFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.MergeNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 
@@ -62,12 +62,12 @@ public class DatatypePropertyShape extends PathPropertyShape {
 		if (shape instanceof TargetClass) {
 			PlanNode typeFilterPlan = new LoggingNode(((TargetClass) shape).getTypeFilterPlan(shaclSailConnection.separateConnection, discardedRight));
 
-			top = new LoggingNode(new MergeNode(top, typeFilterPlan));
+			top = new LoggingNode(new UnionNode(top, typeFilterPlan));
 		}
 
 		PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalInnerJoin(bufferedSplitter.getPlanNode(), shaclSailConnection.separateConnection, path.getQuery()));
 
-		top = new LoggingNode(new MergeNode(top, bulkedExternalLeftOuterJoin));
+		top = new LoggingNode(new UnionNode(top, bulkedExternalLeftOuterJoin));
 
 		DirectTupleFromFilter invalidValues = new DirectTupleFromFilter();
 		new DatatypeFilter(top, null, invalidValues, datatype);

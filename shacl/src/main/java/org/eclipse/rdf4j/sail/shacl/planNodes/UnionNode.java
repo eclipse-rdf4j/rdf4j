@@ -18,12 +18,12 @@ import java.util.stream.Collectors;
 /**
  * @author Håvard Ottestad
  */
-public class MergeNode implements PlanNode {
+public class UnionNode implements PlanNode {
 
 	PlanNode[] nodes;
 
 
-	public MergeNode(PlanNode... nodes) {
+	public UnionNode(PlanNode... nodes) {
 		this.nodes = nodes;
 	}
 
