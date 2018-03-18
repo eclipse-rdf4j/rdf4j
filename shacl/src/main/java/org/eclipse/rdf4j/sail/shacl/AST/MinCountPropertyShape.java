@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
