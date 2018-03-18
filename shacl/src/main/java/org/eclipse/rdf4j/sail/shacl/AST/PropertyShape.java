@@ -79,6 +79,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 							propertyShapes.add(new MaxCountPropertyShape(propertyShapeId, connection, shape));
 						}
 
+						if (hasDatatype(propertyShapeId, connection)) {
+							propertyShapes.add(new DatatypePropertyShape(propertyShapeId, connection, shape));
+						}
+
 						return propertyShapes.stream();
 
 					})
@@ -96,6 +100,9 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			return connection.hasStatement(id, SHACL.MAX_COUNT, null, true);
 		}
 
+		private static boolean hasDatatype(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.DATATYPE, null, true);
+		}
 
 	}
 }

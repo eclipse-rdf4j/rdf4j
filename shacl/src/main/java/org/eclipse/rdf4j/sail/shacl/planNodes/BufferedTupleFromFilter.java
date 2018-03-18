@@ -29,14 +29,18 @@ public class BufferedTupleFromFilter implements PlanNode, PushBasedPlanNode, Sup
 		return new CloseableIteration<Tuple, SailException>() {
 
 			private void calculateNext() {
-				while (next.isEmpty() && parentIterator.hasNext()) {
-					parentIterator.next();
+				if (parentIterator != null) {
+					while (next.isEmpty() && parentIterator.hasNext()) {
+						parentIterator.next();
+					}
 				}
 			}
 
 			@Override
 			public void close() throws SailException {
-				parentIterator.close();
+				if (parentIterator != null) {
+					parentIterator.close();
+				}
 			}
 
 			@Override
@@ -67,7 +71,9 @@ public class BufferedTupleFromFilter implements PlanNode, PushBasedPlanNode, Sup
 
 	@Override
 	public void push(Tuple t) {
-		next.addFirst(t);
+		if (t != null) {
+			next.addFirst(t);
+		}
 	}
 
 	@Override
