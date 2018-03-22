@@ -194,19 +194,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		throws SailException
 	{
 		if (closed.compareAndSet(false, true)) {
-			try {
-				super.close();
-			}
-			finally {
-				try {
-					luceneIndex.endReading();
-				}
-				catch (IOException e) {
-					logger.warn("could not close IndexReader or IndexSearcher " + e, e);
-				}
-				// remember if you were closed before, some sloppy programmers
-				// may call close() twice.
-			}
+			super.close();
 		}
 	}
 
@@ -426,14 +414,6 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 		if (closed.get()) {
 			throw new SailException("Sail has been closed already");
-		}
-
-		// mark that reading is in progress
-		try {
-			this.luceneIndex.beginReading();
-		}
-		catch (IOException e) {
-			throw new SailException(e);
 		}
 
 		// evaluate queries, generate binding sets, and remove queries

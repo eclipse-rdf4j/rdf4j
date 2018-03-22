@@ -126,18 +126,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 		throws SailException
 	{
 		if (closed.compareAndSet(false, true)) {
-			try {
-				super.close();
-			}
-			finally {
-				try {
-					luceneIndex.endReading();
-				}
-				catch (IOException e) {
-					logger.warn("could not close IndexReader or IndexSearcher " + e, e);
-					throw new SailException(e);
-				}
-			}
+			super.close();
 		}
 	}
 
