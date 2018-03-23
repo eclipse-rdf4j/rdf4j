@@ -39,9 +39,11 @@ public interface SearchIndex {
 	Collection<BindingSet> evaluate(SearchQueryEvaluator query)
 		throws SailException;
 
+	@Deprecated
 	void beginReading()
 		throws IOException;
 
+	@Deprecated
 	void endReading()
 		throws IOException;
 

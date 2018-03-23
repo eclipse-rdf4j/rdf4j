@@ -7,7 +7,6 @@
  */
 package org.eclipse.rdf4j.sail.lucene.fn;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -25,7 +24,6 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lucene.DistanceQuerySpec;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailSchema;
 import org.eclipse.rdf4j.sail.lucene.SearchIndex;
@@ -89,13 +87,6 @@ public class DistanceTupleFunction implements TupleFunction {
 
 		          SearchIndex luceneIndex = SearchIndexQueryContextInitializer.getSearchIndex(
 				QueryContext.getQueryContext());
-		// mark that reading is in progress
-		try {
-			luceneIndex.beginReading();
-		}
-		catch (IOException e) {
-			throw new SailException(e);
-		}
 		Collection<BindingSet> results = luceneIndex.evaluate((SearchQueryEvaluator)query);
 		return new ConvertingIteration<BindingSet, List<Value>, QueryEvaluationException>(
 				new CloseableIteratorIteration<>(results.iterator()))
