@@ -32,9 +32,8 @@ import java.util.stream.Stream;
 
 /**
  * @author Håvard Ottestad
- *
+ * <p>
  * This inner join algorithm is left-based, so it doesn't do a full inner join
- *
  */
 public class BulkedExternalInnerJoin implements PlanNode {
 
@@ -77,6 +76,22 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 			private void calculateNext() {
 
+				if (repository != null) {
+					try (RepositoryConnection connection = repository.getConnection()) {
+						boolean empty = !connection.hasStatement((Resource) null, (IRI) null, null, true);
+						if (empty) {
+							return;
+						}
+					}
+				} else {
+					boolean empty = !baseSailConnection.hasStatement((Resource) null, (IRI) null, null, true);
+					if (empty) {
+						return;
+					}
+				}
+
+
+
 				if (!left.isEmpty()) {
 					return;
 				}
@@ -90,7 +105,9 @@ public class BulkedExternalInnerJoin implements PlanNode {
 				if (left.isEmpty()) {
 					return;
 				}
+
 				if (query != null) {
+
 
 					StringBuilder newQuery = new StringBuilder("select * where { VALUES (?a) { \n");
 

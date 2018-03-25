@@ -111,9 +111,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	public void commit()
 		throws SailException {
 		synchronized (sail) {
-			separateConnection.commit();
 			try {
 				boolean valid = validate();
+				separateConnection.commit();
+
 				if (!valid) {
 					rollback();
 					throw new SailException("Failed SHACL validation");

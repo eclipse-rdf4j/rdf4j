@@ -32,6 +32,12 @@
             <artifactId>rdf4j-sail-memory</artifactId>
             <version>${project.version}</version>
         </dependency>
+
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>rdf4j-queryparser-sparql</artifactId>
+            <version>2.3-SNAPSHOT</version>
+        </dependency>
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
