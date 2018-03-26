@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -60,7 +61,7 @@ public class BackgroundGraphResultHangTest {
 		String data = "@not-rdf";
 
 		BackgroundGraphResult gRes = new BackgroundGraphResult(new DummyParser(),
-				new ByteArrayInputStream(data.getBytes(Charset.forName("UTF-8"))), Charset.forName("UTF-8"),
+				new ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8,
 				"http://base.org");
 
 		thrown.expect(QueryEvaluationException.class);

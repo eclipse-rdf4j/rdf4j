@@ -12,6 +12,7 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.BindingSet;
@@ -43,7 +44,7 @@ public class BooleanTextWriter extends AbstractQueryResultWriter implements Bool
 	 *--------------*/
 
 	public BooleanTextWriter(OutputStream out) {
-		writer = new OutputStreamWriter(out, Charset.forName("US-ASCII"));
+		writer = new OutputStreamWriter(out, StandardCharsets.US_ASCII);
 	}
 
 	/*---------*
