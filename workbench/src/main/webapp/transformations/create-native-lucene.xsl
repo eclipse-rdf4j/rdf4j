@@ -44,7 +44,7 @@
 						</th>
 						<td>
 							<input type="text" id="title" name="Repository title" size="48"
-								value="Native store with RDFS+SPIN Support" />
+								value="Native store with Lucene Support" />
 						</td>
 						<td></td>
 					</tr>

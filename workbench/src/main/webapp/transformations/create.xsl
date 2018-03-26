@@ -38,15 +38,15 @@
 								<option value="memory-spin">
 									In Memory Java Store with basic SPIN support
 								</option>
-                                                                <option value="memory-lucene">
-                                                                        In Memory Store with Lucene support
-                                                                </option>
+								<option value="memory-lucene">
+									In Memory Store with Lucene support
+                                </option>
 								<option value="memory-spin-rdfs">
 									In Memory Store with RDFS+SPIN support
 								</option>
-                                                                <option value="memory-spin-rdfs-lucene">
-                                                                        In Memory Store with RDFS+SPIN+Lucene support
-                                                                </option>
+                                <option value="memory-spin-rdfs-lucene">
+                                    In Memory Store with RDFS+SPIN+Lucene support
+                                </option>
 								<option value="memory-customrule">
 									In Memory Store Custom Graph Query
 									Inference
@@ -70,13 +70,13 @@
 								<option value="native-spin">
 									Native Java Store with basic SPIN support
 								</option>
-                                                                <option value="native-lucene">
-                                                                        Native Java Store with Lucene support
-                                                                </option>
+                                <option value="native-lucene">
+                                    Native Java Store with Lucene support
+                                </option>
 								<option value="native-spin-rdfs">
 									Native Java Store with RDFS+SPIN support
 								</option>
-                                                                <option value="native-spin-rdfs-lucene">
+                                <option value="native-spin-rdfs-lucene">
 									Native Java Store with RDFS+SPIN+Lucene support
 								</option>
 								<option value="remote">
