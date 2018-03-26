@@ -40,16 +40,6 @@ public class Export implements Command {
 	private final ConsoleIO consoleIO;
 	private final ConsoleState state;
 
-	// TODO: move this util class, could be reused by Clear and other commands
-	private static Resource getContext(Repository repository, String ctxID) {
-		if (ctxID.equalsIgnoreCase("null")) {
-			return null;
-		}
-		if (ctxID.startsWith("_:")) {
-			return repository.getValueFactory().createBNode(ctxID.substring(2));
-		}
-		return repository.getValueFactory().createIRI(ctxID);
-	}
 	
 	/**
 	 * Get path from file or URI
@@ -86,18 +76,13 @@ public class Export implements Command {
 		} 
 		
 		String fileName = tokens[1];
-		Resource[] contexts = new Resource[]{};
-
-		if (tokens.length > 2) {
-			contexts = new Resource[tokens.length - 2];
-			for (int i = 2; i < tokens.length; i++) {
-				try {
-					contexts[i - 2] = getContext(repository, tokens[i]);
-				} catch (IllegalArgumentException ioe) {
-					consoleIO.writeError("Illegal URI: " + tokens[i]);
-					return;
-				}
-			}
+		
+		Resource[] contexts;
+		try {
+			contexts = Util.getContexts(tokens, 2, repository);
+		} catch (IllegalArgumentException ioe) {
+			consoleIO.writeError(ioe.getMessage());
+			return;
 		}
 		export(repository, fileName, contexts);
 	}
