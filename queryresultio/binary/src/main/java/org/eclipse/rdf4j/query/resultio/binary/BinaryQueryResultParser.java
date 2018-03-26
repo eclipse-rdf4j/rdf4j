@@ -30,8 +30,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
-import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -64,7 +64,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 
 	private int formatVersion;
 
-	private CharsetDecoder charsetDecoder = Charset.forName("UTF-8").newDecoder();
+	private CharsetDecoder charsetDecoder = StandardCharsets.UTF_8.newDecoder();
 
 	private String[] namespaceArray = new String[32];
 

@@ -11,7 +11,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
@@ -56,17 +56,17 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Creates a new NTriplesWriter that will write to the supplied OutputStream.
-	 * 
+	 *
 	 * @param out
 	 *        The OutputStream to write the N-Triples document to.
 	 */
 	public NTriplesWriter(OutputStream out) {
-		this(new OutputStreamWriter(out, Charset.forName("UTF-8")));
+		this(new OutputStreamWriter(out, StandardCharsets.UTF_8));
 	}
 
 	/**
 	 * Creates a new NTriplesWriter that will write to the supplied Writer.
-	 * 
+	 *
 	 * @param writer
 	 *        The Writer to write the N-Triples document to.
 	 */

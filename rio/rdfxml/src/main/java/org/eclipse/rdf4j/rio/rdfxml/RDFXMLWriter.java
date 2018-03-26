@@ -11,7 +11,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -61,7 +61,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied OutputStream.
-	 * 
+	 *
 	 * @param out
 	 *        The OutputStream to write the RDF/XML document to.
 	 */
@@ -76,12 +76,12 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	 *        The OutputStream to write the RDF/XML document to.
 	 */
 	public RDFXMLWriter(OutputStream out, ParsedIRI baseIRI) {
-		this(new OutputStreamWriter(out, Charset.forName("UTF-8")), baseIRI);
+		this(new OutputStreamWriter(out, StandardCharsets.UTF_8), baseIRI);
 	}
 
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied Writer.
-	 * 
+	 *
 	 * @param writer
 	 *        The Writer to write the RDF/XML document to.
 	 */

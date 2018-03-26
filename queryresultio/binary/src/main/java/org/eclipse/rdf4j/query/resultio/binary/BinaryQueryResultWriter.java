@@ -28,8 +28,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
-import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -65,7 +65,7 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	 */
 	private DataOutputStream out;
 
-	private CharsetEncoder charsetEncoder = Charset.forName("UTF-8").newEncoder();
+	private CharsetEncoder charsetEncoder = StandardCharsets.UTF_8.newEncoder();
 
 	/**
 	 * Map containing the namespace IDs (Integer objects) that have been defined in the document, stored using
