@@ -7,7 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trig;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.StringReader;
 import java.util.concurrent.TimeUnit;
@@ -17,6 +20,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -227,6 +231,50 @@ public class TriGParserCustomTest {
 		throws Exception
 	{
 		assertEquals(13, Rio.createParser(RDFFormat.TRIG).getSupportedSettings().size());
+	}
+
+	@Test
+	public void testParseTruePrefix()
+		throws Exception
+	{
+		Rio.parse(new StringReader("@prefix true: <http://example/c/> . {true:s true:p true:o .}"), "",
+				RDFFormat.TRIG);
+	}
+
+	@Test
+	public void testParseTrig_booleanLiteral()
+		throws Exception
+	{
+		String trig = "{\n" + "  <http://www.ex.com/s> <http://www.ex.com/b> true.\n" + "}";
+		Model m = Rio.parse(new StringReader(trig), "http://ex/", RDFFormat.TRIG);
+		assertEquals(1, m.size());
+	}
+
+	@Test
+	public void testParseTrig_booleanLiteral_space()
+		throws Exception
+	{
+		String trig = "{\n" + "  <http://www.ex.com/s> <http://www.ex.com/b> true .\n" + "}";
+		Model m = Rio.parse(new StringReader(trig), "http://ex/", RDFFormat.TRIG);
+		assertEquals(1, m.size());
+	}
+
+	@Test
+	public void testParseTrig_intLiteral()
+		throws Exception
+	{
+		String trig = "{\n" + "  <http://www.ex.com/s> <http://www.ex.com/b> 1.\n" + "}";
+		Model m = Rio.parse(new StringReader(trig), "http://ex/", RDFFormat.TRIG);
+		assertEquals(1, Models.objectLiteral(m).get().intValue());
+	}
+
+	@Test
+	public void testParseTrig_doubleLiteral()
+		throws Exception
+	{
+		String trig = "{\n" + "  <http://www.ex.com/s> <http://www.ex.com/b> 1.2.\n" + "}";
+		Model m = Rio.parse(new StringReader(trig), "http://ex/", RDFFormat.TRIG);
+		assertEquals(1.2d, Models.objectLiteral(m).get().doubleValue(), 0.01);
 	}
 
 }
