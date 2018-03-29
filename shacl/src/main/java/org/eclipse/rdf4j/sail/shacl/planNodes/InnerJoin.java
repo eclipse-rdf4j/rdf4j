@@ -13,7 +13,8 @@ import org.eclipse.rdf4j.sail.SailException;
 /**
  * @author Håvard Ottestad
  *
- * This inner join algorithm is left-based, so it doesn't do a full inner join
+ * This inner join algorithm assumes the left iterator is unique for tuple[0], eg. no two tuples have the same value at index 0.
+ * The right iterator is allowed to contain duplicates.
  *
  */
 public class InnerJoin implements PlanNode {
@@ -74,8 +75,15 @@ public class InnerJoin implements PlanNode {
 				}
 
 				if (nextLeft == null) {
-					if (discardedRight != null && nextRight != null) {
-						discardedRight.push(nextRight);
+					if (discardedRight != null) {
+						while(nextRight != null){
+							discardedRight.push(nextRight);
+							if(rightIterator.hasNext()){
+								nextRight = rightIterator.next();
+							}else{
+								nextRight = null;
+							}
+						}
 					}
 					return;
 				}

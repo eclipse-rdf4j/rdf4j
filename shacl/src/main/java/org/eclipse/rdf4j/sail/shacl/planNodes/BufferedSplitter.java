@@ -13,44 +13,51 @@ import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 
 /**
  * @author Håvard Ottestad
- *
+ * <p>
  * Allows the iterator of one planNode to be used by multiple other nodes by buffering all results from the parent iterator.
  * This will potentially take a fair bit of memory, but maybe be useful for perfomance so that we don't query the underlying
  * datastores for the same data multiple times.
  */
-public class BufferedSplitter{
+public class BufferedSplitter {
 
 	PlanNode parent;
-	private List<Tuple> tuplesBuffer = new ArrayList<>();
+	private List<Tuple> tuplesBuffer;
 
 	public BufferedSplitter(PlanNode planNode) {
 		parent = planNode;
-		initialize();
 	}
 
-	private void initialize(){
-		try (CloseableIteration<Tuple, SailException> iterator = parent.iterator()) {
+	private void initialize() {
+		if (tuplesBuffer == null) {
+			tuplesBuffer = new ArrayList<>();
+			try (CloseableIteration<Tuple, SailException> iterator = parent.iterator()) {
 
-			while (iterator.hasNext()) {
-				Tuple next = iterator.next();
-				tuplesBuffer.add(next);
+				while (iterator.hasNext()) {
+					Tuple next = iterator.next();
+					tuplesBuffer.add(next);
+				}
 			}
 		}
+
 	}
 
 	public PlanNode getPlanNode() {
 
+
 		return new PlanNode() {
 			@Override
 			public CloseableIteration<Tuple, SailException> iterator() {
+
+				initialize();
+				Iterator<Tuple> iterator = tuplesBuffer.iterator();
+
+
 				return new CloseableIteration<Tuple, SailException>() {
-
-					Iterator<Tuple> iterator = tuplesBuffer.iterator();
-
 
 					@Override
 					public void close() throws SailException {
@@ -76,7 +83,7 @@ public class BufferedSplitter{
 
 			@Override
 			public int depth() {
-				return parent.depth()+1;
+				return parent.depth() + 1;
 			}
 		};
 

@@ -32,29 +32,33 @@ import java.util.stream.Stream;
 
 /**
  * @author Håvard Ottestad
+ *
+ * External means that this plan node can join the iterator from a plan node with an external
+ * source (Repository or NotifyingSailConnection) based on a query or a predicate.
+ *
  */
 public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 	private IRI predicate;
 	NotifyingSailConnection baseSailConnection;
-	PlanNode parent;
+	PlanNode leftNode;
 	Repository repository;
 	String query;
 
-	public BulkedExternalLeftOuterJoin(PlanNode parent, Repository repository, String query) {
-		this.parent = parent;
+	public BulkedExternalLeftOuterJoin(PlanNode leftNode, Repository repository, String query) {
+		this.leftNode = leftNode;
 		this.repository = repository;
 		this.query = query;
 	}
 
-	public BulkedExternalLeftOuterJoin(PlanNode parent, Repository repository, IRI predicate) {
-		this.parent = parent;
+	public BulkedExternalLeftOuterJoin(PlanNode leftNode, Repository repository, IRI predicate) {
+		this.leftNode = leftNode;
 		this.repository = repository;
 		this.predicate = predicate;
 	}
 
-	public BulkedExternalLeftOuterJoin(PlanNode parent, NotifyingSailConnection baseSailConnection, String query) {
-		this.parent = parent;
+	public BulkedExternalLeftOuterJoin(PlanNode leftNode, NotifyingSailConnection baseSailConnection, String query) {
+		this.leftNode = leftNode;
 		this.query = query;
 
 		this.baseSailConnection = baseSailConnection;
@@ -69,7 +73,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 			LinkedList<Tuple> right = new LinkedList<>();
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			CloseableIteration<Tuple, SailException> leftNodeIterator = leftNode.iterator();
 
 
 			private void calculateNext() {
@@ -79,8 +83,8 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 				}
 
 
-				while (left.size() < 100 && parentIterator.hasNext()) {
-					left.addFirst(parentIterator.next());
+				while (left.size() < 100 && leftNodeIterator.hasNext()) {
+					left.addFirst(leftNodeIterator.next());
 				}
 
 
@@ -138,7 +142,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 			@Override
 			public void close() throws SailException {
-				parentIterator.close();
+				leftNodeIterator.close();
 			}
 
 			@Override
@@ -203,6 +207,6 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 	@Override
 	public int depth() {
-		return parent.depth() + 1;
+		return leftNode.depth() + 1;
 	}
 }

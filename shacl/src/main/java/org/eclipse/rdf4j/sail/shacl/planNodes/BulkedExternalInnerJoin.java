@@ -32,31 +32,35 @@ import java.util.stream.Stream;
 
 /**
  * @author Håvard Ottestad
- * <p>
- * This inner join algorithm is left-based, so it doesn't do a full inner join
+ *
+ * This inner join algorithm assumes the left iterator is unique for tuple[0], eg. no two tuples have the same value at index 0.
+ * The right iterator is allowed to contain duplicates.
+ *
+ * External means that this plan node can join the iterator from a plan node with an external
+ * source (Repository or NotifyingSailConnection) based on a query or a predicate.
  */
 public class BulkedExternalInnerJoin implements PlanNode {
 
 	private IRI predicate;
 	NotifyingSailConnection baseSailConnection;
-	PlanNode parent;
+	PlanNode leftNode;
 	Repository repository;
 	String query;
 
-	public BulkedExternalInnerJoin(PlanNode parent, Repository repository, String query) {
-		this.parent = parent;
+	public BulkedExternalInnerJoin(PlanNode leftNode, Repository repository, String query) {
+		this.leftNode = leftNode;
 		this.repository = repository;
 		this.query = query;
 	}
 
-	public BulkedExternalInnerJoin(PlanNode parent, Repository repository, IRI predicate) {
-		this.parent = parent;
+	public BulkedExternalInnerJoin(PlanNode leftNode, Repository repository, IRI predicate) {
+		this.leftNode = leftNode;
 		this.repository = repository;
 		this.predicate = predicate;
 	}
 
-	public BulkedExternalInnerJoin(PlanNode parent, NotifyingSailConnection baseSailConnection, String query) {
-		this.parent = parent;
+	public BulkedExternalInnerJoin(PlanNode leftNode, NotifyingSailConnection baseSailConnection, String query) {
+		this.leftNode = leftNode;
 		this.query = query;
 
 		this.baseSailConnection = baseSailConnection;
@@ -71,7 +75,7 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 			LinkedList<Tuple> right = new LinkedList<>();
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			CloseableIteration<Tuple, SailException> leftNodeIterator = leftNode.iterator();
 
 
 			private void calculateNext() {
@@ -97,8 +101,8 @@ public class BulkedExternalInnerJoin implements PlanNode {
 				}
 
 
-				while (left.size() < 100 && parentIterator.hasNext()) {
-					left.addFirst(parentIterator.next());
+				while (left.size() < 100 && leftNodeIterator.hasNext()) {
+					left.addFirst(leftNodeIterator.next());
 				}
 
 
@@ -158,7 +162,7 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 			@Override
 			public void close() throws SailException {
-				parentIterator.close();
+				leftNodeIterator.close();
 			}
 
 			@Override
@@ -220,6 +224,6 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 	@Override
 	public int depth() {
-		return parent.depth() + 1;
+		return leftNode.depth() + 1;
 	}
 }
