@@ -976,20 +976,24 @@ public class TurtleParser extends AbstractRDFParser {
 				previousChar = c;
 				c = readCodePoint();
 			}
+			while (previousChar == '.' && prefix.length() > 0) {
+				// '.' is a legal prefix name char, but can not appear at the end
+				unread(c);
+				c = previousChar;
+				prefix.setLength(prefix.length() -1);
+				previousChar = prefix.codePointAt(prefix.codePointCount(0, prefix.length()) -1);
+			}
 
 			if (c != ':') {
 				// prefix may actually be a boolean value
 				String value = prefix.toString();
 
-				if (value.equals("true") || value.equals("false")) {
+				if (value.equals("true")) {
 					unread(c);
-					return createLiteral(value, null, XMLSchema.BOOLEAN, getLineNumber(), -1);
-				}
-			} else {
-				if (previousChar == '.') {
-					// '.' is a legal prefix name char, but can not appear at
-					// the end
-					reportFatalError("prefix can not end with with '.'");
+					return createLiteral("true", null, XMLSchema.BOOLEAN, getLineNumber(), -1);
+				} else if (value.equals("false")) {
+					unread(c);
+					return createLiteral("false", null, XMLSchema.BOOLEAN, getLineNumber(), -1);
 				}
 			}
 
