@@ -17,7 +17,7 @@ import java.io.IOException;
 public class Serql extends QueryEvaluator {
 	@Override
 	public String getName() {
-		return "sparql";
+		return "serql";
 	}
 	
 	@Override

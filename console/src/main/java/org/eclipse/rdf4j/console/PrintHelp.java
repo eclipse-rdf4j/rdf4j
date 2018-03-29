@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.console;
 
 import java.util.Locale;
 import java.util.Map;
-import java.util.SortedMap;
 
 /**
  * Prints available command and options to the console.
@@ -70,7 +69,7 @@ public class PrintHelp extends ConsoleCommand {
 		consoleIO.writeln("List of all commands:");
 		
 		commands.forEach((k,v) -> {
-			consoleIO.writeln(String.format("%12s %s", k, v.getHelpShort()));
+			consoleIO.writeln(String.format("%-12s %s", k, v.getHelpShort()));
 		});
 		
 		consoleIO.writeln("exit, quit  Exit the console");
