@@ -8,30 +8,19 @@
 package org.eclipse.rdf4j.console;
 
 import java.util.Locale;
+import java.util.Map;
+import java.util.SortedMap;
 
 /**
  * Prints available command and options to the console.
  * 
  * @author Dale Visser
  */
-public class PrintHelp implements Command {
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
-	
+public class PrintHelp extends ConsoleCommand {
 	public static final String USAGE = "Usage:\n";
-
-
-	protected static final String SPARQL = USAGE
-			+ "sparql <query>                       Evaluates the SPARQL query on the currently open repository.\n"
-			+ "sparql                               Starts multi-line input for large SPARQL queries.\n"
-			+ "select|construct|ask|describe|prefix|base <rest-of-query>\n"
-			+ "                                     Evaluates a SPARQL query on the currently open repository.\n";
-
-	protected static final String SERQL = USAGE
-			+ "serql <query>                 Evaluates the SeRQL query on the currently open repository\n"
-			+ "serql                         Starts multi-line input for large SeRQL queries.\n";
-
-
+	
+	private final Map<String,? extends Help> commands;
+	
 	@Override
 	public String getName() {
 		return "help";
@@ -42,15 +31,19 @@ public class PrintHelp implements Command {
 		return "Displays this help message";
 	}
 	
+	@Override
+	public String getHelpLong() {
+		return "No additional help available";
+	}
+	
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO 
 	 */
-	PrintHelp(ConsoleIO consoleIO, ConsoleState state) {
-		super();
-		this.consoleIO = consoleIO;
-		this.state = state;
+	PrintHelp(ConsoleIO consoleIO, ConsoleState state, Map<String,? extends Help> commands) {
+		super(consoleIO, state);
+		this.commands = commands;
 	}
 
 	@Override
@@ -61,7 +54,7 @@ public class PrintHelp implements Command {
 		}
 		
 		final String target = parameters[1].toLowerCase(Locale.ENGLISH);
-		Command cmd = state.getCommands().get(target);
+		Help cmd = commands.get(target);
 		if (cmd != null) {
 			consoleIO.writeln(cmd.getHelpLong());
 		} else {
@@ -76,17 +69,10 @@ public class PrintHelp implements Command {
 		consoleIO.writeln("For more information on a specific command, try 'help <command>'.");
 		consoleIO.writeln("List of all commands:");
 		
-		state.getCommands().forEach((k,v) -> {
+		commands.forEach((k,v) -> {
 			consoleIO.writeln(String.format("%12s %s", k, v.getHelpShort()));
 		});
-
-		consoleIO.writeln("sparql      Evaluate a SPARQL query");
-		consoleIO.writeln("serql       Evaluate a SeRQL query");
+		
 		consoleIO.writeln("exit, quit  Exit the console");
-	}
-
-	@Override
-	public String getHelpLong() {
-		throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
 	}
 }

@@ -29,11 +29,9 @@ import org.slf4j.LoggerFactory;
  *
  * @author dale
  */
-public class Connect extends AbstractCommand {
+public class Connect extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Connect.class);
 
-	private final ConsoleState appInfo;
-	private final ConsoleIO consoleIO;
 	private final Disconnect disconnect;
 	
 	@Override
@@ -59,13 +57,11 @@ public class Connect extends AbstractCommand {
 	 * Constructor
 	 * 
 	 * @param consoleIO
-	 * @param info
+	 * @param state
 	 * @param disconnect 
 	 */
-	Connect(ConsoleIO consoleIO, ConsoleState info, Disconnect disconnect) {
-		super();
-		this.consoleIO = consoleIO;
-		this.appInfo = info;
+	Connect(ConsoleIO consoleIO, ConsoleState state, Disconnect disconnect) {
+		super(consoleIO, state);
 		this.disconnect = disconnect;
 	}
 
@@ -99,7 +95,7 @@ public class Connect extends AbstractCommand {
 	 * @return 
 	 */
 	protected boolean connectDefault() {
-		return installNewManager(new LocalRepositoryManager(this.appInfo.getDataDirectory()),
+		return installNewManager(new LocalRepositoryManager(this.state.getDataDirectory()),
 				"default data directory");
 	}
 
@@ -148,10 +144,7 @@ public class Connect extends AbstractCommand {
 					LOGGER.warn("Failed to read user credentials", ioe);
 				}
 			}
-		} catch (IOException e) {
-			consoleIO.writeError("Failed to access the server: " + e.getMessage());
-			LOGGER.warn("Failed to access the server", e);
-		} catch (RepositoryException e) {
+		} catch (IOException|RepositoryException e) {
 			consoleIO.writeError("Failed to access the server: " + e.getMessage());
 			LOGGER.warn("Failed to access the server", e);
 		}
@@ -185,7 +178,7 @@ public class Connect extends AbstractCommand {
 	 */
 	private boolean installNewManager(final RepositoryManager newManager, final String newManagerID) {
 		boolean installed = false;
-		final String managerID = this.appInfo.getManagerID();
+		final String managerID = this.state.getManagerID();
 		
 		if (newManagerID.equals(managerID)) {
 			consoleIO.writeln("Already connected to " + managerID);
@@ -195,8 +188,8 @@ public class Connect extends AbstractCommand {
 				newManager.initialize();
 				disconnect.execute(false);
 				
-				this.appInfo.setManager(newManager);
-				this.appInfo.setManagerID(newManagerID);
+				this.state.setManager(newManager);
+				this.state.setManagerID(newManagerID);
 				consoleIO.writeln("Connected to " + newManagerID);
 		
 				installed = true;

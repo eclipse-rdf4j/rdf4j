@@ -12,9 +12,7 @@ package org.eclipse.rdf4j.console;
  * 
  * @author Dale Visser
  */
-class PrintInfo implements Command {
-	private final ConsoleState appInfo;
-	private final ConsoleIO consoleIO;
+public class PrintInfo extends ConsoleCommand {
 
 	@Override
 	public  String getName() {
@@ -31,23 +29,22 @@ class PrintInfo implements Command {
 		return  PrintHelp.USAGE
 			+ "info                  Shows information about the console\n";
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
-	 * @param appInfo 
+	 * @param state 
 	 */
-	PrintInfo(ConsoleIO consoleIO, ConsoleState appInfo) {
-		this.consoleIO = consoleIO;
-		this.appInfo = appInfo;
+	PrintInfo(ConsoleIO consoleIO, ConsoleState state) {
+		super(consoleIO, state);
 	}
 
 	@Override
 	public void execute(String... parameters) {
-		consoleIO.writeln(appInfo.getApplicationName());
-		consoleIO.writeln("Data dir: " + appInfo.getDataDirectory());
-		String managerID = appInfo.getManagerID();
+		consoleIO.writeln(state.getApplicationName());
+		consoleIO.writeln("Data dir: " + state.getDataDirectory());
+		String managerID = state.getManagerID();
 		consoleIO.writeln("Connected to: " + (managerID == null ? "-" : managerID));
 	}
 }

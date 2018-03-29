@@ -46,13 +46,12 @@ import org.slf4j.LoggerFactory;
  *
  * @author Dale Visser
  */
-public class Create implements Command {
+public class Create extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Create.class);
 
 	private static final String TEMPLATES_DIR = "templates";
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
+
 	private final LockRemover lockRemover;
 
 	@Override
@@ -80,8 +79,7 @@ public class Create implements Command {
 	 * @param lockRemover
 	 */
 	Create(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
-		this.consoleIO = consoleIO;
-		this.state = state;
+		super(consoleIO, state);
 		this.lockRemover = lockRemover;
 	}
 

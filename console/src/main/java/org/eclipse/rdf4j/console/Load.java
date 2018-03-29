@@ -28,11 +28,9 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Dale Visser
  */
-class Load implements Command {
+public class Load extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Load.class);
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
 	private final LockRemover lockRemover;
 
 	@Override
@@ -63,8 +61,7 @@ class Load implements Command {
 	 * @param lockRemover 
 	 */
 	Load(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
-		this.consoleIO = consoleIO;
-		this.state = state;
+		super(consoleIO, state);
 		this.lockRemover = lockRemover;
 	}
 

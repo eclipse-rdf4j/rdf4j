@@ -14,10 +14,7 @@ import org.eclipse.rdf4j.repository.Repository;
  * 
  * @author Dale Visser
  */
-public class Close extends AbstractCommand {
-
-	private final ConsoleIO consoleIO;
-	private final ConsoleState appInfo;
+public class Close extends ConsoleCommand {
 
 	@Override
 	public  String getName() {
@@ -41,9 +38,8 @@ public class Close extends AbstractCommand {
 	 * @param consoleIO
 	 * @param appInfo 
 	 */
-	Close(ConsoleIO consoleIO, ConsoleState appInfo) {
-		this.consoleIO = consoleIO;
-		this.appInfo = appInfo;
+	Close(ConsoleIO consoleIO, ConsoleState state) {
+		super(consoleIO, state);
 	}
 
 	@Override
@@ -61,16 +57,16 @@ public class Close extends AbstractCommand {
 	 * @param verbose print more information
 	 */
 	protected void closeRepository(final boolean verbose) {
-		final Repository repository = this.appInfo.getRepository();
+		final Repository repository = this.state.getRepository();
 		
 		if (repository == null) {
 			if (verbose) {
 				consoleIO.writeln("There are no open repositories that can be closed");
 			}
 		} else {
-			consoleIO.writeln("Closing repository '" + this.appInfo.getRepositoryID() + "'...");
-			this.appInfo.setRepository(null);
-			this.appInfo.setRepositoryID(null);
+			consoleIO.writeln("Closing repository '" + this.state.getRepositoryID() + "'...");
+			this.state.setRepository(null);
+			this.state.setRepositoryID(null);
 		}
 	}
 }

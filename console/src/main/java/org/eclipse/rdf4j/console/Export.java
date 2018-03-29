@@ -34,11 +34,8 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Bart Hanssens
  */
-public class Export implements Command {
+public class Export extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Export.class);
-
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
 
 	@Override
 	public  String getName() {
@@ -173,7 +170,6 @@ public class Export implements Command {
 	 * @param lockRemover
 	 */
 	Export(ConsoleIO consoleIO, ConsoleState state) {
-		this.consoleIO = consoleIO;
-		this.state = state;
+		super(consoleIO, state);
 	}
 }

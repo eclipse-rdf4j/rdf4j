@@ -27,14 +27,11 @@ import org.slf4j.LoggerFactory;
  *
  * @author Dale Visser
  */
-public class Show implements Command {
+public class Show extends ConsoleCommand {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(Show.class);
 
 	private static final String OUTPUT_SEPARATOR = "+----------";
-
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
 
 	@Override
 	public  String getName() {
@@ -61,8 +58,7 @@ public class Show implements Command {
 	 * @param state
 	 */
 	Show(ConsoleIO consoleIO, ConsoleState state) {
-		this.consoleIO = consoleIO;
-		this.state = state;
+		super(consoleIO, state);
 	}
 
 	@Override
@@ -70,13 +66,13 @@ public class Show implements Command {
 		if (tokens.length == 2) {
 			final String target = tokens[1].toLowerCase(Locale.ENGLISH);
 			if ("repositories".equals(target) || "r".equals(target)) {
-				showRepositories();
+					showRepositories();
 			} else if ("namespaces".equals(target) || "n".equals(target)) {
-				showNamespaces();
+					showNamespaces();
 			} else if ("contexts".equals(target) || "c".equals(target)) {
-				showContexts();
+					showContexts();
 			} else {
-				consoleIO.writeError("Unknown target '" + tokens[1] + "'");
+					consoleIO.writeError("Unknown target '" + tokens[1] + "'");
 			}
 		} else {
 			consoleIO.writeln(getHelpLong());

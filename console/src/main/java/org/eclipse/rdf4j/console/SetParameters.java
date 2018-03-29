@@ -23,7 +23,7 @@ import ch.qos.logback.classic.Logger;
  * 
  * @author dale
  */
-public class SetParameters implements Command {
+public class SetParameters extends ConsoleCommand {
 
 	private static final String QUERYPREFIX_COMMAND = "queryprefix";
 	private static final String SHOWPREFIX_COMMAND = "showprefix";
@@ -64,17 +64,17 @@ public class SetParameters implements Command {
 
 	}
 	
-	private final ConsoleIO consoleIO;
 	private final ConsoleParameters parameters;
 
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
+	 * @param state
 	 * @param parameters 
 	 */
-	SetParameters(ConsoleIO consoleIO, ConsoleParameters parameters) {
-		this.consoleIO = consoleIO;
+	SetParameters(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
+		super(consoleIO, state);
 		this.parameters = parameters;
 	}
 

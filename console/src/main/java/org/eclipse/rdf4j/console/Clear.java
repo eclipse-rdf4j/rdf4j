@@ -24,11 +24,9 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Dale Visser
  */
-public class Clear extends AbstractCommand {
+public class Clear extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Clear.class);
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
 	private final LockRemover lockRemover;
 
 	@Override
@@ -56,8 +54,7 @@ public class Clear extends AbstractCommand {
 	 * @param lockRemover 
 	 */
 	Clear(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
-		this.consoleIO = consoleIO;
-		this.state = state;
+		super(consoleIO, state);
 		this.lockRemover = lockRemover;
 	}
 

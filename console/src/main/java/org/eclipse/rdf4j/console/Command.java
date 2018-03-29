@@ -16,28 +16,6 @@ import java.io.IOException;
  */
 public interface Command {	
 	/**
-	 * Get the name of the command
-	 * 
-	 * @return lowercase name 
-	 */
-	public String getName();
-	
-	/**
-	 * Get short help, used in list of available commands 
-	 * 
-	 * @return string
-	 */
-	public String getHelpShort();
-	
-	/**
-	 * Get extended help, can be multiple lines 
-	 * 
-	 * @return string
-	 */
-	public String getHelpLong();
-	
-
-	/**
 	 * Execute the given parameters.
 	 *
 	 * @param parameters parameters typed by user

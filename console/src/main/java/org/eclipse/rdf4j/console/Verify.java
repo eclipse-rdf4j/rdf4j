@@ -27,10 +27,8 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Dale Visser
  */
-public class Verify implements Command {
+public class Verify extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Verify.class);
-
-	private final ConsoleIO consoleIO;
 
 	@Override
 	public  String getName() {
@@ -54,9 +52,10 @@ public class Verify implements Command {
 	 * Constructor
 	 * 
 	 * @param consoleIO 
+	 * @param state
 	 */
-	Verify(ConsoleIO consoleIO) {
-		this.consoleIO = consoleIO;
+	Verify(ConsoleIO consoleIO, ConsoleState state) {
+		super(consoleIO, state);
 	}
 
 	@Override

@@ -117,7 +117,7 @@ public class FederateTest extends AbstractCommandTest {
 		throws Exception
 	{
 		execute();
-		verify(mockConsoleIO).writeln(PrintHelp.FEDERATE);
+		verify(mockConsoleIO).writeln(federate.getHelpLong());
 	}
 
 	@Test
@@ -125,7 +125,7 @@ public class FederateTest extends AbstractCommandTest {
 		throws Exception
 	{
 		execute(FED_ID);
-		verify(mockConsoleIO).writeln(PrintHelp.FEDERATE);
+		verify(mockConsoleIO).writeln(federate.getHelpLong());
 	}
 
 	@Test
@@ -133,7 +133,7 @@ public class FederateTest extends AbstractCommandTest {
 		throws Exception
 	{
 		execute(FED_ID, MEMORY_MEMBER_ID1);
-		verify(mockConsoleIO).writeln(PrintHelp.FEDERATE);
+		verify(mockConsoleIO).writeln(federate.getHelpLong());
 	}
 
 	@Test

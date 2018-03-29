@@ -28,15 +28,11 @@ import org.slf4j.LoggerFactory;
  *
  * @author Dale Visser
  */
-public class Federate implements Command {
-
+public class Federate extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Federate.class);
 
-	private final ConsoleIO cio;
-	private final ConsoleState state;
-
 	@Override
-	public  String getName() {
+	public String getName() {
 		return "federate";
 	}
 	
@@ -62,12 +58,11 @@ public class Federate implements Command {
 	/**
 	 * Constructor
 	 * 
-	 * @param cio
+	 * @param consoleIO
 	 * @param state 
 	 */
-	Federate(ConsoleIO cio, ConsoleState state) {
-		this.cio = cio;
-		this.state = state;
+	Federate(ConsoleIO consoleIO, ConsoleState state) {
+		super(consoleIO, state);
 	}
 
 	/**
@@ -80,7 +75,7 @@ public class Federate implements Command {
 	@Override
 	public void execute(String... parameters) throws IOException {
 		if (parameters.length < 4) {
-			cio.writeln(getHelpLong());
+			consoleIO.writeln(getHelpLong());
 		} else {
 			LinkedList<String> plist = new LinkedList<>(Arrays.asList(parameters));
 			plist.remove(); // "federate"
@@ -91,7 +86,7 @@ public class Federate implements Command {
 				String fedID = plist.pop();
 				federate(distinct, readonly, fedID, plist);
 			} else {
-				cio.writeError("Duplicate repository id's specified.");
+				consoleIO.writeError("Duplicate repository id's specified.");
 			}
 		}
 	}
@@ -121,23 +116,17 @@ public class Federate implements Command {
 		RepositoryManager manager = state.getManager();
 		try {
 			if (manager.hasRepositoryConfig(fedID)) {
-				cio.writeError(fedID + " already exists.");
+				consoleIO.writeError(fedID + " already exists.");
 			} else if (validateMembers(manager, readonly, memberIDs)) {
-				String description = cio.readln("Federation Description (optional): ");
+				String description = consoleIO.readln("Federation Description (optional): ");
 				RepositoryManagerFederator rmf = new RepositoryManagerFederator(manager);
 				rmf.addFed(fedID, description, memberIDs, readonly, distinct);
-				cio.writeln("Federation created.");
+				consoleIO.writeln("Federation created.");
 			}
-		} catch (RepositoryConfigException rce) {
-			cio.writeError(rce.getMessage());
-		} catch (RepositoryException re) {
-			cio.writeError(re.getMessage());
-		} catch (MalformedURLException mue) {
-			cio.writeError(mue.getMessage());
-		} catch (RDF4JException ore) {
-			cio.writeError(ore.getMessage());
-		} catch (IOException ioe) {
-			cio.writeError(ioe.getMessage());
+		} catch (RepositoryConfigException | RepositoryException | MalformedURLException rce) {
+			consoleIO.writeError(rce.getMessage());
+		} catch (RDF4JException | IOException rce) {
+			consoleIO.writeError(rce.getMessage());
 		}
 	}
 
@@ -157,18 +146,16 @@ public class Federate implements Command {
 					if (!readonly) {
 						if (!manager.getRepository(memberID).isWritable()) {
 							result = false;
-							cio.writeError(memberID + " is read-only.");
+							consoleIO.writeError(memberID + " is read-only.");
 						}
 					}
 				} else {
 					result = false;
-					cio.writeError(memberID + " does not exist.");
+					consoleIO.writeError(memberID + " does not exist.");
 				}
 			}
-		} catch (RepositoryException re) {
-			cio.writeError(re.getMessage());
-		} catch (RepositoryConfigException rce) {
-			cio.writeError(rce.getMessage());
+		} catch (RepositoryException | RepositoryConfigException re) {
+			consoleIO.writeError(re.getMessage());
 		}
 		return result;
 	}

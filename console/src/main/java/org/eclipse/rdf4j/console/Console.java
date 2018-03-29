@@ -253,19 +253,19 @@ public class Console implements ConsoleState, ConsoleParameters {
 		cio.writeln("For bug reports and suggestions, see http://www.rdf4j.org/");
 	}
 
-	private final SortedMap<String, Command> commandMap = new TreeMap<>();
+	private final SortedMap<String,ConsoleCommand> commandMap = new TreeMap<>();
 
 	private final Connect connect;
 	private final Disconnect disconnect;
 	private final Open open;
-	private final QueryEvaluator queryEvaluator;
+	//private final QueryEvaluator queryEvaluator;
 
 	/**
 	 * Add command to register of known commands
 	 * 
 	 * @param cmd command to be added
 	 */
-	public final void register(Command cmd) {
+	public final void register(ConsoleCommand cmd) {
 		commandMap.put(cmd.getName(), cmd);
 	}
 	
@@ -277,27 +277,29 @@ public class Console implements ConsoleState, ConsoleParameters {
 	public Console() throws IOException {
 		appConfig.init();
 		consoleIO = new ConsoleIO(this);
-		
-		register(new Federate(consoleIO, this));
-		this.queryEvaluator = new QueryEvaluator(consoleIO, this, this);
+
 		LockRemover lockRemover = new LockRemover(consoleIO);
 		Close close = new Close(consoleIO, this);
-		register(close);
 		this.disconnect = new Disconnect(consoleIO, this, close);
-		register(new PrintHelp(consoleIO, this));
-		register(new PrintInfo(consoleIO, this));
 		this.connect = new Connect(consoleIO, this, disconnect);
+		this.open = new Open(consoleIO, this, close, lockRemover);
+		
+		register(new Federate(consoleIO, this));
+		register(new Sparql(consoleIO, this, this));
+		register(new Serql(consoleIO, this, this));
+		register(close);
+		register(new PrintHelp(consoleIO, this, commandMap));
+		register(new PrintInfo(consoleIO, this));
 		register(connect);
 		register(new Create(consoleIO, this, lockRemover));
 		register(new Drop(consoleIO, this, close, lockRemover));
-		this.open = new Open(consoleIO, this, close, lockRemover);
 		register(open);
 		register(new Show(consoleIO, this));
 		register(new Load(consoleIO, this, lockRemover));
 		register(new Export(consoleIO, this));
-		register(new Verify(consoleIO));
+		register(new Verify(consoleIO, this));
 		register(new Clear(consoleIO, this, lockRemover));
-		register(new SetParameters(consoleIO, this));
+		register(new SetParameters(consoleIO, this, this));
 	}
 
 	/**
@@ -354,10 +356,12 @@ public class Console implements ConsoleState, ConsoleParameters {
 			
 			exit = "quit".equals(operation) || "exit".equals(operation);
 			if (!exit) {
-				if (commandMap.containsKey(operation)) {
-					commandMap.get(operation).execute(tokens);
+				ConsoleCommand cmd = commandMap.getOrDefault(operation, 
+									commandMap.get("sparql"));
+				if (cmd instanceof QueryEvaluator) {
+					((QueryEvaluator) cmd).executeQuery(command, operation);
 				} else {
-					queryEvaluator.executeQuery(command, operation);
+					cmd.execute(tokens);
 				}
 			}
 		}
@@ -464,9 +468,5 @@ public class Console implements ConsoleState, ConsoleParameters {
 	public void setQueryPrefix(boolean value) {
 		this.queryPrefix = value;
 	}
-
-	@Override
-	public SortedMap<String, Command> getCommands() {
-		return commandMap;
-	}
+	
 }

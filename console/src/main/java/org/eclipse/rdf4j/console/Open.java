@@ -22,11 +22,9 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Dale Visser
  */
-public class Open implements Command {
+public class Open extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Open.class);
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
 	private final Close close;
 	private final LockRemover lockRemover;
 
@@ -55,8 +53,7 @@ public class Open implements Command {
 	 * @param lockRemover 
 	 */
 	Open(ConsoleIO consoleIO, ConsoleState state, Close close, LockRemover lockRemover) {
-		this.consoleIO = consoleIO;
-		this.state = state;
+		super(consoleIO, state);
 		this.close = close;
 		this.lockRemover = lockRemover;
 	}

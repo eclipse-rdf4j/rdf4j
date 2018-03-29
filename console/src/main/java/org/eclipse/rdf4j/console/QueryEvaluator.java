@@ -42,12 +42,10 @@ import org.slf4j.LoggerFactory;
 /**
  * @author Dale Visser
  */
-public class QueryEvaluator {
+public abstract class QueryEvaluator extends ConsoleCommand {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryEvaluator.class);
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
 	private final ConsoleParameters parameters;
 	private final TupleAndGraphQueryEvaluator tg_eval;
 
@@ -59,8 +57,7 @@ public class QueryEvaluator {
 	 * @param parameters 
 	 */
 	QueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
-		this.consoleIO = consoleIO;
-		this.state = state;
+		super(consoleIO, state);
 		this.parameters = parameters;
 		this.tg_eval = new TupleAndGraphQueryEvaluator(consoleIO, state, parameters);
 	}

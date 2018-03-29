@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.console;
 
 import java.io.File;
-import java.util.SortedMap;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
@@ -89,11 +88,5 @@ public interface ConsoleState {
 	 * @param repository repository
 	 */
 	void setRepository(Repository repository);
-	
-	/**
-	 * Get the sorted map of registered commands
-	 * 
-	 * @return 
-	 */
-	public SortedMap<String, Command> getCommands();
+
 }

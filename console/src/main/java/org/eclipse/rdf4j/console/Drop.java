@@ -19,11 +19,9 @@ import org.slf4j.LoggerFactory;
 /**
  * @author Dale Visser
  */
-public class Drop implements Command {
+public class Drop extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Drop.class);
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
 	private final Close close;
 	private final LockRemover lockRemover;
 
@@ -52,8 +50,7 @@ public class Drop implements Command {
 	 * @param lockRemover 
 	 */
 	Drop(ConsoleIO consoleIO, ConsoleState state, Close close, LockRemover lockRemover) {
-		this.consoleIO = consoleIO;
-		this.state = state;
+		super(consoleIO, state);
 		this.close = close;
 		this.lockRemover = lockRemover;
 	}
