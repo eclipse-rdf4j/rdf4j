@@ -11,6 +11,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -95,8 +97,21 @@ import org.slf4j.LoggerFactory;
  * <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> {<http://www.openrdf.org/contrib/lucenesail#LuceneQuery>}; 
  * <http://www.openrdf.org/contrib/lucenesail#query> {"my Lucene query"}; 
  * <http://www.openrdf.org/contrib/lucenesail#score> {Score}; 
- * <http://www.openrdf.org/contrib/lucenesail#snippet> {Snippet} 
- * </code> When defining queries, these properties <b>type and query are mandatory</b>. Also, the <b>matches
+ * <http://www.openrdf.org/contrib/lucenesail#snippet> {Snippet}</code>
+ * 
+ * In SPARQL:
+ * <code>
+ * SELECT ?subject ?score ?snippet ?resource WHERE {
+ * ?subject <http://www.openrdf.org/contrib/lucenesail#matches> [
+ *      a <http://www.openrdf.org/contrib/lucenesail#LuceneQuery> ;
+ *      <http://www.openrdf.org/contrib/lucenesail#query> "my Lucene query" ;
+ *      <http://www.openrdf.org/contrib/lucenesail#score> ?score ;
+ *      <http://www.openrdf.org/contrib/lucenesail#snippet> ?snippet ;
+ *      <http://www.openrdf.org/contrib/lucenesail#resource> ?resource 
+ *   ]
+ * }
+ * </code>
+ * When defining queries, these properties <b>type and query are mandatory</b>. Also, the <b>matches
  * relation is mandatory</b>. When one of these misses, the query will not be executed as expected. The
  * failure behavior can be configured, setting the Sail property "incompletequeryfail" to true will throw a
  * SailException when such patterns are found, this is the default behavior to help finding inaccurate
@@ -216,6 +231,12 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 * filesystem where to store the lucene index.
 	 */
 	public static final String LUCENE_DIR_KEY = "lucenedir";
+        
+        /**
+         * Set the default directory of the Lucene index files. 
+         * The value is always relational to the {@code dataDir} location as a parent directory.
+         */
+        public static final String DEFAULT_LUCENE_DIR = ".index";
 
 	/**
 	 * Set the key "useramdir=true" as sail parameter to let the LuceneSail store its Lucene index in RAM.
@@ -339,7 +360,10 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	@Override
 	public void setDataDir(File dataDir) {
-		this.setParameter(LuceneSail.LUCENE_DIR_KEY, dataDir.getAbsolutePath() + ".index");
+		Path luceneDir = Paths.get(parameters.getProperty(LuceneSail.LUCENE_DIR_KEY, DEFAULT_LUCENE_DIR), "");
+                String luceneDirAbsolute = dataDir.getAbsoluteFile().toPath().resolve(luceneDir).toString();
+		this.setParameter(LuceneSail.LUCENE_DIR_KEY, luceneDirAbsolute);
+                logger.debug("Absolute path to lucene index dir: {}", luceneDirAbsolute);
 		this.getBaseSail().setDataDir(dataDir);
 	}
 
