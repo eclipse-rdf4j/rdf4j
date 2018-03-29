@@ -680,28 +680,24 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		}
 	}
 
-	private boolean add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink,
+	private void add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink,
 			Resource... contexts)
 		throws SailException
 	{
-		boolean modified = false;
 		if (contexts.length == 0) {
-			if (!hasStatement(dataset, subj, pred, obj)) {
+			if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj)) {
 				notifyStatementAdded(vf.createStatement(subj, pred, obj));
-				modified = true;
 			}
 			sink.approve(subj, pred, obj, null);
 		}
 		else {
 			for (Resource ctx : contexts) {
-				if (!hasStatement(dataset, subj, pred, obj, ctx)) {
+				if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, ctx)) {
 					notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
-					modified = true;
 				}
 				sink.approve(subj, pred, obj, ctx);
 			}
 		}
-		return modified;
 	}
 
 	@Override
