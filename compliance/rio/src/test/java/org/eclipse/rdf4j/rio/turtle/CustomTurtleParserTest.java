@@ -15,13 +15,11 @@ import static org.junit.Assert.fail;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.Collections;
-import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.NamespaceImpl;
@@ -532,5 +530,49 @@ public class CustomTurtleParserTest {
 		assertEquals(1, model.size());
 		model.filter(null, RDF.TYPE, null).objects().forEach(obj -> assertEquals(
 				"http://purl.bioontology.org/ontology/UATC/%20SERINE%20%20", obj.stringValue()));
+	}
+
+	@Test
+	public void testParseTruePrefix()
+		throws Exception
+	{
+		Rio.parse(new StringReader("@prefix true: <http://example/c/> . true:s true:p true:o ."), "",
+				RDFFormat.TURTLE);
+	}
+
+	@Test
+	public void testParseBooleanLiteral()
+		throws Exception
+	{
+		String ttl = "<http://www.ex.com/s> <http://www.ex.com/b> true.\n";
+		Model m = Rio.parse(new StringReader(ttl), "http://ex/", RDFFormat.TURTLE);
+		assertEquals(1, m.size());
+	}
+
+	@Test
+	public void testParseBooleanLiteral_space()
+		throws Exception
+	{
+		String ttl = "<http://www.ex.com/s> <http://www.ex.com/b> true .\n";
+		Model m = Rio.parse(new StringReader(ttl), "http://ex/", RDFFormat.TURTLE);
+		assertEquals(1, m.size());
+	}
+
+	@Test
+	public void testParseIntLiteral()
+		throws Exception
+	{
+		String ttl = "<http://www.ex.com/s> <http://www.ex.com/b> 1.\n";
+		Model m = Rio.parse(new StringReader(ttl), "http://ex/", RDFFormat.TURTLE);
+		assertEquals(1, Models.objectLiteral(m).get().intValue());
+	}
+
+	@Test
+	public void testParseDoubleLiteral()
+		throws Exception
+	{
+		String ttl = "<http://www.ex.com/s> <http://www.ex.com/b> 1.2.\n";
+		Model m = Rio.parse(new StringReader(ttl), "http://ex/", RDFFormat.TURTLE);
+		assertEquals(1.2d, Models.objectLiteral(m).get().doubleValue(), 0.01);
 	}
 }

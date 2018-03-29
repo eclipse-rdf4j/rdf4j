@@ -654,7 +654,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		closeNestedResources(null);
 		if (!statementClosed) {
 			// The previous statement still needs to be closed:
-			writer.write(".");
+			writer.write(" .");
 			writer.writeEOL();
 			writer.decreaseIndentation();
 			writer.decreaseIndentation();
