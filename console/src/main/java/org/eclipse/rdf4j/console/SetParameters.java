@@ -31,7 +31,7 @@ public class SetParameters implements Command {
 	private static final String LOG_COMMAND = "log";
 
 	private static final BiMap<String, Level> LOG_LEVELS;
-
+	
 	static {
 		Builder<String, Level> logLevels = ImmutableBiMap.<String, Level>builder();
 
@@ -43,8 +43,28 @@ public class SetParameters implements Command {
 		LOG_LEVELS = logLevels.build();
 	}
 
-	private final ConsoleIO consoleIO;
+	@Override
+	public  String getName() {
+		return "set";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Allows various console parameters to be set";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return  PrintHelp.USAGE
+			+ "set                            Shows all parameter values\n"
+			+ "set width=<number>             Set the width for query result tables\n"
+			+ "set log=<level>                Set the logging level (none, error, warning, info or debug)\n"
+			+ "set showPrefix=<true|false>    Toggles use of prefixed names in query results\n"
+			+ "set queryPrefix=<true|false>   Toggles automatic use of known namespace prefixes in queries\n";
 
+	}
+	
+	private final ConsoleIO consoleIO;
 	private final ConsoleParameters parameters;
 
 	/**
@@ -73,7 +93,7 @@ public class SetParameters implements Command {
 				setParameter(key, value);
 			}
 		} else {
-			consoleIO.writeln(PrintHelp.SET);
+			consoleIO.writeln(getHelpLong());
 		}
 	}
 

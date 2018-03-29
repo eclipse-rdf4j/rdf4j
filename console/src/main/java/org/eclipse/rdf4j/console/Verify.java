@@ -28,11 +28,28 @@ import org.slf4j.LoggerFactory;
  * @author Dale Visser
  */
 public class Verify implements Command {
-
 	private static final Logger LOGGER = LoggerFactory.getLogger(Verify.class);
 
 	private final ConsoleIO consoleIO;
 
+	@Override
+	public  String getName() {
+		return "verify";
+	}
+
+	@Override
+	public String getHelpShort() {
+		return "Verifies the syntax of an RDF data file, takes a file path or URL as argument";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return  PrintHelp.USAGE
+			+ "verify <file-or-url>\n"
+			+ "  <file-or-url>   The path or URL identifying the data file\n"
+			+ "Verifies the validity of the specified data file\n";
+	}
+	
 	/**
 	 * Constructor
 	 * 
@@ -45,7 +62,7 @@ public class Verify implements Command {
 	@Override
 	public void execute(String... tokens) {
 		if (tokens.length != 2) {
-			consoleIO.writeln(PrintHelp.VERIFY);
+			consoleIO.writeln(getHelpLong());
 			return;
 		}
 		String dataPath = parseDataPath(tokens);

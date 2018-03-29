@@ -14,11 +14,27 @@ import org.eclipse.rdf4j.repository.Repository;
  * 
  * @author Dale Visser
  */
-public class Close implements Command {
+public class Close extends AbstractCommand {
 
 	private final ConsoleIO consoleIO;
 	private final ConsoleState appInfo;
 
+	@Override
+	public  String getName() {
+		return "close";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Closes the current repository";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return  PrintHelp.USAGE
+			+ "close   Closes the current repository\n";
+	}
+	
 	/**
 	 * Constructor
 	 * 
@@ -35,7 +51,7 @@ public class Close implements Command {
 		if (tokens.length == 1) {
 			closeRepository(true);
 		} else {
-			consoleIO.writeln(PrintHelp.CLOSE);
+			consoleIO.writeln(getHelpLong());
 		}
 	}
 

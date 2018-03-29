@@ -10,10 +10,10 @@ package org.eclipse.rdf4j.console;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -100,17 +100,17 @@ public class Console implements ConsoleState, ConsoleParameters {
 		final Options options = new Options();
 		
 		OptionGroup cautionGroup = new OptionGroup().addOption(cautiousOption)
-													.addOption(forceOption)
-													.addOption(exitOnErrorMode);
+								.addOption(forceOption)
+								.addOption(exitOnErrorMode);
 		OptionGroup locationGroup = new OptionGroup().addOption(serverURLOption)
-													.addOption(dirOption);
+								.addOption(dirOption);
 		
 		options.addOptionGroup(locationGroup).addOptionGroup(cautionGroup);
 		
 		options.addOption(helpOption).addOption(versionOption)
-									.addOption(echoOption)
-									.addOption(quietOption);
-		
+						.addOption(echoOption)
+						.addOption(quietOption);
+	
 		CommandLine commandLine = parseCommandLine(args, console, options);
 		handleInfoOptions(console, helpOption, versionOption, options, commandLine);
 		
@@ -144,8 +144,8 @@ public class Console implements ConsoleState, ConsoleParameters {
 	 * @param commandLine
 	 * @return location of the (remote or local) repository 
 	 */
-	private static String handleOptionGroups(final Console console, final Option serverURLOption,
-			final Option dirOption, Option forceOption, Option cautiousOption, final Options options,
+	private static String handleOptionGroups(Console console, Option serverURLOption,
+			Option dirOption, Option forceOption, Option cautiousOption, Options options,
 			OptionGroup cautionGroup, OptionGroup locationGroup, CommandLine commandLine) {
 		String location = null;
 		
@@ -172,7 +172,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 		}
 		return location;
 	}
-/**
+	/**
 	 * Handle info options group
 	 * 
 	 * @param console
@@ -181,8 +181,8 @@ public class Console implements ConsoleState, ConsoleParameters {
 	 * @param options
 	 * @param commandLine 
 	 */
-	private static void handleInfoOptions(final Console console, final Option helpOption,
-			final Option versionOption, final Options options, final CommandLine commandLine) {
+	private static void handleInfoOptions(Console console, Option helpOption,
+			Option versionOption, Options options, CommandLine commandLine) {
 		if (commandLine.hasOption(helpOption.getOpt())) {
 			printUsage(console.consoleIO, options);
 			System.exit(0);
@@ -201,8 +201,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 	 * @param options
 	 * @return parsed command line
 	 */
-	private static CommandLine parseCommandLine(final String[] args, final Console console,
-			final Options options) {
+	private static CommandLine parseCommandLine(String[] args, Console console, Options options) {
 		CommandLine commandLine = null;
 		try {
 			commandLine = new PosixParser().parse(options, args);
@@ -254,13 +253,22 @@ public class Console implements ConsoleState, ConsoleParameters {
 		cio.writeln("For bug reports and suggestions, see http://www.rdf4j.org/");
 	}
 
-	private final Map<String, Command> commandMap = new HashMap<>();
+	private final SortedMap<String, Command> commandMap = new TreeMap<>();
 
 	private final Connect connect;
 	private final Disconnect disconnect;
 	private final Open open;
 	private final QueryEvaluator queryEvaluator;
 
+	/**
+	 * Add command to register of known commands
+	 * 
+	 * @param cmd command to be added
+	 */
+	public final void register(Command cmd) {
+		commandMap.put(cmd.getName(), cmd);
+	}
+	
 	/**
 	 * Constructor
 	 * 
@@ -270,26 +278,26 @@ public class Console implements ConsoleState, ConsoleParameters {
 		appConfig.init();
 		consoleIO = new ConsoleIO(this);
 		
-		commandMap.put("federate", new Federate(consoleIO, this));
+		register(new Federate(consoleIO, this));
 		this.queryEvaluator = new QueryEvaluator(consoleIO, this, this);
 		LockRemover lockRemover = new LockRemover(consoleIO);
 		Close close = new Close(consoleIO, this);
-		commandMap.put("close", close);
+		register(close);
 		this.disconnect = new Disconnect(consoleIO, this, close);
-		commandMap.put("help", new PrintHelp(consoleIO));
-		commandMap.put("info", new PrintInfo(consoleIO, this));
+		register(new PrintHelp(consoleIO, this));
+		register(new PrintInfo(consoleIO, this));
 		this.connect = new Connect(consoleIO, this, disconnect);
-		commandMap.put("connect", connect);
-		commandMap.put("create", new Create(consoleIO, this, lockRemover));
-		commandMap.put("drop", new Drop(consoleIO, this, close, lockRemover));
+		register(connect);
+		register(new Create(consoleIO, this, lockRemover));
+		register(new Drop(consoleIO, this, close, lockRemover));
 		this.open = new Open(consoleIO, this, close, lockRemover);
-		commandMap.put("open", open);
-		commandMap.put("show", new Show(consoleIO, this));
-		commandMap.put("load", new Load(consoleIO, this, lockRemover));
-		commandMap.put("export", new Export(consoleIO, this));
-		commandMap.put("verify", new Verify(consoleIO));
-		commandMap.put("clear", new Clear(consoleIO, this, lockRemover));
-		commandMap.put("set", new SetParameters(consoleIO, this));
+		register(open);
+		register(new Show(consoleIO, this));
+		register(new Load(consoleIO, this, lockRemover));
+		register(new Export(consoleIO, this));
+		register(new Verify(consoleIO));
+		register(new Clear(consoleIO, this, lockRemover));
+		register(new SetParameters(consoleIO, this));
 	}
 
 	/**
@@ -348,8 +356,6 @@ public class Console implements ConsoleState, ConsoleParameters {
 			if (!exit) {
 				if (commandMap.containsKey(operation)) {
 					commandMap.get(operation).execute(tokens);
-				} else if ("disconnect".equals(operation)) {
-					disconnect.execute(true);
 				} else {
 					queryEvaluator.executeQuery(command, operation);
 				}
@@ -457,5 +463,10 @@ public class Console implements ConsoleState, ConsoleParameters {
 	@Override
 	public void setQueryPrefix(boolean value) {
 		this.queryPrefix = value;
+	}
+
+	@Override
+	public SortedMap<String, Command> getCommands() {
+		return commandMap;
 	}
 }

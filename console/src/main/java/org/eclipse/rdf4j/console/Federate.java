@@ -35,13 +35,37 @@ public class Federate implements Command {
 	private final ConsoleIO cio;
 	private final ConsoleState state;
 
+	@Override
+	public  String getName() {
+		return "federate";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Federate existing repositories";
+	}
+
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "federate [distinct=<true|false>] [readonly=<true|false>] <fedID> <repoID_1> <repoID_2> [<repoID_n>]*\n"
+			+ "  [distinct=<true|false>]  If true, uses a DISTINCT filter that suppresses duplicate results for identical quads\n"
+			+ "                           from different federation members. Default is false.\n"
+			+ "  [readonly=<true|false>]  If true, sets the fedearated repository as read-only. If any member is read-only, then\n"
+			+ "                           this may only be set to true. Default is true. \n"
+			+ "  <fedId>                  The id to assign the federated repository.\n"
+			+ "  <repoID1> <repoID2>      The id's of at least 2 repositories to federate.\n"
+			+ "  [<repoID_n>]*            The id's of 0 or mare additional repositories to federate.\n\n"
+			+ "You will be prompted to enter a description for the federated repository as well.";
+	}
+	
 	/**
 	 * Constructor
 	 * 
 	 * @param cio
 	 * @param state 
 	 */
-	protected Federate(ConsoleIO cio, ConsoleState state) {
+	Federate(ConsoleIO cio, ConsoleState state) {
 		this.cio = cio;
 		this.state = state;
 	}
@@ -56,7 +80,7 @@ public class Federate implements Command {
 	@Override
 	public void execute(String... parameters) throws IOException {
 		if (parameters.length < 4) {
-			cio.writeln(PrintHelp.FEDERATE);
+			cio.writeln(getHelpLong());
 		} else {
 			LinkedList<String> plist = new LinkedList<>(Arrays.asList(parameters));
 			plist.remove(); // "federate"

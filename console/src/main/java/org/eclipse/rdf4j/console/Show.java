@@ -36,6 +36,24 @@ public class Show implements Command {
 	private final ConsoleIO consoleIO;
 	private final ConsoleState state;
 
+	@Override
+	public  String getName() {
+		return "show";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Displays an overview of various resources";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return  PrintHelp.USAGE
+			+ "show {r, repositories}   Shows all available repositories\n"
+			+ "show {n, namespaces}     Shows all namespaces\n"
+			+ "show {c, contexts}       Shows all context identifiers\n";
+	}	
+	
 	/**
 	 * Constructor
 	 *
@@ -61,7 +79,7 @@ public class Show implements Command {
 				consoleIO.writeError("Unknown target '" + tokens[1] + "'");
 			}
 		} else {
-			consoleIO.writeln(PrintHelp.SHOW);
+			consoleIO.writeln(getHelpLong());
 		}
 	}
 

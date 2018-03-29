@@ -24,14 +24,30 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Dale Visser
  */
-public class Clear implements Command {
-
+public class Clear extends AbstractCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Clear.class);
 
 	private final ConsoleIO consoleIO;
 	private final ConsoleState state;
 	private final LockRemover lockRemover;
 
+	@Override
+	public String getName() {
+		return "clear";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Removes data from a repository";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return  PrintHelp.USAGE
+			+ "clear                   Clears the entire repository\n"
+			+ "clear (<uri>|null)...   Clears the specified context(s)\n";
+	}
+	
 	/**
 	 * Constructor
 	 * 
@@ -66,7 +82,7 @@ public class Clear implements Command {
 						contexts[i - 1] = valueFactory.createIRI(contextID);
 					} catch (IllegalArgumentException e) {
 						consoleIO.writeError("illegal URI: " + contextID);
-						consoleIO.writeln(PrintHelp.CLEAR);
+						consoleIO.writeln(getHelpLong());
 						return;
 					}
 				}

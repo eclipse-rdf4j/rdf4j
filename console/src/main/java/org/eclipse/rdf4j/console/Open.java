@@ -23,7 +23,6 @@ import org.slf4j.LoggerFactory;
  * @author Dale Visser
  */
 public class Open implements Command {
-
 	private static final Logger LOGGER = LoggerFactory.getLogger(Open.class);
 
 	private final ConsoleIO consoleIO;
@@ -31,6 +30,22 @@ public class Open implements Command {
 	private final Close close;
 	private final LockRemover lockRemover;
 
+	@Override
+	public  String getName() {
+		return "open";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Opens a repository to work on, takes a repository ID as argument";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return  PrintHelp.USAGE
+			+ "open <repositoryID>   Opens the repository with the specified ID\n";
+	}
+	
 	/**
 	 * Constructor
 	 * 
@@ -51,7 +66,7 @@ public class Open implements Command {
 		if (tokens.length == 2) {
 			openRepository(tokens[1]);
 		} else {
-			consoleIO.writeln(PrintHelp.OPEN);
+			consoleIO.writeln(getHelpLong());
 		}
 	}
 

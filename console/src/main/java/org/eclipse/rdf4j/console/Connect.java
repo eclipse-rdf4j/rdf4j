@@ -29,14 +29,32 @@ import org.slf4j.LoggerFactory;
  *
  * @author dale
  */
-public class Connect implements Command {
-
+public class Connect extends AbstractCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Connect.class);
 
 	private final ConsoleState appInfo;
 	private final ConsoleIO consoleIO;
 	private final Disconnect disconnect;
+	
+	@Override
+	public String getName() {
+		return "connect";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Connects to a (local or remote) set of repositories";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return  PrintHelp.USAGE
+			+ "connect default                         Opens the default repository set for this console\n"
+			+ "connect <dataDirectory>                 Opens the repository set in the specified data dir\n"
+			+ "connect <serverURL> [user [password]]   Connects to a Sesame server with optional credentials\n";
 
+	}
+	
 	/**
 	 * Constructor
 	 * 
@@ -54,7 +72,7 @@ public class Connect implements Command {
 	@Override
 	public void execute(String... tokens) {
 		if (tokens.length < 2) {
-			consoleIO.writeln(PrintHelp.CONNECT);
+			consoleIO.writeln(getHelpLong());
 			return;
 		}
 		

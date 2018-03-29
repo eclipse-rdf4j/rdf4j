@@ -47,7 +47,6 @@ import org.slf4j.LoggerFactory;
  * @author Dale Visser
  */
 public class Create implements Command {
-
 	private static final Logger LOGGER = LoggerFactory.getLogger(Create.class);
 
 	private static final String TEMPLATES_DIR = "templates";
@@ -56,6 +55,23 @@ public class Create implements Command {
 	private final ConsoleState state;
 	private final LockRemover lockRemover;
 
+	@Override
+	public  String getName() {
+		return "create";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Creates a new repository";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return  PrintHelp.USAGE
+			+ "create <template-name>\n"
+			+ "  <template-name>   The name of a repository configuration template\n";
+	}
+	
 	/**
 	 * Constructor
 	 *
@@ -72,7 +88,7 @@ public class Create implements Command {
 	@Override
 	public void execute(String... tokens) throws IOException {
 		if (tokens.length < 2) {
-			consoleIO.writeln(PrintHelp.CREATE);
+			consoleIO.writeln(getHelpLong());
 		} else {
 			createRepository(tokens[1]);
 		}

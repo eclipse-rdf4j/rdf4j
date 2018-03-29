@@ -40,6 +40,22 @@ public class Export implements Command {
 	private final ConsoleIO consoleIO;
 	private final ConsoleState state;
 
+	@Override
+	public  String getName() {
+		return "export";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Exports repository data to a file";
+	}
+
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "export <file>                 Exports the entirey repository to a file\n"
+			+ "export <file> (<uri>|null)... Exports the specified context(s) to a file\n";
+	}
 	// TODO: move this util class, could be reused by Clear and other commands
 	private static Resource getContext(Repository repository, String ctxID) {
 		if (ctxID.equalsIgnoreCase("null")) {
@@ -81,7 +97,7 @@ public class Export implements Command {
 			return;
 		}
 		if (tokens.length < 2) {
-			consoleIO.writeln(PrintHelp.EXPORT);
+			consoleIO.writeln(getHelpLong());
 			return;
 		} 
 		

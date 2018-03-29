@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
+import java.io.IOException;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
 /**
@@ -14,11 +15,27 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
  * 
  * @author Dale Visser
  */
-public class Disconnect {
+public class Disconnect implements Command {
 
 	private final ConsoleIO consoleIO;
 	private final ConsoleState appInfo;
 	private final Close close;
+
+	@Override
+	public String getName() {
+		return "disconnect";
+	}
+
+	@Override
+	public String getHelpShort() {
+		return "Disconnects from the current set of repositories";
+	}
+
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "disconnect   Disconnects from the current set of repositories or server\n";
+	}
 
 	/**
 	 * Constructor
@@ -52,5 +69,10 @@ public class Disconnect {
 			appInfo.setManager(null);
 			appInfo.setManagerID(null);
 		}
+	}
+
+	@Override
+	public void execute(String... parameters) throws IOException {
+		execute(true);
 	}
 }

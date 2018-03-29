@@ -20,7 +20,6 @@ import org.slf4j.LoggerFactory;
  * @author Dale Visser
  */
 public class Drop implements Command {
-
 	private static final Logger LOGGER = LoggerFactory.getLogger(Drop.class);
 
 	private final ConsoleIO consoleIO;
@@ -28,6 +27,22 @@ public class Drop implements Command {
 	private final Close close;
 	private final LockRemover lockRemover;
 
+	@Override
+	public  String getName() {
+		return "drop";
+	}
+
+	@Override
+	public String getHelpShort() {
+		return "Drops a repository";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return  PrintHelp.USAGE
+			+ "drop <repositoryID>   Drops the repository with the specified id\n";
+	}
+	
 	/**
 	 * Constructor
 	 * 
@@ -46,7 +61,7 @@ public class Drop implements Command {
 	@Override
 	public void execute(String... tokens) throws IOException {
 		if (tokens.length < 2) {
-			consoleIO.writeln(PrintHelp.DROP);
+			consoleIO.writeln(getHelpLong());
 		} else {
 			final String repoID = tokens[1];
 			try {

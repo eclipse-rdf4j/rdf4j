@@ -29,13 +29,32 @@ import org.slf4j.LoggerFactory;
  * @author Dale Visser
  */
 class Load implements Command {
-
 	private static final Logger LOGGER = LoggerFactory.getLogger(Load.class);
 
 	private final ConsoleIO consoleIO;
 	private final ConsoleState state;
 	private final LockRemover lockRemover;
 
+	@Override
+	public  String getName() {
+		return "load";
+	}
+
+	@Override
+	public String getHelpShort() {
+		return "Loads a data file into a repository, takes a file path or URL as argument";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return  PrintHelp.USAGE 
+			+ "load <file-or-url> [from <base-uri>] [into <context-id>]\n"
+			+ "  <file-or-url>   The path or URL identifying the data file\n"
+			+ "  <base-uri>      The base URI to use for resolving relative references, defaults to <file-or-url>\n"
+			+ "  <context-id>    The ID of the context to add the data to, e.g. foo:bar or _:n123\n"
+			+ "Loads the specified data file into the current repository\n";
+	}
+	
 	/**
 	 * Constructor
 	 * 
@@ -56,7 +75,7 @@ class Load implements Command {
 			consoleIO.writeUnopenedError();
 		} else {
 			if (tokens.length < 2) {
-				consoleIO.writeln(PrintHelp.LOAD);
+				consoleIO.writeln(getHelpLong());
 			} else {
 				String baseURI = null;
 				String context = null;
@@ -71,7 +90,7 @@ class Load implements Command {
 					index += 2;
 				}
 				if (index < tokens.length) {
-					consoleIO.writeln(PrintHelp.LOAD);
+					consoleIO.writeln(getHelpLong());
 				} else {
 					load(repository, baseURI, context, tokens);
 				}

@@ -13,10 +13,25 @@ package org.eclipse.rdf4j.console;
  * @author Dale Visser
  */
 class PrintInfo implements Command {
-
 	private final ConsoleState appInfo;
 	private final ConsoleIO consoleIO;
 
+	@Override
+	public  String getName() {
+		return "info";
+	}
+
+	@Override
+	public String getHelpShort() {
+		return "Shows info about the console";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return  PrintHelp.USAGE
+			+ "info                  Shows information about the console\n";
+	}
+	
 	/**
 	 * Constructor
 	 * 
