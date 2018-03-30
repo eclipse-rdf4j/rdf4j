@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,15 +51,23 @@ public class Verify implements Command {
 		}
 		String dataPath = parseDataPath(tokens);
 		try {
-			final URL dataURL = new URL(dataPath);
-			final RDFFormat format = Rio.getParserFormatForFileName(dataPath).orElseThrow(
+			URL dataURL = new URL(dataPath);
+			RDFFormat format = Rio.getParserFormatForFileName(dataPath).orElseThrow(
 					Rio.unsupportedFormat(dataPath));
 			consoleIO.writeln("RDF Format is " + format.getName());
 			
-			final RDFParser parser = Rio.createParser(format);
-			final VerificationListener listener = new VerificationListener(consoleIO);
-			parser.setDatatypeHandling(RDFParser.DatatypeHandling.VERIFY);
-			parser.setVerifyData(true);
+			RDFParser parser = Rio.createParser(format);
+			VerificationLIstener listener = new VerificationLIstener(consoleIO);
+		
+			parser.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
+			parser.set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);
+			
+			parser.set(BasicParserSettings.VERIFY_LANGUAGE_TAGS, true);
+			parser.set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);
+			
+			parser.set(BasicParserSettings.VERIFY_RELATIVE_URIS, true);			
+			parser.set(BasicParserSettings.VERIFY_URI_SYNTAX, true);
+			
 			parser.setParseErrorListener(listener);
 			parser.setRDFHandler(listener);
 			consoleIO.writeln("Verifying data...");
@@ -70,10 +79,11 @@ public class Verify implements Command {
 				dataStream.close();
 			}
 			
-			final int warnings = listener.getWarnings();
-			final int errors = listener.getErrors();
+			int warnings = listener.getWarnings();
+			int errors = listener.getErrors();
+
 			if (warnings + errors > 0) {
-				consoleIO.writeln("Found " + warnings + " warnings and " + errors + " errors");
+				consoleIO.writeError("Found " + warnings + " warnings and " + errors + " errors");
 			} else {
 				consoleIO.writeln("Data verified, no errors were found");
 			}
@@ -87,7 +97,7 @@ public class Verify implements Command {
 		} catch (UnsupportedRDFormatException e) {
 			consoleIO.writeError("No parser available for this RDF format");
 		} catch (RDFParseException e) {
-			LOGGER.error("Unexpected RDFParseException", e);
+			consoleIO.writeError("Unexpected RDFParseException" + e.getMessage());
 		} catch (RDFHandlerException e) {
 			consoleIO.writeError("Unable to verify : " + e.getMessage());
 			LOGGER.error("Unable to verify data file", e);
