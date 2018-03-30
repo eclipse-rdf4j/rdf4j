@@ -1,12 +1,12 @@
 = RDF4J Console
 
-The RDF4J Console is a command-line application for interacting with RDF4J. It can be used to create and use local RDF databases, or it can connect to a running RDF4J Server.
+The RDF4J Console is a text console application for interacting with RDF4J. It can be used to create and use local RDF databases, or to connect to a running RDF4J Server.
 
 == Getting started
 
-RDF4J Console can be started using the `console.bat`/`.sh` scripts that can be found in the bin directory of the RDF4J SDK. By default, the console will connect to the “default data directory”, which contains the console’s own set of repositories.
+RDF4J Console can be started using the `console.bat`/`.sh` scripts in the bin directory of the RDF4J SDK. By default, the console will connect to the “default data directory”, which contains the console’s own set of repositories.
 
-The console can be operated by typing commands. For example, to get an overview of the available commands, type:
+The console is operated by typing commands. For example, to get an overview of the available commands, type:
 
  help
 
@@ -28,7 +28,7 @@ To get an overview of the repositories that are available in the set that your c
 
 === Creating a repository
 
-The `create` command can be used to add new repositories to the set that the console is connected to. This command expects the name of a template that describes the repository’s configuration. Currently, there are nine templates that are included with the console by default:
+The `create` command can be used to add new repositories to the set that the console is connected to. This command expects the name of a template describing the repository's configuration. Several templates are available, including:
 
 - memory — a memory based RDF repository
 - memory-rdfs — a main-memory repository with RDF Schema inferencing
@@ -36,13 +36,15 @@ The `create` command can be used to add new repositories to the set that the con
 - native — a repository that uses on-disk data structure
 - native-rdfs — a native repository with RDF Schema inferencing
 - native-rdfs-dt — a native repository with RDF Schema and direct type hierarchy inferencing
-- remote — a repository that serves as a proxy for a repository on a Sesame Server
+- remote — a repository that serves as a proxy for a repository on a RDF4J Server
+- sparql — a repository that serves as a proxy for a SPARQL endpoint
+
 
 When the `create` command is executed, the console will ask you to fill in a number of parameters for the type of repository that you chose. For example, to create a native repository, you execute the following command:
 
  create native
 
-The console will then ask you to provide an ID and title for the repository, as well as the triple indexes that need to be created for this kind of store. The values between square brackets indicate default values which you can select by simply hitting enter. The output of this dialogue looks something like this:
+The console will ask you to provide an ID and title for the repository, as well as the triple indexes that need to be created for this kind of store. The values between square brackets indicate default values which you can select by simply hitting enter. The output of this dialogue looks something like this:
 
  Please specify values for the following variables:
  Repository ID [native]: myRepo
@@ -50,9 +52,22 @@ The console will then ask you to provide an ID and title for the repository, as 
  Triple indexes [spoc,posc]: 
  Repository created
 
+=== Verifying the syntax of a file
+
+
+  verify
+  
+=== Loading a file into a repository
+
+
+=== Exporting a repository to a file
+
+=== Executing a SPARQL query
+
+
 === Other commands
 
-Please check the documentation that is provided by the console itself for help on how to use the other commands. Most commands should be self explanatory. [TODO expand on this a little – give some examples of other commands]
+Please check the documentation that is provided by the console itself for help on how to use the other commands. Most commands should be self explanatory. 
 
 == Repository configuration
 === Memory store configuration
