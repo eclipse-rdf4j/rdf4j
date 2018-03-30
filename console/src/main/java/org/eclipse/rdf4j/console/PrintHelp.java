@@ -40,8 +40,8 @@ public class PrintHelp extends ConsoleCommand {
 	 * 
 	 * @param consoleIO 
 	 */
-	PrintHelp(ConsoleIO consoleIO, ConsoleState state, Map<String,? extends Help> commands) {
-		super(consoleIO, state);
+	PrintHelp(ConsoleIO consoleIO, Map<String,? extends Help> commands) {
+		super(consoleIO);
 		this.commands = commands;
 	}
 

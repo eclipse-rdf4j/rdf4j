@@ -18,7 +18,24 @@ public abstract class ConsoleCommand implements Command, Help {
 	final ConsoleIO consoleIO;
 	final ConsoleState state;
 	
+	/**
+	 * Get console IO
+	 * 
+	 * @return 
+	 */
+	public ConsoleIO getConsoleIO() {
+		return this.consoleIO;
+	}
 	
+	/**
+	 * Get console state
+	 * 
+	 * @return 
+	 */
+	public ConsoleState getConsoleState() {
+		return this.state;
+	}
+
 	/**
 	 * Get short description, small enough to fit on one console row
 	 * 
@@ -43,6 +60,16 @@ public abstract class ConsoleCommand implements Command, Help {
 	public void execute(String... parameters) throws IOException {
 		throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
 	}
+
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO 
+	 */
+	public ConsoleCommand(ConsoleIO consoleIO) {
+		this.consoleIO = consoleIO;
+		this.state = null;
+	}
 	
 	/**
 	 * Constructor
@@ -50,9 +77,10 @@ public abstract class ConsoleCommand implements Command, Help {
 	 * @param consoleIO
 	 * @param state 
 	 */
-	public ConsoleCommand (ConsoleIO consoleIO, ConsoleState state) {
+	public ConsoleCommand(ConsoleIO consoleIO, ConsoleState state) {
 		this.consoleIO = consoleIO;
 		this.state = state;
 	}
-	
+
+
 }

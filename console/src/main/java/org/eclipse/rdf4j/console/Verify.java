@@ -54,8 +54,8 @@ public class Verify extends ConsoleCommand {
 	 * @param consoleIO 
 	 * @param state
 	 */
-	Verify(ConsoleIO consoleIO, ConsoleState state) {
-		super(consoleIO, state);
+	Verify(ConsoleIO consoleIO) {
+		super(consoleIO);
 	}
 
 	@Override

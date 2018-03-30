@@ -288,7 +288,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 		register(new Sparql(consoleIO, this, this));
 		register(new Serql(consoleIO, this, this));
 		register(close);
-		register(new PrintHelp(consoleIO, this, commandMap));
+		register(new PrintHelp(consoleIO, commandMap));
 		register(new PrintInfo(consoleIO, this));
 		register(connect);
 		register(new Create(consoleIO, this, lockRemover));
@@ -297,7 +297,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 		register(new Show(consoleIO, this));
 		register(new Load(consoleIO, this, lockRemover));
 		register(new Export(consoleIO, this));
-		register(new Verify(consoleIO, this));
+		register(new Verify(consoleIO));
 		register(new Clear(consoleIO, this, lockRemover));
 		register(new SetParameters(consoleIO, this, this));
 	}
