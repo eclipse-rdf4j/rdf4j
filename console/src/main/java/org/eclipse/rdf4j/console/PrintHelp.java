@@ -69,7 +69,7 @@ public class PrintHelp extends ConsoleCommand {
 		consoleIO.writeln("List of all commands:");
 		
 		commands.forEach((k,v) -> {
-			consoleIO.writeln(String.format("%-12s %s", k, v.getHelpShort()));
+			consoleIO.writeln(String.format("%-11s %s", k, v.getHelpShort()));
 		});
 		
 		consoleIO.writeln("exit, quit  Exit the console");
