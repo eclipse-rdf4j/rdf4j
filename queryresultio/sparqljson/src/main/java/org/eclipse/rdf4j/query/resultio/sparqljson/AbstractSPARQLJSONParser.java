@@ -332,8 +332,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 				}
 			}
 			else {
-				throw new QueryResultParseException(
-						"Found unexpected object in top level " + baseStr + " field",
+				logger.debug("Found unexpected object in top level {} field #{}.{}", baseStr,
 						jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 			}
 		}
