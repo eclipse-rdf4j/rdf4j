@@ -60,13 +60,6 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 		return new HTTPRepository(HTTPMemServer.REPOSITORY_URL);
 	}
 
-	@Ignore("temporarily disabled for HTTPRepository")
-	@Test
-	@Override
-	public void testOrderByQueriesAreInterruptable() {
-		System.err.println("temporarily disabled testOrderByQueriesAreInterruptable() for HTTPRepository");
-	}
-
 	@Test
 	public void testContextInTransactionAdd()
 		throws Exception

@@ -292,14 +292,6 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		// TODO see SES-1776
 	}
 
-	@Ignore
-	@Override
-	public void testOrderByQueriesAreInterruptable()
-		throws Exception
-	{
-		System.err.println("temporarily disabled testOrderByQueriesAreInterruptable() for SPARQLRepository");
-	}
-
 	@Test
 	@Override
 	@Ignore("can not execute test because required data add results in illegal SPARQL syntax")
