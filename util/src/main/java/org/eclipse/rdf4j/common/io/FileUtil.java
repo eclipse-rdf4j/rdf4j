@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.common.io;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.Collection;
 import java.util.StringTokenizer;
 
@@ -348,12 +349,7 @@ public class FileUtil {
 			throw new IOException(
 					failureCount + " attempts to generate a non-existent directory name failed, giving up");
 		}
-		boolean created = resultDir.mkdir();
-		if (!created) {
-			throw new IOException("Failed to create tmp directory");
-		}
-
-		return resultDir;
+		return Files.createDirectory(resultDir.toPath()).toFile();
 	}
 
 	/**
