@@ -334,7 +334,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		if (closed.get()) {
 			throw new SailException("Index has been closed");
 		}
-		if (indexWriter == null) {
+		if (indexWriter == null || !indexWriter.isOpen()) {
 			IndexWriterConfig indexWriterConfig = getIndexWriterConfig();
 			indexWriter = new IndexWriter(directory, indexWriterConfig);
 		}
