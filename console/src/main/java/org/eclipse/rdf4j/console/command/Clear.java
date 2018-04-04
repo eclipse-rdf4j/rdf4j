@@ -37,19 +37,19 @@ public class Clear extends ConsoleCommand {
 	public String getName() {
 		return "clear";
 	}
-	
+
 	@Override
 	public String getHelpShort() {
 		return "Removes data from a repository";
 	}
-	
+
 	@Override
 	public String getHelpLong() {
 		return  PrintHelp.USAGE
 			+ "clear                   Clears the entire repository\n"
 			+ "clear (<uri>|null)...   Clears the specified context(s)\n";
 	}
-	
+
 	/**
 	 * Constructor
 	 * 

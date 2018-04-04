@@ -58,7 +58,6 @@ public class Export extends ConsoleCommand {
 			+ "export <file> (<uri>|null)... Exports the specified context(s) to a file\n";
 	}
 
-	
 	/**
 	 * Get path from file or URI
 	 * 
@@ -77,8 +76,7 @@ public class Export extends ConsoleCommand {
 			}
 		}
 		return path;
-	}
-	
+	}	
 
 	@Override
 	public void execute(String... tokens) {
@@ -161,5 +159,4 @@ public class Export extends ConsoleCommand {
 	public Export(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
 	}
-
 }
