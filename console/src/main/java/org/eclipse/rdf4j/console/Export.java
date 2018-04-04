@@ -53,7 +53,7 @@ public class Export extends ConsoleCommand {
 			+ "export <file>                 Exports the entirey repository to a file\n"
 			+ "export <file> (<uri>|null)... Exports the specified context(s) to a file\n";
 	}
-
+	
 	/**
 	 * Get path from file or URI
 	 * 
