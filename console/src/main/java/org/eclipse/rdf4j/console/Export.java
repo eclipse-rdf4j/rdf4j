@@ -37,17 +37,9 @@ import org.slf4j.LoggerFactory;
 public class Export extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Export.class);
 
+	private final ConsoleIO consoleIO;
+	private final ConsoleState state;
 	
-	@Override
-	public  String getName() {
-		return "export";
-	}
-	
-	@Override
-	public String getHelpShort() {
-		return "Exports repository data to a file";
-	}
-
 	/**
 	 * Get path from file or URI
 	 * 
