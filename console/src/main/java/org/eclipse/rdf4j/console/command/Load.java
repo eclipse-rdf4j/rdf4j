@@ -35,8 +35,6 @@ import org.slf4j.LoggerFactory;
 public class Load extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Load.class);
 
-	private final LockRemover lockRemover;
-
 	@Override
 	public  String getName() {
 		return "load";
@@ -62,11 +60,9 @@ public class Load extends ConsoleCommand {
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param lockRemover 
 	 */
-	public Load(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
+	public Load(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
-		this.lockRemover = lockRemover;
 	}
 
 	@Override
@@ -150,7 +146,7 @@ public class Load extends ConsoleCommand {
 	private void handleReadOnlyException(Repository repository, RepositoryReadOnlyException caught,
 			final String... tokens) {
 		try {
-			if (lockRemover.tryToRemoveLock(repository)) {
+			if (LockRemover.tryToRemoveLock(repository, consoleIO)) {
 				execute(tokens);
 			} else {
 				consoleIO.writeError("Failed to load data");

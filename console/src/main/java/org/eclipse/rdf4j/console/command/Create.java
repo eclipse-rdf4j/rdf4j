@@ -55,8 +55,6 @@ public class Create extends ConsoleCommand {
 	private static final String TEMPLATES_DIR = "templates";
 
 
-	private final LockRemover lockRemover;
-
 	@Override
 	public  String getName() {
 		return "create";
@@ -80,11 +78,9 @@ public class Create extends ConsoleCommand {
 	 *
 	 * @param consoleIO
 	 * @param state
-	 * @param lockRemover
 	 */
-	public Create(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
+	public Create(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
-		this.lockRemover = lockRemover;
 	}
 
 	@Override
@@ -153,7 +149,7 @@ public class Create extends ConsoleCommand {
 							this.state.getManager().addRepositoryConfig(repConfig);
 							consoleIO.writeln("Repository created");
 						} catch (RepositoryReadOnlyException e) {
-							if (lockRemover.tryToRemoveLock(this.state.getManager().getSystemRepository())) {
+							if (LockRemover.tryToRemoveLock(this.state.getManager().getSystemRepository(), consoleIO)) {
 								this.state.getManager().addRepositoryConfig(repConfig);
 								consoleIO.writeln("Repository created");
 							} else {

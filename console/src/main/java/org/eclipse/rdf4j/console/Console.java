@@ -302,11 +302,10 @@ public class Console implements ConsoleState, ConsoleParameters {
 		appConfig.init();
 		consoleIO = new ConsoleIO(this);
 
-		LockRemover lockRemover = new LockRemover(consoleIO);
 		Close close = new Close(consoleIO, this);
 		this.disconnect = new Disconnect(consoleIO, this, close);
 		this.connect = new Connect(consoleIO, this, disconnect);
-		this.open = new Open(consoleIO, this, close, lockRemover);
+		this.open = new Open(consoleIO, this, close);
 		
 		register(new Federate(consoleIO, this));
 		register(new Sparql(consoleIO, this, this));
@@ -315,14 +314,14 @@ public class Console implements ConsoleState, ConsoleParameters {
 		register(new PrintHelp(consoleIO, commandMap));
 		register(new PrintInfo(consoleIO, this));
 		register(connect);
-		register(new Create(consoleIO, this, lockRemover));
-		register(new Drop(consoleIO, this, close, lockRemover));
+		register(new Create(consoleIO, this));
+		register(new Drop(consoleIO, this, close));
 		register(open);
 		register(new Show(consoleIO, this));
-		register(new Load(consoleIO, this, lockRemover));
+		register(new Load(consoleIO, this));
 		register(new Export(consoleIO, this));
 		register(new Verify(consoleIO));
-		register(new Clear(consoleIO, this, lockRemover));
+		register(new Clear(consoleIO, this));
 		register(new SetParameters(consoleIO, this, this));
 	}
 

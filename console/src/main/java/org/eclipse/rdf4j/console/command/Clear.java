@@ -31,8 +31,6 @@ import org.slf4j.LoggerFactory;
 public class Clear extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Clear.class);
 
-	private final LockRemover lockRemover;
-
 	@Override
 	public String getName() {
 		return "clear";
@@ -55,11 +53,10 @@ public class Clear extends ConsoleCommand {
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param lockRemover 
+
 	 */
-	public Clear(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
+	public Clear(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
-		this.lockRemover = lockRemover;
 	}
 
 	@Override
@@ -104,7 +101,7 @@ public class Clear extends ConsoleCommand {
 			}
 		} catch (RepositoryReadOnlyException e) {
 			try {
-				if (lockRemover.tryToRemoveLock(repository)) {
+				if (LockRemover.tryToRemoveLock(repository, consoleIO)) {
 					this.clear(repository, contexts);
 				} else {
 					consoleIO.writeError("Failed to clear repository");
