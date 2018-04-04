@@ -40,6 +40,7 @@ public class Export extends ConsoleCommand {
 	private final ConsoleIO consoleIO;
 	private final ConsoleState state;
 	
+	
 	/**
 	 * Get path from file or URI
 	 * 
