@@ -30,7 +30,6 @@ public class Open extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Open.class);
 
 	private final Close close;
-	private final LockRemover lockRemover;
 
 	@Override
 	public  String getName() {
@@ -54,12 +53,10 @@ public class Open extends ConsoleCommand {
 	 * @param consoleIO
 	 * @param state
 	 * @param close
-	 * @param lockRemover 
 	 */
-	public Open(ConsoleIO consoleIO, ConsoleState state, Close close, LockRemover lockRemover) {
+	public Open(ConsoleIO consoleIO, ConsoleState state, Close close) {
 		super(consoleIO, state);
 		this.close = close;
-		this.lockRemover = lockRemover;
 	}
 
 	@Override
@@ -93,7 +90,7 @@ public class Open extends ConsoleCommand {
 			}
 		} catch (RepositoryLockedException e) {
 			try {
-				if (lockRemover.tryToRemoveLock(e)) {
+				if (LockRemover.tryToRemoveLock(e, consoleIO)) {
 					openRepository(repoID);
 				} else {
 					consoleIO.writeError(OPEN_FAILURE);
@@ -102,10 +99,7 @@ public class Open extends ConsoleCommand {
 			} catch (IOException e1) {
 				consoleIO.writeError("Unable to remove lock: " + e1.getMessage());
 			}
-		} catch (RepositoryConfigException e) {
-			consoleIO.writeError(e.getMessage());
-			LOGGER.error(OPEN_FAILURE, e);
-		} catch (RepositoryException e) {
+		} catch (RepositoryConfigException | RepositoryException e) {
 			consoleIO.writeError(e.getMessage());
 			LOGGER.error(OPEN_FAILURE, e);
 		}

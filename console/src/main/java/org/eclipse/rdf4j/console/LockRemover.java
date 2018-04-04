@@ -12,6 +12,7 @@ import java.io.IOException;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryLockedException;
+
 import org.eclipse.rdf4j.sail.LockManager;
 import org.eclipse.rdf4j.sail.SailLockedException;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
@@ -20,13 +21,6 @@ import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
  * @author DAle Visser
  */
 public class LockRemover {
-
-	private final ConsoleIO consoleIO;
-
-	public LockRemover(ConsoleIO consoleIO) {
-		this.consoleIO = consoleIO;
-	}
-
 	/**
 	 *  Try to remove  lock from repository
 	 * 
@@ -35,13 +29,13 @@ public class LockRemover {
 	 * @throws IOException
 	 * @throws RepositoryException
 	 */
-	public boolean tryToRemoveLock(Repository repo) throws IOException, RepositoryException {
+	public static boolean tryToRemoveLock(Repository repo, ConsoleIO consoleIO) 
+						throws IOException, RepositoryException {
 		boolean lockRemoved = false;
 		
-		final LockManager lockManager = new DirectoryLockManager(repo.getDataDir());
+		LockManager lockManager = new DirectoryLockManager(repo.getDataDir());
 		if (lockManager.isLocked() && consoleIO.askProceed(
-				"WARNING: The lock from another process on this repository needs to be removed", true))
-		{
+				"WARNING: The lock from another process on this repository needs to be removed", true)) {
 			repo.shutDown();
 			lockRemoved = lockManager.revokeLock();
 			repo.initialize();
@@ -56,15 +50,15 @@ public class LockRemover {
 	 * @return true if lock was removed
 	 * @throws IOException 
 	 */
-	public boolean tryToRemoveLock(RepositoryLockedException rle) throws IOException {
+	public static boolean tryToRemoveLock(RepositoryLockedException rle, ConsoleIO consoleIO) throws IOException {
 		boolean lockRemoved = false;
+		
 		if (rle.getCause() instanceof SailLockedException) {
-			final SailLockedException sle = (SailLockedException)rle.getCause();
-			final LockManager lockManager = sle.getLockManager();
+			SailLockedException sle = (SailLockedException)rle.getCause();
+			LockManager lockManager = sle.getLockManager();
 			if (lockManager != null && lockManager.isLocked()
 					&& consoleIO.askProceed("WARNING: The lock from process '" + sle.getLockedBy()
-							+ "' on this repository needs to be removed", true))
-			{
+							+ "' on this repository needs to be removed", true)) {
 				lockRemoved = lockManager.revokeLock();
 			}
 		}

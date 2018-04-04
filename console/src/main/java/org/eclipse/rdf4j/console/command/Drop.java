@@ -26,7 +26,6 @@ public class Drop extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Drop.class);
 
 	private final Close close;
-	private final LockRemover lockRemover;
 
 	@Override
 	public  String getName() {
@@ -50,12 +49,10 @@ public class Drop extends ConsoleCommand {
 	 * @param consoleIO
 	 * @param state
 	 * @param close
-	 * @param lockRemover 
 	 */
-	public Drop(ConsoleIO consoleIO, ConsoleState state, Close close, LockRemover lockRemover) {
+	public Drop(ConsoleIO consoleIO, ConsoleState state, Close close) {
 		super(consoleIO, state);
 		this.close = close;
-		this.lockRemover = lockRemover;
 	}
 
 	@Override
@@ -71,7 +68,7 @@ public class Drop extends ConsoleCommand {
 				LOGGER.warn("Unable to drop repository '" + repoID + "'", e);
 			} catch (RepositoryReadOnlyException e) {
 				try {
-					if (lockRemover.tryToRemoveLock(state.getManager().getSystemRepository())) {
+					if (LockRemover.tryToRemoveLock(state.getManager().getSystemRepository(), consoleIO)) {
 						execute(tokens);
 					} else {
 						consoleIO.writeError("Failed to drop repository");

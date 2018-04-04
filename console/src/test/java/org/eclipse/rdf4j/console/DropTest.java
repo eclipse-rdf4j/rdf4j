@@ -58,8 +58,7 @@ public class DropTest extends AbstractCommandTest {
 				new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(MEMORY_MEMBER_ID1)));
 		ConsoleState state = mock(ConsoleState.class);
 		when(state.getManager()).thenReturn(manager);
-		drop = new Drop(mockConsoleIO, state, new Close(mockConsoleIO, state),
-				new LockRemover(mockConsoleIO));
+		drop = new Drop(mockConsoleIO, state, new Close(mockConsoleIO, state));
 	}
 
 	private void setUserDropConfirm(boolean confirm)

@@ -62,6 +62,7 @@ import org.jline.reader.UserInterruptException;
  *
  * @author Jeen Broekstra
  * @author Arjohn Kampman
+ * @author Bart Hanssens
  */
 public class Console implements ConsoleState, ConsoleParameters {
 
@@ -92,6 +93,93 @@ public class Console implements ConsoleState, ConsoleParameters {
 	private boolean showPrefix = true;
 	private boolean queryPrefix = true;
 
+	private final SortedMap<String,ConsoleCommand> commandMap = new TreeMap<>();
+
+	private final Connect connect;
+	private final Disconnect disconnect;
+	private final Open open;
+
+	
+	@Override
+	public String getApplicationName() {
+		return this.appConfig.getFullName();
+	}
+
+	@Override
+	public File getDataDirectory() {
+		return this.appConfig.getDataDir();
+	}
+
+	@Override
+	public String getManagerID() {
+		return this.managerID;
+	}
+
+	@Override
+	public String getRepositoryID() {
+		return this.repositoryID;
+	}
+
+	@Override
+	public RepositoryManager getManager() {
+		return this.manager;
+	}
+
+	@Override
+	public void setManager(RepositoryManager manager) {
+		this.manager = manager;
+	}
+
+	@Override
+	public void setManagerID(String managerID) {
+		this.managerID = managerID;
+	}
+
+	@Override
+	public Repository getRepository() {
+		return this.repository;
+	}
+
+	@Override
+	public void setRepositoryID(String repositoryID) {
+		this.repositoryID = repositoryID;
+	}
+
+	@Override
+	public void setRepository(Repository repository) {
+		this.repository = repository;
+	}
+
+	@Override
+	public int getWidth() {
+		return this.consoleWidth;
+	}
+
+	@Override
+	public void setWidth(int width) {
+		this.consoleWidth = width;
+	}
+
+	@Override
+	public boolean isShowPrefix() {
+		return this.showPrefix;
+	}
+
+	@Override
+	public void setShowPrefix(boolean value) {
+		this.showPrefix = value;
+	}
+
+	@Override
+	public boolean isQueryPrefix() {
+		return this.queryPrefix;
+	}
+
+	@Override
+	public void setQueryPrefix(boolean value) {
+		this.queryPrefix = value;
+	}
+	
 	/*----------------*
 	 * Static methods *
 	 *----------------*/
@@ -139,10 +227,11 @@ public class Console implements ConsoleState, ConsoleParameters {
 		console.consoleIO.setEcho(commandLine.hasOption(echoOption.getOpt()));
 		console.consoleIO.setQuiet(commandLine.hasOption(quietOption.getOpt()));
 		exitOnError = commandLine.hasOption(exitOnErrorMode.getOpt());
-		
-		String location = handleOptionGroups(console, serverURLOption, dirOption, 
-				forceOption, cautiousOption,
-				options, cautionGroup, locationGroup, commandLine);
+
+		String location = handleLocationGroup(console, serverURLOption, dirOption, 
+							options, locationGroup, commandLine);
+		handleCautionGroup(console, forceOption, cautiousOption, 
+							options, cautionGroup, commandLine);
 		
 		final String[] otherArgs = commandLine.getArgs();
 		if (otherArgs.length > 1) {
@@ -159,28 +248,16 @@ public class Console implements ConsoleState, ConsoleParameters {
 	 * @param console
 	 * @param serverURLOption
 	 * @param dirOption
-	 * @param forceOption
-	 * @param cautiousOption
 	 * @param options
-	 * @param cautionGroup
 	 * @param locationGroup
 	 * @param commandLine
 	 * @return location of the (remote or local) repository 
 	 */
-	private static String handleOptionGroups(Console console, Option serverURLOption,
-			Option dirOption, Option forceOption, Option cautiousOption, Options options,
-			OptionGroup cautionGroup, OptionGroup locationGroup, CommandLine commandLine) {
+	private static String handleLocationGroup(Console console, Option serverURLOption, Option dirOption, 
+					Options options, OptionGroup locationGroup, CommandLine commandLine) {
 		String location = null;
 		
 		try {
-			if (commandLine.hasOption(forceOption.getOpt())) {
-				cautionGroup.setSelected(forceOption);
-				console.consoleIO.setForce();
-			}
-			if (commandLine.hasOption(cautiousOption.getOpt())) {
-				cautionGroup.setSelected(cautiousOption);
-				console.consoleIO.setCautious();
-			}
 			if (commandLine.hasOption(dirOption.getOpt())) {
 				locationGroup.setSelected(dirOption);
 				location = commandLine.getOptionValue(dirOption.getOpt());
@@ -194,6 +271,33 @@ public class Console implements ConsoleState, ConsoleParameters {
 			System.exit(3);
 		}
 		return location;
+	}
+
+	/**
+	 * Handle caution option group
+	 * 
+	 * @param console
+	 * @param forceOption
+	 * @param cautiousOption
+	 * @param options
+	 * @param cautionGroup
+	 * @param commandLine
+	 */
+	private static void handleCautionGroup(Console console, Option forceOption, Option cautiousOption, 
+					Options options, OptionGroup cautionGroup, CommandLine commandLine) {
+		try {
+			if (commandLine.hasOption(forceOption.getOpt())) {
+				cautionGroup.setSelected(forceOption);
+				console.consoleIO.setForce();
+			}
+			if (commandLine.hasOption(cautiousOption.getOpt())) {
+				cautionGroup.setSelected(cautiousOption);
+				console.consoleIO.setCautious();
+			}
+		} catch (AlreadySelectedException e) {
+			printUsage(console.consoleIO, options);
+			System.exit(3);
+		}
 	}
 
 	/**
@@ -277,13 +381,6 @@ public class Console implements ConsoleState, ConsoleParameters {
 		cio.writeln("For bug reports and suggestions, see http://www.rdf4j.org/");
 	}
 
-	private final SortedMap<String,ConsoleCommand> commandMap = new TreeMap<>();
-
-	private final Connect connect;
-	private final Disconnect disconnect;
-	private final Open open;
-	//private final QueryEvaluator queryEvaluator;
-
 	/**
 	 * Add command to register of known commands
 	 * 
@@ -302,11 +399,10 @@ public class Console implements ConsoleState, ConsoleParameters {
 		appConfig.init();
 		consoleIO = new ConsoleIO(this);
 
-		LockRemover lockRemover = new LockRemover(consoleIO);
 		Close close = new Close(consoleIO, this);
 		this.disconnect = new Disconnect(consoleIO, this, close);
 		this.connect = new Connect(consoleIO, this, disconnect);
-		this.open = new Open(consoleIO, this, close, lockRemover);
+		this.open = new Open(consoleIO, this, close);
 		
 		register(new Federate(consoleIO, this));
 		register(new Sparql(consoleIO, this, this));
@@ -315,14 +411,14 @@ public class Console implements ConsoleState, ConsoleParameters {
 		register(new PrintHelp(consoleIO, commandMap));
 		register(new PrintInfo(consoleIO, this));
 		register(connect);
-		register(new Create(consoleIO, this, lockRemover));
-		register(new Drop(consoleIO, this, close, lockRemover));
+		register(new Create(consoleIO, this));
+		register(new Drop(consoleIO, this, close));
 		register(open);
 		register(new Show(consoleIO, this));
-		register(new Load(consoleIO, this, lockRemover));
+		register(new Load(consoleIO, this));
 		register(new Export(consoleIO, this));
 		register(new Verify(consoleIO));
-		register(new Clear(consoleIO, this, lockRemover));
+		register(new Clear(consoleIO, this));
 		register(new SetParameters(consoleIO, this, this));
 	}
 
@@ -412,85 +508,4 @@ public class Console implements ConsoleState, ConsoleParameters {
 		}
 		return tokens.toArray(new String[tokens.size()]);
 	}
-
-	@Override
-	public String getApplicationName() {
-		return this.appConfig.getFullName();
-	}
-
-	@Override
-	public File getDataDirectory() {
-		return this.appConfig.getDataDir();
-	}
-
-	@Override
-	public String getManagerID() {
-		return this.managerID;
-	}
-
-	@Override
-	public String getRepositoryID() {
-		return this.repositoryID;
-	}
-
-	@Override
-	public RepositoryManager getManager() {
-		return this.manager;
-	}
-
-	@Override
-	public void setManager(RepositoryManager manager) {
-		this.manager = manager;
-	}
-
-	@Override
-	public void setManagerID(String managerID) {
-		this.managerID = managerID;
-	}
-
-	@Override
-	public Repository getRepository() {
-		return this.repository;
-	}
-
-	@Override
-	public void setRepositoryID(String repositoryID) {
-		this.repositoryID = repositoryID;
-	}
-
-	@Override
-	public void setRepository(Repository repository) {
-		this.repository = repository;
-	}
-
-	@Override
-	public int getWidth() {
-		return this.consoleWidth;
-	}
-
-	@Override
-	public void setWidth(int width) {
-		this.consoleWidth = width;
-	}
-
-	@Override
-	public boolean isShowPrefix() {
-		return this.showPrefix;
-	}
-
-	@Override
-	public void setShowPrefix(boolean value) {
-		this.showPrefix = value;
-	}
-
-	@Override
-	public boolean isQueryPrefix() {
-		return this.queryPrefix;
-	}
-
-	@Override
-	public void setQueryPrefix(boolean value) {
-		this.queryPrefix = value;
-	}
-	
 }
