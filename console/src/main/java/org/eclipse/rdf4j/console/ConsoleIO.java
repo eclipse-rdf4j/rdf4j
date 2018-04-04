@@ -107,7 +107,7 @@ public class ConsoleIO {
 	 * @return 
 	 * @throws IOException
 	 */
-	protected String readMultiLineInput() throws IOException {
+	public String readMultiLineInput() throws IOException {
 		return readMultiLineInput("> ");
 	}
 
@@ -118,7 +118,7 @@ public class ConsoleIO {
 	 * @return 
 	 * @throws IOException
 	 */
-	protected String readMultiLineInput(String prompt) throws IOException {
+	public String readMultiLineInput(String prompt) throws IOException {
 		String line = input.readLine(prompt);
 		String result = null;
 		
@@ -148,7 +148,7 @@ public class ConsoleIO {
 	 * @return
 	 * @throws IOException 
 	 */
-	protected String readln(String... message) throws IOException {
+	public String readln(String... message) throws IOException {
 		String prompt = !quiet && message.length > 0 && message[0] != null ? message[0] : "";
 		String result = input.readLine(prompt);
 		
@@ -165,7 +165,7 @@ public class ConsoleIO {
 	 * @return password string
 	 * @throws IOException 
 	 */
-	protected String readPassword(final String prompt) throws IOException {
+	public String readPassword(final String prompt) throws IOException {
 		String result = input.readLine(prompt, '*');
 		if (echo && !result.isEmpty()) {
 			writeln("************");
@@ -178,14 +178,14 @@ public class ConsoleIO {
 	 * 
 	 * @param string string to write
 	 */
-	protected void write(final String string) {
+	public void write(final String string) {
 		terminal.writer().print(string);
 	}
 
 	/**
 	 * Write a newline
 	 */
-	protected void writeln() {
+	public void writeln() {
 		terminal.writer().println();
 	}
 
@@ -194,7 +194,7 @@ public class ConsoleIO {
 	 * 
 	 * @param string string to write
 	 */
-	protected void writeln(final String string) {
+	public void writeln(final String string) {
 		terminal.writer().println(string);
 	}
 
@@ -203,7 +203,7 @@ public class ConsoleIO {
 	 * 
 	 * @param errMsg error message
 	 */
-	protected void writeError(final String errMsg) {
+	public void writeError(final String errMsg) {
 		terminal.writer().println(errMsg);
 		errorWritten = true;
 	}
@@ -211,7 +211,7 @@ public class ConsoleIO {
 	/**
 	 * Write a "please open first" error message
 	 */
-	protected void writeUnopenedError() {
+	public void writeUnopenedError() {
 		writeError(PLEASE_OPEN_FIRST);
 	}
 
@@ -223,7 +223,7 @@ public class ConsoleIO {
 	 * @param colNo column number
 	 * @param msg message to write
 	 */
-	protected void writeParseError(String prefix, long lineNo, long colNo, String msg) {
+	public void writeParseError(String prefix, long lineNo, long colNo, String msg) {
 		String locationString = RDFParseException.getLocationString(lineNo, colNo);
 		int locSize = locationString.length();
 		
@@ -243,7 +243,7 @@ public class ConsoleIO {
 	 * @return true when continue
 	 * @throws IOException 
 	 */
-	protected boolean askProceed(String msg, boolean defaultValue) throws IOException {
+	public boolean askProceed(String msg, boolean defaultValue) throws IOException {
 		final String defaultString = defaultValue ? "yes" : "no";
 		boolean result = force ? true : (cautious ? false : defaultValue);
 		

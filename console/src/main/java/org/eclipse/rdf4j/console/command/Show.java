@@ -5,12 +5,14 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.util.Locale;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
@@ -57,7 +59,7 @@ public class Show extends ConsoleCommand {
 	 * @param consoleIO
 	 * @param state
 	 */
-	Show(ConsoleIO consoleIO, ConsoleState state) {
+	public Show(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
 	}
 

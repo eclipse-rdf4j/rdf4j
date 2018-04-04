@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
+import org.eclipse.rdf4j.console.command.Export;
 import static org.mockito.Mockito.when;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;

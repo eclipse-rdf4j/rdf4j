@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -19,6 +19,9 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.LockRemover;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -78,7 +81,7 @@ public class Create extends ConsoleCommand {
 	 * @param state
 	 * @param lockRemover
 	 */
-	Create(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
+	public Create(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
 		super(consoleIO, state);
 		this.lockRemover = lockRemover;
 	}

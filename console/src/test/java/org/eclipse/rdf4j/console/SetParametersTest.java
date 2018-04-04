@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
+import org.eclipse.rdf4j.console.command.SetParameters;
 import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;

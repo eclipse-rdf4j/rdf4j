@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.util.Objects;
 
@@ -17,6 +17,9 @@ import com.google.common.collect.ImmutableBiMap.Builder;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleParameters;
+import org.eclipse.rdf4j.console.ConsoleState;
 
 /**
  * Set parameters command
@@ -73,7 +76,7 @@ public class SetParameters extends ConsoleCommand {
 	 * @param state
 	 * @param parameters 
 	 */
-	SetParameters(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
+	public SetParameters(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
 		super(consoleIO, state);
 		this.parameters = parameters;
 	}

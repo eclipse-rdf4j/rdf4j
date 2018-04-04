@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -15,6 +15,8 @@ import java.util.HashSet;
 import java.util.LinkedList;
 
 import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
@@ -61,7 +63,7 @@ public class Federate extends ConsoleCommand {
 	 * @param consoleIO
 	 * @param state 
 	 */
-	Federate(ConsoleIO consoleIO, ConsoleState state) {
+	public Federate(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
 	}
 

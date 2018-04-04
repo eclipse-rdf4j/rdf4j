@@ -7,6 +7,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
+import org.eclipse.rdf4j.console.command.QueryEvaluator;
+import org.eclipse.rdf4j.console.command.ConsoleCommand;
+import org.eclipse.rdf4j.console.command.Close;
+import org.eclipse.rdf4j.console.command.Show;
+import org.eclipse.rdf4j.console.command.Drop;
+import org.eclipse.rdf4j.console.command.Create;
+import org.eclipse.rdf4j.console.command.Open;
+import org.eclipse.rdf4j.console.command.PrintHelp;
+import org.eclipse.rdf4j.console.command.SetParameters;
+import org.eclipse.rdf4j.console.command.Serql;
+import org.eclipse.rdf4j.console.command.PrintInfo;
+import org.eclipse.rdf4j.console.command.Sparql;
+import org.eclipse.rdf4j.console.command.Disconnect;
+import org.eclipse.rdf4j.console.command.Connect;
+import org.eclipse.rdf4j.console.command.Load;
+import org.eclipse.rdf4j.console.command.Export;
+import org.eclipse.rdf4j.console.command.Verify;
+import org.eclipse.rdf4j.console.command.Federate;
+import org.eclipse.rdf4j.console.command.Clear;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;

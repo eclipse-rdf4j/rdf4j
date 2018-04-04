@@ -5,9 +5,12 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.LockRemover;
 
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
@@ -49,7 +52,7 @@ public class Drop extends ConsoleCommand {
 	 * @param close
 	 * @param lockRemover 
 	 */
-	Drop(ConsoleIO consoleIO, ConsoleState state, Close close, LockRemover lockRemover) {
+	public Drop(ConsoleIO consoleIO, ConsoleState state, Close close, LockRemover lockRemover) {
 		super(consoleIO, state);
 		this.close = close;
 		this.lockRemover = lockRemover;

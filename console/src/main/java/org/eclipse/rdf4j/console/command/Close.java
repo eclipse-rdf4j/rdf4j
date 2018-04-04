@@ -5,8 +5,10 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.repository.Repository;
 
 /**
@@ -38,7 +40,7 @@ public class Close extends ConsoleCommand {
 	 * @param consoleIO
 	 * @param appInfo 
 	 */
-	Close(ConsoleIO consoleIO, ConsoleState state) {
+	public Close(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
 	}
 

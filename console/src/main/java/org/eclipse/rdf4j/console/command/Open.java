@@ -5,9 +5,13 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
+
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.LockRemover;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -52,7 +56,7 @@ public class Open extends ConsoleCommand {
 	 * @param close
 	 * @param lockRemover 
 	 */
-	Open(ConsoleIO consoleIO, ConsoleState state, Close close, LockRemover lockRemover) {
+	public Open(ConsoleIO consoleIO, ConsoleState state, Close close, LockRemover lockRemover) {
 		super(consoleIO, state);
 		this.close = close;
 		this.lockRemover = lockRemover;
@@ -74,7 +78,7 @@ public class Open extends ConsoleCommand {
 	 * 
 	 * @param repoID repository ID 
 	 */
-	protected void openRepository(final String repoID) {
+	public void openRepository(final String repoID) {
 		try {
 			final Repository newRepository = state.getManager().getRepository(repoID);
 

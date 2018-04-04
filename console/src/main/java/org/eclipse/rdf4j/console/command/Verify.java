@@ -5,12 +5,15 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
+
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.VerificationListener;
 
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -52,9 +55,8 @@ public class Verify extends ConsoleCommand {
 	 * Constructor
 	 * 
 	 * @param consoleIO 
-	 * @param state
 	 */
-	Verify(ConsoleIO consoleIO) {
+	public Verify(ConsoleIO consoleIO) {
 		super(consoleIO);
 	}
 

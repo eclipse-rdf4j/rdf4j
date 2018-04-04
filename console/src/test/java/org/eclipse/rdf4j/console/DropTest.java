@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
+import org.eclipse.rdf4j.console.command.Close;
+import org.eclipse.rdf4j.console.command.Drop;
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsEqual.equalTo;
 import static org.junit.Assert.assertThat;

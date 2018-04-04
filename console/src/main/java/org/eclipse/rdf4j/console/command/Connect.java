@@ -5,12 +5,15 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
 
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
@@ -60,7 +63,7 @@ public class Connect extends ConsoleCommand {
 	 * @param state
 	 * @param disconnect 
 	 */
-	Connect(ConsoleIO consoleIO, ConsoleState state, Disconnect disconnect) {
+	public Connect(ConsoleIO consoleIO, ConsoleState state, Disconnect disconnect) {
 		super(consoleIO, state);
 		this.disconnect = disconnect;
 	}
@@ -94,7 +97,7 @@ public class Connect extends ConsoleCommand {
 	 * 
 	 * @return 
 	 */
-	protected boolean connectDefault() {
+	public boolean connectDefault() {
 		return installNewManager(new LocalRepositoryManager(this.state.getDataDirectory()),
 				"default data directory");
 	}
@@ -158,7 +161,7 @@ public class Connect extends ConsoleCommand {
 	 * @param path directory of the local repository
 	 * @return true on success
 	 */
-	protected boolean connectLocal(final String path) {
+	public boolean connectLocal(final String path) {
 		final File dir = new File(path);
 		boolean result = false;
 		if (dir.exists() && dir.isDirectory()) {
@@ -207,7 +210,7 @@ public class Connect extends ConsoleCommand {
 	 * @param url URL of the repository
 	 * @return true on success
 	 */
-	protected boolean connectRemote(final String url) {
+	public boolean connectRemote(final String url) {
 		return connectRemote(url, null, null);
 	}
 }

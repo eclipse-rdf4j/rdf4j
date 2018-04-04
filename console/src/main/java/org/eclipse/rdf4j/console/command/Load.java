@@ -5,12 +5,16 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.LockRemover;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
@@ -60,7 +64,7 @@ public class Load extends ConsoleCommand {
 	 * @param state
 	 * @param lockRemover 
 	 */
-	Load(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
+	public Load(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
 		super(consoleIO, state);
 		this.lockRemover = lockRemover;
 	}

@@ -5,9 +5,11 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
 /**
@@ -42,7 +44,7 @@ public class Disconnect extends ConsoleCommand {
 	 * @param state
 	 * @param close 
 	 */
-	Disconnect(ConsoleIO consoleIO, ConsoleState state, Close close) {
+	public Disconnect(ConsoleIO consoleIO, ConsoleState state, Close close) {
 		super(consoleIO, state);
 		this.close = close;
 	}

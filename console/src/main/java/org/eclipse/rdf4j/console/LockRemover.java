@@ -23,14 +23,21 @@ public class LockRemover {
 
 	private final ConsoleIO consoleIO;
 
-	LockRemover(ConsoleIO consoleIO) {
+	public LockRemover(ConsoleIO consoleIO) {
 		this.consoleIO = consoleIO;
 	}
 
-	protected boolean tryToRemoveLock(final Repository repo)
-		throws IOException, RepositoryException
-	{
+	/**
+	 *  Try to remove  lock from repository
+	 * 
+	 * @param repo
+	 * @return true if lock wass removed
+	 * @throws IOException
+	 * @throws RepositoryException
+	 */
+	public boolean tryToRemoveLock(Repository repo) throws IOException, RepositoryException {
 		boolean lockRemoved = false;
+		
 		final LockManager lockManager = new DirectoryLockManager(repo.getDataDir());
 		if (lockManager.isLocked() && consoleIO.askProceed(
 				"WARNING: The lock from another process on this repository needs to be removed", true))
@@ -42,9 +49,14 @@ public class LockRemover {
 		return lockRemoved;
 	}
 
-	protected boolean tryToRemoveLock(final RepositoryLockedException rle)
-		throws IOException
-	{
+	/**
+	 * Try to remove lock when exception  was raised
+	 * 
+	 * @param rle
+	 * @return true if lock was removed
+	 * @throws IOException 
+	 */
+	public boolean tryToRemoveLock(RepositoryLockedException rle) throws IOException {
 		boolean lockRemoved = false;
 		if (rle.getCause() instanceof SailLockedException) {
 			final SailLockedException sle = (SailLockedException)rle.getCause();
