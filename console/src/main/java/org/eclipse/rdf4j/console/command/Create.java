@@ -73,6 +73,7 @@ public class Create extends ConsoleCommand {
 			+ "create <template-name>\n"
 			+ "  <template-name>   The name of a repository configuration template\n";
 	}
+
 	
 	/**
 	 * Constructor

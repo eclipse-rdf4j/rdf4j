@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.console.command.Export;
 import org.eclipse.rdf4j.console.command.Verify;
 import org.eclipse.rdf4j.console.command.Federate;
 import org.eclipse.rdf4j.console.command.Clear;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -96,14 +97,14 @@ public class Console implements ConsoleState, ConsoleParameters {
 	 *----------------*/
 	public static void main(final String[] args) throws IOException {
 		final Console console = new Console();
-		
-		final Option helpOption = new Option("h", "help", false, 
+
+		Option helpOption = new Option("h", "help", false, 
 				"print this help");
-		final Option versionOption = new Option("v", "version", false, 
+		Option versionOption = new Option("v", "version", false, 
 				"print version information");
-		final Option serverURLOption = new Option("s", "serverURL", true,
+		Option serverURLOption = new Option("s", "serverURL", true,
 				"URL of RDF4J Server to connect to, e.g. http://localhost:8080/rdf4j-server/");
-		final Option dirOption = new Option("d", "dataDir", true, 
+		Option dirOption = new Option("d", "dataDir", true, 
 				"data dir to 'connect' to");
 		Option echoOption = new Option("e", "echo", false,
 				"echoes input back to stdout, useful for logging script sessions");
@@ -124,11 +125,13 @@ public class Console implements ConsoleState, ConsoleParameters {
 		OptionGroup locationGroup = new OptionGroup().addOption(serverURLOption)
 								.addOption(dirOption);
 		
-		options.addOptionGroup(locationGroup).addOptionGroup(cautionGroup);
+		options.addOptionGroup(locationGroup)
+			.addOptionGroup(cautionGroup);
 		
-		options.addOption(helpOption).addOption(versionOption)
-						.addOption(echoOption)
-						.addOption(quietOption);
+		options.addOption(helpOption)
+			.addOption(versionOption)
+			.addOption(echoOption)
+			.addOption(quietOption);
 	
 		CommandLine commandLine = parseCommandLine(args, console, options);
 		handleInfoOptions(console, helpOption, versionOption, options, commandLine);
@@ -137,7 +140,8 @@ public class Console implements ConsoleState, ConsoleParameters {
 		console.consoleIO.setQuiet(commandLine.hasOption(quietOption.getOpt()));
 		exitOnError = commandLine.hasOption(exitOnErrorMode.getOpt());
 		
-		String location = handleOptionGroups(console, serverURLOption, dirOption, forceOption, cautiousOption,
+		String location = handleOptionGroups(console, serverURLOption, dirOption, 
+				forceOption, cautiousOption,
 				options, cautionGroup, locationGroup, commandLine);
 		
 		final String[] otherArgs = commandLine.getArgs();
@@ -191,6 +195,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 		}
 		return location;
 	}
+
 	/**
 	 * Handle info options group
 	 * 
@@ -365,7 +370,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 	 * @return true when exit/quit command is entered
 	 * @throws IOException 
 	 */
-	private boolean executeCommand(final String command) throws IOException {
+	private boolean executeCommand(String command) throws IOException {
 		boolean exit = false;
 
 		// only try to parse the command if non-empty.
@@ -393,7 +398,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 	 * @param command command to parse
 	 * @return array of strings
 	 */
-	private String[] parse(final String command) {
+	private String[] parse(String command) {
 		final Pattern pattern = Pattern.compile("\"([^\"]*)\"|(\\S+)");
 		final Matcher matcher = pattern.matcher(command);
 		final List<String> tokens = new ArrayList<>();

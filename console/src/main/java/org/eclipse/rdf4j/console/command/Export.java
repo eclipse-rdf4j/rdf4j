@@ -17,6 +17,7 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.Util;
@@ -56,6 +57,7 @@ public class Export extends ConsoleCommand {
 			+ "export <file>                 Exports the entirey repository to a file\n"
 			+ "export <file> (<uri>|null)... Exports the specified context(s) to a file\n";
 	}
+
 	
 	/**
 	 * Get path from file or URI
