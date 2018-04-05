@@ -7,6 +7,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.SortedMap;
+import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.eclipse.rdf4j.RDF4J;
+import org.eclipse.rdf4j.common.app.AppConfiguration;
+import org.eclipse.rdf4j.common.app.AppVersion;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+
+import org.jline.reader.EndOfFileException;
+import org.jline.reader.UserInterruptException;
+
 import org.eclipse.rdf4j.console.command.Clear;
 import org.eclipse.rdf4j.console.command.Close;
 import org.eclipse.rdf4j.console.command.Connect;
@@ -27,68 +46,145 @@ import org.eclipse.rdf4j.console.command.Show;
 import org.eclipse.rdf4j.console.command.Sparql;
 import org.eclipse.rdf4j.console.command.Verify;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.SortedMap;
-import java.util.TreeMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-import org.eclipse.rdf4j.RDF4J;
-import org.eclipse.rdf4j.common.app.AppConfiguration;
-import org.eclipse.rdf4j.common.app.AppVersion;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.manager.RepositoryManager;
-
-import org.jline.reader.EndOfFileException;
-import org.jline.reader.UserInterruptException;
 
 /**
- * The RDF4J Console is a command-line application for interacting with RDF4J. It reads commands from standard
- * input and prints feedback to standard output. Available options include loading and querying of data in
+ * The RDF4J Console is a command-line application for interacting with RDF4J. 
+ * It reads commands from standard input and prints feedback to standard output. 
+ * Available options include loading and querying of data in
  * repositories, repository creation and verification of RDF files.
  *
  * @author Jeen Broekstra
  * @author Arjohn Kampman
  * @author Bart Hanssens
  */
-public class Console implements ConsoleState, ConsoleParameters {
+public class Console {
+	private final static AppVersion VERSION = AppVersion.parse(RDF4J.getVersion());
+	private final static String APP_NAME = "Console";
+	private final static AppConfiguration APP_CFG = new AppConfiguration(APP_NAME, VERSION);
 
-	/*------------------*
-	 * Static constants *
-	 *------------------*/
-	private static final AppVersion VERSION = AppVersion.parse(RDF4J.getVersion());
-	private static final String APP_NAME = "Console";
+	/**
+	 * Console state
+	 */
+	private static final ConsoleState STATE = new ConsoleState() {
+		private RepositoryManager manager;
+		private String managerID;
+
+		private Repository repository;
+		private String repositoryID;
+	
+		@Override
+		public String getApplicationName() {
+			return APP_CFG.getFullName();
+		}
+
+		@Override
+		public File getDataDirectory() {
+			return APP_CFG.getDataDir();
+		}
+
+		@Override
+		public String getManagerID() {
+			return this.managerID;
+		}
+
+		@Override
+		public String getRepositoryID() {
+			return this.repositoryID;
+		}
+
+		@Override
+		public RepositoryManager getManager() {
+			return this.manager;
+		}
+
+		@Override
+		public void setManager(RepositoryManager manager) {
+			this.manager = manager;
+		}
+
+		@Override
+		public void setManagerID(String managerID) {
+			this.managerID = managerID;
+		}
+
+		@Override
+		public Repository getRepository() {
+			return this.repository;
+		}
+
+		@Override
+		public void setRepositoryID(String repositoryID) {
+			this.repositoryID = repositoryID;
+		}
+
+		@Override
+		public void setRepository(Repository repository) {
+			this.repository = repository;
+		}
+	};
+
+	/**
+	 * Basic console parameters
+	 */
+	private final static ConsoleParameters PARAMS = new ConsoleParameters() {
+		private int consoleWidth = 80;
+
+		private boolean showPrefix = true;
+		private boolean queryPrefix = true;
+
+		@Override
+		public int getWidth() {
+			return this.consoleWidth;
+		}
+
+		@Override
+		public void setWidth(int width) {
+			this.consoleWidth = width;
+		}
+
+		@Override
+		public boolean isShowPrefix() {
+			return this.showPrefix;
+		}
+
+		@Override
+		public void setShowPrefix(boolean value) {
+			this.showPrefix = value;
+		}
+
+		@Override
+		public boolean isQueryPrefix() {
+			return this.queryPrefix;
+		}
+
+		@Override
+		public void setQueryPrefix(boolean value) {
+			this.queryPrefix = value;
+		}
+	};
+	
+	
 	private static boolean exitOnError;
 
-	/*-----------*
-	 * Constants *
-	 *-----------*/
-	private final AppConfiguration appConfig = new AppConfiguration(APP_NAME, VERSION);
-
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-	private RepositoryManager manager;
-	private String managerID;
-
-	private Repository repository;
-	private String repositoryID;
-
 	private final ConsoleIO consoleIO;
-	private int consoleWidth = 80;
-
-	private boolean showPrefix = true;
-	private boolean queryPrefix = true;
 
 	private final SortedMap<String,ConsoleCommand> commandMap = new TreeMap<>();
 
+	// "Core" commands
 	private final Connect connect;
 	private final Disconnect disconnect;
 	private final Open open;
+	private final Close close;
+	
+
+	/**
+	 * Get console state
+	 * 
+	 * @return basic console state
+	 */
+	public ConsoleState getState() {
+		return STATE;
+	}
 	
 	/**
 	 * Get console IO
@@ -99,103 +195,18 @@ public class Console implements ConsoleState, ConsoleParameters {
 		return this.consoleIO;
 	}
 	
-	/**
-	 * Get app configuration
-	 * 
-	 * @return 
-	 */
-	public AppConfiguration getAppConfig() {
-		return this.appConfig;
-	}
 	
-	public void setExitOnError(boolean mode) {
+	protected void setExitOnError(boolean mode) {
 		Console.exitOnError = mode;
 	}
 	
-	@Override
-	public String getApplicationName() {
-		return this.appConfig.getFullName();
-	}
 
-	@Override
-	public File getDataDirectory() {
-		return this.appConfig.getDataDir();
-	}
-
-	@Override
-	public String getManagerID() {
-		return this.managerID;
-	}
-
-	@Override
-	public String getRepositoryID() {
-		return this.repositoryID;
-	}
-
-	@Override
-	public RepositoryManager getManager() {
-		return this.manager;
-	}
-
-	@Override
-	public void setManager(RepositoryManager manager) {
-		this.manager = manager;
-	}
-
-	@Override
-	public void setManagerID(String managerID) {
-		this.managerID = managerID;
-	}
-
-	@Override
-	public Repository getRepository() {
-		return this.repository;
-	}
-
-	@Override
-	public void setRepositoryID(String repositoryID) {
-		this.repositoryID = repositoryID;
-	}
-
-	@Override
-	public void setRepository(Repository repository) {
-		this.repository = repository;
-	}
-
-	@Override
-	public int getWidth() {
-		return this.consoleWidth;
-	}
-
-	@Override
-	public void setWidth(int width) {
-		this.consoleWidth = width;
-	}
-
-	@Override
-	public boolean isShowPrefix() {
-		return this.showPrefix;
-	}
-
-	@Override
-	public void setShowPrefix(boolean value) {
-		this.showPrefix = value;
-	}
-
-	@Override
-	public boolean isQueryPrefix() {
-		return this.queryPrefix;
-	}
-
-	@Override
-	public void setQueryPrefix(boolean value) {
-		this.queryPrefix = value;
-	}
-
-	
-	/*----------------*
-	 * Static methods *
-	 *----------------*/
+	/**
+	 * Main
+	 * 
+	 * @param args command line arguments
+	 * @throws IOException 
+	 */
 	public static void main(final String[] args) throws IOException {
 		final Console console = new Console();
 		
@@ -231,7 +242,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 	 * @param console
 	 * @param selectedLocation s for server, d for local directory 
 	 * @param location
-	 * @param otherArgs 
+	 * @param otherArg last argument, if any 
 	 */
 	private static void connectAndOpen(Console console, String selectedLocation, String location,
 			String otherArg) {
@@ -266,30 +277,37 @@ public class Console implements ConsoleState, ConsoleParameters {
 	 * @throws IOException 
 	 */
 	public Console() throws IOException {
-		appConfig.init();
-		consoleIO = new ConsoleIO(this);
+		APP_CFG.init();
+		consoleIO = new ConsoleIO(STATE);
 
-		Close close = new Close(consoleIO, this);
-		this.disconnect = new Disconnect(consoleIO, this, close);
-		this.connect = new Connect(consoleIO, this, disconnect);
-		this.open = new Open(consoleIO, this, close);
+		this.close = new Close(consoleIO, STATE);
+		this.disconnect = new Disconnect(consoleIO, STATE, close);
+		this.connect = new Connect(consoleIO, STATE, disconnect);
+		this.open = new Open(consoleIO, STATE, close);
 		
-		register(new Federate(consoleIO, this));
-		register(new Sparql(consoleIO, this, this));
-		register(new Serql(consoleIO, this, this));
-		register(close);
-		register(new PrintHelp(consoleIO, commandMap));
-		register(new PrintInfo(consoleIO, this));
-		register(connect);
-		register(new Create(consoleIO, this));
-		register(new Drop(consoleIO, this, close));
+		// "core" commands for connnecting
 		register(open);
-		register(new Show(consoleIO, this));
-		register(new Load(consoleIO, this));
-		register(new Export(consoleIO, this));
+		register(close);
+		register(connect);
+		register(disconnect);
+		// querying
+		register(new Federate(consoleIO, STATE));
+		register(new Sparql(consoleIO, STATE, PARAMS));
+		register(new Serql(consoleIO, STATE, PARAMS));
+		// information
+		register(new PrintHelp(consoleIO, commandMap));
+		register(new PrintInfo(consoleIO, STATE));
+		register(new Show(consoleIO, STATE));
+		// repository management
+		register(new Create(consoleIO, STATE));
+		register(new Drop(consoleIO, STATE, close));
+		// handling data
 		register(new Verify(consoleIO));
-		register(new Clear(consoleIO, this));
-		register(new SetParameters(consoleIO, this, this));
+		register(new Load(consoleIO, STATE));
+		register(new Clear(consoleIO, STATE));
+		register(new Export(consoleIO, STATE));
+		// parameters
+		register(new SetParameters(consoleIO, STATE, PARAMS));
 	}
 
 	/**
@@ -298,7 +316,7 @@ public class Console implements ConsoleState, ConsoleParameters {
 	 * @throws IOException 
 	 */
 	public void start() throws IOException {
-		consoleIO.writeln(appConfig.getFullName());
+		consoleIO.writeln(APP_CFG.getFullName());
 		consoleIO.writeln();
 		consoleIO.writeln(RDF4J.getVersion());
 		consoleIO.writeln("Type 'help' for help.");

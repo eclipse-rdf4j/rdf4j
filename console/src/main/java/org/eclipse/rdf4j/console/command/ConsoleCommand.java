@@ -7,8 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import org.eclipse.rdf4j.console.Help;
 import java.io.IOException;
+
+import org.eclipse.rdf4j.console.Help;
 import org.eclipse.rdf4j.console.Command;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
@@ -85,6 +86,5 @@ public abstract class ConsoleCommand implements Command, Help {
 		this.consoleIO = consoleIO;
 		this.state = state;
 	}
-
 
 }

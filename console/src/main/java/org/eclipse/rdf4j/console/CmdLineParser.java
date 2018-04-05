@@ -101,7 +101,7 @@ class CmdLineParser {
 			return false;
 		}
 		if (commandLine.hasOption(versionOption.getOpt())) {
-			console.getConsoleIO().writeln(console.getAppConfig().getFullName());
+			console.getConsoleIO().writeln(console.getState().getApplicationName());
 			return false;
 		}
 		return true;
