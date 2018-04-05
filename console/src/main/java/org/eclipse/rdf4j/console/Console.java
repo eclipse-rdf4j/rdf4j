@@ -7,25 +7,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import org.eclipse.rdf4j.console.command.QueryEvaluator;
-import org.eclipse.rdf4j.console.command.ConsoleCommand;
+import org.eclipse.rdf4j.console.command.Clear;
 import org.eclipse.rdf4j.console.command.Close;
-import org.eclipse.rdf4j.console.command.Show;
-import org.eclipse.rdf4j.console.command.Drop;
+import org.eclipse.rdf4j.console.command.Connect;
+import org.eclipse.rdf4j.console.command.ConsoleCommand;
 import org.eclipse.rdf4j.console.command.Create;
+import org.eclipse.rdf4j.console.command.Disconnect;
+import org.eclipse.rdf4j.console.command.Drop;
+import org.eclipse.rdf4j.console.command.Export;
+import org.eclipse.rdf4j.console.command.Federate;
+import org.eclipse.rdf4j.console.command.Load;
 import org.eclipse.rdf4j.console.command.Open;
 import org.eclipse.rdf4j.console.command.PrintHelp;
-import org.eclipse.rdf4j.console.command.SetParameters;
-import org.eclipse.rdf4j.console.command.Serql;
 import org.eclipse.rdf4j.console.command.PrintInfo;
+import org.eclipse.rdf4j.console.command.QueryEvaluator;
+import org.eclipse.rdf4j.console.command.Serql;
+import org.eclipse.rdf4j.console.command.SetParameters;
+import org.eclipse.rdf4j.console.command.Show;
 import org.eclipse.rdf4j.console.command.Sparql;
-import org.eclipse.rdf4j.console.command.Disconnect;
-import org.eclipse.rdf4j.console.command.Connect;
-import org.eclipse.rdf4j.console.command.Load;
-import org.eclipse.rdf4j.console.command.Export;
 import org.eclipse.rdf4j.console.command.Verify;
-import org.eclipse.rdf4j.console.command.Federate;
-import org.eclipse.rdf4j.console.command.Clear;
 
 import java.io.File;
 import java.io.IOException;
@@ -36,15 +36,6 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import org.apache.commons.cli.AlreadySelectedException;
-import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.HelpFormatter;
-import org.apache.commons.cli.Option;
-import org.apache.commons.cli.OptionGroup;
-import org.apache.commons.cli.Options;
-import org.apache.commons.cli.ParseException;
-import org.apache.commons.cli.PosixParser;
 
 import org.eclipse.rdf4j.RDF4J;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
@@ -98,7 +89,28 @@ public class Console implements ConsoleState, ConsoleParameters {
 	private final Connect connect;
 	private final Disconnect disconnect;
 	private final Open open;
-
+	
+	/**
+	 * Get console IO
+	 * 
+	 * @return 
+	 */
+	public ConsoleIO getConsoleIO() {
+		return this.consoleIO;
+	}
+	
+	/**
+	 * Get app configuration
+	 * 
+	 * @return 
+	 */
+	public AppConfiguration getAppConfig() {
+		return this.appConfig;
+	}
+	
+	public void setExitOnError(boolean mode) {
+		Console.exitOnError = mode;
+	}
 	
 	@Override
 	public String getApplicationName() {
@@ -179,181 +191,54 @@ public class Console implements ConsoleState, ConsoleParameters {
 	public void setQueryPrefix(boolean value) {
 		this.queryPrefix = value;
 	}
+
 	
 	/*----------------*
 	 * Static methods *
 	 *----------------*/
 	public static void main(final String[] args) throws IOException {
 		final Console console = new Console();
-
-		Option helpOption = new Option("h", "help", false, 
-				"print this help");
-		Option versionOption = new Option("v", "version", false, 
-				"print version information");
-		Option serverURLOption = new Option("s", "serverURL", true,
-				"URL of RDF4J Server to connect to, e.g. http://localhost:8080/rdf4j-server/");
-		Option dirOption = new Option("d", "dataDir", true, 
-				"data dir to 'connect' to");
-		Option echoOption = new Option("e", "echo", false,
-				"echoes input back to stdout, useful for logging script sessions");
-		Option quietOption = new Option("q", "quiet", false, 
-				"suppresses prompts, useful for scripting");
-		Option forceOption = new Option("f", "force", false,
-				"always answer yes to (suppressed) confirmation prompts");
-		Option cautiousOption = new Option("c", "cautious", false,
-				"always answer no to (suppressed) confirmation prompts");
-		Option exitOnErrorMode = new Option("x", "exitOnError", false,
-				"immediately exit the console on the first error");
 		
-		final Options options = new Options();
-		
-		OptionGroup cautionGroup = new OptionGroup().addOption(cautiousOption)
-								.addOption(forceOption)
-								.addOption(exitOnErrorMode);
-		OptionGroup locationGroup = new OptionGroup().addOption(serverURLOption)
-								.addOption(dirOption);
-		
-		options.addOptionGroup(locationGroup)
-			.addOptionGroup(cautionGroup);
-		
-		options.addOption(helpOption)
-			.addOption(versionOption)
-			.addOption(echoOption)
-			.addOption(quietOption);
-	
-		CommandLine commandLine = parseCommandLine(args, console, options);
-		handleInfoOptions(console, helpOption, versionOption, options, commandLine);
-		
-		console.consoleIO.setEcho(commandLine.hasOption(echoOption.getOpt()));
-		console.consoleIO.setQuiet(commandLine.hasOption(quietOption.getOpt()));
-		exitOnError = commandLine.hasOption(exitOnErrorMode.getOpt());
-
-		String location = handleLocationGroup(console, serverURLOption, dirOption, 
-							options, locationGroup, commandLine);
-		handleCautionGroup(console, forceOption, cautiousOption, 
-							options, cautionGroup, commandLine);
-		
-		final String[] otherArgs = commandLine.getArgs();
-		if (otherArgs.length > 1) {
-			printUsage(console.consoleIO, options);
-			System.exit(1);
+		CmdLineParser parser = new CmdLineParser(console);
+		if (parser.parse(args) == null) {
+			System.exit(-1);
 		}
-		connectAndOpen(console, locationGroup.getSelected(), location, otherArgs);
+		
+		if (! parser.handleInfoOptions()) {
+			System.exit(0);
+		}
+		parser.handleEchoOptions();
+		parser.handleExitOption();
+
+		String location = parser.handleLocationGroup();
+		if (location == null) {
+			System.exit(3);
+		}
+		
+		if (! parser.handleCautionGroup()) {
+			System.exit(3);
+		}
+		
+		String otherArg = parser.handleOtherArg();
+		
+		connectAndOpen(console, parser.getSelectedLocation(), location, otherArg);
 		console.start();
-	}
-
-	/**
-	 * Handle command line option group
-	 * 
-	 * @param console
-	 * @param serverURLOption
-	 * @param dirOption
-	 * @param options
-	 * @param locationGroup
-	 * @param commandLine
-	 * @return location of the (remote or local) repository 
-	 */
-	private static String handleLocationGroup(Console console, Option serverURLOption, Option dirOption, 
-					Options options, OptionGroup locationGroup, CommandLine commandLine) {
-		String location = null;
-		
-		try {
-			if (commandLine.hasOption(dirOption.getOpt())) {
-				locationGroup.setSelected(dirOption);
-				location = commandLine.getOptionValue(dirOption.getOpt());
-			}
-			if (commandLine.hasOption(serverURLOption.getOpt())) {
-				locationGroup.setSelected(serverURLOption);
-				location = commandLine.getOptionValue(serverURLOption.getOpt());
-			}
-		} catch (AlreadySelectedException e) {
-			printUsage(console.consoleIO, options);
-			System.exit(3);
-		}
-		return location;
-	}
-
-	/**
-	 * Handle caution option group
-	 * 
-	 * @param console
-	 * @param forceOption
-	 * @param cautiousOption
-	 * @param options
-	 * @param cautionGroup
-	 * @param commandLine
-	 */
-	private static void handleCautionGroup(Console console, Option forceOption, Option cautiousOption, 
-					Options options, OptionGroup cautionGroup, CommandLine commandLine) {
-		try {
-			if (commandLine.hasOption(forceOption.getOpt())) {
-				cautionGroup.setSelected(forceOption);
-				console.consoleIO.setForce();
-			}
-			if (commandLine.hasOption(cautiousOption.getOpt())) {
-				cautionGroup.setSelected(cautiousOption);
-				console.consoleIO.setCautious();
-			}
-		} catch (AlreadySelectedException e) {
-			printUsage(console.consoleIO, options);
-			System.exit(3);
-		}
-	}
-
-	/**
-	 * Handle info options group
-	 * 
-	 * @param console
-	 * @param helpOption
-	 * @param versionOption
-	 * @param options
-	 * @param commandLine 
-	 */
-	private static void handleInfoOptions(Console console, Option helpOption,
-			Option versionOption, Options options, CommandLine commandLine) {
-		if (commandLine.hasOption(helpOption.getOpt())) {
-			printUsage(console.consoleIO, options);
-			System.exit(0);
-		}
-		if (commandLine.hasOption(versionOption.getOpt())) {
-			console.consoleIO.writeln(console.appConfig.getFullName());
-			System.exit(0);
-		}
-	}
-
-	/**
-	 * Parse command line, exit when command line cannot be parsed
-	 * 
-	 * @param args
-	 * @param console
-	 * @param options
-	 * @return parsed command line
-	 */
-	private static CommandLine parseCommandLine(String[] args, Console console, Options options) {
-		CommandLine commandLine = null;
-		try {
-			commandLine = new PosixParser().parse(options, args);
-		} catch (ParseException e) {
-			console.consoleIO.writeError(e.getMessage());
-			System.exit(1);
-		}
-		return commandLine;
 	}
 
 	/**
 	 * Connect to (and open) a repository, exit when connection fails
 	 * 
 	 * @param console
-	 * @param selectedLocationOption s for server, d for local directory 
+	 * @param selectedLocation s for server, d for local directory 
 	 * @param location
 	 * @param otherArgs 
 	 */
-	private static void connectAndOpen(Console console, String selectedLocationOption, String location,
-			String[] otherArgs) {
+	private static void connectAndOpen(Console console, String selectedLocation, String location,
+			String otherArg) {
 		boolean connected;
-		if ("s".equals(selectedLocationOption)) {
+		if ("s".equals(selectedLocation)) {
 			connected = console.connect.connectRemote(location);
-		} else if ("d".equals(selectedLocationOption)) {
+		} else if ("d".equals(selectedLocation)) {
 			connected = console.connect.connectLocal(location);
 		} else {
 			connected = console.connect.connectDefault();
@@ -361,24 +246,9 @@ public class Console implements ConsoleState, ConsoleParameters {
 		if (!connected) {
 			System.exit(2);
 		}
-		if (otherArgs.length > 0) {
-			console.open.openRepository(otherArgs[0]);
+		if (!otherArg.isEmpty()) {
+			console.open.openRepository(otherArg);
 		}
-	}
-
-	/**
-	 * Print usage / available options to console
-	 * 
-	 * @param cio
-	 * @param options 
-	 */
-	private static void printUsage(ConsoleIO cio, Options options) {
-		cio.writeln("RDF4J Console, an interactive command shell for RDF4J repositories.");
-		final HelpFormatter formatter = new HelpFormatter();
-		formatter.setWidth(80);
-		formatter.printHelp("start-console [OPTION] [repositoryID]", options);
-		cio.writeln();
-		cio.writeln("For bug reports and suggestions, see http://www.rdf4j.org/");
 	}
 
 	/**
