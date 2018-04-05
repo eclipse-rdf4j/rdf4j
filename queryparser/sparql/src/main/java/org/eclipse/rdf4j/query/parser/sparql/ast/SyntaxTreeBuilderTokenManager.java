@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2018 Eclipse RDF4J contributors, Aduna, and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -2139,6 +2139,50 @@ private int jjMoveNfa_0(int startState, int curPos)
          ReInitRounds();
       if (curChar < 64)
       {
+         kind = jjMoveNfa_0_curCharLessThan64(startsAt, i, kind);
+      }
+      else if (curChar < 128)
+      {
+         kind = jjMoveNfa_0_curCharLessThan128(startsAt, i, kind);
+      }
+      else
+      {
+         kind = jjMoveNfa_0_curCharOther(startsAt, i, kind);
+      }
+      if (kind != 0x7fffffff)
+      {
+         jjmatchedKind = kind;
+         jjmatchedPos = curPos;
+         kind = 0x7fffffff;
+      }
+      ++curPos;
+      if ((i = jjnewStateCnt) == (startsAt = 157 - (jjnewStateCnt = startsAt)))
+         break;
+      try { curChar = input_stream.readChar(); }
+      catch(java.io.IOException e) { break; }
+   }
+   if (jjmatchedPos > strPos)
+      return curPos;
+
+   int toRet = Math.max(curPos, seenUpto);
+
+   if (curPos < toRet)
+      for (i = toRet - Math.min(curPos, seenUpto); i-- > 0; )
+         try { curChar = input_stream.readChar(); }
+         catch(java.io.IOException e) { throw new Error("Internal Error : Please send a bug report."); }
+
+   if (jjmatchedPos < strPos)
+   {
+      jjmatchedKind = strKind;
+      jjmatchedPos = strPos;
+   }
+   else if (jjmatchedPos == strPos && jjmatchedKind > strKind)
+      jjmatchedKind = strKind;
+
+   return toRet;
+}
+
+   private int jjMoveNfa_0_curCharLessThan64(int startsAt, int i, int kind) {
          long l = 1L << curChar;
          do
          {
@@ -2752,9 +2796,9 @@ private int jjMoveNfa_0(int startState, int curPos)
                default : break;
             }
          } while(i != startsAt);
+      return kind;
       }
-      else if (curChar < 128)
-      {
+private int jjMoveNfa_0_curCharLessThan128(int startsAt, int i, int kind) {
          long l = 1L << (curChar & 077);
          do
          {
@@ -3058,9 +3102,9 @@ private int jjMoveNfa_0(int startState, int curPos)
                default : break;
             }
          } while(i != startsAt);
+      return kind;
       }
-      else
-      {
+private int jjMoveNfa_0_curCharOther(int startsAt, int i, int kind) {
          int hiByte = (int)(curChar >> 8);
          int i1 = hiByte >> 6;
          long l1 = 1L << (hiByte & 077);
@@ -3178,39 +3222,9 @@ private int jjMoveNfa_0(int startState, int curPos)
                default : break;
             }
          } while(i != startsAt);
+      return kind;
       }
-      if (kind != 0x7fffffff)
-      {
-         jjmatchedKind = kind;
-         jjmatchedPos = curPos;
-         kind = 0x7fffffff;
-      }
-      ++curPos;
-      if ((i = jjnewStateCnt) == (startsAt = 157 - (jjnewStateCnt = startsAt)))
-         break;
-      try { curChar = input_stream.readChar(); }
-      catch(java.io.IOException e) { break; }
-   }
-   if (jjmatchedPos > strPos)
-      return curPos;
 
-   int toRet = Math.max(curPos, seenUpto);
-
-   if (curPos < toRet)
-      for (i = toRet - Math.min(curPos, seenUpto); i-- > 0; )
-         try { curChar = input_stream.readChar(); }
-         catch(java.io.IOException e) { throw new Error("Internal Error : Please send a bug report."); }
-
-   if (jjmatchedPos < strPos)
-   {
-      jjmatchedKind = strKind;
-      jjmatchedPos = strPos;
-   }
-   else if (jjmatchedPos == strPos && jjmatchedKind > strKind)
-      jjmatchedKind = strKind;
-
-   return toRet;
-}
 static final int[] jjnextStates = {
    96, 97, 98, 100, 101, 106, 107, 132, 133, 134, 136, 141, 111, 112, 113, 115, 
    120, 78, 89, 91, 36, 37, 39, 31, 32, 34, 7, 8, 41, 42, 43, 45, 
