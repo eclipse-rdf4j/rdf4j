@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
+
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
@@ -60,8 +61,7 @@ public class Disconnect extends ConsoleCommand {
 			if (verbose) {
 				consoleIO.writeln("Already disconnected");
 			}
-		}
-		else {
+		} else {
 			close.closeRepository(false);
 			consoleIO.writeln("Disconnecting from " + this.state.getManagerID());
 			manager.shutDown();
