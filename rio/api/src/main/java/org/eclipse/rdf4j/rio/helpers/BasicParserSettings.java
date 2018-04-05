@@ -118,7 +118,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Verification is performed using registered DatatypeHandlers.
 	 * <p>
-	 * Defaults to false since Sesame 2.8.0, defaulted to true in 2.7.
+	 * Defaults to false.
 	 */
 	public static final RioSetting<Boolean> VERIFY_DATATYPE_VALUES = new RioSettingImpl<Boolean>(
 			"org.eclipse.rdf4j.rio.verifydatatypevalues", "Verify recognised datatype values", Boolean.FALSE);
