@@ -7,10 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import org.eclipse.rdf4j.console.Help;
 import java.util.Locale;
 import java.util.Map;
+
 import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.Help;
 
 /**
  * Prints available command and options to the console.
@@ -41,6 +42,7 @@ public class PrintHelp extends ConsoleCommand {
 	 * Constructor
 	 * 
 	 * @param consoleIO 
+	 * @param commands 
 	 */
 	public PrintHelp(ConsoleIO consoleIO, Map<String,? extends Help> commands) {
 		super(consoleIO);
