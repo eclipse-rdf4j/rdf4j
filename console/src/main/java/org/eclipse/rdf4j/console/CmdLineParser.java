@@ -22,37 +22,37 @@ import org.apache.commons.cli.PosixParser;
  * @author Bart.Hanssens
  */
 class CmdLineParser {
-	private final static Option helpOption = new Option("h", "help", false, 
+	private final static Option HELP = new Option("h", "help", false, 
 				"print this help");
-	private final static Option versionOption = new Option("v", "version", false, 
+	private final static Option VERSION = new Option("v", "version", false, 
 				"print version information");
-	private final static Option serverURLOption = new Option("s", "serverURL", true,
+	private final static Option SERVER = new Option("s", "serverURL", true,
 				"URL of RDF4J Server to connect to, e.g. http://localhost:8080/rdf4j-server/");
-	private final static Option dirOption = new Option("d", "dataDir", true, 
+	private final static Option DIRECTORY = new Option("d", "dataDir", true, 
 				"data dir to 'connect' to");
-	private final static Option echoOption = new Option("e", "echo", false,
+	private final static Option ECHO = new Option("e", "echo", false,
 				"echoes input back to stdout, useful for logging script sessions");
-	private final static Option quietOption = new Option("q", "quiet", false, 
+	private final static Option QUIET = new Option("q", "quiet", false, 
 				"suppresses prompts, useful for scripting");
-	private final static Option forceOption = new Option("f", "force", false,
+	private final static Option FORCE = new Option("f", "force", false,
 				"always answer yes to (suppressed) confirmation prompts");
-	private final static Option cautiousOption = new Option("c", "cautious", false,
+	private final static Option CAUTIOUS = new Option("c", "cautious", false,
 				"always answer no to (suppressed) confirmation prompts");
-	private final static Option exitOnErrorMode = new Option("x", "exitOnError", false,
+	private final static Option MODE = new Option("x", "exitOnError", false,
 				"immediately exit the console on the first error");
 		
-	private final static OptionGroup cautionGroup = new OptionGroup().addOption(cautiousOption)
-								.addOption(forceOption)
-								.addOption(exitOnErrorMode);
-	private final static OptionGroup locationGroup = new OptionGroup().addOption(serverURLOption)
-								.addOption(dirOption);
-	private final static Options options = new Options()
-						.addOptionGroup(locationGroup)
-						.addOptionGroup(cautionGroup)
-						.addOption(helpOption)
-						.addOption(versionOption)
-						.addOption(echoOption)
-						.addOption(quietOption);
+	private final static OptionGroup CAUTION_GROUP = new OptionGroup().addOption(CAUTIOUS)
+								.addOption(FORCE)
+								.addOption(MODE);
+	private final static OptionGroup LOCATION_GROUP = new OptionGroup().addOption(SERVER)
+								.addOption(DIRECTORY);
+	private final static Options OPTIONS = new Options()
+						.addOptionGroup(LOCATION_GROUP)
+						.addOptionGroup(CAUTION_GROUP)
+						.addOption(HELP)
+						.addOption(VERSION)
+						.addOption(ECHO)
+						.addOption(QUIET);
 
 	private final Console console;
 	private CommandLine commandLine;
@@ -66,7 +66,7 @@ class CmdLineParser {
 	 */
 	protected CommandLine parse(String[] args) {
 		try {
-			commandLine = new PosixParser().parse(options, args);
+			commandLine = new PosixParser().parse(OPTIONS, args);
 		} catch (ParseException e) {
 			commandLine = null;
 			console.getConsoleIO().writeError(e.getMessage());
@@ -75,7 +75,7 @@ class CmdLineParser {
 	}
 	
 	/**
-	 * Print usage / available command line options to screen
+	 * Print usage / available command line OPTIONS to screen
 	 * 
 	 * @param cio consoleIO
 	 */
@@ -85,7 +85,7 @@ class CmdLineParser {
 		io.writeln("RDF4J Console, an interactive command shell for RDF4J repositories.");
 		final HelpFormatter formatter = new HelpFormatter();
 		formatter.setWidth(80);
-		formatter.printHelp("start-console [OPTION] [repositoryID]", options);
+		formatter.printHelp("start-console [OPTION] [repositoryID]", OPTIONS);
 		io.writeln();
 		io.writeln("For bug reports and suggestions, see http://www.rdf4j.org/");
 	}
@@ -93,14 +93,14 @@ class CmdLineParser {
 	/**
 	 * Handle help or version parameter at the command line
 	 * 
-	 * @return true if an information option was given
+	 * @return false if an information option was given
 	 */
 	protected boolean handleInfoOptions() {
-		if (commandLine.hasOption(helpOption.getOpt())) {
+		if (commandLine.hasOption(HELP.getOpt())) {
 			printUsage();
 			return false;
 		}
-		if (commandLine.hasOption(versionOption.getOpt())) {
+		if (commandLine.hasOption(VERSION.getOpt())) {
 			console.getConsoleIO().writeln(console.getState().getApplicationName());
 			return false;
 		}
@@ -111,17 +111,17 @@ class CmdLineParser {
 	 * Handle command line exit on error mode
 	 */
 	protected void handleExitOption() {
-		console.setExitOnError(commandLine.hasOption(exitOnErrorMode.getOpt()));
+		console.setExitOnError(commandLine.hasOption(MODE.getOpt()));
 	}
 	
 	/**
-	 * Handle command line echo options
+	 * Handle command line echo OPTIONS
 	 */
 	protected void handleEchoOptions() {
 		ConsoleIO io = console.getConsoleIO();
 		
-		io.setEcho(commandLine.hasOption(echoOption.getOpt()));
-		io.setQuiet(commandLine.hasOption(quietOption.getOpt()));
+		io.setEcho(commandLine.hasOption(ECHO.getOpt()));
+		io.setQuiet(commandLine.hasOption(QUIET.getOpt()));
 	}
 	
 	/**
@@ -133,12 +133,12 @@ class CmdLineParser {
 		ConsoleIO io = console.getConsoleIO();
 		
 		try {
-			if (commandLine.hasOption(forceOption.getOpt())) {
-				cautionGroup.setSelected(forceOption);
+			if (commandLine.hasOption(FORCE.getOpt())) {
+				CAUTION_GROUP.setSelected(FORCE);
 				io.setForce();
 			}
-			if (commandLine.hasOption(cautiousOption.getOpt())) {
-				cautionGroup.setSelected(cautiousOption);
+			if (commandLine.hasOption(CAUTIOUS.getOpt())) {
+				CAUTION_GROUP.setSelected(CAUTIOUS);
 				io.setCautious();
 			}
 		} catch (AlreadySelectedException e) {
@@ -157,13 +157,13 @@ class CmdLineParser {
 		String location = null;
 		
 		try {
-			if (commandLine.hasOption(dirOption.getOpt())) {
-				locationGroup.setSelected(dirOption);
-				location = commandLine.getOptionValue(dirOption.getOpt());
+			if (commandLine.hasOption(DIRECTORY.getOpt())) {
+				LOCATION_GROUP.setSelected(DIRECTORY);
+				location = commandLine.getOptionValue(DIRECTORY.getOpt());
 			}
-			if (commandLine.hasOption(serverURLOption.getOpt())) {
-				locationGroup.setSelected(serverURLOption);
-				location = commandLine.getOptionValue(serverURLOption.getOpt());
+			if (commandLine.hasOption(SERVER.getOpt())) {
+				LOCATION_GROUP.setSelected(SERVER);
+				location = commandLine.getOptionValue(SERVER.getOpt());
 			}
 		} catch (AlreadySelectedException e) {
 			printUsage();
@@ -178,7 +178,7 @@ class CmdLineParser {
 	 * @return string 
 	 */
 	protected String getSelectedLocation() {
-		return locationGroup.getSelected();
+		return LOCATION_GROUP.getSelected();
 	}
 	
 	/**
