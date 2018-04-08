@@ -51,7 +51,7 @@ public class DatatypePropertyShape extends PathPropertyShape {
 
 		BufferedSplitter bufferedSplitter = new BufferedSplitter(addedByShape);
 
-		PlanNode addedByPath = new LoggingNode(new Select(shaclSailConnection.addedStatements, path.getQuery()));
+		PlanNode addedByPath = new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), path.getQuery()));
 
 		// this is essentially pushing the filter down below the join
 		DirectTupleFromFilter invalidValuesDirectOnPath = new DirectTupleFromFilter();
@@ -64,12 +64,12 @@ public class DatatypePropertyShape extends PathPropertyShape {
 
 
 		if (shape instanceof TargetClass) {
-			PlanNode typeFilterPlan = new LoggingNode(((TargetClass) shape).getTypeFilterPlan(shaclSailConnection.separateConnection, discardedRight));
+			PlanNode typeFilterPlan = new LoggingNode(((TargetClass) shape).getTypeFilterPlan(shaclSailConnection.getPreviousStateConnection(), discardedRight));
 
 			top = new LoggingNode(new UnionNode(top, typeFilterPlan));
 		}
 
-		PlanNode bulkedEcternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(bufferedSplitter.getPlanNode(), shaclSailConnection.separateConnection, path.getQuery()));
+		PlanNode bulkedEcternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(bufferedSplitter.getPlanNode(), shaclSailConnection.getPreviousStateConnection(), path.getQuery()));
 
 		top = new LoggingNode(new UnionNode(top, bulkedEcternalInnerJoin));
 

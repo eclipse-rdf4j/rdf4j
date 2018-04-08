@@ -89,7 +89,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			PlanNode planAddedForShape = new LoggingNode(shape.getPlanAddedStatements(shaclSailConnection, shape));
 
-			PlanNode select = new LoggingNode(new Select(shaclSailConnection.addedStatements, path.getQuery()));
+			PlanNode select = new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), path.getQuery()));
 
 			topNode = new LoggingNode(new LeftOuterJoin(planAddedForShape, select));
 

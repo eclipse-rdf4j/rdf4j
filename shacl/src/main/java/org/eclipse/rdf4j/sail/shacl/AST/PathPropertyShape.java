@@ -39,12 +39,12 @@ public class PathPropertyShape extends PropertyShape {
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
-		return new Select(shaclSailConnection.addedStatements, path.getQuery());
+		return new Select(shaclSailConnection.getAddedStatements(), path.getQuery());
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
-		return new Select(shaclSailConnection.removedStatements, path.getQuery());
+		return new Select(shaclSailConnection.getRemovedStatements(), path.getQuery());
 	}
 
 

@@ -51,13 +51,13 @@ public class TargetClass extends Shape {
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
-		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.addedStatements, getQuery())), 1);
+		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), getQuery())), 1);
 
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
-		return new Select(shaclSailConnection.removedStatements, getQuery());
+		return new Select(shaclSailConnection.getRemovedStatements(), getQuery());
 	}
 
 	@Override

@@ -38,22 +38,20 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
-	public NotifyingSailConnection separateConnection;
-
+	private NotifyingSailConnection previousStateConnection;
+	private Repository addedStatements;
+	private Repository removedStatements;
 
 	public final ShaclSail sail;
 
 	public Stats stats;
 
-	public Repository addedStatements;
-	public Repository removedStatements;
-
 	private HashSet<Statement> addedStatementsSet = new HashSet<>();
 	private HashSet<Statement> removedStatementsSet = new HashSet<>();
 
-	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, NotifyingSailConnection separateConnection) {
+	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, NotifyingSailConnection previousStateConnection) {
 		super(connection);
-		this.separateConnection = separateConnection;
+		this.previousStateConnection = previousStateConnection;
 		this.sail = sail;
 
 		if (sail.config.validationEnabled) {
@@ -82,6 +80,18 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		}
 	}
 
+	public NotifyingSailConnection getPreviousStateConnection() {
+		return previousStateConnection;
+	}
+
+	public Repository getAddedStatements() {
+		return addedStatements;
+	}
+
+	public Repository getRemovedStatements() {
+		return removedStatements;
+	}
+
 	@Override
 	public void begin(IsolationLevel level)
 		throws SailException {
@@ -94,7 +104,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		// start two transactions, synchronize on underlying sail so that we get two transactions immediatly successivley
 		synchronized (sail){
 			super.begin(level);
-			separateConnection.begin(IsolationLevels.SNAPSHOT);
+			previousStateConnection.begin(IsolationLevels.SNAPSHOT);
 		}
 
 	}
@@ -113,7 +123,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		synchronized (sail) {
 			try {
 				boolean valid = validate();
-				separateConnection.commit();
+				previousStateConnection.commit();
 
 				if (!valid) {
 					rollback();
@@ -130,7 +140,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	@Override
 	public void rollback() throws SailException {
 		synchronized (sail) {
-			separateConnection.commit();
+			previousStateConnection.commit();
 			cleanup();
 			super.rollback();
 		}
