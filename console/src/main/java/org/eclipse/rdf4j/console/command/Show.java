@@ -36,23 +36,23 @@ public class Show extends ConsoleCommand {
 	private static final String OUTPUT_SEPARATOR = "+----------";
 
 	@Override
-	public  String getName() {
+	public String getName() {
 		return "show";
 	}
-	
+
 	@Override
 	public String getHelpShort() {
 		return "Displays an overview of various resources";
 	}
-	
+
 	@Override
 	public String getHelpLong() {
-		return  PrintHelp.USAGE
+		return PrintHelp.USAGE
 			+ "show {r, repositories}   Shows all available repositories\n"
 			+ "show {n, namespaces}     Shows all namespaces\n"
 			+ "show {c, contexts}       Shows all context identifiers\n";
-	}	
-	
+	}
+
 	/**
 	 * Constructor
 	 *
@@ -68,13 +68,13 @@ public class Show extends ConsoleCommand {
 		if (tokens.length == 2) {
 			final String target = tokens[1].toLowerCase(Locale.ENGLISH);
 			if ("repositories".equals(target) || "r".equals(target)) {
-					showRepositories();
+				showRepositories();
 			} else if ("namespaces".equals(target) || "n".equals(target)) {
-					showNamespaces();
+				showNamespaces();
 			} else if ("contexts".equals(target) || "c".equals(target)) {
-					showContexts();
+				showContexts();
 			} else {
-					consoleIO.writeError("Unknown target '" + tokens[1] + "'");
+				consoleIO.writeError("Unknown target '" + tokens[1] + "'");
 			}
 		} else {
 			consoleIO.writeln(getHelpLong());
