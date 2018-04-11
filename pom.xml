@@ -60,6 +60,7 @@
 		<module>queryrender</module>
 		<module>repository</module>
 		<module>http</module>
+		<module>spanqit</module>
 	</modules>
 
 	<profiles>
