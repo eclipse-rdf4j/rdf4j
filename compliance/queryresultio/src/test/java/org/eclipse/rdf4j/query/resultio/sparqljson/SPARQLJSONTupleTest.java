@@ -268,4 +268,39 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		// -1 results
 		assertEquals(100, handler.getBindingSets().size());
 	}
+
+	@Test
+	public void testOtherKeys()
+		throws Exception
+	{
+		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
+		QueryResultCollector handler = new QueryResultCollector();
+		parser.setQueryResultHandler(handler);
+
+		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/other-keys.srj");
+		assertNotNull("Could not find test resource", stream);
+		parser.parseQueryResult(stream);
+
+		// there must be two variables
+		assertEquals(2, handler.getBindingNames().size());
+
+		// first must be called "book", the second "title"
+		assertEquals("book", handler.getBindingNames().get(0));
+		assertEquals("title", handler.getBindingNames().get(1));
+
+		// should be 7 solutions alltogether
+		assertEquals(7, handler.getBindingSets().size());
+
+		// Results are ordered, so first should be book6
+		assertEquals("http://example.org/book/book6",
+				handler.getBindingSets().get(0).getValue("book").stringValue());
+
+		for (BindingSet b : handler.getBindingSets()) {
+			assertNotNull(b.getValue("book"));
+			assertNotNull(b.getValue("title"));
+			assertTrue(b.getValue("book") instanceof IRI);
+			assertTrue(b.getValue("title") instanceof Literal);
+		}
+
+	}
 }

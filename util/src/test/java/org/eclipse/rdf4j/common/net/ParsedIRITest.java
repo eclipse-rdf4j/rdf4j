@@ -57,7 +57,25 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void uriReferenceIsDescribedCorrectly()
+	public void absoluteIpAddrDescribedCorrectly() throws URISyntaxException {
+		ParsedIRI uri = new ParsedIRI("http://127.0.0.1/path");
+		assertTrue(uri.isAbsolute());
+		assertEquals(uri.getHost(), "127.0.0.1");
+		assertEquals(uri.getPort(), -1);
+		assertEquals(uri.getPath(), "/path");
+	}
+	
+	@Test
+	public void absoluteIpAddrWithPortDescribedCorrectly() throws URISyntaxException {
+		ParsedIRI uri = new ParsedIRI("http://127.0.0.1:3333/path");
+		assertTrue(uri.isAbsolute());
+		assertEquals(uri.getHost(), "127.0.0.1");
+		assertEquals(uri.getPort(), 3333);
+		assertEquals(uri.getPath(), "/path");
+	}
+
+	@Test
+        public void uriReferenceIsDescribedCorrectly()
 		throws URISyntaxException
 	{
 		ParsedIRI uri = new ParsedIRI("/path");

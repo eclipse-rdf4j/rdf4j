@@ -982,7 +982,11 @@ public class ParsedIRI implements Cloneable, Serializable {
 					advance(1);
 				}
 				else {
-					throw error("Invalid IPv4 address");
+					if (i == 3 && (':' == peek() || '/' == peek())) {
+						// next is a port
+					} else {
+						throw error("Invalid IPv4 address");
+					}
 				}
 			}
 			return iri.substring(start, pos);
