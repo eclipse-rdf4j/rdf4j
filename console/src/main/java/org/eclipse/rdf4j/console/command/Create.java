@@ -56,7 +56,7 @@ public class Create extends ConsoleCommand {
 
 
 	@Override
-	public  String getName() {
+	public String getName() {
 		return "create";
 	}
 	
@@ -67,7 +67,7 @@ public class Create extends ConsoleCommand {
 	
 	@Override
 	public String getHelpLong() {
-		return  PrintHelp.USAGE
+		return PrintHelp.USAGE
 			+ "create <template-name>\n"
 			+ "  <template-name>   The name of a repository configuration template\n";
 	}

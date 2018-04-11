@@ -47,7 +47,7 @@ public class SetParameters extends ConsoleCommand {
 	}
 
 	@Override
-	public  String getName() {
+	public String getName() {
 		return "set";
 	}
 	
@@ -58,7 +58,7 @@ public class SetParameters extends ConsoleCommand {
 	
 	@Override
 	public String getHelpLong() {
-		return  PrintHelp.USAGE
+		return PrintHelp.USAGE
 			+ "set                            Shows all parameter values\n"
 			+ "set width=<number>             Set the width for query result tables\n"
 			+ "set log=<level>                Set the logging level (none, error, warning, info or debug)\n"

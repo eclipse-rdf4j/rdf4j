@@ -28,7 +28,7 @@ public class Drop extends ConsoleCommand {
 	private final Close close;
 
 	@Override
-	public  String getName() {
+	public String getName() {
 		return "drop";
 	}
 
@@ -39,7 +39,7 @@ public class Drop extends ConsoleCommand {
 	
 	@Override
 	public String getHelpLong() {
-		return  PrintHelp.USAGE
+		return PrintHelp.USAGE
 			+ "drop <repositoryID>   Drops the repository with the specified id\n";
 	}
 	

@@ -25,7 +25,8 @@ public class LockRemover {
 	 *  Try to remove  lock from repository
 	 * 
 	 * @param repo
-	 * @return true if lock wass removed
+	 * @param consoleIO
+	 * @return true if lock was removed
 	 * @throws IOException
 	 * @throws RepositoryException
 	 */
@@ -44,9 +45,10 @@ public class LockRemover {
 	}
 
 	/**
-	 * Try to remove lock when exception  was raised
+	 * Try to remove lock when exception was raised
 	 * 
 	 * @param rle
+	 * @param consoleIO
 	 * @return true if lock was removed
 	 * @throws IOException 
 	 */

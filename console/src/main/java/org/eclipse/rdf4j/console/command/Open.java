@@ -32,7 +32,7 @@ public class Open extends ConsoleCommand {
 	private final Close close;
 
 	@Override
-	public  String getName() {
+	public String getName() {
 		return "open";
 	}
 	
@@ -43,7 +43,7 @@ public class Open extends ConsoleCommand {
 	
 	@Override
 	public String getHelpLong() {
-		return  PrintHelp.USAGE
+		return PrintHelp.USAGE
 			+ "open <repositoryID>   Opens the repository with the specified ID\n";
 	}
 	

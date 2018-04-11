@@ -34,7 +34,7 @@ public class Verify extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Verify.class);
 
 	@Override
-	public  String getName() {
+	public String getName() {
 		return "verify";
 	}
 
@@ -45,7 +45,7 @@ public class Verify extends ConsoleCommand {
 	
 	@Override
 	public String getHelpLong() {
-		return  PrintHelp.USAGE
+		return PrintHelp.USAGE
 			+ "verify <file-or-url>\n"
 			+ "  <file-or-url>   The path or URL identifying the data file\n"
 			+ "Verifies the validity of the specified data file\n";

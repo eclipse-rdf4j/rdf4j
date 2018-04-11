@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.console.ConsoleState;
 public class PrintInfo extends ConsoleCommand {
 
 	@Override
-	public  String getName() {
+	public String getName() {
 		return "info";
 	}
 
@@ -29,7 +29,7 @@ public class PrintInfo extends ConsoleCommand {
 	
 	@Override
 	public String getHelpLong() {
-		return  PrintHelp.USAGE
+		return PrintHelp.USAGE
 			+ "info                  Shows information about the console\n";
 	}
 

@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.repository.Repository;
 public class Close extends ConsoleCommand {
 
 	@Override
-	public  String getName() {
+	public String getName() {
 		return "close";
 	}
 	
@@ -30,7 +30,7 @@ public class Close extends ConsoleCommand {
 	
 	@Override
 	public String getHelpLong() {
-		return  PrintHelp.USAGE
+		return PrintHelp.USAGE
 			+ "close   Closes the current repository\n";
 	}
 	

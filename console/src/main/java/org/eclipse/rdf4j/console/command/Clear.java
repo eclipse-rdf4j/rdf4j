@@ -43,7 +43,7 @@ public class Clear extends ConsoleCommand {
 
 	@Override
 	public String getHelpLong() {
-		return  PrintHelp.USAGE
+		return PrintHelp.USAGE
 			+ "clear                   Clears the entire repository\n"
 			+ "clear (<uri>|null)...   Clears the specified context(s)\n";
 	}

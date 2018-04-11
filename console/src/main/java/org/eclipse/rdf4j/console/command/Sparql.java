@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
 
 /**
- * Abstract command
+ * SPARQL query command
  * 
  * @author Bart Hanssens
  */
