@@ -18,6 +18,7 @@
 		<module>store</module>
 		<module>serql</module>
 		<module>geosparql</module>
+		<module>shacl</module>
 	</modules>
 
 	<name>RDF4J compliance tests</name>
