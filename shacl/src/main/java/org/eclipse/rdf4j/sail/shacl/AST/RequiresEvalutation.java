@@ -15,6 +15,6 @@ import org.eclipse.rdf4j.repository.Repository;
  */
 public interface RequiresEvalutation {
 
-	boolean requiresEvalutation(Repository addedStatements, Repository removedStatements);
+	boolean requiresEvaluation(Repository addedStatements, Repository removedStatements);
 
 }

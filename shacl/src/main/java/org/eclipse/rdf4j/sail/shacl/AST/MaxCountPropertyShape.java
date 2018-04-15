@@ -91,7 +91,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return true;
 	}
 }

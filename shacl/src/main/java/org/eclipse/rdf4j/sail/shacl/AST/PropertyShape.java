@@ -55,7 +55,7 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 	}
 
 	@Override
-	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return false;
 	}
 

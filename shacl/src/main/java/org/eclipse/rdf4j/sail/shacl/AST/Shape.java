@@ -59,16 +59,16 @@ public class Shape implements PlanGenerator, RequiresEvalutation, QueryGenerator
 
 	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, Shape shape) {
 		return propertyShapes.stream()
-			.filter(propertyShape -> propertyShape.requiresEvalutation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
+			.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
 			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, shape))
 			.collect(Collectors.toList());
 	}
 
 	@Override
-	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return propertyShapes
 			.stream()
-			.anyMatch(propertyShape -> propertyShape.requiresEvalutation(addedStatements, removedStatements));
+			.anyMatch(propertyShape -> propertyShape.requiresEvaluation(addedStatements, removedStatements));
 	}
 
 	@Override

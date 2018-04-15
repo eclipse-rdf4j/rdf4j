@@ -117,7 +117,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 
 		boolean requiresEvalutation = false;
 		if (shape instanceof TargetClass) {
@@ -129,6 +129,6 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			requiresEvalutation = true;
 		}
 
-		return super.requiresEvalutation(addedStatements, removedStatements) | requiresEvalutation;
+		return super.requiresEvaluation(addedStatements, removedStatements) | requiresEvalutation;
 	}
 }

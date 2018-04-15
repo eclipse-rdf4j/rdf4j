@@ -43,7 +43,7 @@ public class SimplePath extends Path {
 	}
 
 	@Override
-	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		boolean requiresEvalutation;
 		try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
 			requiresEvalutation = addedStatementsConnection.hasStatement(null, path, null, false);
