@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -27,7 +27,7 @@ public class Utils {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		sailRepository.initialize();
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			connection.add(SimpleTest.class.getClassLoader().getResourceAsStream(resourceName), "", RDFFormat.TURTLE);
+			connection.add(Utils.class.getClassLoader().getResourceAsStream(resourceName), "", RDFFormat.TURTLE);
 		} catch (IOException | NullPointerException e) {
 			System.out.println("Error reading: " + resourceName);
 			throw new RuntimeException(e);

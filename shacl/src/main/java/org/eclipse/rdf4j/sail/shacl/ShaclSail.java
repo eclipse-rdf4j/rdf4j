@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -37,7 +37,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	@Override
 	public NotifyingSailConnection getConnection()
 		throws SailException {
-		return new ShaclSailConnection(this, super.getConnection());
+		return new ShaclSailConnection(this, super.getConnection(), super.getConnection());
 	}
 
 	public void disableValidation() {

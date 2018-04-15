@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -49,17 +49,17 @@ public class Shape implements PlanGenerator, RequiresEvalutation, QueryGenerator
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
-		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.addedStatements, getQuery())), 1);
+		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), getQuery())), 1);
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
-		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.removedStatements, getQuery())), 1);
+		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getRemovedStatements(), getQuery())), 1);
 	}
 
 	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, Shape shape) {
 		return propertyShapes.stream()
-			.filter(propertyShape -> propertyShape.requiresEvalutation(shaclSailConnection.addedStatements, shaclSailConnection.removedStatements))
+			.filter(propertyShape -> propertyShape.requiresEvalutation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
 			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, shape))
 			.collect(Collectors.toList());
 	}

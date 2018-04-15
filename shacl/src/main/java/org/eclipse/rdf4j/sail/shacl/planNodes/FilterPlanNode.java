@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -29,6 +29,11 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsDepth
 		this.trueNode = trueNode;
 		this.falseNode = falseNode;
 
+		initialize(trueNode, falseNode);
+
+	}
+
+	private void initialize(T trueNode, T falseNode) {
 		CloseableIteration<Tuple, SailException> iterator = iterator();
 
 		if (trueNode != null) {
@@ -40,17 +45,20 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsDepth
 			falseNode.parentIterator(iterator);
 			falseNode.receiveDepthProvider(this);
 		}
-
 	}
 
 	private CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			CloseableIteration<Tuple, SailException> parentIterator;
 
 			Tuple next;
 
 			private void calculateNext() {
+				if(parentIterator == null){
+					 parentIterator = parent.iterator();
+				}
+
 				if (next != null) {
 					return;
 				}

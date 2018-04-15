@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -23,8 +23,8 @@ import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
 import java.util.Arrays;
 import java.util.LinkedList;
@@ -32,32 +32,36 @@ import java.util.stream.Stream;
 
 /**
  * @author Håvard Ottestad
+ *
+ * External means that this plan node can join the iterator from a plan node with an external
+ * source (Repository or NotifyingSailConnection) based on a query or a predicate.
+ *
  */
 public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 	private IRI predicate;
-	ShaclSailConnection shaclSailConnection;
-	PlanNode parent;
+	NotifyingSailConnection baseSailConnection;
+	PlanNode leftNode;
 	Repository repository;
 	String query;
 
-	public BulkedExternalLeftOuterJoin(PlanNode parent, Repository repository, String query) {
-		this.parent = parent;
+	public BulkedExternalLeftOuterJoin(PlanNode leftNode, Repository repository, String query) {
+		this.leftNode = leftNode;
 		this.repository = repository;
 		this.query = query;
 	}
 
-	public BulkedExternalLeftOuterJoin(PlanNode parent, Repository repository, IRI predicate) {
-		this.parent = parent;
+	public BulkedExternalLeftOuterJoin(PlanNode leftNode, Repository repository, IRI predicate) {
+		this.leftNode = leftNode;
 		this.repository = repository;
 		this.predicate = predicate;
 	}
 
-	public BulkedExternalLeftOuterJoin(PlanNode parent, ShaclSailConnection shaclSailConnection, String query) {
-		this.parent = parent;
+	public BulkedExternalLeftOuterJoin(PlanNode leftNode, NotifyingSailConnection baseSailConnection, String query) {
+		this.leftNode = leftNode;
 		this.query = query;
 
-		this.shaclSailConnection = shaclSailConnection;
+		this.baseSailConnection = baseSailConnection;
 
 	}
 
@@ -69,7 +73,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 			LinkedList<Tuple> right = new LinkedList<>();
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			CloseableIteration<Tuple, SailException> leftNodeIterator = leftNode.iterator();
 
 
 			private void calculateNext() {
@@ -79,8 +83,8 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 				}
 
 
-				while (left.size() < 100 && parentIterator.hasNext()) {
-					left.addFirst(parentIterator.next());
+				while (left.size() < 100 && leftNodeIterator.hasNext()) {
+					left.addFirst(leftNodeIterator.next());
 				}
 
 
@@ -112,7 +116,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 						ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(newQuery.toString(), null);
 
-						try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = shaclSailConnection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)) {
+						try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = baseSailConnection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)) {
 							while (evaluate.hasNext()) {
 								BindingSet next = evaluate.next();
 								right.addFirst(new Tuple(next));
@@ -138,7 +142,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 			@Override
 			public void close() throws SailException {
-				parentIterator.close();
+				leftNodeIterator.close();
 			}
 
 			@Override
@@ -203,6 +207,6 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 	@Override
 	public int depth() {
-		return parent.depth() + 1;
+		return leftNode.depth() + 1;
 	}
 }
