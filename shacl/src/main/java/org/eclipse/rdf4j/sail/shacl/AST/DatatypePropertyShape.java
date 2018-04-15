@@ -82,7 +82,7 @@ public class DatatypePropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return true;
 	}
 }

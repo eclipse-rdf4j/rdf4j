@@ -49,8 +49,8 @@ public class PathPropertyShape extends PropertyShape {
 
 
 	@Override
-	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
-		return super.requiresEvalutation(addedStatements, removedStatements) || path.requiresEvalutation(addedStatements, removedStatements);
+	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
+		return super.requiresEvaluation(addedStatements, removedStatements) || path.requiresEvaluation(addedStatements, removedStatements);
 	}
 }
 
