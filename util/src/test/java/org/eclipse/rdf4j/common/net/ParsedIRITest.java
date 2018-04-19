@@ -57,6 +57,14 @@ public class ParsedIRITest {
 	}
 
 	@Test
+	public void numericSubdomainPortCorrectly() throws URISyntaxException {
+		ParsedIRI uri = new ParsedIRI("http://2017.rdf4j.org:8080/");
+		assertTrue(uri.isAbsolute());
+		assertEquals(uri.getHost(), "2017.rdf4j.org");
+		assertEquals(uri.getPort(), 8080);
+	}
+	
+	@Test
 	public void absoluteIpAddrDescribedCorrectly() throws URISyntaxException {
 		ParsedIRI uri = new ParsedIRI("http://127.0.0.1/path");
 		assertTrue(uri.isAbsolute());
