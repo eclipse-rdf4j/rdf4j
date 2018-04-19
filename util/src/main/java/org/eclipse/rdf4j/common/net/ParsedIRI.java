@@ -972,6 +972,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 				throw error("Invalid host IP address");
 			}
 		}
+		/* FIXME: breaks on subdomains starting with a number)
 		else if (isMember(DIGIT, peek())) {
 			for (int i = 0; i < 4; i++) {
 				int octet = Integer.parseInt(parseMember(DIGIT, '.'));
@@ -991,6 +992,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			}
 			return iri.substring(start, pos);
 		}
+		*/
 		else {
 			return parsePctEncoded(hchar, ':', '/');
 		}
