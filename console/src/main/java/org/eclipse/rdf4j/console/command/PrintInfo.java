@@ -5,34 +5,49 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
+
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
 
 /**
  * Print command
  * 
  * @author Dale Visser
  */
-class PrintInfo implements Command {
+public class PrintInfo extends ConsoleCommand {
 
-	private final ConsoleState appInfo;
-	private final ConsoleIO consoleIO;
+	@Override
+	public String getName() {
+		return "info";
+	}
+
+	@Override
+	public String getHelpShort() {
+		return "Shows info about the console";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "info                  Shows information about the console\n";
+	}
 
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
-	 * @param appInfo 
+	 * @param state 
 	 */
-	PrintInfo(ConsoleIO consoleIO, ConsoleState appInfo) {
-		this.consoleIO = consoleIO;
-		this.appInfo = appInfo;
+	public PrintInfo(ConsoleIO consoleIO, ConsoleState state) {
+		super(consoleIO, state);
 	}
 
 	@Override
 	public void execute(String... parameters) {
-		consoleIO.writeln(appInfo.getApplicationName());
-		consoleIO.writeln("Data dir: " + appInfo.getDataDirectory());
-		String managerID = appInfo.getManagerID();
+		consoleIO.writeln(state.getApplicationName());
+		consoleIO.writeln("Data dir: " + state.getDataDirectory());
+		String managerID = state.getManagerID();
 		consoleIO.writeln("Connected to: " + (managerID == null ? "-" : managerID));
 	}
 }

@@ -5,12 +5,15 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
+
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.VerificationListener;
 
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -27,25 +30,40 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Dale Visser
  */
-public class Verify implements Command {
-
+public class Verify extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Verify.class);
 
-	private final ConsoleIO consoleIO;
+	@Override
+	public String getName() {
+		return "verify";
+	}
 
+	@Override
+	public String getHelpShort() {
+		return "Verifies the syntax of an RDF data file, takes a file path or URL as argument";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "verify <file-or-url>\n"
+			+ "  <file-or-url>   The path or URL identifying the data file\n"
+			+ "Verifies the validity of the specified data file\n";
+	}
+	
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO 
 	 */
-	Verify(ConsoleIO consoleIO) {
-		this.consoleIO = consoleIO;
+	public Verify(ConsoleIO consoleIO) {
+		super(consoleIO);
 	}
 
 	@Override
 	public void execute(String... tokens) {
 		if (tokens.length != 2) {
-			consoleIO.writeln(PrintHelp.VERIFY);
+			consoleIO.writeln(getHelpLong());
 			return;
 		}
 		String dataPath = parseDataPath(tokens);

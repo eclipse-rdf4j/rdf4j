@@ -5,7 +5,8 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
+
 
 import static org.eclipse.rdf4j.query.QueryLanguage.SERQL;
 import static org.eclipse.rdf4j.query.QueryLanguage.SPARQL;
@@ -17,6 +18,9 @@ import java.util.List;
 import java.util.Locale;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleParameters;
+import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -42,12 +46,10 @@ import org.slf4j.LoggerFactory;
 /**
  * @author Dale Visser
  */
-public class QueryEvaluator {
+public abstract class QueryEvaluator extends ConsoleCommand {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryEvaluator.class);
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
 	private final ConsoleParameters parameters;
 	private final TupleAndGraphQueryEvaluator tg_eval;
 
@@ -58,9 +60,8 @@ public class QueryEvaluator {
 	 * @param state
 	 * @param parameters 
 	 */
-	QueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
-		this.consoleIO = consoleIO;
-		this.state = state;
+	public QueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
+		super(consoleIO, state);
 		this.parameters = parameters;
 		this.tg_eval = new TupleAndGraphQueryEvaluator(consoleIO, state, parameters);
 	}

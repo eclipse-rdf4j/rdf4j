@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -15,6 +15,8 @@ import java.util.HashSet;
 import java.util.LinkedList;
 
 import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
@@ -28,26 +30,45 @@ import org.slf4j.LoggerFactory;
  *
  * @author Dale Visser
  */
-public class Federate implements Command {
-
+public class Federate extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Federate.class);
 
-	private final ConsoleIO cio;
-	private final ConsoleState state;
+	@Override
+	public String getName() {
+		return "federate";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Federate existing repositories";
+	}
 
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "federate [distinct=<true|false>] [readonly=<true|false>] <fedID> <repoID_1> <repoID_2> [<repoID_n>]*\n"
+			+ "  [distinct=<true|false>]  If true, uses a DISTINCT filter that suppresses duplicate results for identical quads\n"
+			+ "                           from different federation members. Default is false.\n"
+			+ "  [readonly=<true|false>]  If true, sets the fedearated repository as read-only. If any member is read-only, then\n"
+			+ "                           this may only be set to true. Default is true. \n"
+			+ "  <fedId>                  The id to assign the federated repository.\n"
+			+ "  <repoID1> <repoID2>      The id's of at least 2 repositories to federate.\n"
+			+ "  [<repoID_n>]*            The id's of 0 or mare additional repositories to federate.\n\n"
+			+ "You will be prompted to enter a description for the federated repository as well.";
+	}
+	
 	/**
 	 * Constructor
 	 * 
-	 * @param cio
+	 * @param consoleIO
 	 * @param state 
 	 */
-	protected Federate(ConsoleIO cio, ConsoleState state) {
-		this.cio = cio;
-		this.state = state;
+	public Federate(ConsoleIO consoleIO, ConsoleState state) {
+		super(consoleIO, state);
 	}
 
 	/**
-	 * Executes a 'federate' command for the Sesame Console.
+	 * Executes a 'federate' command for the RDF4J Console.
 	 *
 	 * @param parameters the expectations for the tokens in this array are fully documented in
 	 * {@link PrintHelp#FEDERATE} .
@@ -56,7 +77,7 @@ public class Federate implements Command {
 	@Override
 	public void execute(String... parameters) throws IOException {
 		if (parameters.length < 4) {
-			cio.writeln(PrintHelp.FEDERATE);
+			consoleIO.writeln(getHelpLong());
 		} else {
 			LinkedList<String> plist = new LinkedList<>(Arrays.asList(parameters));
 			plist.remove(); // "federate"
@@ -67,7 +88,7 @@ public class Federate implements Command {
 				String fedID = plist.pop();
 				federate(distinct, readonly, fedID, plist);
 			} else {
-				cio.writeError("Duplicate repository id's specified.");
+				consoleIO.writeError("Duplicate repository id's specified.");
 			}
 		}
 	}
@@ -97,23 +118,17 @@ public class Federate implements Command {
 		RepositoryManager manager = state.getManager();
 		try {
 			if (manager.hasRepositoryConfig(fedID)) {
-				cio.writeError(fedID + " already exists.");
+				consoleIO.writeError(fedID + " already exists.");
 			} else if (validateMembers(manager, readonly, memberIDs)) {
-				String description = cio.readln("Federation Description (optional): ");
+				String description = consoleIO.readln("Federation Description (optional): ");
 				RepositoryManagerFederator rmf = new RepositoryManagerFederator(manager);
 				rmf.addFed(fedID, description, memberIDs, readonly, distinct);
-				cio.writeln("Federation created.");
+				consoleIO.writeln("Federation created.");
 			}
-		} catch (RepositoryConfigException rce) {
-			cio.writeError(rce.getMessage());
-		} catch (RepositoryException re) {
-			cio.writeError(re.getMessage());
-		} catch (MalformedURLException mue) {
-			cio.writeError(mue.getMessage());
-		} catch (RDF4JException ore) {
-			cio.writeError(ore.getMessage());
-		} catch (IOException ioe) {
-			cio.writeError(ioe.getMessage());
+		} catch (RepositoryConfigException | RepositoryException | MalformedURLException rce) {
+			consoleIO.writeError(rce.getMessage());
+		} catch (RDF4JException | IOException rce) {
+			consoleIO.writeError(rce.getMessage());
 		}
 	}
 
@@ -133,18 +148,16 @@ public class Federate implements Command {
 					if (!readonly) {
 						if (!manager.getRepository(memberID).isWritable()) {
 							result = false;
-							cio.writeError(memberID + " is read-only.");
+							consoleIO.writeError(memberID + " is read-only.");
 						}
 					}
 				} else {
 					result = false;
-					cio.writeError(memberID + " does not exist.");
+					consoleIO.writeError(memberID + " does not exist.");
 				}
 			}
-		} catch (RepositoryException re) {
-			cio.writeError(re.getMessage());
-		} catch (RepositoryConfigException rce) {
-			cio.writeError(rce.getMessage());
+		} catch (RepositoryException | RepositoryConfigException re) {
+			consoleIO.writeError(re.getMessage());
 		}
 		return result;
 	}

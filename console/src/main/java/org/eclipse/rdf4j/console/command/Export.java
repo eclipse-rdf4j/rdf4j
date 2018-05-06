@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
 import java.io.Writer;
@@ -17,6 +17,10 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.Util;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
@@ -34,13 +38,26 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Bart Hanssens
  */
-public class Export implements Command {
+public class Export extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Export.class);
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
+	@Override
+	public String getName() {
+		return "export";
+	}
 
-	
+	@Override
+	public String getHelpShort() {
+		return "Exports repository data to a file";
+	}
+
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "export <file>                 Exports the entirey repository to a file\n"
+			+ "export <file> (<uri>|null)... Exports the specified context(s) to a file\n";
+	}
+
 	/**
 	 * Get path from file or URI
 	 * 
@@ -59,8 +76,7 @@ public class Export implements Command {
 			}
 		}
 		return path;
-	}
-	
+	}	
 
 	@Override
 	public void execute(String... tokens) {
@@ -71,7 +87,7 @@ public class Export implements Command {
 			return;
 		}
 		if (tokens.length < 2) {
-			consoleIO.writeln(PrintHelp.EXPORT);
+			consoleIO.writeln(getHelpLong());
 			return;
 		} 
 		
@@ -139,10 +155,8 @@ public class Export implements Command {
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param lockRemover
 	 */
-	Export(ConsoleIO consoleIO, ConsoleState state) {
-		this.consoleIO = consoleIO;
-		this.state = state;
+	public Export(ConsoleIO consoleIO, ConsoleState state) {
+		super(consoleIO, state);
 	}
 }

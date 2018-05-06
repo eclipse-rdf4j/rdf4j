@@ -23,7 +23,7 @@ public class Util {
 	 * @param ctxID context as string
 	 * @return context IRI
 	 */
-	protected static Resource getContext(Repository repository, String ctxID) {
+	public static Resource getContext(Repository repository, String ctxID) {
 		if (ctxID.equalsIgnoreCase("null")) {
 			return null;
 		}
@@ -42,7 +42,7 @@ public class Util {
 	 * @return array of contexts or null for default context
 	 * @throws IllegalArgumentException
 	 */
-	protected static Resource[] getContexts(String[] tokens, int pos, Repository repository)
+	public static Resource[] getContexts(String[] tokens, int pos, Repository repository)
 									throws IllegalArgumentException {	
 		Resource[] contexts = new Resource[]{};
 

@@ -5,12 +5,16 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.LockRemover;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
@@ -28,25 +32,37 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Dale Visser
  */
-class Load implements Command {
-
+public class Load extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Load.class);
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
-	private final LockRemover lockRemover;
+	@Override
+	public String getName() {
+		return "load";
+	}
 
+	@Override
+	public String getHelpShort() {
+		return "Loads a data file into a repository, takes a file path or URL as argument";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE 
+			+ "load <file-or-url> [from <base-uri>] [into <context-id>]\n"
+			+ "  <file-or-url>   The path or URL identifying the data file\n"
+			+ "  <base-uri>      The base URI to use for resolving relative references, defaults to <file-or-url>\n"
+			+ "  <context-id>    The ID of the context to add the data to, e.g. foo:bar or _:n123\n"
+			+ "Loads the specified data file into the current repository\n";
+	}
+	
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param lockRemover 
 	 */
-	Load(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
-		this.consoleIO = consoleIO;
-		this.state = state;
-		this.lockRemover = lockRemover;
+	public Load(ConsoleIO consoleIO, ConsoleState state) {
+		super(consoleIO, state);
 	}
 
 	@Override
@@ -56,7 +72,7 @@ class Load implements Command {
 			consoleIO.writeUnopenedError();
 		} else {
 			if (tokens.length < 2) {
-				consoleIO.writeln(PrintHelp.LOAD);
+				consoleIO.writeln(getHelpLong());
 			} else {
 				String baseURI = null;
 				String context = null;
@@ -71,7 +87,7 @@ class Load implements Command {
 					index += 2;
 				}
 				if (index < tokens.length) {
-					consoleIO.writeln(PrintHelp.LOAD);
+					consoleIO.writeln(getHelpLong());
 				} else {
 					load(repository, baseURI, context, tokens);
 				}
@@ -130,7 +146,7 @@ class Load implements Command {
 	private void handleReadOnlyException(Repository repository, RepositoryReadOnlyException caught,
 			final String... tokens) {
 		try {
-			if (lockRemover.tryToRemoveLock(repository)) {
+			if (LockRemover.tryToRemoveLock(repository, consoleIO)) {
 				execute(tokens);
 			} else {
 				consoleIO.writeError("Failed to load data");

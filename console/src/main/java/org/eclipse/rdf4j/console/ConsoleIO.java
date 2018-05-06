@@ -22,8 +22,7 @@ import org.jline.terminal.TerminalBuilder;
 /**
  * @author Dale Visser
  */
-class ConsoleIO {
-
+public class ConsoleIO {
 	private static final String PLEASE_OPEN_FIRST = "please open a repository first";
 
 	private final Terminal terminal;
@@ -105,18 +104,21 @@ class ConsoleIO {
 	/**
 	 * Reads multiple lines from the input until a line that with a '.' on its own is read.
 	 * 
+	 * @return 
 	 * @throws IOException
 	 */
-	protected String readMultiLineInput() throws IOException {
+	public String readMultiLineInput() throws IOException {
 		return readMultiLineInput("> ");
 	}
 
 	/**
 	 * Reads multiple lines from the input until a line that with a '.' on its own is read.
 	 * 
+	 * @param prompt
+	 * @return 
 	 * @throws IOException
 	 */
-	protected String readMultiLineInput(String prompt) throws IOException {
+	public String readMultiLineInput(String prompt) throws IOException {
 		String line = input.readLine(prompt);
 		String result = null;
 		
@@ -146,7 +148,7 @@ class ConsoleIO {
 	 * @return
 	 * @throws IOException 
 	 */
-	protected String readln(String... message) throws IOException {
+	public String readln(String... message) throws IOException {
 		String prompt = !quiet && message.length > 0 && message[0] != null ? message[0] : "";
 		String result = input.readLine(prompt);
 		
@@ -163,7 +165,7 @@ class ConsoleIO {
 	 * @return password string
 	 * @throws IOException 
 	 */
-	protected String readPassword(final String prompt) throws IOException {
+	public String readPassword(final String prompt) throws IOException {
 		String result = input.readLine(prompt, '*');
 		if (echo && !result.isEmpty()) {
 			writeln("************");
@@ -176,14 +178,14 @@ class ConsoleIO {
 	 * 
 	 * @param string string to write
 	 */
-	protected void write(final String string) {
+	public void write(final String string) {
 		terminal.writer().print(string);
 	}
 
 	/**
 	 * Write a newline
 	 */
-	protected void writeln() {
+	public void writeln() {
 		terminal.writer().println();
 	}
 
@@ -192,7 +194,7 @@ class ConsoleIO {
 	 * 
 	 * @param string string to write
 	 */
-	protected void writeln(final String string) {
+	public void writeln(final String string) {
 		terminal.writer().println(string);
 	}
 
@@ -201,7 +203,7 @@ class ConsoleIO {
 	 * 
 	 * @param errMsg error message
 	 */
-	protected void writeError(final String errMsg) {
+	public void writeError(final String errMsg) {
 		terminal.writer().println(errMsg);
 		errorWritten = true;
 	}
@@ -209,7 +211,7 @@ class ConsoleIO {
 	/**
 	 * Write a "please open first" error message
 	 */
-	protected void writeUnopenedError() {
+	public void writeUnopenedError() {
 		writeError(PLEASE_OPEN_FIRST);
 	}
 
@@ -221,12 +223,11 @@ class ConsoleIO {
 	 * @param colNo column number
 	 * @param msg message to write
 	 */
-	protected void writeParseError(final String prefix, final long lineNo, final long colNo,
-			final String msg) {
+	public void writeParseError(String prefix, long lineNo, long colNo, String msg) {
 		String locationString = RDFParseException.getLocationString(lineNo, colNo);
 		int locSize = locationString.length();
 		
-		final StringBuilder builder = new StringBuilder(locSize + prefix.length() + msg.length() + 3);
+		StringBuilder builder = new StringBuilder(locSize + prefix.length() + msg.length() + 3);
 		builder.append(prefix).append(": ").append(msg);
 		if (locSize > 0) {
 			builder.append(" ").append(locationString);
@@ -242,7 +243,7 @@ class ConsoleIO {
 	 * @return true when continue
 	 * @throws IOException 
 	 */
-	protected boolean askProceed(final String msg, final boolean defaultValue) throws IOException {
+	public boolean askProceed(String msg, boolean defaultValue) throws IOException {
 		final String defaultString = defaultValue ? "yes" : "no";
 		boolean result = force ? true : (cautious ? false : defaultValue);
 		
