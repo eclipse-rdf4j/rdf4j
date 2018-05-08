@@ -1006,8 +1006,8 @@ public class ParsedIRI implements Cloneable, Serializable {
 				// Reset position and parse host
 				pos = startPos;
 				String host = parsePctEncoded(hchar, ':', '/');
-
-				if (isTLDValid(start)) {
+				
+				if (isTLDValid(start) || scheme.equalsIgnoreCase("bundle")) { 
 					return host;
 				} else {
 					throw parsingException;
