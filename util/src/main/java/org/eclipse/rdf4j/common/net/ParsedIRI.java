@@ -973,10 +973,19 @@ public class ParsedIRI implements Cloneable, Serializable {
 			}
 		}
 		else if (isMember(DIGIT, peek())) {
+			URISyntaxException parsingException = null;
+			int startPos = pos;
 			for (int i = 0; i < 4; i++) {
-				int octet = Integer.parseInt(parseMember(DIGIT, '.'));
+				int octet = -1;
+				try {
+					octet = Integer.parseInt(parseMember(DIGIT, '.'));
+				} catch (NumberFormatException e) {
+					parsingException = error("Invalid IPv4 address");
+					break;
+				}
 				if (octet < 0 || octet > 255) {
-					throw error("Invalid IPv4 address");
+					parsingException = error("Invalid IPv4 address");
+					break;
 				}
 				if ('.' == peek()) {
 					advance(1);
@@ -985,15 +994,48 @@ public class ParsedIRI implements Cloneable, Serializable {
 					if (i == 3 && (':' == peek() || '/' == peek())) {
 						// next is a port
 					} else {
-						throw error("Invalid IPv4 address");
+						parsingException = error("Invalid IPv4 address");
+						break;
 					}
 				}
 			}
-			return iri.substring(start, pos);
+			if (parsingException == null) {
+				// IPv4 parsed successfully
+				return iri.substring(start, pos);
+			} else {
+				// Reset position and parse host
+				pos = startPos;
+				String host = parsePctEncoded(hchar, ':', '/');
+				
+				if (isTLDValid(start) || scheme.equalsIgnoreCase("bundle")) { 
+					return host;
+				} else {
+					throw parsingException;
+				}
+			}
 		}
 		else {
 			return parsePctEncoded(hchar, ':', '/');
 		}
+	}
+
+	private boolean isTLDValid(int hostStartPos) {
+		int step = 0;
+		boolean illegalCharFound = false;
+
+		while(pos + step > hostStartPos) {
+			int currChar = peek(--step);
+			if ('.' == currChar) {
+				return !illegalCharFound;
+			}
+
+			// TLDs should start with a letter
+			if (!isMember(ALPHA, currChar)) {
+				illegalCharFound = true;
+			}
+		}
+
+		return true;
 	}
 
 	private String parsePath()

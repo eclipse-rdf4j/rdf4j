@@ -47,6 +47,19 @@ public class ParsedIRITest {
 	public static final String FRAGMENT = "http://example.com/#fragment";
 
 	@Test
+	public void hostWithLeadingDigit() {
+		String[] hosts = {"1example.com", "1.example.com"};
+		for (String host : hosts) {
+			assertEquals(host, ParsedIRI.create("http://" + host).getHost());
+		}
+	}
+
+	@Test(expected = URISyntaxException.class)
+	public void testIncorrectIPv4() throws URISyntaxException {
+		ParsedIRI iri = new ParsedIRI("http://127.0.0.256/");
+	}
+
+	@Test
 	public void absoluteHttpUriIsDescribedCorrectly()
 		throws URISyntaxException
 	{
@@ -95,6 +108,15 @@ public class ParsedIRITest {
 		assertEquals("/bar/baz.jar!/COM/foo/Quux.class", uri.normalize().getPath());
 	}
 
+	@Test
+	public void osgiBundleUri()
+	throws URISyntaxException
+	{
+		ParsedIRI uri = new ParsedIRI("bundle://159.0:1/org/eclipse/rdf4j/repository/config/system.ttl");
+		assertTrue(uri.isAbsolute());
+		assertEquals("bundle", uri.getScheme());
+	}
+	
 	@Test
 	public void jarUriWithHttpStringifiesToOriginalForm()
 		throws URISyntaxException
