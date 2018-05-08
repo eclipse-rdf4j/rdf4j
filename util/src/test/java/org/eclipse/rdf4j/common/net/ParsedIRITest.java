@@ -109,6 +109,15 @@ public class ParsedIRITest {
 	}
 
 	@Test
+	public void osgiBundleUri()
+	throws URISyntaxException
+	{
+		ParsedIRI uri = new ParsedIRI("bundle://159.0:1/org/eclipse/rdf4j/repository/config/system.ttl");
+		assertTrue(uri.isAbsolute());
+		assertEquals("bundle", uri.getScheme());
+	}
+	
+	@Test
 	public void jarUriWithHttpStringifiesToOriginalForm()
 		throws URISyntaxException
 	{
