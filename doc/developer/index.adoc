@@ -291,8 +291,7 @@ RDF4j has four separate announcements:
 
 We use the https://ci.eclipse.org/rdf4j[Eclipse RDF4J Jenkins CI instance] to build and deploy new releases to the Central Repository.
 To do this, log in to Jenkins, and start the job named `rdf4j-client-deploy-release-ossrh-central`.
-The job will ask for the github release tag as an input parameters, e.g. '2.2.1'.
-Do the same for `rdf4j-storage-deploy-release-ossrh-central` and `rdf4j-tools-deploy-release-ossrh-central` sequentially.
+The job will ask for the github release tag as an input parameters, e.g. '2.2.1'. It will automatically start deployment jobs for the `rdf4j-storage`, `rdf4j-tools`, and `rdf4j-testsuite` subprojects, in the correct sequence.
 
 These jobs will automatically check out the release tag, build the project, and upload all artifacts to https://oss.sonatype.org/[OSS Sonatype].
 After successful upload, it will also automatically invoke synchronization with the Central Repository.
@@ -360,7 +359,7 @@ For more detailed information about the release review process, see the https://
 
 === Branching minor releases
 
-Prior to a minor release, the _develop_ branch in merged into the _master_ branch
+Prior to a minor release, the _develop_ branch is merged into the _master_ branch
 (along with the _develop_ branch's version) to facilitate release review.
 This will increment the _master_ version to the latest major/minor SNAPSHOT version.
 After the review is complete the steps to create a minor release are the same as the patch release steps.
