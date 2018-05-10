@@ -25,6 +25,8 @@ image:rdf-graph-1.png[]
 
 So what exactly are we looking at here? Well, we have a _resource_ "Picasso", denoted by an IRI (Internationalized _Resource Identifier_): `http://example.org/Picasso`. In RDF, resources have _properties_. Here we are using the `foaf:firstName` property to denote the relation between the resource "Picasso" and the value "Pablo". `foaf:firstName` is also an IRI, though to make things easier to read we use an abbreviated syntax, called _prefixed names_ (more about this later). Finally, the property value, "Pablo", is a _literal_ value: it is not represented using a resource identifier, but simply as a string of characters.
 
+NOTE: the `foaf:firstName` property is part of the FOAF (Friend-of-a-Friend) vocabulary. This is an example of reusing an existing vocabuary to describe our own data. After all, if someone else already defined a property for describing people's first names, why not use it? More about this later.
+
 As you may have noticed, we have depicted our fact about Picasso as a simple *graph*: two nodes, connected by an edge. It is very helpful to think about RDF models as graphs, and a lot of the tools we will be using to create and query RDF data make a lot more sense if you do.
 
 In RDF, each fact is called a *statement*. Each statement consists of three parts (for this reason, it is also often called a _triple_):
