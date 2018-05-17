@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.console.command.Clear;
 import org.eclipse.rdf4j.console.command.Close;
 import org.eclipse.rdf4j.console.command.Connect;
 import org.eclipse.rdf4j.console.command.ConsoleCommand;
+import org.eclipse.rdf4j.console.command.Convert;
 import org.eclipse.rdf4j.console.command.Create;
 import org.eclipse.rdf4j.console.command.Disconnect;
 import org.eclipse.rdf4j.console.command.Drop;
@@ -306,6 +307,7 @@ public class Console {
 		register(new Load(consoleIO, STATE));
 		register(new Clear(consoleIO, STATE));
 		register(new Export(consoleIO, STATE));
+		register(new Convert(consoleIO, STATE));
 		// parameters
 		register(new SetParameters(consoleIO, STATE, PARAMS));
 	}
