@@ -54,7 +54,7 @@ public class Convert extends ConsoleCommand {
 	
 	@Override
 	public void execute(String... tokens) {
-		if (tokens.length < 2) {
+		if (tokens.length < 3) {
 			consoleIO.writeln(getHelpLong());
 			return;
 		} 
