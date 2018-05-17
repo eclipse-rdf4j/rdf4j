@@ -59,6 +59,8 @@ public class ConvertTest extends AbstractCommandTest {
 	@Test
 	public final void testConvert() throws IOException {
 		File json = LOCATION.newFile("alien.jsonld");
+		//json.delete(); // only the location is needed, not a real (empty) file
+		
 		convert.execute("convert", from.toString(), json.toString());
 		
 		assertTrue("File is empty", json.length() > 0);
@@ -70,15 +72,24 @@ public class ConvertTest extends AbstractCommandTest {
 			//
 		}
 		assertTrue("Invalid JSON", o != null);
+	}
+	
+	@Test
+	public final void testConvertParseError() throws IOException {
+		File f = LOCATION.newFile("empty.nt");
+		File json = LOCATION.newFile("empty.jsonld");
+		json.delete(); // only the location is needed, not a real (empty) file
 		
-		json.delete();
+		convert.execute("convert", f.toString(), json.toString());
+		assertTrue("File not empty", json.length() == 0);
 	}
 	
 	@Test
 	public final void testConvertInvalidFormat() throws IOException {
-		File qyx = LOCATION.newFile("alien.qyx");
+		File qyx = LOCATION.newFile("alien.qyx"); 
+		qyx.delete(); // only the location is needed, not a real (empty) file
+
 		convert.execute("convert", from.toString(), qyx.toString());
 		verify(mockConsoleIO).writeError("No RDF writer for " + qyx.toString());
-		qyx.delete();
 	}
 }
