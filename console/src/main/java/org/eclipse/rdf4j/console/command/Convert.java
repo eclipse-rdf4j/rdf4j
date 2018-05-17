@@ -29,7 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Export triples to file
+ * Convert RDF file from one format to another
  * 
  * @author Bart Hanssens
  */

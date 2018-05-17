@@ -7,6 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
 
@@ -53,5 +59,25 @@ public class Util {
 			}
 		}
 		return contexts;
+	}
+	
+	/**
+	 * Get path from file or URI
+	 * 
+	 * @param file file name
+	 * @return path or null
+	 */
+	public static Path getPath(String file) {
+		Path path = null;
+		try {
+			path = Paths.get(file);
+		} catch (InvalidPathException ipe) {
+			try {
+				path = Paths.get(new URI(file));
+			} catch (URISyntaxException ex) { 
+				//
+			}
+		}
+		return path;
 	}
 }
