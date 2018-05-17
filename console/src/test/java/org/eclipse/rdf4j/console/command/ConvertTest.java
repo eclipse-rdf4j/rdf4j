@@ -26,6 +26,8 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.verify;
 
 /**
  * @author Bart Hanssens
@@ -74,11 +76,12 @@ public class ConvertTest extends AbstractCommandTest {
 	
 	@Test
 	public final void testConvertParseError() throws IOException {
-		File f = LOCATION.newFile("empty.nt");
+		File wrong = LOCATION.newFile("wrong.nt");
+		Files.write(wrong.toPath(), "error".getBytes());
 		File json = LOCATION.newFile("empty.jsonld");
-
-		convert.execute("convert", f.toString(), json.toString());
-		assertTrue("File not empty" + json.length(), json.length() == 0);
+		
+		convert.execute("convert", wrong.toString(), json.toString());
+		verify(mockConsoleIO).writeError(anyString());
 	}
 	
 	@Test
