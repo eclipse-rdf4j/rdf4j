@@ -19,7 +19,7 @@ import org.apache.commons.cli.PosixParser;
 /**
  * Helper class for configuring console
  * 
- * @author Bart.Hanssens
+ * @author Bart Hanssens
  */
 class CmdLineParser {
 	private final static Option HELP = new Option("h", "help", false, 
@@ -60,7 +60,6 @@ class CmdLineParser {
 	/**
 	 * Parse command line arguments
 	 * 
-	 * @param console
 	 * @param args arguments
 	 * @return parsed command line or null
 	 */
@@ -76,8 +75,6 @@ class CmdLineParser {
 	
 	/**
 	 * Print usage / available command line OPTIONS to screen
-	 * 
-	 * @param cio consoleIO
 	 */
 	protected void printUsage() {
 		ConsoleIO io = console.getConsoleIO();
@@ -108,14 +105,14 @@ class CmdLineParser {
 	}
 
 	/**
-	 * Handle command line exit on error mode
+	 * Handle command line "exit on error" mode
 	 */
 	protected void handleExitOption() {
 		console.setExitOnError(commandLine.hasOption(MODE.getOpt()));
 	}
 	
 	/**
-	 * Handle command line echo OPTIONS
+	 * Handle command line echo options
 	 */
 	protected void handleEchoOptions() {
 		ConsoleIO io = console.getConsoleIO();
@@ -182,7 +179,7 @@ class CmdLineParser {
 	}
 	
 	/**
-	 * Get last remaining argument from command line, if any.
+	 * Get remaining argument from command line, if any.
 	 * Returns empty string if there is no argument, null on error
 	 * 
 	 * @return argument as string, or null on error

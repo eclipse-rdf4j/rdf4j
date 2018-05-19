@@ -277,7 +277,7 @@ public class ConsoleIO {
 	/**
 	 * Whether to suppress printing of prompts to output
 	 * 
-	 * @param quiet true to surpress printing
+	 * @param quiet true to suppress printing
 	 */
 	public void setQuiet(boolean quiet) {
 		this.quiet = quiet;
@@ -300,7 +300,7 @@ public class ConsoleIO {
 	/**
 	 * Check if an error was written to the console
 	 * 
-	 * @return true when error wwas written
+	 * @return true when error was written
 	 */
 	public boolean wasErrorWritten() {
 		return errorWritten;
