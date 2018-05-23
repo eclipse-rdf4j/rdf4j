@@ -36,7 +36,7 @@ public class SolrBulkUpdater implements BulkUpdater {
 		throws IOException
 	{
 		SolrDocument document = ((SolrSearchDocument)doc).getDocument();
-		addOrUpdateList.add(ClientUtils.toSolrInputDocument(document));
+		addOrUpdateList.add(SolrUtil.toSolrInputDocument(document));
 	}
 
 	@Override

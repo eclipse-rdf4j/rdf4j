@@ -34,7 +34,7 @@
 			<artifactId>guava</artifactId>
 		</dependency>
 		<dependency>
-			<groupId>com.spatial4j</groupId>
+			<groupId>org.locationtech.spatial4j</groupId>
 			<artifactId>spatial4j</artifactId>
 		</dependency>
 		<dependency>

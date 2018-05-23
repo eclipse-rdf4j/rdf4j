@@ -18,6 +18,7 @@ import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
+import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
 
 import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
@@ -67,12 +68,14 @@ public class ElasticsearchQuery implements SearchQuery {
 	public void highlight(URI property) {
 		String field = (property != null)
 				? ElasticsearchIndex.toPropertyFieldName(SearchFields.getPropertyField(property)) : ElasticsearchIndex.ALL_PROPERTY_FIELDS;
-		request.addHighlightedField(field);
-		request.setHighlighterPreTags(SearchFields.HIGHLIGHTER_PRE_TAG);
-		request.setHighlighterPostTags(SearchFields.HIGHLIGHTER_POST_TAG);
+		HighlightBuilder hb = new HighlightBuilder();
+		hb.field(field);
+		hb.preTags(SearchFields.HIGHLIGHTER_PRE_TAG);
+		hb.postTags(SearchFields.HIGHLIGHTER_POST_TAG);
 		// Elastic Search doesn't really have the same support for fragments as Lucene.
 		// So, we have to get back the whole highlighted value (comma-separated if it is a list)
 		// and then post-process it into fragments ourselves.
-		request.setHighlighterNumOfFragments(0);
+		hb.numOfFragments(0);
+		request.highlighter(hb);
 	}
 }

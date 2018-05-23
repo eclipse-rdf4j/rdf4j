@@ -34,7 +34,6 @@ import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.CorruptIndexException;
 import org.apache.lucene.index.DirectoryReader;
-import org.apache.lucene.index.DocsEnum;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
@@ -43,6 +42,7 @@ import org.apache.lucene.index.IndexWriterConfig.OpenMode;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.LeafReader;
 import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.index.PostingsEnum;
 import org.apache.lucene.index.StoredFieldVisitor;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.queries.CustomScoreQuery;
@@ -60,6 +60,8 @@ import org.apache.lucene.search.highlight.Formatter;
 import org.apache.lucene.search.highlight.Highlighter;
 import org.apache.lucene.search.highlight.QueryScorer;
 import org.apache.lucene.search.highlight.SimpleHTMLFormatter;
+import org.apache.lucene.search.similarities.ClassicSimilarity;
+import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.spatial.SpatialStrategy;
 import org.apache.lucene.spatial.prefix.RecursivePrefixTreeStrategy;
 import org.apache.lucene.spatial.prefix.tree.SpatialPrefixTree;
@@ -77,18 +79,16 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lucene.util.GeoUnits;
+import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.context.SpatialContextFactory;
+import org.locationtech.spatial4j.shape.Point;
+import org.locationtech.spatial4j.shape.Shape;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
-import com.spatial4j.core.context.SpatialContext;
-import com.spatial4j.core.context.SpatialContextFactory;
-import com.spatial4j.core.shape.Point;
-import com.spatial4j.core.shape.Shape;
-import org.apache.lucene.search.similarities.DefaultSimilarity;
-import org.apache.lucene.search.similarities.Similarity;
 
 /**
  * A LuceneIndex is a one-stop-shop abstraction of a Lucene index. It takes care of proper synchronization of
@@ -148,7 +148,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	public LuceneIndex(Directory directory, Analyzer analyzer)
 		throws IOException
 	{
-		this(directory, analyzer, new DefaultSimilarity());
+		this(directory, analyzer, new ClassicSimilarity());
 	}
 
 	/**
@@ -174,6 +174,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		postInit();
 	}
 
+	@SuppressWarnings("unchecked")
 	@Override
 	public synchronized void initialize(Properties parameters)
 		throws Exception
@@ -232,7 +233,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 					parameters.getProperty(LuceneSail.SIMILARITY_CLASS_KEY)).newInstance();
 		}
 		else {
-			similarity = new DefaultSimilarity();
+			similarity = new ClassicSimilarity();
 		}
 
 		return similarity;
@@ -492,22 +493,25 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	private static Document getDocument(LeafReader reader, Term term)
 		throws IOException
 	{
-		DocsEnum docs = reader.termDocsEnum(term);
+		PostingsEnum docs = reader.postings(term);
 		if (docs != null) {
 			int docId = docs.nextDoc();
-			if (docId != DocsEnum.NO_MORE_DOCS) {
-				if (docs.nextDoc() != DocsEnum.NO_MORE_DOCS) {
+			// PostingsEnum may contain deleted documents, we have to cope for it
+			while (docId != PostingsEnum.NO_MORE_DOCS) {
+
+				// if document is deleted, skip and continue
+				Bits liveDocs = reader.getLiveDocs();
+				if (liveDocs != null && !liveDocs.get(docId)) {
+					docId = docs.nextDoc();
+					continue;
+				}
+				if (docs.nextDoc() != PostingsEnum.NO_MORE_DOCS) {
 					throw new IllegalStateException("Multiple Documents for term " + term.text());
 				}
 				return readDocument(reader, docId, null);
 			}
-			else {
-				return null;
-			}
 		}
-		else {
-			return null;
-		}
+		return null;
 	}
 
 	/**
@@ -534,10 +538,15 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	private static void addDocuments(LeafReader reader, Term term, Collection<Document> documents)
 		throws IOException
 	{
-		DocsEnum docs = reader.termDocsEnum(term);
+		PostingsEnum docs = reader.postings(term);
 		if (docs != null) {
 			int docId;
-			while ((docId = docs.nextDoc()) != DocsEnum.NO_MORE_DOCS) {
+			while ((docId = docs.nextDoc()) != PostingsEnum.NO_MORE_DOCS) {
+				Bits liveDocs = reader.getLiveDocs();
+				// Maybe some of the docs have been deleted! Check that too..
+				if (liveDocs != null && !liveDocs.get(docId)) {
+					continue;
+				}
 				Document document = readDocument(reader, docId, null);
 				documents.add(document);
 			}
@@ -659,6 +668,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		}
 	}
 
+	@SuppressWarnings("unused")
 	private void logIndexStats() {
 		try {
 			IndexReader reader = null;
@@ -815,7 +825,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		double degs = GeoUnits.toDegrees(distance, units);
 		final String geoField = SearchFields.getPropertyField(geoProperty);
 		SpatialStrategy strategy = getSpatialStrategyMapper().apply(geoField);
-		final Shape boundingCircle = strategy.getSpatialContext().makeCircle(p, degs);
+		final Shape boundingCircle = strategy.getSpatialContext().getShapeFactory().circle(p, degs);
 		Query q = strategy.makeQuery(new SpatialArgs(SpatialOperation.Intersects, boundingCircle));
 		if (contextVar != null) {
 			q = addContextTerm(q, (Resource)contextVar.getValue());
@@ -835,13 +845,13 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	private Query addContextTerm(Query q, Resource ctx) {
-		BooleanQuery combinedQuery = new BooleanQuery();
+		BooleanQuery.Builder combinedQuery = new BooleanQuery.Builder();
 		TermQuery idQuery = new TermQuery(
 				new Term(SearchFields.CONTEXT_FIELD_NAME, SearchFields.getContextID(ctx)));
 		// the specified named graph or not the unnamed graph
 		combinedQuery.add(idQuery, ctx != null ? Occur.MUST : Occur.MUST_NOT);
 		combinedQuery.add(q, Occur.MUST);
-		return combinedQuery;
+		return combinedQuery.build();
 	}
 
 	@Override
@@ -956,10 +966,10 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		// rewrite the query
 		TermQuery idQuery = new TermQuery(
 				new Term(SearchFields.URI_FIELD_NAME, SearchFields.getResourceID(resource)));
-		BooleanQuery combinedQuery = new BooleanQuery();
+		BooleanQuery.Builder combinedQuery = new BooleanQuery.Builder();
 		combinedQuery.add(idQuery, Occur.MUST);
 		combinedQuery.add(query, Occur.MUST);
-		return search(combinedQuery);
+		return search(combinedQuery.build());
 	}
 
 	/**

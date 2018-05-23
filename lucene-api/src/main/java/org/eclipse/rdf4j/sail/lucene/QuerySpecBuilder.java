@@ -65,6 +65,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 	 * a TupleExpr. To be removed, prefer {@link process(TupleExpr tupleExpr, BindingSet bindings, Collection
 	 * <SearchQueryEvaluator> result)}.
 	 */
+	@SuppressWarnings("unchecked")
 	@Deprecated
 	public Set<QuerySpec> process(TupleExpr tupleExpr, BindingSet bindings)
 		throws SailException

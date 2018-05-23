@@ -15,6 +15,6 @@ public class Factory implements SolrClientFactory {
 
 	@Override
 	public SolrClient create(String spec) {
-		return new HttpSolrClient(spec);
+		return new HttpSolrClient.Builder(spec).build();
 	}
 }

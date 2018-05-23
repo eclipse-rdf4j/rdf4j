@@ -14,10 +14,10 @@ import java.util.Set;
 import org.apache.lucene.search.ScoreDoc;
 import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.sail.lucene.util.GeoUnits;
+import org.locationtech.spatial4j.shape.Point;
+import org.locationtech.spatial4j.shape.Shape;
 
 import com.google.common.collect.Sets;
-import com.spatial4j.core.shape.Point;
-import com.spatial4j.core.shape.Shape;
 
 public class LuceneDocumentDistance extends LuceneDocumentResult implements DocumentDistance {
 

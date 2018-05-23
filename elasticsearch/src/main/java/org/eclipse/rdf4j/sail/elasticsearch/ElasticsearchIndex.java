@@ -18,7 +18,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
-import org.apache.lucene.spatial.util.GeoHashUtils;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
@@ -37,8 +36,6 @@ import org.eclipse.rdf4j.sail.lucene.SearchQuery;
 import org.elasticsearch.action.ActionRequestBuilder;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequestBuilder;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
-import org.elasticsearch.action.deletebyquery.DeleteByQueryAction;
-import org.elasticsearch.action.deletebyquery.DeleteByQueryRequestBuilder;
 import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.action.search.SearchRequestBuilder;
@@ -50,8 +47,7 @@ import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.cluster.health.ClusterIndexHealth;
 import org.elasticsearch.cluster.metadata.MappingMetaData;
 import org.elasticsearch.common.collect.ImmutableOpenMap;
-import org.elasticsearch.common.geo.GeoDistance;
-import org.elasticsearch.common.geo.GeoDistance.FixedSourceDistance;
+import org.elasticsearch.common.geo.GeoPoint;
 import org.elasticsearch.common.geo.ShapeRelation;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.InetSocketTransportAddress;
@@ -66,20 +62,26 @@ import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.QueryStringQueryBuilder;
 import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
-import org.elasticsearch.plugin.deletebyquery.DeleteByQueryPlugin;
+import org.elasticsearch.index.reindex.DeleteByQueryAction;
+import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
+import org.elasticsearch.transport.client.PreBuiltTransportClient;
+import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.context.SpatialContextFactory;
+import org.locationtech.spatial4j.distance.DistanceUtils;
+import org.locationtech.spatial4j.io.GeohashUtils;
+import org.locationtech.spatial4j.shape.Point;
+import org.locationtech.spatial4j.shape.Shape;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
 import com.google.common.collect.Iterables;
-import com.spatial4j.core.context.SpatialContext;
-import com.spatial4j.core.context.SpatialContextFactory;
-import com.spatial4j.core.distance.DistanceUtils;
-import com.spatial4j.core.shape.Point;
-import com.spatial4j.core.shape.Shape;
+
 
 /**
  * Requires an Elasticsearch cluster with the DeleteByQuery plugin.
@@ -202,8 +204,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 			}
 		}
 
-		client = TransportClient.builder().settings(settingsBuilder).addPlugin(
-				DeleteByQueryPlugin.class).build();
+		client = new PreBuiltTransportClient(settingsBuilder.build());
 		String transport = parameters.getProperty(TRANSPORT_KEY, DEFAULT_TRANSPORT);
 		for (String addrStr : transport.split(",")) {
 			TransportAddress addr;
@@ -253,7 +254,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		}
 		String waitForRelocatingShards = parameters.getProperty(WAIT_FOR_RELOCATING_SHARDS_KEY);
 		if (waitForRelocatingShards != null) {
-			healthReqBuilder.setWaitForRelocatingShards(Integer.parseInt(waitForRelocatingShards));
+			// TODO no longer available
+//			healthReqBuilder.setWaitForRelocatingShards(Integer.parseInt(waitForRelocatingShards));
 		}
 		ClusterHealthResponse healthResponse = healthReqBuilder.execute().actionGet();
 		logger.info("Cluster health: {}", healthResponse.getStatus());
@@ -266,9 +268,10 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 				indexHealth.getNumberOfShards(), indexHealth.getActiveShards(),
 				indexHealth.getActivePrimaryShards(), indexHealth.getInitializingShards(),
 				indexHealth.getUnassignedShards(), indexHealth.getRelocatingShards());
-		for (String err : healthResponse.getValidationFailures()) {
-			logger.warn(err);
-		}
+//		TODO no longer available
+//		for (String err : healthResponse.getValidationFailures()) {
+//			logger.warn(err);
+//		}
 	}
 
 	protected Function<? super String, ? extends SpatialContext> createSpatialContextMapper(
@@ -299,7 +302,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 								analyzer).endObject().endObject().endObject().endObject().string();
 
 		doAcknowledgedRequest(client.admin().indices().prepareCreate(indexName).setSettings(
-				Settings.settingsBuilder().loadFromSource(settings)));
+				Settings.builder().loadFromSource(settings)));
 
 		// use _source instead of explicit stored = true
 		XContentBuilder typeMapping = XContentFactory.jsonBuilder();
@@ -547,22 +550,24 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		QueryBuilder qb = prepareQuery(propertyURI, QueryBuilders.queryStringQuery(query));
 		SearchRequestBuilder request = client.prepareSearch();
 		if (highlight) {
+			HighlightBuilder hb = new HighlightBuilder();
 			String field;
 			if(propertyURI != null) {
 				field = toPropertyFieldName(SearchFields.getPropertyField(propertyURI));
 			} else {
 				field = ALL_PROPERTY_FIELDS;
-				request.setHighlighterRequireFieldMatch(false);
+				hb.requireFieldMatch(false);
 			}
-			request.addHighlightedField(field);
-			request.setHighlighterPreTags(SearchFields.HIGHLIGHTER_PRE_TAG);
-			request.setHighlighterPostTags(SearchFields.HIGHLIGHTER_POST_TAG);
+			hb.field(field);
+			hb.preTags(SearchFields.HIGHLIGHTER_PRE_TAG);
+			hb.postTags(SearchFields.HIGHLIGHTER_POST_TAG);
 			// Elastic Search doesn't really have the same support for fragments as
 			// Lucene.
 			// So, we have to get back the whole highlighted value (comma-separated
 			// if it is a list)
 			// and then post-process it into fragments ourselves.
-			request.setHighlighterNumOfFragments(0);
+			hb.numOfFragments(0);
+			request.highlighter(hb);
 		}
 
 		SearchHits hits;
@@ -639,8 +644,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		double lon = p.getX();
 		final String fieldName = toGeoPointFieldName(SearchFields.getPropertyField(geoProperty));
 		QueryBuilder qb = QueryBuilders.functionScoreQuery(
-				QueryBuilders.geoDistanceQuery(fieldName).lat(lat).lon(lon).distance(unitDist, unit),
-				ScoreFunctionBuilders.linearDecayFunction(fieldName, GeoHashUtils.stringEncode(lon, lat),
+				QueryBuilders.geoDistanceQuery(fieldName).point(lat, lon).distance(unitDist, unit),
+				ScoreFunctionBuilders.linearDecayFunction(fieldName, GeohashUtils.encodeLatLon(lat, lon),
 						new DistanceUnit.Distance(unitDist, unit)));
 		if (contextVar != null) {
 			qb = addContextTerm(qb, (Resource)contextVar.getValue());
@@ -648,12 +653,12 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 		SearchRequestBuilder request = client.prepareSearch();
 		SearchHits hits = search(request, qb);
-		final FixedSourceDistance srcDistance = GeoDistance.DEFAULT.fixedSourceDistance(lat, lon, unit);
+		final GeoPoint srcPoint = new GeoPoint(lat, lon);
 		return Iterables.transform(hits, new Function<SearchHit, DocumentDistance>() {
 
 			@Override
 			public DocumentDistance apply(SearchHit hit) {
-				return new ElasticsearchDocumentDistance(hit, geoContextMapper, fieldName, units, srcDistance,
+				return new ElasticsearchDocumentDistance(hit, geoContextMapper, fieldName, units, srcPoint,
 						unit);
 			}
 		});
@@ -686,14 +691,15 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		}
 		final String fieldName = toGeoShapeFieldName(SearchFields.getPropertyField(geoProperty));
 		GeoShapeQueryBuilder fb = QueryBuilders.geoShapeQuery(fieldName,
-				ElasticsearchSpatialSupport.getSpatialSupport().toShapeBuilder(shape), spatialOp);
+				ElasticsearchSpatialSupport.getSpatialSupport().toShapeBuilder(shape));
+		fb.relation(spatialOp);
 		QueryBuilder qb = QueryBuilders.matchAllQuery();
 		if (contextVar != null) {
 			qb = addContextTerm(qb, (Resource)contextVar.getValue());
 		}
 
 		SearchRequestBuilder request = client.prepareSearch();
-		SearchHits hits = search(request, QueryBuilders.filteredQuery(qb, fb));
+		SearchHits hits = search(request, QueryBuilders.boolQuery().must(qb).filter(fb));
 		return Iterables.transform(hits, new Function<SearchHit, DocumentResult>() {
 
 			@Override
@@ -726,8 +732,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 			nDocs = maxDocs;
 		}
 		else {
-			long docCount = client.prepareCount(indexName).setTypes(types).setQuery(
-					query).execute().actionGet().getCount();
+			long docCount = client.prepareSearch(indexName).setTypes(types).setSource(
+					new SearchSourceBuilder().size(0).query(query)).get().getHits().getTotalHits();
 			nDocs = Math.max((int)Math.min(docCount, Integer.MAX_VALUE), 1);
 		}
 		SearchResponse response = request.setIndices(indexName).setTypes(types).setVersion(true).setQuery(
@@ -816,10 +822,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 			// }
 
 			// now delete all documents from the deleted context
-			new DeleteByQueryRequestBuilder(client, DeleteByQueryAction.INSTANCE).setIndices(
-					indexName).setQuery(
-							QueryBuilders.termQuery(
-					SearchFields.CONTEXT_FIELD_NAME, contextString)).execute().actionGet();
+			DeleteByQueryAction.INSTANCE.newRequestBuilder(client).source(indexName).filter(
+					QueryBuilders.termQuery(SearchFields.CONTEXT_FIELD_NAME, contextString)).get();
 		}
 
 		// now add those again, that had other contexts also.
@@ -892,7 +896,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		throws IOException
 	{
 		IndexResponse response = request.execute().actionGet();
-		boolean ok = response.isCreated();
+		boolean ok = response.status().equals(RestStatus.CREATED);
 		if (!ok) {
 			throw new IOException("Document not created: " + request.get().getClass().getName());
 		}
@@ -903,7 +907,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		throws IOException
 	{
 		UpdateResponse response = request.execute().actionGet();
-		boolean isUpsert = response.isCreated();
+		boolean isUpsert = response.status().equals(RestStatus.CREATED);
 		if (isUpsert) {
 			throw new IOException("Unexpected upsert: " + request.get().getClass().getName());
 		}

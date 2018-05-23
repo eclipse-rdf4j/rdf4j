@@ -105,6 +105,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 	private final SearchIndex luceneIndex;
 
+	@SuppressWarnings("unused")
 	private final AbstractFederatedServiceResolver tupleFunctionServiceResolver;
 
 	private final LuceneSail sail;

@@ -13,10 +13,10 @@
 	<name>RDF4J Elasticsearch Sail Tests</name>
 	<description>Tests for Elasticsearch.</description>
 
-    <properties>
-        <lucene.version>5.5.4</lucene.version>
-        <elasticsearch.version>2.4.6</elasticsearch.version>
-    </properties>
+	<properties>
+		<lucene.version>6.6.4</lucene.version>
+		<elasticsearch.version>5.6.9</elasticsearch.version>
+	</properties>
 
 	<dependencies>
 		<dependency>
@@ -31,12 +31,11 @@
 		    <version>${lucene.version}</version>
 		    <scope>test</scope>
 		</dependency>
-  		<dependency>
-            <groupId>org.elasticsearch</groupId>
-            <artifactId>elasticsearch</artifactId>
-            <version>${elasticsearch.version}</version>
+		<dependency>
+			<groupId>org.elasticsearch.test</groupId>
+			<artifactId>framework</artifactId>
+			<version>${elasticsearch.version}</version>
 			<scope>test</scope>
-			<type>test-jar</type>
 		</dependency>
 		<dependency>
 			<groupId>org.hamcrest</groupId>

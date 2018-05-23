@@ -41,18 +41,18 @@ import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.lucene.SearchQuery;
 import org.eclipse.rdf4j.sail.lucene.util.GeoUnits;
+import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.context.SpatialContextFactory;
+import org.locationtech.spatial4j.shape.Point;
+import org.locationtech.spatial4j.shape.Rectangle;
+import org.locationtech.spatial4j.shape.Shape;
+import org.locationtech.spatial4j.shape.SpatialRelation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
 import com.google.common.collect.Iterables;
-import com.spatial4j.core.context.SpatialContext;
-import com.spatial4j.core.context.SpatialContextFactory;
-import com.spatial4j.core.shape.Point;
-import com.spatial4j.core.shape.Rectangle;
-import com.spatial4j.core.shape.Shape;
-import com.spatial4j.core.shape.SpatialRelation;
 
 /**
  * @see LuceneSail
@@ -185,7 +185,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	{
 		SolrDocument document = ((SolrSearchDocument)doc).getDocument();
 		try {
-			client.add(ClientUtils.toSolrInputDocument(document));
+			client.add(SolrUtil.toSolrInputDocument(document));
 		}
 		catch (SolrServerException e) {
 			throw new IOException(e);
@@ -597,6 +597,11 @@ public class SolrIndex extends AbstractSearchIndex {
 		@Override
 		public boolean equals(Object other) {
 			return s.equals(other);
+		}
+
+		@Override
+		public SpatialContext getContext() {
+			return s.getContext();
 		}
 	}
 

@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
+import java.util.Arrays;
 import java.util.Collection;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -15,7 +16,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailIndexedPropertiesTest;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.plugin.deletebyquery.DeleteByQueryPlugin;
+import org.elasticsearch.index.reindex.ReindexPlugin;
 import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.test.ESIntegTestCase;
 import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
@@ -55,8 +56,13 @@ public class ElasticsearchSailIndexedPropertiesTest extends ESIntegTestCase {
 	}
 
 	@Override
+	protected Collection<Class<? extends Plugin>> transportClientPlugins() {
+		return Arrays.asList(ReindexPlugin.class);
+	}
+
+	@Override
 	protected Collection<Class<? extends Plugin>> nodePlugins() {
-		return pluginList(DeleteByQueryPlugin.class);
+		return Arrays.asList(ReindexPlugin.class);
 	}
 
 	@After

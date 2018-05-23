@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.elasticsearch;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -30,10 +31,11 @@ import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.plugin.deletebyquery.DeleteByQueryPlugin;
+import org.elasticsearch.index.reindex.ReindexPlugin;
 import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.test.ESIntegTestCase;
 import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
 import org.elasticsearch.test.ESIntegTestCase.SuppressLocalMode;
@@ -101,7 +103,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		throws Exception
 	{
 		super.setUp();
-		client = (TransportClient) internalCluster().transportClient();
+		client = (TransportClient)internalCluster().transportClient();
 
 		Properties sailProperties = new Properties();
 		sailProperties.put(ElasticsearchIndex.TRANSPORT_KEY, client.transportAddresses().get(0).toString());
@@ -115,8 +117,13 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 	}
 
 	@Override
+	protected Collection<Class<? extends Plugin>> transportClientPlugins() {
+		return Arrays.asList(ReindexPlugin.class);
+	}
+
+	@Override
 	protected Collection<Class<? extends Plugin>> nodePlugins() {
-		return pluginList(DeleteByQueryPlugin.class);
+		return Arrays.asList(ReindexPlugin.class);
 	}
 
 	@After
@@ -135,8 +142,10 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 	public void testAddStatement()
 		throws IOException
 	{
-		String predicate1Field = ElasticsearchIndex.toPropertyFieldName(SearchFields.getPropertyField(predicate1));
-		String predicate2Field = ElasticsearchIndex.toPropertyFieldName(SearchFields.getPropertyField(predicate2));
+		String predicate1Field = ElasticsearchIndex.toPropertyFieldName(
+				SearchFields.getPropertyField(predicate1));
+		String predicate2Field = ElasticsearchIndex.toPropertyFieldName(
+				SearchFields.getPropertyField(predicate2));
 
 		// add a statement to an index
 		index.begin();
@@ -144,8 +153,8 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		index.commit();
 
 		// check that it arrived properly
-		long count = client.prepareCount(index.getIndexName()).setTypes(
-				index.getTypes()).execute().actionGet().getCount();
+		long count = client.prepareSearch(index.getIndexName()).setTypes(
+				index.getTypes()).get().getHits().getTotalHits();
 		assertEquals(1, count);
 
 		SearchHits hits = client.prepareSearch(index.getIndexName()).setTypes(index.getTypes()).setQuery(
@@ -170,8 +179,8 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		// See if everything remains consistent. We must create a new
 		// IndexReader
 		// in order to be able to see the updates
-		count = client.prepareCount(index.getIndexName()).setTypes(
-				index.getTypes()).execute().actionGet().getCount();
+		count = client.prepareSearch(index.getIndexName()).setTypes(
+				index.getTypes()).get().getHits().getTotalHits();
 		assertEquals(1, count); // #docs should *not* have increased
 
 		hits = client.prepareSearch(index.getIndexName()).setTypes(index.getTypes()).setQuery(
@@ -190,12 +199,14 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		assertFalse(docs.hasNext());
 
 		// see if we can query for these literals
-		count = client.prepareCount(index.getIndexName()).setTypes(index.getTypes()).setQuery(
-				QueryBuilders.queryStringQuery(object1.getLabel())).execute().actionGet().getCount();
+		count = client.prepareSearch(index.getIndexName()).setTypes(index.getTypes()).setSource(
+				new SearchSourceBuilder().size(0).query(
+						QueryBuilders.queryStringQuery(object1.getLabel()))).get().getHits().getTotalHits();
 		assertEquals(1, count);
 
-		count = client.prepareCount(index.getIndexName()).setTypes(index.getTypes()).setQuery(
-				QueryBuilders.queryStringQuery(object2.getLabel())).execute().actionGet().getCount();
+		count = client.prepareSearch(index.getIndexName()).setTypes(index.getTypes()).setSource(
+				new SearchSourceBuilder().size(0).query(
+						QueryBuilders.queryStringQuery(object2.getLabel()))).get().getHits().getTotalHits();
 		assertEquals(1, count);
 
 		// remove the first statement
@@ -206,8 +217,9 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		// check that that statement is actually removed and that the other
 		// still
 		// exists
-		count = client.prepareCount(index.getIndexName()).setTypes(
-				index.getTypes()).execute().actionGet().getCount();
+
+		count = client.prepareSearch(index.getIndexName()).setTypes(
+				index.getTypes()).get().getHits().getTotalHits();
 		assertEquals(1, count);
 
 		hits = client.prepareSearch(index.getIndexName()).setTypes(index.getTypes()).setQuery(
@@ -232,8 +244,9 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 		// check that there are no documents left (i.e. the last Document was
 		// removed completely, rather than its remaining triple removed)
-		count = client.prepareCount(index.getIndexName()).setTypes(
-				index.getTypes()).execute().actionGet().getCount();
+
+		count = client.prepareSearch(index.getIndexName()).setTypes(
+				index.getTypes()).get().getHits().getTotalHits();
 		assertEquals(0, count);
 	}
 
@@ -253,8 +266,9 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		index.commit();
 
 		// check that it arrived properly
-		long count = client.prepareCount(index.getIndexName()).setTypes(
-				index.getTypes()).execute().actionGet().getCount();
+
+		long count = client.prepareSearch(index.getIndexName()).setTypes(
+				index.getTypes()).get().getHits().getTotalHits();
 		assertEquals(2, count);
 
 		// check the documents

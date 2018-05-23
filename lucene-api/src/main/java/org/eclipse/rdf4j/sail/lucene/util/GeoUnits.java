@@ -9,8 +9,8 @@ package org.eclipse.rdf4j.sail.lucene.util;
 
 import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
+import org.locationtech.spatial4j.distance.DistanceUtils;
 
-import com.spatial4j.core.distance.DistanceUtils;
 
 public final class GeoUnits {
 
