@@ -18,8 +18,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -526,7 +526,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 */
 	@Override
 	@Deprecated
-	protected SearchQuery parseQuery(String query, URI propertyURI)
+	protected SearchQuery parseQuery(String query, IRI propertyURI)
 		throws MalformedQueryException
 	{
 		QueryBuilder qb = prepareQuery(propertyURI, QueryBuilders.queryStringQuery(query));
@@ -543,7 +543,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 *         when the parsing brakes
 	 */
 	@Override
-	protected Iterable<? extends DocumentScore> query(Resource subject, String query, URI propertyURI,
+	protected Iterable<? extends DocumentScore> query(Resource subject, String query, IRI propertyURI,
 			boolean highlight)
 		throws MalformedQueryException, IOException
 	{
@@ -614,7 +614,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentDistance> geoQuery(final URI geoProperty, Point p, final URI units,
+	protected Iterable<? extends DocumentDistance> geoQuery(final IRI geoProperty, Point p, final IRI units,
 			double distance, String distanceVar, Var contextVar)
 		throws MalformedQueryException, IOException
 	{
@@ -681,7 +681,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, URI geoProperty,
+	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty,
 			Shape shape, Var contextVar)
 		throws MalformedQueryException, IOException
 	{
@@ -741,7 +741,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		return response.getHits();
 	}
 
-	private QueryStringQueryBuilder prepareQuery(URI propertyURI, QueryStringQueryBuilder query) {
+	private QueryStringQueryBuilder prepareQuery(IRI propertyURI, QueryStringQueryBuilder query) {
 		// check out which query parser to use, based on the given property URI
 		if (propertyURI == null)
 			// if we have no property given, we create a default query parser which

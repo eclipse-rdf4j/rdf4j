@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.lucene.search.ScoreDoc;
-import org.eclipse.rdf4j.model.URI;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.lucene.util.GeoUnits;
 import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Shape;
@@ -23,7 +23,7 @@ public class LuceneDocumentDistance extends LuceneDocumentResult implements Docu
 
 	private final String geoProperty;
 
-	private final URI units;
+	private final IRI units;
 
 	private final Point origin;
 
@@ -35,7 +35,7 @@ public class LuceneDocumentDistance extends LuceneDocumentResult implements Docu
 		return fields;
 	}
 
-	public LuceneDocumentDistance(ScoreDoc doc, String geoProperty, URI units, Point origin,
+	public LuceneDocumentDistance(ScoreDoc doc, String geoProperty, IRI units, Point origin,
 			boolean includeContext, LuceneIndex index)
 	{
 		super(doc, index, requiredFields(geoProperty, includeContext));

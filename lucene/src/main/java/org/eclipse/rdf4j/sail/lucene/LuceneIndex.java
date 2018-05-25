@@ -72,8 +72,8 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.RAMDirectory;
 import org.apache.lucene.util.Bits;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -756,7 +756,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 */
 	@Override
 	@Deprecated
-	protected SearchQuery parseQuery(String query, URI propertyURI)
+	protected SearchQuery parseQuery(String query, IRI propertyURI)
 		throws MalformedQueryException
 	{
 		Query q;
@@ -779,7 +779,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 *         when the parsing brakes
 	 */
 	@Override
-	protected Iterable<? extends DocumentScore> query(Resource subject, String query, URI propertyURI,
+	protected Iterable<? extends DocumentScore> query(Resource subject, String query, IRI propertyURI,
 			boolean highlight)
 		throws MalformedQueryException, IOException
 	{
@@ -818,7 +818,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentDistance> geoQuery(final URI geoProperty, Point p, final URI units,
+	protected Iterable<? extends DocumentDistance> geoQuery(final IRI geoProperty, Point p, final IRI units,
 			double distance, String distanceVar, Var contextVar)
 		throws MalformedQueryException, IOException
 	{
@@ -855,7 +855,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, URI geoProperty,
+	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty,
 			Shape shape, Var contextVar)
 		throws MalformedQueryException, IOException
 	{
@@ -988,7 +988,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		return getIndexSearcher().search(query, nDocs);
 	}
 
-	private QueryParser getQueryParser(URI propertyURI) {
+	private QueryParser getQueryParser(IRI propertyURI) {
 		// check out which query parser to use, based on the given property URI
 		if (propertyURI == null)
 			// if we have no property given, we create a default query parser

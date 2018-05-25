@@ -7,7 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
-import org.eclipse.rdf4j.model.URI;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
 import org.elasticsearch.common.geo.GeoDistance;
@@ -23,7 +24,7 @@ public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult i
 
 	private final String geoPointField;
 
-	private final URI units;
+	private final IRI units;
 
 	private final GeoPoint srcPoint;
 
@@ -31,7 +32,7 @@ public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult i
 
 	public ElasticsearchDocumentDistance(SearchHit hit,
 			Function<? super String, ? extends SpatialContext> geoContextMapper, String geoPointField,
-			URI units, GeoPoint srcPoint, DistanceUnit unit)
+			IRI units, GeoPoint srcPoint, DistanceUnit unit)
 	{
 		super(hit, geoContextMapper);
 		this.geoPointField = geoPointField;

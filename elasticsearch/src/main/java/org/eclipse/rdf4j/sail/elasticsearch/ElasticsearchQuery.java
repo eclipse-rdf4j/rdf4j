@@ -9,8 +9,8 @@ package org.eclipse.rdf4j.sail.elasticsearch;
 
 import java.io.IOException;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.sail.lucene.DocumentScore;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.lucene.SearchQuery;
@@ -65,7 +65,7 @@ public class ElasticsearchQuery implements SearchQuery {
 	 * Highlights the given field or all fields if null.
 	 */
 	@Override
-	public void highlight(URI property) {
+	public void highlight(IRI property) {
 		String field = (property != null)
 				? ElasticsearchIndex.toPropertyFieldName(SearchFields.getPropertyField(property)) : ElasticsearchIndex.ALL_PROPERTY_FIELDS;
 		HighlightBuilder hb = new HighlightBuilder();

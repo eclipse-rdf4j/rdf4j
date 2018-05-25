@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -874,18 +873,18 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	 * To be removed.
 	 */
 	@Deprecated
-	protected abstract SearchQuery parseQuery(String q, URI property)
+	protected abstract SearchQuery parseQuery(String q, IRI property)
 		throws MalformedQueryException;
 
-	protected abstract Iterable<? extends DocumentScore> query(Resource subject, String q, URI property,
+	protected abstract Iterable<? extends DocumentScore> query(Resource subject, String q, IRI property,
 			boolean highlight)
 		throws MalformedQueryException, IOException;
 
-	protected abstract Iterable<? extends DocumentDistance> geoQuery(URI geoProperty, Point p, URI units,
+	protected abstract Iterable<? extends DocumentDistance> geoQuery(IRI geoProperty, Point p, IRI units,
 			double distance, String distanceVar, Var context)
 		throws MalformedQueryException, IOException;
 
-	protected abstract Iterable<? extends DocumentResult> geoRelationQuery(String relation, URI geoProperty,
+	protected abstract Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty,
 			Shape shape, Var context)
 		throws MalformedQueryException, IOException;
 

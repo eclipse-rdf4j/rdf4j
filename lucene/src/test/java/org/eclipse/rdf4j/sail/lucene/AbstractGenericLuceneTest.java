@@ -90,7 +90,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	public static final IRI PREDICATE_3 = vf.createIRI("urn:predicate3");
 
-	private static final Logger LOG = LoggerFactory.getLogger(AbstractGenericLuceneTest.class);
+	static final Logger LOG = LoggerFactory.getLogger(AbstractGenericLuceneTest.class);
 
 	protected LuceneSail sail;
 
