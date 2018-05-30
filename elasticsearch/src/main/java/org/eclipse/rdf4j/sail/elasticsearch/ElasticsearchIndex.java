@@ -130,8 +130,19 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 * Set the parameter "waitForRelocatingShards=" to configure if {@link #initialize(java.util.Properties)
 	 * initialization} should wait until the specified number of nodes are relocating. Does not wait by
 	 * default.
+	 * 
+	 * @deprecated use {@link #WAIT_FOR_NO_RELOCATING_SHARDS_KEY} in elastic search >= 5.x
 	 */
+	@Deprecated
 	public static final String WAIT_FOR_RELOCATING_SHARDS_KEY = "waitForRelocatingShards";
+
+	/**
+	 * Set the parameter "waitForNoRelocatingShards=true|false" to configure if
+	 * {@link #initialize(java.util.Properties) initialization} should wait until the are no relocating
+	 * shards. Defaults to false, meaning the operation does not wait on there being no more relocating
+	 * shards. Set to true to wait until the number of relocating shards in the cluster is 0.
+	 */
+	public static final String WAIT_FOR_NO_RELOCATING_SHARDS_KEY = "waitForNoRelocatingShards";
 
 	public static final String DEFAULT_INDEX_NAME = "elastic-search-sail";
 
@@ -182,6 +193,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		return new String[] { documentType };
 	}
 
+	@SuppressWarnings("unchecked")
 	@Override
 	public void initialize(Properties parameters)
 		throws Exception
@@ -254,8 +266,12 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		}
 		String waitForRelocatingShards = parameters.getProperty(WAIT_FOR_RELOCATING_SHARDS_KEY);
 		if (waitForRelocatingShards != null) {
-			// TODO no longer available
-//			healthReqBuilder.setWaitForRelocatingShards(Integer.parseInt(waitForRelocatingShards));
+			logger.warn("Property " + WAIT_FOR_RELOCATING_SHARDS_KEY + " no longer supported. Use "
+					+ WAIT_FOR_NO_RELOCATING_SHARDS_KEY + " instead");
+		}
+		String waitForNoRelocatingShards = parameters.getProperty(WAIT_FOR_NO_RELOCATING_SHARDS_KEY);
+		if (waitForNoRelocatingShards != null) {
+			healthReqBuilder.setWaitForNoRelocatingShards(Boolean.parseBoolean(waitForNoRelocatingShards));
 		}
 		ClusterHealthResponse healthResponse = healthReqBuilder.execute().actionGet();
 		logger.info("Cluster health: {}", healthResponse.getStatus());
@@ -268,10 +284,6 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 				indexHealth.getNumberOfShards(), indexHealth.getActiveShards(),
 				indexHealth.getActivePrimaryShards(), indexHealth.getInitializingShards(),
 				indexHealth.getUnassignedShards(), indexHealth.getRelocatingShards());
-//		TODO no longer available
-//		for (String err : healthResponse.getValidationFailures()) {
-//			logger.warn(err);
-//		}
 	}
 
 	protected Function<? super String, ? extends SpatialContext> createSpatialContextMapper(
