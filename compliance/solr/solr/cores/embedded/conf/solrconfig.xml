@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <config>
-	<luceneMatchVersion>5.0.0</luceneMatchVersion>
+	<luceneMatchVersion>7.2.1</luceneMatchVersion>
 
 	<dataDir>target/test-data</dataDir>
 

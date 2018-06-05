@@ -20,13 +20,11 @@ import org.elasticsearch.index.reindex.ReindexPlugin;
 import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.test.ESIntegTestCase;
 import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
-import org.elasticsearch.test.ESIntegTestCase.SuppressLocalMode;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 @ClusterScope(numDataNodes = 1)
-@SuppressLocalMode
 public class ElasticsearchSailIndexedPropertiesTest extends ESIntegTestCase {
 
 	AbstractLuceneSailIndexedPropertiesTest delegateTest;
