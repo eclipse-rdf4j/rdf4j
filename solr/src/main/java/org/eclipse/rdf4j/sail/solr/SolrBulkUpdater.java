@@ -13,7 +13,6 @@ import java.util.List;
 
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
-import org.apache.solr.client.solrj.util.ClientUtils;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrInputDocument;
 import org.eclipse.rdf4j.sail.lucene.BulkUpdater;
@@ -36,7 +35,7 @@ public class SolrBulkUpdater implements BulkUpdater {
 		throws IOException
 	{
 		SolrDocument document = ((SolrSearchDocument)doc).getDocument();
-		addOrUpdateList.add(ClientUtils.toSolrInputDocument(document));
+		addOrUpdateList.add(SolrUtil.toSolrInputDocument(document));
 	}
 
 	@Override

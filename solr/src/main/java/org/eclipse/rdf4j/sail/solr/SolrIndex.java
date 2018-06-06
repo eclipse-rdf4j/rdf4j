@@ -20,13 +20,12 @@ import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
-import org.apache.solr.client.solrj.util.ClientUtils;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.params.SpatialParams;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -41,18 +40,18 @@ import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.lucene.SearchQuery;
 import org.eclipse.rdf4j.sail.lucene.util.GeoUnits;
+import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.context.SpatialContextFactory;
+import org.locationtech.spatial4j.shape.Point;
+import org.locationtech.spatial4j.shape.Rectangle;
+import org.locationtech.spatial4j.shape.Shape;
+import org.locationtech.spatial4j.shape.SpatialRelation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
 import com.google.common.collect.Iterables;
-import com.spatial4j.core.context.SpatialContext;
-import com.spatial4j.core.context.SpatialContextFactory;
-import com.spatial4j.core.shape.Point;
-import com.spatial4j.core.shape.Rectangle;
-import com.spatial4j.core.shape.Shape;
-import com.spatial4j.core.shape.SpatialRelation;
 
 /**
  * @see LuceneSail
@@ -185,7 +184,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	{
 		SolrDocument document = ((SolrSearchDocument)doc).getDocument();
 		try {
-			client.add(ClientUtils.toSolrInputDocument(document));
+			client.add(SolrUtil.toSolrInputDocument(document));
 		}
 		catch (SolrServerException e) {
 			throw new IOException(e);
@@ -323,7 +322,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	 */
 	@Override
 	@Deprecated
-	protected SearchQuery parseQuery(String query, URI propertyURI)
+	protected SearchQuery parseQuery(String query, IRI propertyURI)
 		throws MalformedQueryException
 	{
 		SolrQuery q = prepareQuery(propertyURI, new SolrQuery(query));
@@ -340,7 +339,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	 *         when the parsing brakes
 	 */
 	@Override
-	protected Iterable<? extends DocumentScore> query(Resource subject, String query, URI propertyURI,
+	protected Iterable<? extends DocumentScore> query(Resource subject, String query, IRI propertyURI,
 			boolean highlight)
 		throws MalformedQueryException, IOException
 	{
@@ -418,7 +417,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentDistance> geoQuery(URI geoProperty, Point p, final URI units,
+	protected Iterable<? extends DocumentDistance> geoQuery(IRI geoProperty, Point p, final IRI units,
 			double distance, String distanceVar, Var contextVar)
 		throws MalformedQueryException, IOException
 	{
@@ -471,7 +470,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, URI geoProperty,
+	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty,
 			Shape shape, Var contextVar)
 		throws MalformedQueryException, IOException
 	{
@@ -598,6 +597,11 @@ public class SolrIndex extends AbstractSearchIndex {
 		public boolean equals(Object other) {
 			return s.equals(other);
 		}
+
+		@Override
+		public SpatialContext getContext() {
+			return s.getContext();
+		}
 	}
 
 	private static class WktPoint extends WktShape<Point> implements Point {
@@ -642,7 +646,7 @@ public class SolrIndex extends AbstractSearchIndex {
 		return client.query(query.setRows(nDocs));
 	}
 
-	private SolrQuery prepareQuery(URI propertyURI, SolrQuery query) {
+	private SolrQuery prepareQuery(IRI propertyURI, SolrQuery query) {
 		// check out which query parser to use, based on the given property URI
 		if (propertyURI == null)
 			// if we have no property given, we create a default query parser which

@@ -16,16 +16,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.lucene.spatial.util.GeoHashUtils;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
+import org.elasticsearch.common.geo.GeoHashUtils;
 import org.elasticsearch.common.lucene.uid.Versions;
 import org.elasticsearch.search.SearchHit;
+import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.shape.Point;
+import org.locationtech.spatial4j.shape.Shape;
 
 import com.google.common.base.Function;
-import com.spatial4j.core.context.SpatialContext;
-import com.spatial4j.core.shape.Point;
-import com.spatial4j.core.shape.Shape;
 
 public class ElasticsearchDocument implements SearchDocument {
 

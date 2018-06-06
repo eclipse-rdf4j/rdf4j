@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -36,15 +35,15 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lucene.util.MapOfListMaps;
+import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.shape.Point;
+import org.locationtech.spatial4j.shape.Shape;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.SetMultimap;
 import com.google.common.collect.Sets;
-import com.spatial4j.core.context.SpatialContext;
-import com.spatial4j.core.shape.Point;
-import com.spatial4j.core.shape.Shape;
 
 public abstract class AbstractSearchIndex implements SearchIndex {
 
@@ -874,18 +873,18 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	 * To be removed.
 	 */
 	@Deprecated
-	protected abstract SearchQuery parseQuery(String q, URI property)
+	protected abstract SearchQuery parseQuery(String q, IRI property)
 		throws MalformedQueryException;
 
-	protected abstract Iterable<? extends DocumentScore> query(Resource subject, String q, URI property,
+	protected abstract Iterable<? extends DocumentScore> query(Resource subject, String q, IRI property,
 			boolean highlight)
 		throws MalformedQueryException, IOException;
 
-	protected abstract Iterable<? extends DocumentDistance> geoQuery(URI geoProperty, Point p, URI units,
+	protected abstract Iterable<? extends DocumentDistance> geoQuery(IRI geoProperty, Point p, IRI units,
 			double distance, String distanceVar, Var context)
 		throws MalformedQueryException, IOException;
 
-	protected abstract Iterable<? extends DocumentResult> geoRelationQuery(String relation, URI geoProperty,
+	protected abstract Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty,
 			Shape shape, Var context)
 		throws MalformedQueryException, IOException;
 
