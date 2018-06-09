@@ -7,10 +7,8 @@ Before you dive in, here are some things you need to know.
 
 - [Legal stuff](#legal-stuff)
 - [Creating your contribution](#creating-your-contribution)
-- [Workflow](#workflow) 
- - [Releases](#releases)
-  - [Release branches](#release-branches)
 - [Code formatting](#code-formatting)
+- [Workflow](#workflow) 
 	
 ## Legal stuff
 
@@ -54,50 +52,6 @@ into the `master` branch, to be included in the next minor or major release. If
 your contribution is a bug fix in an existing release, we will also schedule it
 for inclusion in a patch release.
 
-## Workflow
-
-The short-short version for contributors: work from the `master` branch. 
-
-The more complete version: RDF4J uses a git branching model where feature
-development takes place on branches from the `master` branch. This is where all
-development for the next (minor or major) release happens.
-
-Every issue, no matter how small, gets its own branch while under development.
-Issue branch names are always prefixed with `issues/`, followed by the issue
-number in the [GitHub issue tracker](https://github.com/eclipse/rdf4j/issues),
-followed by one or two dash-separated keywords for the issue. 
-
-For example: `issues/#276-rdfxml-sax` is the branch for a fix for
-GitHub issue #276, which has to do with RDF/XML and the SAX parser.
-
-Once a feature/fix is complete, tested, and reviewed (via a Pull Request), it
-is merged into master, and the issue branch is closed.
-
-### Releases
-
-RDF4J is on an 8-week release cycle for minor and major releases. See the [Milestone overview](https://github.com/eclipse/rdf4j/milestones) in the [issue tracker](https://github.com/eclipse/rdf4j/issues) for an overview of planned releases.
-
-In order to guarantee stability of the release and to ensure we have enough
-time to complete release review, we use a feature cutoff date. This date is
-typically three weeks before the release date. The feature cutoff date does not
-mean that each feature needs to be complete, but it does mean that we ask every
-contributor to make a commitment to have their feature complete and stable in
-time for final review and release. If a contributor cannot make that
-commitment, the feature is not included in the release and is simply
-"postponed" to the next release cycle.
-
-We occasionally also schedule *patch releases*, which only include (backward
-compatible) bug fixes. These releases are typically planned on short notice and
-can be done without much in the way of formal review.
-
-#### Release branches
-
-A few days before release of a minor or major version, we create a *release
-branch* from the current head of the master branch. The purpose of this release
-branch is to perform last-minute tweaks and little fixes. Once we are ready to
-release, the latest commit of the release branch is tagged with the version number, and
-the release branch is merged back to master, then closed.
-
 ## Code formatting
 
 RDF4J uses custom code formatting settings and a few code templates as well, and we expect every contributor to apply these settings before submitting a contribution.
@@ -126,7 +80,7 @@ principles:
 5. Make sure every new source file starts with the correct Eclipse copyright license header. The license header to use is:
 ```
 /*******************************************************************************
- * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -134,3 +88,9 @@ principles:
  *******************************************************************************/
  ```
  **NB** for older existing source code, RDF4J uses a slightly different copyright header, mentioning 'Aduna' as additional copyright holder . Please make sure you do not use that different header for any new contributions. 
+ 
+## Workflow 
+
+The short-short version for contributors: start from the `master` branch, and create a new, separeate branch for every bugfix, improvment, or new feature. 
+
+For more detailed information on how RDF4J manages git branches, versioning, releases, and planning, see [Developer Workflow and Project Management](http://docs.rdf4j.org/developer/#_developer_workflow_and_project_management).
