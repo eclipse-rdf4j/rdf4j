@@ -7,9 +7,9 @@
 		<version>2.4-SNAPSHOT</version>
 	</parent>
 
-	<artifactId>rdf4j-spanqit</artifactId>
+	<artifactId>rdf4j-sparqlbuilder</artifactId>
 
-	<name>RDF4J: Spanqit</name>
+	<name>RDF4J: SparqlBuilder</name>
 	<description>A fluent SPARQL query builder</description>
 
 	<dependencies>
