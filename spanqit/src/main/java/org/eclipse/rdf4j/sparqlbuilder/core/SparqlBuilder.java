@@ -16,9 +16,9 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 /**
  * A class to with static methods to create SPARQL query elements.
  */
-public class Spanqit {
+public class SparqlBuilder {
 	// prevent instantiation of this class
-	private Spanqit() { }
+	private SparqlBuilder() { }
 
 	/**
 	 * Create a SPARQL variable with a specific alias.

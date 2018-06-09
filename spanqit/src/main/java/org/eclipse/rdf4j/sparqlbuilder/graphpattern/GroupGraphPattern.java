@@ -12,7 +12,7 @@ import java.util.Optional;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElementCollection;
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * A SPARQL Group Graph Pattern
@@ -104,14 +104,14 @@ class GroupGraphPattern extends QueryElementCollection<GraphPattern> implements
 			pattern.append(OPTIONAL).append(" ");
 		}
 
-		SpanqitUtils.appendQueryElementIfPresent(from, pattern, GRAPH, " ");
+		SparqlBuilderUtils.appendQueryElementIfPresent(from, pattern, GRAPH, " ");
 		
 		innerPattern.append(super.getQueryString());
 
-		SpanqitUtils.appendQueryElementIfPresent(filter, innerPattern, "\n", null);
+		SparqlBuilderUtils.appendQueryElementIfPresent(filter, innerPattern, "\n", null);
 
 		if (bracketize) {
-			pattern.append(SpanqitUtils.getBracedString(innerPattern
+			pattern.append(SparqlBuilderUtils.getBracedString(innerPattern
 					.toString()));
 		} else {
 			pattern.append(innerPattern.toString());

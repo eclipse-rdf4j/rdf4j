@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
  */
 public class GraphTemplate implements QueryElement {
 	private static final String CONSTRUCT = "CONSTRUCT";
-	private TriplesTemplate triplesTemplate = Spanqit.triplesTemplate();
+	private TriplesTemplate triplesTemplate = SparqlBuilder.triplesTemplate();
 	
 	GraphTemplate() { }
 

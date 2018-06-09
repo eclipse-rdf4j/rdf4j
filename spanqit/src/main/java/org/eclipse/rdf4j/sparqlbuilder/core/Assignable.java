@@ -27,6 +27,6 @@ public interface Assignable extends QueryElement {
 	 * @return an Assignment object
 	 */
 	default public Assignment as(Variable var) {
-		return Spanqit.as(this, var);
+		return SparqlBuilder.as(this, var);
 	}
 }

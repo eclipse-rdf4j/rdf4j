@@ -15,7 +15,7 @@ import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
@@ -27,9 +27,9 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 public class Section3Test extends BaseExamples {
 	@Test
 	public void example_3_1() {
-		Prefix dc = Spanqit.prefix("dc", iri(DC_NS));
+		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS));
 		
-		Variable x = query.var(), title = Spanqit.var("title");
+		Variable x = query.var(), title = SparqlBuilder.var("title");
 		TriplePattern xTitle = GraphPatterns.tp(x, dc.iri("title"), title);
 		
 		Expression<?> regex = Expressions.regex(title, Rdf.literalOf("^SPARQL"));
@@ -44,10 +44,10 @@ public class Section3Test extends BaseExamples {
 
 	@Test
 	public void example_3_2() {
-		Prefix dc = Spanqit.prefix("dc", iri(DC_NS)),
-			   ns = Spanqit.prefix("ns", iri(EXAMPLE_COM_NS));
+		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS)),
+			   ns = SparqlBuilder.prefix("ns", iri(EXAMPLE_COM_NS));
 		
-		Variable title = Spanqit.var("title"), price = Spanqit
+		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder
 				.var("price");
 		Variable x = query.var();
 		Expression<?> priceConstraint = Expressions.lt(price, 30.5);

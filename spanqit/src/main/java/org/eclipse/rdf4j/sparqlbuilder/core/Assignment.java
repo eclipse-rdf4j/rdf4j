@@ -8,7 +8,7 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 
 package org.eclipse.rdf4j.sparqlbuilder.core;
 
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * A SPARQL expression-to-variable assignment
@@ -29,6 +29,6 @@ public class Assignment implements Projectable, Groupable {
 
 	@Override
 	public String getQueryString() {
-		return SpanqitUtils.getParenthesizedString(expression.getQueryString() + AS + var.getQueryString());
+		return SparqlBuilderUtils.getParenthesizedString(expression.getQueryString() + AS + var.getQueryString());
 	}
 }

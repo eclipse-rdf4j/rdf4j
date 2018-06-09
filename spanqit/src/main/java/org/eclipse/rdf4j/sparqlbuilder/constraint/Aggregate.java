@@ -8,7 +8,7 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint;
 
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * A SPARQL aggregate expression. 
@@ -113,6 +113,6 @@ public class Aggregate extends Expression<Aggregate> {
 				.append(" ").append("=").append(" ").append(separator);
 		}
 		
-		return aggregate.append(SpanqitUtils.getParenthesizedString(params.toString())).toString();
+		return aggregate.append(SparqlBuilderUtils.getParenthesizedString(params.toString())).toString();
 	}
 }

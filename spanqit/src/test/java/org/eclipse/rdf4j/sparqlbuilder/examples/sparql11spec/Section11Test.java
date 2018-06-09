@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Assignment;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
@@ -24,13 +24,13 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 public class Section11Test extends BaseExamples {
 	@Test
 	public void example_11_1() {
-		Prefix base = Spanqit.prefix(iri("http://books.example/"));
-		Variable lprice = Spanqit.var("lprice"), totalPrice = Spanqit.var("totalPrice");
+		Prefix base = SparqlBuilder.prefix(iri("http://books.example/"));
+		Variable lprice = SparqlBuilder.var("lprice"), totalPrice = SparqlBuilder.var("totalPrice");
 
 		Expression<?> sum = Expressions.sum(lprice);
-		Assignment sumAsTotal = Spanqit.as(sum, totalPrice);
+		Assignment sumAsTotal = SparqlBuilder.as(sum, totalPrice);
 
-		Variable org = Spanqit.var("org"), auth = Spanqit.var("auth"), book = Spanqit.var("book");
+		Variable org = SparqlBuilder.var("org"), auth = SparqlBuilder.var("auth"), book = SparqlBuilder.var("book");
 
 		query.prefix(base).select(sumAsTotal).where(org.has(base.iri("affiliates"), auth),
 				auth.has(base.iri("writesBook"), book), book.has(base.iri("price"), lprice)).groupBy(org)
@@ -40,18 +40,18 @@ public class Section11Test extends BaseExamples {
 
 	@Test
 	public void example_11_2() {
-		Prefix base = Spanqit.prefix(null);
+		Prefix base = SparqlBuilder.prefix(null);
 		Variable y = query.var(), avg = query.var(), a = query.var(), x = query.var();
 
-		query.select(Spanqit.as(Expressions.avg(y), avg)).where(a.has(base.iri("x"), x).andHas(base.iri("y"), y))
+		query.select(SparqlBuilder.as(Expressions.avg(y), avg)).where(a.has(base.iri("x"), x).andHas(base.iri("y"), y))
 				.groupBy(x);
 		p();
 	}
 
 	@Test
 	public void example_11_3() {
-		Prefix base = Spanqit.prefix(iri("http://data.example/"));
-		Variable size = Spanqit.var("size"), asize = Spanqit.var("asize"), x = query.var();
+		Prefix base = SparqlBuilder.prefix(iri("http://data.example/"));
+		Variable size = SparqlBuilder.var("size"), asize = SparqlBuilder.var("asize"), x = query.var();
 		Expression<?> avgSize = Expressions.avg(size);
 
 		query.prefix(base).select(avgSize.as(asize)).where(x.has(base.iri("size"), size)).groupBy(x)
@@ -61,7 +61,7 @@ public class Section11Test extends BaseExamples {
 
 	@Test
 	public void example_11_4() {
-		Prefix base = Spanqit.prefix(iri("http://example.com/data/#"));
+		Prefix base = SparqlBuilder.prefix(iri("http://example.com/data/#"));
 		Variable x = query.var(), y = query.var(), z = query.var(), min = query.var();
 		Expression<?> twiceMin = Expressions.multiply(Expressions.min(y), Rdf.literalOf(2));
 
@@ -72,7 +72,7 @@ public class Section11Test extends BaseExamples {
 
 	@Test
 	public void example_11_5() {
-		Prefix base = Spanqit.prefix(iri("http://example.com/data/#"));
+		Prefix base = SparqlBuilder.prefix(iri("http://example.com/data/#"));
 		Variable g = query.var(), p = query.var(), avg = query.var(), c = query.var();
 		Expression<?> midRange = Expressions.divide(
 		        Expressions.add(Expressions.min(p), Expressions.max(p)).parenthesize(),

@@ -11,7 +11,7 @@ package org.eclipse.rdf4j.sparqlbuilder.core.query;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * A SPARQL LOAD Query
@@ -63,7 +63,7 @@ public class LoadQuery extends GraphManagementQuery<LoadQuery> {
 
 		load.append(from.getQueryString());
 
-		SpanqitUtils.appendQueryElementIfPresent(to, load, " " + INTO_GRAPH + " ", null);
+		SparqlBuilderUtils.appendQueryElementIfPresent(to, load, " " + INTO_GRAPH + " ", null);
 
 		return load.toString();
 	}

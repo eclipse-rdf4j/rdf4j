@@ -13,7 +13,7 @@ import org.junit.Test;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
@@ -26,12 +26,12 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.PropertiesBlankNode;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral.StringLiteral;
 
 public class Section4Test extends BaseExamples {
-	Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
-	Variable x = Spanqit.var("x"), name = Spanqit.var("name");
+	Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
+	Variable x = SparqlBuilder.var("x"), name = SparqlBuilder.var("name");
 
 	@Test
 	public void example_4_1_4() {
-		Prefix defPrefix = Spanqit.prefix(iri(DC_NS));
+		Prefix defPrefix = SparqlBuilder.prefix(iri(DC_NS));
 		
 		// [ :p "v" ] .
 		PropertiesBlankNode bnode = Rdf.bNode(defPrefix.iri("p"), Rdf.literalOf("v"));
@@ -61,7 +61,7 @@ public class Section4Test extends BaseExamples {
 
 	@Test
 	public void example_4_2_1() {
-		Variable mbox = Spanqit.var("mbox");
+		Variable mbox = SparqlBuilder.var("mbox");
 		
 		TriplePattern tp = GraphPatterns.tp(x, foaf.iri("name"), name).andHas(foaf.iri("mbox"), mbox);
 		p(tp);
@@ -69,9 +69,9 @@ public class Section4Test extends BaseExamples {
 
 	@Test
 	public void example_4_2_2() {
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
-		Variable x = Spanqit.var("x"),
-				name = Spanqit.var("name");
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
+		Variable x = SparqlBuilder.var("x"),
+				name = SparqlBuilder.var("name");
 		Iri nick = foaf.iri("nick");
 		StringLiteral aliceNick = Rdf.literalOf("Alice"),
 				alice_Nick = Rdf.literalOf("Alice_");
@@ -85,10 +85,10 @@ public class Section4Test extends BaseExamples {
 	
 	@Test
 	public void example_4_2_4() {
-		Prefix defPrefix = Spanqit.prefix(iri(DC_NS));
+		Prefix defPrefix = SparqlBuilder.prefix(iri(DC_NS));
 
 		// isA() is a shortcut method to create triples using the "a" keyword
-		p(Spanqit.var("x").isA(defPrefix.iri("Class1")));
+		p(SparqlBuilder.var("x").isA(defPrefix.iri("Class1")));
 
 		// the isA predicate is a static member of RdfPredicate
 		p(Rdf.bNode(RdfPredicate.a, defPrefix.iri("appClass")).has(defPrefix.iri("p"), "v"));

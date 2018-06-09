@@ -30,7 +30,7 @@ public class Rdf {
 	private Rdf() { 	}
 
 	/**
-	 * Create a Spanqit Iri instance from a String iri
+	 * Create a SparqlBuilder Iri instance from a String iri
 	 * 
 	 * @param iriString the String representing the iri
 	 * @return the {@link Iri} instance
@@ -41,7 +41,7 @@ public class Rdf {
 	}
 	
 	/**
-	 * Create a Spanqit Iri instance from a namespace and local name
+	 * Create a SparqlBuilder Iri instance from a namespace and local name
 	 * @param namespace
 	 * 		the namespace of the Iri
 	 * @param localName

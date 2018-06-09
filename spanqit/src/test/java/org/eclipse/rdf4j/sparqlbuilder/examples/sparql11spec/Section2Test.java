@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Assignment;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
 import org.eclipse.rdf4j.sparqlbuilder.core.PrefixDeclarations;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.ConstructQuery;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 public class Section2Test extends BaseExamples {
 	@Test
 	public void example_2_1() {
-		Variable title = Spanqit.var("title");
+		Variable title = SparqlBuilder.var("title");
 
 		TriplePattern book1_has_title = GraphPatterns.tp(Rdf.iri(EXAMPLE_ORG_BOOK_NS, "book1"), Rdf.iri(DC_NS, "title"), title);
 
@@ -37,7 +37,7 @@ public class Section2Test extends BaseExamples {
 
 	@Test
 	public void example_2_2() {
-		Prefix foaf = Spanqit.prefix("foaf", Rdf.iri(FOAF_NS));
+		Prefix foaf = SparqlBuilder.prefix("foaf", Rdf.iri(FOAF_NS));
 
 		/**
 		 * As a shortcut, Query objects can create variables that will be unique to the
@@ -90,7 +90,7 @@ public class Section2Test extends BaseExamples {
 	
 	@Test
 	public void example_2_4() {
-		Prefix foaf = Spanqit.prefix("foaf", Rdf.iri(FOAF_NS));
+		Prefix foaf = SparqlBuilder.prefix("foaf", Rdf.iri(FOAF_NS));
 
 		Variable x = query.var(), name = query.var();
 		query.prefix(foaf).select(x, name).where(x.has(foaf.iri("name"), name));
@@ -99,13 +99,13 @@ public class Section2Test extends BaseExamples {
 
 	@Test
 	public void example_2_5() {
-		Prefix foaf = Spanqit.prefix("foaf", Rdf.iri(FOAF_NS));
-		Variable G = Spanqit.var("G"),
-				P = Spanqit.var("P"), 
-				S = Spanqit.var("S"),
-				name = Spanqit.var("name");
+		Prefix foaf = SparqlBuilder.prefix("foaf", Rdf.iri(FOAF_NS));
+		Variable G = SparqlBuilder.var("G"),
+				P = SparqlBuilder.var("P"), 
+				S = SparqlBuilder.var("S"),
+				name = SparqlBuilder.var("name");
 
-		Assignment concatAsName = Spanqit.as(Expressions.concat(G, Rdf.literalOf(" "), S), name);
+		Assignment concatAsName = SparqlBuilder.as(Expressions.concat(G, Rdf.literalOf(" "), S), name);
 
 		query.prefix(foaf).select(concatAsName).where(
 				GraphPatterns.tp(P, foaf.iri("givenName"), G).andHas(foaf.iri("surname"), S));
@@ -118,12 +118,12 @@ public class Section2Test extends BaseExamples {
 
 	@Test
 	public void example_2_6() {
-		Prefix foaf = Spanqit.prefix("foaf", Rdf.iri(FOAF_NS)),
-				org = Spanqit.prefix("org", Rdf.iri(EXAMPLE_COM_NS));
-		PrefixDeclarations prefixes = Spanqit.prefixes(foaf, org);
+		Prefix foaf = SparqlBuilder.prefix("foaf", Rdf.iri(FOAF_NS)),
+				org = SparqlBuilder.prefix("org", Rdf.iri(EXAMPLE_COM_NS));
+		PrefixDeclarations prefixes = SparqlBuilder.prefixes(foaf, org);
 
 		ConstructQuery graphQuery = Queries.CONSTRUCT();
-		Variable x = graphQuery.var(), name = Spanqit.var("name");
+		Variable x = graphQuery.var(), name = SparqlBuilder.var("name");
 
 		TriplePattern foafName = GraphPatterns.tp(x, foaf.iri("name"), name);
 		TriplePattern orgName = GraphPatterns.tp(x, org.iri("employeeName"), name);

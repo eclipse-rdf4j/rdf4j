@@ -13,7 +13,7 @@ import org.junit.Test;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
@@ -24,9 +24,9 @@ public class Section7Test extends BaseExamples {
 	@Test
 	public void example_7() {
 		String DC_10_NS = "http://purl.org/dc/elements/1.0/";
-		Prefix dc10 = Spanqit.prefix("dc10", iri(DC_10_NS)),
-			   dc11 = Spanqit.prefix("dc11", iri(DC_NS));
-		Variable title = Spanqit.var("title"), book = Spanqit
+		Prefix dc10 = SparqlBuilder.prefix("dc10", iri(DC_10_NS)),
+			   dc11 = SparqlBuilder.prefix("dc11", iri(DC_NS));
+		Variable title = SparqlBuilder.var("title"), book = SparqlBuilder
 				.var("book");
 		
 		Iri dc10TitleIri = dc10.iri("title");
@@ -39,7 +39,7 @@ public class Section7Test extends BaseExamples {
 		p();
 
 		resetQuery();
-		Variable x = query.var(), y = query.var(), author = Spanqit
+		Variable x = query.var(), y = query.var(), author = SparqlBuilder
 				.var("author");
 		GraphPattern dc10Title = book.has(dc10TitleIri, x),
 				dc11Title = book.has(dc11TitleIri, y);

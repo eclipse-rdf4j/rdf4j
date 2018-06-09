@@ -11,13 +11,13 @@ package org.eclipse.rdf4j.sparqlbuilder.core.query;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryPattern;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.TriplesTemplate;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphName;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * The SPARQL Modify Queries
@@ -41,7 +41,7 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	private Optional<GraphName> deleteGraph = Optional.empty();
 	private Optional<GraphName> insertGraph = Optional.empty();
 
-	private QueryPattern where = Spanqit.where();
+	private QueryPattern where = SparqlBuilder.where();
 
 	ModifyQuery() { }
 	
@@ -69,7 +69,7 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	 * 			SPARQL DELETE WHERE shortcut</a>
 	 */
 	public ModifyQuery delete(TriplePattern... triples) {
-		deleteTriples = SpanqitUtils.getOrCreateAndModifyOptional(deleteTriples, Spanqit::triplesTemplate, tt -> tt.and(triples));
+		deleteTriples = SparqlBuilderUtils.getOrCreateAndModifyOptional(deleteTriples, SparqlBuilder::triplesTemplate, tt -> tt.and(triples));
 		
 		return this;
 	}
@@ -95,7 +95,7 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	 * @return this modify query instance
 	 */
 	public ModifyQuery insert(TriplePattern... triples) {
-		insertTriples = SpanqitUtils.getOrCreateAndModifyOptional(insertTriples, Spanqit::triplesTemplate, tt -> tt.and(triples));
+		insertTriples = SparqlBuilderUtils.getOrCreateAndModifyOptional(insertTriples, SparqlBuilder::triplesTemplate, tt -> tt.and(triples));
 		
 		return this;
 	}

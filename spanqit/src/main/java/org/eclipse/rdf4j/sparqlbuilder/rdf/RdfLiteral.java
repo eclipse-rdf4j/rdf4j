@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
 import java.util.Optional;
 
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * Denotes an RDF literal
@@ -92,13 +92,13 @@ public abstract class RdfLiteral<T> implements RdfValue {
 			StringBuilder literal = new StringBuilder();
 			
 			if(value.contains("'") || value.contains("\"")) {
-				literal.append(SpanqitUtils.getLongQuotedString(value));
+				literal.append(SparqlBuilderUtils.getLongQuotedString(value));
 			} else {
-				literal.append(SpanqitUtils.getQuotedString(value));
+				literal.append(SparqlBuilderUtils.getQuotedString(value));
 			}
 			
-			SpanqitUtils.appendQueryElementIfPresent(dataType, literal, DATATYPE_SPECIFIER, null);
-			SpanqitUtils.appendStringIfPresent(languageTag, literal, LANG_TAG_SPECIFIER, null);
+			SparqlBuilderUtils.appendQueryElementIfPresent(dataType, literal, DATATYPE_SPECIFIER, null);
+			SparqlBuilderUtils.appendStringIfPresent(languageTag, literal, LANG_TAG_SPECIFIER, null);
 			
 			return literal.toString();
 		}

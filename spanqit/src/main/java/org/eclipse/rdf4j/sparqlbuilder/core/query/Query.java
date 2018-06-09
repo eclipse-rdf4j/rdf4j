@@ -18,12 +18,12 @@ import org.eclipse.rdf4j.sparqlbuilder.core.OrderBy;
 import org.eclipse.rdf4j.sparqlbuilder.core.Orderable;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryPattern;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode;
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * The base class for all SPARQL Queries. Contains elements and methods common
@@ -37,7 +37,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	protected static final String LIMIT = "LIMIT";
 	protected static final String OFFSET = "OFFSET";
 
-	protected QueryPattern where = Spanqit.where();
+	protected QueryPattern where = SparqlBuilder.where();
 	protected Optional<GroupBy> groupBy = Optional.empty();
 	protected Optional<OrderBy> orderBy = Optional.empty();
 	protected Optional<Having> having = Optional.empty();
@@ -82,7 +82,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 * @see GroupBy
 	 */
 	public T groupBy(Groupable... groupables) {
-		groupBy = SpanqitUtils.getOrCreateAndModifyOptional(groupBy, Spanqit::groupBy, gb -> gb.by(groupables));
+		groupBy = SparqlBuilderUtils.getOrCreateAndModifyOptional(groupBy, SparqlBuilder::groupBy, gb -> gb.by(groupables));
 
 		return (T) this;
 	}
@@ -110,7 +110,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 * @see OrderBy
 	 */
 	public T orderBy(Orderable... conditions) {
-		orderBy = SpanqitUtils.getOrCreateAndModifyOptional(orderBy, Spanqit::orderBy, ob -> ob.by(conditions));
+		orderBy = SparqlBuilderUtils.getOrCreateAndModifyOptional(orderBy, SparqlBuilder::orderBy, ob -> ob.by(conditions));
 		
 		return (T) this;
 	}
@@ -138,7 +138,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 * @see Having
 	 */
 	public T having(Expression<?>... constraints) {
-		having = SpanqitUtils.getOrCreateAndModifyOptional(having, Spanqit::having, h -> h.having(constraints));
+		having = SparqlBuilderUtils.getOrCreateAndModifyOptional(having, SparqlBuilder::having, h -> h.having(constraints));
 
 		return (T) this;
 	}
@@ -195,7 +195,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 * @return a {@link Variable} object that is unique to this query instance
 	 */
 	public Variable var() {
-		return Spanqit.var("x" + ++varCount);
+		return SparqlBuilder.var("x" + ++varCount);
 	}
 
     /**
@@ -217,9 +217,9 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 		query.append(getQueryActionString()).append("\n");
 		query.append(where.getQueryString()).append("\n");
 
-		SpanqitUtils.appendAndNewlineIfPresent(groupBy, query);
-		SpanqitUtils.appendAndNewlineIfPresent(having, query);
-		SpanqitUtils.appendAndNewlineIfPresent(orderBy, query);
+		SparqlBuilderUtils.appendAndNewlineIfPresent(groupBy, query);
+		SparqlBuilderUtils.appendAndNewlineIfPresent(having, query);
+		SparqlBuilderUtils.appendAndNewlineIfPresent(orderBy, query);
 
 		if (limit >= 0) {
 			query.append(LIMIT + " ").append(limit).append("\n");

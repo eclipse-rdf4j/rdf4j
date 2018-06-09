@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.OrderBy;
 import org.eclipse.rdf4j.sparqlbuilder.core.OrderCondition;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
 import org.eclipse.rdf4j.sparqlbuilder.core.PrefixDeclarations;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
@@ -24,18 +24,18 @@ import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 public class Section15Test extends BaseExamples {
 	@Test
 	public void example_15_1() {
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
 		Variable name = query.var(), x = query.var();
 
         TriplePattern employeePattern = x.has(foaf.iri("name"), name);
 		query.prefix(foaf).select(name).where(employeePattern).orderBy(name);
 		p();
 		
-		Prefix base = Spanqit.prefix(iri("http://example.org/ns#"));
-		PrefixDeclarations prefixes = Spanqit.prefixes(foaf, base);
+		Prefix base = SparqlBuilder.prefix(iri("http://example.org/ns#"));
+		PrefixDeclarations prefixes = SparqlBuilder.prefixes(foaf, base);
 		Variable emp = query.var();
 		
-		OrderCondition empDesc = Spanqit.desc(emp);
+		OrderCondition empDesc = SparqlBuilder.desc(emp);
 		
 		// calling prefix() with a PrefixDeclarations instance (rather than
 		// Prefix objects) replaces (rather than augments) the query's
@@ -48,17 +48,17 @@ public class Section15Test extends BaseExamples {
         // similarly, calling orderBy() with an OrderBy instance (rather
         // than Orderable instances) replaces (rather than augments)
         // the query's order conditions
-        query.orderBy(Spanqit.orderBy(empDesc));
+        query.orderBy(SparqlBuilder.orderBy(empDesc));
 		p();
 		
-		OrderBy order = Spanqit.orderBy(name, empDesc);
+		OrderBy order = SparqlBuilder.orderBy(name, empDesc);
 		query.orderBy(order);
 		p();
 	}
 	
 	@Test
 	public void example_15_3_1() {
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
 		Variable name = query.var(), x = query.var();
 		
 		query.prefix(foaf).select(name).distinct().where(x.has(foaf.iri("name"), name));
@@ -72,7 +72,7 @@ public class Section15Test extends BaseExamples {
 	
 	@Test
 	public void example_15_4() {
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
 		Variable name = query.var(), x = query.var();
 		
 		query.prefix(foaf).select(name).where(x.has(foaf.iri("name"), name))
@@ -84,7 +84,7 @@ public class Section15Test extends BaseExamples {
 	
 	@Test
 	public void example_15_5() {
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
 		Variable name = query.var(), x = query.var();
 		
 		query.prefix(foaf).select(name).where(x.has(foaf.iri("name"), name))

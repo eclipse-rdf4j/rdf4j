@@ -12,13 +12,13 @@ import java.util.Collections;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * Represents a collection of triple patterns
  */
 public class TriplesTemplate extends StandardQueryElementCollection<TriplePattern> {
-	private static final Function<String, String> WRAPPER = SpanqitUtils::getBracedString;
+	private static final Function<String, String> WRAPPER = SparqlBuilderUtils::getBracedString;
 	TriplesTemplate(TriplePattern... triples) {
 		super("\n");
 		setWrapperMethod(WRAPPER);
