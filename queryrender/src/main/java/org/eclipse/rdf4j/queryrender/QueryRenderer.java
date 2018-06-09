@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 
 /**
  * <p>
- * Interface for Sesame-based query renderers
+ * Interface for RDF4J-based query renderers
  * </p>
  * 
  * @author Michael Grove

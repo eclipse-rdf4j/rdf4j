@@ -15,7 +15,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * </p>
  * 
  * @author Michael Grove
+ * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder} instead.
  */
+@Deprecated
 public interface SupportsExpr {
 
 	TupleExpr expr();
