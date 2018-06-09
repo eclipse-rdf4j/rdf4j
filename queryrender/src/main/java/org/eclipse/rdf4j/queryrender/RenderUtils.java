@@ -35,7 +35,7 @@ public final class RenderUtils {
 	 * @param theValue
 	 *        the value to render
 	 * @return the value rendered in its query string representation
-	 * @deprecated since 2.8.0. Use {@link #toSPARQL(Value)} instead.
+	 * @deprecated Use {@link #toSPARQL(Value)} instead.
 	 */
 	@Deprecated
 	public static String getSPARQLQueryString(Value theValue) {
@@ -94,7 +94,7 @@ public final class RenderUtils {
 	 * @param theValue
 	 *        the value to render
 	 * @return the value rendered in its query string representation
-	 * @deprecated since 2.8.0. Use {{@link #toSeRQL(Value)} instead.
+	 * @deprecated Use {{@link #toSeRQL(Value)} instead.
 	 */
 	@Deprecated
 	public static String getSerqlQueryString(Value theValue) {

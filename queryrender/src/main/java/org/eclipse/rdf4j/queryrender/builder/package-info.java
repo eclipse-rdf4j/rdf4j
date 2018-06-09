@@ -5,22 +5,10 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.queryrender.builder;
-
 /**
- * <p>
- * Abstract representation of a group of atoms in a query
- * </p>
+ * <b>This package is deprecated. Use the new rdf4j-sparqlbuilder module for query building instead.</b>
  * 
- * @author Michael Grove
- * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder} instead.
+ * @see org.eclipse.rdf4j.sparqlbuilder
  */
 @Deprecated
-public interface Group extends SupportsExpr {
-
-	public boolean isOptional();
-
-	public void addChild(Group theGroup);
-
-	public int size();
-}
+package org.eclipse.rdf4j.queryrender.builder;
