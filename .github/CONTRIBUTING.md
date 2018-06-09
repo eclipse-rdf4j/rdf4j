@@ -16,16 +16,19 @@ RDF4J is a project governed by the [Eclipse Foundation](http://www.eclipse.org/)
 
 In order for any contributions to RDF4J to be accepted, you MUST do the following things:
 
-1. Digitally sign the [Eclipse Contributor Agreement (ECA)](https://www.eclipse.org/legal/ECA.php). You can do this as follows: 
+### Sign the Eclipse Contributor Agreement
+You must digitally sign the [Eclipse Contributor Agreement (ECA)](https://www.eclipse.org/legal/ECA.php). You can do this as follows: 
 
-  * If you haven't done so already, [register an Eclipse account](https://dev.eclipse.org/site_login/createaccount.php). Use the same email address when you register for the account that you intend to use on Git commit records. 
-  * Log into the [Eclipse projects forge](http://www.eclipse.org/contribute/cla); click on the "Eclipse Contributor Agreement" tab; and complete the form. See the [ECA FAQ](https://www.eclipse.org/legal/ecafaq.php) for more info. 
+* If you haven't done so already, [register an Eclipse account](https://dev.eclipse.org/site_login/createaccount.php). Use the same email address when you register for the account that you intend to use on Git commit records. 
+* Log into the [Eclipse projects forge](http://www.eclipse.org/contribute/cla); click on the "Eclipse Contributor Agreement" tab; and complete the form. See the [ECA FAQ](https://www.eclipse.org/legal/ecafaq.php) for more info. 
 
-2. Add your github username in your [Eclipse account settings](https://dev.eclipse.org/site_login/#open_tab_accountsettings).
+### Link your Github and Eclipse accounts
 
-3. "Sign-off" your commits
-Every commit you make in your patch or pull request MUST be "signed off".
-You do this by adding the `-s` flag when you make the commit(s).
+Add your github username in your [Eclipse account settings](https://dev.eclipse.org/site_login/#open_tab_accountsettings).
+
+### Sign-off every commit
+
+Every commit you make in your patch or pull request MUST be "signed off". You do this by adding the `-s` flag when you make the commit(s).
 
 ## Creating your contribution
 
@@ -38,7 +41,7 @@ Once the legalities are out of the way you can dig in. Here's how:
 5. Make sure you include tests.
 6. Make sure the test suite passes after your changes.
 7. Commit your changes into the branch. Use meaningful commit messages. Reference the issue number in the commit message (for example "issue #276: added null check").
-8. **Sign off** every commit you do, using the `-s` flag (as explained in the [legal stuff](#legal-stuff).
+8. **Sign off** every commit you do, using the `-s` flag (as explained in the [legal stuff](#legal-stuff)).
 9. Optionally squash your commits (not necessary, but if you want to clean your commit history a bit, _this_ is the point to do it).
 10. Push your changes to your branch in your forked repository.
 11. If your contribution is complete, use GitHub to submit a pull request (PR)
