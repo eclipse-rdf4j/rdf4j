@@ -94,6 +94,6 @@ principles:
  
 ## Workflow 
 
-The short-short version for contributors: start from the `master` branch, and create a new, separeate branch for every bugfix, improvment, or new feature. 
+The short-short version for contributors: start from the `master` branch, and create a new, separate branch for every bugfix, improvement, or new feature. 
 
 For more detailed information on how RDF4J manages git branches, versioning, releases, and planning, see [Developer Workflow and Project Management](http://docs.rdf4j.org/developer/#_developer_workflow_and_project_management).
