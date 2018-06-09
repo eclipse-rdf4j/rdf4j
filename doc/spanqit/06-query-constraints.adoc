@@ -1,0 +1,26 @@
+= Query Constraints
+You can create SPARQL query constraints using the `Expressions` class which provides static methods to create `Expression` objects representing SPARQL's built-in expressions:
+[source,java]
+----
+Variable name = Spanqit.var("name");
+Expression<?> regexExpression = Expressions.regex(name, "Smith");
+System.out.println(regexExpression.getQueryString());
+// ==> REGEX( ?name, "Smith" )
+----
+`Expression`s take `Operand` instances as arguments. `Operand` is implemented by the types you would expect (`Variable`, the RDF model interface `RdfValue`, and `Expression` itself). Where possible, `Expressions` has included wrappers to take appropriate Java primitives as parameters as well:
+[source,java]
+----
+Variable price = Spanqit.var("price");
+Expression<?> priceLimit = Expressions.lt(price, 100);
+System.out.println(priceLimit.getQueryString());
+// ==> ?price < 100
+----
+For those places where a wrapper has not (yet) been created, `RdfLiteral`s can be used instead. The `Rdf` class provides factory methods to create `StringLiteral`, `NumericLiteral`, and `BooleanLiteral` instances:
+[source,java]
+----
+Variable price = Spanqit.var("price");
+ExpressionOperand discount = Rdf.literalOf(0.9);
+Expression<?> discountedPrice = Expressions.multiply(price, discount);
+System.out.println(discountedPrice.getQueryString());
+// ==> ( ?price * 0.9 )
+----

@@ -1,0 +1,5 @@
+:repo: https://github.com/anqit/rdf4j/tree/spanqit-migration/
+:examples: {repo}core/spanqit/src/test/java/org/eclipse/rdf4j/spanqit/examples
+
+= Examples
+For more detailed examples of how to use Spanqit, check out the {examples}[JUnit tests] located within the project. They follow the http://www.w3.org/TR/2013/REC-sparql11-query-20130321/[SPARQL 1.1 specification] and the https://www.w3.org/TR/sparql11-update/[SPARQL 1.1 Update Spec] published by W3C, and show how to use Spanqit to create each of the (supported) queries shown.

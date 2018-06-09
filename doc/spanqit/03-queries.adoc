@@ -1,0 +1,21 @@
+= Queries
+Spanqit supports all of the query types described by the https://www.w3.org/TR/2013/REC-sparql11-query-20130321/[SPARQL 1.1 Query Spec] as well as the https://www.w3.org/TR/sparql11-update/[SPARQL 1.1 Update Spec].
+
+The `Queries` class provides static methods to instantiate the various query objects. For example:
+[source,java]
+----
+SelectQuery selectQuery = Queries.SELECT();
+ConstructQuery constructQuery = Queries.CONSTRUCT();
+----
+Query objects provide methods to set or add the various elements appropriate for the type of query:
+[source,java]
+----
+Prefix ex;
+Variable product;
+TriplePattern personWroteBook, personAuthoredBook;
+
+// ...
+
+selectQuery.prefix(ex).select(product).where(product.isA(ex.iri("book"));
+constructQuery.prefix(ex).construct(personWroteBook).where(personAuthoredBook);
+----

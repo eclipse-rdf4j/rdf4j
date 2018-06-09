@@ -1,0 +1,26 @@
+= Introduction
+Spanqit is a fluent Java API used to programmatically create SPARQL query strings. It is not explicitly dependent on any RDF or SPARQL libraries, and can thus be used with any SPARQL query processor.
+
+Spanqit allows the following SPARQL query:
+[source,sparql]
+----
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+SELECT ?name
+WHERE { ?x foaf:name ?name }
+ORDER BY ?name
+LIMIT 5
+OFFSET 10
+----
+to be created as simply as:
+[source,java]
+----
+query.prefix(foaf).select(name)
+    .where(x.has(foaf.iri("name"), name))
+    .orderBy(name)
+    .limit(5)
+    .offset(10);
+----
+
+Spanqit is based on http://www.w3.org/TR/2013/REC-sparql11-query-20130321/[SPARQL 1.1 Spec] and https://www.w3.org/TR/sparql11-update/[SPARQL 1.1 Update Spec]. Almost all features of SPARQL 1.1 are supported, excluding some current (Known-Limitations)[known limitations].
+
+NOTE: This document assumes the reader is already familiar with the SPARQL query language. Please refer to the above specification if not.
