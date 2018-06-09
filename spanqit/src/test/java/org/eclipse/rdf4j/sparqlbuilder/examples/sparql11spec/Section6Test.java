@@ -14,7 +14,7 @@ import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatternNotTriple;
@@ -24,9 +24,9 @@ import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 public class Section6Test extends BaseExamples {
 	@Test
 	public void example_6_1() {
-		Variable name = Spanqit.var("name"), mbox = Spanqit.var("mbox");
+		Variable name = SparqlBuilder.var("name"), mbox = SparqlBuilder.var("mbox");
 		Variable x = query.var();
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
 		
 		GraphPatternNotTriple where = GraphPatterns.and(
 				x.has(foaf.iri("name"), name),
@@ -38,10 +38,10 @@ public class Section6Test extends BaseExamples {
 
 	@Test
 	public void example_6_2() {
-		Prefix dc = Spanqit.prefix("dc", iri(DC_NS)),
-			   ns = Spanqit.prefix("ns", iri(EXAMPLE_ORG_NS));
-		Variable title = Spanqit.var("title"), price = Spanqit
-				.var("price"), x = Spanqit.var("x");
+		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS)),
+			   ns = SparqlBuilder.prefix("ns", iri(EXAMPLE_ORG_NS));
+		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder
+				.var("price"), x = SparqlBuilder.var("x");
 
 		GraphPatternNotTriple pricePattern = GraphPatterns
 				.and(x.has(ns.iri("price"), price))
@@ -54,8 +54,8 @@ public class Section6Test extends BaseExamples {
 
 	@Test
 	public void example_6_3() {
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
-		Variable name = Spanqit.var("name"), mbox = Spanqit.var("mbox"), hpage = Spanqit
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
+		Variable name = SparqlBuilder.var("name"), mbox = SparqlBuilder.var("mbox"), hpage = SparqlBuilder
 				.var("hpage");
 		Variable x = query.var();
 

@@ -14,11 +14,11 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Base;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
 import org.eclipse.rdf4j.sparqlbuilder.core.PrefixDeclarations;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.TriplesTemplate;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphName;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * A SPARQL Update query
@@ -44,7 +44,7 @@ abstract class UpdateQuery<T extends UpdateQuery<T>> implements QueryElement {
 	 * @return this
 	 */
 	public T base(Iri iri) {
-		this.base = Optional.of(Spanqit.base(iri));
+		this.base = Optional.of(SparqlBuilder.base(iri));
 
 		return (T) this;
 	}
@@ -70,7 +70,7 @@ abstract class UpdateQuery<T extends UpdateQuery<T>> implements QueryElement {
 	 * @return this
 	 */
 	public T prefix(Prefix... prefixes) {
-		this.prefixes = SpanqitUtils.getOrCreateAndModifyOptional(this.prefixes, Spanqit::prefixes, p -> p.addPrefix(prefixes));
+		this.prefixes = SparqlBuilderUtils.getOrCreateAndModifyOptional(this.prefixes, SparqlBuilder::prefixes, p -> p.addPrefix(prefixes));
 
 		return (T) this;
 	}
@@ -94,8 +94,8 @@ abstract class UpdateQuery<T extends UpdateQuery<T>> implements QueryElement {
 	public String getQueryString() {
 		StringBuilder query = new StringBuilder();
 
-		SpanqitUtils.appendAndNewlineIfPresent(base, query);
-		SpanqitUtils.appendAndNewlineIfPresent(prefixes, query);
+		SparqlBuilderUtils.appendAndNewlineIfPresent(base, query);
+		SparqlBuilderUtils.appendAndNewlineIfPresent(prefixes, query);
 
 		query.append(getQueryActionString());
 		
@@ -104,7 +104,7 @@ abstract class UpdateQuery<T extends UpdateQuery<T>> implements QueryElement {
 
 	protected void appendNamedTriplesTemplates(StringBuilder queryString, Optional<GraphName> graphName, TriplesTemplate triples) {
 		queryString.append(graphName.map(graph ->
-				SpanqitUtils.getBracedString("GRAPH " + graph.getQueryString() + " " + triples.getQueryString()))
+				SparqlBuilderUtils.getBracedString("GRAPH " + graph.getQueryString() + " " + triples.getQueryString()))
 			.orElseGet(triples::getQueryString));
 	}
 }

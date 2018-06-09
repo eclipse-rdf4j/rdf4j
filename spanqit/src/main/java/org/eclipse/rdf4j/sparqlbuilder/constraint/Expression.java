@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Assignable;
 import org.eclipse.rdf4j.sparqlbuilder.core.Groupable;
 import org.eclipse.rdf4j.sparqlbuilder.core.Orderable;
 import org.eclipse.rdf4j.sparqlbuilder.core.StandardQueryElementCollection;
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * A SPARQL expression. Used by filters, having clauses, order and group by
@@ -47,7 +47,7 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
 public abstract class Expression<T extends Expression<T>> extends
         StandardQueryElementCollection<Operand> implements Operand,
         Orderable, Groupable, Assignable {
-	private static final Function<String, String> WRAPPER = SpanqitUtils::getParenthesizedString;
+	private static final Function<String, String> WRAPPER = SparqlBuilderUtils::getParenthesizedString;
 
 	protected SparqlOperator operator;
 

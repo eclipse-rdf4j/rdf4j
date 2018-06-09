@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * Denotes an RDF Blank Node
@@ -40,7 +40,7 @@ public interface RdfBlankNode extends RdfResource {
 	class AnonymousBlankNode implements RdfBlankNode {
 		@Override
 		public String getQueryString() {
-			return SpanqitUtils.getBracketedString("");
+			return SparqlBuilderUtils.getBracketedString("");
 		}	
 	}
 	
@@ -108,7 +108,7 @@ public interface RdfBlankNode extends RdfResource {
 
 		@Override
 		public String getQueryString() {
-			return SpanqitUtils.getBracketedString(predicateObjectLists.getQueryString());
+			return SparqlBuilderUtils.getBracketedString(predicateObjectLists.getQueryString());
 		}
 	}
 }

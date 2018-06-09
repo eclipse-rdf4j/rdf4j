@@ -8,7 +8,7 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 
 package org.eclipse.rdf4j.sparqlbuilder.core;
 
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * An ascending or descending order condition
@@ -69,7 +69,7 @@ public class OrderCondition implements Orderable {
 				condition.append(DESC);
 			}
 
-			condition.append(SpanqitUtils.getParenthesizedString(orderOn.getQueryString()));
+			condition.append(SparqlBuilderUtils.getParenthesizedString(orderOn.getQueryString()));
 		}
 
 		return condition.toString();

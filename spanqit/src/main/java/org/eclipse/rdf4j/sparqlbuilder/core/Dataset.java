@@ -38,7 +38,7 @@ public class Dataset extends StandardQueryElementCollection<From> {
 	 * @return this
 	 */
 	public Dataset from(Iri... iris) {
-		addElements(Spanqit::from, iris);
+		addElements(SparqlBuilder::from, iris);
 
 		return this;
 	}

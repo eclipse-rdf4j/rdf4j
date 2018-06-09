@@ -15,9 +15,9 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Dataset;
 import org.eclipse.rdf4j.sparqlbuilder.core.From;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
 import org.eclipse.rdf4j.sparqlbuilder.core.PrefixDeclarations;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * A non-subquery query.
@@ -39,7 +39,7 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 	 * @return this
 	 */
 	public T base(Iri iri) {
-		this.base = Optional.of(Spanqit.base(iri));
+		this.base = Optional.of(SparqlBuilder.base(iri));
 
 		return (T) this;
 	}
@@ -65,7 +65,7 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 	 * @return this
 	 */
 	public T prefix(Prefix... prefixes) {
-		this.prefixes = SpanqitUtils.getOrCreateAndModifyOptional(this.prefixes, Spanqit::prefixes, p -> p.addPrefix(prefixes));
+		this.prefixes = SparqlBuilderUtils.getOrCreateAndModifyOptional(this.prefixes, SparqlBuilder::prefixes, p -> p.addPrefix(prefixes));
 
 		return (T) this;
 	}
@@ -91,7 +91,7 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 	 * @return this
 	 */
 	public T from(From... graphs) {
-		from = SpanqitUtils.getOrCreateAndModifyOptional(from, Spanqit::dataset, f -> f.from(graphs));
+		from = SparqlBuilderUtils.getOrCreateAndModifyOptional(from, SparqlBuilder::dataset, f -> f.from(graphs));
 
 		return (T) this;
 	}
@@ -113,9 +113,9 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 	public String getQueryString() {
 		StringBuilder query = new StringBuilder();
 
-		SpanqitUtils.appendAndNewlineIfPresent(base, query);
-		SpanqitUtils.appendAndNewlineIfPresent(prefixes, query);
-		SpanqitUtils.appendAndNewlineIfPresent(from, query);
+		SparqlBuilderUtils.appendAndNewlineIfPresent(base, query);
+		SparqlBuilderUtils.appendAndNewlineIfPresent(prefixes, query);
+		SparqlBuilderUtils.appendAndNewlineIfPresent(from, query);
 
 		query.append(super.getQueryString());
 

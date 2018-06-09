@@ -15,7 +15,7 @@ import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.DeleteDataQuery;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.InsertDataQuery;
@@ -31,11 +31,11 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
  * Follows the SPARQL 1.1 Update Spec starting <a href="https://www.w3.org/TR/sparql11-update/#graphManagement">here</a>
  */
 public class Section3Test extends BaseExamples {
-	Prefix dc = Spanqit.prefix("dc", iri("http://purl.org/dc/elements/1.1/"));
-	Prefix ns = Spanqit.prefix("ns", iri(EXAMPLE_ORG_NS));
-	Prefix foaf = Spanqit.prefix("foaf", iri("http://xmlns.com/foaf/0.1/"));
-	Prefix xsd = Spanqit.prefix("xsd", iri("http://www.w3.org/2001/XMLSchema#"));
-	Prefix rdf = Spanqit.prefix("rdf", iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#"));
+	Prefix dc = SparqlBuilder.prefix("dc", iri("http://purl.org/dc/elements/1.1/"));
+	Prefix ns = SparqlBuilder.prefix("ns", iri(EXAMPLE_ORG_NS));
+	Prefix foaf = SparqlBuilder.prefix("foaf", iri("http://xmlns.com/foaf/0.1/"));
+	Prefix xsd = SparqlBuilder.prefix("xsd", iri("http://www.w3.org/2001/XMLSchema#"));
+	Prefix rdf = SparqlBuilder.prefix("rdf", iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#"));
 
 	/**
      * PREFIX dc: <http://purl.org/dc/elements/1.1/>
@@ -118,8 +118,8 @@ public class Section3Test extends BaseExamples {
 
 	@Test
 	public void example_with() {
-		TriplePattern abc = GraphPatterns.tp(Spanqit.var("a"), Spanqit.var("b"), Spanqit.var("c"));
-		TriplePattern xyz = GraphPatterns.tp(Spanqit.var("x"), Spanqit.var("y"), Spanqit.var("z"));
+		TriplePattern abc = GraphPatterns.tp(SparqlBuilder.var("a"), SparqlBuilder.var("b"), SparqlBuilder.var("c"));
+		TriplePattern xyz = GraphPatterns.tp(SparqlBuilder.var("x"), SparqlBuilder.var("y"), SparqlBuilder.var("z"));
 		ModifyQuery modify = Queries.MODIFY();
 		Iri g1 = () -> "<g1>";
 		GraphPattern examplePattern = () -> " ... ";
@@ -146,7 +146,7 @@ public class Section3Test extends BaseExamples {
      */
 	@Test
 	public void example_5() {
-		Variable person = Spanqit.var("person");
+		Variable person = SparqlBuilder.var("person");
 		ModifyQuery modify = Queries.MODIFY();
 
 		modify.prefix(foaf).with(iri("http://example/addresses")).delete(person.has(foaf.iri("givenName"), "Bill"))
@@ -170,7 +170,7 @@ public class Section3Test extends BaseExamples {
      */
 	@Test
 	public void example_6() {
-		Variable book = Spanqit.var("book"), p = Spanqit.var("p"), v = Spanqit.var("v"), date = Spanqit.var("date");
+		Variable book = SparqlBuilder.var("book"), p = SparqlBuilder.var("p"), v = SparqlBuilder.var("v"), date = SparqlBuilder.var("date");
 
 		ModifyQuery modify = Queries.MODIFY();
 
@@ -189,7 +189,7 @@ public class Section3Test extends BaseExamples {
      */
 	@Test
 	public void example_7() {
-		Variable person = Spanqit.var("person"), property = Spanqit.var("property"), value = Spanqit.var("value");
+		Variable person = SparqlBuilder.var("person"), property = SparqlBuilder.var("property"), value = SparqlBuilder.var("value");
 
 		ModifyQuery modify = Queries.MODIFY().prefix(foaf).with(iri("http://example/addresses"))
 				.delete(person.has(property, value))
@@ -215,7 +215,7 @@ public class Section3Test extends BaseExamples {
      */
 	@Test
 	public void example_8() {
-		Variable book = Spanqit.var("book"), p = Spanqit.var("p"), v = Spanqit.var("v"), date = Spanqit.var("date");
+		Variable book = SparqlBuilder.var("book"), p = SparqlBuilder.var("p"), v = SparqlBuilder.var("v"), date = SparqlBuilder.var("date");
 
 		p(Queries.MODIFY().prefix(dc, xsd).insert(book.has(p, v)).into(iri("http://example/bookStore2"))
 				.where(and(book.has(dc.iri("date"), date), book.has(p, v)).from(iri("http://example/bookStore")).filter(
@@ -243,7 +243,7 @@ public class Section3Test extends BaseExamples {
      */
 	@Test
 	public void example_9() {
-		Variable person = Spanqit.var("person"), name = Spanqit.var("name"), email = Spanqit.var("email");
+		Variable person = SparqlBuilder.var("person"), name = SparqlBuilder.var("name"), email = SparqlBuilder.var("email");
 		TriplePattern personNameTriple = person.has(foaf.iri("name"), name),
 				personEmailTriple = person.has(foaf.iri("mbox"), email);
 
@@ -282,8 +282,8 @@ public class Section3Test extends BaseExamples {
      */
 	@Test
 	public void example_10() {
-		Variable book = Spanqit.var("book"), p = Spanqit.var("p"), v = Spanqit.var("v"), date = Spanqit.var("date");
-		Prefix dcmitype = Spanqit.prefix("dcmitype", iri("http://purl.org/dc/dcmitype/"));
+		Variable book = SparqlBuilder.var("book"), p = SparqlBuilder.var("p"), v = SparqlBuilder.var("v"), date = SparqlBuilder.var("date");
+		Prefix dcmitype = SparqlBuilder.prefix("dcmitype", iri("http://purl.org/dc/dcmitype/"));
 
 		ModifyQuery insertIntobookStore2Query = Queries.MODIFY().prefix(dcmitype, dc, xsd)
 				.insert(book.has(p, v)).into(iri("http://example/bookStore2"))
@@ -307,7 +307,7 @@ public class Section3Test extends BaseExamples {
      */
 	@Test
 	public void example_11() {
-		Variable person = Spanqit.var("person"), property = Spanqit.var("property"), value = Spanqit.var("value");
+		Variable person = SparqlBuilder.var("person"), property = SparqlBuilder.var("property"), value = SparqlBuilder.var("value");
 
 		p(Queries.MODIFY().prefix(foaf).delete().where(person.has(foaf.iri("givenName"), "Fred").andHas(property, value)));
 	}
@@ -327,8 +327,8 @@ public class Section3Test extends BaseExamples {
      */
 	@Test
 	public void example_12() {
-		Variable person = Spanqit.var("person"), property1 = Spanqit.var("property1"), value1 = Spanqit.var("value1"),
-				property2 = Spanqit.var("property2"), value2 = Spanqit.var("value2");
+		Variable person = SparqlBuilder.var("person"), property1 = SparqlBuilder.var("property1"), value1 = SparqlBuilder.var("value1"),
+				property2 = SparqlBuilder.var("property2"), value2 = SparqlBuilder.var("value2");
 		Iri namesGraph = iri("http://example.com/names"), addressesGraph = iri("http://example.com/addresses");
 
 		ModifyQuery deleteFredFromNamesAndAddressesQuery = Queries.MODIFY().prefix(foaf)

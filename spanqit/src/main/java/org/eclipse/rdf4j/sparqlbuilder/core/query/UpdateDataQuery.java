@@ -10,14 +10,14 @@ package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
 import java.util.Optional;
 
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.TriplesTemplate;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphName;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 
 @SuppressWarnings("unchecked")
 abstract class UpdateDataQuery<T extends UpdateDataQuery<T>> extends UpdateQuery<T> {
-	protected TriplesTemplate triplesTemplate = Spanqit.triplesTemplate();
+	protected TriplesTemplate triplesTemplate = SparqlBuilder.triplesTemplate();
 	protected Optional<GraphName> graphName = Optional.empty();
 	
 	protected T addTriples(TriplePattern... triples) {

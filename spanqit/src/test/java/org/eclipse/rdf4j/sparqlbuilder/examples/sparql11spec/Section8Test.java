@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryPattern;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
@@ -29,12 +29,12 @@ public class Section8Test extends BaseExamples {
 	@Test
 	public void example_8_1_1() {
 		String rdf_ns = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
-		Prefix rdf = Spanqit.prefix("rdf", iri(rdf_ns));
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
+		Prefix rdf = SparqlBuilder.prefix("rdf", iri(rdf_ns));
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
 		Variable person = query.var();
 
 		GraphPattern personWithName = person.has(foaf.iri("name"),
-				Spanqit.var("name"));
+				SparqlBuilder.var("name"));
 		GraphPatternNotTriple personOfTypePerson = GraphPatterns.and(person
 				.has(rdf.iri("type"), foaf.iri("Person")));
 		query.prefix(rdf, foaf).select(person)
@@ -45,12 +45,12 @@ public class Section8Test extends BaseExamples {
 	@Test
 	public void example_8_1_2() {
 		String rdf_ns = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
-		Prefix rdf = Spanqit.prefix("rdf", iri(rdf_ns));
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
+		Prefix rdf = SparqlBuilder.prefix("rdf", iri(rdf_ns));
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
 		Variable person = query.var();
 
 		GraphPattern personWithName = person.has(foaf.iri("name"),
-				Spanqit.var("name"));
+				SparqlBuilder.var("name"));
 		GraphPatternNotTriple personOfTypePerson = GraphPatterns.and(person
 				.has(rdf.iri("type"), foaf.iri("Person")));
 		query.prefix(rdf, foaf).select(person)
@@ -60,8 +60,8 @@ public class Section8Test extends BaseExamples {
 
 	@Test
 	public void example_8_2() {
-		Prefix base = Spanqit.prefix(iri("http://example/"));
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
+		Prefix base = SparqlBuilder.prefix(iri("http://example/"));
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
 		Variable s = query.var();
 /*
  * "{ ?s ?x1 ?x2} MINUS { ?s foaf:givenName "Bob" }
@@ -75,14 +75,14 @@ public class Section8Test extends BaseExamples {
 
 	@Test
 	public void example_8_3_2() {
-		Prefix base = Spanqit.prefix(iri("http://example/"));
+		Prefix base = SparqlBuilder.prefix(iri("http://example/"));
 		Variable s = query.var(), p = query.var(), o = query.var();
 		Iri a = base.iri("a"), b = base.iri("b"), c = base.iri("c");
 		
 		query.prefix(base).all().where(GraphPatterns.and(s.has(p, o)).filterNotExists(GraphPatterns.tp(a, b, c)));
 		p();
 		
-		QueryPattern where = Spanqit.where(GraphPatterns.and(s.has(p, o)).minus(GraphPatterns.tp(a, b, c)));
+		QueryPattern where = SparqlBuilder.where(GraphPatterns.and(s.has(p, o)).minus(GraphPatterns.tp(a, b, c)));
 		
 		// passing a QueryPattern object to the query (rather than graph 
 		// pattern(s)) replaces (rather than augments) the query's
@@ -93,7 +93,7 @@ public class Section8Test extends BaseExamples {
 	
 	@Test
 	public void example_8_3_3() {
-		Prefix base = Spanqit.prefix(iri("http://example/"));
+		Prefix base = SparqlBuilder.prefix(iri("http://example/"));
 		Variable x = query.var(), m = query.var(), n = query.var();
 		Expression<?> filter = Expressions.equals(n, m);
 		
@@ -104,7 +104,7 @@ public class Section8Test extends BaseExamples {
 		query.prefix(base).select().all().where(notExistsFilter);
 		p();
 		
-		QueryPattern where = Spanqit.where(GraphPatterns.and(x.has(base.iri("p"), n))
+		QueryPattern where = SparqlBuilder.where(GraphPatterns.and(x.has(base.iri("p"), n))
 				.minus(GraphPatterns.and(x.has(base.iri("q"), m)).filter(filter)));
 		query.where(where);
 		p();

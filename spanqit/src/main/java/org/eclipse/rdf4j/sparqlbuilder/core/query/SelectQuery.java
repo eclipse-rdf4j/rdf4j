@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.Projectable;
 import org.eclipse.rdf4j.sparqlbuilder.core.Projection;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 
 /**
  * A SPARQL Select query
@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
  *      SPARQL Select Query</a>
  */
 public class SelectQuery extends OuterQuery<SelectQuery> {
-	private Projection select = Spanqit.select();
+	private Projection select = SparqlBuilder.select();
 
 	// package-protect instantiation of this class
 	SelectQuery() { }

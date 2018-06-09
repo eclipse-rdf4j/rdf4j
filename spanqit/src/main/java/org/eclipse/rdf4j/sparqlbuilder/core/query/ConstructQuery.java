@@ -9,7 +9,7 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.GraphTemplate;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 
 /**
@@ -23,7 +23,7 @@ public class ConstructQuery extends OuterQuery<ConstructQuery> {
 	// package-protect instantiation of this class
 	ConstructQuery() { }
 
-	private GraphTemplate construct = Spanqit.construct();
+	private GraphTemplate construct = SparqlBuilder.construct();
 
 	/**
 	 * Add triples to this query's graph template

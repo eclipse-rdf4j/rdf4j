@@ -10,9 +10,9 @@ package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.Projectable;
 import org.eclipse.rdf4j.sparqlbuilder.core.Projection;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.Query;
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * A SPARQL subquery
@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
  *      SPARQL Subquery</a>
  */
 public class SubSelect extends Query<SubSelect> implements GraphPattern {
-	private Projection select = Spanqit.select();
+	private Projection select = SparqlBuilder.select();
 
 	/*
 	 * If someone has any ideas how I can eliminate the need for repeating the
@@ -146,6 +146,6 @@ public class SubSelect extends Query<SubSelect> implements GraphPattern {
 		// TODO: VALUES
 		// subselect.append(values.getQueryString());
 
-		return SpanqitUtils.getBracedString(subSelect.toString());
+		return SparqlBuilderUtils.getBracedString(subSelect.toString());
 	}
 }

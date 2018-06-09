@@ -15,7 +15,7 @@ import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryPattern;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
@@ -24,8 +24,8 @@ import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
 public class Section5Test extends BaseExamples {
 	@Test
 	public void example_5_2() {
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
-		Variable name = Spanqit.var("name"), mbox = Spanqit.var("mbox");
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
+		Variable name = SparqlBuilder.var("name"), mbox = SparqlBuilder.var("mbox");
 		Variable x = query.var();
 
 		query.prefix(foaf)
@@ -38,7 +38,7 @@ public class Section5Test extends BaseExamples {
 				foaf.iri("name"), name));
 		GraphPattern mboxPattern = GraphPatterns.and(x.has(
 				foaf.iri("mbox"), mbox));
-		QueryPattern where = Spanqit.where(GraphPatterns.and(namePattern,
+		QueryPattern where = SparqlBuilder.where(GraphPatterns.and(namePattern,
 				mboxPattern));
 		query.where(where);
 		p();
@@ -54,8 +54,8 @@ public class Section5Test extends BaseExamples {
 
 	@Test
 	public void example_5_2_3() {
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
-		Variable x = Spanqit.var("x"), name = Spanqit.var("name"), mbox = Spanqit
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
+		Variable x = SparqlBuilder.var("x"), name = SparqlBuilder.var("name"), mbox = SparqlBuilder
 				.var("mbox");
 
 		p(GraphPatterns.and(x.has(foaf.iri("name"), name),

@@ -21,13 +21,13 @@ public interface Orderable extends QueryElement {
 	 * @return an ascending {@link OrderCondition} instance for this {@link Orderable} object
 	 */
 	default public OrderCondition asc() {
-		return Spanqit.asc(this);
+		return SparqlBuilder.asc(this);
 	}
 	
 	/**
 	 * @return an descending {@link OrderCondition} instance for this {@link Orderable} object
 	 */
 	default public OrderCondition desc() {
-		return Spanqit.desc(this);
+		return SparqlBuilder.desc(this);
 	}
 }

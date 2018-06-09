@@ -15,7 +15,7 @@ import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 import org.eclipse.rdf4j.sparqlbuilder.core.Dataset;
 import org.eclipse.rdf4j.sparqlbuilder.core.From;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
-import org.eclipse.rdf4j.sparqlbuilder.core.Spanqit;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
@@ -25,9 +25,9 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 public class Section13Test extends BaseExamples {
 	@Test
 	public void example_13_2_1() {
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
 		Variable name = query.var();
-		From defaultGraph = Spanqit.from(iri("http://example.org/foaf/aliceFoaf"));
+		From defaultGraph = SparqlBuilder.from(iri("http://example.org/foaf/aliceFoaf"));
 		
 		query.prefix(foaf).select(name).from(defaultGraph).where(query.var().has(foaf.iri("name"), name));
 		p();
@@ -35,20 +35,20 @@ public class Section13Test extends BaseExamples {
 	
 	@Test
 	public void example_13_2_2() {
-		Dataset dataset = Spanqit.dataset(
-				Spanqit.fromNamed(iri("http://example.org/alice")), 
-				Spanqit.fromNamed(iri("http://example.org/bob")));
+		Dataset dataset = SparqlBuilder.dataset(
+				SparqlBuilder.fromNamed(iri("http://example.org/alice")), 
+				SparqlBuilder.fromNamed(iri("http://example.org/bob")));
 		p(dataset);
 	}
 	
 	@Test
 	public void example_13_2_3() {
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
-		Prefix dc = Spanqit.prefix("dc", iri(DC_NS));
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
+		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS));
 		
-		From defaultGraph = Spanqit.from(iri("http://example.org/dft.ttl"));
-		From aliceGraph = Spanqit.fromNamed(iri("http://example.org/alice")); 
-		From bobGraph = Spanqit.fromNamed(iri("http://example.org/bob"));
+		From defaultGraph = SparqlBuilder.from(iri("http://example.org/dft.ttl"));
+		From aliceGraph = SparqlBuilder.fromNamed(iri("http://example.org/alice")); 
+		From bobGraph = SparqlBuilder.fromNamed(iri("http://example.org/bob"));
 
 		Variable who = query.var(), g = query.var(), mbox = query.var();
 		GraphPattern namedGraph = GraphPatterns.and(query.var().has(foaf.iri("mbox"), mbox)).from(g);
@@ -60,15 +60,15 @@ public class Section13Test extends BaseExamples {
 	
 	@Test
 	public void example_13_3_1() {
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
 		Variable src = query.var(), bobNick = query.var(), x = query.var();
 		
 		// TODO: still need to bracket GGP's that aren't explicitly GGP instances,
 		// even if there's only 1
 		query.prefix(foaf)
 			.select(src, bobNick)
-			.from(Spanqit.fromNamed(iri("http://example.org/alice")),
-					Spanqit.fromNamed(iri("http://example.org/bob")))
+			.from(SparqlBuilder.fromNamed(iri("http://example.org/alice")),
+					SparqlBuilder.fromNamed(iri("http://example.org/bob")))
 			.where(GraphPatterns.and(
 					x.has(foaf.iri("mbox"), iri("mailto:bob@work.example")),
 					x.has(foaf.iri("nick"), bobNick))
@@ -78,14 +78,14 @@ public class Section13Test extends BaseExamples {
 	
 	@Test
 	public void example_13_3_2() {
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
-		Prefix data = Spanqit.prefix("data", iri("http://example.org/foaf/"));
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
+		Prefix data = SparqlBuilder.prefix("data", iri("http://example.org/foaf/"));
 		Variable x = query.var(), nick = query.var();
 		
 		query.prefix(foaf, data)
 			.select(nick)
-			.from(Spanqit.fromNamed(iri("http://example.org/foaf/aliceFoaf")),
-					Spanqit.fromNamed(iri("http://example.org/foaf/bobFoaf")))
+			.from(SparqlBuilder.fromNamed(iri("http://example.org/foaf/aliceFoaf")),
+					SparqlBuilder.fromNamed(iri("http://example.org/foaf/bobFoaf")))
 			.where(GraphPatterns.and(
 					x.has(foaf.iri("mbox"), iri("mailto:bob@work.example")),
 					x.has(foaf.iri("nick"), nick))
@@ -95,9 +95,9 @@ public class Section13Test extends BaseExamples {
 	
 	@Test
 	public void example_13_3_3() {
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
-		Prefix data = Spanqit.prefix("data", iri("http://example.org/foaf/"));
-		Prefix rdfs = Spanqit.prefix("rdfs", iri("http://www.w3.org/2000/01/rdf-schema#"));
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
+		Prefix data = SparqlBuilder.prefix("data", iri("http://example.org/foaf/"));
+		Prefix rdfs = SparqlBuilder.prefix("rdfs", iri("http://www.w3.org/2000/01/rdf-schema#"));
 		
 		Variable mbox = query.var(), nick = query.var(), ppd = query.var(),
 				alice = query.var(), whom = query.var(), w = query.var();
@@ -118,16 +118,16 @@ public class Section13Test extends BaseExamples {
 				
 		query.prefix(data, foaf, rdfs)
 			.select(mbox, nick, ppd)
-			.from(Spanqit.fromNamed(iri("http://example.org/foaf/aliceFoaf")),
-				Spanqit.fromNamed(iri("http://example.org/foaf/bobFoaf")))
+			.from(SparqlBuilder.fromNamed(iri("http://example.org/foaf/aliceFoaf")),
+				SparqlBuilder.fromNamed(iri("http://example.org/foaf/bobFoaf")))
 			.where(aliceFoafGraph, ppdGraph);
 		p();
 	}
 	
 	@Test
 	public void example_13_3_4() {
-		Prefix foaf = Spanqit.prefix("foaf", iri(FOAF_NS));
-		Prefix dc = Spanqit.prefix("dc", iri(DC_NS));
+		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
+		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS));
 		
 		Variable name = query.var(), mbox = query.var(), date = query.var(),
 				g = query.var(), person = query.var();

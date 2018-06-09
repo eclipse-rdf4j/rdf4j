@@ -11,7 +11,7 @@ package org.eclipse.rdf4j.sparqlbuilder.core;
 import java.util.ArrayList;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * A SPARQL Having clause
@@ -24,7 +24,7 @@ public class Having extends StandardQueryElementCollection<Expression<?>> {
 	private static final String DELIMETER = " ";
 
 	Having() {
-		super(HAVING, DELIMETER, SpanqitUtils::getParenthesizedString, new ArrayList<>());
+		super(HAVING, DELIMETER, SparqlBuilderUtils::getParenthesizedString, new ArrayList<>());
 		printBodyIfEmpty(true);
 	}
 

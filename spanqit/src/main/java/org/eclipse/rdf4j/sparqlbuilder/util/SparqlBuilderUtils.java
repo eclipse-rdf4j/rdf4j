@@ -14,8 +14,11 @@ import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 
-@SuppressWarnings("javadoc")
-public class SpanqitUtils {
+/**
+ * Utility functions for the SparqlBuilder 
+ *
+ */
+public class SparqlBuilderUtils {
 	private static final String PAD = " ";
 
 	public static <O> Optional<O> getOrCreateAndModifyOptional(Optional<O> optional, Supplier<O> getter, UnaryOperator<O> operator) {

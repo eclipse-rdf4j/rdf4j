@@ -12,7 +12,7 @@ import java.util.Optional;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * A SPARQL Filter Clause
@@ -51,7 +51,7 @@ class Filter implements QueryElement {
 
 		filter.append(FILTER).append(" ");
 		String exp = constraint.map(QueryElement::getQueryString).orElse("");
-		filter.append(SpanqitUtils.getParenthesizedString(exp));
+		filter.append(SparqlBuilderUtils.getParenthesizedString(exp));
 
 		return filter.toString();
 	}

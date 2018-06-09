@@ -8,7 +8,7 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint;
 
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * Represents a SPARQL operation that takes exactly 1 argument
@@ -17,6 +17,6 @@ class UnaryOperation extends Operation<UnaryOperation> {
 	UnaryOperation(UnaryOperator operator) {
 		super(operator, 1);
 		setOperatorName(operator.getQueryString(), false);
-		setWrapperMethod(SpanqitUtils::getParenthesizedString);
+		setWrapperMethod(SparqlBuilderUtils::getParenthesizedString);
 	}
 }

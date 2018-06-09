@@ -11,7 +11,7 @@ package org.eclipse.rdf4j.sparqlbuilder.core;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatternNotTriple;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
-import org.eclipse.rdf4j.sparqlbuilder.util.SpanqitUtils;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * A SPARQL Query Pattern (<code>WHERE</code> clause)
@@ -60,7 +60,7 @@ public class QueryPattern implements QueryElement {
 		
 		whereClause.append(WHERE).append(" ");
 		if(where.hasQualifier()) {
-			whereClause.append(SpanqitUtils.getBracedString(where.getQueryString()));
+			whereClause.append(SparqlBuilderUtils.getBracedString(where.getQueryString()));
 		} else {
 			whereClause.append(where.getQueryString());
 		}
