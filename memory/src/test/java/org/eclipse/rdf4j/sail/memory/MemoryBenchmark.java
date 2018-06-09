@@ -1,4 +1,4 @@
-package org.eclipse.rdf4j.query.parser.sparql;
+package org.eclipse.rdf4j.sail.memory;
 
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
