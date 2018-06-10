@@ -1,6 +1,8 @@
 = Introduction
 RDF4J SparqlBuilder is a fluent Java API used to programmatically create SPARQL query strings. It is based on the http://https://github.com/anqit/spanqit[Spanqit] query builder developed by Anqit Praqash, and has been slightly modified to allow tighter integration with the rest of the RDF4J framework.
 
+CAUTION: integration of SparqlBuilder with the RDF4J framework is a work-in-progress. This means that the current SparqlBuilder API should be considered "experimental". Although we'll do our best to avoid it, we may make some backward-incompatible changes in this API in a future MINOR release.
+
 SparqlBuilder allows the following SPARQL query:
 [source,sparql]
 ----
