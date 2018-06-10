@@ -1,9 +1,10 @@
 include::../shared-settings.adoc[]
 :toclevels: 4
 include::../header.adoc[]
+:javadoc: http://docs.rdf4j.org/javadoc/latest?org/eclipse/rdf4j/
 
 :numbered!:
-== Creating SPARQL Queries with Spanqit
+== Creating SPARQL Queries with the SparqlBuilder
 
 :numbered:
 include::01-introduction.adoc[leveloffset=+1]
@@ -18,7 +19,7 @@ include::05-graph-patterns.adoc[leveloffset=+1]
 
 include::06-query-constraints.adoc[leveloffset=+1]
 
-include::07-spanqit-rdf-model.adoc[leveloffset=+1]
+include::07-sparqlbuilder-rdf-model.adoc[leveloffset=+1]
 
 include::08-examples.adoc[leveloffset=+1]
 

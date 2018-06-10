@@ -18,6 +18,7 @@ include::header.adoc[]
 ==== Howto's
 
 - link:custom-sparql-functions[Creating Custom SPARQL Functions]
+- link:sparqlbuilder[Creating SPARQL queries using the SparqlBuilder]
 
 === Reference Documentation
 
