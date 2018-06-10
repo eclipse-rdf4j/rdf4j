@@ -29,7 +29,7 @@ To resolve issues where the request body is not getting properly interpreted as 
 
 === Logging Configuration
 
-Both RDF4J Server and RDF$J Workbench use the Logback logging framework. In its default configuration, all RDF4J Server log messages are sent to the log file [RDF4J_DATA]/Server/logs/main.log (and log messages for the Workbench to the same file in [RDF4J_DATA]/Workbench ).
+Both RDF4J Server and RDF4J Workbench use the Logback logging framework. In its default configuration, all RDF4J Server log messages are sent to the log file [RDF4J_DATA]/Server/logs/main.log (and log messages for the Workbench to the same file in [RDF4J_DATA]/Workbench ).
 
 The default log level is INFO, indicating that only important status messages, warnings and errors are logged. The log level and -behaviour can be adjusted by modifying the [RDF4J_DATA]/Server/conf/logback.xml file. This file will be generated when the server is first run. Please consult the logback manual for configuration instructions.
 
@@ -37,7 +37,7 @@ The default log level is INFO, indicating that only important status messages, w
 
 A clean installation of RDF4J Server has a single repository by default: the SYSTEM repository. This SYSTEM repository contains all configuration data for the server, including data on which other repositories exists and (in future releases) the access rights on these repositories. This SYSTEM repository should not be used to store data that is not related to the server configuration.
 
-The best way to create and manage repositories in a SYSTEM repository is to use the RDF$J Console or RDF4J Workbench. The RDF$J Console is a command-line application for interacting with RDF4J Server (see the following chapter for details).
+The best way to create and manage repositories in a SYSTEM repository is to use the RDF4J Console or RDF4J Workbench. The RDF4J Console is a command-line application for interacting with RDF4J Server (see the following chapter for details).
 
 === Setting up Users and Permissions
 
