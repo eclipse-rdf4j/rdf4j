@@ -222,9 +222,6 @@ public class Console {
 		parser.handleExitOption();
 
 		String location = parser.handleLocationGroup();
-		if (location == null) {
-			System.exit(3);
-		}
 		
 		if (! parser.handleCautionGroup()) {
 			System.exit(3);
