@@ -8,8 +8,8 @@
 package org.eclipse.rdf4j.workbench.util;
 
 import java.util.Enumeration;
-import java.util.Hashtable;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletContext;
@@ -20,12 +20,12 @@ public class BasicServletConfig implements ServletConfig {
 
 	private ServletContext context;
 
-	private Hashtable<String, String> params;
+	private ConcurrentHashMap<String, String> params;
 
 	public BasicServletConfig(String name, ServletContext context) {
 		this.name = name;
 		this.context = context;
-		params = new Hashtable<String, String>();
+		params = new ConcurrentHashMap<>();
 	}
 
 	@SuppressWarnings("unchecked")
@@ -46,21 +46,25 @@ public class BasicServletConfig implements ServletConfig {
 	public BasicServletConfig(String name, ServletContext context, Map<String, String> params) {
 		this.name = name;
 		this.context = context;
-		this.params = new Hashtable<String, String>(params);
+		this.params = new ConcurrentHashMap<>(params);
 	}
 
+	@Override
 	public String getServletName() {
 		return name;
 	}
 
+	@Override
 	public ServletContext getServletContext() {
 		return context;
 	}
 
+	@Override
 	public Enumeration<String> getInitParameterNames() {
 		return params.keys();
 	}
 
+	@Override
 	public String getInitParameter(String name) {
 		return params.get(name);
 	}
