@@ -22,7 +22,9 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
  * </p>
  * 
  * @author Michael Grove
+ * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder} instead.
  */
+@Deprecated
 public class QueryBuilderFactory {
 
 	/**
