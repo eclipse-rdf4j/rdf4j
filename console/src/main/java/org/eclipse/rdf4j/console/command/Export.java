@@ -9,13 +9,9 @@ package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
 import java.io.Writer;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
@@ -58,26 +54,6 @@ public class Export extends ConsoleCommand {
 			+ "export <file> (<uri>|null)... Exports the specified context(s) to a file\n";
 	}
 
-	/**
-	 * Get path from file or URI
-	 * 
-	 * @param file file name
-	 * @return path or null
-	 */
-	private static Path getPath(String file) {
-		Path path = null;
-		try {
-			path = Paths.get(file);
-		} catch (InvalidPathException ipe) {
-			try {
-				path = Paths.get(new URI(file));
-			} catch (URISyntaxException ex) { 
-				//
-			}
-		}
-		return path;
-	}	
-
 	@Override
 	public void execute(String... tokens) {
 		Repository repository = state.getRepository();
@@ -112,7 +88,7 @@ public class Export extends ConsoleCommand {
 	 * @throws UnsupportedRDFormatException
 	 */
 	private void export(Repository repository, String fileName, Resource...contexts) {
-		Path path = getPath(fileName);
+		Path path = Util.getPath(fileName);
 		if (path == null) {
 			consoleIO.writeError("Invalid file name");
 			return;
