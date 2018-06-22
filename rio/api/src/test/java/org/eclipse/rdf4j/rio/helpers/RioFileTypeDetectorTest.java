@@ -7,20 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import static org.hamcrest.Matchers.hasItem;
-import static org.hamcrest.Matchers.isA;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.spi.FileTypeDetector;
 import java.util.ServiceLoader;
 
 import org.junit.Test;
 
-public class RioFileTypeDetectorTest {
+public class RioFileTypeDetectorTest
+{
     @Test
     public void correctClassIsRegisteredInServices()
     {
-        assertThat(ServiceLoader.load(FileTypeDetector.class),
-                hasItem(isA(RioFileTypeDetector.class)));
+        assertThat(ServiceLoader.load(FileTypeDetector.class)).anyMatch(ftd -> ftd instanceof RioFileTypeDetector);
     }
 }
