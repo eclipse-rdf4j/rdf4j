@@ -7,13 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
-import static org.hamcrest.CoreMatchers.not;
-import static org.hamcrest.Matchers.empty;
-import static org.hamcrest.Matchers.hasSize;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -35,8 +32,6 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.SimpleParseLocationListener;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.hamcrest.CoreMatchers;
-import org.hamcrest.Matchers;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -116,11 +111,11 @@ public class TestTurtleParser {
 
 		parser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_URI_SYNTAX);
 		parser.parse(new StringReader(data), baseURI);
-		assertThat(errorCollector.getErrors(), hasSize(1));
-		assertThat(errorCollector.getFatalErrors(), empty());
-		assertThat(statementCollector.getStatements(), not(empty()));
-		assertThat("only syntactically legal triples should have been reported",
-				statementCollector.getStatements(), hasSize(1));
+		assertThat(errorCollector.getErrors()).hasSize(1);
+		assertThat(errorCollector.getFatalErrors()).isEmpty();
+		assertThat(statementCollector.getStatements()).isNotEmpty();
+		assertThat(statementCollector.getStatements()).hasSize(1)
+		        .overridingErrorMessage("only syntactically legal triples should have been reported");
 	}
 
 	@Test
@@ -132,10 +127,11 @@ public class TestTurtleParser {
 		parser.getParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false);
 
 		parser.parse(new StringReader(data), baseURI);
-		assertThat(errorCollector.getErrors(), empty());
-		assertThat(errorCollector.getFatalErrors(), empty());
-		assertThat(statementCollector.getStatements(), not(empty()));
-		assertThat("all triples should have been reported", statementCollector.getStatements(), hasSize(3));
+		assertThat(errorCollector.getErrors()).isEmpty();
+		assertThat(errorCollector.getFatalErrors()).isEmpty();
+		assertThat(statementCollector.getStatements()).isNotEmpty();
+		assertThat(statementCollector.getStatements()).hasSize(3)
+		        .overridingErrorMessage("all triples should have been reported");
 	}
 
 	@Test
@@ -360,7 +356,7 @@ public class TestTurtleParser {
 
 		Collection<Statement> stmts = sc.getStatements();
 
-		assertThat(stmts, Matchers.<Statement> iterableWithSize(2));
+		assertThat(stmts).hasSize(2);
 
 		Iterator<Statement> iter = stmts.iterator();
 
@@ -373,7 +369,7 @@ public class TestTurtleParser {
 
 		String resourceUrl = res.stringValue();
 
-		assertThat(resourceUrl, CoreMatchers.startsWith("jar:" + zipfileUrl + "!"));
+		assertThat(resourceUrl).startsWith("jar:" + zipfileUrl + "!");
 
 		URL javaUrl = new URL(resourceUrl);
 		assertEquals("jar", javaUrl.getProtocol());
