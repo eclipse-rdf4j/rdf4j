@@ -1,5 +1,5 @@
 = Graph Patterns
-SparqlBuilder uses three classes to represent the SPARQL graph patterns, all of which implement the {javadoc}sparqlbuilder/graphpattern/GraphPatter.html[GraphPattern] interface:
+SparqlBuilder uses three classes to represent the SPARQL graph patterns, all of which implement the {javadoc}sparqlbuilder/graphpattern/GraphPattern.html[GraphPattern] interface:
 - The `TriplePattern` class represents triple patterns.
 - The `GraphPatternNotTriple` class represents collections of graph patterns.
 - The `SubSelect` class represents a SPARQL sub query.
@@ -22,7 +22,7 @@ A `TriplePattern` instance can also be created from the `has()` and `isA()` shor
 [source,java]
 ----
 Prefix foaf = SparqlBuilder.prefix("foaf", iri("http://xmlns.com/foaf/0.1/"));
-Variable x = SparqlBuilder.var("x"), name = Spanqit.var("name");
+Variable x = SparqlBuilder.var("x"), name = SparqlBuilder.var("name");
 
 TriplePattern triple = x.has(foaf.iri("nick"), Rdf.literalOf("Alice"), Rdf.literalOf("Alice_"))
     .andHas(foaf.iri("name"), name);
@@ -47,7 +47,7 @@ System.out.println(groupPattern.getQueryString());
 ----
 Prefix dc10 = SparqlBuilder.prefix("dc10", iri("http://purl.org/dc/elements/1.0/")),
 	dc11 = SparqlBuilder.prefix("dc11", iri("http://purl.org/dc/elements/1.1/"));
-Variable book = SparqlBuilder.var("book"), title = Spanqit.var("title");
+Variable book = SparqlBuilder.var("book"), title = SparqlBuilder.var("title");
 
 GraphPatternNotTriple union = GraphPatterns.union(book.has(dc10.iri("title"), title),
 	book.has(dc11.iri("title"), title);
