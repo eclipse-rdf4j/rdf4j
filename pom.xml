@@ -221,7 +221,7 @@
 		<spring.version>4.2.1.RELEASE</spring.version>
 		<httpclient.version>4.5.5</httpclient.version>
 		<httpcore.version>4.4.9</httpcore.version>
-		<jackson.version>2.9.5</jackson.version>
+		<jackson.version>2.9.6</jackson.version>
 		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
 	</properties>
 
