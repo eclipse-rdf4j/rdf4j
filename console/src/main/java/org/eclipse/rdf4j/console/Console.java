@@ -190,13 +190,18 @@ public class Console {
 	/**
 	 * Get console IO
 	 * 
-	 * @return 
+	 * @return console
 	 */
 	public ConsoleIO getConsoleIO() {
 		return this.consoleIO;
 	}
 	
 	
+	/**
+	 * Set exit on error mode
+	 * 
+	 * @param mode true when error should exit 
+	 */
 	protected void setExitOnError(boolean mode) {
 		Console.exitOnError = mode;
 	}
@@ -223,9 +228,6 @@ public class Console {
 		parser.handleExitOption();
 
 		String location = parser.handleLocationGroup();
-		if (location == null) {
-			System.exit(3);
-		}
 		
 		if (! parser.handleCautionGroup()) {
 			System.exit(3);
