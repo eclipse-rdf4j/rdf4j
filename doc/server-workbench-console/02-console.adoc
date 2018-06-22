@@ -1,34 +1,48 @@
 = RDF4J Console
 
-The RDF4J Console is a command-line application for interacting with RDF4J. It can be used to create and use local RDF databases, or it can connect to a running RDF4J Server.
+The RDF4J Console is a text console application for interacting with RDF4J. It can be used to create and use local RDF databases, or to connect to a running RDF4J Server.
 
 == Getting started
 
-RDF4J Console can be started using the `console.bat`/`.sh` scripts that can be found in the bin directory of the RDF4J SDK. By default, the console will connect to the “default data directory”, which contains the console’s own set of repositories.
+RDF4J Console can be started using the `console.bat`/`.sh` scripts in the bin directory of the RDF4J SDK. By default, the console will connect to the “default data directory”, which contains the console’s own set of repositories.
 
-The console can be operated by typing commands. For example, to get an overview of the available commands, type:
+The console is operated by typing commands. For example, to get an overview of the available commands, type:
 
  help
 
 To get help for a specific command, type ‘help’ followed by the command name, e.g.:
 
  help connect
+ 
+=== History
 
-=== Connecting to RDF4J Server
+The console has a built-in history, use the Up and Down arrows to cycle through the history of commands.
+
+=== Connecting to a set of repositories
 
 As indicated in the previous section, the console connects to its own set of repositories by default. Using the `connect` command you can make the console connect to a RDF4J Server or to a set of repositories on your file system. For example, to connect to a RDF4J Server that is listening to port 8080 on localhost, enter the following command:
 
- connect http://localhost:8080/rdf4j-server
+  connect http://localhost:8080/rdf4j-server
+ 
+To connect to the default set of repositories, enter:
 
-=== Repository list
+  connect default
+
+When connecting to a remote server, a user name and password can be provided as well:
+
+  connect http://example.rdf4j.org/rdfj-server myname mypassword
+
+Not surprisingly, the `disconnect` command disconnects the console from the set of repository.
+
+=== Showing the list of repositories
 
 To get an overview of the repositories that are available in the set that your console is connected to, use the `show` command:
 
  show repositories
 
-=== Creating a repository
+=== Creating a new repository
 
-The `create` command can be used to add new repositories to the set that the console is connected to. This command expects the name of a template that describes the repository’s configuration. Currently, there are nine templates that are included with the console by default:
+The `create` command creates a new repository in the set the console is connected to. This command expects the name of a template describing the repository's configuration. Several templates are available, including:
 
 - memory — a memory based RDF repository
 - memory-rdfs — a main-memory repository with RDF Schema inferencing
@@ -36,13 +50,15 @@ The `create` command can be used to add new repositories to the set that the con
 - native — a repository that uses on-disk data structure
 - native-rdfs — a native repository with RDF Schema inferencing
 - native-rdfs-dt — a native repository with RDF Schema and direct type hierarchy inferencing
-- remote — a repository that serves as a proxy for a repository on a Sesame Server
+- remote — a repository that serves as a proxy for a repository on a RDF4J Server
+- sparql — a repository that serves as a proxy for a SPARQL endpoint
+
 
 When the `create` command is executed, the console will ask you to fill in a number of parameters for the type of repository that you chose. For example, to create a native repository, you execute the following command:
 
  create native
 
-The console will then ask you to provide an ID and title for the repository, as well as the triple indexes that need to be created for this kind of store. The values between square brackets indicate default values which you can select by simply hitting enter. The output of this dialogue looks something like this:
+The console will ask you to provide an ID and title for the repository, as well as the triple indexes that need to be created for this kind of store. The values between square brackets indicate default values which you can select by simply hitting enter. The output of this dialogue looks something like this:
 
  Please specify values for the following variables:
  Repository ID [native]: myRepo
@@ -50,9 +66,59 @@ The console will then ask you to provide an ID and title for the repository, as 
  Triple indexes [spoc,posc]: 
  Repository created
 
+=== Opening and closing a repository
+
+The `open` command opens a specific repository. For example, to open the `myrepo` repository, enter:
+
+  open myrepo
+
+The `close` command closes the connection.
+
+=== Verifying a file
+
+The `verify` command verifies the validity of an RDF file. Several formats (serializations) are supported, including JSON-LD, Turtle, N-Triples and RDF/XML. The console will select the format based upon the extension of the file name. For example, to verify a JSON-LD file: 
+ 
+  verify data.jsonld
+
+On a MS-Windows system, forward slashes or double backward slashes are to be used when specifying the file path, for example:
+
+  verify C:\\data\\rdf\\data.jsonld
+
+or
+
+  verify C:/data/rdf/data.jsonld
+  
+=== Loading a file into a repository
+
+The `load` command loads a file into the opened repository.  Several formats (serializations) are supported, including JSON-LD, Turtle, N-Triples and RDF/XML. The console will select the format based upon the extension of the file name.
+
+  load import.nt
+
+Specifying a base IRI for resolving relative IRIs:
+
+  load import.nt from http://example.org
+
+=== Exporting a repository to a file
+
+The `export` command exports statements from a repository to a file. Either the entire repository can be exported, or a (list of) named graphs / contexts.
+
+  export export.nt
+
+=== Executing a SPARQL query
+
+The `sparql` command executes a sparql query. 
+
+  sparql
+
+Multiple lines can be entered. To terminate the input, enter a new line containing only a single dot `.`
+
+  select ?s ?p ?o
+  where { ?s ?p ?o }
+  .
+
 === Other commands
 
-Please check the documentation that is provided by the console itself for help on how to use the other commands. Most commands should be self explanatory. [TODO expand on this a little – give some examples of other commands]
+Please check the documentation that is provided by the console itself for help on how to use the other commands. Most commands should be self explanatory. 
 
 == Repository configuration
 === Memory store configuration
