@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.helpers;
 
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -24,7 +22,7 @@ import org.junit.Test;
 
 /**
  * Some general tests for {@link NogifyingSailConnectionWrapper} expected behaviour.
- * 
+ *
  * @author Dale Visser
  */
 public class NotifyingSailConnectionWrapperTest {
@@ -89,7 +87,7 @@ public class NotifyingSailConnectionWrapperTest {
 
 	/**
 	 * Regression test for SES-1934.
-	 * 
+	 *
 	 * @throws SailException
 	 */
 	@Test
@@ -98,12 +96,12 @@ public class NotifyingSailConnectionWrapperTest {
 	{
 		wrapper.addConnectionListener(listener);
 		addStatement("a");
-		assertThat(listener.getCount(), is(equalTo(1)));
+		assertThat(listener.getCount()).isEqualTo(1);
 		removeStatement("a");
-		assertThat(listener.getCount(), is(equalTo(0)));
+		assertThat(listener.getCount()).isEqualTo(0);
 		wrapper.removeConnectionListener(listener);
 		addStatement("b");
-		assertThat(listener.getCount(), is(equalTo(0)));
+		assertThat(listener.getCount()).isEqualTo(0);
 	}
 
 	private void removeStatement(String objectValue)

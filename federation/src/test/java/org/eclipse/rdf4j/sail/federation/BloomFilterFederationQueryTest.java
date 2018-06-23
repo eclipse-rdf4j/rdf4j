@@ -7,8 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation;
 
-import static org.hamcrest.CoreMatchers.is;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.Map;
@@ -29,7 +28,7 @@ public class BloomFilterFederationQueryTest extends FederationQueryTest {
 	{
 		super.configure(federation);
 		List<Repository> members = federation.getMembers();
-		assertThat(members.size(), is(3));
+		assertThat(members).hasSize(3);
 		RepositoryBloomFilter bf1 = AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE;
 		RepositoryBloomFilter bf2 = new InaccurateRepositoryBloomFilter();
 		RepositoryBloomFilter bf3 = AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE;
@@ -37,8 +36,8 @@ public class BloomFilterFederationQueryTest extends FederationQueryTest {
 		federation.setBloomFilter(members.get(1), bf2);
 		federation.setBloomFilter(members.get(2), bf3);
 		Map<Repository, RepositoryBloomFilter> filters = federation.getBloomFilters();
-		assertThat(filters.get(members.get(0)), is(bf1));
-		assertThat(filters.get(members.get(1)), is(bf2));
-		assertThat(filters.get(members.get(2)), is(bf3));
+		assertThat(filters.get(members.get(0))).isEqualTo(bf1);
+		assertThat(filters.get(members.get(1))).isEqualTo(bf2);
+		assertThat(filters.get(members.get(2))).isEqualTo(bf3);
 	}
 }

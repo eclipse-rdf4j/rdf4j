@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.spin;
 
-import static org.hamcrest.CoreMatchers.hasItems;
-import static org.hamcrest.CoreMatchers.is;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.util.HashSet;
@@ -63,8 +61,8 @@ public class EvaluationModeTest {
 				results.add(bs.getValue("s").stringValue());
 			}
 		}
-		assertThat(results.size(), is(2));
-		assertThat(results, hasItems("ex:Subj1", "ex:Subj3"));
+		assertThat(results).hasSize(2);
+		assertThat(results).contains("ex:Subj1", "ex:Subj3");
 		conn.close();
 		repo.shutDown();
 	}
