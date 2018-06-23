@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 
 	<groupId>org.eclipse.rdf4j</groupId>
-	<artifactId>rdf4j-client-parent</artifactId>
+	<artifactId>rdf4j-parent</artifactId>
 	<version>2.4-SNAPSHOT</version>
 	<packaging>pom</packaging>
 
