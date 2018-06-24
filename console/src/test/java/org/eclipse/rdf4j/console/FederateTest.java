@@ -7,10 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsEqual.equalTo;
-import static org.hamcrest.core.IsInstanceOf.instanceOf;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -45,7 +42,7 @@ import ch.qos.logback.classic.Logger;
 
 /**
  * Unit tests for {@link Federate}.
- * 
+ *
  * @author Dale Visser
  */
 public class FederateTest extends AbstractCommandTest {
@@ -192,7 +189,7 @@ public class FederateTest extends AbstractCommandTest {
 		execute(FED_ID, MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID2);
 		verifySuccess(ProxyRepositoryFactory.REPOSITORY_TYPE, ProxyRepositoryFactory.REPOSITORY_TYPE);
 		long expectedSize = getSize(MEMORY_MEMBER_ID1) + getSize(MEMORY_MEMBER_ID2);
-		assertThat(getSize(FED_ID), is(equalTo(expectedSize)));
+		assertThat(getSize(FED_ID)).isEqualTo(expectedSize);
 	}
 
 	private long getSize(String memberID)
@@ -239,7 +236,7 @@ public class FederateTest extends AbstractCommandTest {
 		verifySuccess(false, true, ProxyRepositoryFactory.REPOSITORY_TYPE,
 				ProxyRepositoryFactory.REPOSITORY_TYPE);
 		long expectedSize = getSize(MEMORY_MEMBER_ID1) + getSize(MEMORY_MEMBER_ID2);
-		assertThat(getSize(FED_ID), is(equalTo(expectedSize)));
+		assertThat(getSize(FED_ID)).isEqualTo(expectedSize);
 	}
 
 	@Test
@@ -260,23 +257,23 @@ public class FederateTest extends AbstractCommandTest {
 	private void verifySuccess(boolean readonly, boolean distinct, String... memberTypes)
 		throws Exception
 	{
-		assertThat(manager.hasRepositoryConfig(FED_ID), is(equalTo(true)));
+		assertThat(manager.hasRepositoryConfig(FED_ID)).isTrue();
 		verify(mockConsoleIO, times(1)).readln("Federation Description (optional): ");
 		verify(mockConsoleIO, times(1)).writeln("Federation created.");
 		verify(mockConsoleIO, never()).writeError(anyString());
-		assertThat(manager.getRepositoryInfo(FED_ID).getDescription(), is(equalTo(FED_DESCRIPTION)));
+		assertThat(manager.getRepositoryInfo(FED_ID).getDescription()).isEqualTo(FED_DESCRIPTION);
 		SailRepositoryConfig sailRepoConfig = (SailRepositoryConfig)manager.getRepositoryConfig(
 				FED_ID).getRepositoryImplConfig();
 		FederationConfig fedSailConfig = (FederationConfig)sailRepoConfig.getSailImplConfig();
-		assertThat(fedSailConfig.isReadOnly(), is(equalTo(readonly)));
-		assertThat(fedSailConfig.isDistinct(), is(equalTo(distinct)));
+		assertThat(fedSailConfig.isReadOnly()).isEqualTo(readonly);
+		assertThat(fedSailConfig.isDistinct()).isEqualTo(distinct);
 		List<RepositoryImplConfig> members = fedSailConfig.getMembers();
-		assertThat(members.size(), is(equalTo(memberTypes.length)));
+		assertThat(members).hasSameSizeAs(memberTypes);
 		int i = 0;
 		for (RepositoryImplConfig ric : members) {
 			String memberType = memberTypes[i];
 			i++;
-			assertThat(ric.getType(), is(equalTo(memberType)));
+			assertThat(ric.getType()).isEqualTo(memberType);
 			Class<? extends RepositoryImplConfig> implType;
 			if (HTTPRepositoryFactory.REPOSITORY_TYPE.equals(memberType)) {
 				implType = HTTPRepositoryConfig.class;
@@ -287,7 +284,7 @@ public class FederateTest extends AbstractCommandTest {
 			else {
 				implType = ProxyRepositoryConfig.class;
 			}
-			assertThat(ric, is(instanceOf(implType)));
+			assertThat(ric).isInstanceOf(implType);
 		}
 	}
 
@@ -300,6 +297,6 @@ public class FederateTest extends AbstractCommandTest {
 		else {
 			verify(mockConsoleIO).writeError(anyString());
 		}
-		assertThat(manager.hasRepositoryConfig(FED_ID), is(equalTo(false)));
+		assertThat(manager.hasRepositoryConfig(FED_ID)).isFalse();
 	}
 }
