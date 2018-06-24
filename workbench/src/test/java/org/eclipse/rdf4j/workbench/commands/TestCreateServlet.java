@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.commands;
 
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsNull.notNullValue;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.junit.Test;
@@ -37,7 +35,7 @@ public class TestCreateServlet {
 				"sparql" };
 		for (String template : expectedTemplates) {
 			String resource = template + ".ttl";
-			assertThat(resource, RepositoryConfig.class.getResourceAsStream(resource), is(notNullValue()));
+			assertThat(RepositoryConfig.class.getResourceAsStream(resource)).isNotNull().as(resource);
 		}
 	}
 }

@@ -7,11 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.util;
 
-import static org.hamcrest.CoreMatchers.startsWith;
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsEqual.equalTo;
-import static org.hamcrest.core.IsInstanceOf.instanceOf;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -68,8 +64,8 @@ public class TestValueDecoder {
 		throws BadRequestException
 	{
 		Value value = decoder.decodeValue("rdfs:label");
-		assertThat(value, is(instanceOf(IRI.class)));
-		assertThat((IRI)value, is(equalTo(RDFS.LABEL)));
+		assertThat(value).isInstanceOf(IRI.class);
+		assertThat((IRI)value).isEqualTo(RDFS.LABEL);
 	}
 
 	@Test
@@ -77,8 +73,8 @@ public class TestValueDecoder {
 		throws BadRequestException
 	{
 		Value value = decoder.decodeValue("\"plain string\"");
-		assertThat(value, is(instanceOf(Literal.class)));
-		assertThat((Literal)value, is(equalTo(factory.createLiteral("plain string"))));
+		assertThat(value).isInstanceOf(Literal.class);
+		assertThat((Literal)value).isEqualTo(factory.createLiteral("plain string"));
 	}
 
 	@Test
@@ -91,8 +87,8 @@ public class TestValueDecoder {
 		}
 		catch (BadRequestException bre) {
 			Throwable rootCause = bre.getRootCause();
-			assertThat(rootCause, is(instanceOf(BadRequestException.class)));
-			assertThat(rootCause.getMessage(), startsWith("Malformed language tag or datatype: "));
+			assertThat(rootCause).isInstanceOf(BadRequestException.class);
+			assertThat(rootCause).hasMessageStartingWith("Malformed language tag or datatype: ");
 		}
 	}
 
@@ -101,8 +97,8 @@ public class TestValueDecoder {
 		throws BadRequestException
 	{
 		Value value = decoder.decodeValue("\"1\"^^xsd:int");
-		assertThat(value, is(instanceOf(Literal.class)));
-		assertThat((Literal)value, is(equalTo(factory.createLiteral(1))));
+		assertThat(value).isInstanceOf(Literal.class);
+		assertThat((Literal)value).isEqualTo(factory.createLiteral(1));
 	}
 
 	@Test
@@ -110,8 +106,8 @@ public class TestValueDecoder {
 		throws BadRequestException
 	{
 		Value value = decoder.decodeValue("\"1\"^^<" + XMLSchema.INT + ">");
-		assertThat(value, is(instanceOf(Literal.class)));
-		assertThat((Literal)value, is(equalTo(factory.createLiteral(1))));
+		assertThat(value).isInstanceOf(Literal.class);
+		assertThat((Literal)value).isEqualTo(factory.createLiteral(1));
 	}
 
 	@Test
@@ -119,7 +115,7 @@ public class TestValueDecoder {
 		throws BadRequestException
 	{
 		Value value = decoder.decodeValue("\"color\"@en-US");
-		assertThat(value, is(instanceOf(Literal.class)));
-		assertThat((Literal)value, is(equalTo(factory.createLiteral("color", "en-US"))));
+		assertThat(value).isInstanceOf(Literal.class);
+		assertThat((Literal)value).isEqualTo(factory.createLiteral("color", "en-US"));
 	}
 }
