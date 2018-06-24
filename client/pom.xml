@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
-		<artifactId>rdf4j-client-parent</artifactId>
+		<artifactId>rdf4j-parent</artifactId>
 		<version>2.4-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-client</artifactId>
@@ -212,7 +212,6 @@
 			</plugin>
 			<plugin>
 				<artifactId>maven-resources-plugin</artifactId>
-				<version>3.0.2</version>
 				<executions>
 					<execution>
 						<id>create-manifest</id>
