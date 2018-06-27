@@ -2,6 +2,10 @@
     "head": { "vars": [ "book" , "title" ]
     } ,
     "other": "Other keys, with different names, may be present in the JSON Results Object",
+    "otherArray": [ "Other keys, with different names, ", "may be present in the JSON Results Object" ],
+    "otherObject": { "start": { "text" : "Other keys, " }, "middle": "with different names, ", "end": [ "may be present in", " the JSON Results Object" ] },
+    "otherEmptyArray": [],
+    "otherEmptyObject": {},
     "results": {
         "bindings": [
             {
