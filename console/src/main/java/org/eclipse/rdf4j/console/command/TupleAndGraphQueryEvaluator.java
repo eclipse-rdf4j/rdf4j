@@ -82,12 +82,10 @@ public class TupleAndGraphQueryEvaluator {
 			consoleIO.writeUnopenedError();
 			return;
 		}
-		final RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			final long startTime = System.nanoTime();
 			consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
-			final TupleQueryResult tupleQueryResult = con.prepareTupleQuery(queryLn, queryString).evaluate();
-			try {
+			try (TupleQueryResult tupleQueryResult = con.prepareTupleQuery(queryLn, queryString).evaluate()) {
 				int resultCount = 0;
 				final List<String> bindingNames = tupleQueryResult.getBindingNames();
 				if (bindingNames.isEmpty()) {
@@ -141,11 +139,7 @@ public class TupleAndGraphQueryEvaluator {
 				}
 				final long endTime = System.nanoTime();
 				consoleIO.writeln(resultCount + " result(s) (" + (endTime - startTime) / 1000000 + " ms)");
-			} finally {
-				tupleQueryResult.close();
 			}
-		} finally {
-			con.close();
 		}
 	}
 
@@ -168,15 +162,12 @@ public class TupleAndGraphQueryEvaluator {
 			return;
 		}
 		
-		final RepositoryConnection con = repository.getConnection();
-		con.setParserConfig(nonVerifyingParserConfig);
-		try {
+		try(RepositoryConnection con = repository.getConnection()) {
+			con.setParserConfig(nonVerifyingParserConfig);
 			consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
 			final long startTime = System.nanoTime();
 			final Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
-			final GraphQueryResult queryResult = con.prepareGraphQuery(queryLn, queryString).evaluate();
-		
-			try {
+			try (GraphQueryResult queryResult = con.prepareGraphQuery(queryLn, queryString).evaluate()) {
 				int resultCount = 0;
 				while (queryResult.hasNext()) {
 					final Statement statement = queryResult.next(); // NOPMD
@@ -190,11 +181,7 @@ public class TupleAndGraphQueryEvaluator {
 				}
 				final long endTime = System.nanoTime();
 				consoleIO.writeln(resultCount + " results (" + (endTime - startTime) / 1000000 + " ms)");
-			} finally {
-				queryResult.close();
 			}
-		} finally {
-			con.close();
 		}
 	}
 	

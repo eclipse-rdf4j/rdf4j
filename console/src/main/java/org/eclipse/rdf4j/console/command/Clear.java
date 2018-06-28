@@ -90,14 +90,11 @@ public class Clear extends ConsoleCommand {
 			consoleIO.writeln("Removing specified contexts...");
 		}
 		try {
-			final RepositoryConnection con = repository.getConnection();
-			try {
+			try (RepositoryConnection con = repository.getConnection()) {
 				con.clear(contexts);
 				if (contexts.length == 0) {
 					con.clearNamespaces();
 				}
-			} finally {
-				con.close();
 			}
 		} catch (RepositoryReadOnlyException e) {
 			try {

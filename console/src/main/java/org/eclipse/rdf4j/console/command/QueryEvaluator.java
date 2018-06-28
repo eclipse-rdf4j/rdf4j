@@ -174,14 +174,11 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			// explicitly provide the query parser with name space mappings in
 			// advance.
 			try {
-				final RepositoryConnection con = repository.getConnection();
-				try {
+				try (RepositoryConnection con = repository.getConnection()) {
 					final Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
 					if (!namespaces.isEmpty()) {
 						addQueryPrefixes(queryLn, result, namespaces);
 					}
-				} finally {
-					con.close();
 				}
 			} catch (RepositoryException e) {
 				consoleIO.writeError("Error connecting to repository: " + e.getMessage());
@@ -245,16 +242,13 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			return;
 		}
 		
-		final RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
 			final long startTime = System.nanoTime();
 			final boolean result = con.prepareBooleanQuery(queryLn, queryString).evaluate();
 			consoleIO.writeln("Answer: " + result);
 			final long endTime = System.nanoTime();
 			consoleIO.writeln("Query evaluated in " + (endTime - startTime) / 1000000 + " ms");
-		} finally {
-			con.close();
 		}
 	}
 
@@ -275,15 +269,12 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			return;
 		}
 		
-		final RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			consoleIO.writeln("Executing update...");
 			final long startTime = System.nanoTime();
 			con.prepareUpdate(queryLn, queryString).execute();
 			final long endTime = System.nanoTime();
 			consoleIO.writeln("Update executed in " + (endTime - startTime) / 1000000 + " ms");
-		} finally {
-			con.close();
 		}
 	}
 }

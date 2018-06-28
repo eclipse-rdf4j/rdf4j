@@ -81,11 +81,8 @@ public class Verify extends ConsoleCommand {
 			parser.setRDFHandler(listener);
 			consoleIO.writeln("Verifying data...");
 			
-			final InputStream dataStream = dataURL.openStream();
-			try {
+			try (InputStream dataStream = dataURL.openStream()) {
 				parser.parse(dataStream, "urn://openrdf.org/RioVerifier/");
-			} finally {
-				dataStream.close();
 			}
 			
 			final int warnings = listener.getWarnings();
