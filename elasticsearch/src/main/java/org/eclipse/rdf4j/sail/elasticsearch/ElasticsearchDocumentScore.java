@@ -13,11 +13,11 @@ import org.eclipse.rdf4j.sail.lucene.DocumentScore;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.elasticsearch.common.text.Text;
 import org.elasticsearch.search.SearchHit;
-import org.elasticsearch.search.highlight.HighlightField;
+import org.elasticsearch.search.fetch.subphase.highlight.HighlightField;
+import org.locationtech.spatial4j.context.SpatialContext;
 
 import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
-import com.spatial4j.core.context.SpatialContext;
 
 public class ElasticsearchDocumentScore extends ElasticsearchDocumentResult implements DocumentScore {
 

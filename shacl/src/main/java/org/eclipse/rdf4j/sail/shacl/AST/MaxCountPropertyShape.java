@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MaxCountFilter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.MergeNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
@@ -63,7 +63,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 			planAddedStatements1 = new LoggingNode(((TargetClass) shape).getTypeFilterPlan(shaclSailConnection, planAddedStatements1));
 		}
 
-		PlanNode mergeNode = new LoggingNode(new MergeNode(planAddedStatements, planAddedStatements1));
+		PlanNode mergeNode = new LoggingNode(new UnionNode(planAddedStatements, planAddedStatements1));
 
 		PlanNode groupByCount1 = new LoggingNode(new GroupByCount(mergeNode));
 
@@ -84,14 +84,14 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		new MaxCountFilter(groupByCount, null, directTupleFromFilter, maxCount);
 
-		PlanNode mergeNode1 = new MergeNode(new LoggingNode(directTupleFromFilter), new LoggingNode(invalidValues));
+		PlanNode mergeNode1 = new UnionNode(new LoggingNode(directTupleFromFilter), new LoggingNode(invalidValues));
 
 		return new LoggingNode(mergeNode1);
 
 	}
 
 	@Override
-	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return true;
 	}
 }

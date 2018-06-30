@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -15,6 +15,6 @@ import org.eclipse.rdf4j.repository.Repository;
  */
 public interface RequiresEvalutation {
 
-	boolean requiresEvalutation(Repository addedStatements, Repository removedStatements);
+	boolean requiresEvaluation(Repository addedStatements, Repository removedStatements);
 
 }

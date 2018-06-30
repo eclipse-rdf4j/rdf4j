@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -39,18 +39,18 @@ public class PathPropertyShape extends PropertyShape {
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
-		return new Select(shaclSailConnection.addedStatements, path.getQuery());
+		return new Select(shaclSailConnection.getAddedStatements(), path.getQuery());
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
-		return new Select(shaclSailConnection.removedStatements, path.getQuery());
+		return new Select(shaclSailConnection.getRemovedStatements(), path.getQuery());
 	}
 
 
 	@Override
-	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
-		return super.requiresEvalutation(addedStatements, removedStatements) || path.requiresEvalutation(addedStatements, removedStatements);
+	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
+		return super.requiresEvaluation(addedStatements, removedStatements) || path.requiresEvaluation(addedStatements, removedStatements);
 	}
 }
 

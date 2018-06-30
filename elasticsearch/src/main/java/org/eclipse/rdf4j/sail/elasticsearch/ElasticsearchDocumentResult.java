@@ -10,9 +10,9 @@ package org.eclipse.rdf4j.sail.elasticsearch;
 import org.eclipse.rdf4j.sail.lucene.DocumentResult;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.elasticsearch.search.SearchHit;
+import org.locationtech.spatial4j.context.SpatialContext;
 
 import com.google.common.base.Function;
-import com.spatial4j.core.context.SpatialContext;
 
 public class ElasticsearchDocumentResult implements DocumentResult {
 

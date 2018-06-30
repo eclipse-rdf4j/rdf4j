@@ -7,15 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.solr;
 
-import org.eclipse.rdf4j.model.URI;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
 import org.eclipse.rdf4j.sail.lucene.util.GeoUnits;
 
 public class SolrDocumentDistance extends SolrDocumentResult implements DocumentDistance {
 
-	private final URI units;
+	private final IRI units;
 
-	public SolrDocumentDistance(SolrSearchDocument doc, URI units) {
+	public SolrDocumentDistance(SolrSearchDocument doc, IRI units) {
 		super(doc);
 		this.units = units;
 	}

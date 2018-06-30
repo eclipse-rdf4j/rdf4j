@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 import java.util.HashMap;
 import java.util.Map;
 
-import com.spatial4j.core.context.SpatialContext;
-import com.spatial4j.core.context.SpatialContextFactory;
+import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.context.SpatialContextFactory;
 
 /**
  * This class is responsible for creating the {@link com.spatial4j.core.context.SpatialContext},

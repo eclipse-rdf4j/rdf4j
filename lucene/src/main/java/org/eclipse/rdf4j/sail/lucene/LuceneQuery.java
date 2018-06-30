@@ -17,8 +17,8 @@ import org.apache.lucene.search.highlight.Formatter;
 import org.apache.lucene.search.highlight.Highlighter;
 import org.apache.lucene.search.highlight.QueryScorer;
 import org.apache.lucene.search.highlight.SimpleHTMLFormatter;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.URI;
 
 import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
@@ -64,7 +64,7 @@ public class LuceneQuery implements SearchQuery {
 
 	@Override
 	@Deprecated
-	public void highlight(URI property) {
+	public void highlight(IRI property) {
 		Formatter formatter = new SimpleHTMLFormatter(SearchFields.HIGHLIGHTER_PRE_TAG,
 				SearchFields.HIGHLIGHTER_POST_TAG);
 		highlighter = new Highlighter(formatter, new QueryScorer(query));

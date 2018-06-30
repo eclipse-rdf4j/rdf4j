@@ -16,8 +16,8 @@ import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.sail.lucene.DocumentScore;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.lucene.SearchQuery;
@@ -81,7 +81,7 @@ public class SolrSearchQuery implements SearchQuery {
 	 * Highlights the given field or all fields if null.
 	 */
 	@Override
-	public void highlight(URI property) {
+	public void highlight(IRI property) {
 		query.setHighlight(true);
 		String field = (property != null) ? SearchFields.getPropertyField(property) : "*";
 		query.addHighlightField(field);

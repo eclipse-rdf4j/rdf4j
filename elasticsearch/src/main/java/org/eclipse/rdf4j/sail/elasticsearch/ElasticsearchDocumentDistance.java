@@ -7,44 +7,46 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
-import org.eclipse.rdf4j.model.URI;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
-import org.elasticsearch.common.geo.GeoDistance.FixedSourceDistance;
+import org.elasticsearch.common.geo.GeoDistance;
 import org.elasticsearch.common.geo.GeoPoint;
 import org.elasticsearch.common.unit.DistanceUnit;
 import org.elasticsearch.search.SearchHit;
+import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.distance.DistanceUtils;
 
 import com.google.common.base.Function;
-import com.spatial4j.core.context.SpatialContext;
-import com.spatial4j.core.distance.DistanceUtils;
 
 public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult implements DocumentDistance {
 
 	private final String geoPointField;
 
-	private final URI units;
+	private final IRI units;
 
-	private final FixedSourceDistance srcDistance;
+	private final GeoPoint srcPoint;
 
 	private final DistanceUnit unit;
 
 	public ElasticsearchDocumentDistance(SearchHit hit,
 			Function<? super String, ? extends SpatialContext> geoContextMapper, String geoPointField,
-			URI units, FixedSourceDistance srcDistance, DistanceUnit unit)
+			IRI units, GeoPoint srcPoint, DistanceUnit unit)
 	{
 		super(hit, geoContextMapper);
 		this.geoPointField = geoPointField;
 		this.units = units;
-		this.srcDistance = srcDistance;
+		this.srcPoint = srcPoint;
 		this.unit = unit;
 	}
 
 	@Override
 	public double getDistance() {
 		String geohash = (String)((ElasticsearchDocument)getDocument()).getSource().get(geoPointField);
-		GeoPoint point = GeoPoint.fromGeohash(geohash);
-		double unitDist = srcDistance.calculate(point.getLat(), point.getLon());
+		GeoPoint dstPoint = GeoPoint.fromGeohash(geohash);
+
+		double unitDist = GeoDistance.ARC.calculate(srcPoint.getLat(), srcPoint.getLon(), dstPoint.getLat(), dstPoint.getLon(), unit);
 		double distance;
 		if (GEOF.UOM_METRE.equals(units)) {
 			distance = unit.toMeters(unitDist);

@@ -9,8 +9,8 @@ package org.eclipse.rdf4j.sail.lucene;
 
 import java.io.IOException;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.URI;
 
 @Deprecated
 public interface SearchQuery {
@@ -24,5 +24,5 @@ public interface SearchQuery {
 	/**
 	 * Highlights the given field or all fields if null.
 	 */
-	void highlight(URI property);
+	void highlight(IRI property);
 }

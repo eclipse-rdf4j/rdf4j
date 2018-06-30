@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -43,7 +43,7 @@ public class SimplePath extends Path {
 	}
 
 	@Override
-	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		boolean requiresEvalutation;
 		try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
 			requiresEvalutation = addedStatementsConnection.hasStatement(null, path, null, false);

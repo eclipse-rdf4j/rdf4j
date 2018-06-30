@@ -12,8 +12,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.helpers.QueryModelVisitorBase;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.sail.SailException;
 
 public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
@@ -43,7 +43,7 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 		throws SailException
 	{
 
-		tupleExpr.visit(new QueryModelVisitorBase<SailException>() {
+		tupleExpr.visit(new AbstractQueryModelVisitor<SailException>() {
 
 			final Map<String, GeoRelationQuerySpec> specs = new HashMap<String, GeoRelationQuerySpec>();
 
@@ -92,7 +92,7 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 
 			@Override
 			public void meet(StatementPattern sp) {
-				URI propertyName = (URI)sp.getPredicateVar().getValue();
+				IRI propertyName = (IRI)sp.getPredicateVar().getValue();
 				if (propertyName != null && index.isGeoField(SearchFields.getPropertyField(propertyName))
 						&& !sp.getObjectVar().hasValue())
 				{

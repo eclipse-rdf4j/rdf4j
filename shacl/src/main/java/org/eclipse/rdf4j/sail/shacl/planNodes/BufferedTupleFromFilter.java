@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -29,14 +29,18 @@ public class BufferedTupleFromFilter implements PlanNode, PushBasedPlanNode, Sup
 		return new CloseableIteration<Tuple, SailException>() {
 
 			private void calculateNext() {
-				while (next.isEmpty() && parentIterator.hasNext()) {
-					parentIterator.next();
+				if (parentIterator != null) {
+					while (next.isEmpty() && parentIterator.hasNext()) {
+						parentIterator.next();
+					}
 				}
 			}
 
 			@Override
 			public void close() throws SailException {
-				parentIterator.close();
+				if (parentIterator != null) {
+					parentIterator.close();
+				}
 			}
 
 			@Override
@@ -67,7 +71,9 @@ public class BufferedTupleFromFilter implements PlanNode, PushBasedPlanNode, Sup
 
 	@Override
 	public void push(Tuple t) {
-		next.addFirst(t);
+		if (t != null) {
+			next.addFirst(t);
+		}
 	}
 
 	@Override

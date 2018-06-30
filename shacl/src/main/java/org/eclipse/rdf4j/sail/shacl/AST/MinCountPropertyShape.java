@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.MergeNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MinCountFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -75,7 +75,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			PlanNode planAddedStatements = new TrimTuple(new LoggingNode(shape.getPlanAddedStatements(shaclSailConnection, shape)), 1);
 
-			PlanNode mergeNode = new LoggingNode(new MergeNode(planAddedStatements, filteredPlanRemovedStatements));
+			PlanNode mergeNode = new LoggingNode(new UnionNode(planAddedStatements, filteredPlanRemovedStatements));
 
 			PlanNode unique = new LoggingNode(new Unique(mergeNode));
 
@@ -86,11 +86,13 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			//topNode = new LoggingNode(new BulkedExternalLeftOuterJoin(unique, shaclSailConnection.addedStatements, path.getQuery()));
 
 		} else {
-			String query =shape.getQuery();
 
+			PlanNode planAddedForShape = new LoggingNode(shape.getPlanAddedStatements(shaclSailConnection, shape));
 
-			query += "\n OPTIONAL { " + path.getQuery() + " }";
-			topNode = new LoggingNode(new TrimTuple(new Select(shaclSailConnection.addedStatements, query), 1));
+			PlanNode select = new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), path.getQuery()));
+
+			topNode = new LoggingNode(new LeftOuterJoin(planAddedForShape, select));
+
 		}
 
 
@@ -115,7 +117,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public boolean requiresEvalutation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 
 		boolean requiresEvalutation = false;
 		if (shape instanceof TargetClass) {
@@ -127,6 +129,6 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			requiresEvalutation = true;
 		}
 
-		return super.requiresEvalutation(addedStatements, removedStatements) | requiresEvalutation;
+		return super.requiresEvaluation(addedStatements, removedStatements) | requiresEvalutation;
 	}
 }

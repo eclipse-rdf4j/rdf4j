@@ -11,13 +11,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
 
 public final class SearchFields {
@@ -66,7 +66,7 @@ public final class SearchFields {
 	public static final Pattern HIGHLIGHTER_PATTERN = Pattern.compile(
 			"(" + HIGHLIGHTER_PRE_TAG + ".+?" + HIGHLIGHTER_POST_TAG + ")");
 
-	private static final ValueFactory valueFactory = ValueFactoryImpl.getInstance();
+	private static final ValueFactory valueFactory = SimpleValueFactory.getInstance();
 
 	private SearchFields() {
 	}
@@ -76,7 +76,7 @@ public final class SearchFields {
 	 * bnode prefixed with a "!".
 	 */
 	public static String getResourceID(Resource resource) {
-		if (resource instanceof URI) {
+		if (resource instanceof IRI) {
 			return resource.toString();
 		}
 		else if (resource instanceof BNode) {
@@ -134,7 +134,7 @@ public final class SearchFields {
 		}
 	}
 
-	public static String getPropertyField(URI property) {
+	public static String getPropertyField(IRI property) {
 		return property.toString();
 	}
 

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -38,19 +38,20 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
+	private NotifyingSailConnection previousStateConnection;
+	private Repository addedStatements;
+	private Repository removedStatements;
 
-	public ShaclSail sail;
+	public final ShaclSail sail;
 
 	public Stats stats;
-
-	public Repository addedStatements;
-	public Repository removedStatements;
 
 	private HashSet<Statement> addedStatementsSet = new HashSet<>();
 	private HashSet<Statement> removedStatementsSet = new HashSet<>();
 
-	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection) {
+	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, NotifyingSailConnection previousStateConnection) {
 		super(connection);
+		this.previousStateConnection = previousStateConnection;
 		this.sail = sail;
 
 		if (sail.config.validationEnabled) {
@@ -79,6 +80,18 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		}
 	}
 
+	public NotifyingSailConnection getPreviousStateConnection() {
+		return previousStateConnection;
+	}
+
+	public Repository getAddedStatements() {
+		return addedStatements;
+	}
+
+	public Repository getRemovedStatements() {
+		return removedStatements;
+	}
+
 	@Override
 	public void begin(IsolationLevel level)
 		throws SailException {
@@ -87,7 +100,13 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		assert removedStatements == null;
 
 		stats = new Stats();
-		super.begin(level);
+
+		// start two transactions, synchronize on underlying sail so that we get two transactions immediatly successivley
+		synchronized (sail){
+			super.begin(level);
+			previousStateConnection.begin(IsolationLevels.SNAPSHOT);
+		}
+
 	}
 
 	private SailRepository getNewMemorySail() {
@@ -101,23 +120,30 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	@Override
 	public void commit()
 		throws SailException {
-		try {
-			boolean valid = validate();
-			if (!valid) {
-				rollback();
-				throw new SailException("Failed SHACL validation");
-			} else {
-				super.commit();
+		synchronized (sail) {
+			try {
+				boolean valid = validate();
+				previousStateConnection.commit();
+
+				if (!valid) {
+					rollback();
+					throw new SailException("Failed SHACL validation");
+				} else {
+					super.commit();
+				}
+			} finally {
+				cleanup();
 			}
-		} finally {
-			cleanup();
 		}
 	}
 
 	@Override
 	public void rollback() throws SailException {
-		cleanup();
-		super.rollback();
+		synchronized (sail) {
+			previousStateConnection.commit();
+			cleanup();
+			super.rollback();
+		}
 	}
 
 	private void cleanup() {
@@ -149,8 +175,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		for (Shape shape : sail.shapes) {
 			List<PlanNode> planNodes = shape.generatePlans(this, shape);
 			for (PlanNode planNode : planNodes) {
-
-
 				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
 					List<Tuple> collect = stream.collect(Collectors.toList());
 

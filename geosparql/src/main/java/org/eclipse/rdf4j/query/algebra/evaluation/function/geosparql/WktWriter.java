@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
 import java.io.IOException;
 
-import com.spatial4j.core.shape.Shape;
+import org.locationtech.spatial4j.shape.Shape;
 
 public interface WktWriter {
 
