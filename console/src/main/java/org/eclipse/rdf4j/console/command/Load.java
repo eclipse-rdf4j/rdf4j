@@ -179,15 +179,12 @@ public class Load extends ConsoleCommand {
 		consoleIO.writeln("Loading data...");
 		
 		final long startTime = System.nanoTime();
-		final RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			if (dataURL == null) {
 				con.add(dataFile, baseURI, null, contexts);
 			} else {
 				con.add(dataURL, baseURI, null, contexts);
 			}
-		} finally {
-			con.close();
 		}
 		final long endTime = System.nanoTime();
 		consoleIO.writeln(

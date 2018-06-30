@@ -123,28 +123,20 @@ public class Show extends ConsoleCommand {
 			return;
 		}
 
-		RepositoryConnection con;
-		try {
-			con = repository.getConnection();
-			try {
-				final CloseableIteration<? extends Namespace, RepositoryException> namespaces = con.getNamespaces();
-				try {
-					if (namespaces.hasNext()) {
-						consoleIO.writeln(OUTPUT_SEPARATOR);
-						while (namespaces.hasNext()) {
-							final Namespace namespace = namespaces.next();
-							consoleIO.writeln("|" + namespace.getPrefix() + "  " + namespace.getName());
-						}
-						consoleIO.writeln(OUTPUT_SEPARATOR);
-					} else {
-						consoleIO.writeln("--no namespaces found--");
+
+		try (RepositoryConnection con = repository.getConnection()) {
+			try (CloseableIteration<? extends Namespace, RepositoryException> namespaces = con.getNamespaces()) {
+				if (namespaces.hasNext()) {
+					consoleIO.writeln(OUTPUT_SEPARATOR);
+					while (namespaces.hasNext()) {
+						final Namespace namespace = namespaces.next();
+						consoleIO.writeln("|" + namespace.getPrefix() + "  " + namespace.getName());
 					}
-				} finally {
-					namespaces.close();
+					consoleIO.writeln(OUTPUT_SEPARATOR);
+				} else {
+					consoleIO.writeln("--no namespaces found--");
 				}
-			} finally {
-				con.close();
-			}
+			} 
 		} catch (RepositoryException e) {
 			consoleIO.writeError(e.getMessage());
 			LOGGER.error("Failed to show namespaces", e);
@@ -161,26 +153,17 @@ public class Show extends ConsoleCommand {
 			return;
 		}
 
-		RepositoryConnection con;
-		try {
-			con = repository.getConnection();
-			try {
-				final CloseableIteration<? extends Resource, RepositoryException> contexts = con.getContextIDs();
-				try {
-					if (contexts.hasNext()) {
-						consoleIO.writeln(OUTPUT_SEPARATOR);
-						while (contexts.hasNext()) {
-							consoleIO.writeln("|" + contexts.next().toString());
-						}
-						consoleIO.writeln(OUTPUT_SEPARATOR);
-					} else {
-						consoleIO.writeln("--no contexts found--");
+		try (RepositoryConnection con = repository.getConnection()) {
+			try (CloseableIteration<? extends Resource, RepositoryException> contexts = con.getContextIDs()) {
+				if (contexts.hasNext()) {
+					consoleIO.writeln(OUTPUT_SEPARATOR);
+					while (contexts.hasNext()) {
+						consoleIO.writeln("|" + contexts.next().toString());
 					}
-				} finally {
-					contexts.close();
+					consoleIO.writeln(OUTPUT_SEPARATOR);
+				} else {
+					consoleIO.writeln("--no contexts found--");
 				}
-			} finally {
-				con.close();
 			}
 		} catch (RepositoryException e) {
 			consoleIO.writeError(e.getMessage());
