@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfxml;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayOutputStream;
@@ -30,8 +30,6 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.hamcrest.CoreMatchers;
-import org.hamcrest.Matchers;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -53,7 +51,7 @@ public class RDFXMLParserTest {
 		throws Exception
 	{
 		platformLocale = Locale.getDefault();
-		
+
 		Locale.setDefault(Locale.ENGLISH);
 		vf = SimpleValueFactory.getInstance();
 		parser = new RDFXMLParser();
@@ -87,7 +85,7 @@ public class RDFXMLParserTest {
 
 		Collection<Statement> stmts = sc.getStatements();
 
-		assertThat(stmts, Matchers.<Statement> iterableWithSize(3));
+		assertThat(stmts).hasSize(3);
 
 		Iterator<Statement> iter = stmts.iterator();
 
@@ -102,7 +100,7 @@ public class RDFXMLParserTest {
 
 		String resourceUrl = res.stringValue();
 
-		assertThat(resourceUrl, CoreMatchers.startsWith("jar:" + zipfileUrl + "!"));
+		assertThat(resourceUrl).startsWith("jar:" + zipfileUrl + "!");
 
 		URL javaUrl = new URL(resourceUrl);
 		assertEquals("jar", javaUrl.getProtocol());

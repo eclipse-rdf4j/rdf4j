@@ -475,6 +475,36 @@ public class NTriplesUtil {
 	}
 
 	/**
+	 * Checks whether the supplied character is valid character as per N-Triples specification.
+	 * See <a href="https://www.w3.org/TR/n-triples/#BNodes">https://www.w3.org/TR/n-triples/#BNodes</a>.
+	 *
+	 */
+	public static boolean isValidCharacterForBNodeLabel(int c) {
+		return isLetterOrNumber(c) || isLiberalCharactersButNotDot(c) || isDot(c);
+	}
+
+	/**
+	 * Checks whether the supplied character is in list of liberal characters according to the N-Triples specification except Dot.
+	 */
+	public static boolean isLiberalCharactersButNotDot(int c) {
+		return isUnderscore(c) || c == 45 || c == 183 || (c >= 768 && c <= 879) || c == 8255 || c == 8256;
+	}
+
+	/**
+	 * Checks whether the supplied character is Underscore.
+	 */
+	public static boolean isUnderscore(int c) {
+		return c == 95;
+	}
+
+	/**
+	 * Checks whether the supplied character is Dot '.'.
+	 */
+	public static boolean isDot(int c) {
+		return c == 46;
+	}
+
+	/**
 	 * Escapes a Unicode string to an all-ASCII character sequence. Any special characters are escaped using
 	 * backslashes (<tt>"</tt> becomes <tt>\"</tt>, etc.), and non-ascii/non-printable characters are escaped
 	 * using Unicode escapes (<tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>).

@@ -7,12 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.manager;
 
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsEqual.equalTo;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
@@ -88,7 +86,7 @@ public class LocalRepositoryManagerTest {
 	/**
 	 * Test method for
 	 * {@link org.eclipse.rdf4j.repository.manager.LocalRepositoryManager#getRepository(java.lang.String)} .
-	 * 
+	 *
 	 * @throws RepositoryException
 	 *         if a problem occurs accessing the repository
 	 * @throws RepositoryConfigException
@@ -181,7 +179,7 @@ public class LocalRepositoryManagerTest {
 
 	/**
 	 * Test method for {@link RepositoryManager.isSafeToRemove(String)}.
-	 * 
+	 *
 	 * @throws RepositoryException
 	 *         if a problem occurs during execution
 	 * @throws RepositoryConfigException
@@ -191,11 +189,11 @@ public class LocalRepositoryManagerTest {
 	public void testIsSafeToRemove()
 		throws RepositoryException, RepositoryConfigException
 	{
-		assertThat(manager.isSafeToRemove(PROXY_ID), is(equalTo(true)));
-		assertThat(manager.isSafeToRemove(TEST_REPO), is(equalTo(false)));
+		assertThat(manager.isSafeToRemove(PROXY_ID)).isTrue();
+		assertThat(manager.isSafeToRemove(TEST_REPO)).isFalse();
 		manager.removeRepository(PROXY_ID);
-		assertThat(manager.hasRepositoryConfig(PROXY_ID), is(equalTo(false)));
-		assertThat(manager.isSafeToRemove(TEST_REPO), is(equalTo(true)));
+		assertThat(manager.hasRepositoryConfig(PROXY_ID)).isFalse();;
+		assertThat(manager.isSafeToRemove(TEST_REPO)).isTrue();;
 	}
 
 	@Test
