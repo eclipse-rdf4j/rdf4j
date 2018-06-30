@@ -7,12 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation;
 
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsCollectionContaining.hasItem;
-import static org.hamcrest.core.IsEqual.equalTo;
-import static org.hamcrest.core.IsNot.not;
-import static org.hamcrest.core.IsNull.nullValue;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.util.List;
@@ -48,9 +43,9 @@ public class FederationNamespacesTest {
 	{
 		RepositoryConnection con = createFederationWithMemberNamespaces("a", "a");
 		try {
-			assertThat(con.getNamespace(PREFIX), is(equalTo(EXPECTED_NAME)));
+			assertThat(con.getNamespace(PREFIX)).isEqualTo(EXPECTED_NAME);
 			List<Namespace> asList = Iterations.asList(con.getNamespaces());
-			assertThat(asList, hasItem(EXPECTED_NAMESPACE));
+			assertThat(asList).contains(EXPECTED_NAMESPACE);
 		}
 		finally {
 			con.close();
@@ -63,9 +58,9 @@ public class FederationNamespacesTest {
 	{
 		RepositoryConnection con = createFederationWithMemberNamespaces("a", "a", "a");
 		try {
-			assertThat(con.getNamespace(PREFIX), is(equalTo(EXPECTED_NAME)));
+			assertThat(con.getNamespace(PREFIX)).isEqualTo(EXPECTED_NAME);
 			List<Namespace> asList = Iterations.asList(con.getNamespaces());
-			assertThat(asList, hasItem(EXPECTED_NAMESPACE));
+			assertThat(asList).contains(EXPECTED_NAMESPACE);
 		}
 		finally {
 			con.close();
@@ -78,9 +73,9 @@ public class FederationNamespacesTest {
 	{
 		RepositoryConnection con = createFederationWithMemberNamespaces("a", "b");
 		try {
-			assertThat(con.getNamespace(PREFIX), is(nullValue()));
+			assertThat(con.getNamespace(PREFIX)).isNull();;
 			List<Namespace> asList = Iterations.asList(con.getNamespaces());
-			assertThat(asList, not(hasItem(EXPECTED_NAMESPACE)));
+			assertThat(asList).doesNotContain(EXPECTED_NAMESPACE);
 		}
 		finally {
 			con.close();
@@ -93,9 +88,9 @@ public class FederationNamespacesTest {
 	{
 		RepositoryConnection con = createFederationWithMemberNamespaces("a", "b", "c");
 		try {
-			assertThat(con.getNamespace(PREFIX), is(nullValue()));
+			assertThat(con.getNamespace(PREFIX)).isNull();
 			List<Namespace> asList = Iterations.asList(con.getNamespaces());
-			assertThat(asList, not(hasItem(EXPECTED_NAMESPACE)));
+			assertThat(asList).doesNotContain(EXPECTED_NAMESPACE);
 		}
 		finally {
 			con.close();

@@ -7,10 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail;
 
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsInstanceOf.instanceOf;
-import static org.hamcrest.core.IsNot.not;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -66,14 +63,14 @@ public class TestProxyRepository {
 	public final void testProperInitialization()
 		throws RepositoryException
 	{
-		assertThat(repository.getDataDir(), is(dataDir.getRoot()));
-		assertThat(repository.getProxiedIdentity(), is("test"));
-		assertThat(repository.isInitialized(), is(false));
-		assertThat(repository.isWritable(), is(proxied.isWritable()));
+		assertThat(repository.getDataDir()).isEqualTo(dataDir.getRoot());
+		assertThat(repository.getProxiedIdentity()).isEqualTo("test");
+		assertThat(repository.isInitialized()).isFalse();
+		assertThat(repository.isWritable()).isEqualTo(proxied.isWritable());
 		repository.initialize();
 		RepositoryConnection connection = repository.getConnection();
 		try {
-			assertThat(connection, instanceOf(SailRepositoryConnection.class));
+			assertThat(connection).isInstanceOf(SailRepositoryConnection.class);
 		}
 		finally {
 			connection.close();
@@ -100,14 +97,14 @@ public class TestProxyRepository {
 			connection.add(Thread.currentThread().getContextClassLoader().getResourceAsStream("proxy.ttl"),
 					"http://www.test.org/proxy#", RDFFormat.TURTLE);
 			count = connection.size();
-			assertThat(count, not(0L));
+			assertThat(count).isNotEqualTo(0L);
 		}
 		finally {
 			connection.close();
 		}
 		connection = repository.getConnection();
 		try {
-			assertThat(connection.size(), is(count));
+			assertThat(connection.size()).isEqualTo(count);
 		}
 		finally {
 			connection.close();

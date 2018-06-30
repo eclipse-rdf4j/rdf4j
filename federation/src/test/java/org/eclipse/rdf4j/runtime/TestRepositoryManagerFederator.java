@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.runtime;
 
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsEqual.equalTo;
-import static org.hamcrest.core.IsInstanceOf.instanceOf;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -22,9 +20,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.ExpectedException;
 
 /**
  * @author Dale Visser
@@ -32,9 +28,6 @@ import org.junit.rules.ExpectedException;
 public class TestRepositoryManagerFederator {
 
 	RepositoryManagerFederator federator;
-
-	@Rule
-	public ExpectedException thrown = ExpectedException.none();
 
 	/**
 	 * @throws java.lang.Exception
@@ -54,10 +47,10 @@ public class TestRepositoryManagerFederator {
 	public final void testDirectRecursiveAddThrowsException()
 		throws MalformedURLException, RDF4JException
 	{
-		thrown.expect(is(instanceOf(RepositoryConfigException.class)));
-		thrown.expectMessage(is(equalTo("A federation member may not have the same ID as the federation.")));
-		String id = "fedtest";
-		federator.addFed(id, "Federation Test", Arrays.asList(new String[] { id, "ignore" }), true, false);
+        String id = "fedtest";
+        assertThatThrownBy(() -> federator.addFed(id, "Federation Test", Arrays.asList(new String[] { id, "ignore" }),
+                true, false)).isInstanceOf(RepositoryConfigException.class)
+                        .hasMessage("A federation member may not have the same ID as the federation.");
 	}
 
 }

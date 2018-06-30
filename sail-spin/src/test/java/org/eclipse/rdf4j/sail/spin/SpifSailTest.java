@@ -10,10 +10,9 @@
 package org.eclipse.rdf4j.sail.spin;
 
 import com.google.common.collect.Lists;
-import static org.hamcrest.CoreMatchers.is;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
@@ -214,7 +213,7 @@ public class SpifSailTest {
 		TupleQueryResult tqr = tq.evaluate();
 		for (int i = 1; i <= 3; i++) {
 			BindingSet bs = tqr.next();
-			assertThat(((Literal)bs.getValue("x")).intValue(), is(i));
+			assertThat(((Literal)bs.getValue("x")).intValue()).isEqualTo(i);
 		}
 		assertFalse(tqr.hasNext());
 	}
@@ -228,7 +227,7 @@ public class SpifSailTest {
 		TupleQueryResult tqr = tq.evaluate();
 		for (int i = 1; i <= 4; i++) {
 			BindingSet bs = tqr.next();
-			assertThat(((Literal)bs.getValue("x")).intValue(), is(i));
+			assertThat(((Literal)bs.getValue("x")).intValue()).isEqualTo(i);
 		}
 		assertFalse(tqr.hasNext());
 	}
@@ -242,7 +241,7 @@ public class SpifSailTest {
 		TupleQueryResult tqr = tq.evaluate();
 		for (int i = 1; i <= 3; i++) {
 			BindingSet bs = tqr.next();
-			assertThat(((Literal)bs.getValue("x")).stringValue(), is(Integer.toString(i)));
+			assertThat(((Literal)bs.getValue("x")).stringValue()).isEqualTo(Integer.toString(i));
 		}
 		assertFalse(tqr.hasNext());
 	}
