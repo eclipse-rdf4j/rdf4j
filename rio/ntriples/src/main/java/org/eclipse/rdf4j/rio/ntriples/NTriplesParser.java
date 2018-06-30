@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.rio.ntriples;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.PushbackReader;
 import java.io.Reader;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
@@ -45,7 +46,7 @@ public class NTriplesParser extends AbstractRDFParser {
 	 * Variables *
 	 *-----------*/
 
-	protected Reader reader;
+	protected PushbackReader reader;
 
 	protected long lineNo;
 
@@ -156,7 +157,8 @@ public class NTriplesParser extends AbstractRDFParser {
 				rdfHandler.startRDF();
 			}
 
-			this.reader = reader;
+			// Allow 1 characters to be pushed back
+			this.reader = new PushbackReader(reader);
 			lineNo = 1;
 
 			reportLocation(lineNo, 1);
@@ -470,20 +472,57 @@ public class NTriplesParser extends AbstractRDFParser {
 		if (c == -1) {
 			throwEOFException();
 		}
-		else if (!NTriplesUtil.isLetterOrNumber(c)) {
-			reportError("Expected a letter or number, found: " + new String(Character.toChars(c)),
+		else if (!NTriplesUtil.isLetterOrNumber(c) && !NTriplesUtil.isUnderscore(c)) {
+			reportError("Expected a letter or number or underscore, found: " + new String(Character.toChars(c)),
 					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 		}
 		name.append(Character.toChars(c));
 
 		// Read all following letter and numbers, they are part of the name
 		c = readCodePoint();
-		while (c != -1 && NTriplesUtil.isLetterOrNumber(c)) {
+		while (c != -1 && NTriplesUtil.isValidCharacterForBNodeLabel(c)) {
+			if(NTriplesUtil.isDot(c) && !NTriplesUtil.isValidCharacterForBNodeLabel(peekCodePoint())) {
+				break;
+			}
 			name.append(Character.toChars(c));
 			c = readCodePoint();
 		}
 
 		return c;
+	}
+
+	/**
+	 * Peeks at the next Unicode code point without advancing the reader, and
+	 * returns its value.
+	 *
+	 * @return the next Unicode code point, or -1 if the end of the stream has
+	 *         been reached.
+	 * @throws IOException
+	 */
+	protected int peekCodePoint() throws IOException {
+		int result = readCodePoint();
+		unread(result);
+		return result;
+	}
+
+	/**
+	 * Pushes back a single code point by copying it to the front of the buffer.
+	 * After this method returns, a call to {@link #readCodePoint()} will return
+	 * the same code point c again.
+	 *
+	 * @param codePoint
+	 *            a single Unicode code point.
+	 * @throws IOException
+	 */
+	protected void unread(int codePoint) throws IOException {
+		if (codePoint != -1) {
+			if (Character.isSupplementaryCodePoint(codePoint)) {
+				final char[] surrogatePair = Character.toChars(codePoint);
+				reader.unread(surrogatePair);
+			} else {
+				reader.unread(codePoint);
+			}
+		}
 	}
 
 	private int parseLiteral(int c, StringBuilder value, StringBuilder lang, StringBuilder datatype)
