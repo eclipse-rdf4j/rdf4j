@@ -11,7 +11,7 @@ import static org.junit.Assert.*;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 
@@ -76,7 +76,7 @@ public class SPARQLTSVCustomTest {
 	{
 		ByteArrayOutputStream output = new ByteArrayOutputStream();
 		QueryResultIO.writeTuple(tqr, TupleQueryResultFormat.TSV, output);
-		String result = new String(output.toByteArray(), Charset.forName("UTF-8"));
+		String result = new String(output.toByteArray(), StandardCharsets.UTF_8);
 		return result;
 	}
 

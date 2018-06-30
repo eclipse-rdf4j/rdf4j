@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.rio;
 
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -62,11 +63,11 @@ public class RDFFormat extends FileFormat {
 	 * <code>.xml</code>. The media type is <code>application/rdf+xml</code>, but <code>application/xml</code>
 	 * and <code>text/xml</code> are also accepted. The character encoding is UTF-8.
 	 * </p>
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/rdf-syntax-grammar/">RDF/XML Syntax Specification (Revised)</a>
 	 */
 	public static final RDFFormat RDFXML = new RDFFormat("RDF/XML",
-			Arrays.asList("application/rdf+xml", "application/xml", "text/xml"), Charset.forName("UTF-8"),
+			Arrays.asList("application/rdf+xml", "application/xml", "text/xml"), StandardCharsets.UTF_8,
 			Arrays.asList("rdf", "rdfs", "owl", "xml"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/RDF_XML"),
 			SUPPORTS_NAMESPACES, NO_CONTEXTS);
@@ -77,11 +78,11 @@ public class RDFFormat extends FileFormat {
 	 * The file extension <code>.nt</code> is recommend for N-Triples documents. The media type is
 	 * <code>application/n-triples</code> and encoding is in UTF-8.
 	 * </p>
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/n-triples/">N-Triples</a>
 	 */
 	public static final RDFFormat NTRIPLES = new RDFFormat("N-Triples",
-			Arrays.asList("application/n-triples", "text/plain"), Charset.forName("UTF-8"),
+			Arrays.asList("application/n-triples", "text/plain"), StandardCharsets.UTF_8,
 			Arrays.asList("nt"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/N-Triples"),
 			NO_NAMESPACES, NO_CONTEXTS);
@@ -93,11 +94,11 @@ public class RDFFormat extends FileFormat {
 	 * <code>text/turtle</code>, but <code>application/x-turtle</code> is also accepted. Character encoding is
 	 * UTF-8.
 	 * </p>
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/turtle/">Turtle - Terse RDF Triple Language</a>
 	 */
 	public static final RDFFormat TURTLE = new RDFFormat("Turtle",
-			Arrays.asList("text/turtle", "application/x-turtle"), Charset.forName("UTF-8"),
+			Arrays.asList("text/turtle", "application/x-turtle"), StandardCharsets.UTF_8,
 			Arrays.asList("ttl"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/Turtle"),
 			SUPPORTS_NAMESPACES, NO_CONTEXTS);
@@ -108,11 +109,11 @@ public class RDFFormat extends FileFormat {
 	 * The file extension <code>.n3</code> is recommended for N3 documents. The media type is
 	 * <code>text/n3</code>, but <code>text/rdf+n3</code> is also accepted. Character encoding is UTF-8.
 	 * </p>
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TeamSubmission/n3/">Notation3 (N3): A readable RDF syntax</a>
 	 */
 	public static final RDFFormat N3 = new RDFFormat("N3", Arrays.asList("text/n3", "text/rdf+n3"),
-			Charset.forName("UTF-8"), Arrays.asList("n3"),
+			StandardCharsets.UTF_8, Arrays.asList("n3"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/N3"),
 			SUPPORTS_NAMESPACES, NO_CONTEXTS);
 
@@ -123,11 +124,11 @@ public class RDFFormat extends FileFormat {
 	 * The file extension <code>.xml</code> is recommended for TriX documents, <code>.trix</code> is also
 	 * accepted. The media type is <code>application/trix</code> and the encoding is UTF-8.
 	 * </p>
-	 * 
+	 *
 	 * @see <a href="http://swdev.nokia.com/trix/">TriX: RDF Triples in XML</a>
 	 */
 	public static final RDFFormat TRIX = new RDFFormat("TriX", Arrays.asList("application/trix"),
-			Charset.forName("UTF-8"), Arrays.asList("xml", "trix"), null, SUPPORTS_NAMESPACES,
+			StandardCharsets.UTF_8, Arrays.asList("xml", "trix"), null, SUPPORTS_NAMESPACES,
 			SUPPORTS_CONTEXTS);
 
 	/**
@@ -137,11 +138,11 @@ public class RDFFormat extends FileFormat {
 	 * The file extension <code>.trig</code> is recommend for TriG documents. The media type is
 	 * <code>application/trig</code> and the encoding is UTF-8.
 	 * </p>
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/trig/">The TriG Syntax</a>
 	 */
 	public static final RDFFormat TRIG = new RDFFormat("TriG",
-			Arrays.asList("application/trig", "application/x-trig"), Charset.forName("UTF-8"),
+			Arrays.asList("application/trig", "application/x-trig"), StandardCharsets.UTF_8,
 			Arrays.asList("trig"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/TriG"),
 			SUPPORTS_NAMESPACES, SUPPORTS_CONTEXTS);
@@ -166,11 +167,11 @@ public class RDFFormat extends FileFormat {
 	 * The file extension <code>.nq</code> is recommended for N-Quads documents. The media type is
 	 * <code>application/n-quads</code> and the encoding is UTF-8.
 	 * </p>
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/n-quads/">N-Quads: Extending N-Triples with Context</a>
 	 */
 	public static final RDFFormat NQUADS = new RDFFormat("N-Quads",
-			Arrays.asList("application/n-quads", "text/x-nquads", "text/nquads"), Charset.forName("UTF-8"),
+			Arrays.asList("application/n-quads", "text/x-nquads", "text/nquads"), StandardCharsets.UTF_8,
 			Arrays.asList("nq"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/N-Quads"), NO_NAMESPACES,
 			SUPPORTS_CONTEXTS);
@@ -182,11 +183,11 @@ public class RDFFormat extends FileFormat {
 	 * The file extension <code>.jsonld</code> is recommended for JSON-LD documents. The media type is
 	 * <code>application/ld+json</code> and the encoding is UTF-8.
 	 * </p>
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/json-ld/">JSON-LD 1.0</a>
 	 */
 	public static final RDFFormat JSONLD = new RDFFormat("JSON-LD", Arrays.asList("application/ld+json"),
-			Charset.forName("UTF-8"), Arrays.asList("jsonld"),
+			StandardCharsets.UTF_8, Arrays.asList("jsonld"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/JSON-LD"),
 			SUPPORTS_NAMESPACES, SUPPORTS_CONTEXTS);
 
@@ -197,11 +198,11 @@ public class RDFFormat extends FileFormat {
 	 * The file extension <code>.rj</code> is recommended for RDF/JSON documents. The media type is
 	 * <code>application/rdf+json</code> and the encoding is UTF-8.
 	 * </p>
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/rdf-json/">RDF 1.1 JSON Alternate Serialization (RDF/JSON)</a>
 	 */
 	public static final RDFFormat RDFJSON = new RDFFormat("RDF/JSON", Arrays.asList("application/rdf+json"),
-			Charset.forName("UTF-8"), Arrays.asList("rj"),
+			StandardCharsets.UTF_8, Arrays.asList("rj"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/RDF_JSON"),
 			NO_NAMESPACES, SUPPORTS_CONTEXTS);
 
@@ -211,11 +212,11 @@ public class RDFFormat extends FileFormat {
 	 * The file extension <code>.xhtml</code> is recommended for RDFa documents. The preferred media type is
 	 * <code>application/xhtml+xml</code> and the encoding is UTF-8.
 	 * </p>
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/rdfa-syntax/">XHTML+RDFa 1.1</a>
 	 */
 	public static final RDFFormat RDFA = new RDFFormat("RDFa",
-			Arrays.asList("application/xhtml+xml", "application/html", "text/html"), Charset.forName("UTF-8"),
+			Arrays.asList("application/xhtml+xml", "application/html", "text/html"), StandardCharsets.UTF_8,
 			Arrays.asList("xhtml", "html"),
 			SimpleValueFactory.getInstance().createIRI("http://www.w3.org/ns/formats/RDFa"),
 			SUPPORTS_NAMESPACES, NO_CONTEXTS);

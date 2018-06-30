@@ -14,6 +14,7 @@ import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -122,7 +123,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Constants *
 	 *-----------*/
 
-	protected static final Charset UTF8 = Charset.forName("UTF-8");
+	protected static final Charset UTF8 = StandardCharsets.UTF_8;
 
 	/**
 	 * The default value of the threshold for URL length, beyond which we use the POST method for SPARQL query

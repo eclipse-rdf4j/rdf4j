@@ -13,7 +13,7 @@ import java.io.InputStreamReader;
 import java.io.PushbackReader;
 import java.io.Reader;
 import java.io.UnsupportedEncodingException;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashSet;
 
@@ -115,7 +115,7 @@ public class NTriplesParser extends AbstractRDFParser {
 		// Note: baseURI will be checked in parse(Reader, String)
 
 		try {
-			parse(new InputStreamReader(new BOMInputStream(in, false), Charset.forName("UTF-8")), baseURI);
+			parse(new InputStreamReader(new BOMInputStream(in, false), StandardCharsets.UTF_8), baseURI);
 		}
 		catch (UnsupportedEncodingException e) {
 			// Every platform should support the UTF-8 encoding...

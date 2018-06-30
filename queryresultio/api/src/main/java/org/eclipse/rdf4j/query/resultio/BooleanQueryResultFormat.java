@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.resultio;
 
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collection;
 
@@ -30,21 +31,21 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 	 * SPARQL Query Results XML Format.
 	 */
 	public static final BooleanQueryResultFormat SPARQL = new BooleanQueryResultFormat("SPARQL/XML",
-			Arrays.asList("application/sparql-results+xml", "application/xml"), Charset.forName("UTF-8"),
+			Arrays.asList("application/sparql-results+xml", "application/xml"), StandardCharsets.UTF_8,
 			Arrays.asList("srx", "xml"), SPARQL_RESULTS_XML_URI);
 
 	/**
 	 * SPARQL Query Results JSON Format.
 	 */
 	public static final BooleanQueryResultFormat JSON = new BooleanQueryResultFormat("SPARQL/JSON",
-			Arrays.asList("application/sparql-results+json", "application/json"), Charset.forName("UTF-8"),
+			Arrays.asList("application/sparql-results+json", "application/json"), StandardCharsets.UTF_8,
 			Arrays.asList("srj", "json"), SPARQL_RESULTS_JSON_URI);
 
 	/**
 	 * Plain text encoding using values "true" and "false" (case-insensitive).
 	 */
 	public static final BooleanQueryResultFormat TEXT = new BooleanQueryResultFormat("TEXT", "text/boolean",
-			Charset.forName("US-ASCII"), "txt");
+			StandardCharsets.US_ASCII, "txt");
 
 	/*--------------*
 	 * Constructors *

@@ -30,7 +30,9 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
  * </p>
  * 
  * @author Michael Grove
+ * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder} instead.
  */
+@Deprecated
 public class BasicGroup implements Group {
 
 	private boolean mIsOptional = false;

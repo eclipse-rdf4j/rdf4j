@@ -12,6 +12,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -50,7 +51,7 @@ public class BooleanTextParser extends AbstractQueryResultParser implements Bool
 	public synchronized boolean parse(InputStream in)
 		throws IOException, QueryResultParseException
 	{
-		Reader reader = new InputStreamReader(in, Charset.forName("US-ASCII"));
+		Reader reader = new InputStreamReader(in, StandardCharsets.US_ASCII);
 		String value = IOUtil.readString(reader, 16);
 		value = value.trim();
 
