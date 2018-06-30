@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 
 /**
  * <p>
- * Base class for rendering Sesame query API objects into strings.
+ * Base class for rendering RDF4J query API objects into strings.
  * </p>
  * 
  * @author Michael Grove

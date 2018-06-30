@@ -12,7 +12,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.text.StringUtil;
@@ -49,7 +49,7 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 	 * @param out
 	 */
 	public SPARQLResultsTSVWriter(OutputStream out) {
-		Writer w = new OutputStreamWriter(out, Charset.forName("UTF-8"));
+		Writer w = new OutputStreamWriter(out, StandardCharsets.UTF_8);
 		writer = new BufferedWriter(w, 1024);
 	}
 

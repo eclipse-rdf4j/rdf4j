@@ -13,7 +13,9 @@ package org.eclipse.rdf4j.queryrender.builder;
  * </p>
  * 
  * @author Michael Grove
+ * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder} instead.
  */
+@Deprecated
 public interface Group extends SupportsExpr {
 
 	public boolean isOptional();

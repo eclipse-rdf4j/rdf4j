@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * <p>
- * Visitor implementation for the sesame query algebra which walks the tree and figures out the context for
+ * Visitor implementation for the query algebra which walks the tree and figures out the context for
  * nodes in the algebra. The context for a node is set on the highest node in the tree. That is, everything
  * below it shares the same context.
  * </p>

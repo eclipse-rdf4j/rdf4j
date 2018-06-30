@@ -17,6 +17,7 @@ import java.io.Reader;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -898,7 +899,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			boolean overwrite, boolean preserveNodeIds, Action action, Resource... contexts)
 		throws IOException, RDFParseException, RepositoryException, UnauthorizedException
 	{
-		final Charset charset = dataFormat.hasCharset() ? dataFormat.getCharset() : Charset.forName("UTF-8");
+		final Charset charset = dataFormat.hasCharset() ? dataFormat.getCharset() : StandardCharsets.UTF_8;
 
 		HttpEntity entity = new AbstractHttpEntity() {
 
