@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Matchers.anyBoolean;
 import static org.mockito.Matchers.startsWith;
 import static org.mockito.Mockito.mock;
@@ -79,10 +77,10 @@ public class DropTest extends AbstractCommandTest {
 		throws RepositoryException, IOException
 	{
 		setUserDropConfirm(true);
-		assertThat(manager.isSafeToRemove(PROXY_ID), is(equalTo(true)));
+		assertThat(manager.isSafeToRemove(PROXY_ID)).isTrue();
 		drop.execute("drop", PROXY_ID);
 		verify(mockConsoleIO).writeln("Dropped repository '" + PROXY_ID + "'");
-		assertThat(manager.isSafeToRemove(MEMORY_MEMBER_ID1), is(equalTo(true)));
+		assertThat(manager.isSafeToRemove(MEMORY_MEMBER_ID1)).isTrue();
 		drop.execute("drop", MEMORY_MEMBER_ID1);
 		verify(mockConsoleIO).writeln("Dropped repository '" + MEMORY_MEMBER_ID1 + "'");
 	}
@@ -92,7 +90,7 @@ public class DropTest extends AbstractCommandTest {
 		throws RepositoryException, IOException
 	{
 		setUserDropConfirm(true);
-		assertThat(manager.isSafeToRemove(MEMORY_MEMBER_ID1), is(equalTo(false)));
+		assertThat(manager.isSafeToRemove(MEMORY_MEMBER_ID1)).isFalse();
 		when(mockConsoleIO.askProceed(startsWith("WARNING: dropping this repository may break"),
 				anyBoolean())).thenReturn(false);
 		drop.execute("drop", MEMORY_MEMBER_ID1);

@@ -7,8 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import static org.hamcrest.CoreMatchers.equalTo;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 import java.io.IOException;
@@ -35,18 +34,18 @@ public class ConsoleIOTest {
 	@Test
 	public void shouldSetErrorWrittenWhenErrorsAreWritten() {
 		io.writeError(null);
-		assertThat(io.wasErrorWritten(), equalTo(true));
+		assertThat(io.wasErrorWritten()).isTrue();
 	}
 
 	@Test
 	public void shouldSetErroWrittenOnParserError() {
 		io.writeParseError("", 0, 0, "");
-		assertThat(io.wasErrorWritten(), equalTo(true));
+		assertThat(io.wasErrorWritten()).isTrue();
 	}
 
 	@Test
 	public void shouldSetErroWrittenOnWriteUnoppenedError() {
 		io.writeUnopenedError();
-		assertThat(io.wasErrorWritten(), equalTo(true));
+		assertThat(io.wasErrorWritten()).isTrue();
 	}
 }

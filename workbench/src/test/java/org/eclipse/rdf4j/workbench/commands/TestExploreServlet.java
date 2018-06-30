@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.commands;
 
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -96,7 +94,7 @@ public class TestExploreServlet {
 	/**
 	 * Test method for
 	 * {@link org.eclipse.rdf4j.workbench.commands.ExploreServlet#processResource(org.eclipse.rdf4j.repository.RepositoryConnection, org.eclipse.rdf4j.workbench.util.TupleResultBuilder, org.eclipse.rdf4j.model.Value, int, int, boolean)}
-	 * 
+	 *
 	 * @throws RepositoryException
 	 *         if a problem occurs executing the method under test
 	 */
@@ -210,7 +208,7 @@ public class TestExploreServlet {
 		throws RDF4JException
 	{
 		ResultCursor cursor = servlet.processResource(connection, builder, uri, 0, limit, true);
-		assertThat(cursor.getTotalResultCount(), is(equalTo(expectedTotal)));
-		assertThat(cursor.getRenderedResultCount(), is(equalTo(expectedRendered)));
+		assertThat(cursor.getTotalResultCount()).isEqualTo(expectedTotal);
+		assertThat(cursor.getRenderedResultCount()).isEqualTo(expectedRendered);
 	}
 }

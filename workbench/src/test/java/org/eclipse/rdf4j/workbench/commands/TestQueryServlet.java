@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.commands;
 
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.eq;
@@ -52,21 +50,21 @@ public class TestQueryServlet {
 	public final void testLongQuery()
 		throws ServletException, IOException
 	{
-		assertThat(servlet.shouldWriteQueryCookie(longQuery), is(equalTo(false)));
+		assertThat(servlet.shouldWriteQueryCookie(longQuery)).isFalse();
 	}
 
 	@Test
 	public final void testShortQuery()
 		throws ServletException, IOException
 	{
-		assertThat(servlet.shouldWriteQueryCookie(SHORT_QUERY), is(equalTo(true)));
+		assertThat(servlet.shouldWriteQueryCookie(SHORT_QUERY)).isTrue();
 	}
 
 	@Test
 	public final void testNoQuery()
 		throws ServletException, IOException
 	{
-		assertThat(servlet.shouldWriteQueryCookie(null), is(equalTo(true)));
+		assertThat(servlet.shouldWriteQueryCookie(null)).isTrue();
 	}
 
 	@Test
@@ -78,7 +76,7 @@ public class TestQueryServlet {
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("text");
-		assertThat(servlet.getQueryText(request), is(equalTo(SHORT_QUERY)));
+		assertThat(servlet.getQueryText(request)).isEqualTo(SHORT_QUERY);
 	}
 
 	@Test
@@ -87,7 +85,7 @@ public class TestQueryServlet {
 	{
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(false);
-		assertThat(servlet.getQueryText(request), is(equalTo("")));
+		assertThat(servlet.getQueryText(request)).isEmpty();;
 	}
 
 	@Test
@@ -99,7 +97,7 @@ public class TestQueryServlet {
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("junk");
-		assertThat(servlet.getQueryText(request), is(equalTo(SHORT_QUERY)));
+		assertThat(servlet.getQueryText(request)).isEqualTo(SHORT_QUERY);
 	}
 
 	@Test
@@ -110,7 +108,7 @@ public class TestQueryServlet {
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
-		assertThat(servlet.getQueryText(request), is(equalTo(SHORT_QUERY)));
+		assertThat(servlet.getQueryText(request)).isEqualTo(SHORT_QUERY);
 	}
 
 	@Test
@@ -124,7 +122,7 @@ public class TestQueryServlet {
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("hash");
 		QueryServlet.substituteQueryCache(Collections.singletonMap(hash, longQuery));
-		assertThat(servlet.getQueryText(request), is(equalTo(longQuery)));
+		assertThat(servlet.getQueryText(request)).isEqualTo(longQuery);
 	}
 
 	@Test
@@ -138,7 +136,7 @@ public class TestQueryServlet {
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("hash");
 		QueryServlet.substituteQueryCache(Collections.<String, String> emptyMap());
-		assertThat(servlet.getQueryText(request), is(equalTo("")));
+		assertThat(servlet.getQueryText(request)).isEmpty();
 	}
 
 	@Test
@@ -154,6 +152,6 @@ public class TestQueryServlet {
 		when(storage.getQueryText(any(HTTPRepository.class), anyString(), eq("test save name"))).thenReturn(
 				longQuery);
 		servlet.substituteQueryStorage(storage);
-		assertThat(servlet.getQueryText(request), is(equalTo(longQuery)));
+		assertThat(servlet.getQueryText(request)).isEqualTo(longQuery);
 	}
 }
