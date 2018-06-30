@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.util.Objects;
 
@@ -17,13 +17,16 @@ import com.google.common.collect.ImmutableBiMap.Builder;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleParameters;
+import org.eclipse.rdf4j.console.ConsoleState;
 
 /**
  * Set parameters command
  * 
  * @author dale
  */
-public class SetParameters implements Command {
+public class SetParameters extends ConsoleCommand {
 
 	private static final String QUERYPREFIX_COMMAND = "queryprefix";
 	private static final String SHOWPREFIX_COMMAND = "showprefix";
@@ -31,7 +34,7 @@ public class SetParameters implements Command {
 	private static final String LOG_COMMAND = "log";
 
 	private static final BiMap<String, Level> LOG_LEVELS;
-
+	
 	static {
 		Builder<String, Level> logLevels = ImmutableBiMap.<String, Level>builder();
 
@@ -43,18 +46,38 @@ public class SetParameters implements Command {
 		LOG_LEVELS = logLevels.build();
 	}
 
-	private final ConsoleIO consoleIO;
+	@Override
+	public String getName() {
+		return "set";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Allows various console parameters to be set";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "set                            Shows all parameter values\n"
+			+ "set width=<number>             Set the width for query result tables\n"
+			+ "set log=<level>                Set the logging level (none, error, warning, info or debug)\n"
+			+ "set showPrefix=<true|false>    Toggles use of prefixed names in query results\n"
+			+ "set queryPrefix=<true|false>   Toggles automatic use of known namespace prefixes in queries\n";
 
+	}
+	
 	private final ConsoleParameters parameters;
 
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
+	 * @param state
 	 * @param parameters 
 	 */
-	SetParameters(ConsoleIO consoleIO, ConsoleParameters parameters) {
-		this.consoleIO = consoleIO;
+	public SetParameters(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
+		super(consoleIO, state);
 		this.parameters = parameters;
 	}
 
@@ -73,7 +96,7 @@ public class SetParameters implements Command {
 				setParameter(key, value);
 			}
 		} else {
-			consoleIO.writeln(PrintHelp.SET);
+			consoleIO.writeln(getHelpLong());
 		}
 	}
 

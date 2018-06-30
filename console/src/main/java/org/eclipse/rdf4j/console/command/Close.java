@@ -5,8 +5,10 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.repository.Repository;
 
 /**
@@ -14,20 +16,32 @@ import org.eclipse.rdf4j.repository.Repository;
  * 
  * @author Dale Visser
  */
-public class Close implements Command {
+public class Close extends ConsoleCommand {
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState appInfo;
-
+	@Override
+	public String getName() {
+		return "close";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Closes the current repository";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "close   Closes the current repository\n";
+	}
+	
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
 	 * @param appInfo 
 	 */
-	Close(ConsoleIO consoleIO, ConsoleState appInfo) {
-		this.consoleIO = consoleIO;
-		this.appInfo = appInfo;
+	public Close(ConsoleIO consoleIO, ConsoleState state) {
+		super(consoleIO, state);
 	}
 
 	@Override
@@ -35,7 +49,7 @@ public class Close implements Command {
 		if (tokens.length == 1) {
 			closeRepository(true);
 		} else {
-			consoleIO.writeln(PrintHelp.CLOSE);
+			consoleIO.writeln(getHelpLong());
 		}
 	}
 
@@ -45,16 +59,16 @@ public class Close implements Command {
 	 * @param verbose print more information
 	 */
 	protected void closeRepository(final boolean verbose) {
-		final Repository repository = this.appInfo.getRepository();
+		final Repository repository = this.state.getRepository();
 		
 		if (repository == null) {
 			if (verbose) {
 				consoleIO.writeln("There are no open repositories that can be closed");
 			}
 		} else {
-			consoleIO.writeln("Closing repository '" + this.appInfo.getRepositoryID() + "'...");
-			this.appInfo.setRepository(null);
-			this.appInfo.setRepositoryID(null);
+			consoleIO.writeln("Closing repository '" + this.state.getRepositoryID() + "'...");
+			this.state.setRepository(null);
+			this.state.setRepositoryID(null);
 		}
 	}
 }

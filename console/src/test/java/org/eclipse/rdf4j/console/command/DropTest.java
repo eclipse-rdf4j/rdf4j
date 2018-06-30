@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Matchers.anyBoolean;
@@ -19,10 +19,14 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 
 import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.ProxyRepositoryConfig;
+
+import static org.junit.Assert.assertThat;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -54,8 +58,7 @@ public class DropTest extends AbstractCommandTest {
 				new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(MEMORY_MEMBER_ID1)));
 		ConsoleState state = mock(ConsoleState.class);
 		when(state.getManager()).thenReturn(manager);
-		drop = new Drop(mockConsoleIO, state, new Close(mockConsoleIO, state),
-				new LockRemover(mockConsoleIO));
+		drop = new Drop(mockConsoleIO, state, new Close(mockConsoleIO, state));
 	}
 
 	private void setUserDropConfirm(boolean confirm)

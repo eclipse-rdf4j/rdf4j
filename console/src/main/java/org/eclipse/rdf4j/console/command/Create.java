@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -19,6 +19,9 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.LockRemover;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -46,33 +49,44 @@ import org.slf4j.LoggerFactory;
  *
  * @author Dale Visser
  */
-public class Create implements Command {
-
+public class Create extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Create.class);
 
 	private static final String TEMPLATES_DIR = "templates";
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
-	private final LockRemover lockRemover;
 
+	@Override
+	public String getName() {
+		return "create";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Creates a new repository";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "create <template-name>\n"
+			+ "  <template-name>   The name of a repository configuration template\n";
+	}
+
+	
 	/**
 	 * Constructor
 	 *
 	 * @param consoleIO
 	 * @param state
-	 * @param lockRemover
 	 */
-	Create(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
-		this.consoleIO = consoleIO;
-		this.state = state;
-		this.lockRemover = lockRemover;
+	public Create(ConsoleIO consoleIO, ConsoleState state) {
+		super(consoleIO, state);
 	}
 
 	@Override
 	public void execute(String... tokens) throws IOException {
 		if (tokens.length < 2) {
-			consoleIO.writeln(PrintHelp.CREATE);
+			consoleIO.writeln(getHelpLong());
 		} else {
 			createRepository(tokens[1]);
 		}
@@ -135,7 +149,7 @@ public class Create implements Command {
 							this.state.getManager().addRepositoryConfig(repConfig);
 							consoleIO.writeln("Repository created");
 						} catch (RepositoryReadOnlyException e) {
-							if (lockRemover.tryToRemoveLock(this.state.getManager().getSystemRepository())) {
+							if (LockRemover.tryToRemoveLock(this.state.getManager().getSystemRepository(), consoleIO)) {
 								this.state.getManager().addRepositoryConfig(repConfig);
 								consoleIO.writeln("Repository created");
 							} else {

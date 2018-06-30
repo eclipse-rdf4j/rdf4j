@@ -5,7 +5,8 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
+
 
 import static org.eclipse.rdf4j.query.QueryLanguage.SERQL;
 import static org.eclipse.rdf4j.query.QueryLanguage.SPARQL;
@@ -17,6 +18,9 @@ import java.util.List;
 import java.util.Locale;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleParameters;
+import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -42,12 +46,10 @@ import org.slf4j.LoggerFactory;
 /**
  * @author Dale Visser
  */
-public class QueryEvaluator {
+public abstract class QueryEvaluator extends ConsoleCommand {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryEvaluator.class);
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
 	private final ConsoleParameters parameters;
 	private final TupleAndGraphQueryEvaluator tg_eval;
 
@@ -58,9 +60,8 @@ public class QueryEvaluator {
 	 * @param state
 	 * @param parameters 
 	 */
-	QueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
-		this.consoleIO = consoleIO;
-		this.state = state;
+	public QueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
+		super(consoleIO, state);
 		this.parameters = parameters;
 		this.tg_eval = new TupleAndGraphQueryEvaluator(consoleIO, state, parameters);
 	}
@@ -173,14 +174,11 @@ public class QueryEvaluator {
 			// explicitly provide the query parser with name space mappings in
 			// advance.
 			try {
-				final RepositoryConnection con = repository.getConnection();
-				try {
+				try (RepositoryConnection con = repository.getConnection()) {
 					final Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
 					if (!namespaces.isEmpty()) {
 						addQueryPrefixes(queryLn, result, namespaces);
 					}
-				} finally {
-					con.close();
 				}
 			} catch (RepositoryException e) {
 				consoleIO.writeError("Error connecting to repository: " + e.getMessage());
@@ -244,16 +242,13 @@ public class QueryEvaluator {
 			return;
 		}
 		
-		final RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
 			final long startTime = System.nanoTime();
 			final boolean result = con.prepareBooleanQuery(queryLn, queryString).evaluate();
 			consoleIO.writeln("Answer: " + result);
 			final long endTime = System.nanoTime();
 			consoleIO.writeln("Query evaluated in " + (endTime - startTime) / 1000000 + " ms");
-		} finally {
-			con.close();
 		}
 	}
 
@@ -274,15 +269,12 @@ public class QueryEvaluator {
 			return;
 		}
 		
-		final RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			consoleIO.writeln("Executing update...");
 			final long startTime = System.nanoTime();
 			con.prepareUpdate(queryLn, queryString).execute();
 			final long endTime = System.nanoTime();
 			consoleIO.writeln("Update executed in " + (endTime - startTime) / 1000000 + " ms");
-		} finally {
-			con.close();
 		}
 	}
 }

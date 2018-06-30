@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
  * 
  * @author Dale Visser
  */
-class VerificationListener extends AbstractRDFHandler implements ParseErrorListener {
+public class VerificationListener extends AbstractRDFHandler implements ParseErrorListener {
 
 	private final ConsoleIO consoleIO;
 
@@ -26,7 +26,7 @@ class VerificationListener extends AbstractRDFHandler implements ParseErrorListe
 	 * 
 	 * @param consoleIO 
 	 */
-	VerificationListener(ConsoleIO consoleIO) {
+	public VerificationListener(ConsoleIO consoleIO) {
 		super();
 		this.consoleIO = consoleIO;
 	}

@@ -5,12 +5,16 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
 
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.LockRemover;
+import org.eclipse.rdf4j.console.Util;
+
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -24,25 +28,35 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Dale Visser
  */
-public class Clear implements Command {
-
+public class Clear extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Clear.class);
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
-	private final LockRemover lockRemover;
+	@Override
+	public String getName() {
+		return "clear";
+	}
+
+	@Override
+	public String getHelpShort() {
+		return "Removes data from a repository";
+	}
+
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "clear                   Clears the entire repository\n"
+			+ "clear (<uri>|null)...   Clears the specified context(s)\n";
+	}
 
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param lockRemover 
+
 	 */
-	Clear(ConsoleIO consoleIO, ConsoleState state, LockRemover lockRemover) {
-		this.consoleIO = consoleIO;
-		this.state = state;
-		this.lockRemover = lockRemover;
+	public Clear(ConsoleIO consoleIO, ConsoleState state) {
+		super(consoleIO, state);
 	}
 
 	@Override
@@ -52,24 +66,12 @@ public class Clear implements Command {
 		if (repository == null) {
 			consoleIO.writeUnopenedError();
 		} else {
-			final ValueFactory valueFactory = repository.getValueFactory();
-			Resource[] contexts = new Resource[tokens.length - 1];
-			
-			for (int i = 1; i < tokens.length; i++) {
-				final String contextID = tokens[i];
-				if (contextID.equalsIgnoreCase("null")) {
-					contexts[i - 1] = null; // NOPMD
-				} else if (contextID.startsWith("_:")) {
-					contexts[i - 1] = valueFactory.createBNode(contextID.substring(2));
-				} else {
-					try {
-						contexts[i - 1] = valueFactory.createIRI(contextID);
-					} catch (IllegalArgumentException e) {
-						consoleIO.writeError("illegal URI: " + contextID);
-						consoleIO.writeln(PrintHelp.CLEAR);
-						return;
-					}
-				}
+			Resource[] contexts;
+			try {
+				contexts = Util.getContexts(tokens, 1, repository);
+			} catch (IllegalArgumentException ioe) {
+				consoleIO.writeError(ioe.getMessage());
+				return;
 			}
 			clear(repository, contexts);
 		}
@@ -88,18 +90,15 @@ public class Clear implements Command {
 			consoleIO.writeln("Removing specified contexts...");
 		}
 		try {
-			final RepositoryConnection con = repository.getConnection();
-			try {
+			try (RepositoryConnection con = repository.getConnection()) {
 				con.clear(contexts);
 				if (contexts.length == 0) {
 					con.clearNamespaces();
 				}
-			} finally {
-				con.close();
 			}
 		} catch (RepositoryReadOnlyException e) {
 			try {
-				if (lockRemover.tryToRemoveLock(repository)) {
+				if (LockRemover.tryToRemoveLock(repository, consoleIO)) {
 					this.clear(repository, contexts);
 				} else {
 					consoleIO.writeError("Failed to clear repository");
