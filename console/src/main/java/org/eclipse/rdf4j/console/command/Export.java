@@ -5,18 +5,18 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
 import java.io.Writer;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.Util;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
@@ -34,43 +34,25 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Bart Hanssens
  */
-public class Export implements Command {
+public class Export extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Export.class);
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
+	@Override
+	public String getName() {
+		return "export";
+	}
 
-	// TODO: move this util class, could be reused by Clear and other commands
-	private static Resource getContext(Repository repository, String ctxID) {
-		if (ctxID.equalsIgnoreCase("null")) {
-			return null;
-		}
-		if (ctxID.startsWith("_:")) {
-			return repository.getValueFactory().createBNode(ctxID.substring(2));
-		}
-		return repository.getValueFactory().createIRI(ctxID);
+	@Override
+	public String getHelpShort() {
+		return "Exports repository data to a file";
 	}
-	
-	/**
-	 * Get path from file or URI
-	 * 
-	 * @param file file name
-	 * @return path or null
-	 */
-	private static Path getPath(String file) {
-		Path path = null;
-		try {
-			path = Paths.get(file);
-		} catch (InvalidPathException ipe) {
-			try {
-				path = Paths.get(new URI(file));
-			} catch (URISyntaxException ex) { 
-				//
-			}
-		}
-		return path;
+
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "export <file>                 Exports the entirey repository to a file\n"
+			+ "export <file> (<uri>|null)... Exports the specified context(s) to a file\n";
 	}
-	
 
 	@Override
 	public void execute(String... tokens) {
@@ -81,23 +63,18 @@ public class Export implements Command {
 			return;
 		}
 		if (tokens.length < 2) {
-			consoleIO.writeln(PrintHelp.EXPORT);
+			consoleIO.writeln(getHelpLong());
 			return;
 		} 
 		
 		String fileName = tokens[1];
-		Resource[] contexts = new Resource[]{};
-
-		if (tokens.length > 2) {
-			contexts = new Resource[tokens.length - 2];
-			for (int i = 2; i < tokens.length; i++) {
-				try {
-					contexts[i - 2] = getContext(repository, tokens[i]);
-				} catch (IllegalArgumentException ioe) {
-					consoleIO.writeError("Illegal URI: " + tokens[i]);
-					return;
-				}
-			}
+		
+		Resource[] contexts;
+		try {
+			contexts = Util.getContexts(tokens, 2, repository);
+		} catch (IllegalArgumentException ioe) {
+			consoleIO.writeError(ioe.getMessage());
+			return;
 		}
 		export(repository, fileName, contexts);
 	}
@@ -111,7 +88,7 @@ public class Export implements Command {
 	 * @throws UnsupportedRDFormatException
 	 */
 	private void export(Repository repository, String fileName, Resource...contexts) {
-		Path path = getPath(fileName);
+		Path path = Util.getPath(fileName);
 		if (path == null) {
 			consoleIO.writeError("Invalid file name");
 			return;
@@ -154,10 +131,8 @@ public class Export implements Command {
 	 * 
 	 * @param consoleIO
 	 * @param state
-	 * @param lockRemover
 	 */
-	Export(ConsoleIO consoleIO, ConsoleState state) {
-		this.consoleIO = consoleIO;
-		this.state = state;
+	public Export(ConsoleIO consoleIO, ConsoleState state) {
+		super(consoleIO, state);
 	}
 }

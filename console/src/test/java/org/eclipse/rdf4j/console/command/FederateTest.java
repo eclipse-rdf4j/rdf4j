@@ -5,12 +5,14 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsEqual.equalTo;
 import static org.hamcrest.core.IsInstanceOf.instanceOf;
+
 import static org.junit.Assert.assertThat;
+
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -32,11 +34,13 @@ import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.repository.sparql.config.SPARQLRepositoryConfig;
 import org.eclipse.rdf4j.repository.sparql.config.SPARQLRepositoryFactory;
 import org.eclipse.rdf4j.sail.federation.config.FederationConfig;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+
 import org.mockito.InjectMocks;
 import org.slf4j.LoggerFactory;
 
@@ -117,7 +121,7 @@ public class FederateTest extends AbstractCommandTest {
 		throws Exception
 	{
 		execute();
-		verify(mockConsoleIO).writeln(PrintHelp.FEDERATE);
+		verify(mockConsoleIO).writeln(federate.getHelpLong());
 	}
 
 	@Test
@@ -125,7 +129,7 @@ public class FederateTest extends AbstractCommandTest {
 		throws Exception
 	{
 		execute(FED_ID);
-		verify(mockConsoleIO).writeln(PrintHelp.FEDERATE);
+		verify(mockConsoleIO).writeln(federate.getHelpLong());
 	}
 
 	@Test
@@ -133,7 +137,7 @@ public class FederateTest extends AbstractCommandTest {
 		throws Exception
 	{
 		execute(FED_ID, MEMORY_MEMBER_ID1);
-		verify(mockConsoleIO).writeln(PrintHelp.FEDERATE);
+		verify(mockConsoleIO).writeln(federate.getHelpLong());
 	}
 
 	@Test

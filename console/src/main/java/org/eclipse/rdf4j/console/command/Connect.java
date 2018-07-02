@@ -5,12 +5,15 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
 
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
@@ -29,32 +32,46 @@ import org.slf4j.LoggerFactory;
  *
  * @author dale
  */
-public class Connect implements Command {
-
+public class Connect extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Connect.class);
 
-	private final ConsoleState appInfo;
-	private final ConsoleIO consoleIO;
 	private final Disconnect disconnect;
+	
+	@Override
+	public String getName() {
+		return "connect";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Connects to a (local or remote) set of repositories";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "connect default                         Opens the default repository set for this console\n"
+			+ "connect <dataDirectory>                 Opens the repository set in the specified data dir\n"
+			+ "connect <serverURL> [user [password]]   Connects to an RDF4J server with optional credentials\n";
 
+	}
+	
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
-	 * @param info
+	 * @param state
 	 * @param disconnect 
 	 */
-	Connect(ConsoleIO consoleIO, ConsoleState info, Disconnect disconnect) {
-		super();
-		this.consoleIO = consoleIO;
-		this.appInfo = info;
+	public Connect(ConsoleIO consoleIO, ConsoleState state, Disconnect disconnect) {
+		super(consoleIO, state);
 		this.disconnect = disconnect;
 	}
 
 	@Override
 	public void execute(String... tokens) {
 		if (tokens.length < 2) {
-			consoleIO.writeln(PrintHelp.CONNECT);
+			consoleIO.writeln(getHelpLong());
 			return;
 		}
 		
@@ -80,8 +97,8 @@ public class Connect implements Command {
 	 * 
 	 * @return 
 	 */
-	protected boolean connectDefault() {
-		return installNewManager(new LocalRepositoryManager(this.appInfo.getDataDirectory()),
+	public boolean connectDefault() {
+		return installNewManager(new LocalRepositoryManager(this.state.getDataDirectory()),
 				"default data directory");
 	}
 
@@ -130,10 +147,7 @@ public class Connect implements Command {
 					LOGGER.warn("Failed to read user credentials", ioe);
 				}
 			}
-		} catch (IOException e) {
-			consoleIO.writeError("Failed to access the server: " + e.getMessage());
-			LOGGER.warn("Failed to access the server", e);
-		} catch (RepositoryException e) {
+		} catch (IOException|RepositoryException e) {
 			consoleIO.writeError("Failed to access the server: " + e.getMessage());
 			LOGGER.warn("Failed to access the server", e);
 		}
@@ -147,7 +161,7 @@ public class Connect implements Command {
 	 * @param path directory of the local repository
 	 * @return true on success
 	 */
-	protected boolean connectLocal(final String path) {
+	public boolean connectLocal(final String path) {
 		final File dir = new File(path);
 		boolean result = false;
 		if (dir.exists() && dir.isDirectory()) {
@@ -167,7 +181,7 @@ public class Connect implements Command {
 	 */
 	private boolean installNewManager(final RepositoryManager newManager, final String newManagerID) {
 		boolean installed = false;
-		final String managerID = this.appInfo.getManagerID();
+		final String managerID = this.state.getManagerID();
 		
 		if (newManagerID.equals(managerID)) {
 			consoleIO.writeln("Already connected to " + managerID);
@@ -177,8 +191,8 @@ public class Connect implements Command {
 				newManager.initialize();
 				disconnect.execute(false);
 				
-				this.appInfo.setManager(newManager);
-				this.appInfo.setManagerID(newManagerID);
+				this.state.setManager(newManager);
+				this.state.setManagerID(newManagerID);
 				consoleIO.writeln("Connected to " + newManagerID);
 		
 				installed = true;
@@ -196,7 +210,7 @@ public class Connect implements Command {
 	 * @param url URL of the repository
 	 * @return true on success
 	 */
-	protected boolean connectRemote(final String url) {
+	public boolean connectRemote(final String url) {
 		return connectRemote(url, null, null);
 	}
 }

@@ -5,9 +5,13 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
+
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.LockRemover;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -22,28 +26,37 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Dale Visser
  */
-public class Open implements Command {
-
+public class Open extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Open.class);
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
 	private final Close close;
-	private final LockRemover lockRemover;
 
+	@Override
+	public String getName() {
+		return "open";
+	}
+	
+	@Override
+	public String getHelpShort() {
+		return "Opens a repository to work on, takes a repository ID as argument";
+	}
+	
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "open <repositoryID>   Opens the repository with the specified ID\n";
+	}
+	
 	/**
 	 * Constructor
 	 * 
 	 * @param consoleIO
 	 * @param state
 	 * @param close
-	 * @param lockRemover 
 	 */
-	Open(ConsoleIO consoleIO, ConsoleState state, Close close, LockRemover lockRemover) {
-		this.consoleIO = consoleIO;
-		this.state = state;
+	public Open(ConsoleIO consoleIO, ConsoleState state, Close close) {
+		super(consoleIO, state);
 		this.close = close;
-		this.lockRemover = lockRemover;
 	}
 
 	@Override
@@ -51,7 +64,7 @@ public class Open implements Command {
 		if (tokens.length == 2) {
 			openRepository(tokens[1]);
 		} else {
-			consoleIO.writeln(PrintHelp.OPEN);
+			consoleIO.writeln(getHelpLong());
 		}
 	}
 
@@ -62,7 +75,7 @@ public class Open implements Command {
 	 * 
 	 * @param repoID repository ID 
 	 */
-	protected void openRepository(final String repoID) {
+	public void openRepository(final String repoID) {
 		try {
 			final Repository newRepository = state.getManager().getRepository(repoID);
 
@@ -77,7 +90,7 @@ public class Open implements Command {
 			}
 		} catch (RepositoryLockedException e) {
 			try {
-				if (lockRemover.tryToRemoveLock(e)) {
+				if (LockRemover.tryToRemoveLock(e, consoleIO)) {
 					openRepository(repoID);
 				} else {
 					consoleIO.writeError(OPEN_FAILURE);
@@ -86,10 +99,7 @@ public class Open implements Command {
 			} catch (IOException e1) {
 				consoleIO.writeError("Unable to remove lock: " + e1.getMessage());
 			}
-		} catch (RepositoryConfigException e) {
-			consoleIO.writeError(e.getMessage());
-			LOGGER.error(OPEN_FAILURE, e);
-		} catch (RepositoryException e) {
+		} catch (RepositoryConfigException | RepositoryException e) {
 			consoleIO.writeError(e.getMessage());
 			LOGGER.error(OPEN_FAILURE, e);
 		}

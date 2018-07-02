@@ -5,12 +5,14 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.util.Locale;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
@@ -27,14 +29,29 @@ import org.slf4j.LoggerFactory;
  *
  * @author Dale Visser
  */
-public class Show implements Command {
+public class Show extends ConsoleCommand {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(Show.class);
 
 	private static final String OUTPUT_SEPARATOR = "+----------";
 
-	private final ConsoleIO consoleIO;
-	private final ConsoleState state;
+	@Override
+	public String getName() {
+		return "show";
+	}
+
+	@Override
+	public String getHelpShort() {
+		return "Displays an overview of various resources";
+	}
+
+	@Override
+	public String getHelpLong() {
+		return PrintHelp.USAGE
+			+ "show {r, repositories}   Shows all available repositories\n"
+			+ "show {n, namespaces}     Shows all namespaces\n"
+			+ "show {c, contexts}       Shows all context identifiers\n";
+	}
 
 	/**
 	 * Constructor
@@ -42,9 +59,8 @@ public class Show implements Command {
 	 * @param consoleIO
 	 * @param state
 	 */
-	Show(ConsoleIO consoleIO, ConsoleState state) {
-		this.consoleIO = consoleIO;
-		this.state = state;
+	public Show(ConsoleIO consoleIO, ConsoleState state) {
+		super(consoleIO, state);
 	}
 
 	@Override
@@ -61,7 +77,7 @@ public class Show implements Command {
 				consoleIO.writeError("Unknown target '" + tokens[1] + "'");
 			}
 		} else {
-			consoleIO.writeln(PrintHelp.SHOW);
+			consoleIO.writeln(getHelpLong());
 		}
 	}
 

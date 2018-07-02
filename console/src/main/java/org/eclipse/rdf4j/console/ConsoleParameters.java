@@ -22,7 +22,7 @@ public interface ConsoleParameters {
 	int getWidth();
 
 	/**
-	 * Sey screen width
+	 * Set screen width
 	 * 
 	 * @param width width in columns
 	 */

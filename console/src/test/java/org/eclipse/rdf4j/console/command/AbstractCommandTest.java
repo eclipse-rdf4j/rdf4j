@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.console;
+package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -17,6 +17,8 @@ import java.nio.charset.StandardCharsets;
 
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
