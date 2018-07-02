@@ -11,6 +11,35 @@
   <name>RDF4J Tools</name>
   <description>Server, Workbench, Console and other end-user tools for RDF4J.</description>
 
+  <url>http://www.rdf4j.org/</url>
+  <inceptionYear>2015</inceptionYear>
+
+  <organization>
+          <name>Eclipse Foundation</name>
+          <url>https://www.eclipse.org/</url>
+  </organization>
+
+  <developers>
+          <developer>
+                  <id>jeenbroekstra</id>
+                  <name>Jeen Broekstra</name>
+                  <email>jeen.broekstra@gmail.com</email>
+                  <timezone>GMT+10</timezone>
+          </developer>
+          <developer>
+                  <id>james_leigh</id>
+                  <name>James Leigh</name>
+                  <email>james@ontotext.com</email>
+          </developer>
+          <developer>
+                  <id>ansell</id>
+                  <name>Peter Ansell</name>
+                  <email>p_ansell@yahoo.com</email>
+                  <url>https://github.com/ansell</url>
+                  <timezone>GMT+10</timezone>
+          </developer>
+  </developers>
+
   <licenses>
     <license>
       <name>Eclipse Distribution License v1.0</name>
