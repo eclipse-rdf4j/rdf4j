@@ -75,7 +75,7 @@ public class Verify extends ConsoleCommand {
 			consoleIO.writeln("RDF Format is " + format.getName());
 			
 			RDFParser parser = Rio.createParser(format);
-			VerificationLIstener listener = new VerificationLIstener(consoleIO);
+			VerificationListener listener = new VerificationListener(consoleIO);
 		
 			parser.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
 			parser.set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);
