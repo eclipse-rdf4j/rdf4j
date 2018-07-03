@@ -1,2 +1,0 @@
-= The RDF Model
-Spanqit provides a collection of interfaces to model RDF objects in the `org.eclipse.rdf4j.spanqit.rdf` package. Instances of these interfaces can be used when needed and as expected while creating SPARQL queries. The `Rdf` class contains static factory methods to create RDF objects for use with Spanqit, including IRI's, blank nodes, and RDF literals.

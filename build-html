@@ -5,6 +5,7 @@ asciidoctor -n -D html/migration doc/migration/index.adoc
 asciidoctor -n -D html/programming doc/programming/index.adoc
 asciidoctor -n -D html/getting-started doc/getting-started/index.adoc
 asciidoctor -n -D html/rdf-tutorial doc/rdf-tutorial/index.adoc
+asciidoctor -n -D html/sparqlbuilder doc/sparqlbuilder/index.adoc
 asciidoctor -n -D html/custom-sparql-functions doc/custom-sparql-functions/index.adoc
 asciidoctor -n -D html/rest-api doc/rest-api/index.adoc
 asciidoctor -n -D html/rdf4j-binary doc/rdf4j-binary/index.adoc
