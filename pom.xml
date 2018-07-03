@@ -144,6 +144,9 @@
     </profile>
     <profile>
       <id>assembly</id>
+      <modules>
+        <module>assembly</module>
+      </modules>
       <build>
         <plugins>
           <plugin>
