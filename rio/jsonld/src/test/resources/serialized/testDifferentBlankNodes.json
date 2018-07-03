@@ -1,0 +1,14 @@
+[ {
+  "@id" : "sch:node1",
+  "sch:pred1" : [ {
+    "@id" : "_:bnode1"
+  } ],
+  "sch:pred2" : [ {
+    "@value" : "literal1"
+  } ]
+}, {
+  "@id" : "_:bnode2",
+  "sch:pred2" : [ {
+    "@id" : "_:bnode2"
+  } ]
+} ]

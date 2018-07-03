@@ -74,6 +74,14 @@ public class JSONLDSettings {
 			"org.eclipse.rdf4j.rio.jsonld.mode", "JSONLD Mode", JSONLDMode.EXPAND);
 
 	/**
+	 * If set to true, the JSON-LD processor will try to represent the JSON-LD object in a hierarchical view.
+	 * <p>
+	 * Default to false
+	 */
+	public static final RioSetting<Boolean> HIERARCHICAL_VIEW = new RioSettingImpl<>(
+			"org.eclipse.rdf4j.rio.jsonld.hierarchicalview", "Hierarchical representation of the JSON", Boolean.FALSE);
+
+	/**
 	 * Private default constructor.
 	 */
 	private JSONLDSettings() {
