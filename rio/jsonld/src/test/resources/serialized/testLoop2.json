@@ -1,0 +1,20 @@
+[ {
+  "@id" : "sch:node1",
+  "sch:pred1" : [ {
+    "@id" : "sch:node2",
+    "sch:pred2" : [ {
+      "@id" : "sch:node3",
+      "sch:pred3" : [ {
+        "@id" : "sch:node1"
+      } ]
+    }, {
+      "@id" : "sch:node4",
+      "sch:pred1" : [ {
+        "@id" : "sch:node3",
+        "sch:pred3" : [ {
+          "@id" : "sch:node1"
+        } ]
+      } ]
+    } ]
+  } ]
+} ]
