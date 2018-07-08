@@ -8,6 +8,7 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
+import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatternNotTriples;
 import org.junit.Test;
 
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
@@ -20,7 +21,6 @@ import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
-import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatternNotTriple;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
@@ -35,7 +35,7 @@ public class Section8Test extends BaseExamples {
 
 		GraphPattern personWithName = person.has(foaf.iri("name"),
 				SparqlBuilder.var("name"));
-		GraphPatternNotTriple personOfTypePerson = GraphPatterns.and(person
+		GraphPatternNotTriples personOfTypePerson = GraphPatterns.and(person
 				.has(rdf.iri("type"), foaf.iri("Person")));
 		query.prefix(rdf, foaf).select(person)
 				.where(personOfTypePerson.filterNotExists(personWithName));
@@ -51,10 +51,11 @@ public class Section8Test extends BaseExamples {
 
 		GraphPattern personWithName = person.has(foaf.iri("name"),
 				SparqlBuilder.var("name"));
-		GraphPatternNotTriple personOfTypePerson = GraphPatterns.and(person
+		GraphPatternNotTriples personOfTypePerson = GraphPatterns.and(person
 				.has(rdf.iri("type"), foaf.iri("Person")));
 		query.prefix(rdf, foaf).select(person)
-				.where(personOfTypePerson.filterExists(personWithName));
+				.where(personOfTypePerson
+						.filterExists(personWithName));
 		p();
 	}
 
