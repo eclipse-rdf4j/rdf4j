@@ -27,7 +27,7 @@ public class Rdf {
 	// not sure if other protocols are generally used in RDF iri's?
 	private static final Set<String> IRI_PROTOCOLS = Stream.of("http://", "https://", "mailto:").collect(Collectors.toSet());
 
-	private Rdf() { 	}
+	private Rdf() { }
 
 	/**
 	 * Create a SparqlBuilder Iri instance from a String iri

@@ -15,5 +15,5 @@ public interface QueryElement {
 	/**
 	 * @return the String representing the SPARQL syntax of this element
 	 */
-	public String getQueryString();
+	String getQueryString();
 }

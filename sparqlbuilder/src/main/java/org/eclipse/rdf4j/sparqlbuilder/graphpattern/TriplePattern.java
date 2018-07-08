@@ -8,12 +8,12 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 
 package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
 
-import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.toRdfLiteralArray;
-
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfObject;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicateObjectList;
+
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.toRdfLiteralArray;
 
 /**
  * Denotes a SPARQL Triple Pattern
@@ -101,30 +101,6 @@ public interface TriplePattern extends GraphPattern {
 	 */
 	default TriplePattern andIsA(RdfObject object) {
 		return andHas(RdfPredicate.a, object);
-	}
-	
-	/**
-	 * Create a group graph pattern containing this triple pattern and the given graph patterns
-	 * 
-	 * @param graphPatterns
-	 * 		other {@link GraphPattern}s to add to the group graph pattern
-	 * @return
-	 * 		a new {@link GraphPatternNotTriple}
-	 */
-	default GraphPatternNotTriple and(GraphPattern... graphPatterns) {
-		return GraphPatterns.and(this).and(graphPatterns);
-	}
-	
-	/**
-	 * Create an alternative graph pattern containing this triple unioned with the given graph patterns
-	 * 
-	 * @param graphPatterns
-	 * 		other {@link GraphPattern}s to add to the alternative graph pattern
-	 * @return
-	 * 		a new {@link GraphPatternNotTriple}
-	 */
-	default GraphPatternNotTriple union(GraphPattern... graphPatterns) {
-		return GraphPatterns.union(this).union(graphPatterns);
 	}
 
 	@Override
