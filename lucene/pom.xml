@@ -65,6 +65,8 @@
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-backward-codecs</artifactId>
 			<version>${lucene.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
 		</dependency>
 		
 		<dependency>
