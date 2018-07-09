@@ -25,7 +25,9 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
  * </p>
  * 
  * @author Michael Grove
+ * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder} instead.
  */
+@Deprecated
 public class GroupBuilder<T extends ParsedQuery, E extends SupportsGroups> {
 
 	private E mBuilder;
@@ -58,8 +60,7 @@ public class GroupBuilder<T extends ParsedQuery, E extends SupportsGroups> {
 			if (mBuilder != null) {
 				mBuilder.addGroup(mGroup);
 			}
-		}
-		else {
+		} else {
 			mParent = theParent;
 			theParent.addChild(mGroup);
 		}
@@ -81,8 +82,7 @@ public class GroupBuilder<T extends ParsedQuery, E extends SupportsGroups> {
 		if (mGroup.isEmpty()) {
 			if (mParent != null) {
 				mParent.removeChild(mGroup);
-			}
-			else {
+			} else {
 				mBuilder.removeGroup(mGroup);
 			}
 		}

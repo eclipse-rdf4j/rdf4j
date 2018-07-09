@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.queryrender.BaseTupleExprRenderer;
 
 /**
  * <p>
- * Renders a Sesame {@link TupleExpr} into SeRQL Syntax
+ * Renders a {@link TupleExpr} into SeRQL Syntax
  * </p>
  * 
  * @author Michael Grove

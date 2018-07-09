@@ -47,7 +47,7 @@ import org.eclipse.rdf4j.queryrender.RenderUtils;
 
 /**
  * <p>
- * Renders a Sesame {@link ValueExpr} into SeRQL syntax.
+ * Renders a {@link ValueExpr} into SeRQL syntax.
  * </p>
  * 
  * @author Michael Grove
