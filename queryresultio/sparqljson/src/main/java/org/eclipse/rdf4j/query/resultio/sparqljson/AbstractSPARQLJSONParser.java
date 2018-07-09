@@ -334,6 +334,30 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 			else {
 				logger.debug("Found unexpected object in top level {} field #{}.{}", baseStr,
 						jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+				// Consume the discovered unexpected object 
+				// (in particular, if it is either an array or a composite object).
+				jp.nextToken();
+
+				if (jp.currentToken() == JsonToken.START_ARRAY) {
+					while (!(jp.getParsingContext().getParent().inRoot()
+							&& (jp.currentToken() == JsonToken.END_ARRAY)))
+					{
+						if (jp.nextToken() == null) {
+							throw new QueryResultParseException(
+									"An array value of the unexpected " + baseStr + " field is not closed.");
+						}
+					}
+				}
+				else if (jp.currentToken() == JsonToken.START_OBJECT) {
+					while (!(jp.getParsingContext().getParent().inRoot()
+							&& (jp.currentToken() == JsonToken.END_OBJECT)))
+					{
+						if (jp.nextToken() == null) {
+							throw new QueryResultParseException(
+									"An object value of the unexpected " + baseStr + " field is not closed.");
+						}
+					}
+				}
 			}
 		}
 
