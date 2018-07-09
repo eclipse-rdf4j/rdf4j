@@ -11,6 +11,8 @@ package org.eclipse.rdf4j.sparqlbuilder.examples;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.SelectQuery;
@@ -38,6 +40,8 @@ public class BaseExamples {
 	protected static final String DC_NS = "http://purl.org/dc/elements/1.1/";
 	protected static final String FOAF_NS = "http://xmlns.com/foaf/0.1/";
 
+	protected static final ValueFactory VF = SimpleValueFactory.getInstance();
+	
 	protected SelectQuery query;
 
 	@Rule

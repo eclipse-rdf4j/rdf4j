@@ -12,7 +12,9 @@ import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 /**
  * Utility functions for the SparqlBuilder 
@@ -42,6 +44,10 @@ public class SparqlBuilderUtils {
 			builder.append(string);
 			sufOpt.ifPresent(s -> builder.append(s));
 		});
+	}
+	
+	public static Iri convert(IRI iri) {
+		return () -> getEnclosedString("<", ">", iri.stringValue());
 	}
 	
 	public static String getBracedString(String contents) {

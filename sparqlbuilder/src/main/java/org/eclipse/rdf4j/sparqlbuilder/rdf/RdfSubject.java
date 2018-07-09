@@ -10,9 +10,11 @@ package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.toRdfLiteralArray;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * Denotes an element that can represent a subject in a
@@ -35,6 +37,10 @@ public interface RdfSubject extends QueryElement {
 	 */
 	default TriplePattern has(RdfPredicate predicate, RdfObject... objects) {
 		return GraphPatterns.tp(this, predicate, objects);
+	}
+	
+	default TriplePattern has(IRI predicate, RdfObject... objects) {
+		return has(SparqlBuilderUtils.convert(predicate), objects);
 	}
 	
 	/**

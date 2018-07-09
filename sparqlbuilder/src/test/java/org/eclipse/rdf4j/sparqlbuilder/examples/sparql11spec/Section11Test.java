@@ -12,6 +12,7 @@ import org.junit.Test;
 
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Assignment;
@@ -34,6 +35,27 @@ public class Section11Test extends BaseExamples {
 
 		query.prefix(base).select(sumAsTotal).where(org.has(base.iri("affiliates"), auth),
 				auth.has(base.iri("writesBook"), book), book.has(base.iri("price"), lprice)).groupBy(org)
+				.having(Expressions.gt(sum, 10));
+		p();
+	}
+	
+	@Test
+	public void example_11_1_model() {
+		String ex = EXAMPLE_ORG_BOOK_NS;
+		IRI affiliates = VF.createIRI(ex, "affiliates");
+		IRI writesBook = VF.createIRI(ex, "writesBook");
+		IRI price = VF.createIRI(ex, "price");
+		
+		Prefix base = SparqlBuilder.prefix(iri("http://books.example/"));
+		Variable lprice = SparqlBuilder.var("lprice"), totalPrice = SparqlBuilder.var("totalPrice");
+
+		Expression<?> sum = Expressions.sum(lprice);
+		Assignment sumAsTotal = SparqlBuilder.as(sum, totalPrice);
+
+		Variable org = SparqlBuilder.var("org"), auth = SparqlBuilder.var("auth"), book = SparqlBuilder.var("book");
+
+		query.prefix(base).select(sumAsTotal).where(org.has(affiliates, auth),
+				auth.has(writesBook, book), book.has(price, lprice)).groupBy(org)
 				.having(Expressions.gt(sum, 10));
 		p();
 	}
