@@ -8,6 +8,7 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
+import org.eclipse.rdf4j.sparqlbuilder.graphpattern.*;
 import org.junit.Test;
 
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
@@ -18,10 +19,6 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
 import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
-import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
-import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatternNotTriple;
-import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
-import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 
 public class Section3Test extends BaseExamples {
@@ -33,7 +30,7 @@ public class Section3Test extends BaseExamples {
 		TriplePattern xTitle = GraphPatterns.tp(x, dc.iri("title"), title);
 		
 		Expression<?> regex = Expressions.regex(title, Rdf.literalOf("^SPARQL"));
-		GraphPatternNotTriple where = GraphPatterns.and(xTitle).filter(regex);
+		GraphPattern where = xTitle.filter(regex);
 
 		query.prefix(dc).select(title).where(where);
 		p();
