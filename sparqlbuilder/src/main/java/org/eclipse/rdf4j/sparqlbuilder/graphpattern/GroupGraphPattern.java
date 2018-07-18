@@ -8,11 +8,11 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 
 package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
 
-import java.util.Optional;
-
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElementCollection;
 import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
+
+import java.util.Optional;
 
 /**
  * A SPARQL Group Graph Pattern
@@ -53,29 +53,34 @@ class GroupGraphPattern extends QueryElementCollection<GraphPattern> implements
 		this.filter = original.filter;
 	}
 
-	GroupGraphPattern and(GraphPattern... patterns) {
-		addElements(patterns);
+	@Override
+	public GroupGraphPattern and(GraphPattern... patterns) {
+		if(isEmpty() && patterns.length == 1 && (isGGP(patterns[0]))) {
+		    copy(GraphPatterns.extractOrConvertToGGP(patterns[0]));
+		} else {
+		    addElements(patterns);
+        }
 
 		return this;
 	}
 
-	GroupGraphPattern optional(boolean isOptional) {
+	@Override
+	public GroupGraphPattern optional(boolean isOptional) {
 		this.isOptional = isOptional;
 
 		return this;
 	}
-	
-	GroupGraphPattern from(GraphName name) {
+
+	@Override
+	public GroupGraphPattern from(GraphName name) {
 		from = Optional.of(name);
 		
 		return this;
 	}
 
-	GroupGraphPattern filter(Expression<?> constraint) {
-		if (!filter.isPresent()) {
-			filter = Optional.of(new Filter());
-		}
-		filter.get().filter(constraint);
+	@Override
+	public GroupGraphPattern filter(Expression<?> constraint) {
+		filter = Optional.of(new Filter(constraint));
 
 		return this;
 	}
@@ -85,20 +90,10 @@ class GroupGraphPattern extends QueryElementCollection<GraphPattern> implements
 		return super.isEmpty();
 	}
 
-	public boolean hasQualifier() {
-	    return isOptional || from.isPresent();
-    }
-
 	@Override
 	public String getQueryString() {
 		StringBuilder pattern = new StringBuilder();
 		StringBuilder innerPattern = new StringBuilder();
-
-		// Prevent extra brackets being added in the case of this graph pattern
-		// containing only one group graph pattern. Resulting syntax is
-		// logically equivalent and easier to read (and hopefully parse by query
-		// parsers)
-		boolean bracketize = !(elements.size() == 1 && elements.iterator().next() instanceof GroupGraphPattern);
 
 		if (isOptional) {
 			pattern.append(OPTIONAL).append(" ");
@@ -110,7 +105,7 @@ class GroupGraphPattern extends QueryElementCollection<GraphPattern> implements
 
 		SparqlBuilderUtils.appendQueryElementIfPresent(filter, innerPattern, "\n", null);
 
-		if (bracketize) {
+		if (bracketInner()) {
 			pattern.append(SparqlBuilderUtils.getBracedString(innerPattern
 					.toString()));
 		} else {
@@ -119,4 +114,23 @@ class GroupGraphPattern extends QueryElementCollection<GraphPattern> implements
 
 		return pattern.toString();
 	}
+
+	private static boolean isGGP(GraphPattern pattern) {
+        if(pattern instanceof GroupGraphPattern) {
+            return true;
+        }
+        if(pattern instanceof GraphPatternNotTriples) {
+            return ((GraphPatternNotTriples) pattern).gp instanceof GroupGraphPattern;
+        }
+
+        return false;
+    }
+
+    // Prevent extra brackets being added in the case of this graph pattern
+    // containing only one group graph pattern. Resulting syntax is
+    // logically equivalent and easier to read (and hopefully parse by query
+    // parsers) or make sure to add them if "modifiers" exist
+    private boolean bracketInner() {
+        return !(elements.size() == 1 && elements.iterator().next() instanceof GroupGraphPattern);
+    }
 }

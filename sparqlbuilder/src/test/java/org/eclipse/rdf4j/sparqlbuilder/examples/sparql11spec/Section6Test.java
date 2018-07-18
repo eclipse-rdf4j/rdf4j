@@ -8,6 +8,7 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
+import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatternNotTriples;
 import org.junit.Test;
 
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
@@ -17,7 +18,6 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
 import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
-import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatternNotTriple;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 
@@ -28,7 +28,7 @@ public class Section6Test extends BaseExamples {
 		Variable x = query.var();
 		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
 		
-		GraphPatternNotTriple where = GraphPatterns.and(
+		GraphPatternNotTriples where = GraphPatterns.and(
 				x.has(foaf.iri("name"), name),
 				GraphPatterns.optional(x.has(foaf.iri("mbox"), mbox)));
 
@@ -43,7 +43,7 @@ public class Section6Test extends BaseExamples {
 		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder
 				.var("price"), x = SparqlBuilder.var("x");
 
-		GraphPatternNotTriple pricePattern = GraphPatterns
+		GraphPatternNotTriples pricePattern = GraphPatterns
 				.and(x.has(ns.iri("price"), price))
 				.filter(Expressions.lt(price, 30)).optional();
 
