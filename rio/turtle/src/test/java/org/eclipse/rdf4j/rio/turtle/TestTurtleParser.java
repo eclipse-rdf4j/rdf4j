@@ -133,6 +133,53 @@ public class TestTurtleParser {
 		assertThat(statementCollector.getStatements()).hasSize(3)
 		        .overridingErrorMessage("all triples should have been reported");
 	}
+	
+	@Test
+	public void testUnparsableIRIFatal() throws Exception
+	{
+		// subject IRI is not processable by ParsedIRI
+		String data = " <http://www:example.org/> <urn:foo> <urn:bar> . ";
+
+		try {
+			parser.parse(new StringReader(data), baseURI);
+			fail("default config should result in fatal error / parse exception");
+		}
+		catch (RDFParseException e) {
+			// expected
+		}
+
+	}
+	
+	@Test
+	public void testUnparsableIRINonFatal() throws Exception
+	{
+		// subject IRI is not processable by ParsedIRI
+		String data = " <http://www:example.org/> <urn:foo> <urn:bar> . <urn:foo2> <urn:foo> <urn:bar> .";
+		parser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_URI_SYNTAX);
+		parser.parse(new StringReader(data), baseURI);
+		assertThat(errorCollector.getErrors()).hasSize(1);
+		assertThat(errorCollector.getFatalErrors()).isEmpty();
+		assertThat(statementCollector.getStatements()).isNotEmpty();
+		assertThat(statementCollector.getStatements()).hasSize(1)
+		        .overridingErrorMessage("only syntactically legal triples should have been reported");
+
+	}
+
+	@Test
+	public void testUnparsableIRINoVerify() throws Exception
+	{
+		// subject IRI is not processable by ParsedIRI
+		String data = " <http://www:example.org/> <urn:foo> <urn:bar> . <urn:foo2> <urn:foo> <urn:bar> .";
+		parser.getParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false);
+
+		parser.parse(new StringReader(data), baseURI);
+		assertThat(errorCollector.getErrors()).isEmpty();
+		assertThat(errorCollector.getFatalErrors()).isEmpty();
+		assertThat(statementCollector.getStatements()).isNotEmpty();
+		assertThat(statementCollector.getStatements()).hasSize(2)
+		        .overridingErrorMessage("all triples should have been reported");
+
+	}
 
 	@Test
 	public void testParseBNodes()
