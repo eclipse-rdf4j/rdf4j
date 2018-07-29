@@ -40,7 +40,7 @@ public interface RdfSubject extends QueryElement {
 	}
 	
 	default TriplePattern has(IRI predicate, RdfObject... objects) {
-		return has(SparqlBuilderUtils.convert(predicate), objects);
+		return has(predicate, objects);
 	}
 	
 	/**

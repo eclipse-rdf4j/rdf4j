@@ -13,6 +13,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.AnonymousBlankNode;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.LabeledBlankNode;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.PropertiesBlankNode;
@@ -41,6 +43,16 @@ public class Rdf {
 	}
 	
 	/**
+	 * Create a SparqlBuilder Iri instance from an {@link IRI}
+	 * 
+	 * @param iri the IRI
+	 * @return the SparqlBuilder {@link Iri} instance
+	 */
+	public static Iri iri(IRI iri) {
+		return iri(iri.stringValue());
+	}
+	
+	/**
 	 * Create a SparqlBuilder Iri instance from a namespace and local name
 	 * @param namespace
 	 * 		the namespace of the Iri
@@ -51,6 +63,8 @@ public class Rdf {
 	public static Iri iri(String namespace, String localName) {
 		return iri(namespace + localName);
 	}
+	
+	
 	
 	/**
 	 * creates a labeled blank node

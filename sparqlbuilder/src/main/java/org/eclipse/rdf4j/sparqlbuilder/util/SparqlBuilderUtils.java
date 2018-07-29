@@ -45,11 +45,7 @@ public class SparqlBuilderUtils {
 			sufOpt.ifPresent(s -> builder.append(s));
 		});
 	}
-	
-	public static Iri convert(IRI iri) {
-		return () -> getEnclosedString("<", ">", iri.stringValue());
-	}
-	
+
 	public static String getBracedString(String contents) {
 		return getEnclosedString("{", "}", contents);
 	}
