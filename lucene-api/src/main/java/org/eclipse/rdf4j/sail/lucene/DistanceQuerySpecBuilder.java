@@ -64,6 +64,9 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 					ValueExpr dist = null;
 					String distanceVar = null;
 					QueryModelNode parent = f.getParentNode();
+					while(!(parent instanceof ExtensionElem || parent instanceof Compare)) {
+						parent = parent.getParentNode();
+					}
 					if (parent instanceof ExtensionElem) {
 						distanceVar = ((ExtensionElem)parent).getName();
 						QueryModelNode extension = parent.getParentNode();
@@ -84,6 +87,9 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 						else if (op == CompareOp.GT && compare.getRightArg() == f) {
 							dist = compare.getLeftArg();
 						}
+					}
+					else {
+						throw new SailException("missing outcome variable or comparison for distance function: " + f.getSignature());
 					}
 
 					DistanceQuerySpec spec = new DistanceQuerySpec(f, dist,
