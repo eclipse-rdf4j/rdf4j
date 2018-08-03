@@ -14,6 +14,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -34,6 +35,8 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
  * @author Jeen Broekstra
  */
 public class SPARQLResultsTSVParser extends AbstractTupleQueryResultParser implements TupleQueryResultParser {
+
+	private static final Pattern numberPattern = Pattern.compile("^[-+]?[\\d.].*");
 
 	@Override
 	public TupleQueryResultFormat getTupleQueryResultFormat() {
@@ -90,7 +93,7 @@ public class SPARQLResultsTSVParser extends AbstractTupleQueryResultParser imple
 						v = parseLiteral(valueString);
 					}
 					else if (!"".equals(valueString)) {
-						if (valueString.matches("^[\\+\\-]?[\\d\\.].*")) {
+						if (numberPattern.matcher(valueString).matches()) {
 
 							IRI datatype = null;
 
