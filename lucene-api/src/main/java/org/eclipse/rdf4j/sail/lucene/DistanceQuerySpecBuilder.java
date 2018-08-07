@@ -64,9 +64,6 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 					ValueExpr dist = null;
 					String distanceVar = null;
 					QueryModelNode parent = f.getParentNode();
-					while(!(parent instanceof ExtensionElem || parent instanceof Compare)) {
-						parent = parent.getParentNode();
-					}
 					if (parent instanceof ExtensionElem) {
 						distanceVar = ((ExtensionElem)parent).getName();
 						QueryModelNode extension = parent.getParentNode();
@@ -88,12 +85,8 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 							dist = compare.getLeftArg();
 						}
 					}
-					else {
-						throw new SailException("missing outcome variable or comparison for distance function: " + f.getSignature());
-					}
 
-					DistanceQuerySpec spec = new DistanceQuerySpec(f, dist,
-							distanceVar, filter);
+					DistanceQuerySpec spec = new DistanceQuerySpec(f, dist, distanceVar, filter);
 					specs.put(spec.getGeoVar(), spec);
 				}
 			}
@@ -112,7 +105,9 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 							// constant optimizer
 							results.add(spec);
 						}
-						else {
+						else if (spec.getDistanceFunctionCall() != null && spec.getDistanceExpr() != null
+								&& spec.getGeoProperty() != null)
+						{
 							// evaluate later
 							TupleFunctionCall funcCall = new TupleFunctionCall();
 							funcCall.setURI(LuceneSailSchema.WITHIN_DISTANCE.toString());
