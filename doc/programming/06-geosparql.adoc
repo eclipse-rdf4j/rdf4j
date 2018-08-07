@@ -1,6 +1,6 @@
 = GeoSPARQL 
 
-RDF4J offers an extended algebra for partial http://www.opengeospatial.org/standards/geosparql[GeoSPARQL] support. When enabled, this offers additional geospatial functionality as part of the SPARQL engine, on top of any RDF4J repository.
+RDF4J offers an extended algebra for partial http://www.opengeospatial.org/standards/geosparql[GeoSPARQL] support. When enabled, this offers additional geospatial functionality as part of the SPARQL engine, on top of any RDF4J repository, using the well-known Spatial4J and JTS libraries for geospatial reasoning.
 
 To enable GeoSPARQL support, all you need to do is include the `rdf4j-queryalgebra-geosparql` Maven module in your project:
 
