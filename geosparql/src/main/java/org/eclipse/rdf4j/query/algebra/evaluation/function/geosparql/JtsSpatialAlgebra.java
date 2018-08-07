@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.spatial4j.context.jts.JtsSpatialContext;
+import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Shape;
 import org.locationtech.spatial4j.shape.jts.JtsShapeFactory;
 
@@ -42,18 +43,27 @@ public class JtsSpatialAlgebra implements SpatialAlgebra {
 	}
 
 	public Shape intersection(Shape s1, Shape s2) {
-		return shapeFactory.makeShapeFromGeometry(
-				shapeFactory.getGeometryFrom(s1).intersection(shapeFactory.getGeometryFrom(s2)));
+		Geometry intersection = shapeFactory.getGeometryFrom(s1).intersection(shapeFactory.getGeometryFrom(s2));
+		if (intersection.isEmpty()) {
+			return shapeFactory.pointXY(Double.NaN, Double.NaN);
+		}
+		return shapeFactory.makeShapeFromGeometry(intersection);
 	}
 
 	public Shape symDifference(Shape s1, Shape s2) {
-		return shapeFactory.makeShapeFromGeometry(
-				shapeFactory.getGeometryFrom(s1).symDifference(shapeFactory.getGeometryFrom(s2)));
+		Geometry symDiff = shapeFactory.getGeometryFrom(s1).symDifference(shapeFactory.getGeometryFrom(s2));
+		if (symDiff.isEmpty()) {
+			return shapeFactory.pointXY(Double.NaN, Double.NaN);
+		}
+		return shapeFactory.makeShapeFromGeometry(symDiff);
 	}
 
 	public Shape difference(Shape s1, Shape s2) {
-		return shapeFactory.makeShapeFromGeometry(
-				shapeFactory.getGeometryFrom(s1).difference(shapeFactory.getGeometryFrom(s2)));
+		Geometry difference = shapeFactory.getGeometryFrom(s1).difference(shapeFactory.getGeometryFrom(s2));
+		if (difference.isEmpty()) {
+			return shapeFactory.pointXY(Double.NaN, Double.NaN);
+		}
+		return shapeFactory.makeShapeFromGeometry(difference);
 	}
 
 	public boolean relate(Shape s1, Shape s2, String intersectionPattern) {
