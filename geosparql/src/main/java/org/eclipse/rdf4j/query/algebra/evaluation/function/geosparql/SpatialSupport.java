@@ -19,8 +19,10 @@ import org.locationtech.spatial4j.io.ShapeWriter;
  * then the following fall-backs are used:
  * <ul>
  * <li>it uses the JTS GEO SpatialContext implementation, with added support for polygons.</li>
- * <li>a JtsSpatialAlgebra with support for most Spatial4J/JTS-enabled geospatial operations.</li>
- * <li>a DefaultWktWriter that wraps the standard Spatial4J {@link ShapeWriter}</li>.
+ * {@link org.locationtech.spatial4j.context.SpatialContextFactory} . The prefix is stripped from the system property
+ * name to form the SpatialContextFactory argument name.</li>
+ * <li>a SpatialAlgebra that does not support any operation.</li>
+ * <li>a WktWriter that only supports points</li>.
  * </ul>
  */
 abstract class SpatialSupport {
