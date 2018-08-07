@@ -1,119 +1,99 @@
-= GeoSPARQL
+= GeoSPARQL 
 
-== SAILs, relation with Spatial4j / JTS
+RDF4J offers an extended algebra for partial http://www.opengeospatial.org/standards/geosparql[GeoSPARQL] support. When enabled, this offers additional geospatial functionality as part of the SPARQL engine, on top of any RDF4J repository.
 
-Most of the geo heavy-lifting is performed by the SAILs, which also means that GeoSPARQL support (or lack thereof) depends on the SAIL being used.
-Strictly speaking using a (text) search engine like Lucene is not required, but it will speed up spatial queries.
+To enable GeoSPARQL support, all you need to do is include the `rdf4j-queryalgebra-geosparql` Maven module in your project:
 
-=== Lucene
-
-By default, the Lucene SAIL only spatially indexes `http://www.opengis.net/ont/geosparql#asWKT` fields.
-This can be changed using the `LuceneSail.WKT_FIELDS` parameter.
-
-The Lucene SAIL included in RDF4j uses a slightly outdated version of the https://www.locationtech.org/proposals/spatial4j[Spatial4j] library, 
-which in turn relies on an older version of the https://www.locationtech.org/projects/technology.jts[JTS] library for certain features.
-This JTS library is not bundled with RDF4j due to license issues.
-Future versions of RDF4j will likely solve this issue, as both Spatial4j and JTS are moving to https://www.locationtech.org[Eclipse LocationTech],
-and the JTS license will be changed.
-
-Meanwhile RDF4j users can use the Solr or ElasticSearch SAIL to connect to external search services with more recent versions of these libraries.
-
-=== Providing your own SpatialSupportInitializer
-
-Another option is to implement a `org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer` class.
-For example, https://bitbucket.org/pulquero/sesame-geosparql-jts[Mark Hale's sesame-geosparql-jts].
-
-== WKT Literals
-
-Geographic coordinates can be stored as literals with the "Well-Known Text" (WKT) datatype. 
-WKT allows for very simple, i.e. a single point, but also very complex shapes, e.g. shapes consisting of multiple polygons. 
-
-=== Order of coordinates
-
-WKT can also describe coordinate reference systems (CRS) and projections. 
-One common source of confusing is that, by default, the X-coordinate (longitude) is followed by Y-coordinate (latitude) 
-while many people are used to the Y-X (latitude-longitude) notation.
-
-Spatial4j provides some convenience functions for generating simple geometric shapes.
-For instance, points representing the center of the cities of Amsterdam, Brussels... can easily be generated using `SpatialContext.GEO`.
-
-[source,java]
+[source, xml]
 ----
-import com.spatial4j.core.context.SpatialContext;
-import com.spatial4j.core.shape.Point;
-....
-SpatialContext geo = SpatialContext.GEO;
-Point amsterdam = geo.makePoint(4.9, 52.37);
-Point brussels = geo.makePoint(4.35, 50.85);
-Point canberra = geo.makePoint(149.12, -35.31);
-Point dakar = geo.makePoint(-17.45, 14.69);
+<dependency>
+  <groupId>org.eclipse.rdf4j</groupId>
+  <artifactId>rdf4j-queryalgebra-geosparql</artifactId>
+</dependency>
 ----
 
-Circles and rectangles are also supported, polygons require JTS to be present.
+NOTE: this module is currently not included by default in the RDF4J Server, so if you plan to use GeoSPARQL in the RDF4J Server, you will need to download this jar separately and add it to the runtime classpath of the webapp. 
 
-=== Reading WKT Literals
+== Adding geospatial data to the Repository
 
-=== Writing WKT Literals
+By default, RDF4J only supports GeoSPARQL functions on top of geospatial data represented as so-called Well-Known Text (WKT)  strings.
 
-RDF4j 2.1.x uses Spatial4J 0.4.1, which does not support writing shapes to WKT just yet (added in 0.5).
+For example, to model the coordinates of landmarks like the Eiffel Tower in Paris or the Tower Bridge in London, you could do something like this:
 
-An extremely simple writer could look like:
-
-[source,java]
+[source]
 ----
-public static String toWkt(Point p) {
-   return "POINT(" + p.getX() + " " + p.getY() + ")";
+@prefix geo: <http://www.opengis.net/ont/geosparql#> .
+@prefix sf: <http://www.opengis.net/ont/sf> .
+@prefix ex: <http://example.org/> .
+
+ex:eiffelTower a ex:Landmark ;
+          geo:hasGeometry ex:coordinates-et.
+ex:coordinates-et a sf:Point; 
+        geo:asWKT "POINT(48.8584 2.2945)"^^geo:wktLiteral .
+ex:towerBridge a ex:Landmark ;
+          geo:hasGeometry ex:coordinates-tb.
+ex:coordinates-tb a sf:Point; 
+        geo:asWKT "POINT(51.5055 0.0754)"^^geo:wktLiteral .
+----
+
+After adding this data to a repository, we can use a GeoSPARQL query to get,
+for example, the distance between the two landmarks, like so:
+
+[source]
+----
+PREFIX geo: <http://www.opengis.net/ont/geosparql#> 
+PREFIX geof: <http://www.opengis.net/def/function/geosparql/> 
+PREFIX uom: <http://www.opengis.net/def/uom/OGC/1.0/> 
+PREFIX ex: <http://example.org/> 
+SELECT * 
+WHERE { 
+  ?lmA a ex:Landmark ;
+       geo:hasGeometry [ geo:asWKT ?coord1 ]. 
+  ?lmB a ex:Landmark ;
+       geo:hasGeometry [ geo:asWKT ?coord2 ]. 
+  BIND((geof:distance(?coord1, ?coord2, uom:metre)/1000) as ?dist) . 
+  FILTER (str(?lmA) < str(?lmB))
 }
 ----
 
+== Supported GeoSPARQL functions
 
-== Queries
+In this section we briefly enumerate the GeoSPARQL extension functions supported by RDF4J. For more information on the precise meaning and use of these functions we refer you to to the http://www.opengeospatial.org/standards/geosparql[GeoSPARQL specification].
 
-=== Distance query
+=== Non-topological and common query functions
 
-Using the function described above, the coordinates can be added to subjects.
+RDF4J supports the following non-topological geospatial functions as defined in the GeoSPARQL specs: `geof:distance`, `geof:boundary`, `geof:buffer`, `geof:convexHull`, `geof:difference`, `geof:envelope,` `geof:intersection`, `geof:getSRID`, `geof:symDifference`, `geof:union`, and `geof:relate`.
 
-[source,java]
-----
-import org.eclipse.rdf4j.model.vocabulary.GEO;
-...
-IRI am = fac.createIRI("http://example.org/amsterdam");
-con.add(am, GEO.AS_WKT, fac.createLiteral(toWkt(amsterdam), GEO.WKT_LITERAL));
-...
-----
+=== Simple Feature functions
 
-Make sure to include the rdf4j-queryalgebra-geosparql jar in your project.
+RDF4J supports the following Simple Feature (sf) functions: `geof:sfEquals`, `geof:sfDisjoint`,
+`geof:sfIntersects`, `geof:sfTouches`, `geof:sfCrosses`, `geof:sfWithin`, `geof:sfContains`, and `geof:sfOverlaps`.
 
-The following query returns the distance between city centers in kilometers.
-`GEOF` provides geometric functions, while `UOM` provides unit of measurements.
-Note that the metric unit is spelled `metre` (not the US spelling `meter`)
+=== Egenhofer functions
 
-[source,java]
-----
-String qry = 
-   "PREFIX geo: <http://www.opengis.net/ont/geosparql#> " +
-   "PREFIX geof: <http://www.opengis.net/def/function/geosparql/> " +
-   "PREFIX uom: <http://www.opengis.net/def/uom/OGC/1.0/> " +
-   " " +
-   "SELECT ?cityA ?cityB ?dist " +
-   "WHERE { ?cityA geo:asWKT ?coord1 . " +
-   "        ?cityB geo:asWKT ?coord2 . " +
-   " BIND( (geof:distance(?coord1, ?coord2, uom:metre) / 1000) as ?dist) . " +
-   "        FILTER ( !sameTerm (?cityA, ?cityB) ) }";
+RDF4J supports the following Egenhofer (eh) functions: `geof:ehEquals`, `geof:ehDisjoint`,
+`geof:ehMeet`, `geof:ehOverlap`, `geof:ehCovers`, `geof:ehCoveredBy` ,
+`geof:ehInside`, and `geof:ehContains`. 
 
-List<BindingSet> results = Repositories.tupleQuery(repo, qry, 
-                                                   r -> QueryResults.asList(r));
-results.forEach(res -> { 
-   System.out.println(res.getValue("cityA").stringValue() + " - " +
-                      res.getValue("cityB").stringValue() + " : " +
-                      res.getValue("dist").stringValue() + "km");   } );
-----
+=== RCC8 functions 
 
-=== 
+RDF4J supports the following RCC8 functions: `geof:rcc8eq`, `geof:rcc8dc`, `geof:rcc8ec`,
+`geof:rcc8po`, `geof:rcc8tppi`, `geof:rcc8tpp`, `geof:rcc8ntpp`, and `geof:rcc8ntppi`.
+
+== Improved performance through Lucene
+
+Although RDF4J supports GeoSPARQL querying on any type of store, the Lucene SAIL and its derivates (the SolrSail and the ElasticSearchSail) have built-in optimizations that make geospatial querying on large datasets more efficient.
+By default, the Lucene SAIL only spatially indexes `http://www.opengis.net/ont/geosparql#asWKT` fields.
+This can be changed using the `LuceneSail.WKT_FIELDS` parameter. 
+
+=== Reading and writing WKT Literals
+
+RDF4J 2.4 uses Spatial4J 0.7, which has full support for converting between Shape objects and WKT strings. See the https://github.com/locationtech/spatial4j/blob/master/FORMATS.md[Spatial4J Format  documentation] for more details.
 
 == Further reading
 
 Here are some useful links:
 
+- https://projects.eclipse.org/projects/locationtech.spatial4j[Spatial4J website]
 - http://www.opengeospatial.org/standards/geosparql[OGC GeoSPARQL specification]
 - https://en.wikipedia.org/wiki/Well-known_text[Wikipedia article on WKT]
