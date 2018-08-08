@@ -450,7 +450,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	 * @return {@code true} if, and only if, this IRI is absolute and its path does not start with a slash
 	 */
 	public boolean isOpaque() {
-		return scheme != null && !path.startsWith("/");
+		return scheme != null && !path.isEmpty() && !path.startsWith("/");
 	}
 
 	/**
@@ -991,8 +991,8 @@ public class ParsedIRI implements Cloneable, Serializable {
 					advance(1);
 				}
 				else {
-					if (i == 3 && (':' == peek() || '/' == peek())) {
-						// next is a port
+					if (i == 3 && (EOF == peek() || ':' == peek() || '/' == peek())) {
+						// next is end of IRI, a port, or a path
 					} else {
 						parsingException = error("Invalid IPv4 address");
 						break;
@@ -1136,8 +1136,11 @@ public class ParsedIRI implements Cloneable, Serializable {
 	}
 
 	private URISyntaxException error(String reason) {
-		int cp = iri.codePointAt(pos);
-		return new URISyntaxException(iri, reason + " U+" + Integer.toHexString(cp).toUpperCase(), pos);
+		if (pos > -1 && pos < iri.length()) {
+			int cp = iri.codePointAt(pos);
+			reason = reason + " U+" + Integer.toHexString(cp).toUpperCase();
+		}
+		return new URISyntaxException(iri, reason, pos);
 	}
 
 	private void appendAscii(StringBuilder sb, String input) {
