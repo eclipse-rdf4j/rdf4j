@@ -79,6 +79,9 @@ public class ParsedIRITest {
 	}
 	
 	@Test
+<<<<<<< Updated upstream
+	public void absoluteIpAddrWithPortDescribedCorrectly() throws URISyntaxException {
+=======
 	public void absoluteIpAddrNoPath()
 		throws URISyntaxException
 	{
@@ -90,9 +93,10 @@ public class ParsedIRITest {
 	}
 
 	@Test
-    public void absoluteIpAddrWithPortDescribedCorrectly() 
-        throws URISyntaxException 
-    {
+	public void absoluteIpAddrWithPortDescribedCorrectly()
+		throws URISyntaxException
+	{
+>>>>>>> Stashed changes
 		ParsedIRI uri = new ParsedIRI("http://127.0.0.1:3333/path");
 		assertTrue(uri.isAbsolute());
 		assertEquals(uri.getHost(), "127.0.0.1");
