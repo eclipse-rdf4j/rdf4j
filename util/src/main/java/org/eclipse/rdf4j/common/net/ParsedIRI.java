@@ -450,7 +450,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	 * @return {@code true} if, and only if, this IRI is absolute and its path does not start with a slash
 	 */
 	public boolean isOpaque() {
-		return scheme != null && !path.startsWith("/");
+		return scheme != null && !path.isEmpty() && !path.startsWith("/");
 	}
 
 	/**
