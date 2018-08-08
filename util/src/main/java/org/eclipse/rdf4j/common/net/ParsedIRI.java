@@ -871,7 +871,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 				path = parsePath();
 			}
 			else {
-				error("absolute or empty path expected");
+				throw error("absolute or empty path expected");
 			}
 		}
 		else if ('/' == peek || '?' == peek || '#' == peek || EOF == peek) {
