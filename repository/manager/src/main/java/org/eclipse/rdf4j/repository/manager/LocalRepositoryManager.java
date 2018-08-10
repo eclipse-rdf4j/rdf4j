@@ -20,6 +20,9 @@ import java.io.OutputStream;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.file.CopyOption;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -441,7 +444,11 @@ public class LocalRepositoryManager extends RepositoryManager {
 		if (updateSystem) {
 			super.addRepositoryConfig(config);
 		}
-		part.renameTo(configFile);
+		try {
+			Files.move(part.toPath(), configFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+		} catch (IOException e) {
+			throw new RepositoryConfigException(e);
+		}
 	}
 
 	@Override

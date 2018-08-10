@@ -287,7 +287,7 @@ public class JSONLDHierarchicalWriterTest {
 	}
 
 	private class ComparingOutputStream extends OutputStream {
-		int[] toIgnore = new int[]{' ', '\n', '\t'};
+		int[] toIgnore = new int[]{' ', '\n', '\t', '\r'};
 		int charInFile;
 		InputStream is;
 
