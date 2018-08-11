@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+
 import org.locationtech.spatial4j.context.SpatialContext;
 import org.locationtech.spatial4j.distance.DistanceUtils;
 import org.locationtech.spatial4j.shape.Point;
@@ -24,10 +25,14 @@ import org.locationtech.spatial4j.shape.Shape;
 
 class FunctionArguments {
 
+	/**
+	 * Empty constructor
+	 */
 	private FunctionArguments() {
 	}
 
 	/**
+	 * Get the double value
 	 * 
 	 * @param func function
 	 * @param v value
@@ -40,6 +45,7 @@ class FunctionArguments {
 	}
 
 	/**
+	 * Get the string value
 	 * 
 	 * @param func function
 	 * @param v value
@@ -52,6 +58,7 @@ class FunctionArguments {
 	}
 
 	/**
+	 * Get the geo shape
 	 * 
 	 * @param func function
 	 * @param v value
@@ -71,6 +78,7 @@ class FunctionArguments {
 	}
 
 	/**
+	 * Get the geo point
 	 * 
 	 * @param func function
 	 * @param v value
