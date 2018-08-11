@@ -195,7 +195,9 @@ public class NTriplesParser extends AbstractRDFParser {
 	 * Reads characters from reader until it finds a character that is not a space or tab, and returns this
 	 * last character code point. In case the end of the character stream has been reached, -1 is returned.
 	 */
-	protected int skipWhitespace(int c) throws IOException {
+	protected int skipWhitespace(int c)
+		throws IOException
+	{
 		while (c == ' ' || c == '\t') {
 			c = readCodePoint();
 		}
@@ -206,7 +208,9 @@ public class NTriplesParser extends AbstractRDFParser {
 	/**
 	 * Verifies that there is only whitespace or comments until the end of the line.
 	 */
-	protected int assertLineTerminates(int c) throws IOException, RDFParseException {
+	protected int assertLineTerminates(int c)
+		throws IOException, RDFParseException
+	{
 		c = readCodePoint();
 
 		c = skipWhitespace(c);
@@ -226,7 +230,9 @@ public class NTriplesParser extends AbstractRDFParser {
 	/**
 	 * Reads characters from reader until the first EOL has been read. The EOL character or -1 is returned.
 	 */
-	protected int skipToEndOfLine(int c) throws IOException {
+	protected int skipToEndOfLine(int c)
+		throws IOException
+	{
 		while (c != -1 && c != '\r' && c != '\n') {
 			c = readCodePoint();
 		}
@@ -238,7 +244,9 @@ public class NTriplesParser extends AbstractRDFParser {
 	 * Reads characters from reader until the first EOL has been read. The first character after the EOL is
 	 * returned. In case the end of the character stream has been reached, -1 is returned.
 	 */
-	protected int skipLine(int c) throws IOException {
+	protected int skipLine(int c)
+		throws IOException
+	{
 		while (c != -1 && c != '\r' && c != '\n') {
 			c = readCodePoint();
 		}
@@ -268,7 +276,9 @@ public class NTriplesParser extends AbstractRDFParser {
 		return c;
 	}
 
-	private int parseTriple(int c) throws IOException, RDFParseException, RDFHandlerException {
+	private int parseTriple(int c)
+		throws IOException, RDFParseException, RDFHandlerException
+	{
 		boolean ignoredAnError = false;
 		try {
 			c = parseSubject(c);
@@ -322,7 +332,9 @@ public class NTriplesParser extends AbstractRDFParser {
 		return c;
 	}
 
-	protected int parseSubject(int c) throws IOException, RDFParseException {
+	protected int parseSubject(int c)
+		throws IOException, RDFParseException
+	{
 		StringBuilder sb = new StringBuilder(100);
 
 		// subject is either an uriref (<foo://bar>) or a nodeID (_:node1)
@@ -347,7 +359,9 @@ public class NTriplesParser extends AbstractRDFParser {
 		return c;
 	}
 
-	protected int parsePredicate(int c) throws IOException, RDFParseException {
+	protected int parsePredicate(int c)
+		throws IOException, RDFParseException
+	{
 		StringBuilder sb = new StringBuilder(100);
 
 		// predicate must be an uriref (<foo://bar>)
@@ -367,7 +381,9 @@ public class NTriplesParser extends AbstractRDFParser {
 		return c;
 	}
 
-	protected int parseObject(int c) throws IOException, RDFParseException {
+	protected int parseObject(int c)
+		throws IOException, RDFParseException
+	{
 		StringBuilder sb = getBuffer();
 
 		// object is either an uriref (<foo://bar>), a nodeID (_:node1) or a
@@ -400,7 +416,9 @@ public class NTriplesParser extends AbstractRDFParser {
 		return c;
 	}
 
-	protected int parseUriRef(int c, StringBuilder uriRef) throws IOException, RDFParseException {
+	protected int parseUriRef(int c, StringBuilder uriRef)
+		throws IOException, RDFParseException
+	{
 		if (c != '<') {
 			reportError("Supplied char should be a '<', is: " + new String(Character.toChars(c)),
 					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
@@ -439,7 +457,9 @@ public class NTriplesParser extends AbstractRDFParser {
 		return c;
 	}
 
-	protected int parseNodeID(int c, StringBuilder name) throws IOException, RDFParseException {
+	protected int parseNodeID(int c, StringBuilder name)
+		throws IOException, RDFParseException
+	{
 		if (c != '_') {
 			reportError("Supplied char should be a '_', is: " + new String(Character.toChars(c)),
 					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
@@ -484,7 +504,9 @@ public class NTriplesParser extends AbstractRDFParser {
 	 * @return the next Unicode code point, or -1 if the end of the stream has been reached.
 	 * @throws IOException
 	 */
-	protected int peekCodePoint() throws IOException {
+	protected int peekCodePoint()
+		throws IOException
+	{
 		int result = readCodePoint();
 		unread(result);
 		return result;
@@ -498,7 +520,9 @@ public class NTriplesParser extends AbstractRDFParser {
 	 *        a single Unicode code point.
 	 * @throws IOException
 	 */
-	protected void unread(int codePoint) throws IOException {
+	protected void unread(int codePoint)
+		throws IOException
+	{
 		if (codePoint != -1) {
 			if (Character.isSupplementaryCodePoint(codePoint)) {
 				final char[] surrogatePair = Character.toChars(codePoint);
@@ -586,7 +610,9 @@ public class NTriplesParser extends AbstractRDFParser {
 	}
 
 	@Override
-	protected IRI createURI(String uri) throws RDFParseException {
+	protected IRI createURI(String uri)
+		throws RDFParseException
+	{
 		try {
 			uri = NTriplesUtil.unescapeString(uri);
 		}
@@ -603,7 +629,9 @@ public class NTriplesParser extends AbstractRDFParser {
 	 * @return the next Unicode code point, or -1 if the end of the stream has been reached.
 	 * @throws IOException
 	 */
-	protected int readCodePoint() throws IOException {
+	protected int readCodePoint()
+		throws IOException
+	{
 		int next = reader.read();
 		if (Character.isHighSurrogate((char)next)) {
 			next = Character.toCodePoint((char)next, (char)reader.read());
@@ -611,7 +639,9 @@ public class NTriplesParser extends AbstractRDFParser {
 		return next;
 	}
 
-	protected Literal createLiteral(String label, String lang, String datatype) throws RDFParseException {
+	protected Literal createLiteral(String label, String lang, String datatype)
+		throws RDFParseException
+	{
 		try {
 			label = NTriplesUtil.unescapeString(label);
 		}
@@ -648,11 +678,15 @@ public class NTriplesParser extends AbstractRDFParser {
 	 * the error.
 	 */
 	@Override
-	protected void reportError(String msg, RioSetting<Boolean> setting) throws RDFParseException {
+	protected void reportError(String msg, RioSetting<Boolean> setting)
+		throws RDFParseException
+	{
 		reportError(msg, lineNo, -1, setting);
 	}
 
-	protected void reportError(Exception e, RioSetting<Boolean> setting) throws RDFParseException {
+	protected void reportError(Exception e, RioSetting<Boolean> setting)
+		throws RDFParseException
+	{
 		reportError(e, lineNo, -1, setting);
 	}
 
@@ -661,7 +695,9 @@ public class NTriplesParser extends AbstractRDFParser {
 	 * error.
 	 */
 	@Override
-	protected void reportFatalError(String msg) throws RDFParseException {
+	protected void reportFatalError(String msg)
+		throws RDFParseException
+	{
 		reportFatalError(msg, lineNo, -1);
 	}
 
@@ -670,11 +706,15 @@ public class NTriplesParser extends AbstractRDFParser {
 	 * error.
 	 */
 	@Override
-	protected void reportFatalError(Exception e) throws RDFParseException {
+	protected void reportFatalError(Exception e)
+		throws RDFParseException
+	{
 		reportFatalError(e, lineNo, -1);
 	}
 
-	protected void throwEOFException() throws RDFParseException {
+	protected void throwEOFException()
+		throws RDFParseException
+	{
 		throw new RDFParseException("Unexpected end of file");
 	}
 
