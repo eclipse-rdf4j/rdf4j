@@ -97,7 +97,7 @@ class FunctionArguments {
 	}
 
 	/**
-	 * Get the literal
+	 * Get the literal of a specific data type
 	 * 
 	 * @param func function
 	 * @param v value
