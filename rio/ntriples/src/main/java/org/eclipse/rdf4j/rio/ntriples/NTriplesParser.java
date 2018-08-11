@@ -144,7 +144,7 @@ public class NTriplesParser extends AbstractRDFParser {
 		throws IOException, RDFParseException, RDFHandlerException
 	{
 		clear();
-		
+
 		try {
 			if (reader == null) {
 				throw new IllegalArgumentException("Reader can not be 'null'");
@@ -304,7 +304,10 @@ public class NTriplesParser extends AbstractRDFParser {
 			c = assertLineTerminates(c);
 		}
 		catch (RDFParseException rdfpe) {
-			if (getParserConfig().isNonFatalError(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES)) {
+			if (!getParserConfig().get(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES)
+					|| getParserConfig().isNonFatalError(
+							NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES))
+			{
 				reportError(rdfpe, NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 				ignoredAnError = true;
 			}
@@ -349,7 +352,8 @@ public class NTriplesParser extends AbstractRDFParser {
 			throwEOFException();
 		}
 		else {
-			reportFatalError("Expected '<' or '_', found: " + new String(Character.toChars(c)));
+			throw new RDFParseException("Expected '<' or '_', found: " + new String(Character.toChars(c)),
+					lineNo, c);
 		}
 
 		return c;
@@ -370,7 +374,8 @@ public class NTriplesParser extends AbstractRDFParser {
 			throwEOFException();
 		}
 		else {
-			reportFatalError("Expected '<', found: " + new String(Character.toChars(c)));
+			throw new RDFParseException("Expected '<', found: " + new String(Character.toChars(c)), lineNo,
+					c);
 		}
 
 		return c;
@@ -404,7 +409,8 @@ public class NTriplesParser extends AbstractRDFParser {
 			throwEOFException();
 		}
 		else {
-			reportFatalError("Expected '<', '_' or '\"', found: " + new String(Character.toChars(c)) + "");
+			throw new RDFParseException("Expected '<' or '_', found: " + new String(Character.toChars(c)),
+					lineNo, c);
 		}
 
 		return c;
@@ -473,7 +479,8 @@ public class NTriplesParser extends AbstractRDFParser {
 			throwEOFException();
 		}
 		else if (!NTriplesUtil.isLetterOrNumber(c) && !NTriplesUtil.isUnderscore(c)) {
-			reportError("Expected a letter or number or underscore, found: " + new String(Character.toChars(c)),
+			reportError(
+					"Expected a letter or number or underscore, found: " + new String(Character.toChars(c)),
 					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 		}
 		name.append(Character.toChars(c));
@@ -481,7 +488,7 @@ public class NTriplesParser extends AbstractRDFParser {
 		// Read all following letter and numbers, they are part of the name
 		c = readCodePoint();
 		while (c != -1 && NTriplesUtil.isValidCharacterForBNodeLabel(c)) {
-			if(NTriplesUtil.isDot(c) && !NTriplesUtil.isValidCharacterForBNodeLabel(peekCodePoint())) {
+			if (NTriplesUtil.isDot(c) && !NTriplesUtil.isValidCharacterForBNodeLabel(peekCodePoint())) {
 				break;
 			}
 			name.append(Character.toChars(c));
@@ -492,34 +499,36 @@ public class NTriplesParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Peeks at the next Unicode code point without advancing the reader, and
-	 * returns its value.
+	 * Peeks at the next Unicode code point without advancing the reader, and returns its value.
 	 *
-	 * @return the next Unicode code point, or -1 if the end of the stream has
-	 *         been reached.
+	 * @return the next Unicode code point, or -1 if the end of the stream has been reached.
 	 * @throws IOException
 	 */
-	protected int peekCodePoint() throws IOException {
+	protected int peekCodePoint()
+		throws IOException
+	{
 		int result = readCodePoint();
 		unread(result);
 		return result;
 	}
 
 	/**
-	 * Pushes back a single code point by copying it to the front of the buffer.
-	 * After this method returns, a call to {@link #readCodePoint()} will return
-	 * the same code point c again.
+	 * Pushes back a single code point by copying it to the front of the buffer. After this method returns, a
+	 * call to {@link #readCodePoint()} will return the same code point c again.
 	 *
 	 * @param codePoint
-	 *            a single Unicode code point.
+	 *        a single Unicode code point.
 	 * @throws IOException
 	 */
-	protected void unread(int codePoint) throws IOException {
+	protected void unread(int codePoint)
+		throws IOException
+	{
 		if (codePoint != -1) {
 			if (Character.isSupplementaryCodePoint(codePoint)) {
 				final char[] surrogatePair = Character.toChars(codePoint);
 				reader.unread(surrogatePair);
-			} else {
+			}
+			else {
 				reader.unread(codePoint);
 			}
 		}
@@ -637,7 +646,7 @@ public class NTriplesParser extends AbstractRDFParser {
 			label = NTriplesUtil.unescapeString(label);
 		}
 		catch (IllegalArgumentException e) {
-			reportFatalError(e);
+			throw new RDFParseException(e, lineNo, -1);
 		}
 
 		if (lang.length() == 0) {
