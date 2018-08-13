@@ -92,7 +92,7 @@ public class BTree implements Closeable {
 	 */
 	final ReentrantReadWriteLock btreeLock = new ReentrantReadWriteLock();
 
-	final NodeCache nodeCache = new NodeCache(id -> {
+	private final NodeCache nodeCache = new NodeCache(id -> {
 		Node node = new Node(id, this);
 		node.read();
 		return node;
@@ -1148,9 +1148,8 @@ public class BTree implements Closeable {
 	void releaseNode(Node node)
 		throws IOException
 	{
-		// Note: this method is called by Node.release(), which already
-		// synchronizes on nodeCache. This method should not be called directly to
-		// prevent concurrency issues!!!
+		// Note: this method is called by Node.release()
+		// This method should not be called directly (to prevent concurrency issues)!!!
 
 		if (node.isEmpty() && node.isLeaf()) {
 			// Discard node

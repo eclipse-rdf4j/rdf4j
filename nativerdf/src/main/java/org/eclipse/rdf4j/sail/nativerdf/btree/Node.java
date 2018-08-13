@@ -12,6 +12,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.LinkedList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 
@@ -29,7 +30,7 @@ class Node {
 	private int valueCount;
 
 	/** The number of objects currently 'using' this node. */
-	private int usageCount;
+	private final AtomicInteger usageCount = new AtomicInteger(0);
 
 	/** Flag indicating whether the contents of data has changed. */
 	private boolean dataChanged;
@@ -54,7 +55,6 @@ class Node {
 		this.id = id;
 		this.tree = tree;
 		this.valueCount = 0;
-		this.usageCount = 0;
 
 		// Allocate enough room to store one more value and node ID;
 		// this greatly simplifies the algorithm for splitting a node.
@@ -75,31 +75,36 @@ class Node {
 	}
 
 	public int use() {
-		// synchronize on nodeCache because release() can call
-		// releaseNode(Node) and readNode(int) calls this method
-		synchronized (tree.nodeCache) {
-			return ++usageCount;
-		}
+		return usageCount.incrementAndGet();
 	}
 
 	public void release()
 		throws IOException
 	{
-		// synchronize on nodeCache because this method can call
-		// releaseNode(Node) and readNode(int) can call use()
-		synchronized (tree.nodeCache) {
-			assert usageCount > 0 : "Releasing node while usage count is " + usageCount;
+		int newUsage = usageCount.decrementAndGet();
+		assert newUsage >= 0 : "Releasing node while usage count is " + (newUsage + 1);
 
-			usageCount--;
-
-			if (usageCount == 0) {
-				tree.releaseNode(this);
-			}
+		if (newUsage == 0) {
+			//TODO Make this less ugly, if possible without performance sacrifices
+			final IOException[] err = new IOException[1];
+			usageCount.updateAndGet(usage -> {
+				if (usage == 0) {
+					try {
+						tree.releaseNode(this);
+					}
+					catch (IOException exc) {
+						err[0] = exc;
+					}
+				}
+				return usage;
+			});
+			if (err[0] != null)
+				throw err[0];
 		}
 	}
 
 	public int getUsageCount() {
-		return usageCount;
+		return usageCount.get();
 	}
 
 	public boolean dataChanged() {
