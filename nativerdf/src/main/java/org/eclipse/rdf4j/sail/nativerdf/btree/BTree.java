@@ -15,11 +15,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -68,17 +64,6 @@ public class BTree implements Closeable {
 	 */
 	static final int HEADER_LENGTH = 16;
 
-	/**
-	 * The size of the node cache. Note that this is not a hard limit. All nodes that are actively used are
-	 * always cached. Also, a minimum of {@link NODE_CACHE_SIZE} nodes of unused nodes is kept in the cache.
-	 */
-	static final int NODE_CACHE_SIZE = 10;
-
-	/**
-	 * The minimum number of most recently released nodes to keep in the cache.
-	 */
-	static final int MIN_MRU_CACHE_SIZE = 4;
-
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -107,21 +92,11 @@ public class BTree implements Closeable {
 	 */
 	final ReentrantReadWriteLock btreeLock = new ReentrantReadWriteLock();
 
-	/*
-	 * Node caching
-	 */
-
-	/**
-	 * Map containing cached nodes, indexed by their ID.
-	 */
-	final Map<Integer, Node> nodeCache = new HashMap<Integer, Node>(NODE_CACHE_SIZE);
-
-	/**
-	 * Map of cached nodes that are no longer "in use", sorted from least recently used to most recently used.
-	 * This collection is used to remove nodes from the cache when it is full. Note: needs to be synchronized
-	 * through nodeCache (data strucures should prob be merged in a NodeCache class)
-	 */
-	private final Map<Integer, Node> mruNodes = new LinkedHashMap<Integer, Node>(NODE_CACHE_SIZE);
+	final NodeCache nodeCache = new NodeCache(id -> {
+		Node node = new Node(id, this);
+		node.read();
+		return node;
+	});
 
 	/*
 	 * Info about allocated and unused nodes in the file
@@ -450,14 +425,7 @@ public class BTree implements Closeable {
 			}
 			finally {
 				try {
-					synchronized (nodeCache) {
-						try {
-							nodeCache.clear();
-						}
-						finally {
-							mruNodes.clear();
-						}
-					}
+					nodeCache.clear();
 				}
 				finally {
 					try {
@@ -485,13 +453,7 @@ public class BTree implements Closeable {
 		btreeLock.readLock().lock();
 		try {
 			// Write any changed nodes that still reside in the cache to disk
-			synchronized (nodeCache) {
-				for (Node node : nodeCache.values()) {
-					if (node.dataChanged()) {
-						node.write();
-					}
-				}
-			}
+			nodeCache.flush();
 
 			if (forceSync) {
 				nioFile.force(false);
@@ -1134,10 +1096,7 @@ public class BTree implements Closeable {
 	{
 		btreeLock.writeLock().lock();
 		try {
-			synchronized (nodeCache) {
-				nodeCache.clear();
-				mruNodes.clear();
-			}
+			nodeCache.clear();
 			nioFile.truncate(HEADER_LENGTH);
 
 			if (rootNodeID != 0) {
@@ -1159,16 +1118,8 @@ public class BTree implements Closeable {
 
 		Node node = new Node(newNodeID, this);
 
-		synchronized (nodeCache) {
-			if (nodeCache.size() >= NODE_CACHE_SIZE && mruNodes.size() > MIN_MRU_CACHE_SIZE) {
-				// Make some room for the new node
-				expelNodeFromCache();
-			}
-
-			node.use();
-
-			nodeCache.put(node.getID(), node);
-		}
+		nodeCache.put(node);
+		node.use();
 
 		return node;
 	}
@@ -1189,37 +1140,9 @@ public class BTree implements Closeable {
 			throw new IllegalArgumentException("id must be larger than 0, is: " + id + " in " + getFile());
 		}
 
-		// Check node cache
-		synchronized (nodeCache) {
-			Node node = nodeCache.get(id);
-
-			if (node != null) {
-				// Found node in cache
-				int usageCount = node.use();
-				if (usageCount == 1) {
-					mruNodes.remove(id);
-				}
-			}
-			else {
-				if (nodeCache.size() >= NODE_CACHE_SIZE && mruNodes.size() > MIN_MRU_CACHE_SIZE) {
-					// Make some room for the new node
-					expelNodeFromCache();
-				}
-
-				// Read node from disk and add to cache
-				node = new Node(id, this);
-
-				// FIXME: this blocks the (synchronized) access to the cache for
-				// quite some time
-				node.read();
-
-				nodeCache.put(id, node);
-
-				node.use();
-			}
-
-			return node;
-		}
+		Node node = nodeCache.read(id);
+		node.use();
+		return node;
 	}
 
 	void releaseNode(Node node)
@@ -1229,11 +1152,10 @@ public class BTree implements Closeable {
 		// synchronizes on nodeCache. This method should not be called directly to
 		// prevent concurrency issues!!!
 
-		// synchronized (nodeCache) {
 		if (node.isEmpty() && node.isLeaf()) {
 			// Discard node
 			node.write();
-			nodeCache.remove(node.getID());
+			nodeCache.discard(node.getID());
 
 			// allow the node ID to be reused
 			synchronized (allocatedNodesList) {
@@ -1246,32 +1168,8 @@ public class BTree implements Closeable {
 				}
 			}
 		}
-		else {
-			mruNodes.put(node.getID(), node);
-
-			if (nodeCache.size() > NODE_CACHE_SIZE && mruNodes.size() > MIN_MRU_CACHE_SIZE) {
-				expelNodeFromCache();
-			}
-		}
-		// }
-	}
-
-	/**
-	 * Tries to expel the least recently used node from the cache.
-	 */
-	private void expelNodeFromCache()
-		throws IOException
-	{
-		if (!mruNodes.isEmpty()) {
-			Iterator<Node> iter = mruNodes.values().iterator();
-			Node lruNode = iter.next();
-
-			if (lruNode.dataChanged()) {
-				lruNode.write();
-			}
-			iter.remove();
-			nodeCache.remove(lruNode.getID());
-		}
+		else
+			nodeCache.release(node);
 	}
 
 	private void writeFileHeader()
