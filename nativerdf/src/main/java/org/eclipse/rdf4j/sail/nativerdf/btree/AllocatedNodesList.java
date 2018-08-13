@@ -281,7 +281,7 @@ class AllocatedNodesList implements Closeable {
 	{
 		allocatedNodes = new BitSet();
 
-		BTree.Node rootNode = btree.readRootNode();
+		Node rootNode = btree.readRootNode();
 		if (rootNode != null) {
 			crawlAllocatedNodes(rootNode);
 		}
@@ -289,7 +289,7 @@ class AllocatedNodesList implements Closeable {
 		scheduleSync();
 	}
 
-	private void crawlAllocatedNodes(BTree.Node node)
+	private void crawlAllocatedNodes(Node node)
 		throws IOException
 	{
 		try {
