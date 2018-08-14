@@ -34,7 +34,6 @@ import org.slf4j.LoggerFactory;
  * </ul>
  * The first reference was used to implement this class.
  * <p>
- * TODO: clean up code
  * 
  * @author Arjohn Kampman
  * @author Enrico Minack
@@ -92,9 +91,14 @@ public class BTree implements Closeable {
 	 */
 	final ReentrantReadWriteLock btreeLock = new ReentrantReadWriteLock();
 
-	private final NodeCache nodeCache = new NodeCache(id -> {
+	private final ConcurrentNodeCache nodeCache = new ConcurrentNodeCache(id -> {
 		Node node = new Node(id, this);
-		node.read();
+		try {
+			node.read();
+		}
+		catch (IOException exc) {
+			logger.error("Error reading B-Tree node", exc);
+		}
 		return node;
 	});
 

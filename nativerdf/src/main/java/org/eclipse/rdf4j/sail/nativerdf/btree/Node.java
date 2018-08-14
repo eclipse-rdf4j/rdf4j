@@ -11,8 +11,9 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Iterator;
-import java.util.LinkedList;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 
@@ -36,7 +37,7 @@ class Node {
 	private boolean dataChanged;
 
 	/** Registered listeners that want to be notified of changes to the node. */
-	private final LinkedList<NodeListener> listeners = new LinkedList<NodeListener>();
+	private final ConcurrentLinkedDeque<NodeListener> listeners = new ConcurrentLinkedDeque<NodeListener>();
 
 	/**
 	 * Creates a new Node object with the specified ID.
@@ -84,23 +85,8 @@ class Node {
 		int newUsage = usageCount.decrementAndGet();
 		assert newUsage >= 0 : "Releasing node while usage count is " + (newUsage + 1);
 
-		if (newUsage == 0) {
-			//TODO Make this less ugly, if possible without performance sacrifices
-			final IOException[] err = new IOException[1];
-			usageCount.updateAndGet(usage -> {
-				if (usage == 0) {
-					try {
-						tree.releaseNode(this);
-					}
-					catch (IOException exc) {
-						err[0] = exc;
-					}
-				}
-				return usage;
-			});
-			if (err[0] != null)
-				throw err[0];
-		}
+		if (newUsage == 0)
+			tree.releaseNode(this);
 	}
 
 	public int getUsageCount() {
@@ -413,103 +399,79 @@ class Node {
 	}
 
 	public void register(NodeListener listener) {
-		synchronized (listeners) {
-			assert !listeners.contains(listener);
-			listeners.add(listener);
-		}
+		//assert !listeners.contains(listener);
+		listeners.add(listener);
 	}
 
 	public void deregister(NodeListener listener) {
-		synchronized (listeners) {
-			assert listeners.contains(listener);
-			listeners.remove(listener);
-		}
+		//assert listeners.contains(listener);
+		listeners.removeFirstOccurrence(listener);
 	}
 
 	private void notifyValueAdded(int index) {
-		synchronized (listeners) {
-			Iterator<NodeListener> iter = listeners.iterator();
-
-			while (iter.hasNext()) {
-				// Deregister if listener return true
-				if (iter.next().valueAdded(this, index)) {
-					iter.remove();
-				}
-			}
-		}
+		notifySafeListeners(nl -> nl.valueAdded(this, index));
 	}
 
 	private void notifyValueRemoved(int index) {
-		synchronized (listeners) {
-			Iterator<NodeListener> iter = listeners.iterator();
-
-			while (iter.hasNext()) {
-				// Deregister if listener return true
-				if (iter.next().valueRemoved(this, index)) {
-					iter.remove();
-				}
-			}
-		}
+		notifySafeListeners(nl -> nl.valueRemoved(this, index));
 	}
 
 	private void notifyRotatedLeft(int index, Node leftChildNode, Node rightChildNode)
 		throws IOException
 	{
-		synchronized (listeners) {
-			Iterator<NodeListener> iter = listeners.iterator();
-
-			while (iter.hasNext()) {
-				// Deregister if listener return true
-				if (iter.next().rotatedLeft(this, index, leftChildNode, rightChildNode)) {
-					iter.remove();
-				}
-			}
-		}
+		notifyListeners(nl -> nl.rotatedLeft(this, index, leftChildNode, rightChildNode));
 	}
 
 	private void notifyRotatedRight(int index, Node leftChildNode, Node rightChildNode)
 		throws IOException
 	{
-		synchronized (listeners) {
-			Iterator<NodeListener> iter = listeners.iterator();
-
-			while (iter.hasNext()) {
-				// Deregister if listener return true
-				if (iter.next().rotatedRight(this, index, leftChildNode, rightChildNode)) {
-					iter.remove();
-				}
-			}
-		}
+		notifyListeners(nl -> nl.rotatedRight(this, index, leftChildNode, rightChildNode));
 	}
 
 	private void notifyNodeSplit(Node rightNode, int medianIdx)
 		throws IOException
 	{
-		synchronized (listeners) {
-			Iterator<NodeListener> iter = listeners.iterator();
-
-			while (iter.hasNext()) {
-				boolean deregister = iter.next().nodeSplit(this, rightNode, medianIdx);
-
-				if (deregister) {
-					iter.remove();
-				}
-			}
-		}
+		notifyListeners(nl -> nl.nodeSplit(this, rightNode, medianIdx));
 	}
 
 	private void notifyNodeMerged(Node targetNode, int mergeIdx)
 		throws IOException
 	{
-		synchronized (listeners) {
-			Iterator<NodeListener> iter = listeners.iterator();
+		notifyListeners(nl -> nl.nodeMergedWith(this, targetNode, mergeIdx));
+	}
 
-			while (iter.hasNext()) {
-				boolean deregister = iter.next().nodeMergedWith(this, targetNode, mergeIdx);
+	@FunctionalInterface
+	private interface NodeListenerNotifier {
 
-				if (deregister) {
-					iter.remove();
-				}
+		/**
+		 * @return true if the notifier should be deregistered
+		 */
+		boolean apply(NodeListener listener)
+			throws IOException;
+	}
+
+	private void notifyListeners(NodeListenerNotifier notifier)
+		throws IOException
+	{
+		Iterator<NodeListener> iter = listeners.iterator();
+
+		while (iter.hasNext()) {
+			boolean deregister = notifier.apply(iter.next());
+
+			if (deregister) {
+				iter.remove();
+			}
+		}
+	}
+
+	private void notifySafeListeners(Function<NodeListener, Boolean> notifier) {
+		Iterator<NodeListener> iter = listeners.iterator();
+
+		while (iter.hasNext()) {
+			boolean deregister = notifier.apply(iter.next());
+
+			if (deregister) {
+				iter.remove();
 			}
 		}
 	}
