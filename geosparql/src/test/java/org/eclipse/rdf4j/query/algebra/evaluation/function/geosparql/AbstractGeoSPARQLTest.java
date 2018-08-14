@@ -11,8 +11,9 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.nio.file.Files;
+
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
@@ -55,13 +56,27 @@ public abstract class AbstractGeoSPARQLTest {
 	 * 
 	 * @param name name of the file containing the query
 	 * @return binding set
-	 * @throws java.io.IOException
+	 * @throws IOException
 	 */
 	public static BindingSet getBindingSet(String name) throws IOException {
+		return Repositories.tupleQuery(getRepository(), getQuery(name), r -> QueryResults.singleResult(r));
+	}
+	
+	public static List<BindingSet> getResults(String name) throws IOException {
+		return Repositories.tupleQuery(getRepository(), getQuery(name), r -> QueryResults.asList(r));
+	}
+
+	/**
+	 * Get the query, stored as a resource file
+	 * 
+	 * @param name name of the file containing the query
+	 * @return
+	 * @throws IOException 
+	 */
+	private static String getQuery(String name) throws IOException {
 		try (InputStream is = AbstractGeoSPARQLTest.class.getResourceAsStream(name);
 				BufferedReader buffer = new BufferedReader(new InputStreamReader(is))) {
-            String qry = buffer.lines().collect(Collectors.joining("\n"));
-			return Repositories.tupleQuery(getRepository(), qry, r -> QueryResults.singleResult(r));
+            return buffer.lines().collect(Collectors.joining("\n"));
 		}
 	}
 	
@@ -74,10 +89,18 @@ public abstract class AbstractGeoSPARQLTest {
 		cities.put("amsterdam", "POINT(4.9 52.37)");
 		cities.put("brussels", "POINT(4.35 50.85)");
 		cities.put("canberra", "POINT(149.12 -35.31)");
-		cities.put("dakar", "POINT(-17.45 14.69)");
+		cities.put("denver", "POINT(-105.00 39.74)");
 		
+		Map<String,String> states = new HashMap<>();
+		states.put("colorado", "POLYGON((-109.05 41, -102.05 41, -102.05 37, -109.05 37, -109.05 41))");
+		states.put("wyoming", "POLYGON((-111.05 45, -104.05 45, -104.05 41, -111.05 41, -111.05 45))");
+
 		try (RepositoryConnection conn = REPO.getConnection()) {
 			for(Entry<String,String> e: cities.entrySet()) {
+				IRI iri = F.createIRI("http://example.org/", e.getKey());
+				conn.add(iri, GEO.AS_WKT, F.createLiteral(e.getValue(), GEO.WKT_LITERAL));
+			}
+			for(Entry<String,String> e: states.entrySet()) {
 				IRI iri = F.createIRI("http://example.org/", e.getKey());
 				conn.add(iri, GEO.AS_WKT, F.createLiteral(e.getValue(), GEO.WKT_LITERAL));
 			}
