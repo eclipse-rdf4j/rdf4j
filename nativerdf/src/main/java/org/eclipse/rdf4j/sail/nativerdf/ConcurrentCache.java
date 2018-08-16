@@ -48,8 +48,14 @@ public class ConcurrentCache<K, V> {
 		cache.clear();
 	}
 
-	protected void onEntryRemoval(K key) {
+	/**
+	 * @param key
+	 *        the key of the node to test for removal and do finalization on
+	 * @return true if removal is approved
+	 */
+	protected boolean onEntryRemoval(K key) {
 		// Hook method, doing nothing by default
+		return true;
 	}
 
 	protected void cleanUp() {
@@ -72,10 +78,8 @@ public class ConcurrentCache<K, V> {
 
 			K key = iter.next();
 
-			if (i % removeEachTh < 1) {
-				onEntryRemoval(key);
+			if (i % removeEachTh < 1 && onEntryRemoval(key))
 				iter.remove();
-			}
 		}
 	}
 }

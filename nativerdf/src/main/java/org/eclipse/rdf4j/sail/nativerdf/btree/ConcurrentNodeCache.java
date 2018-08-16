@@ -29,7 +29,7 @@ class ConcurrentNodeCache extends ConcurrentCache<Integer, Node> {
 	};
 
 	public ConcurrentNodeCache(Function<Integer, Node> reader) {
-		super(0); //cleanUp, when actually run, will purge the cache
+		super(0); //cleanUp, when actually run, will try to completely purge the cache (but retain currently used nodes)
 		this.reader = reader;
 	}
 
@@ -56,10 +56,16 @@ class ConcurrentNodeCache extends ConcurrentCache<Integer, Node> {
 	}
 
 	@Override
-	protected void onEntryRemoval(Integer key) {
+	protected boolean onEntryRemoval(Integer key) {
 		Node node = cache.get(key);
+
+		if (node.getUsageCount() > 0)
+			return false;
+
 		if (node != null)
 			writeNode.accept(node);
+
+		return true;
 	}
 
 }

@@ -1121,9 +1121,9 @@ public class BTree implements Closeable {
 		int newNodeID = allocatedNodesList.allocateNode();
 
 		Node node = new Node(newNodeID, this);
+		node.use();
 
 		nodeCache.put(node);
-		node.use();
 
 		return node;
 	}
