@@ -62,6 +62,13 @@ public abstract class AbstractGeoSPARQLTest {
 		return Repositories.tupleQuery(getRepository(), getQuery(name), r -> QueryResults.singleResult(r));
 	}
 	
+	/**
+	 * Get multiple resulting binding sets of a query, stored as a resource file
+	 * 
+	 * @param name name of the file containing the query
+	 * @return list of binding sets
+	 * @throws IOException 
+	 */
 	public static List<BindingSet> getResults(String name) throws IOException {
 		return Repositories.tupleQuery(getRepository(), getQuery(name), r -> QueryResults.asList(r));
 	}
