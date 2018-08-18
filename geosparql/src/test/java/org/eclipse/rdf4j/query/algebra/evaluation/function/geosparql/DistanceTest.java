@@ -29,7 +29,7 @@ public class DistanceTest extends AbstractGeoSPARQLTest {
 	/**
 	 * Test distance between two cities, in meters.
 	 * 
-	 * @throws java.io.IOException
+	 * @throws IOException
 	 */
 	@Test
 	public void testDistanceAmBxl() throws IOException {

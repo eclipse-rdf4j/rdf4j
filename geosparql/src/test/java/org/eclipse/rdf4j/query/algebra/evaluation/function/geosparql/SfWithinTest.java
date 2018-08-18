@@ -27,9 +27,9 @@ import static org.junit.Assert.assertTrue;
 public class SfWithinTest extends AbstractGeoSPARQLTest {
 	
 	/**
-	 * Test sf:within
+	 * Test sfWithin
 	 * 
-	 * @throws java.io.IOException
+	 * @throws IOException
 	 */
 	@Test
 	public void testDenverSfWithinColorado() throws IOException {

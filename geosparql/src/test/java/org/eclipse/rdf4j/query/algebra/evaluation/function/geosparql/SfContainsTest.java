@@ -24,16 +24,16 @@ import static org.junit.Assert.assertTrue;
  *
  * @author Bart Hanssens
  */
-public class EhContainsTest extends AbstractGeoSPARQLTest {
+public class SfContainsTest extends AbstractGeoSPARQLTest {
 	
 	/**
-	 * Test ehContains.
+	 * Test sfContains.
 	 * 
 	 * @throws IOException
 	 */
 	@Test
-	public void testEhContainsDenver() throws IOException {
-		List<BindingSet> list = getResults("ehcontains.rq");
+	public void testSfContainsDenver() throws IOException {
+		List<BindingSet> list = getResults("sfcontains.rq");
 		
 		assertNotNull("Resultset is null", list);
 		assertEquals("Number of results must be one", 1, list.size());
