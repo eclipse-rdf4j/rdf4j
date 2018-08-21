@@ -43,15 +43,31 @@ class ConcurrentNodeCache extends ConcurrentCache<Integer, Node> {
 		cache.put(node.getID(), node);
 	}
 
-	public Node read(int id) {
-		return cache.computeIfAbsent(id, reader);
+	public Node readAndUse(int id) {
+		return cache.compute(id, (k, v) -> {
+			Node node = v == null ? reader.apply(k) : v;
+			node.use();
+			return node;
+		});
 	}
 
-	public void discard(int nodeId) {
-		cache.computeIfPresent(nodeId, (k, v) -> v.getUsageCount() == 0 ? null : v);
+	public boolean discardEmptyUnused(int nodeId) {
+
+		Node nn = cache.computeIfPresent(nodeId, (k, v) -> {
+
+			if (v.getUsageCount() == 0 && v.isEmpty() && v.isLeaf()) {
+				writeNode.accept(v);
+				return null;
+			}
+			else
+				return v;
+		});
+		return nn == null;
 	}
 
-	public void release(Node node) {
+	public void release(Node node, boolean forceSync) {
+		if (forceSync)
+			writeNode.accept(node);
 		cleanUp();
 	}
 
@@ -59,11 +75,13 @@ class ConcurrentNodeCache extends ConcurrentCache<Integer, Node> {
 	protected boolean onEntryRemoval(Integer key) {
 		Node node = cache.get(key);
 
+		if (node == null)
+			return true;
+
 		if (node.getUsageCount() > 0)
 			return false;
 
-		if (node != null)
-			writeNode.accept(node);
+		writeNode.accept(node);
 
 		return true;
 	}

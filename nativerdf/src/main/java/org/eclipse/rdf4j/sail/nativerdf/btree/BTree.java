@@ -97,7 +97,7 @@ public class BTree implements Closeable {
 			node.read();
 		}
 		catch (IOException exc) {
-			logger.error("Error reading B-Tree node", exc);
+			throw new RuntimeException("Error reading B-tree node", exc);
 		}
 		return node;
 	});
@@ -1144,9 +1144,7 @@ public class BTree implements Closeable {
 			throw new IllegalArgumentException("id must be larger than 0, is: " + id + " in " + getFile());
 		}
 
-		Node node = nodeCache.read(id);
-		node.use();
-		return node;
+		return nodeCache.readAndUse(id);
 	}
 
 	void releaseNode(Node node)
@@ -1155,12 +1153,8 @@ public class BTree implements Closeable {
 		// Note: this method is called by Node.release()
 		// This method should not be called directly (to prevent concurrency issues)!!!
 
-		if (node.isEmpty() && node.isLeaf()) {
-			// Discard node
-			node.write();
-			nodeCache.discard(node.getID());
-
-			// allow the node ID to be reused
+		if (node.isEmpty() && node.isLeaf() && nodeCache.discardEmptyUnused(node.getID())) {
+			// allow the discarded node ID to be reused
 			synchronized (allocatedNodesList) {
 				allocatedNodesList.freeNode(node.getID());
 
@@ -1172,7 +1166,7 @@ public class BTree implements Closeable {
 			}
 		}
 		else
-			nodeCache.release(node);
+			nodeCache.release(node, forceSync);
 	}
 
 	private void writeFileHeader()

@@ -71,15 +71,18 @@ public class ConcurrentCache<K, V> {
 		if (size < capacity + CLEANUP_INTERVAL / 2)
 			return;
 
-		Iterator<K> iter = cache.keySet().iterator();
-		float removeEachTh = (float)size / (size - capacity);
+		synchronized (cache) {
+			Iterator<K> iter = cache.keySet().iterator();
 
-		for (int i = 0; iter.hasNext(); i++) {
+			float removeEachTh = (float)size / (size - capacity);
 
-			K key = iter.next();
+			for (int i = 0; iter.hasNext(); i++) {
 
-			if (i % removeEachTh < 1 && onEntryRemoval(key))
-				iter.remove();
+				K key = iter.next();
+
+				if (i % removeEachTh < 1)
+					cache.computeIfPresent(key, (k, v) -> onEntryRemoval(k) ? null : v);
+			}
 		}
 	}
 }
