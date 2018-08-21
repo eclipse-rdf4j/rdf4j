@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.io.input.BOMInputStream;
+
 import org.eclipse.rdf4j.common.xml.SimpleSAXAdapter;
 import org.eclipse.rdf4j.common.xml.SimpleSAXParser;
 import org.eclipse.rdf4j.common.xml.XMLReaderFactory;
@@ -41,12 +42,11 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 import org.eclipse.rdf4j.rio.helpers.TriXParserSettings;
 import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
+
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
-import org.xml.sax.SAXNotRecognizedException;
-import org.xml.sax.SAXNotSupportedException;
 import org.xml.sax.SAXParseException;
 import org.xml.sax.XMLReader;
 
@@ -178,7 +178,13 @@ public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 			else {
 				xmlReader = XMLReaderFactory.createXMLReader();
 			}
-
+			// See also https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet
+			xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+			xmlReader.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false); 
+			xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+			xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+			//
+			
 			xmlReader.setErrorHandler(this);
 
 			saxParser = new SimpleSAXParser(xmlReader);
