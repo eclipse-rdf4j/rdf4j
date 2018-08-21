@@ -20,6 +20,7 @@ import java.util.Stack;
 import javax.xml.transform.sax.SAXResult;
 
 import org.apache.commons.io.input.BOMInputStream;
+
 import org.eclipse.rdf4j.common.net.ParsedURI;
 import org.eclipse.rdf4j.common.xml.XMLReaderFactory;
 import org.eclipse.rdf4j.common.xml.XMLUtil;
@@ -37,6 +38,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
+
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.Locator;
@@ -261,7 +263,13 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 			else {
 				xmlReader = XMLReaderFactory.createXMLReader();
 			}
-
+			// See also https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet
+			xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+			xmlReader.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false); 
+			xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+			xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+                        //
+                        
 			xmlReader.setContentHandler(saxFilter);
 			xmlReader.setErrorHandler(this);
 
