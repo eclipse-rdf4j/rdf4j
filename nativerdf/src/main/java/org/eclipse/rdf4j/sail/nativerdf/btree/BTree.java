@@ -21,6 +21,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.common.io.NioFile;
+import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -97,7 +98,7 @@ public class BTree implements Closeable {
 			node.read();
 		}
 		catch (IOException exc) {
-			throw new RuntimeException("Error reading B-tree node", exc);
+			throw new SailException("Error reading B-tree node", exc);
 		}
 		return node;
 	});

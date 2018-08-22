@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.nativerdf.ConcurrentCache;
 
 class ConcurrentNodeCache extends ConcurrentCache<Integer, Node> {
@@ -23,7 +24,7 @@ class ConcurrentNodeCache extends ConcurrentCache<Integer, Node> {
 				node.write();
 			}
 			catch (IOException exc) {
-				throw new RuntimeException(exc);
+				throw new SailException("Error writing B-tree node", exc);
 			}
 		}
 	};

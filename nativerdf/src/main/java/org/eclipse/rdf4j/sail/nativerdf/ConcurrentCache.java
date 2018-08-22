@@ -67,11 +67,12 @@ public class ConcurrentCache<K, V> {
 
 		cleanupTick %= CLEANUP_INTERVAL;
 
-		final int size = cache.size();
-		if (size < capacity + CLEANUP_INTERVAL / 2)
-			return;
-
 		synchronized (cache) {
+
+			final int size = cache.size();
+			if (size < capacity + CLEANUP_INTERVAL / 2)
+				return;
+
 			Iterator<K> iter = cache.keySet().iterator();
 
 			float removeEachTh = (float)size / (size - capacity);
