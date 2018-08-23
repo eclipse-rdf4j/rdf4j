@@ -202,6 +202,21 @@ public class SimpleLiteralTest {
 
 	/**
 	 * Test method for
+	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#SimpleLiteral(java.lang.String, java.lang.String)} .
+	 */
+	@Test
+	public final void testStringStringEmptyEmpty()
+		throws Exception
+	{
+		String label = "";
+		String language = "";
+
+		thrown.expect(IllegalArgumentException.class);
+		new SimpleLiteral(label, language);
+	}
+
+	/**
+	 * Test method for
 	 * {@link org.eclipse.rdf4j.model.impl.SimpleLiteral#SimpleLiteral(java.lang.String, org.eclipse.rdf4j.model.IRI)}
 	 * .
 	 */

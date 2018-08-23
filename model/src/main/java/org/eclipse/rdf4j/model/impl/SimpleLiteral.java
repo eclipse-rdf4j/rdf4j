@@ -113,12 +113,16 @@ public class SimpleLiteral implements Literal {
 		this.label = label;
 	}
 
+	@Override
 	public String getLabel() {
 		return label;
 	}
 
 	protected void setLanguage(String language) {
 		Objects.requireNonNull(language);
+		if (language.isEmpty()) {
+			throw new IllegalArgumentException("Language tag cannot be empty");
+		}
 		this.language = language;
 		setDatatype(RDF.LANGSTRING);
 	}
