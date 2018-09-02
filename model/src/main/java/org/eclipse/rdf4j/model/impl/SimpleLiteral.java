@@ -78,7 +78,7 @@ public class SimpleLiteral implements Literal {
 	 * @param label
 	 *        The label for the literal, must not be <tt>null</tt>.
 	 * @param language
-	 *        The language tag for the literal, must not be <tt>null</tt>.
+	 *        The language tag for the literal, must not be <tt>null</tt> and not be empty.
 	 */
 	protected SimpleLiteral(String label, String language) {
 		setLabel(label);
@@ -113,12 +113,16 @@ public class SimpleLiteral implements Literal {
 		this.label = label;
 	}
 
+	@Override
 	public String getLabel() {
 		return label;
 	}
 
 	protected void setLanguage(String language) {
 		Objects.requireNonNull(language);
+		if (language.isEmpty()) {
+			throw new IllegalArgumentException("Language tag cannot be empty");
+		}
 		this.language = language;
 		setDatatype(RDF.LANGSTRING);
 	}
