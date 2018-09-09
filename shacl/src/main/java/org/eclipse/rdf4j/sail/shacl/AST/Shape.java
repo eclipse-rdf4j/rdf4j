@@ -80,7 +80,7 @@ public class Shape implements PlanGenerator, RequiresEvalutation, QueryGenerator
 	public static class Factory {
 
 		public static List<Shape> getShapes(SailRepositoryConnection connection) {
-			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, RDF.TYPE, SHACL.SHAPE))) {
+			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, RDF.TYPE, SHACL.NODE_SHAPE))) {
 				return stream.map(Statement::getSubject).map(shapeId -> {
 					if (hasTargetClass(shapeId, connection)) {
 						return new TargetClass(shapeId, connection);
