@@ -117,6 +117,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		if(shaclSailConnection.sail.isDebugPrintPlans()){
 			System.out.println("digraph  {");
+			System.out.println("labelloc=t;\nfontsize=30;\nlabel=\""+this.getClass().getSimpleName()+"\";");
 
 			filteredStatements2.printPlan();
 			System.out.println(System.identityHashCode(shaclSailConnection) + " [label=\"" + StringEscapeUtils.escapeJava("Base sail") + "\" shape=pentagon fillcolor=lightblue style=filled];");
