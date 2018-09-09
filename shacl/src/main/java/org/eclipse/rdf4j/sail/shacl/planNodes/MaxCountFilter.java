@@ -29,4 +29,11 @@ public class MaxCountFilter extends FilterPlanNode {
 		return literal.longValue() <= maxCount;
 	}
 
+	@Override
+	public String toString() {
+		return "MaxCountFilter{" +
+			"maxCount=" + maxCount +
+			" 'true means <= " +maxCount +"'"+
+			'}';
+	}
 }

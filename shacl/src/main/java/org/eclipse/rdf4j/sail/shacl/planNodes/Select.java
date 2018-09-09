@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -99,5 +101,28 @@ public class Select implements PlanNode {
 		return 0;
 	}
 
+	@Override
+	public void printPlan() {
+		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
+		if(repository != null){
 
+				System.out.println(System.identityHashCode(repository)+ " -> " +getId());
+		}
+		if(connection != null){
+			System.out.println( System.identityHashCode(connection)+ " -> " +getId());
+		}
+
+	}
+
+	@Override
+	public String getId() {
+		return System.identityHashCode(this)+"";
+	}
+
+	@Override
+	public String toString() {
+		return "Select{" +
+			"query='" + query + '\'' +
+			'}';
+	}
 }

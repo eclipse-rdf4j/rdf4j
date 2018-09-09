@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -16,6 +18,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
@@ -85,6 +88,19 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 		new MaxCountFilter(groupByCount, null, directTupleFromFilter, maxCount);
 
 		PlanNode mergeNode1 = new UnionNode(new LoggingNode(directTupleFromFilter), new LoggingNode(invalidValues));
+
+		if(shaclSailConnection.sail.isDebugPrintPlans()){
+			System.out.println("digraph  {");
+
+			mergeNode1.printPlan();
+			System.out.println(System.identityHashCode(shaclSailConnection) + " [label=\"" + StringEscapeUtils.escapeJava("Base sail") + "\" shape=pentagon fillcolor=lightblue style=filled];");
+			System.out.println(System.identityHashCode(shaclSailConnection.getAddedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Added statements") + "\" shape=pentagon fillcolor=lightblue style=filled];");
+			System.out.println(System.identityHashCode(shaclSailConnection.getRemovedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Removed statements") + "\" shape=pentagon fillcolor=lightblue style=filled];");
+			System.out.println(System.identityHashCode(shaclSailConnection.getPreviousStateConnection()) + " [label=\"" + StringEscapeUtils.escapeJava("Previous state connection") + "\" shape=pentagon fillcolor=lightblue style=filled];");
+
+			System.out.println("}");
+
+		}
 
 		return new LoggingNode(mergeNode1);
 

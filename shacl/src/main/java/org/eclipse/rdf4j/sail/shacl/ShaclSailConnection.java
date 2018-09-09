@@ -93,6 +93,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
+	public void begin() throws SailException {
+		begin(sail.getDefaultIsolationLevel());
+	}
+
+	@Override
 	public void begin(IsolationLevel level)
 		throws SailException {
 

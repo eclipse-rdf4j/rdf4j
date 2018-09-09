@@ -24,6 +24,7 @@ import java.util.List;
 public class ShaclSail extends NotifyingSailWrapper {
 
 	public List<Shape> shapes;
+	boolean debugPrintPlans = false;
 
 	ShaclSailConfig config = new ShaclSailConfig();
 
@@ -48,6 +49,13 @@ public class ShaclSail extends NotifyingSailWrapper {
 		config.validationEnabled = true;
 	}
 
+	public boolean isDebugPrintPlans() {
+		return debugPrintPlans;
+	}
+
+	public void setDebugPrintPlans(boolean debugPrintPlans) {
+		this.debugPrintPlans = debugPrintPlans;
+	}
 }
 
 class ShaclSailConfig {
