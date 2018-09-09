@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 import java.io.IOException;
+import java.net.URL;
 import java.util.UUID;
 
 /**
@@ -27,7 +28,20 @@ public class Utils {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		sailRepository.initialize();
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			connection.add(Utils.class.getClassLoader().getResourceAsStream(resourceName), "", RDFFormat.TURTLE);
+			connection.add(Utils.class.getClassLoader().getResourceAsStream(resourceName), "http://example.org/", RDFFormat.TURTLE);
+		} catch (IOException | NullPointerException e) {
+			System.out.println("Error reading: " + resourceName);
+			throw new RuntimeException(e);
+		}
+		return sailRepository;
+	}
+
+
+	public static SailRepository getSailRepository(URL resourceName) {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		sailRepository.initialize();
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			connection.add(resourceName, resourceName.toString(), RDFFormat.TURTLE);
 		} catch (IOException | NullPointerException e) {
 			System.out.println("Error reading: " + resourceName);
 			throw new RuntimeException(e);
