@@ -43,7 +43,7 @@ public class ConsoleIO {
 	 * @param info
 	 * @throws IOException 
 	 */
-	ConsoleIO(InputStream input, OutputStream out, ConsoleState info) throws IOException {
+	public ConsoleIO(InputStream input, OutputStream out, ConsoleState info) throws IOException {
 		this.terminal = TerminalBuilder.builder().system(false).streams(input, out).build();
 		this.input = LineReaderBuilder.builder().terminal(terminal).build();
 		this.appInfo = info;
@@ -55,7 +55,7 @@ public class ConsoleIO {
 	 * @param info
 	 * @throws IOException 
 	 */
-	ConsoleIO(ConsoleState info) throws IOException {
+	public ConsoleIO(ConsoleState info) throws IOException {
 		this.terminal = TerminalBuilder.terminal();
 		this.input = LineReaderBuilder.builder().terminal(terminal).build();
 		this.appInfo = info;
