@@ -4,10 +4,10 @@
 
 	<modelVersion>4.0.0</modelVersion>
 
-	<groupId>org.eclipse.rdf4j</groupId>
-	<artifactId>rdf4j-storage-parent</artifactId>
-	<version>2.4-SNAPSHOT</version>
-	<packaging>pom</packaging>
+  <groupId>org.eclipse.rdf4j</groupId>
+  <artifactId>rdf4j-storage-parent</artifactId>
+  <version>2.5-SNAPSHOT</version>
+  <packaging>pom</packaging>
 
 	<name>RDF4J Storage</name>
 	<description>RDF4J storage-related libraries: Repositories and SAILs</description>
