@@ -58,14 +58,16 @@ public class Section5Test extends BaseExamples {
 		Variable x = SparqlBuilder.var("x"), name = SparqlBuilder.var("name"), mbox = SparqlBuilder
 				.var("mbox");
 
-		p(GraphPatterns.and(x.has(foaf.iri("name"), name),
-				x.has(foaf.iri("mbox"), mbox)));
-		p("");
-		p(GraphPatterns.and(x.has(foaf.iri("name"), name),
-				x.has(foaf.iri("mbox"), mbox)).filter(
-				Expressions.regex(name, "Smith")));
-		p("");
-		p(GraphPatterns.and(x.has(foaf.iri("name"), name),
-				GraphPatterns.and(), x.has(foaf.iri("mbox"), mbox)));
+		p(
+            GraphPatterns.and(x.has(foaf.iri("name"), name),
+                    x.has(foaf.iri("mbox"), mbox)),
+
+            GraphPatterns.and(x.has(foaf.iri("name"), name),
+                    x.has(foaf.iri("mbox"), mbox)).filter(
+                    Expressions.regex(name, "Smith")),
+
+            GraphPatterns.and(x.has(foaf.iri("name"), name),
+                    GraphPatterns.and(), x.has(foaf.iri("mbox"), mbox))
+		);
 	}
 }

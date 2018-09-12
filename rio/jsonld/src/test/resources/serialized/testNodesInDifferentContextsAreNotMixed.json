@@ -1,0 +1,22 @@
+[ {
+  "@graph" : [ {
+    "@id" : "sch:node2",
+    "sch:pred2" : [ {
+      "@id" : "sch:node3"
+    } ]
+  } ],
+  "@id" : "sch:context1"
+}, {
+  "@graph" : [ {
+    "@id" : "sch:node3",
+    "sch:pred3" : [ {
+      "@id" : "sch:node1"
+    } ]
+  } ],
+  "@id" : "sch:context2"
+}, {
+  "@id" : "sch:node1",
+  "sch:pred1" : [ {
+    "@id" : "sch:node2"
+  } ]
+} ]

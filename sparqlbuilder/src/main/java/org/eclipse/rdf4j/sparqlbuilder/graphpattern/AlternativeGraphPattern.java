@@ -40,8 +40,9 @@ class AlternativeGraphPattern extends QueryElementCollection<GroupGraphPattern>
 		this.elements = original.elements;
 	}
 
-	AlternativeGraphPattern union(GraphPattern... patterns) {
-		addElements(GroupGraphPattern::new, patterns);
+	@Override
+    public AlternativeGraphPattern union(GraphPattern... patterns) {
+		addElements(GraphPatterns::extractOrConvertToGGP, patterns);
 
 		return this;
 	}

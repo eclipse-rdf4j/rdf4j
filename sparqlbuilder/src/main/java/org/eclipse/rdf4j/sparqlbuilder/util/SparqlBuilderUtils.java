@@ -38,9 +38,9 @@ public class SparqlBuilderUtils {
 		Optional<String> sufOpt = Optional.ofNullable(suffix);
 		
 		stringOptional.ifPresent(string -> {
-			preOpt.ifPresent(p -> builder.append(p));
+			preOpt.ifPresent(builder::append);
 			builder.append(string);
-			sufOpt.ifPresent(s -> builder.append(s));
+			sufOpt.ifPresent(builder::append);
 		});
 	}
 	
@@ -72,8 +72,7 @@ public class SparqlBuilderUtils {
 		return getEnclosedString("'''", "'''", contents, false);
 	}
 	
-	private static String getEnclosedString(String open, String close,
-			String contents) {
+	private static String getEnclosedString(String open, String close, String contents) {
 		return getEnclosedString(open, close, contents, true);
 	}
 

@@ -126,6 +126,10 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 			opts.setUseNativeTypes(getWriterConfig().get(JSONLDSettings.USE_NATIVE_TYPES));
 			// opts.optimize = getWriterConfig().get(JSONLDSettings.OPTIMIZE);
 
+			if (getWriterConfig().get(JSONLDSettings.HIERARCHICAL_VIEW)) {
+				output = JSONLDHierarchicalProcessor.fromJsonLdObject(output);
+			}
+
 			if (baseURI != null && getWriterConfig().get(BasicWriterSettings.BASE_DIRECTIVE)) {
 				opts.setBase(baseURI);
 			}
