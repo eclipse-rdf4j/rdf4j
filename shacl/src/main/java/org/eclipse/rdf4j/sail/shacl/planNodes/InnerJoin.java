@@ -7,8 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+
 
 /**
  * @author Håvard Ottestad
@@ -163,4 +166,37 @@ public class InnerJoin implements PlanNode {
 		return Math.max(left.depth(), right.depth());
 	}
 
+	@Override
+	public void printPlan() {
+		left.printPlan();
+
+		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
+		System.out.println(left.getId()+" -> "+getId()+ " [label=\"left\"];");
+		System.out.println(right.getId()+" -> "+getId()+ " [label=\"right\"];");
+		right.printPlan();
+
+		if(discardedRight != null){
+			if(discardedRight instanceof PlanNode){
+				System.out.println(getId()+" -> "+((PlanNode) discardedRight).getId()+ " [label=\"discardedRight\"];");
+			}
+
+		}
+		if(discardedLeft != null){
+			if(discardedLeft instanceof PlanNode){
+				System.out.println(getId()+" -> "+((PlanNode) discardedLeft).getId()+ " [label=\"discardedLeft\"];");
+			}
+
+
+		}
+	}
+
+	@Override
+	public String getId() {
+		return System.identityHashCode(this)+"";
+	}
+
+	@Override
+	public String toString() {
+		return "InnerJoin";
+	}
 }

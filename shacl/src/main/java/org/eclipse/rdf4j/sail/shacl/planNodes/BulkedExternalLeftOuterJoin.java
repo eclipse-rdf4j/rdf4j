@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -25,6 +27,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+
 
 import java.util.Arrays;
 import java.util.LinkedList;
@@ -208,5 +211,37 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 	@Override
 	public int depth() {
 		return leftNode.depth() + 1;
+	}
+
+	@Override
+	public void printPlan() {
+		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
+
+		leftNode.printPlan();
+
+
+		if(repository != null){
+			System.out.println( System.identityHashCode(repository)+" -> "+getId()+ " [label=\"right\"]");
+		}
+		if(baseSailConnection != null){
+			System.out.println( System.identityHashCode(baseSailConnection)+" -> "+getId()+ " [label=\"right\"]");
+		}
+
+		System.out.println(leftNode.getId()+" -> "+getId()+ " [label=\"left\"]");
+
+
+	}
+
+	@Override
+	public String toString() {
+		return "BulkedExternalLeftOuterJoin{" +
+			"predicate=" + predicate +
+			", query='" + query + '\'' +
+			'}';
+	}
+
+	@Override
+	public String getId() {
+		return System.identityHashCode(this)+"";
 	}
 }

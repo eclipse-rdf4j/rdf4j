@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -63,6 +65,31 @@ public class DirectTupleFromFilter implements PlanNode, PushBasedPlanNode, Suppo
 	@Override
 	public int depth() {
 		return depthProvider.depth() + 1;
+	}
+
+	@Override
+	public void printPlan() {
+		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
+
+		if(depthProvider instanceof PlanNode){
+			((PlanNode) depthProvider).printPlan();
+
+		}
+
+		if(depthProvider instanceof FilterPlanNode){
+			((FilterPlanNode) depthProvider).printPlan();
+
+		}
+	}
+
+	@Override
+	public String toString() {
+		return "DirectTupleFromFilter";
+	}
+
+	@Override
+	public String getId() {
+		return System.identityHashCode(this)+"";
 	}
 
 	@Override

@@ -79,5 +79,14 @@ public class MockInputPlanNode implements PlanNode {
 		return 0;
 	}
 
+	@Override
+	public void printPlan() {
+
+	}
+
+	@Override
+	public String getId() {
+		return System.identityHashCode(this)+"";
+	}
 
 }

@@ -124,6 +124,16 @@ public class LoggingNode implements PlanNode {
 		return parent.depth() + 1;
 	}
 
+	@Override
+	public void printPlan() {
+		parent.printPlan();
+	}
+
+	@Override
+	public String getId() {
+		return parent.getId();
+	}
+
 	private String leadingSpace() {
 		StringBuilder ret = new StringBuilder();
 		int depth = depth();

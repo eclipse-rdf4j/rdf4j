@@ -8,8 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+
 
 /**
  * @author Håvard Ottestad
@@ -69,5 +72,24 @@ public class TrimTuple implements PlanNode {
 	@Override
 	public int depth() {
 		return parent.depth() + 1;
+	}
+
+	@Override
+	public void printPlan() {
+		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
+		System.out.println(parent.getId()+" -> "+getId());
+		parent.printPlan();
+	}
+
+	@Override
+	public String toString() {
+		return "TrimTuple{" +
+			"newLength=" + newLength +
+			'}';
+	}
+
+	@Override
+	public String getId() {
+		return System.identityHashCode(this)+"";
 	}
 }

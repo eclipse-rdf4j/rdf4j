@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -112,5 +114,25 @@ public class UnionNode implements PlanNode {
 	public int depth() {
 		return Arrays.stream(nodes).mapToInt(PlanNode::depth).max().orElse(0) + 1;
 
+	}
+
+	@Override
+	public void printPlan() {
+		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
+		for (PlanNode node : nodes) {
+			System.out.println(node.getId()+" -> "+getId());
+			node.printPlan();
+
+		}
+	}
+
+	@Override
+	public String toString() {
+		return "UnionNode";
+	}
+
+	@Override
+	public String getId() {
+		return System.identityHashCode(this)+"";
 	}
 }

@@ -30,4 +30,10 @@ public class MinCountFilter extends FilterPlanNode {
 		return literal.longValue() >= minCount;
 	}
 
+	@Override
+	public String toString() {
+		return "MinCountFilter{" +
+			"minCount=" + minCount +
+			'}';
+	}
 }

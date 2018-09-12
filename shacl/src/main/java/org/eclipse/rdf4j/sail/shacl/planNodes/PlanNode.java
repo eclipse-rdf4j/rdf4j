@@ -21,4 +21,9 @@ public interface PlanNode {
 	int depth();
 
 
+	void printPlan();
+
+	String getId();
+
+
 }
