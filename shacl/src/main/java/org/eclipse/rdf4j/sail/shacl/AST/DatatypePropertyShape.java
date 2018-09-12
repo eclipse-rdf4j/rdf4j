@@ -37,8 +37,8 @@ public class DatatypePropertyShape extends PathPropertyShape {
 
 	private final Resource datatype;
 
-	DatatypePropertyShape(Resource id, SailRepositoryConnection connection, Shape shape) {
-		super(id, connection, shape);
+	DatatypePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+		super(id, connection, nodeShape);
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.DATATYPE, null, true))) {
 			datatype = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:datatype on " + id));
@@ -48,9 +48,9 @@ public class DatatypePropertyShape extends PathPropertyShape {
 
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 
-		PlanNode addedByShape = new LoggingNode(shape.getPlanAddedStatements(shaclSailConnection, shape));
+		PlanNode addedByShape = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape));
 
 		BufferedSplitter bufferedSplitter = new BufferedSplitter(addedByShape);
 
@@ -66,8 +66,8 @@ public class DatatypePropertyShape extends PathPropertyShape {
 		PlanNode top = new LoggingNode(new InnerJoin(bufferedSplitter.getPlanNode(), invalidValuesDirectOnPath, null, discardedRight));
 
 
-		if (shape instanceof TargetClass) {
-			PlanNode typeFilterPlan = new LoggingNode(((TargetClass) shape).getTypeFilterPlan(shaclSailConnection.getPreviousStateConnection(), discardedRight));
+		if (nodeShape instanceof TargetClass) {
+			PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection.getPreviousStateConnection(), discardedRight));
 
 			top = new LoggingNode(new UnionNode(top, typeFilterPlan));
 		}
@@ -85,10 +85,10 @@ public class DatatypePropertyShape extends PathPropertyShape {
 			System.out.println("labelloc=t;\nfontsize=30;\nlabel=\""+this.getClass().getSimpleName()+"\";");
 
 			invalidValues.printPlan();
-			System.out.println(System.identityHashCode(shaclSailConnection) + " [label=\"" + StringEscapeUtils.escapeJava("Base sail") + "\" shape=pentagon fillcolor=lightblue style=filled];");
-			System.out.println(System.identityHashCode(shaclSailConnection.getAddedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Added statements") + "\" shape=pentagon fillcolor=lightblue style=filled];");
-			System.out.println(System.identityHashCode(shaclSailConnection.getRemovedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Removed statements") + "\" shape=pentagon fillcolor=lightblue style=filled];");
-			System.out.println(System.identityHashCode(shaclSailConnection.getPreviousStateConnection()) + " [label=\"" + StringEscapeUtils.escapeJava("Previous state connection") + "\" shape=pentagon fillcolor=lightblue style=filled];");
+			System.out.println(System.identityHashCode(shaclSailConnection) + " [label=\"" + StringEscapeUtils.escapeJava("Base sail") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
+			System.out.println(System.identityHashCode(shaclSailConnection.getAddedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Added statements") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
+			System.out.println(System.identityHashCode(shaclSailConnection.getRemovedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Removed statements") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
+			System.out.println(System.identityHashCode(shaclSailConnection.getPreviousStateConnection()) + " [label=\"" + StringEscapeUtils.escapeJava("Previous state connection") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
 
 			System.out.println("}");
 

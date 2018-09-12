@@ -16,11 +16,11 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
  */
 public interface PlanGenerator {
 
-	PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape);
+	PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape);
 
-	PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, Shape shape);
+	PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape);
 
-	PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, Shape shape);
+	PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape);
 
 
 }

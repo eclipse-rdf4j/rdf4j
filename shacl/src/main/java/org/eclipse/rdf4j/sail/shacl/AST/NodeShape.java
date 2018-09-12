@@ -27,40 +27,40 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * The AST (Abstract Syntax Tree) node that represents the Shape node. Shape nodes can have multiple property shapes, which are the restrictions for everything that matches the Shape.
+ * The AST (Abstract Syntax Tree) node that represents the NodeShape node. NodeShape nodes can have multiple property nodeShapes, which are the restrictions for everything that matches the NodeShape.
  *
  * @author Heshan Jayasinghe
  */
-public class Shape implements PlanGenerator, RequiresEvalutation, QueryGenerator {
+public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGenerator {
 
 	private Resource id;
 
 	private List<PropertyShape> propertyShapes;
 
-	public Shape(Resource id, SailRepositoryConnection connection) {
+	public NodeShape(Resource id, SailRepositoryConnection connection) {
 		this.id = id;
 		propertyShapes = PropertyShape.Factory.getProprtyShapes(id, connection, this);
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), getQuery())), 1);
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getRemovedStatements(), getQuery())), 1);
 	}
 
-	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, Shape shape) {
+	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 		return propertyShapes.stream()
 			.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
-			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, shape))
+			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape))
 			.collect(Collectors.toList());
 	}
 
@@ -79,13 +79,13 @@ public class Shape implements PlanGenerator, RequiresEvalutation, QueryGenerator
 
 	public static class Factory {
 
-		public static List<Shape> getShapes(SailRepositoryConnection connection) {
-			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, RDF.TYPE, SHACL.SHAPE))) {
+		public static List<NodeShape> getShapes(SailRepositoryConnection connection) {
+			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, RDF.TYPE, SHACL.NODE_SHAPE))) {
 				return stream.map(Statement::getSubject).map(shapeId -> {
 					if (hasTargetClass(shapeId, connection)) {
 						return new TargetClass(shapeId, connection);
 					} else {
-						return new Shape(shapeId, connection); // target class shapes are the only supported shapes
+						return new NodeShape(shapeId, connection); // target class nodeShapes are the only supported nodeShapes
 					}
 				})
 					.filter(Objects::nonNull)

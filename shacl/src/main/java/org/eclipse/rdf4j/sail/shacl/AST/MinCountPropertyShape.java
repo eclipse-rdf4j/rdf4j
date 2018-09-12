@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import java.util.stream.Stream;
 
 /**
- * The AST (Abstract Syntax Tree) node that represents a sh:minCount property shape restriction.
+ * The AST (Abstract Syntax Tree) node that represents a sh:minCount property nodeShape restriction.
  *
  * @author Heshan Jayasinghe
  */
@@ -48,8 +48,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	private boolean optimizeWhenNoStatementsRemoved = true;
 
 
-	MinCountPropertyShape(Resource id, SailRepositoryConnection connection, Shape shape) {
-		super(id, connection, shape);
+	MinCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+		super(id, connection, nodeShape);
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.MIN_COUNT, null, true))) {
 			minCount = stream.map(Statement::getObject).map(v -> (Literal) v).map(Literal::longValue).findAny().orElseThrow(() -> new RuntimeException("Expect to find sh:minCount on " + id));
@@ -62,27 +62,27 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		return "MinCountPropertyShape{" + "maxCount=" + minCount + '}';
 	}
 
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 
 		PlanNode topNode;
 
 
 		if (!optimizeWhenNoStatementsRemoved || shaclSailConnection.stats.hasRemoved()) {
-			PlanNode planRemovedStatements = new LoggingNode(new TrimTuple(new LoggingNode(super.getPlanRemovedStatements(shaclSailConnection, shape)), 1));
+			PlanNode planRemovedStatements = new LoggingNode(new TrimTuple(new LoggingNode(super.getPlanRemovedStatements(shaclSailConnection, nodeShape)), 1));
 
 			PlanNode filteredPlanRemovedStatements = planRemovedStatements;
 
-			if (shape instanceof TargetClass) {
-				filteredPlanRemovedStatements = new LoggingNode(((TargetClass) shape).getTypeFilterPlan(shaclSailConnection, planRemovedStatements));
+			if (nodeShape instanceof TargetClass) {
+				filteredPlanRemovedStatements = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, planRemovedStatements));
 			}
 
-			PlanNode planAddedStatements = new LoggingNode(shape.getPlanAddedStatements(shaclSailConnection, shape));
+			PlanNode planAddedStatements = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape));
 
 			PlanNode mergeNode = new LoggingNode(new UnionNode(planAddedStatements, filteredPlanRemovedStatements));
 
 			PlanNode unique = new LoggingNode(new Unique(mergeNode));
 
-			topNode = new LoggingNode(new LeftOuterJoin(unique, super.getPlanAddedStatements(shaclSailConnection, shape)));
+			topNode = new LoggingNode(new LeftOuterJoin(unique, super.getPlanAddedStatements(shaclSailConnection, nodeShape)));
 
 			// BulkedExternalLeftOuterJoin is slower, at least when the super.getPlanAddedStatements only returns statements that have the correct type.
 			// Persumably BulkedExternalLeftOuterJoin will be high if super.getPlanAddedStatements has a high number of statements for other subjects that in "unique"
@@ -90,7 +90,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		} else {
 
-			PlanNode planAddedForShape = new LoggingNode(shape.getPlanAddedStatements(shaclSailConnection, shape));
+			PlanNode planAddedForShape = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape));
 
 			PlanNode select = new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), path.getQuery()));
 
@@ -120,10 +120,10 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			System.out.println("labelloc=t;\nfontsize=30;\nlabel=\""+this.getClass().getSimpleName()+"\";");
 
 			filteredStatements2.printPlan();
-			System.out.println(System.identityHashCode(shaclSailConnection) + " [label=\"" + StringEscapeUtils.escapeJava("Base sail") + "\" shape=pentagon fillcolor=lightblue style=filled];");
-			System.out.println(System.identityHashCode(shaclSailConnection.getAddedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Added statements") + "\" shape=pentagon fillcolor=lightblue style=filled];");
-			System.out.println(System.identityHashCode(shaclSailConnection.getRemovedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Removed statements") + "\" shape=pentagon fillcolor=lightblue style=filled];");
-			System.out.println(System.identityHashCode(shaclSailConnection.getPreviousStateConnection()) + " [label=\"" + StringEscapeUtils.escapeJava("Previous state connection") + "\" shape=pentagon fillcolor=lightblue style=filled];");
+			System.out.println(System.identityHashCode(shaclSailConnection) + " [label=\"" + StringEscapeUtils.escapeJava("Base sail") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
+			System.out.println(System.identityHashCode(shaclSailConnection.getAddedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Added statements") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
+			System.out.println(System.identityHashCode(shaclSailConnection.getRemovedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Removed statements") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
+			System.out.println(System.identityHashCode(shaclSailConnection.getPreviousStateConnection()) + " [label=\"" + StringEscapeUtils.escapeJava("Previous state connection") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
 
 			System.out.println("}");
 
@@ -137,8 +137,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 
 		boolean requiresEvalutation = false;
-		if (shape instanceof TargetClass) {
-			Resource targetClass = ((TargetClass) shape).targetClass;
+		if (nodeShape instanceof TargetClass) {
+			Resource targetClass = ((TargetClass) nodeShape).targetClass;
 			try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
 				requiresEvalutation = addedStatementsConnection.hasStatement(null, RDF.TYPE, targetClass, false);
 			}
