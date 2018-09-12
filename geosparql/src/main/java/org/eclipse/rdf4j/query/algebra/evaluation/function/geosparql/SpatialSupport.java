@@ -7,21 +7,19 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
-import java.util.HashMap;
-import java.util.Map;
-
 import org.locationtech.spatial4j.context.SpatialContext;
-import org.locationtech.spatial4j.context.SpatialContextFactory;
+import org.locationtech.spatial4j.context.jts.JtsSpatialContext;
+import org.locationtech.spatial4j.io.ShapeWriter;
 
 /**
- * This class is responsible for creating the {@link com.spatial4j.core.context.SpatialContext},
- * {@link SpatialAlegbra} and {@link WktWriter} that will be used. It will first try to load a subclass of
+ * This class is responsible for creating the {@link org.locationtech.spatial4j.context.SpatialContext},
+ * {@link SpatialAlgebra} and {@link WktWriter} that will be used. It will first try to load a subclass of
  * itself called "org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer" .
- * This is not provided, and is primarily intended as a way to inject JTS support. If this fails then the
- * following fall-backs are used:
+ * This is not provided, and is primarily intended as a way to inject custom geospatial support. If this fails
+ * then the following fall-backs are used:
  * <ul>
- * <li>a SpatialContext created by passing system properties with the prefix "spatialSupport." to
- * {@link com.spatial4j.core.context.SpatialContextFactory} . The prefix is stripped from the system property
+ * <li>it uses the JTS GEO SpatialContext implementation, with added support for polygons.</li>
+ * {@link org.locationtech.spatial4j.context.SpatialContextFactory} . The prefix is stripped from the system property
  * name to form the SpatialContextFactory argument name.</li>
  * <li>a SpatialAlgebra that does not support any operation.</li>
  * <li>a WktWriter that only supports points</li>.
@@ -44,7 +42,7 @@ abstract class SpatialSupport {
 			support = (SpatialSupport)cls.newInstance();
 		}
 		catch (Exception e) {
-			support = new DefaultSpatialSupport();
+			support = new JtsSpatialSupport();
 		}
 		spatialContext = support.createSpatialContext();
 		spatialAlgebra = support.createSpatialAlgebra();
@@ -69,30 +67,21 @@ abstract class SpatialSupport {
 
 	protected abstract WktWriter createWktWriter();
 
-	private static final class DefaultSpatialSupport extends SpatialSupport {
-
-		private static final String SYSTEM_PROPERTY_PREFIX = "spatialSupport.";
+	private static final class JtsSpatialSupport extends SpatialSupport {
 
 		@Override
-		protected SpatialContext createSpatialContext() {
-			Map<String, String> args = new HashMap<String, String>();
-			for (String key : System.getProperties().stringPropertyNames()) {
-				if (key.startsWith(SYSTEM_PROPERTY_PREFIX)) {
-					args.put(key.substring(SYSTEM_PROPERTY_PREFIX.length()), System.getProperty(key));
-				}
-			}
-			return SpatialContextFactory.makeSpatialContext(args,
-					Thread.currentThread().getContextClassLoader());
+		protected JtsSpatialContext createSpatialContext() {
+			return JtsSpatialContext.GEO;
 		}
 
 		@Override
-		protected SpatialAlgebra createSpatialAlgebra() {
-			return new DefaultSpatialAlgebra();
+		protected JtsSpatialAlgebra createSpatialAlgebra() {
+			return new JtsSpatialAlgebra((JtsSpatialContext)spatialContext);
 		}
 
 		@Override
 		protected WktWriter createWktWriter() {
-			return new DefaultWktWriter();
+			return new DefaultWktWriter(spatialContext);
 		}
 	}
 }

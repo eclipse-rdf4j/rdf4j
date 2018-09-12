@@ -5,22 +5,18 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-storage-compliance</artifactId>
-		<version>2.5-SNAPSHOT</version>
+		<version>2.4-SNAPSHOT</version>
 	</parent>
 
-	<artifactId>rdf4j-solr-compliance</artifactId>
+	<artifactId>rdf4j-lucene-compliance</artifactId>
 
-	<name>RDF4J Solr Sail Tests</name>
-	<description>Tests for Solr Sail.</description>
-
-	<properties>
-		<solr.version>6.6.1</solr.version>
-	</properties>
+	<name>RDF4J Lucene Sail Tests</name>
+	<description>Compliance Tests for LuceneSail.</description>
 
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-sail-solr</artifactId>
+			<artifactId>rdf4j-sail-lucene</artifactId>
 			<version>${project.version}</version>
 			<scope>test</scope>
 		</dependency>
@@ -63,19 +59,6 @@
 			<artifactId>log4j-over-slf4j</artifactId>
 			<scope>test</scope>
 		</dependency>
-		<!-- needed for embedded solr server -->
-		<dependency>
-			<groupId>org.apache.solr</groupId>
-			<artifactId>solr-core</artifactId>
-			<version>${solr.version}</version>
-			<scope>test</scope>
-			<exclusions>
-				<exclusion>
-					<groupId>log4j</groupId>
-					<artifactId>log4j</artifactId>
-				</exclusion>
-			</exclusions>
-		</dependency>
 	</dependencies>
 	<profiles>
 		<profile>
@@ -83,24 +66,6 @@
 			<activation>
 				<jdk>[1.9,9,)</jdk>
 			</activation>
-			<dependencies>
-				<dependency>
-					<groupId>org.apache.solr</groupId>
-					<artifactId>solr-core</artifactId>
-					<version>${solr.version}</version>
-					<optional>true</optional>
-					<exclusions>
-						<exclusion>
-							<groupId>log4j</groupId>
-							<artifactId>log4j</artifactId>
-						</exclusion>
-						<exclusion>
-							<groupId>jdk.tools</groupId>
-							<artifactId>jdk.tools</artifactId>
-						</exclusion>
-					</exclusions>
-				</dependency>
-			</dependencies>
 		</profile>
 	</profiles>
 </project>

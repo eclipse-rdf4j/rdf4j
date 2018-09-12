@@ -13,6 +13,7 @@
 
 	<modules>
 		<module>model</module>
+                <module>lucene</module>
 		<module>elasticsearch</module>
 		<module>solr</module>
 		<module>store</module>
