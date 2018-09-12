@@ -61,26 +61,14 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 	static class Factory {
 
-		static List<PropertyShape> getProprtyShapes(Resource ShapeId, SailRepositoryConnection connection, NodeShape nodeShape) {
+		static List<PropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection, NodeShape nodeShape) {
 
 			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(ShapeId, SHACL.PROPERTY, null))) {
 				return stream
 					.map(Statement::getObject)
 					.map(v -> (Resource) v)
 					.flatMap(propertyShapeId -> {
-						List<PropertyShape> propertyShapes = new ArrayList<>(2);
-
-						if (hasMinCount(propertyShapeId, connection)) {
-							propertyShapes.add(new MinCountPropertyShape(propertyShapeId, connection, nodeShape));
-						}
-
-						if (hasMaxCount(propertyShapeId, connection)) {
-							propertyShapes.add(new MaxCountPropertyShape(propertyShapeId, connection, nodeShape));
-						}
-
-						if (hasDatatype(propertyShapeId, connection)) {
-							propertyShapes.add(new DatatypePropertyShape(propertyShapeId, connection, nodeShape));
-						}
+						List<PropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape, propertyShapeId);
 
 						return propertyShapes.stream();
 
@@ -88,6 +76,31 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 					.collect(Collectors.toList());
 			}
 
+		}
+
+		static List<PropertyShape> getPropertyShapesInner(SailRepositoryConnection connection, NodeShape nodeShape, Resource propertyShapeId) {
+			List<PropertyShape> propertyShapes = new ArrayList<>(2);
+
+			if (hasMinCount(propertyShapeId, connection)) {
+				propertyShapes.add(new MinCountPropertyShape(propertyShapeId, connection, nodeShape));
+			}
+
+			if (hasMaxCount(propertyShapeId, connection)) {
+				propertyShapes.add(new MaxCountPropertyShape(propertyShapeId, connection, nodeShape));
+			}
+
+			if (hasDatatype(propertyShapeId, connection)) {
+				propertyShapes.add(new DatatypePropertyShape(propertyShapeId, connection, nodeShape));
+			}
+
+			if (hasOr(propertyShapeId, connection)) {
+				propertyShapes.add(new OrPropertyShape(propertyShapeId, connection, nodeShape));
+			}
+			return propertyShapes;
+		}
+
+		private static boolean hasOr(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.OR, null, true);
 		}
 
 

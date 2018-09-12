@@ -37,7 +37,9 @@ public class ShaclTest {
 
 	static final List<String> testCasePaths = Arrays.asList(
 		"test-cases/datatype/simple",
-		"test-cases/minCount/simple"
+		"test-cases/minCount/simple",
+		"test-cases/or/datatype"
+
 	);
 
 	private final String testCasePath;
@@ -133,7 +135,9 @@ public class ShaclTest {
 
 		String shaclFile = shaclPath + "shacl.ttl";
 		System.out.println(shaclFile);
-		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository(shaclFile)));
+		ShaclSail innerShaclSail = new ShaclSail(new MemoryStore(), Utils.getSailRepository(shaclFile));
+		innerShaclSail.setDebugPrintPlans(true);
+		SailRepository shaclSail = new SailRepository(innerShaclSail);
 		shaclSail.initialize();
 
 		boolean exception = false;

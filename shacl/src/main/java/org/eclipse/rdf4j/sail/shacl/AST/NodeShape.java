@@ -39,7 +39,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	public NodeShape(Resource id, SailRepositoryConnection connection) {
 		this.id = id;
-		propertyShapes = PropertyShape.Factory.getProprtyShapes(id, connection, this);
+		propertyShapes = PropertyShape.Factory.getPropertyShapes(id, connection, this);
 	}
 
 	@Override
