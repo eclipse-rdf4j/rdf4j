@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
+import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.sail.config.ProxyRepositoryConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
@@ -256,5 +257,18 @@ public class LocalRepositoryManagerTest {
 			con.commit();
 		}
 		assertFalse(manager.hasRepositoryConfig(config.getID()));
+	}
+
+	/**
+	 * Regression test for adding new repositories when legacy SYSTEM repository is still present
+	 * 
+	 * See also GitHub issue 1077
+	 */ 
+	@Test
+	public void testAddWithExistingSysRepository() {
+		new File(datadir, "repositories/SYSTEM").mkdir();
+		RepositoryImplConfig cfg = new SailRepositoryConfig(new MemoryStoreConfig());
+		manager.addRepositoryConfig(new RepositoryConfig("test-01", cfg));
+		manager.addRepositoryConfig(new RepositoryConfig("test-02", cfg));
 	}
 }
