@@ -319,7 +319,7 @@ public class FileUtil {
 	 * @throws IOException
 	 *         If no directory could be created.
 	 */
-	public static File createTempDir(String prefix)
+	public static synchronized File createTempDir(String prefix)
 		throws IOException
 	{
 		String tmpDirStr = System.getProperty("java.io.tmpdir");
@@ -353,7 +353,7 @@ public class FileUtil {
 	}
 
 	/**
-	 * Deletes the specified diretory and any files and directories in it recursively.
+	 * Deletes the specified directory and any files and directories in it recursively.
 	 * 
 	 * @param dir
 	 *        The directory to remove.
