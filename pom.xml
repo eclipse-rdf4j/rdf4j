@@ -772,7 +772,7 @@
 				</configuration>
 			</plugin>
 			<plugin>
-				<!-- verify all bytecode (including third party libs) is Java 8 max -->
+				<!-- verify all byte-code (including third party libraries) is Java 8 max -->
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-enforcer-plugin</artifactId>
 				<version>1.4.1</version>
