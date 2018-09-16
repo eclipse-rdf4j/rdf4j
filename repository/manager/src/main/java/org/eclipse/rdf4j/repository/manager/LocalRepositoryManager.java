@@ -441,13 +441,13 @@ public class LocalRepositoryManager extends RepositoryManager {
 		catch (IOException | RDFHandlerException | UnsupportedRDFormatException | URISyntaxException e) {
 			throw new RepositoryConfigException(e);
 		}
-		if (updateSystem) {
-			super.addRepositoryConfig(config);
-		}
 		try {
 			Files.move(part.toPath(), configFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
 		} catch (IOException e) {
 			throw new RepositoryConfigException(e);
+		}
+		if (updateSystem) {
+			super.addRepositoryConfig(config);
 		}
 	}
 
