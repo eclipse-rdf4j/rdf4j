@@ -7,7 +7,7 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 ex:EverythingShape
-	a sh:Shape ;
+	a sh:NodeShape  ;
 	sh:property [
 		sh:path rdfs:label ;
 		sh:minCount 1 ;

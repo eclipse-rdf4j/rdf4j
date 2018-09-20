@@ -6,7 +6,7 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 ex:shape1
-	a sh:Shape ;
+	a sh:NodeShape  ;
 	sh:targetClass ex:Person ;
 	sh:property [
 		sh:path ex:ssn ;
@@ -22,7 +22,7 @@ ex:shape1
 
 
 ex:shape2
-	a sh:Shape ;
+	a sh:NodeShape  ;
 	sh:targetClass ex:OtherPerson ;
 	sh:property [
 		sh:path ex:age ;
