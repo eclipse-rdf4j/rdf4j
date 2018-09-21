@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Collection;
 import java.util.StringTokenizer;
+import java.util.UUID;
 
 /**
  * Utility methods for operations on Files.
@@ -308,9 +309,7 @@ public class FileUtil {
 	}
 
 	/**
-	 * Creates a new and empty directory in the default temp directory using the given prefix. This methods
-	 * uses {@link File#createTempFile} to create a new tmp file, deletes it and creates a directory for it
-	 * instead.
+	 * Creates a new and empty directory in the default temp directory using the given prefix.
 	 * 
 	 * @param prefix
 	 *        The prefix string to be used in generating the diretory's name; must be at least three
@@ -318,38 +317,13 @@ public class FileUtil {
 	 * @return A newly-created empty directory.
 	 * @throws IOException
 	 *         If no directory could be created.
+	 * @deprecated use {@link Files#createTempDirectory(String, java.nio.file.attribute.FileAttribute...)} instead
 	 */
+	@Deprecated
 	public static synchronized File createTempDir(String prefix)
 		throws IOException
-	{
-		String tmpDirStr = System.getProperty("java.io.tmpdir");
-		if (tmpDirStr == null) {
-			throw new IOException("System property 'java.io.tmpdir' does not specify a tmp dir");
-		}
-
-		File tmpDir = new File(tmpDirStr);
-		if (!tmpDir.exists()) {
-			boolean created = tmpDir.mkdirs();
-			if (!created) {
-				throw new IOException("Unable to create tmp dir " + tmpDir);
-			}
-		}
-
-		File resultDir = null;
-		int suffix = (int)System.currentTimeMillis();
-		int failureCount = 0;
-		do {
-			resultDir = new File(tmpDir, prefix + suffix % 10000);
-			suffix++;
-			failureCount++;
-		}
-		while (resultDir.exists() && failureCount < 50);
-
-		if (resultDir.exists()) {
-			throw new IOException(
-					failureCount + " attempts to generate a non-existent directory name failed, giving up");
-		}
-		return Files.createDirectory(resultDir.toPath()).toFile();
+	{	
+		return Files.createTempDirectory(prefix).toFile();
 	}
 
 	/**
