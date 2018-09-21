@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.repository.http;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -38,17 +40,19 @@ import org.eclipse.rdf4j.rio.RDFFormat;
  * throw the specific RepositoryException subclass UnautorizedException, the semantics of which is defined by
  * the HTTP protocol.
  * <p>
- * This repository proxy uses a <a href="http://docs.rdf4j.org/rest-api/">Sesame-specific extension of the SPARQL
- * 1.1 Protocol</a> to communicate with the server. For communicating with a non-Sesame-based SPARQL endpoint,
- * it is recommend to use {@link org.eclipse.rdf4j.repository.sparql.SPARQLRepository SPARQLRepository}
- * instead.
+ * This repository proxy uses a <a href="http://docs.rdf4j.org/rest-api/">Sesame-specific extension of the
+ * SPARQL 1.1 Protocol</a> to communicate with the server. For communicating with a non-Sesame-based SPARQL
+ * endpoint, it is recommend to use {@link org.eclipse.rdf4j.repository.sparql.SPARQLRepository
+ * SPARQLRepository} instead.
  *
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  * @author Herko ter Horst
  */
-public class HTTPRepository extends AbstractRepository implements HttpClientDependent, SessionManagerDependent {
+public class HTTPRepository extends AbstractRepository
+		implements HttpClientDependent, SessionManagerDependent
+{
 
 	/*-----------*
 	 * Variables *
@@ -77,6 +81,8 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	private File dataDir;
 
 	private volatile Boolean compatibleMode = null;
+
+	private volatile Map<String, String> additionalHttpHeaders = Collections.emptyMap();
 
 	/*--------------*
 	 * Constructors *
@@ -149,6 +155,33 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 		}
 	}
 
+	/**
+	 * Get the additional HTTP headers which will be used
+	 * 
+	 * @return a read-only view of the additional HTTP headers which will be included in every request to the
+	 *         server.
+	 */
+	public Map<String, String> getAdditionalHttpHeaders() {
+		return Collections.unmodifiableMap(additionalHttpHeaders);
+	}
+
+	/**
+	 * Set additional HTTP headers to be included in every request to the server, which may be required for
+	 * certain unusual server configurations. This will only take effect on connections subsequently returned
+	 * by {@link #getConnection()}.
+	 * 
+	 * @param additionalHttpHeaders
+	 *        a map containing pairs of header names and values. May be null
+	 */
+	public void setAdditionalHttpHeaders(Map<String, String> additionalHttpHeaders) {
+		if (additionalHttpHeaders == null) {
+			this.additionalHttpHeaders = Collections.emptyMap();
+		}
+		else {
+			this.additionalHttpHeaders = additionalHttpHeaders;
+		}
+	}
+
 	@Override
 	public final HttpClient getHttpClient() {
 		return getHttpClientSessionManager().getHttpClient();
@@ -175,16 +208,12 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	}
 
 	@Override
-	public RepositoryConnection getConnection()
-		throws RepositoryException
-	{
+	public RepositoryConnection getConnection() throws RepositoryException {
 		return new HTTPRepositoryConnection(this, createHTTPClient());
 	}
 
 	@Override
-	public boolean isWritable()
-		throws RepositoryException
-	{
+	public boolean isWritable() throws RepositoryException {
 		if (!isInitialized()) {
 			throw new IllegalStateException("HTTPRepository not initialized.");
 		}
@@ -221,9 +250,9 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Sets the preferred serialization format for tuple query results to the supplied
-	 * {@link TupleQueryResultFormat}, overriding the {@link SPARQLProtocolSession} 's default preference. Setting
-	 * this parameter is not necessary in most cases as the {@link SPARQLProtocolSession} by default indicates a
-	 * preference for the most compact and efficient format available.
+	 * {@link TupleQueryResultFormat}, overriding the {@link SPARQLProtocolSession} 's default preference.
+	 * Setting this parameter is not necessary in most cases as the {@link SPARQLProtocolSession} by default
+	 * indicates a preference for the most compact and efficient format available.
 	 * 
 	 * @param format
 	 *        the preferred {@link TupleQueryResultFormat}. If set to 'null' no explicit preference will be
@@ -244,9 +273,9 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Sets the preferred serialization format for RDF to the supplied {@link RDFFormat}, overriding the
-	 * {@link SPARQLProtocolSession}'s default preference. Setting this parameter is not necessary in most cases as
-	 * the {@link SPARQLProtocolSession} by default indicates a preference for the most compact and efficient format
-	 * available.
+	 * {@link SPARQLProtocolSession}'s default preference. Setting this parameter is not necessary in most
+	 * cases as the {@link SPARQLProtocolSession} by default indicates a preference for the most compact and
+	 * efficient format available.
 	 * <p>
 	 * Use with caution: if set to a format that does not support context serialization any context info
 	 * contained in the query result will be lost.
@@ -289,16 +318,12 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	 */
 
 	@Override
-	protected void initializeInternal()
-		throws RepositoryException
-	{
+	protected void initializeInternal() throws RepositoryException {
 		// no-op
 	}
 
 	@Override
-	protected void shutDownInternal()
-		throws RepositoryException
-	{
+	protected void shutDownInternal() throws RepositoryException {
 		try {
 			SharedHttpClientSessionManager toCloseDependentClient = dependentClient;
 			dependentClient = null;
@@ -334,6 +359,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 		if (username != null) {
 			httpClient.setUsernameAndPassword(username, password);
 		}
+		httpClient.setAdditionalHttpHeaders(additionalHttpHeaders);
 		return httpClient;
 	}
 
@@ -346,9 +372,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	 * @throws RepositoryException
 	 *         if something went wrong while querying the server for the protocol version.
 	 */
-	boolean useCompatibleMode()
-		throws RepositoryException
-	{
+	boolean useCompatibleMode() throws RepositoryException {
 		Boolean result = compatibleMode;
 		if (result == null) {
 			synchronized (this) {
