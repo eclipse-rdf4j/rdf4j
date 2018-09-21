@@ -14,7 +14,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Collection;
 import java.util.StringTokenizer;
-import java.util.UUID;
 
 /**
  * Utility methods for operations on Files.
