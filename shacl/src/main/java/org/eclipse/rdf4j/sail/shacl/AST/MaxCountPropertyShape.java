@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 
-import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -55,12 +54,17 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 		return "MaxCountPropertyShape{" + "maxCount=" + maxCount + '}';
 	}
 
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	@Override
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
 
 
 		PlanNode planAddedStatements = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape));
 
 		PlanNode planAddedStatements1 = new LoggingNode(super.getPlanAddedStatements(shaclSailConnection, nodeShape));
+
+		if(!assumeBaseSailValid){
+			planAddedStatements1 = new UnionNode(planAddedStatements1, super.getPlanRemovedStatements(shaclSailConnection, nodeShape));
+		}
 
 		if (nodeShape instanceof TargetClass) {
 			planAddedStatements1 = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, planAddedStatements1));
@@ -89,18 +93,8 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		PlanNode mergeNode1 = new UnionNode(new LoggingNode(directTupleFromFilter), new LoggingNode(invalidValues));
 
-		if(shaclSailConnection.sail.isDebugPrintPlans()){
-			System.out.println("digraph  {");
-			System.out.println("labelloc=t;\nfontsize=30;\nlabel=\""+this.getClass().getSimpleName()+"\";");
-
-			mergeNode1.printPlan();
-			System.out.println(System.identityHashCode(shaclSailConnection) + " [label=\"" + StringEscapeUtils.escapeJava("Base sail") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
-			System.out.println(System.identityHashCode(shaclSailConnection.getAddedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Added statements") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
-			System.out.println(System.identityHashCode(shaclSailConnection.getRemovedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Removed statements") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
-			System.out.println(System.identityHashCode(shaclSailConnection.getPreviousStateConnection()) + " [label=\"" + StringEscapeUtils.escapeJava("Previous state connection") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
-
-			System.out.println("}");
-
+		if(printPlans){
+			printPlan(mergeNode1, shaclSailConnection);
 		}
 
 		return new LoggingNode(mergeNode1);

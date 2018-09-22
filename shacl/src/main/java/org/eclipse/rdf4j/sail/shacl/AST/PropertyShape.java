@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -40,7 +41,7 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
@@ -57,6 +58,22 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 	@Override
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return false;
+	}
+
+
+	public void printPlan(PlanNode planNode, ShaclSailConnection shaclSailConnection) {
+
+		System.out.println("digraph  {");
+		System.out.println("labelloc=t;\nfontsize=30;\nlabel=\"" + this.getClass().getSimpleName() + "\";");
+
+		planNode.printPlan();
+		System.out.println(System.identityHashCode(shaclSailConnection) + " [label=\"" + StringEscapeUtils.escapeJava("Base sail") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
+		System.out.println(System.identityHashCode(shaclSailConnection.getAddedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Added statements") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
+		System.out.println(System.identityHashCode(shaclSailConnection.getRemovedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Removed statements") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
+		System.out.println(System.identityHashCode(shaclSailConnection.getPreviousStateConnection()) + " [label=\"" + StringEscapeUtils.escapeJava("Previous state connection") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
+
+		System.out.println("}");
+
 	}
 
 	static class Factory {
@@ -115,6 +132,8 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 		private static boolean hasDatatype(Resource id, SailRepositoryConnection connection) {
 			return connection.hasStatement(id, SHACL.DATATYPE, null, true);
 		}
+
+
 
 	}
 }

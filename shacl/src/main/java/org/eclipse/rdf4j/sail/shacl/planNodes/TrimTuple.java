@@ -92,4 +92,10 @@ public class TrimTuple implements PlanNode {
 	public String getId() {
 		return System.identityHashCode(this)+"";
 	}
+
+	@Override
+	public IteratorData getIteratorDataType() {
+		if(newLength == 1) return IteratorData.tripleBased;
+		return parent.getIteratorDataType();
+	}
 }

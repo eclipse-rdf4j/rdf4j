@@ -38,7 +38,8 @@ public class ShaclTest {
 	static final List<String> testCasePaths = Arrays.asList(
 		"test-cases/datatype/simple",
 		"test-cases/minCount/simple",
-		"test-cases/or/datatype"
+		"test-cases/or/datatype",
+		"test-cases/or/minCountMaxCount"
 
 	);
 
@@ -155,9 +156,10 @@ public class ShaclTest {
 			System.out.println(name);
 
 			try (SailRepositoryConnection connection = shaclSail.getConnection()) {
+				connection.begin();
 				String query = IOUtil.readString(resourceAsStream);
 				connection.prepareUpdate(query).execute();
-
+				connection.commit();
 			} catch (RepositoryException sailException) {
 				exception = true;
 				System.out.println(sailException.getMessage());
@@ -169,9 +171,9 @@ public class ShaclTest {
 		}
 		if (ran) {
 			if (expectedResult == ExpectedResult.valid) {
-				assertFalse(exception);
+				assertFalse("Expected transaction to succeed", exception);
 			} else {
-				assertTrue(exception);
+				assertTrue("Expected transaction to fail", exception);
 			}
 		}
 

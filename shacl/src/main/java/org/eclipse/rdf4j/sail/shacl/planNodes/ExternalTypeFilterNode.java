@@ -113,4 +113,9 @@ public class ExternalTypeFilterNode implements PlanNode {
 	public String getId() {
 		return System.identityHashCode(this)+"";
 	}
+
+	@Override
+	public IteratorData getIteratorDataType() {
+		return parent.getIteratorDataType();
+	}
 }

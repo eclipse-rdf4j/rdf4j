@@ -17,9 +17,9 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
-
 import org.eclipse.rdf4j.sail.shacl.planNodes.EqualsJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
+import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 
@@ -47,14 +47,14 @@ public class OrPropertyShape extends PathPropertyShape {
 
 	private static List<Value> toList(SailRepositoryConnection connection, Resource orList) {
 		List<Value> ret = new ArrayList<>();
-		while(!orList.equals(RDF.NIL)){
+		while (!orList.equals(RDF.NIL)) {
 			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(orList, RDF.FIRST, null))) {
 				Value value = stream.map(Statement::getObject).findAny().get();
 				ret.add(value);
 			}
 
 			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(orList, RDF.REST, null))) {
-				orList =  stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
+				orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
 			}
 
 		}
@@ -67,15 +67,51 @@ public class OrPropertyShape extends PathPropertyShape {
 
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
 
-		EqualsJoin equalsJoin = new EqualsJoin(or.get(0).getPlan(shaclSailConnection, nodeShape), or.get(1).getPlan(shaclSailConnection, nodeShape));
+		List<PlanNode> plannodes = or.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, false)).collect(Collectors.toList());
 
-		for (int i = 2; i < or.size(); i++) {
-			equalsJoin = new EqualsJoin(equalsJoin, or.get(i).getPlan(shaclSailConnection, nodeShape));
+		List<IteratorData> iteratorDataTypes = plannodes.stream().map(PlanNode::getIteratorDataType).distinct().collect(Collectors.toList());
+
+		if (iteratorDataTypes.size() > 1) {
+			throw new UnsupportedOperationException("No support for OR shape with mix between aggregate and raw triples");
 		}
 
-		return new LoggingNode(equalsJoin);
+
+		PlanNode ret = null;
+
+
+		if (iteratorDataTypes.get(0) == IteratorData.tripleBased) {
+
+			EqualsJoin equalsJoin = new EqualsJoin(plannodes.get(0), plannodes.get(1));
+
+			for (int i = 2; i < or.size(); i++) {
+				equalsJoin = new EqualsJoin(equalsJoin, plannodes.get(i));
+			}
+
+			ret =  new LoggingNode(equalsJoin);
+		}
+
+		else if (iteratorDataTypes.get(0) == IteratorData.aggregated) {
+
+			PlanNode equalsJoin = new LoggingNode(new InnerJoin(plannodes.get(0), plannodes.get(1), null, null));
+
+			for (int i = 2; i < or.size(); i++) {
+				equalsJoin = new LoggingNode(new InnerJoin(equalsJoin, plannodes.get(i), null, null));
+			}
+
+			ret =  new LoggingNode(equalsJoin);
+		}else{
+			throw new IllegalStateException("Should not get here!");
+
+		}
+
+		if(printPlans){
+			printPlan(ret, shaclSailConnection);
+		}
+
+		return ret;
+
 
 	}
 

@@ -26,4 +26,7 @@ public interface PlanNode {
 	String getId();
 
 
+	IteratorData getIteratorDataType();
+
+
 }

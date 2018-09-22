@@ -135,4 +135,13 @@ public class UnionNode implements PlanNode {
 	public String getId() {
 		return System.identityHashCode(this)+"";
 	}
+
+	@Override
+	public IteratorData getIteratorDataType() {
+		List<IteratorData> collect = Arrays.stream(nodes).map(PlanNode::getIteratorDataType).distinct().collect(Collectors.toList());
+		if(collect.size() == 1) return collect.get(0);
+
+		throw new IllegalStateException("Not implemented support for when union node operates on nodes with different iterator data types");
+
+	}
 }

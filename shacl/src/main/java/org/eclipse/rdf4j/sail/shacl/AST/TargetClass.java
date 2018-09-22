@@ -45,7 +45,7 @@ public class TargetClass extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
 		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection, getQuery())), 1);
 	}
 

@@ -108,6 +108,11 @@ public class BufferedSplitter {
 			}
 
 			@Override
+			public IteratorData getIteratorDataType() {
+				return parent.getIteratorDataType();
+			}
+
+			@Override
 			public String toString() {
 				return "BufferedSplitter";
 			}

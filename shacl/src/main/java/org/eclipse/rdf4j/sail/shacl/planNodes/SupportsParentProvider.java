@@ -8,17 +8,19 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-public interface SupportsDepthProvider {
+import java.util.List;
 
-	void receiveDepthProvider(DepthProvider depthProvider);
+public interface SupportsParentProvider {
+
+	void receiveParentProvider(ParentProvider parentProvider);
 
 }
 
 /**
  * @author Håvard Ottestad
  */
-interface DepthProvider {
+interface ParentProvider {
 
-	int depth();
+	List<PlanNode> parent();
 
 }

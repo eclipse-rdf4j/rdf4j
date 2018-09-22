@@ -13,11 +13,14 @@ import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
+import java.util.Arrays;
+import java.util.List;
+
 
 /**
  * @author Håvard Ottestad
  */
-public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsDepthProvider> implements DepthProvider {
+public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParentProvider> implements ParentProvider {
 
 	PlanNode parent;
 
@@ -41,12 +44,12 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsDepth
 
 		if (trueNode != null) {
 			trueNode.parentIterator(iterator);
-			trueNode.receiveDepthProvider(this);
+			trueNode.receiveParentProvider(this);
 		}
 
 		if (falseNode != null) {
 			falseNode.parentIterator(iterator);
-			falseNode.receiveDepthProvider(this);
+			falseNode.receiveParentProvider(this);
 		}
 	}
 
@@ -120,8 +123,8 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsDepth
 		};
 	}
 
-	public int depth() {
-		return parent.depth() + 1;
+	public List<PlanNode> parent() {
+		return Arrays.asList(parent);
 	}
 
 

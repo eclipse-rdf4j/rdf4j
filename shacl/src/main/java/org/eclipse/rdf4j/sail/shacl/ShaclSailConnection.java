@@ -178,7 +178,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		boolean allValid = true;
 
 		for (NodeShape nodeShape : sail.nodeShapes) {
-			List<PlanNode> planNodes = nodeShape.generatePlans(this, nodeShape);
+			List<PlanNode> planNodes = nodeShape.generatePlans(this, nodeShape, sail.debugPrintPlans);
 			for (PlanNode planNode : planNodes) {
 				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
 					List<Tuple> collect = stream.collect(Collectors.toList());
