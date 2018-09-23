@@ -63,7 +63,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 		PlanNode planAddedStatements1 = new LoggingNode(super.getPlanAddedStatements(shaclSailConnection, nodeShape));
 
 		if(!assumeBaseSailValid){
-			planAddedStatements1 = new UnionNode(planAddedStatements1, super.getPlanRemovedStatements(shaclSailConnection, nodeShape));
+			planAddedStatements1 = new UnionNode(planAddedStatements1, new TrimTuple(super.getPlanRemovedStatements(shaclSailConnection, nodeShape), 1));
 		}
 
 		if (nodeShape instanceof TargetClass) {
