@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!DOCTYPE rdf:RDF [
+        <!ENTITY % xxe SYSTEM "file:///etc/passwd" >
+        %xxe;
+        ]>
+<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>
+    <rdf:Description rdf:about='urn:test:empty-literal'>
+        <label xmlns='http://www.w3.org/2000/01/rdf-schema#'>Example</label>
+    </rdf:Description>
+</rdf:RDF>
