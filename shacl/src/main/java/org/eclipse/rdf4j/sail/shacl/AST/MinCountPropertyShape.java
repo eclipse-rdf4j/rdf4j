@@ -93,6 +93,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 				topNode = new LoggingNode(new UnionNode(unique, planAddedStatements1));
 
 			}
+
 			// BulkedExternalLeftOuterJoin is slower, at least when the super.getPlanAddedStatements only returns statements that have the correct type.
 			// Persumably BulkedExternalLeftOuterJoin will be high if super.getPlanAddedStatements has a high number of statements for other subjects that in "unique"
 			//topNode = new LoggingNode(new BulkedExternalLeftOuterJoin(unique, shaclSailConnection.addedStatements, path.getQuery()));
@@ -108,7 +109,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			} else {
 				if (nodeShape instanceof TargetClass) {
-					planAddedForShape = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, planAddedForShape));
+					select = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, select));
 				}
 				topNode = new LoggingNode(new UnionNode(planAddedForShape, select));
 
