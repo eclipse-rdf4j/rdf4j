@@ -244,3 +244,8 @@ finally {
 }
 ----
 
+== Configuring the parser
+
+The Rio parsers have several configuration options, allowing you to tweak their behavior. For example, if Rio detects an invalid URI, by default it will report an error and stop. You can reconfigure the parser to try and continue by skipping the line, or even to just ignore the syntax error and accept the invalid URI.
+
+Each Rio parser 
