@@ -15,6 +15,14 @@
 	<name>RDF4J: Runtime - OSGi</name>
 	<description>OSGi Runtime dependencies for an RDF4J application</description>
 
+	<properties>
+		<serviceresources.basedir>${project.build.directory}/serviceResources</serviceresources.basedir>
+		<serviceresources.raw.dir>${serviceresources.basedir}/raw</serviceresources.raw.dir>
+		<serviceresources.raw.jar>${serviceresources.raw.dir}/raw-service-resources.jar</serviceresources.raw.jar>
+		<serviceresources.fixed.dir>${serviceresources.basedir}/fixed</serviceresources.fixed.dir>
+		<jarToEnhance>${project.build.directory}/${project.artifactId}-${project.version}.jar</jarToEnhance>
+	</properties>
+
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -25,23 +33,6 @@
 
 	<build>
 		<plugins>
-			<plugin>
-				<artifactId>maven-antrun-plugin</artifactId>
-				<executions>
-					<execution>
-						<phase>process-classes</phase>
-						<configuration>
-							<target>
-								<mkdir dir="target/services/META-INF/services" />
-								<ant antfile="build.xml" target="create-service-files" dir="${basedir}" />
-							</target>
-						</configuration>
-						<goals>
-							<goal>run</goal>
-						</goals>
-					</execution>
-				</executions>
-			</plugin>
 			<plugin>
 				<groupId>org.apache.felix</groupId>
 				<artifactId>maven-bundle-plugin</artifactId>
@@ -59,10 +50,6 @@
 							org.springframework.*;resolution:=optional,
 							*
 						</Import-Package>
-						<Include-Resource>
-							{maven-resources},
-							META-INF/services=target/services/META-INF/services
-						</Include-Resource>
 						<Embed-Dependency>
 							*;
 							groupId=org.eclipse.rdf4j;
@@ -80,6 +67,56 @@
 						<version>2.4.0</version>
 					</dependency>
 				</dependencies>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-shade-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>gather-provider-configuration-files</id>
+						<goals>
+							<goal>shade</goal>
+						</goals>
+						<configuration>
+							<artifactSet>
+								<includes>
+									<include>${project.groupId}:*:*</include>
+								</includes>
+							</artifactSet>
+							<filters>
+								<filter>
+									<artifact>*</artifact>
+									<includes>
+										<include>META-INF/services/*</include>
+									</includes>
+								</filter>
+							</filters>
+							<transformers>
+								<transformer
+									implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+							</transformers>
+							<outputFile>${serviceresources.raw.jar}</outputFile>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<artifactId>maven-antrun-plugin</artifactId>
+				<executions>
+					<execution>
+						<phase>package</phase>
+						<id>enrich-main-artifact-with-provider-configuration-files</id>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<target>
+								<ant antfile="build.xml"
+									target="enrich-artifact-with-provider-configuration-files" dir="${basedir}" />
+							</target>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>
