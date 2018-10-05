@@ -43,7 +43,7 @@ public class ZipUtil {
 	 * @param destDir
 	 *        the destination directory
 	 * @throws IOException
-	 *         when something untowards happens during the extraction process
+	 *         when something untoward happens during the extraction process
 	 */
 	public static void extract(File zipFile, File destDir)
 		throws IOException
