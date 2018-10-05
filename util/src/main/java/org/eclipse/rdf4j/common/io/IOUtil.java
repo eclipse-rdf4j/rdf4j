@@ -105,7 +105,7 @@ public class IOUtil {
 	 *        The maximum number of characters to read.
 	 * @return A String of length <tt>maxChars</tt>, or less if the supplied Reader did not contain that much
 	 *         characters.
-	 * @throws java.io.IOException
+	 * @throws IOException
 	 */
 	public static String readString(Reader r, int maxChars)
 		throws IOException
@@ -140,7 +140,7 @@ public class IOUtil {
 	 * @param r
 	 *        The Reader supplying the characters
 	 * @return A character array containing all characters from the supplied reader.
-	 * @throws java.io.IOException
+	 * @throws IOException
 	 */
 	public static char[] readChars(Reader r)
 		throws IOException
@@ -453,10 +453,10 @@ public class IOUtil {
 	}
 
 	/**
-	 * Write the contents of a byte array (unbuffered) to a file
+	 * Write the contents of a byte array (unbuffered) to a file.
 	 * 
-	 * @param data
-	 * @param file
+	 * @param data data to write
+	 * @param file file
 	 * @throws IOException 
 	 */
 	public static void writeBytes(byte[] data, File file)
@@ -472,9 +472,10 @@ public class IOUtil {
 	}
 
 	/**
+	 * Write he contents of a byte array (unbuffered) to an output stream.
 	 * 
-	 * @param data
-	 * @param out
+	 * @param data data to write
+	 * @param out file
 	 * @throws IOException 
 	 */
 	public static void writeBytes(byte[] data, OutputStream out)

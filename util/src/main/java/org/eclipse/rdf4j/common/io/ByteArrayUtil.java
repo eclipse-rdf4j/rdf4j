@@ -189,10 +189,10 @@ public class ByteArrayUtil {
 	 * <tt>mask</tt>. In other words: this method returns true if
 	 * <tt>(value[i] ^ pattern[i]) &amp; mask[i] == 0</tt> for all i.
 	 * 
-	 * @param value
-	 * @param mask
-	 * @param pattern
-	 * @return 
+	 * @param value byte array
+	 * @param mask 
+	 * @param pattern pattern
+	 * @return  true if pattern was found
 	 */
 	public static boolean matchesPattern(byte[] value, byte[] mask, byte[] pattern) {
 		for (int i = 0; i < value.length; i++) {
