@@ -19,6 +19,11 @@ import java.io.InputStream;
  */
 public class UncloseableInputStream extends FilterInputStream {
 
+	/**
+	 * Constructor
+	 * 
+	 * @param parent input stream
+	 */
 	public UncloseableInputStream(InputStream parent) {
 		super(parent);
 	}
@@ -30,6 +35,11 @@ public class UncloseableInputStream extends FilterInputStream {
 		// do nothing
 	}
 
+	/**
+	 * Invoke close on FilterInputStream parent class.
+	 * 
+	 * @throws IOException 
+	 */
 	public void doClose()
 		throws IOException
 	{
