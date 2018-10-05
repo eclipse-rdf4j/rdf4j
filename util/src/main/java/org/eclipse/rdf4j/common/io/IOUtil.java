@@ -394,12 +394,8 @@ public class IOUtil {
 	public static void writeBytes(byte[] data, File file)
 		throws IOException
 	{
-		FileOutputStream out = new FileOutputStream(file);
-		try {
+		try (FileOutputStream out = new FileOutputStream(file)) {
 			writeBytes(data, out);
-		}
-		finally {
-			out.close();
 		}
 	}
 
