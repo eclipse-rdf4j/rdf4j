@@ -232,8 +232,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		try {
 			List<Resource> contextList = new ArrayList<Resource>();
 
-			TupleQueryResult contextIDs = client.getContextIDs();
-			try {
+			try (TupleQueryResult contextIDs = client.getContextIDs()) {
 				while (contextIDs.hasNext()) {
 					BindingSet bindingSet = contextIDs.next();
 					Value context = bindingSet.getValue("contextID");
@@ -242,9 +241,6 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 						contextList.add((Resource)context);
 					}
 				}
-			}
-			finally {
-				contextIDs.close();
 			}
 
 			return createRepositoryResult(contextList);
@@ -389,12 +385,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 					Rio.unsupportedFormat(file.getName()));
 		}
 
-		InputStream in = new FileInputStream(file);
-		try {
+		try (InputStream in = new FileInputStream(file)) {
 			add(in, baseURI, dataFormat, contexts);
-		}
-		finally {
-			in.close();
 		}
 	}
 
@@ -797,8 +789,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		try {
 			List<Namespace> namespaceList = new ArrayList<Namespace>();
 
-			TupleQueryResult namespaces = client.getNamespaces();
-			try {
+			try (TupleQueryResult namespaces = client.getNamespaces()) {
 				while (namespaces.hasNext()) {
 					BindingSet bindingSet = namespaces.next();
 					Value prefix = bindingSet.getValue("prefix");
@@ -810,9 +801,6 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 						namespaceList.add(new SimpleNamespace(prefixStr, namespaceStr));
 					}
 				}
-			}
-			finally {
-				namespaces.close();
 			}
 
 			return createRepositoryResult(namespaceList);
