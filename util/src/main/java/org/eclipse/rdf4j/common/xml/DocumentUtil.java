@@ -90,9 +90,7 @@ public class DocumentUtil {
 		factory.setNamespaceAware(namespaceAware);
 		factory.setSchema(schema);
 
-		InputStream in = null;
-		try {
-			in = new BufferedInputStream(location.openConnection().getInputStream());
+		try (InputStream in = new BufferedInputStream(location.openConnection().getInputStream())) {
 			DocumentBuilder builder = factory.newDocumentBuilder();
 			result = builder.parse(in);
 		}
@@ -106,11 +104,6 @@ public class DocumentUtil {
 		}
 		catch (ParserConfigurationException e) {
 			throw toIOE(e);
-		}
-		finally {
-			if (in != null) {
-				in.close();
-			}
 		}
 
 		return result;
