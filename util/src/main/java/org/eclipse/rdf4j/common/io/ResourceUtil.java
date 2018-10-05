@@ -195,15 +195,10 @@ public class ResourceUtil {
 		URL resourceURL = getURL(resourceName);
 
 		if (resourceURL != null) {
-			InputStream in = resourceURL.openStream();
-
-			try {
+			try (InputStream in = resourceURL.openStream()) {
 				Properties result = new Properties();
 				result.load(in);
 				return result;
-			}
-			finally {
-				in.close();
 			}
 		}
 
