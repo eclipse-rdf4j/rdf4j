@@ -13,6 +13,12 @@ import static org.junit.Assert.fail;
 
 import java.util.Date;
 import java.util.GregorianCalendar;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentHashMap.KeySetView;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
@@ -27,6 +33,11 @@ import org.junit.Test;
  * @author jeen
  */
 public class ValueFactoryTest {
+
+	/**
+	 * The number of threads to use for the multi-threaded test.
+	 */
+	private static final int THREADS = Math.max(Runtime.getRuntime().availableProcessors(), 2);
 
 	private ValueFactory f;
 
@@ -48,6 +59,37 @@ public class ValueFactoryTest {
 		BNode b = f.createBNode();
 		assertNotNull(b);
 		assertNotNull(b.getID());
+	}
+
+	/**
+	 * Test method for
+	 * {@link org.eclipse.rdf4j.model.impl.AbstractValueFactory#createBNode()}.
+	 */
+	@Test
+	public void testCreateBNodeMultipleThreads() throws Exception {
+		ExecutorService executor = Executors.newFixedThreadPool(THREADS);
+
+		int bnodesPerThread = 100000;
+
+		Set<BNode> results = ConcurrentHashMap.newKeySet(bnodesPerThread * THREADS);
+
+		for (int nextThread = 0; nextThread < THREADS; nextThread++) {
+			executor.submit(() -> {
+				Set<BNode> perThreadResults = ConcurrentHashMap.newKeySet(bnodesPerThread);
+				for (int i = 0; i < bnodesPerThread; i++) {
+					BNode b = f.createBNode();
+					assertNotNull(b);
+					assertNotNull(b.getID());
+					perThreadResults.add(b);
+				}
+				results.addAll(perThreadResults);
+			});
+		}
+
+		executor.shutdown();
+		executor.awaitTermination(1, TimeUnit.MINUTES);
+
+		assertEquals(bnodesPerThread * THREADS, results.size());
 	}
 
 	/**

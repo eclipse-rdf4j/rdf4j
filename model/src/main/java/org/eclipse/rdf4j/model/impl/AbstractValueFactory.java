@@ -11,6 +11,8 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Date;
 import java.util.GregorianCalendar;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
@@ -40,13 +42,19 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 * "universal" ID for bnode prefixes to prevent blank node clashes (unique per classloaded instance of
 	 * this class)
 	 */
-	private static long lastBNodePrefixUID = 0;
+	private static final AtomicLong lastBNodePrefixUID = new AtomicLong(System.currentTimeMillis());
 
-	private static synchronized long getNextBNodePrefixUid() {
-		return lastBNodePrefixUID = Math.max(System.currentTimeMillis(), lastBNodePrefixUID + 1);
+	private static long getNextBNodePrefixUid() {
+		return lastBNodePrefixUID.updateAndGet(t -> Math.max(System.currentTimeMillis(), t + 1));
 	}
 
 	private static final DatatypeFactory datatypeFactory;
+
+	/**
+	 * This is the number of bnodes that are generated in a synchronised block after
+	 * switching prefixes, to ensure the new prefix matches the new ids.
+	 */
+	private static final long SYNCHRONIZED_BNODE_COUNT = 1024;
 
 	static {
 		try {
@@ -64,12 +72,12 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	/**
 	 * The ID for the next bnode that is created.
 	 */
-	private int nextBNodeID;
+	private final AtomicLong nextBNodeID = new AtomicLong(1);
 
 	/**
 	 * The prefix for any new bnode IDs.
 	 */
-	private String bnodePrefix;
+	private final AtomicReference<String> bnodePrefix = new AtomicReference<>();
 
 	/*--------------*
 	 * Constructors *
@@ -134,19 +142,31 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	protected void initBNodeParams() {
 		// BNode prefix is based on currentTimeMillis(). Combined with a
 		// sequential number per session, this gives a unique identifier.
-		bnodePrefix = "node" + Long.toString(getNextBNodePrefixUid(), 32) + "x";
-		nextBNodeID = 1;
+		bnodePrefix.set("node" + Long.toString(getNextBNodePrefixUid(), 32) + "x");
+		nextBNodeID.set(1);
 	}
 
 	@Override
-	public synchronized BNode createBNode() {
-		int id = nextBNodeID++;
+	public BNode createBNode() {
+		long id = nextBNodeID.incrementAndGet();
 
-		BNode result = createBNode(bnodePrefix + id);
+		final BNode result;
 
-		if (id == Integer.MAX_VALUE) {
-			// Start with a new bnode prefix
-			initBNodeParams();
+		// Make the first N bnodes after a prefix switch synchronised to enable the
+		// bnode to match the prefix to avoid synchronising for every bnode prefix check
+		if (id == Long.MAX_VALUE || id < SYNCHRONIZED_BNODE_COUNT) {
+			synchronized (lastBNodePrefixUID) {
+				// Other threads may have called initBNodearams, so increment here as a safety
+				id = nextBNodeID.incrementAndGet();
+				if (id == Long.MAX_VALUE || id < 0) {
+					// Start with a new bnode prefix
+					initBNodeParams();
+					id = nextBNodeID.incrementAndGet();
+				}
+				result = createBNode(bnodePrefix.get() + id);
+			}
+		} else {
+			result = createBNode(bnodePrefix.get() + id);
 		}
 
 		return result;
