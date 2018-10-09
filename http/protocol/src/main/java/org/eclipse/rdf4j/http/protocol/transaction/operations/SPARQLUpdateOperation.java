@@ -54,7 +54,6 @@ public class SPARQLUpdateOperation implements TransactionOperation, Serializable
 		this.setBindings(bindings);
 	}
 
-        @Override
 	public void execute(RepositoryConnection con)
 		throws RepositoryException
 	{

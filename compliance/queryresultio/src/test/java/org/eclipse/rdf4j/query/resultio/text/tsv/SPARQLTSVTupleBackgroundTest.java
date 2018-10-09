@@ -53,7 +53,6 @@ public class SPARQLTSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 		return null;
 	}
 
-        @Override
 	protected TupleQueryResult parseTupleInternal(TupleQueryResultFormat format, InputStream in)
 		throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
 		UnsupportedQueryResultFormatException
@@ -126,7 +125,6 @@ public class SPARQLTSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 		}
 	}
 
-        @Override
 	protected void assertQueryResultsEqual(TupleQueryResult expected, TupleQueryResult output)
 		throws QueryEvaluationException, TupleQueryResultHandlerException, QueryResultHandlerException,
 		UnsupportedEncodingException

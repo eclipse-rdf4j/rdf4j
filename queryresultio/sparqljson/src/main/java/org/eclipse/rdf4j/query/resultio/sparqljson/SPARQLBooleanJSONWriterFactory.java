@@ -23,7 +23,6 @@ public class SPARQLBooleanJSONWriterFactory implements BooleanQueryResultWriterF
 	/**
 	 * Returns {@link BooleanQueryResultFormat#JSON}.
 	 */
-        @Override
 	public BooleanQueryResultFormat getBooleanQueryResultFormat() {
 		return BooleanQueryResultFormat.JSON;
 	}
@@ -31,7 +30,6 @@ public class SPARQLBooleanJSONWriterFactory implements BooleanQueryResultWriterF
 	/**
 	 * Returns a new instance of SPARQLResultsJSONWriter.
 	 */
-        @Override
 	public BooleanQueryResultWriter getWriter(OutputStream out) {
 		return new SPARQLBooleanJSONWriter(out);
 	}

@@ -55,7 +55,6 @@ public class OffsetIteration<E, X extends Exception> extends FilterIteration<E, 
 	/**
 	 * Returns <tt>false</tt> for the first OFFSET objects.
 	 */
-	@Override
 	protected boolean accept(E object) {
 		if (droppedResults < offset) {
 			droppedResults++;

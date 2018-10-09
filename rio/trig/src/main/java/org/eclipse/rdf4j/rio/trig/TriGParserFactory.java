@@ -21,7 +21,6 @@ public class TriGParserFactory implements RDFParserFactory {
 	/**
 	 * Returns {@link RDFFormat#TRIG}.
 	 */
-        @Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.TRIG;
 	}
@@ -29,7 +28,6 @@ public class TriGParserFactory implements RDFParserFactory {
 	/**
 	 * Returns a new instance of {@link TriGParser}.
 	 */
-        @Override
 	public RDFParser getParser() {
 		return new TriGParser();
 	}

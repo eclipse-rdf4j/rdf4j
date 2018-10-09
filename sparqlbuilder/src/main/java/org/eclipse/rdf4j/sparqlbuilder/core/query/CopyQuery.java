@@ -19,7 +19,6 @@ public class CopyQuery extends DestinationSourceManagementQuery<CopyQuery> {
 
 	CopyQuery() { }
 	
-        @Override
 	protected String getQueryActionString() {
 		return COPY;
 	}

@@ -41,7 +41,6 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 		this.conn = conn;
 	}
 
-        @Override
 	public GraphQueryResult evaluate()
 		throws QueryEvaluationException
 	{
@@ -71,7 +70,6 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 	 * HTTPQueryEvaluationException(e.getMessage(), e); } }
 	 */
 
-        @Override
 	public void evaluate(RDFHandler handler)
 		throws QueryEvaluationException, RDFHandlerException
 	{

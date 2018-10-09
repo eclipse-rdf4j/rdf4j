@@ -44,7 +44,6 @@ public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRep
 		setDelegate(delegate);
 	}
 
-        @Override
 	public RepositoryImplConfig getDelegate() {
 		return delegate;
 	}

@@ -21,7 +21,6 @@ public class SPARQLResultsTSVParserFactory implements TupleQueryResultParserFact
 	/**
 	 * Returns {@link TupleQueryResultFormat#TSV}.
 	 */
-	@Override
 	public TupleQueryResultFormat getTupleQueryResultFormat() {
 		return TupleQueryResultFormat.TSV;
 	}
@@ -29,7 +28,6 @@ public class SPARQLResultsTSVParserFactory implements TupleQueryResultParserFact
 	/**
 	 * Returns a new instance of SPARQLResultsTSVParser.
 	 */
-	@Override
 	public TupleQueryResultParser getParser() {
 		return new SPARQLResultsTSVParser();
 	}

@@ -56,7 +56,6 @@ public class BasicGroup implements Group {
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public int size() {
 		int aSize = mExpressions.size();
 
@@ -70,7 +69,6 @@ public class BasicGroup implements Group {
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public void addChild(Group theGroup) {
 		mChildren.add(theGroup);
 	}
@@ -102,7 +100,6 @@ public class BasicGroup implements Group {
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public boolean isOptional() {
 		return mIsOptional;
 	}
@@ -110,7 +107,6 @@ public class BasicGroup implements Group {
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public TupleExpr expr() {
 		return expr(true);
 	}

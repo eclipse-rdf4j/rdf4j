@@ -27,7 +27,6 @@ public class Or extends BinaryValueOperator {
 	 * Methods *
 	 *---------*/
 
-        @Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

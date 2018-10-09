@@ -93,7 +93,6 @@ public abstract class LookAheadIterator<E> extends AbstractCloseableIterator<E> 
 	/**
 	 * Throws an {@link UnsupportedOperationException}.
 	 */
-	@Override
 	public void remove() {
 		throw new UnsupportedOperationException();
 	}

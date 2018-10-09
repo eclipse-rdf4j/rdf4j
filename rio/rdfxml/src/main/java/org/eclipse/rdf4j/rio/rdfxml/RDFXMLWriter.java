@@ -108,7 +108,6 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	 * Methods *
 	 *---------*/
 
-	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.RDFXML;
 	}
@@ -177,7 +176,6 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-	@Override
 	public void endRDF()
 		throws RDFHandlerException
 	{
@@ -209,7 +207,6 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-	@Override
 	public void handleNamespace(String prefix, String name) {
 		setNamespace(prefix, name);
 	}
@@ -249,7 +246,6 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		namespaceTable.put(name, prefix);
 	}
 
-	@Override
 	public void handleStatement(Statement st)
 		throws RDFHandlerException
 	{
@@ -370,7 +366,6 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-	@Override
 	public void handleComment(String comment)
 		throws RDFHandlerException
 	{

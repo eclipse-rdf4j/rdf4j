@@ -684,7 +684,6 @@ public class NTriplesParser extends AbstractRDFParser {
 		reportError(msg, lineNo, -1, setting);
 	}
 
-        @Override
 	protected void reportError(Exception e, RioSetting<Boolean> setting)
 		throws RDFParseException
 	{

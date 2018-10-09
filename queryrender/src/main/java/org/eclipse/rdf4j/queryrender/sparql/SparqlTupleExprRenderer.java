@@ -53,7 +53,6 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public String render(final TupleExpr theExpr)
 		throws Exception
 	{
@@ -75,7 +74,6 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	protected String renderValueExpr(final ValueExpr theExpr)
 		throws Exception
 	{

@@ -40,7 +40,6 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 		this.conn = conn;
 	}
 
-        @Override
 	public TupleQueryResult evaluate()
 		throws QueryEvaluationException
 	{
@@ -61,7 +60,6 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 		}
 	}
 
-        @Override
 	public void evaluate(TupleQueryResultHandler handler)
 		throws QueryEvaluationException, TupleQueryResultHandlerException
 	{

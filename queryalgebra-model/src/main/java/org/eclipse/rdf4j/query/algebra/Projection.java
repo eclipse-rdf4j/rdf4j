@@ -70,7 +70,6 @@ public class Projection extends UnaryTupleOperator {
 		return projElemList.getTargetNamesFor(getArg().getAssuredBindingNames());
 	}
 
-        @Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

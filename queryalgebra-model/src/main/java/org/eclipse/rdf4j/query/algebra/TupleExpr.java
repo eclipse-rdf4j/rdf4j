@@ -30,6 +30,5 @@ public interface TupleExpr extends QueryModelNode {
 	 */
 	public Set<String> getAssuredBindingNames();
 
-        @Override
 	public TupleExpr clone();
 }

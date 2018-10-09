@@ -20,7 +20,6 @@ public class ASTSTRUUID extends SimpleNode {
 	}
 
 	/** Accept the visitor. **/
-        @Override
 	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
 		throws VisitorException
 	{

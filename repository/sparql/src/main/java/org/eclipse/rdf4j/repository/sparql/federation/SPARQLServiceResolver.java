@@ -41,7 +41,6 @@ public class SPARQLServiceResolver extends AbstractFederatedServiceResolver
 	/** dependent life cycle */
 	private volatile SharedHttpClientSessionManager dependentClient;
 
-        @Override
 	public HttpClientSessionManager getHttpClientSessionManager() {
 		HttpClientSessionManager result = client;
 		if (result == null) {
@@ -55,7 +54,6 @@ public class SPARQLServiceResolver extends AbstractFederatedServiceResolver
 		return result;
 	}
 
-        @Override
 	public void setHttpClientSessionManager(HttpClientSessionManager client) {
 		synchronized (this) {
 			this.client = client;
@@ -69,12 +67,10 @@ public class SPARQLServiceResolver extends AbstractFederatedServiceResolver
 		}
 	}
 
-        @Override
 	public HttpClient getHttpClient() {
 		return getHttpClientSessionManager().getHttpClient();
 	}
 
-        @Override
 	public void setHttpClient(HttpClient httpClient) {
 		SharedHttpClientSessionManager toSetDependentClient = dependentClient;
 		if (toSetDependentClient == null) {

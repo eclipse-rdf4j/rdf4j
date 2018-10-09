@@ -74,7 +74,6 @@ public class If extends AbstractQueryModelNode implements ValueExpr {
 		this.condition = condition;
 	}
 
-        @Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

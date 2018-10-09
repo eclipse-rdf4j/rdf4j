@@ -15,19 +15,16 @@ import java.util.List;
  */
 public abstract class AbstractTupleQueryResultHandler implements TupleQueryResultHandler {
 
-        @Override
 	public void startQueryResult(List<String> bindingNames)
 		throws TupleQueryResultHandlerException
 	{
 	}
 
-        @Override
 	public void endQueryResult()
 		throws TupleQueryResultHandlerException
 	{
 	}
 
-        @Override
 	public void handleSolution(BindingSet bindingSet)
 		throws TupleQueryResultHandlerException
 	{

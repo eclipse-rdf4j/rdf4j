@@ -39,7 +39,6 @@ public class SPARQLBinaryTupleBackgroundTest extends AbstractQueryResultIOTupleT
 		return null;
 	}
 
-        @Override
 	protected TupleQueryResult parseTupleInternal(TupleQueryResultFormat format, InputStream in)
 		throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
 		UnsupportedQueryResultFormatException

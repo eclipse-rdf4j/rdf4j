@@ -28,7 +28,6 @@ public class SPARQLBooleanQuery extends AbstractHTTPQuery implements BooleanQuer
 		super(httpClient, QueryLanguage.SPARQL, queryString, baseURI);
 	}
 
-        @Override
 	public boolean evaluate()
 		throws QueryEvaluationException
 	{

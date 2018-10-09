@@ -21,7 +21,6 @@ public class RDFXMLParserFactory implements RDFParserFactory {
 	/**
 	 * Returns the RDF format for this factory.
 	 */
-	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.RDFXML;
 	}
@@ -29,7 +28,6 @@ public class RDFXMLParserFactory implements RDFParserFactory {
 	/**
 	 * Returns a new instance of RDFXMLParser.
 	 */
-	@Override
 	public RDFParser getParser() {
 		return new RDFXMLParser();
 	}

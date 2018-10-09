@@ -80,7 +80,6 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	/**
 	 * Returns <tt>true</tt> if the object is in the set of elements of the second argument.
 	 */
-	@Override
 	protected boolean accept(E object)
 		throws X
 	{

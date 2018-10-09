@@ -72,12 +72,10 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 		this.valueIdentifiers = new LinkedHashMap<Value, Integer>(bufferSize);
 	}
 
-        @Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.BINARY;
 	}
 
-        @Override
 	public void startRDF()
 		throws RDFHandlerException
 	{
@@ -93,7 +91,6 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-        @Override
 	public void endRDF()
 		throws RDFHandlerException
 	{
@@ -111,7 +108,6 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-        @Override
 	public void handleNamespace(String prefix, String uri)
 		throws RDFHandlerException
 	{
@@ -126,7 +122,6 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-        @Override
 	public void handleComment(String comment)
 		throws RDFHandlerException
 	{
@@ -140,7 +135,6 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-        @Override
 	public void handleStatement(Statement st)
 		throws RDFHandlerException
 	{

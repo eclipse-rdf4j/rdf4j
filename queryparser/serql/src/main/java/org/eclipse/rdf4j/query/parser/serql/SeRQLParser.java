@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 
 public class SeRQLParser implements QueryParser {
 
-        @Override
 	public ParsedQuery parseQuery(String queryStr, String baseURI)
 		throws MalformedQueryException
 	{
@@ -105,7 +104,6 @@ public class SeRQLParser implements QueryParser {
 		}
 	}
 
-        @Override
 	public ParsedUpdate parseUpdate(String updateStr, String baseURI)
 		throws MalformedQueryException
 	{

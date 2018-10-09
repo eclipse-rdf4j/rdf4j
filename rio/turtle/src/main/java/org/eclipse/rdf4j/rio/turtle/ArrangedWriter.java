@@ -66,7 +66,6 @@ class ArrangedWriter implements RDFWriter {
 
 	private final Comparator<Statement> comparator = new Comparator<Statement>() {
 
-                @Override
 		public int compare(Statement s1, Statement s2) {
 			IRI p1 = s1.getPredicate();
 			IRI p2 = s2.getPredicate();
@@ -124,32 +123,26 @@ class ArrangedWriter implements RDFWriter {
 		this.repeatBlankNodes = repeatBlankNodes;
 	}
 
-        @Override
 	public RDFFormat getRDFFormat() {
 		return delegate.getRDFFormat();
 	}
 
-        @Override
 	public RDFWriter setWriterConfig(WriterConfig config) {
 		return delegate.setWriterConfig(config);
 	}
 
-        @Override
 	public WriterConfig getWriterConfig() {
 		return delegate.getWriterConfig();
 	}
 
-        @Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
 		return delegate.getSupportedSettings();
 	}
 
-        @Override
 	public <T> RDFWriter set(RioSetting<T> setting, T value) {
 		return delegate.set(setting, value);
 	}
 
-        @Override
 	public void startRDF()
 		throws RDFHandlerException
 	{
@@ -163,7 +156,6 @@ class ArrangedWriter implements RDFWriter {
 		delegate.startRDF();
 	}
 
-        @Override
 	public void endRDF()
 		throws RDFHandlerException
 	{
@@ -172,7 +164,6 @@ class ArrangedWriter implements RDFWriter {
 		delegate.endRDF();
 	}
 
-        @Override
 	public void handleNamespace(String prefix, String uri)
 		throws RDFHandlerException
 	{
@@ -185,7 +176,6 @@ class ArrangedWriter implements RDFWriter {
 		}
 	}
 
-        @Override
 	public void handleComment(String comment)
 		throws RDFHandlerException
 	{
@@ -193,7 +183,6 @@ class ArrangedWriter implements RDFWriter {
 		delegate.handleComment(comment);
 	}
 
-        @Override
 	public synchronized void handleStatement(Statement st)
 		throws RDFHandlerException
 	{

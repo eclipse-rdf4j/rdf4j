@@ -22,7 +22,6 @@ public class N3ParserFactory implements RDFParserFactory {
 	/**
 	 * Returns {@link RDFFormat#N3}.
 	 */
-        @Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.N3;
 	}
@@ -30,7 +29,6 @@ public class N3ParserFactory implements RDFParserFactory {
 	/**
 	 * Returns a new instance of {@link TurtleParser}.
 	 */
-        @Override
 	public RDFParser getParser() {
 		return new TurtleParser();
 	}

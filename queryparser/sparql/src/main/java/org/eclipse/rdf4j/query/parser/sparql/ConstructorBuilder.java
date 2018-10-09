@@ -101,7 +101,6 @@ public class ConstructorBuilder {
 			basicPattern = false;
 		}
 
-                @Override
 		public void meet(StatementPattern node) {
 			if (!Scope.DEFAULT_CONTEXTS.equals(node.getScope())) {
 				basicPattern = false;

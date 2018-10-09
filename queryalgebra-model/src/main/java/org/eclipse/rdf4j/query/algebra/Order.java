@@ -73,7 +73,6 @@ public class Order extends UnaryTupleOperator {
 		pe.setParentNode(this);
 	}
 
-        @Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

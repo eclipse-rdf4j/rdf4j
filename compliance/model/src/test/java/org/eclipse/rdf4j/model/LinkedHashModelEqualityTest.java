@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
  */
 public class LinkedHashModelEqualityTest extends ModelEqualityTest {
 
-        @Override
 	protected Model createEmptyModel() {
 		return new LinkedHashModel();
 	}

@@ -25,7 +25,6 @@ public abstract class AbstractRepository implements Repository {
 
 	protected final Logger logger = LoggerFactory.getLogger(getClass());
 
-        @Override
 	public final void initialize()
 		throws RepositoryException
 	{
@@ -42,7 +41,6 @@ public abstract class AbstractRepository implements Repository {
 	protected abstract void initializeInternal()
 		throws RepositoryException;
 
-        @Override
 	public final void shutDown()
 		throws RepositoryException
 	{
@@ -52,7 +50,6 @@ public abstract class AbstractRepository implements Repository {
 		}
 	}
 
-        @Override
 	public final boolean isInitialized() {
 		return initialized;
 	}

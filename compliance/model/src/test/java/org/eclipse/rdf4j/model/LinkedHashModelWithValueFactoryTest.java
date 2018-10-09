@@ -31,7 +31,6 @@ public class LinkedHashModelWithValueFactoryTest extends ModelTest {
 		super(name);
 	}
 
-        @Override
 	public Model makeEmptyModel() {
 		LinkedHashModel model = new LinkedHashModel();
 		model.getValueFactory();

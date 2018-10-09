@@ -99,7 +99,6 @@ public class TurtleParser extends AbstractRDFParser {
 	 * Methods *
 	 *---------*/
 
-        @Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.TURTLE;
 	}
@@ -133,7 +132,6 @@ public class TurtleParser extends AbstractRDFParser {
 	 * @throws IllegalArgumentException
 	 *             If the supplied input stream or base URI is <tt>null</tt>.
 	 */
-        @Override
 	public synchronized void parse(InputStream in, String baseURI)
 			throws IOException, RDFParseException, RDFHandlerException {
 		if (in == null) {
@@ -170,7 +168,6 @@ public class TurtleParser extends AbstractRDFParser {
 	 * @throws IllegalArgumentException
 	 *             If the supplied reader or base URI is <tt>null</tt>.
 	 */
-        @Override
 	public synchronized void parse(Reader reader, String baseURI)
 			throws IOException, RDFParseException, RDFHandlerException {
 		clear();

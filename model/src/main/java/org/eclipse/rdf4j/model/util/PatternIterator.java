@@ -41,14 +41,12 @@ public class PatternIterator<S extends Statement> implements Iterator<S> {
 		this.contexts = notNull(contexts);
 	}
 
-        @Override
 	public boolean hasNext() {
 		findNextElement();
 
 		return nextElement != null;
 	}
 
-        @Override
 	public S next() {
 		findNextElement();
 
@@ -74,7 +72,6 @@ public class PatternIterator<S extends Statement> implements Iterator<S> {
 		}
 	}
 
-        @Override
 	public void remove() {
 		if (!nextCalled)
 			throw new IllegalStateException();

@@ -133,7 +133,6 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 		}
 	}
 
-        @Override
 	protected void assertQueryResultsEqual(TupleQueryResult tqr1, TupleQueryResult tqr2)
 		throws QueryEvaluationException
 	{

@@ -29,12 +29,10 @@ public abstract class AbstractQueryModelNode implements QueryModelNode {
 	 * Methods *
 	 *---------*/
 
-        @Override
 	public QueryModelNode getParentNode() {
 		return parent;
 	}
 
-        @Override
 	public void setParentNode(QueryModelNode parent) {
 		this.parent = parent;
 	}
@@ -43,7 +41,6 @@ public abstract class AbstractQueryModelNode implements QueryModelNode {
 	 * Dummy implementation of {@link QueryModelNode#visitChildren} that does nothing. Subclasses should
 	 * override this method when they have child nodes.
 	 */
-        @Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 		throws X
 	{
@@ -54,7 +51,6 @@ public abstract class AbstractQueryModelNode implements QueryModelNode {
 	 * throws an {@link IllegalArgumentException} indicating that <tt>current</tt> is not a child node of this
 	 * node.
 	 */
-        @Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		throw new IllegalArgumentException("Node is not a child node: " + current);
 	}
@@ -63,7 +59,6 @@ public abstract class AbstractQueryModelNode implements QueryModelNode {
 	 * Default implementation of {@link QueryModelNode#replaceWith(QueryModelNode)} that throws an
 	 * {@link IllegalArgumentException} indicating that <tt>current</tt> is not a child node of this node.
 	 */
-        @Override
 	public void replaceWith(QueryModelNode replacement) {
 		if (parent == null) {
 			throw new IllegalStateException("Node has no parent");
@@ -76,7 +71,6 @@ public abstract class AbstractQueryModelNode implements QueryModelNode {
 	 * Default implementation of {@link QueryModelNode#getSignature()} that prints the name of the node's
 	 * class.
 	 */
-        @Override
 	public String getSignature() {
 		return this.getClass().getSimpleName();
 	}

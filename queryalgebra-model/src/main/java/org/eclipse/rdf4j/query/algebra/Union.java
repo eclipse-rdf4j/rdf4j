@@ -38,7 +38,6 @@ public class Union extends BinaryTupleOperator {
 	 * Methods *
 	 *---------*/
 
-        @Override
 	public Set<String> getBindingNames() {
 		Set<String> bindingNames = new LinkedHashSet<String>(16);
 		bindingNames.addAll(getLeftArg().getBindingNames());
@@ -46,7 +45,6 @@ public class Union extends BinaryTupleOperator {
 		return bindingNames;
 	}
 
-        @Override
 	public Set<String> getAssuredBindingNames() {
 		Set<String> bindingNames = new LinkedHashSet<String>(16);
 		bindingNames.addAll(getLeftArg().getAssuredBindingNames());
@@ -54,7 +52,6 @@ public class Union extends BinaryTupleOperator {
 		return bindingNames;
 	}
 
-        @Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

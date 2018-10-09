@@ -43,7 +43,6 @@ public class RemoveNamespaceOperation implements TransactionOperation, Serializa
 		this.prefix = prefix;
 	}
 
-        @Override
 	public void execute(RepositoryConnection con)
 		throws RepositoryException
 	{

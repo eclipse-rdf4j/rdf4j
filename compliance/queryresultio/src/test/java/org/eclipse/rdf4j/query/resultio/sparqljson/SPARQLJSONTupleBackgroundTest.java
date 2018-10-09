@@ -52,7 +52,6 @@ public class SPARQLJSONTupleBackgroundTest extends AbstractQueryResultIOTupleTes
 		return BooleanQueryResultFormat.JSON;
 	}
 
-        @Override
 	protected TupleQueryResult parseTupleInternal(TupleQueryResultFormat format, InputStream in)
 		throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
 		UnsupportedQueryResultFormatException

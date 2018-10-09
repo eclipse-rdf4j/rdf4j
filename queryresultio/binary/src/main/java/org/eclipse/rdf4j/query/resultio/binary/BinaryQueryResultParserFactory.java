@@ -21,7 +21,6 @@ public class BinaryQueryResultParserFactory implements TupleQueryResultParserFac
 	/**
 	 * Returns {@link TupleQueryResultFormat#BINARY}.
 	 */
-        @Override
 	public TupleQueryResultFormat getTupleQueryResultFormat() {
 		return TupleQueryResultFormat.BINARY;
 	}
@@ -29,7 +28,6 @@ public class BinaryQueryResultParserFactory implements TupleQueryResultParserFac
 	/**
 	 * Returns a new instance of BinaryQueryResultParser.
 	 */
-        @Override
 	public TupleQueryResultParser getParser() {
 		return new BinaryQueryResultParser();
 	}

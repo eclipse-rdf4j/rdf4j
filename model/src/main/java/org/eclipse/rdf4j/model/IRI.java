@@ -34,7 +34,6 @@ public interface IRI extends URI, Resource {
 	 * 
 	 * @return The String-representation of this IRI.
 	 */
-        @Override
 	public String toString();
 
 	/**
@@ -43,7 +42,6 @@ public interface IRI extends URI, Resource {
 	 * 
 	 * @return The IRI's namespace.
 	 */
-        @Override
 	public String getNamespace();
 
 	/**
@@ -52,7 +50,6 @@ public interface IRI extends URI, Resource {
 	 * 
 	 * @return The IRI's local name.
 	 */
-        @Override
 	public String getLocalName();
 
 	/**
@@ -63,7 +60,6 @@ public interface IRI extends URI, Resource {
 	 * @return <tt>true</tt> if the other object is an instance of {@link IRI} and their
 	 *         String-representations are equal, <tt>false</tt> otherwise.
 	 */
-        @Override
 	public boolean equals(Object o);
 
 	/**
@@ -72,6 +68,5 @@ public interface IRI extends URI, Resource {
 	 * 
 	 * @return A hash code for the IRI.
 	 */
-        @Override
 	public int hashCode();
 }

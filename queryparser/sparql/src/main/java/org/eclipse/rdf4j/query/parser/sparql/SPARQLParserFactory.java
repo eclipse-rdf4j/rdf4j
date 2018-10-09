@@ -23,7 +23,6 @@ public class SPARQLParserFactory implements QueryParserFactory {
 	/**
 	 * Returns {@link QueryLanguage#SPARQL}.
 	 */
-        @Override
 	public QueryLanguage getQueryLanguage() {
 		return QueryLanguage.SPARQL;
 	}
@@ -31,7 +30,6 @@ public class SPARQLParserFactory implements QueryParserFactory {
 	/**
 	 * Returns a shared, thread-safe, instance of SPARQLParser.
 	 */
-        @Override
 	public QueryParser getParser() {
 		return singleton;
 	}

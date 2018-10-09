@@ -36,7 +36,6 @@ public class HTTPBooleanQuery extends AbstractHTTPQuery implements BooleanQuery 
 		this.conn = conn;
 	}
 
-        @Override
 	public boolean evaluate()
 		throws QueryEvaluationException
 	{

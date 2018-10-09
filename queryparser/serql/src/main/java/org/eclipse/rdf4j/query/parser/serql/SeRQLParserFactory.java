@@ -23,7 +23,6 @@ public class SeRQLParserFactory implements QueryParserFactory {
 	/**
 	 * Returns {@link QueryLanguage#SERQL}.
 	 */
-        @Override
 	public QueryLanguage getQueryLanguage() {
 		return QueryLanguage.SERQL;
 	}
@@ -31,7 +30,6 @@ public class SeRQLParserFactory implements QueryParserFactory {
 	/**
 	 * Returns a shared, thread-safe, instance of SeRQLParser.
 	 */
-        @Override
 	public QueryParser getParser() {
 		return singleton;
 	}

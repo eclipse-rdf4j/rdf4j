@@ -42,19 +42,16 @@ public class ContextAwareConnectionTest {
 
 	static class GraphQueryStub extends AbstractQuery implements GraphQuery {
 
-                @Override
 		public GraphQueryResult evaluate() {
 			return null;
 		}
 
-                @Override
 		public void evaluate(RDFHandler arg0) {
 		}
 	}
 
 	static class InvocationHandlerStub implements InvocationHandler {
 
-                @Override
 		public Object invoke(Object proxy, Method method, Object[] args)
 			throws Throwable
 		{
@@ -81,12 +78,10 @@ public class ContextAwareConnectionTest {
 
 	static class TupleQueryStub extends AbstractQuery implements TupleQuery {
 
-                @Override
 		public TupleQueryResult evaluate() {
 			return null;
 		}
 
-                @Override
 		public void evaluate(TupleQueryResultHandler arg0) {
 		}
 	}

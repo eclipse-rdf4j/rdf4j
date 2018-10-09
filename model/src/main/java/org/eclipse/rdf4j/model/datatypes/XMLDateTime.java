@@ -466,7 +466,6 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	 * @throws ClassCastException
 	 *         If <tt>other</tt> is not a DateTime object.
 	 */
-        @Override
 	public int compareTo(XMLDateTime otherDT) {
 		XMLDateTime thisDT = this;
 

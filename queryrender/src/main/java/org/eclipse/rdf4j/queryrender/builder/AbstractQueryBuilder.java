@@ -103,7 +103,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public void reset() {
 		mDistinct = mReduced = false;
 		mLimit = mOffset = -1;
@@ -115,7 +114,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public T query() {
 		UnaryTupleOperator aRoot = null;
 		UnaryTupleOperator aCurr = null;
@@ -231,7 +229,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> fromNamed(final IRI theURI) {
 		mFromNamed.add(theURI);
 		return this;
@@ -240,7 +237,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> from(final IRI theURI) {
 		mFrom.add(theURI);
 		return this;
@@ -249,7 +245,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> distinct() {
 		// crappy way to only let this be set for select queries
 		if (isSelect()) {
@@ -262,7 +257,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> reduced() {
 		mReduced = true;
 		return this;
@@ -271,7 +265,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> addProjectionVar(String... theNames) {
 		if (isSelect()) {
 			mProjectionVars.addAll(Arrays.asList(theNames));
@@ -293,7 +286,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> addProjectionStatement(final String theSubj, final String thePred,
 			final String theObj)
 	{
@@ -322,7 +314,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> addProjectionStatement(final String theSubj, final String thePred,
 			final Value theObj)
 	{
@@ -337,7 +328,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> addProjectionStatement(String theSubj, IRI thePred, Value theObj) {
 		if (isConstruct()) {
 			mProjectionPatterns.add(new StatementPattern(new Var(theSubj), GroupBuilder.valueToVar(thePred),
@@ -350,7 +340,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> addProjectionStatement(IRI theSubj, String thePred, String theObj) {
 		if (isConstruct()) {
 			mProjectionPatterns.add(new StatementPattern(GroupBuilder.valueToVar(theSubj), new Var(thePred),
@@ -363,7 +352,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> addProjectionStatement(IRI theSubj, IRI thePred, String theObj) {
 		if (isConstruct()) {
 			mProjectionPatterns.add(new StatementPattern(GroupBuilder.valueToVar(theSubj),
@@ -376,7 +364,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> addProjectionStatement(String theSubj, IRI thePred, String theObj) {
 		if (isConstruct()) {
 			mProjectionPatterns.add(new StatementPattern(new Var(theSubj), GroupBuilder.valueToVar(thePred),
@@ -474,7 +461,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public GroupBuilder<T, QueryBuilder<T>> group() {
 		return new GroupBuilder<T, QueryBuilder<T>>(this, false, null);
 	}
@@ -482,7 +468,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public GroupBuilder<T, QueryBuilder<T>> optional() {
 		return new GroupBuilder<T, QueryBuilder<T>>(this, true, null);
 	}
@@ -490,7 +475,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> limit(int theLimit) {
 		mLimit = theLimit;
 		return this;
@@ -499,7 +483,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> offset(int theOffset) {
 		mOffset = theOffset;
 		return this;
@@ -508,7 +491,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> addGroup(Group theGroup) {
 		mQueryAtoms.add(theGroup);
 		return this;
@@ -517,7 +499,6 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * @inheritDoc
 	 */
-        @Override
 	public QueryBuilder<T> removeGroup(Group theGroup) {
 		mQueryAtoms.remove(theGroup);
 		return this;

@@ -32,7 +32,6 @@ public class SPARQLGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 		super(httpClient, QueryLanguage.SPARQL, queryString, baseURI);
 	}
 
-        @Override
 	public GraphQueryResult evaluate()
 		throws QueryEvaluationException
 	{
@@ -54,7 +53,6 @@ public class SPARQLGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 		}
 	}
 
-        @Override
 	public void evaluate(RDFHandler handler)
 		throws QueryEvaluationException, RDFHandlerException
 	{

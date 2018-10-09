@@ -259,7 +259,6 @@ public class SimpleSAXParser {
 		 *---------*/
 
 		// overrides DefaultHandler.startDocument()
-		@Override
 		public void startDocument()
 			throws SAXException
 		{
@@ -267,7 +266,6 @@ public class SimpleSAXParser {
 		}
 
 		// overrides DefaultHandler.endDocument()
-		@Override
 		public void endDocument()
 			throws SAXException
 		{
@@ -275,7 +273,6 @@ public class SimpleSAXParser {
 		}
 
 		// overrides DefaultHandler.characters()
-		@Override
 		public void characters(char[] ch, int start, int length)
 			throws SAXException
 		{
@@ -283,7 +280,6 @@ public class SimpleSAXParser {
 		}
 
 		// overrides DefaultHandler.startElement()
-		@Override
 		public void startElement(String namespaceURI, String localName, String qName, Attributes attributes)
 			throws SAXException
 		{
@@ -321,7 +317,6 @@ public class SimpleSAXParser {
 		}
 
 		// overrides DefaultHandler.endElement()
-		@Override
 		public void endElement(String namespaceURI, String localName, String qName)
 			throws SAXException
 		{

@@ -58,7 +58,6 @@ public class Regex extends BinaryValueOperator {
 		return flagsArg;
 	}
 
-        @Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

@@ -23,7 +23,6 @@ public class BooleanTextWriterFactory implements BooleanQueryResultWriterFactory
 	/**
 	 * Returns {@link BooleanQueryResultFormat#TEXT}.
 	 */
-	@Override
 	public BooleanQueryResultFormat getBooleanQueryResultFormat() {
 		return BooleanQueryResultFormat.TEXT;
 	}
@@ -31,7 +30,6 @@ public class BooleanTextWriterFactory implements BooleanQueryResultWriterFactory
 	/**
 	 * Returns a new instance of BinaryQueryResultWriter.
 	 */
-	@Override
 	public BooleanQueryResultWriter getWriter(OutputStream out) {
 		return new BooleanTextWriter(out);
 	}

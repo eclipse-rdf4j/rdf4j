@@ -158,12 +158,10 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		contextVar = context;
 	}
 
-        @Override
 	public Set<String> getBindingNames() {
 		return getAssuredBindingNames();
 	}
 
-        @Override
 	public Set<String> getAssuredBindingNames() {
 		Set<String> bindingNames = new HashSet<String>(8);
 
@@ -207,7 +205,6 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		return varCollection;
 	}
 
-        @Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

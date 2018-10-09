@@ -21,7 +21,6 @@ public class TriXParserFactory implements RDFParserFactory {
 	/**
 	 * Returns {@link RDFFormat#TRIX}.
 	 */
-	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.TRIX;
 	}
@@ -29,7 +28,6 @@ public class TriXParserFactory implements RDFParserFactory {
 	/**
 	 * Returns a new instance of {@link TriXParser}.
 	 */
-	@Override
 	public RDFParser getParser() {
 		return new TriXParser();
 	}

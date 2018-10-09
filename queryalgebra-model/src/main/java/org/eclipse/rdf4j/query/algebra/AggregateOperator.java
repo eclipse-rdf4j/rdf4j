@@ -18,7 +18,6 @@ public interface AggregateOperator extends ValueExpr {
 
 	public void setDistinct(boolean distinct);
 
-        @Override
 	public AggregateOperator clone();
 
 }

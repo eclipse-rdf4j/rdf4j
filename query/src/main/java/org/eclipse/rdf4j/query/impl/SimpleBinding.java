@@ -39,12 +39,10 @@ public class SimpleBinding implements Binding {
 		this.value = value;
 	}
 
-        @Override
 	public String getName() {
 		return name;
 	}
 
-        @Override
 	public Value getValue() {
 		return value;
 	}

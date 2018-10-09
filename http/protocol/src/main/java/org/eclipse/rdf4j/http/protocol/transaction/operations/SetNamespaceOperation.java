@@ -54,7 +54,6 @@ public class SetNamespaceOperation implements TransactionOperation, Serializable
 		this.prefix = prefix;
 	}
 
-        @Override
 	public void execute(RepositoryConnection con)
 		throws RepositoryException
 	{

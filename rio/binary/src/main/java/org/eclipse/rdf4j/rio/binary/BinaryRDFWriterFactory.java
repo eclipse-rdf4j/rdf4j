@@ -24,7 +24,6 @@ public class BinaryRDFWriterFactory implements RDFWriterFactory {
 	/**
 	 * Returns {@link RDFFormat#BINARY}.
 	 */
-        @Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.BINARY;
 	}
@@ -32,12 +31,10 @@ public class BinaryRDFWriterFactory implements RDFWriterFactory {
 	/**
 	 * Returns a new instance of {@link BinaryRDFWriter}.
 	 */
-        @Override
 	public RDFWriter getWriter(OutputStream out) {
 		return new BinaryRDFWriter(out);
 	}
 
-        @Override
 	public RDFWriter getWriter(OutputStream out, String baseURI) {
 		return new BinaryRDFWriter(out);
 	}
@@ -45,7 +42,6 @@ public class BinaryRDFWriterFactory implements RDFWriterFactory {
 	/**
 	 * throws UnsupportedOperationException
 	 */
-        @Override
 	public RDFWriter getWriter(Writer writer) {
 		throw new UnsupportedOperationException();
 	}
@@ -53,7 +49,6 @@ public class BinaryRDFWriterFactory implements RDFWriterFactory {
 	/**
 	 * throws UnsupportedOperationException
 	 */
-        @Override
 	public RDFWriter getWriter(Writer writer, String baseURI) {
 		throw new UnsupportedOperationException();
 	}

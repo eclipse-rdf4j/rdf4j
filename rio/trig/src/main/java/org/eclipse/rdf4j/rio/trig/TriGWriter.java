@@ -131,7 +131,6 @@ public class TriGWriter extends TurtleWriter {
 		}
 	}
 
-        @Override
 	protected void handleStatementInternal(Statement st, boolean endRDFCalled, boolean canShortenSubject,
 			boolean canShortenObject)
 	{

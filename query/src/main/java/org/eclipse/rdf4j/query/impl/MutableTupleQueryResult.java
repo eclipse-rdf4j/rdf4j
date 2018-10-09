@@ -206,7 +206,6 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 		return bindingSets.set(index, bindingSet);
 	}
 
-        @Override
 	public void remove() {
 		if (lastReturned == -1) {
 			throw new IllegalStateException();

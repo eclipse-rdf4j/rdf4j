@@ -59,7 +59,6 @@ public class GraphImpl extends AbstractCollection<Statement> implements Graph {
 		this(SimpleValueFactory.getInstance(), statements);
 	}
 
-        @Override
 	public ValueFactory getValueFactory() {
 		return valueFactory;
 	}
@@ -83,7 +82,6 @@ public class GraphImpl extends AbstractCollection<Statement> implements Graph {
 		return statements.add(st);
 	}
 
-        @Override
 	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
@@ -101,7 +99,6 @@ public class GraphImpl extends AbstractCollection<Statement> implements Graph {
 		return graphChanged;
 	}
 
-        @Override
 	public Iterator<Statement> match(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 		return new PatternIterator(iterator(), subj, pred, obj, contexts);

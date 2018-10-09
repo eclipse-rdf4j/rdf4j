@@ -21,7 +21,6 @@ public class SPARQLResultsJSONParserFactory implements TupleQueryResultParserFac
 	/**
 	 * Returns {@link TupleQueryResultFormat#JSON}.
 	 */
-        @Override
 	public TupleQueryResultFormat getTupleQueryResultFormat() {
 		return TupleQueryResultFormat.JSON;
 	}
@@ -29,7 +28,6 @@ public class SPARQLResultsJSONParserFactory implements TupleQueryResultParserFac
 	/**
 	 * Returns a new instance of {@link SPARQLResultsJSONParser}.
 	 */
-        @Override
 	public TupleQueryResultParser getParser() {
 		return new SPARQLResultsJSONParser();
 	}

@@ -154,7 +154,6 @@ public class LocalRepositoryManager extends RepositoryManager {
 	 * @throws MalformedURLException
 	 *         If the path cannot be parsed as a URL
 	 */
-        @Override
 	public URL getLocation()
 		throws MalformedURLException
 	{
@@ -387,7 +386,6 @@ public class LocalRepositoryManager extends RepositoryManager {
 		File repositoriesDir = resolvePath(REPOSITORIES_DIR);
 		String[] dirs = repositoriesDir.list(new FilenameFilter() {
 
-                        @Override
 			public boolean accept(File repositories, String name) {
 				File dataDir = new File(repositories, name);
 				return dataDir.isDirectory() && new File(dataDir, CFG_FILE).exists();
@@ -482,7 +480,6 @@ public class LocalRepositoryManager extends RepositoryManager {
 		File repositoriesDir = resolvePath(REPOSITORIES_DIR);
 		String[] dirs = repositoriesDir.list(new FilenameFilter() {
 
-                        @Override
 			public boolean accept(File repositories, String name) {
 				File dataDir = new File(repositories, name);
 				return dataDir.isDirectory() && new File(dataDir, CFG_FILE).exists();

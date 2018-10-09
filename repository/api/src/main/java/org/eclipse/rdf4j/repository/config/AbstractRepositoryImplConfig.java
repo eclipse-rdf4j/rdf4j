@@ -38,7 +38,6 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 		setType(type);
 	}
 
-        @Override
 	public String getType() {
 		return type;
 	}
@@ -47,7 +46,6 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 		this.type = type;
 	}
 
-        @Override
 	public void validate()
 		throws RepositoryConfigException
 	{
@@ -56,7 +54,6 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 		}
 	}
 
-        @Override
 	public Resource export(Model model) {
 		BNode implNode = SimpleValueFactory.getInstance().createBNode();
 
@@ -67,7 +64,6 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 		return implNode;
 	}
 
-        @Override
 	public void parse(Model model, Resource resource)
 		throws RepositoryConfigException
 	{

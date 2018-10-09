@@ -116,7 +116,6 @@ public enum IsolationLevels implements IsolationLevel {
 		}
 	}
 
-        @Override
 	public IRI getURI() {
 		final ValueFactory f = SimpleValueFactory.getInstance();
 		return f.createIRI(SESAME.NAMESPACE, this.name());

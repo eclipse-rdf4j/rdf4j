@@ -109,12 +109,10 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		return client.getQueryURL();
 	}
 
-        @Override
 	public final HttpClient getHttpClient() {
 		return client.getHttpClient();
 	}
 
-        @Override
 	public void setHttpClient(HttpClient httpClient) {
 		client.setHttpClient(httpClient);
 	}
@@ -131,7 +129,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 	}
 
-        @Override
 	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			RDFHandler handler, Resource... contexts)
 		throws RepositoryException, RDFHandlerException
@@ -149,7 +146,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 	}
 
-        @Override
 	public RepositoryResult<Resource> getContextIDs()
 		throws RepositoryException
 	{
@@ -203,21 +199,18 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 	}
 
-        @Override
 	public String getNamespace(String prefix)
 		throws RepositoryException
 	{
 		return null;
 	}
 
-        @Override
 	public RepositoryResult<Namespace> getNamespaces()
 		throws RepositoryException
 	{
 		return new RepositoryResult<Namespace>(new EmptyIteration<Namespace, RepositoryException>());
 	}
 
-        @Override
 	public boolean isEmpty()
 		throws RepositoryException
 	{
@@ -239,7 +232,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 	}
 
-        @Override
 	public long size(Resource... contexts)
 		throws RepositoryException
 	{
@@ -257,7 +249,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 	}
 
-        @Override
 	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts)
 		throws RepositoryException
@@ -379,7 +370,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 	}
 
-        @Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts)
 		throws RepositoryException
@@ -402,7 +392,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		return (SPARQLRepository)super.getRepository();
 	}
 
-        @Override
 	public Query prepareQuery(QueryLanguage ql, String query, String base)
 		throws RepositoryException, MalformedQueryException
 	{
@@ -421,7 +410,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		throw new UnsupportedOperationException("Unsupported query language " + ql);
 	}
 
-        @Override
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query, String base)
 		throws RepositoryException, MalformedQueryException
 	{
@@ -431,7 +419,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		throw new UnsupportedQueryLanguageException("Unsupported query language " + ql);
 	}
 
-        @Override
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String base)
 		throws RepositoryException, MalformedQueryException
 	{
@@ -441,7 +428,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		throw new UnsupportedQueryLanguageException("Unsupported query language " + ql);
 	}
 
-        @Override
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String base)
 		throws RepositoryException, MalformedQueryException
 	{
@@ -450,7 +436,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		throw new UnsupportedQueryLanguageException("Unsupported query language " + ql);
 	}
 
-        @Override
 	public void commit()
 		throws RepositoryException
 	{
@@ -474,7 +459,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 	}
 
-        @Override
 	public void rollback()
 		throws RepositoryException
 	{
@@ -490,7 +474,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 	}
 
-        @Override
 	public void begin()
 		throws RepositoryException
 	{
@@ -658,7 +641,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 	}
 
-        @Override
 	public void add(Statement st, Resource... contexts)
 		throws RepositoryException
 	{
@@ -680,7 +662,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 	}
 
-        @Override
 	public void add(Iterable<? extends Statement> statements, Resource... contexts)
 		throws RepositoryException
 	{
@@ -700,7 +681,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 	}
 
-        @Override
 	public void clear(Resource... contexts)
 		throws RepositoryException
 	{
@@ -737,7 +717,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 	}
 
-        @Override
 	public void clearNamespaces()
 		throws RepositoryException
 	{
@@ -746,7 +725,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		// throw new UnsupportedOperationException();
 	}
 
-        @Override
 	public void remove(Statement st, Resource... contexts)
 		throws RepositoryException
 	{
@@ -769,7 +747,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	}
 
-        @Override
 	public void remove(Iterable<? extends Statement> statements, Resource... contexts)
 		throws RepositoryException
 	{
@@ -789,7 +766,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 	}
 
-        @Override
 	public void removeNamespace(String prefix)
 		throws RepositoryException
 	{
@@ -797,7 +773,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		// throw new UnsupportedOperationException();
 	}
 
-        @Override
 	public void setNamespace(String prefix, String name)
 		throws RepositoryException
 	{
@@ -805,7 +780,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		// throw new UnsupportedOperationException();
 	}
 
-        @Override
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
 		throws RepositoryException, MalformedQueryException
 	{
@@ -958,7 +932,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 	}
 
-        @Override
 	public boolean isActive()
 		throws UnknownTransactionStateException, RepositoryException
 	{

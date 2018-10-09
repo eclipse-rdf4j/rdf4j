@@ -19,7 +19,6 @@ public class ConvertingIterationTest extends CloseableIterationTest {
 				intList.iterator());
 		return new ConvertingIteration<Integer, String, Exception>(intIteration) {
 
-                        @Override
 			protected String convert(Integer integer) {
 				return integer.toString();
 			}

@@ -23,7 +23,6 @@ public class SPARQLBooleanXMLWriterFactory implements BooleanQueryResultWriterFa
 	/**
 	 * Returns {@link BooleanQueryResultFormat#SPARQL}.
 	 */
-        @Override
 	public BooleanQueryResultFormat getBooleanQueryResultFormat() {
 		return BooleanQueryResultFormat.SPARQL;
 	}
@@ -31,7 +30,6 @@ public class SPARQLBooleanXMLWriterFactory implements BooleanQueryResultWriterFa
 	/**
 	 * Returns a new instance of {@link SPARQLBooleanXMLWriter}.
 	 */
-        @Override
 	public BooleanQueryResultWriter getWriter(OutputStream out) {
 		return new SPARQLBooleanXMLWriter(out);
 	}

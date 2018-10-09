@@ -64,12 +64,10 @@ public class ListBindingSet extends AbstractBindingSet {
 		this.values = values;
 	}
 
-        @Override
 	public Set<String> getBindingNames() {
 		return new LinkedHashSet<String>(bindingNames);
 	}
 
-        @Override
 	public Value getValue(String bindingName) {
 		int idx = bindingNames.indexOf(bindingName);
 
@@ -80,7 +78,6 @@ public class ListBindingSet extends AbstractBindingSet {
 		return null;
 	}
 
-        @Override
 	public Binding getBinding(String bindingName) {
 		Value value = getValue(bindingName);
 
@@ -91,17 +88,14 @@ public class ListBindingSet extends AbstractBindingSet {
 		return null;
 	}
 
-        @Override
 	public boolean hasBinding(String bindingName) {
 		return getValue(bindingName) != null;
 	}
 
-        @Override
 	public Iterator<Binding> iterator() {
 		return new ListBindingSetIterator();
 	}
 
-        @Override
 	public int size() {
 		int size = 0;
 
@@ -134,19 +128,16 @@ public class ListBindingSet extends AbstractBindingSet {
 			}
 		}
 
-                @Override
 		public boolean hasNext() {
 			return index < values.size();
 		}
 
-                @Override
 		public Binding next() {
 			Binding result = new SimpleBinding(bindingNames.get(index), values.get(index));
 			findNextElement();
 			return result;
 		}
 
-                @Override
 		public void remove() {
 			throw new UnsupportedOperationException();
 		}

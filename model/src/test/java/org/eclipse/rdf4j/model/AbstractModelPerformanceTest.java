@@ -30,7 +30,6 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-        @Override
 	public void setUp()
 		throws Exception
 	{
@@ -41,7 +40,6 @@ public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
 	 * @throws java.lang.Exception
 	 */
 	@After
-        @Override
 	public void tearDown()
 		throws Exception
 	{

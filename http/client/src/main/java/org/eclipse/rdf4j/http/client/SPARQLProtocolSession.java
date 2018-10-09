@@ -214,12 +214,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Get/set methods *
 	 *-----------------*/
 
-        @Override
 	public final HttpClient getHttpClient() {
 		return httpClient;
 	}
 
-        @Override
 	public void setHttpClient(HttpClient httpClient) {
 		this.httpClient = httpClient;
 	}

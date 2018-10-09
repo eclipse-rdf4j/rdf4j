@@ -63,7 +63,6 @@ public class OrderElem extends AbstractQueryModelNode {
 		this.ascending = ascending;
 	}
 
-        @Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

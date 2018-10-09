@@ -81,27 +81,22 @@ public class MapBindingSet extends AbstractBindingSet {
 		bindings.clear();
 	}
 
-        @Override
 	public Iterator<Binding> iterator() {
 		return bindings.values().iterator();
 	}
 
-        @Override
 	public Set<String> getBindingNames() {
 		return bindings.keySet();
 	}
 
-        @Override
 	public Binding getBinding(String bindingName) {
 		return bindings.get(bindingName);
 	}
 
-        @Override
 	public boolean hasBinding(String bindingName) {
 		return bindings.containsKey(bindingName);
 	}
 
-        @Override
 	public Value getValue(String bindingName) {
 		Binding binding = getBinding(bindingName);
 
@@ -112,7 +107,6 @@ public class MapBindingSet extends AbstractBindingSet {
 		return null;
 	}
 
-        @Override
 	public int size() {
 		return bindings.size();
 	}

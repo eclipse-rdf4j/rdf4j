@@ -66,12 +66,10 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 		this.arg = arg;
 	}
 
-        @Override
 	public Set<String> getBindingNames() {
 		return getArg().getBindingNames();
 	}
 
-        @Override
 	public Set<String> getAssuredBindingNames() {
 		return getArg().getAssuredBindingNames();
 	}
