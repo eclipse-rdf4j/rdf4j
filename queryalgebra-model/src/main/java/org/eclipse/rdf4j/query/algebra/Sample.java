@@ -22,6 +22,7 @@ public class Sample extends AbstractAggregateOperator {
 		super(arg, distinct);
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

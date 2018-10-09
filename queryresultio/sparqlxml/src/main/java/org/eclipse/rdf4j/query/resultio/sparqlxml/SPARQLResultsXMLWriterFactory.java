@@ -23,6 +23,7 @@ public class SPARQLResultsXMLWriterFactory implements TupleQueryResultWriterFact
 	/**
 	 * Returns {@link TupleQueryResultFormat#SPARQL}.
 	 */
+	@Override
 	public TupleQueryResultFormat getTupleQueryResultFormat() {
 		return TupleQueryResultFormat.SPARQL;
 	}
@@ -30,6 +31,7 @@ public class SPARQLResultsXMLWriterFactory implements TupleQueryResultWriterFact
 	/**
 	 * Returns a new instance of {@link SPARQLResultsXMLWriter}.
 	 */
+	@Override
 	public TupleQueryResultWriter getWriter(OutputStream out) {
 		return new SPARQLResultsXMLWriter(out);
 	}

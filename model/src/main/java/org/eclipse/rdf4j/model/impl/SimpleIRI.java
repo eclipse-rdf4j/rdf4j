@@ -86,10 +86,12 @@ public class SimpleIRI implements IRI {
 		return iriString;
 	}
 
+	@Override
 	public String stringValue() {
 		return iriString;
 	}
 
+	@Override
 	public String getNamespace() {
 		if (localNameIdx < 0) {
 			localNameIdx = URIUtil.getLocalNameIndex(iriString);
@@ -98,6 +100,7 @@ public class SimpleIRI implements IRI {
 		return iriString.substring(0, localNameIdx);
 	}
 
+	@Override
 	public String getLocalName() {
 		if (localNameIdx < 0) {
 			localNameIdx = URIUtil.getLocalNameIndex(iriString);

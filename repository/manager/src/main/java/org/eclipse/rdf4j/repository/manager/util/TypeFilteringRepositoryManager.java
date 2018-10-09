@@ -46,6 +46,7 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 	/**
 	 * @see org.eclipse.rdf4j.repository.manager.RepositoryManager#getHttpClient()
 	 */
+	@Override
 	public HttpClient getHttpClient() {
 		return delegate.getHttpClient();
 	}
@@ -54,6 +55,7 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 	 * @param httpClient
 	 * @see org.eclipse.rdf4j.repository.manager.RepositoryManager#setHttpClient(org.apache.http.client.HttpClient)
 	 */
+	@Override
 	public void setHttpClient(HttpClient httpClient) {
 		delegate.setHttpClient(httpClient);
 	}

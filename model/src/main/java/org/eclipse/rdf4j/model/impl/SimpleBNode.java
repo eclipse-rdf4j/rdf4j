@@ -57,6 +57,7 @@ public class SimpleBNode implements BNode {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public String getID() {
 		return id;
 	}
@@ -65,6 +66,7 @@ public class SimpleBNode implements BNode {
 		this.id = id;
 	}
 
+	@Override
 	public String stringValue() {
 		return id;
 	}

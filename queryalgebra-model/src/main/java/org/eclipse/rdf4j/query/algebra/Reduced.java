@@ -24,6 +24,7 @@ public class Reduced extends UnaryTupleOperator {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

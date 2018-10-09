@@ -114,6 +114,7 @@ public class SPARQLTSVTupleTest extends AbstractQueryResultIOTupleTest {
 		}
 	}
 
+	@Override
 	protected void assertQueryResultsEqual(TupleQueryResult expected, TupleQueryResult output)
 		throws QueryEvaluationException, TupleQueryResultHandlerException, QueryResultHandlerException,
 		UnsupportedEncodingException

@@ -21,6 +21,7 @@ public class TurtleParserFactory implements RDFParserFactory {
 	/**
 	 * Returns {@link RDFFormat#TURTLE}.
 	 */
+	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.TURTLE;
 	}
@@ -28,6 +29,7 @@ public class TurtleParserFactory implements RDFParserFactory {
 	/**
 	 * Returns a new instance of {@link TurtleParser}.
 	 */
+	@Override
 	public RDFParser getParser() {
 		return new TurtleParser();
 	}

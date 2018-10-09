@@ -59,6 +59,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	 * Constructors *
 	 *--------------*/
 
+	@Override
 	protected E getNextElement()
 		throws X
 	{

@@ -22,6 +22,7 @@ public class ASTPathSequence extends SimpleNode {
 	}
 
 	/** Accept the visitor. **/
+	@Override
 	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
 		throws VisitorException
 	{

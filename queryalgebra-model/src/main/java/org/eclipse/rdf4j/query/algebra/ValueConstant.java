@@ -44,6 +44,7 @@ public class ValueConstant extends AbstractQueryModelNode implements ValueExpr {
 		this.value = value;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

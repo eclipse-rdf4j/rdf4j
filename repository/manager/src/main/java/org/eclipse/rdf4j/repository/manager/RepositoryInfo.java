@@ -67,6 +67,7 @@ public class RepositoryInfo implements Comparable<RepositoryInfo> {
 		this.writable = writable;
 	}
 
+	@Override
 	public int compareTo(RepositoryInfo o) {
 		int result = Collator.getInstance().compare(getDescription(), o.getDescription());
 		if (result == 0) {

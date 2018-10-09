@@ -39,6 +39,7 @@ public interface Binding extends Serializable {
 	 * @return <tt>true</tt> if the other object is an instance of {@link Binding} and both their names and
 	 *         values are equal, <tt>false</tt> otherwise.
 	 */
+	@Override
 	public boolean equals(Object o);
 
 	/**
@@ -52,5 +53,6 @@ public interface Binding extends Serializable {
 	 * 
 	 * @return A hash code for the binding.
 	 */
+	@Override
 	public int hashCode();
 }
