@@ -58,6 +58,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	/**
 	 * @inheritDoc
 	 */
+        @Override
 	public String render(TupleExpr theExpr)
 		throws Exception
 	{
@@ -280,6 +281,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	/**
 	 * @inheritDoc
 	 */
+        @Override
 	protected String renderValueExpr(final ValueExpr theExpr)
 		throws Exception
 	{

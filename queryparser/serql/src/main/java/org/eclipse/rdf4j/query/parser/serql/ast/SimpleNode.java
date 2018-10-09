@@ -34,20 +34,25 @@ public class SimpleNode implements Node {
 		this.parser = parser;
 	}
 
+        @Override
 	public void jjtOpen() {
 	}
 
+        @Override
 	public void jjtClose() {
 	}
 
+        @Override
 	public void jjtSetParent(Node n) {
 		parent = n;
 	}
 
+        @Override
 	public Node jjtGetParent() {
 		return parent;
 	}
 
+        @Override
 	public void jjtAddChild(Node n, int i) {
 		while (i >= children.size()) {
 			// Add dummy nodes
@@ -57,14 +62,17 @@ public class SimpleNode implements Node {
 		children.set(i, n);
 	}
 
+        @Override
 	public void jjtAppendChild(Node n) {
 		children.add(n);
 	}
 
+        @Override
 	public void jjtInsertChild(Node n, int i) {
 		children.add(i, n);
 	}
 
+        @Override
 	public void jjtReplaceChild(Node oldNode, Node newNode) {
 		for (int i = 0; i < children.size(); i++) {
 			if (children.get(i) == oldNode) {
@@ -93,6 +101,7 @@ public class SimpleNode implements Node {
 		return children;
 	}
 
+        @Override
 	public Node jjtGetChild(int i) {
 		return children.get(i);
 	}
@@ -126,11 +135,13 @@ public class SimpleNode implements Node {
 		return result;
 	}
 
+        @Override
 	public int jjtGetNumChildren() {
 		return children.size();
 	}
 
 	/** Accept the visitor. */
+        @Override
 	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
 		throws VisitorException
 	{

@@ -31,6 +31,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 
 	private static final long serialVersionUID = 4254119331281455614L;
 
+        @Override
 	public Model unmodifiable() {
 		return new UnmodifiableModel(this);
 	}

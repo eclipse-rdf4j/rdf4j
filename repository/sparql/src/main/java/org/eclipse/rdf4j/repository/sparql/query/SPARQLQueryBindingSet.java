@@ -103,14 +103,17 @@ public class SPARQLQueryBindingSet extends AbstractBindingSet {
 		bindings.keySet().retainAll(bindingNames);
 	}
 
+        @Override
 	public Set<String> getBindingNames() {
 		return bindings.keySet();
 	}
 
+        @Override
 	public Value getValue(String bindingName) {
 		return bindings.get(bindingName);
 	}
 
+        @Override
 	public Binding getBinding(String bindingName) {
 		Value value = getValue(bindingName);
 
@@ -121,10 +124,12 @@ public class SPARQLQueryBindingSet extends AbstractBindingSet {
 		return null;
 	}
 
+        @Override
 	public boolean hasBinding(String bindingName) {
 		return bindings.containsKey(bindingName);
 	}
 
+        @Override
 	public Iterator<Binding> iterator() {
 		Iterator<Map.Entry<String, Value>> entries = bindings.entrySet().iterator();
 
@@ -137,6 +142,7 @@ public class SPARQLQueryBindingSet extends AbstractBindingSet {
 		};
 	}
 
+        @Override
 	public int size() {
 		return bindings.size();
 	}

@@ -339,6 +339,7 @@ public class ParsedURI implements java.lang.Cloneable {
 		return result;
 	}
 
+	@Override
 	public String toString() {
 		StringBuilder sb = new StringBuilder(64);
 
@@ -379,6 +380,7 @@ public class ParsedURI implements java.lang.Cloneable {
 	}
 
 	// Overrides Object.clone()
+	@Override
 	public Object clone() {
 		try {
 			return super.clone();

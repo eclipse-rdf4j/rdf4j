@@ -26,10 +26,12 @@ public class SingletonIterator<E> implements Iterator<E> {
 		this.value = new AtomicReference<E>(value);
 	}
 
+	@Override
 	public boolean hasNext() {
 		return value.get() != null;
 	}
 
+	@Override
 	public E next() {
 		E result = value.getAndSet(null);
 		if (result == null) {
@@ -38,6 +40,7 @@ public class SingletonIterator<E> implements Iterator<E> {
 		return result;
 	}
 
+	@Override
 	public void remove() {
 		throw new UnsupportedOperationException();
 	}

@@ -26,6 +26,7 @@ public class TreeModelTest extends ModelTest {
 		super(name);
 	}
 
+        @Override
 	public Model makeEmptyModel() {
 		return new TreeModel();
 	}

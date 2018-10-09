@@ -196,6 +196,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	 * @throws MalformedURLException
 	 *         If serverURL cannot be parsed
 	 */
+        @Override
 	public URL getLocation()
 		throws MalformedURLException
 	{

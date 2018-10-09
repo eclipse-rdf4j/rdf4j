@@ -126,10 +126,12 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	 * Methods *
 	 *---------*/
 
+        @Override
 	public HttpClient getHttpClient() {
 		return client.getHttpClient();
 	}
 
+        @Override
 	public void setHttpClient(HttpClient httpClient) {
 		client.setHttpClient(httpClient);
 	}
@@ -144,6 +146,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		return (HTTPRepository)super.getRepository();
 	}
 
+        @Override
 	public void begin()
 		throws RepositoryException
 	{
@@ -182,6 +185,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	 * @throws UnsupportedOperationException
 	 *         if the method is not supported for the supplied query language.
 	 */
+        @Override
 	public Query prepareQuery(QueryLanguage ql, String queryString, String baseURI) {
 		if (QueryLanguage.SPARQL.equals(ql)) {
 			String strippedQuery = QueryParserUtil.removeSPARQLQueryProlog(queryString).toUpperCase();
@@ -214,18 +218,22 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+        @Override
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String queryString, String baseURI) {
 		return new HTTPTupleQuery(this, ql, queryString, baseURI);
 	}
 
+        @Override
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String queryString, String baseURI) {
 		return new HTTPGraphQuery(this, ql, queryString, baseURI);
 	}
 
+        @Override
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String queryString, String baseURI) {
 		return new HTTPBooleanQuery(this, ql, queryString, baseURI);
 	}
 
+        @Override
 	public RepositoryResult<Resource> getContextIDs()
 		throws RepositoryException
 	{
@@ -257,6 +265,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+        @Override
 	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts)
 		throws RepositoryException
@@ -272,6 +281,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+        @Override
 	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			RDFHandler handler, Resource... contexts)
 		throws RDFHandlerException, RepositoryException
@@ -288,6 +298,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+        @Override
 	public long size(Resource... contexts)
 		throws RepositoryException
 	{
@@ -300,6 +311,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+        @Override
 	public void commit()
 		throws RepositoryException
 	{
@@ -336,6 +348,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+        @Override
 	public void rollback()
 		throws RepositoryException
 	{
@@ -377,6 +390,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+        @Override
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
 		throws IOException, RDFParseException, RepositoryException
 	{
@@ -398,6 +412,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+        @Override
 	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
 		throws IOException, RDFParseException, RepositoryException
 	{
@@ -443,6 +458,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+        @Override
 	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
 		throws IOException, RDFParseException, RepositoryException
 	{
@@ -483,6 +499,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		return format;
 	}
 
+        @Override
 	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
 		throws IOException, RDFParseException, RepositoryException
 	{
@@ -720,6 +737,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		conditionalCommit(localTransaction);
 	}
 
+        @Override
 	public void removeNamespace(String prefix)
 		throws RepositoryException
 	{
@@ -748,6 +766,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	}
 
+        @Override
 	public void clearNamespaces()
 		throws RepositoryException
 	{
@@ -766,6 +785,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+        @Override
 	public void setNamespace(String prefix, String name)
 		throws RepositoryException
 	{
@@ -791,6 +811,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+        @Override
 	public RepositoryResult<Namespace> getNamespaces()
 		throws RepositoryException
 	{
@@ -825,6 +846,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+        @Override
 	public String getNamespace(String prefix)
 		throws RepositoryException
 	{
@@ -857,6 +879,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 				new CloseableIteratorIteration<E, RepositoryException>(elements.iterator()));
 	}
 
+        @Override
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
 		throws RepositoryException, MalformedQueryException
 	{
@@ -897,6 +920,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+        @Override
 	public boolean isActive()
 		throws UnknownTransactionStateException, RepositoryException
 	{

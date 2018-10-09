@@ -67,6 +67,7 @@ public class RepositoryProvider {
 	static {
 		Runtime.getRuntime().addShutdownHook(new Thread("RepositoryProvider-shutdownHook") {
 
+                        @Override
 			public void run() {
 				synchronized (managers) {
 					for (SynchronizedManager manager : managers.values()) {

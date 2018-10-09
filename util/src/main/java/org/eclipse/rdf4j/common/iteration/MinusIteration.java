@@ -78,6 +78,7 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 	 *--------------*/
 
 	// implements LookAheadIteration.getNextElement()
+	@Override
 	protected boolean accept(E object)
 		throws X
 	{

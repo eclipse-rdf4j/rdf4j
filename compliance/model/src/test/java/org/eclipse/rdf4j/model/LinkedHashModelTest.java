@@ -26,6 +26,7 @@ public class LinkedHashModelTest extends ModelTest {
 		super(name);
 	}
 
+        @Override
 	public Model makeEmptyModel() {
 		return new LinkedHashModel();
 	}
