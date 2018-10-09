@@ -397,9 +397,9 @@ public class TestTurtleParser {
 		StatementCollector sc = new StatementCollector();
 		parser.setRDFHandler(sc);
 
-		InputStream in = new URL(url).openStream();
+	    try (InputStream in = new URL(url).openStream()) {
 		parser.parse(in, url);
-		in.close();
+	    }
 
 		Collection<Statement> stmts = sc.getStatements();
 

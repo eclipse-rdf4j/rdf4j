@@ -31,11 +31,10 @@ public class UnionIterationTest extends CloseableIterationTest {
 		SingletonIteration<String, Exception> iter1 = new SingletonIteration<String, Exception>("1");
 		SingletonIteration<String, Exception> iter2 = new SingletonIteration<String, Exception>("2");
 		SingletonIteration<String, Exception> iter3 = new SingletonIteration<String, Exception>("3");
-		UnionIteration<String, Exception> unionIter = new UnionIteration<String, Exception>(iter1, iter2,
-				iter3);
-
+	    try (UnionIteration<String, Exception> unionIter = new UnionIteration<String, Exception>(iter1, iter2,
+		iter3)) {
 		unionIter.next();
-		unionIter.close();
+	    }
 
 		assertTrue("iter1 should have been closed", iter1.isClosed());
 		assertTrue("iter2 should have been closed", iter2.isClosed());

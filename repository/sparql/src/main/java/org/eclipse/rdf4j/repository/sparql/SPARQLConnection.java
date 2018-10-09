@@ -235,17 +235,13 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	public long size(Resource... contexts)
 		throws RepositoryException
 	{
-		RepositoryResult<Statement> stmts = getStatements(null, null, null, true, contexts);
-		try {
+		try (RepositoryResult<Statement> stmts = getStatements(null, null, null, true, contexts)) {
 			long i = 0;
 			while (stmts.hasNext()) {
 				stmts.next();
 				i++;
 			}
 			return i;
-		}
-		finally {
-			stmts.close();
 		}
 	}
 
