@@ -208,8 +208,8 @@
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-		<slf4j.version>1.7.10</slf4j.version>
-		<logback.version>1.1.2</logback.version>
+		<slf4j.version>1.7.25</slf4j.version>
+		<logback.version>1.1.11</logback.version>
 		<httpclient.version>4.5.5</httpclient.version>
 		<httpcore.version>4.4.9</httpcore.version>
 		<jackson.version>2.9.6</jackson.version>
