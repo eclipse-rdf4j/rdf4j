@@ -164,7 +164,7 @@ Languages are associated with a string literal by means of a "language tag", as 
 
 We will demonstrate the use of language tags and data types by adding some additional data to our model. Specifically, we will add some information about a painting created by van Gogh, namely "The Potato Eaters".
 
-=== Example 03: addding a date and a number 
+=== Example 03: adding a date and a number 
 
 {examples}model/Example03LiteralDatatypes.java[Example 03] shows how we can add the creation date (as an `xsd:dateTime`) and the number of people depicted in the painting (as an `xsd:integer`):
 
