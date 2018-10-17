@@ -21,11 +21,10 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- *
  * @author Bart Hanssens
  */
-public class EhContainsTest extends AbstractGeoSPARQLTest {
-	
+public class EhContainsTest extends GeometricRelationFunctionTest {
+
 	/**
 	 * Test ehContains.
 	 * 
@@ -33,17 +32,22 @@ public class EhContainsTest extends AbstractGeoSPARQLTest {
 	 */
 	@Test
 	public void testEhContainsDenver() throws IOException {
-		List<BindingSet> list = getResults("ehcontains.rq");
-		
+		List<BindingSet> list = GeoSPARQLTests.getResults("ehcontains.rq");
+
 		assertNotNull("Resultset is null", list);
 		assertEquals("Number of results must be one", 1, list.size());
 
 		Value value = list.get(0).getBinding("city").getValue();
 		assertNotNull("Binded value is null", value);
-		
+
 		assertTrue("Value is not an IRI", value instanceof IRI);
-		IRI iri = (IRI) value;
+		IRI iri = (IRI)value;
 
 		assertEquals("City is not Denver", "http://example.org/denver", iri.stringValue());
+	}
+
+	@Override
+	protected GeometricRelationFunction testedFunction() {
+		return new EhContains();
 	}
 }
