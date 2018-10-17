@@ -20,9 +20,7 @@ import org.locationtech.spatial4j.shape.Shape;
 abstract class GeometricUnaryFunction implements Function {
 
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
-		throws ValueExprEvaluationException
-	{
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException(
 					getURI() + " requires exactly 1 argument, got " + args.length);
@@ -30,15 +28,15 @@ abstract class GeometricUnaryFunction implements Function {
 
 		SpatialContext geoContext = SpatialSupport.getSpatialContext();
 		Shape geom = FunctionArguments.getShape(this, args[0], geoContext);
-		Shape result = operation(geom);
 
 		String wkt;
 		try {
-			wkt = SpatialSupport.getWktWriter().toWkt(result);
+			wkt = SpatialSupport.getWktWriter().toWkt(operation(geom));
 		}
-		catch (IOException ioe) {
-			throw new ValueExprEvaluationException(ioe);
+		catch (IOException | RuntimeException e) {
+			throw new ValueExprEvaluationException(e);
 		}
+
 		return valueFactory.createLiteral(wkt, GEO.WKT_LITERAL);
 	}
 

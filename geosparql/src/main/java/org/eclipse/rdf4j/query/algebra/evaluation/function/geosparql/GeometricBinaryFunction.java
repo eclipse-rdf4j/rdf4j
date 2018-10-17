@@ -31,14 +31,14 @@ abstract class GeometricBinaryFunction implements Function {
 		SpatialContext geoContext = SpatialSupport.getSpatialContext();
 		Shape geom1 = FunctionArguments.getShape(this, args[0], geoContext);
 		Shape geom2 = FunctionArguments.getShape(this, args[1], geoContext);
-		Shape result = operation(geom1, geom2);
 
 		String wkt;
 		try {
+			Shape result = operation(geom1, geom2);
 			wkt = SpatialSupport.getWktWriter().toWkt(result);
 		}
-		catch (IOException ioe) {
-			throw new ValueExprEvaluationException(ioe);
+		catch (IOException|RuntimeException e) {
+			throw new ValueExprEvaluationException(e);
 		}
 		return valueFactory.createLiteral(wkt, GEO.WKT_LITERAL);
 	}
