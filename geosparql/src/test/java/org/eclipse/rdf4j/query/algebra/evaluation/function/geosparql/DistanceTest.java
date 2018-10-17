@@ -21,11 +21,10 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- *
  * @author Bart Hanssens
  */
-public class DistanceTest extends AbstractGeoSPARQLTest {
-	
+public class DistanceTest {
+
 	/**
 	 * Test distance between two cities, in meters.
 	 * 
@@ -33,37 +32,38 @@ public class DistanceTest extends AbstractGeoSPARQLTest {
 	 */
 	@Test
 	public void testDistanceAmBxl() throws IOException {
-		BindingSet bs = getBindingSet("distance.rq");
-		
+		BindingSet bs = GeoSPARQLTests.getBindingSet("distance.rq");
+
 		assertNotNull("Bindingset is null", bs);
-		
+
 		Value value = bs.getBinding("dist").getValue();
 		assertNotNull("Binded value is null", value);
-		
+
 		assertTrue("Value is not a literal", value instanceof Literal);
-		Literal l = (Literal) value;
+		Literal l = (Literal)value;
 		assertTrue("Literal not of type double", l.getDatatype().equals(XMLSchema.DOUBLE));
 
 		assertEquals("Distance Amsterdam-Brussels not correct", 173, l.doubleValue() / 1000, 0.5);
 	}
-	
+
 	/**
 	 * Test if distance between cities is the same in both directions
 	 * 
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	@Test
 	public void testDistanceSame() throws IOException {
-		BindingSet bs = getBindingSet("distance_same.rq");
+		BindingSet bs = GeoSPARQLTests.getBindingSet("distance_same.rq");
 
 		assertNotNull("Bindingset is null", bs);
 
 		Value v1 = bs.getBinding("dist1").getValue();
-		double ambxl = ((Literal) v1).doubleValue();
-		
+		double ambxl = ((Literal)v1).doubleValue();
+
 		Value v2 = bs.getBinding("dist2").getValue();
-		double bxlam = ((Literal) v2).doubleValue();
-		
-		assertEquals("Distance Amsterdam-Brussels not correct", ambxl, bxlam, 0.1);		
+		double bxlam = ((Literal)v2).doubleValue();
+
+		assertEquals("Distance Amsterdam-Brussels not correct", ambxl, bxlam, 0.1);
 	}
+
 }
