@@ -15,14 +15,17 @@ import java.util.Set;
  */
 public class SingletonSet extends AbstractQueryModelNode implements TupleExpr {
 
+	@Override
 	public Set<String> getBindingNames() {
 		return getAssuredBindingNames();
 	}
 
+	@Override
 	public Set<String> getAssuredBindingNames() {
 		return Collections.emptySet();
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

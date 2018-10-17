@@ -21,6 +21,7 @@ public class SPARQLBooleanXMLParserFactory implements BooleanQueryResultParserFa
 	/**
 	 * Returns {@link BooleanQueryResultFormat#SPARQL}.
 	 */
+	@Override
 	public BooleanQueryResultFormat getBooleanQueryResultFormat() {
 		return BooleanQueryResultFormat.SPARQL;
 	}
@@ -28,6 +29,7 @@ public class SPARQLBooleanXMLParserFactory implements BooleanQueryResultParserFa
 	/**
 	 * Returns a new instance of SPARQLBooleanXMLParser.
 	 */
+	@Override
 	public BooleanQueryResultParser getParser() {
 		return new SPARQLBooleanXMLParser();
 	}

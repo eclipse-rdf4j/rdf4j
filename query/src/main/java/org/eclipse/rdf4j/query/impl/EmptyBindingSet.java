@@ -33,26 +33,32 @@ public class EmptyBindingSet implements BindingSet {
 
 	private EmptyBindingIterator iter = new EmptyBindingIterator();
 
+	@Override
 	public Iterator<Binding> iterator() {
 		return iter;
 	}
 
+	@Override
 	public Set<String> getBindingNames() {
 		return Collections.emptySet();
 	}
 
+	@Override
 	public Binding getBinding(String bindingName) {
 		return null;
 	}
 
+	@Override
 	public boolean hasBinding(String bindingName) {
 		return false;
 	}
 
+	@Override
 	public Value getValue(String bindingName) {
 		return null;
 	}
 
+	@Override
 	public int size() {
 		return 0;
 	}
@@ -82,14 +88,17 @@ public class EmptyBindingSet implements BindingSet {
 
 	private static class EmptyBindingIterator implements Iterator<Binding> {
 
+		@Override
 		public boolean hasNext() {
 			return false;
 		}
 
+		@Override
 		public Binding next() {
 			throw new NoSuchElementException();
 		}
 
+		@Override
 		public void remove() {
 			throw new IllegalStateException();
 		}

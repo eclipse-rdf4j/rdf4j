@@ -24,6 +24,7 @@ public interface BindingSet extends Iterable<Binding>, Serializable {
 	 * Creates an iterator over the bindings in this BindingSet. This only returns bindings with non-null
 	 * values. An implementation is free to return the bindings in arbitrary order.
 	 */
+	@Override
 	public Iterator<Binding> iterator();
 
 	/**
@@ -78,6 +79,7 @@ public interface BindingSet extends Iterable<Binding>, Serializable {
 	 * @return <tt>true</tt> if the other object is an instance of {@link BindingSet} and it contains the same
 	 *         set of bindings (disregarding order), <tt>false</tt> otherwise.
 	 */
+	@Override
 	public boolean equals(Object o);
 
 	/**
@@ -96,5 +98,6 @@ public interface BindingSet extends Iterable<Binding>, Serializable {
 	 * 
 	 * @return A hash code for the BindingSet.
 	 */
+	@Override
 	public int hashCode();
 }

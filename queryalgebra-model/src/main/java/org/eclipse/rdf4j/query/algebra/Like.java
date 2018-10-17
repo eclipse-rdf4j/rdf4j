@@ -60,6 +60,7 @@ public class Like extends UnaryValueOperator {
 		return opPattern;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

@@ -138,6 +138,7 @@ public class ValidatingValueFactory implements ValueFactory {
 		return delegate.createLiteral(label, datatype);
 	}
 
+	@Override
 	public Literal createLiteral(String label, String language) {
 		if (!Literals.isValidLanguageTag(language)) {
 			throw new IllegalArgumentException("Not a valid language tag: " + language);
@@ -165,70 +166,87 @@ public class ValidatingValueFactory implements ValueFactory {
 		}
 	}
 
+	@Override
 	public BNode createBNode() {
 		return delegate.createBNode();
 	}
 
+	@Override
 	public Literal createLiteral(String label) {
 		return delegate.createLiteral(label);
 	}
 
+	@Override
 	public Literal createLiteral(boolean value) {
 		return delegate.createLiteral(value);
 	}
 
+	@Override
 	public Literal createLiteral(byte value) {
 		return delegate.createLiteral(value);
 	}
 
+	@Override
 	public Literal createLiteral(short value) {
 		return delegate.createLiteral(value);
 	}
 
+	@Override
 	public Literal createLiteral(int value) {
 		return delegate.createLiteral(value);
 	}
 
+	@Override
 	public Literal createLiteral(long value) {
 		return delegate.createLiteral(value);
 	}
 
+	@Override
 	public Literal createLiteral(float value) {
 		return delegate.createLiteral(value);
 	}
 
+	@Override
 	public Literal createLiteral(double value) {
 		return delegate.createLiteral(value);
 	}
 
+	@Override
 	public Literal createLiteral(BigDecimal bigDecimal) {
 		return delegate.createLiteral(bigDecimal);
 	}
 
+	@Override
 	public Literal createLiteral(BigInteger bigInteger) {
 		return delegate.createLiteral(bigInteger);
 	}
 
+	@Override
 	public Literal createLiteral(XMLGregorianCalendar calendar) {
 		return delegate.createLiteral(calendar);
 	}
 
+	@Override
 	public Literal createLiteral(Date date) {
 		return delegate.createLiteral(date);
 	}
 
+	@Override
 	public Statement createStatement(Resource subject, IRI predicate, Value object) {
 		return delegate.createStatement(subject, predicate, object);
 	}
 
+	@Override
 	public Statement createStatement(Resource subject, IRI predicate, Value object, Resource context) {
 		return delegate.createStatement(subject, predicate, object, context);
 	}
 
+	@Override
 	public Statement createStatement(Resource subject, URI predicate, Value object) {
 		return delegate.createStatement(subject, predicate, object);
 	}
 
+	@Override
 	public Statement createStatement(Resource subject, URI predicate, Value object, Resource context) {
 		return delegate.createStatement(subject, predicate, object, context);
 	}

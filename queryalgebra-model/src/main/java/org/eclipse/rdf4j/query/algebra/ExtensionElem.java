@@ -51,6 +51,7 @@ public class ExtensionElem extends AbstractQueryModelNode {
 		this.name = name;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

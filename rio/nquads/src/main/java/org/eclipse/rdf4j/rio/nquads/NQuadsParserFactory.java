@@ -21,6 +21,7 @@ public class NQuadsParserFactory implements RDFParserFactory {
 	/**
 	 * Returns {@link RDFFormat#NQUADS}.
 	 */
+	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.NQUADS;
 	}
@@ -28,6 +29,7 @@ public class NQuadsParserFactory implements RDFParserFactory {
 	/**
 	 * Returns a new instance of NQuadsParser.
 	 */
+	@Override
 	public RDFParser getParser() {
 		return new NQuadsParser();
 	}

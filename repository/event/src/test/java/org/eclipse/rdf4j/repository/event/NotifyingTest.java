@@ -40,6 +40,7 @@ public class NotifyingTest {
 
 	static class InvocationHandlerStub implements InvocationHandler {
 
+		@Override
 		public Object invoke(Object proxy, Method method, Object[] args)
 			throws Throwable
 		{
@@ -95,6 +96,7 @@ public class NotifyingTest {
 
 	static class UpdateStub extends AbstractUpdate implements Update {
 
+		@Override
 		public void execute()
 			throws UpdateExecutionException
 		{
@@ -108,6 +110,7 @@ public class NotifyingTest {
 		final Update updateStub = new UpdateStub();
 		final RepositoryConnection stub = new RepositoryConnectionStub() {
 
+			@Override
 			public Update prepareUpdate(QueryLanguage ql, String query, String baseURI)
 				throws MalformedQueryException, RepositoryException
 			{
@@ -118,6 +121,7 @@ public class NotifyingTest {
 		NotifyingRepositoryConnection con = new NotifyingRepositoryConnectionWrapper(repo, stub);
 		con.addRepositoryConnectionListener(new RepositoryConnectionListenerAdapter() {
 
+			@Override
 			public void execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
 					Update operation)
 			{
@@ -140,6 +144,7 @@ public class NotifyingTest {
 		final IRI uri = vf.createIRI("http://example.com/");
 		final RepositoryConnection stub = new RepositoryConnectionStub() {
 
+			@Override
 			protected void removeWithoutCommit(Resource subject, IRI predicate, Value object,
 					Resource... contexts)
 				throws RepositoryException
@@ -150,6 +155,7 @@ public class NotifyingTest {
 		NotifyingRepositoryConnection con = new NotifyingRepositoryConnectionWrapper(repo, stub);
 		con.addRepositoryConnectionListener(new RepositoryConnectionListenerAdapter() {
 
+			@Override
 			public void remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
 					Resource... contexts)
 			{

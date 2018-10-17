@@ -29,6 +29,7 @@ public class IsNumeric extends UnaryValueOperator {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

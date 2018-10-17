@@ -26,6 +26,7 @@ public class RDFXMLWriterFactory implements RDFWriterFactory {
 	/**
 	 * Returns {@link RDFFormat#RDFXML}.
 	 */
+	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.RDFXML;
 	}
@@ -33,6 +34,7 @@ public class RDFXMLWriterFactory implements RDFWriterFactory {
 	/**
 	 * Returns a new instance of {@link RDFXMLWriter}.
 	 */
+	@Override
 	public RDFWriter getWriter(OutputStream out) {
 		return new RDFXMLWriter(out);
 	}
@@ -42,6 +44,7 @@ public class RDFXMLWriterFactory implements RDFWriterFactory {
 	 *
 	 * @throws URISyntaxException
 	 */
+	@Override
 	public RDFWriter getWriter(OutputStream out, String baseURI)
 		throws URISyntaxException
 	{
@@ -51,6 +54,7 @@ public class RDFXMLWriterFactory implements RDFWriterFactory {
 	/**
 	 * Returns a new instance of {@link RDFXMLWriter}.
 	 */
+	@Override
 	public RDFWriter getWriter(Writer writer) {
 		return new RDFXMLWriter(writer);
 	}
@@ -60,6 +64,7 @@ public class RDFXMLWriterFactory implements RDFWriterFactory {
 	 *
 	 * @throws URISyntaxException
 	 */
+	@Override
 	public RDFWriter getWriter(Writer writer, String baseURI)
 		throws URISyntaxException
 	{

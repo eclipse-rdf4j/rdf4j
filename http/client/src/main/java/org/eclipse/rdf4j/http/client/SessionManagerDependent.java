@@ -23,6 +23,7 @@ public interface SessionManagerDependent extends SesameClientDependent {
 	 * 
 	 * @return a {@link HttpClientSessionManager} instance or null
 	 */
+	@Override
 	HttpClientSessionManager getHttpClientSessionManager();
 
 	/**
@@ -33,6 +34,7 @@ public interface SessionManagerDependent extends SesameClientDependent {
 	 * 
 	 * @param client
 	 */
+	@Override
 	void setHttpClientSessionManager(HttpClientSessionManager client);
 
 }

@@ -29,6 +29,7 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 
 	private static final long serialVersionUID = -7055973992568220217L;
 
+	@Override
 	public int compare(Value o1, Value o2) {
 		// check equality
 		if (ObjectUtil.nullEquals(o1, o2)) {
