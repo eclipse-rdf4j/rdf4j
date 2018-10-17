@@ -37,6 +37,7 @@ public class SystemOverviewController implements Controller {
 		this.view = view;
 	}
 
+	@Override
 	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response)
 		throws Exception
 	{

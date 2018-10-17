@@ -35,6 +35,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		setEnabled(true);
 	}
 
+	@Override
 	public String getId() {
 		return id;
 	}
@@ -43,30 +44,37 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		this.id = id;
 	}
 
+	@Override
 	public boolean isHidden() {
 		return hidden;
 	}
 
+	@Override
 	public void setHidden(boolean hidden) {
 		this.hidden = hidden;
 	}
 
+	@Override
 	public boolean isEnabled() {
 		return enabled;
 	}
 
+	@Override
 	public void setEnabled(boolean enabled) {
 		this.enabled = enabled;
 	}
 
+	@Override
 	public NavigationNode getParent() {
 		return parent;
 	}
 
+	@Override
 	public void setParent(NavigationNode parent) {
 		this.parent = parent;
 	}
 
+	@Override
 	public boolean isParent(NavigationNode node) {
 		boolean result = false;
 
@@ -82,6 +90,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return result;
 	}
 
+	@Override
 	public String getPathPrefix() {
 		StringBuilder result = new StringBuilder();
 		if (getParent() != null) {
@@ -96,6 +105,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return result.toString();
 	}
 
+	@Override
 	public String getPathSeparator() {
 		String result = null;
 		if (getParent() != null) {
@@ -104,6 +114,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return result;
 	}
 
+	@Override
 	public String getPath() {
 		if (path == null) {
 			StringBuilder result = new StringBuilder();
@@ -114,10 +125,12 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return path;
 	}
 
+	@Override
 	public void setPath(String path) {
 		this.path = path;
 	}
 
+	@Override
 	public String getIconPrefix() {
 		StringBuilder result = new StringBuilder();
 		if (getParent() != null) {
@@ -132,6 +145,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return result.toString();
 	}
 
+	@Override
 	public String getIconSeparator() {
 		String result = null;
 		if (getParent() != null) {
@@ -140,6 +154,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return result;
 	}
 
+	@Override
 	public String getIconSuffix() {
 		String result = null;
 		if (getParent() != null) {
@@ -148,6 +163,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return result;
 	}
 
+	@Override
 	public String getIcon() {
 		if (icon == null) {
 			StringBuilder result = new StringBuilder();
@@ -160,10 +176,12 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return icon;
 	}
 
+	@Override
 	public void setIcon(String icon) {
 		this.icon = icon;
 	}
 
+	@Override
 	public String getI18nPrefix() {
 		StringBuilder result = new StringBuilder();
 		if (getParent() != null) {
@@ -178,6 +196,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return result.toString();
 	}
 
+	@Override
 	public String getI18nSeparator() {
 		String result = null;
 		if (getParent() != null) {
@@ -186,6 +205,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return result;
 	}
 
+	@Override
 	public String getI18nSuffix() {
 		String result = null;
 		if (getParent() != null) {
@@ -194,6 +214,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return result;
 	}
 
+	@Override
 	public String getI18n() {
 		if (i18n == null) {
 			StringBuilder result = new StringBuilder();
@@ -205,10 +226,12 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return i18n;
 	}
 
+	@Override
 	public void setI18n(String i18n) {
 		this.i18n = i18n;
 	}
 
+	@Override
 	public String getViewSuffix() {
 		if (viewSuffix == null) {
 			if (getParent() != null) {
@@ -218,10 +241,12 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return viewSuffix;
 	}
 
+	@Override
 	public void setViewSuffix(String viewSuffix) {
 		this.viewSuffix = viewSuffix;
 	}
 
+	@Override
 	public int getDepth() {
 		int result = 0;
 
@@ -232,6 +257,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return result;
 	}
 
+	@Override
 	public boolean equals(Object other) {
 		boolean result = this == other;
 		if (!result && other instanceof NavigationNode && getClass().equals(other.getClass())) {
@@ -249,6 +275,7 @@ public abstract class AbstractNavigationNode implements NavigationNode {
 		return result;
 	}
 
+	@Override
 	public int hashCode() {
 		int result = getId().hashCode();
 		if (getParent() != null) {

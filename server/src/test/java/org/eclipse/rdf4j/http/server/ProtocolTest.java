@@ -499,6 +499,7 @@ public class ProtocolTest {
 
 			Runnable runner = new Runnable() {
 
+				@Override
 				public void run() {
 					try {
 						if (number % 2 == 0) {

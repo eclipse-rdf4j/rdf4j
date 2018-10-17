@@ -35,6 +35,7 @@ public class InfoServlet extends TransformationServlet {
 		return new String[] { "limit", "queryLn", "infer", "Accept", "Content-Type" };
 	}
 
+	@Override
 	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
 		throws Exception
 	{

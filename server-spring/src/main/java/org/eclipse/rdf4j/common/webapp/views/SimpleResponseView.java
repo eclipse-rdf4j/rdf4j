@@ -39,11 +39,13 @@ public class SimpleResponseView implements View {
 	private SimpleResponseView() {
 	}
 
+	@Override
 	public String getContentType() {
 		return CONTENT_TYPE;
 	}
 
 	@SuppressWarnings("rawtypes")
+	@Override
 	public void render(Map model, HttpServletRequest request, HttpServletResponse response)
 		throws Exception
 	{

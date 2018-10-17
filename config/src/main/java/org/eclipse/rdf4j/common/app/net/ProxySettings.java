@@ -207,6 +207,7 @@ public class ProxySettings implements Configuration {
 	/**
 	 * (Re-)loads the proxy system properties.
 	 */
+	@Override
 	public void load()
 		throws IOException
 	{
@@ -220,6 +221,7 @@ public class ProxySettings implements Configuration {
 	/**
 	 * Saves the currently known settings.
 	 */
+	@Override
 	public void save()
 		throws IOException
 	{
@@ -231,12 +233,14 @@ public class ProxySettings implements Configuration {
 
 	}
 
+	@Override
 	public void destroy()
 		throws IOException
 	{
 		// no-op
 	}
 
+	@Override
 	public void init()
 		throws IOException
 	{

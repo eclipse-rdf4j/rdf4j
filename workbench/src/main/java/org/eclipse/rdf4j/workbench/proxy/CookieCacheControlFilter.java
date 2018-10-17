@@ -37,14 +37,17 @@ public class CookieCacheControlFilter implements Filter {
 
 	private static final String HEADER_LASTMOD = "Last-Modified";
 
+	@Override
 	public void init(FilterConfig config)
 		throws ServletException
 	{
 	}
 
+	@Override
 	public void destroy() {
 	}
 
+	@Override
 	public void doFilter(ServletRequest req, ServletResponse resp, FilterChain chain)
 		throws IOException, ServletException
 	{

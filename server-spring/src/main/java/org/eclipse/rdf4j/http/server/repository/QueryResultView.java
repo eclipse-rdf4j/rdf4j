@@ -57,6 +57,7 @@ public abstract class QueryResultView implements View {
 	public static final String HEADERS_ONLY = "headersOnly";
 
 	@SuppressWarnings("rawtypes")
+	@Override
 	public final void render(Map model, HttpServletRequest request, HttpServletResponse response)
 		throws IOException
 	{

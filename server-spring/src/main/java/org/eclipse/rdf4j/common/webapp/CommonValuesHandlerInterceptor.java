@@ -24,12 +24,14 @@ import org.springframework.web.servlet.ModelAndView;
  */
 public class CommonValuesHandlerInterceptor implements HandlerInterceptor {
 
+	@Override
 	public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler,
 			Exception ex)
 	{
 		// nop
 	}
 
+	@Override
 	public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler,
 			ModelAndView mav)
 	{
@@ -39,6 +41,7 @@ public class CommonValuesHandlerInterceptor implements HandlerInterceptor {
 		mav.addObject("currentYear", Calendar.getInstance().get(Calendar.YEAR));
 	}
 
+	@Override
 	public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
 		throws Exception
 	{

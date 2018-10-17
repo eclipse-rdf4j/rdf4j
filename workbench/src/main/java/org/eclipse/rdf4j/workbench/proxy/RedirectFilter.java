@@ -23,16 +23,19 @@ public class RedirectFilter implements Filter {
 
 	private FilterConfig config;
 
+	@Override
 	public void init(FilterConfig config)
 		throws ServletException
 	{
 		this.config = config;
 	}
 
+	@Override
 	public void destroy() {
 	}
 
 	@SuppressWarnings("unchecked")
+	@Override
 	public void doFilter(ServletRequest req, ServletResponse resp, FilterChain chain)
 		throws IOException, ServletException
 	{

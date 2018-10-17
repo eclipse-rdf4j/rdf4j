@@ -32,6 +32,7 @@ public class ArbitraryLengthPathTest extends TestCase {
 	private RepositoryConnection con;
 
 	@Before
+	@Override
 	public void setUp()
 		throws Exception
 	{
@@ -41,6 +42,7 @@ public class ArbitraryLengthPathTest extends TestCase {
 	}
 
 	@After
+	@Override
 	public void tearDown()
 		throws Exception
 	{

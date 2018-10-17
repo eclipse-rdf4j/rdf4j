@@ -49,11 +49,13 @@ public class GraphQueryResultView extends QueryResultView {
 	private GraphQueryResultView() {
 	}
 
+	@Override
 	public String getContentType() {
 		return null;
 	}
 
 	@SuppressWarnings("rawtypes")
+	@Override
 	protected void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
 		throws IOException
 	{

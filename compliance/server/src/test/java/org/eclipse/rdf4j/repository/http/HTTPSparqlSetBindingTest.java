@@ -38,6 +38,7 @@ public class HTTPSparqlSetBindingTest extends SparqlSetBindingTest {
 		server.stop();
 	}
 
+	@Override
 	protected Repository newRepository() {
 		return new HTTPRepository(HTTPMemServer.REPOSITORY_URL);
 	}

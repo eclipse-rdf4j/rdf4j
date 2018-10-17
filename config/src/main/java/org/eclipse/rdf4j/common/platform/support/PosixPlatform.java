@@ -17,22 +17,27 @@ import org.eclipse.rdf4j.common.platform.AbstractPlatform;
  */
 public class PosixPlatform extends AbstractPlatform {
 
+	@Override
 	public String getName() {
 		return "POSIX-compatible";
 	}
 
+	@Override
 	public File getOSApplicationDataDir() {
 		return new File(System.getProperty("user.home"), ".RDF4J");
 	}
 
+	@Override
 	public boolean dataDirPreserveCase() {
 		return false;
 	}
 
+	@Override
 	public boolean dataDirReplaceWhitespace() {
 		return true;
 	}
 
+	@Override
 	public boolean dataDirReplaceColon() {
 		return false;
 	}

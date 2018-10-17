@@ -218,6 +218,7 @@ public class AppVersion implements Comparable<AppVersion> {
 	 * @return <tt>0</tt> if both versions are equal, a negative number if this version is older than
 	 *         <tt>other</tt>, or a positive number otherwise.
 	 */
+	@Override
 	public int compareTo(AppVersion other) {
 		int result = major - other.major;
 

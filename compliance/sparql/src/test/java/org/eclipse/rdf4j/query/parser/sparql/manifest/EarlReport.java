@@ -129,10 +129,12 @@ public class EarlReport {
 
 		private int failureCount;
 
+		@Override
 		public void startTest(Test test) {
 			errorCount = failureCount = 0;
 		}
 
+		@Override
 		public void endTest(Test test) {
 			String testURI = null;
 			;
@@ -175,10 +177,12 @@ public class EarlReport {
 			}
 		}
 
+		@Override
 		public void addError(Test test, Throwable t) {
 			errorCount++;
 		}
 
+		@Override
 		public void addFailure(Test test, AssertionFailedError error) {
 			failureCount++;
 		}

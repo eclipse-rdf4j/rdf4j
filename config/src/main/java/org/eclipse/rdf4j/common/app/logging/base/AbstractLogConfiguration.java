@@ -53,6 +53,7 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 		initBase();
 	}
 
+	@Override
 	public void setBaseDir(File baseDir)
 		throws IOException
 	{
@@ -64,14 +65,17 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 		}
 	}
 
+	@Override
 	public File getBaseDir() {
 		return this.baseDir;
 	}
 
+	@Override
 	public File getConfDir() {
 		return confDir;
 	}
 
+	@Override
 	public File getLoggingDir() {
 		return loggingDir;
 	}
@@ -107,10 +111,12 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 		}
 	}
 
+	@Override
 	public boolean isDebugLoggingEnabled() {
 		return debugLoggingEnabled;
 	}
 
+	@Override
 	public void setDebugLoggingEnabled(boolean debugLoggingEnabled) {
 		this.debugLoggingEnabled = debugLoggingEnabled;
 	}
@@ -119,10 +125,12 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 		return Collections.unmodifiableSet(packages);
 	}
 
+	@Override
 	public AppConfiguration getAppConfiguration() {
 		return this.config;
 	}
 
+	@Override
 	public void setAppConfiguration(AppConfiguration config) {
 		this.config = config;
 	}

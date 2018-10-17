@@ -38,6 +38,7 @@ public class W3CApprovedSPARQL11UpdateTest extends SPARQLUpdateConformanceTest {
 	{
 		return SPARQL11ManifestTest.suite(new Factory() {
 
+			@Override
 			public W3CApprovedSPARQL11UpdateTest createSPARQLUpdateConformanceTest(String testURI,
 					String name, String requestFile, IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs,
 					IRI resultDefaultGraphURI, Map<String, IRI> resultNamedGraphs)

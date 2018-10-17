@@ -32,6 +32,7 @@ public class WindowsPlatform extends AbstractPlatform {
 	/**
 	 * Returns the name of this windows platform.
 	 */
+	@Override
 	public String getName() {
 		if (isWin9x()) {
 			return "Windows 9x";
@@ -56,6 +57,7 @@ public class WindowsPlatform extends AbstractPlatform {
 		}
 	}
 
+	@Override
 	public File getUserHome() {
 		File result = super.getUserHome();
 
@@ -83,6 +85,7 @@ public class WindowsPlatform extends AbstractPlatform {
 	/**
 	 * Returns an application data directory in the "Application Data" userdir of Windows.
 	 */
+	@Override
 	public File getOSApplicationDataDir() {
 		File result = new File(getUserHome(), APPLICATION_DATA);
 
@@ -173,14 +176,17 @@ public class WindowsPlatform extends AbstractPlatform {
 		}
 	}
 
+	@Override
 	public boolean dataDirPreserveCase() {
 		return true;
 	}
 
+	@Override
 	public boolean dataDirReplaceWhitespace() {
 		return false;
 	}
 
+	@Override
 	public boolean dataDirReplaceColon() {
 		return true;
 	}

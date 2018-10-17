@@ -38,6 +38,7 @@ public class LoggingOverviewController implements Controller {
 			LogLevel.INFO.toString(),
 			LogLevel.DEBUG.toString() };
 
+	@Override
 	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response)
 		throws Exception
 	{

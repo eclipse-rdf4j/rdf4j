@@ -56,10 +56,12 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 
 	private FileLogReader currentReader = null;
 
+	@Override
 	public boolean supportsDateRanges() {
 		return true;
 	}
 
+	@Override
 	public void setAppender(Appender<?> appender) {
 		super.setAppender(appender);
 		if (appender instanceof RollingFileAppender) {
@@ -77,6 +79,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		}
 	}
 
+	@Override
 	public void init()
 		throws Exception
 	{
@@ -125,6 +128,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		}
 	}
 
+	@Override
 	public boolean hasNext() {
 		if (getLimit() == 0) {
 			return isMoreAvailable();
@@ -132,10 +136,12 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		return isMoreAvailable() && (count < (getOffset() + getLimit()));
 	}
 
+	@Override
 	public boolean isMoreAvailable() {
 		return next != null;
 	}
 
+	@Override
 	public LogRecord next() {
 		LogRecord result = next;
 		try {
@@ -176,6 +182,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		}
 	}
 
+	@Override
 	public void destroy()
 		throws IOException
 	{
@@ -187,6 +194,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	/**
 	 * @return Returns the startDate.
 	 */
+	@Override
 	public Date getStartDate() {
 		return startDate;
 	}
@@ -195,6 +203,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	 * @param startDate
 	 *        The startDate to set.
 	 */
+	@Override
 	public void setStartDate(Date startDate) {
 		this.startDate = startDate;
 	}
@@ -202,6 +211,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	/**
 	 * @return Returns the endDate.
 	 */
+	@Override
 	public Date getEndDate() {
 		return endDate;
 	}
@@ -210,14 +220,17 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	 * @param endDate
 	 *        The endDate to set.
 	 */
+	@Override
 	public void setEndDate(Date endDate) {
 		this.endDate = endDate;
 	}
 
+	@Override
 	public Date getMaxDate() {
 		return this.maxDate;
 	}
 
+	@Override
 	public Date getMinDate() {
 		return this.minDate;
 	}
@@ -248,6 +261,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 			this.endCal = endCal;
 		}
 
+		@Override
 		public boolean accept(File dir, String name) {
 			Matcher matcher = pattern.matcher(name);
 			if (!matcher.matches()) {

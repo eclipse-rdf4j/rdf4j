@@ -93,6 +93,7 @@ public class FederateTest extends AbstractCommandTest {
 	}
 
 	@After
+	@Override
 	public void tearDown()
 		throws Exception
 	{

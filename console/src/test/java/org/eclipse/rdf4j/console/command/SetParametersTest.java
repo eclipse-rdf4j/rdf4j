@@ -43,6 +43,7 @@ public class SetParametersTest extends AbstractCommandTest {
 	}
 
 	@After
+	@Override
 	public void tearDown()
 		throws Exception
 	{

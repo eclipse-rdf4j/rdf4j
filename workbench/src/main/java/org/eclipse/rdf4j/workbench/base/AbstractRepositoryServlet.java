@@ -48,6 +48,7 @@ public abstract class AbstractRepositoryServlet extends AbstractServlet implemen
 		this.info = info;
 	}
 
+	@Override
 	public void setRepository(Repository repository) {
 		if (repository == null) {
 			this.vf = SimpleValueFactory.getInstance();

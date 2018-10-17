@@ -122,6 +122,7 @@ public class Group extends AbstractNavigationNode {
 		return new ArrayList<View>(views.values());
 	}
 
+	@Override
 	public Object clone() {
 		Group result = new Group(getId());
 		copyCommonAttributes(result);
