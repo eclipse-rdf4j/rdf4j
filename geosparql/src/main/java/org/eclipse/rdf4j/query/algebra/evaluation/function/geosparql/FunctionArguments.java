@@ -12,6 +12,7 @@ import java.text.ParseException;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
@@ -39,9 +40,18 @@ class FunctionArguments {
 	 * @return double
 	 * @throws ValueExprEvaluationException 
 	 */
-	public static double getDouble(Function func, Value v) throws ValueExprEvaluationException {
-		Literal l = getLiteral(func, v, XMLSchema.DOUBLE);
-		return l.doubleValue();
+	public static double getDouble(Function func, Value v) throws ValueExprEvaluationException { 
+		if (!(v instanceof Literal)) {
+			throw new ValueExprEvaluationException("Invalid argument for " + func.getURI() + ": " + v);
+		}
+		
+		try {
+			return ((Literal)v).doubleValue();
+		}
+		catch (NumberFormatException e) {
+			throw new ValueExprEvaluationException(e);
+		}
+		
 	}
 
 	/**
