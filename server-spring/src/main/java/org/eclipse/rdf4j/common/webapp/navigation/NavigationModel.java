@@ -75,10 +75,12 @@ public class NavigationModel extends Group {
 		super(id);
 	}
 
+	@Override
 	public String getId() {
 		return "";
 	}
 
+	@Override
 	public String getPathPrefix() {
 		if (pathPrefix == null) {
 			setPathPrefix(DEFAULT_PATH_PREFIX);
@@ -138,6 +140,7 @@ public class NavigationModel extends Group {
 		this.iconSuffix = iconSuffix;
 	}
 
+	@Override
 	public String getI18nPrefix() {
 		if (i18nPrefix == null) {
 			setI18nPrefix(DEFAULT_I18N_PREFIX);
@@ -173,6 +176,7 @@ public class NavigationModel extends Group {
 		this.i18nSuffix = i18nSuffix;
 	}
 
+	@Override
 	public String getViewSuffix() {
 		if (viewSuffix == null) {
 			setViewSuffix(DEFAULT_VIEW_SUFFIX);
@@ -240,6 +244,7 @@ public class NavigationModel extends Group {
 		}
 	}
 
+	@Override
 	public Object clone() {
 		NavigationModel result = new NavigationModel(getId());
 		copyCommonAttributes(result);

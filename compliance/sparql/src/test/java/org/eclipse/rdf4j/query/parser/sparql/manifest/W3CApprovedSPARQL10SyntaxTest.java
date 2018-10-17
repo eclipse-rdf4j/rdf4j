@@ -27,6 +27,7 @@ public class W3CApprovedSPARQL10SyntaxTest extends SPARQL11SyntaxTest {
 	{
 		return SPARQL11SyntaxTest.suite(new Factory() {
 
+			@Override
 			public SPARQL11SyntaxTest createSPARQLSyntaxTest(String testURI, String testName,
 					String testAction, boolean positiveTest)
 			{
@@ -41,6 +42,7 @@ public class W3CApprovedSPARQL10SyntaxTest extends SPARQL11SyntaxTest {
 		super(testURI, name, queryFileURL, positiveTest);
 	}
 
+	@Override
 	protected ParsedOperation parseOperation(String operation, String fileURL)
 		throws MalformedQueryException
 	{

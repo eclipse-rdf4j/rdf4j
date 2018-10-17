@@ -24,6 +24,7 @@ public class FederationSPARQL10QueryTest extends SPARQLQueryTest {
 	{
 		return SPARQL10ManifestTest.suite(new Factory() {
 
+			@Override
 			public FederationSPARQL10QueryTest createSPARQLQueryTest(String testURI, String name,
 					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality)
 			{
@@ -31,6 +32,7 @@ public class FederationSPARQL10QueryTest extends SPARQLQueryTest {
 						laxCardinality, false);
 			}
 
+			@Override
 			public FederationSPARQL10QueryTest createSPARQLQueryTest(String testURI, String name,
 					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality,
 					boolean checkOrder)
@@ -63,6 +65,7 @@ public class FederationSPARQL10QueryTest extends SPARQLQueryTest {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
 
+	@Override
 	protected Repository newRepository() {
 		Federation sail = new Federation();
 		sail.addMember(new SailRepository(new MemoryStore()));

@@ -12,22 +12,27 @@ import java.io.File;
 
 public class DefaultPlatform extends AbstractPlatform {
 
+	@Override
 	public String getName() {
 		return "Default";
 	}
 
+	@Override
 	public File getOSApplicationDataDir() {
 		return new File("RDF4J");
 	}
 
+	@Override
 	public boolean dataDirPreserveCase() {
 		return false;
 	}
 
+	@Override
 	public boolean dataDirReplaceWhitespace() {
 		return false;
 	}
 
+	@Override
 	public boolean dataDirReplaceColon() {
 		return false;
 	}

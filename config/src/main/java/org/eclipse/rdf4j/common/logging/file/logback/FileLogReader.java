@@ -47,6 +47,7 @@ public class FileLogReader extends AbstractLogReader {
 		this.logFile = logFile;
 	}
 
+	@Override
 	public void setAppender(Appender<?> appender) {
 		super.setAppender(appender);
 		if (appender instanceof FileAppender) {
@@ -58,6 +59,7 @@ public class FileLogReader extends AbstractLogReader {
 		this.next = null;
 	}
 
+	@Override
 	public void init()
 		throws Exception
 	{
@@ -83,10 +85,12 @@ public class FileLogReader extends AbstractLogReader {
 		}
 	}
 
+	@Override
 	public boolean isMoreAvailable() {
 		return next != null;
 	}
 
+	@Override
 	public boolean hasNext() {
 		if (getLimit() == 0) {
 			return isMoreAvailable();
@@ -94,6 +98,7 @@ public class FileLogReader extends AbstractLogReader {
 		return isMoreAvailable() && (count < (getOffset() + getLimit()));
 	}
 
+	@Override
 	public LogRecord next() {
 		LogRecord result = next;
 		try {
@@ -198,6 +203,7 @@ public class FileLogReader extends AbstractLogReader {
 		return result;
 	}
 
+	@Override
 	public void destroy()
 		throws IOException
 	{

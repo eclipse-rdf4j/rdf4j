@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.common.platform.support;
  */
 public class PosixGnomePlatform extends PosixPlatform {
 
+	@Override
 	public String getName() {
 		return "POSIX-compatible with Gnome";
 	}

@@ -55,11 +55,13 @@ public class TupleQueryResultView extends QueryResultView {
 	private TupleQueryResultView() {
 	}
 
+	@Override
 	public String getContentType() {
 		return null;
 	}
 
 	@SuppressWarnings("rawtypes")
+	@Override
 	protected void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
 		throws IOException
 	{

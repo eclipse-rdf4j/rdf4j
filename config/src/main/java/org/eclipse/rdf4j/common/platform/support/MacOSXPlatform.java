@@ -17,6 +17,7 @@ public class MacOSXPlatform extends PosixPlatform {
 
 	public static final String APPLICATION_DATA = "Library/Application Support/RDF4J";
 
+	@Override
 	public String getName() {
 		return "Mac OS X";
 	}
@@ -26,10 +27,12 @@ public class MacOSXPlatform extends PosixPlatform {
 		return new File(System.getProperty("user.home"), APPLICATION_DATA);
 	}
 
+	@Override
 	public boolean dataDirPreserveCase() {
 		return true;
 	}
 
+	@Override
 	public boolean dataDirReplaceWhitespace() {
 		return false;
 	}

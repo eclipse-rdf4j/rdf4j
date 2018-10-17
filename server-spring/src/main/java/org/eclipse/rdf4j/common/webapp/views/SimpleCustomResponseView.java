@@ -38,11 +38,13 @@ public class SimpleCustomResponseView implements View {
 		return INSTANCE;
 	}
 
+	@Override
 	public String getContentType() {
 		return null;
 	}
 
 	@SuppressWarnings("rawtypes")
+	@Override
 	public void render(Map model, HttpServletRequest request, HttpServletResponse response)
 		throws Exception
 	{

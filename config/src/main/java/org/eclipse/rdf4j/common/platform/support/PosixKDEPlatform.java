@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.common.platform.support;
  */
 public class PosixKDEPlatform extends PosixPlatform {
 
+	@Override
 	public String getName() {
 		return "POSIX-compatible with KDE";
 	}

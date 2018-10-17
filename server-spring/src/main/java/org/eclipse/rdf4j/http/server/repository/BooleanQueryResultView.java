@@ -38,11 +38,13 @@ public class BooleanQueryResultView extends QueryResultView {
 	private BooleanQueryResultView() {
 	}
 
+	@Override
 	public String getContentType() {
 		return null;
 	}
 
 	@SuppressWarnings("rawtypes")
+	@Override
 	protected void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
 		throws IOException
 	{

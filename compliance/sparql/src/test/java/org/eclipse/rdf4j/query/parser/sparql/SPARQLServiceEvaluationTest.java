@@ -100,6 +100,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws java.lang.Exception
 	 */
 	@Before
+	@Override
 	public void setUp()
 		throws Exception
 	{
@@ -216,6 +217,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws java.lang.Exception
 	 */
 	@After
+	@Override
 	public void tearDown()
 		throws Exception
 	{

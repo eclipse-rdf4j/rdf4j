@@ -29,6 +29,7 @@ public class Parameter {
 		return value;
 	}
 
+	@Override
 	public boolean equals(Object obj) {
 		if (obj instanceof Parameter) {
 			Parameter other = (Parameter)obj;
@@ -38,10 +39,12 @@ public class Parameter {
 		return false;
 	}
 
+	@Override
 	public int hashCode() {
 		return key.hashCode();
 	}
 
+	@Override
 	public String toString() {
 		if (value == null) {
 			return key;

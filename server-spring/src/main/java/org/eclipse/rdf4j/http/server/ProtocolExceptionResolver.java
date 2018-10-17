@@ -28,6 +28,7 @@ public class ProtocolExceptionResolver implements HandlerExceptionResolver {
 
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
+	@Override
 	public ModelAndView resolveException(HttpServletRequest request, HttpServletResponse response,
 			Object handler, Exception exception)
 	{

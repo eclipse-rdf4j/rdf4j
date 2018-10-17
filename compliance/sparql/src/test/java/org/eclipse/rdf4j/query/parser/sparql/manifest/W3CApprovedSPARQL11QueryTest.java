@@ -24,6 +24,7 @@ public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
 	{
 		return SPARQL11ManifestTest.suite(new Factory() {
 
+			@Override
 			public W3CApprovedSPARQL11QueryTest createSPARQLQueryTest(String testURI, String name,
 					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality)
 			{
@@ -31,6 +32,7 @@ public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
 						laxCardinality, false);
 			}
 
+			@Override
 			public W3CApprovedSPARQL11QueryTest createSPARQLQueryTest(String testURI, String name,
 					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality,
 					boolean checkOrder)
@@ -64,6 +66,7 @@ public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
 
+	@Override
 	protected Repository newRepository() {
 		return new DatasetRepository(new SailRepository(new MemoryStore()));
 	}

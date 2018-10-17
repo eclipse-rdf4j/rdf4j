@@ -42,6 +42,7 @@ public class LogbackConfiguration extends AbstractLogConfiguration {
 		// it will be called from the super constructor
 	}
 
+	@Override
 	public void init()
 		throws IOException
 	{
@@ -55,6 +56,7 @@ public class LogbackConfiguration extends AbstractLogConfiguration {
 		save();
 	}
 
+	@Override
 	public void load()
 		throws IOException
 	{
@@ -81,12 +83,14 @@ public class LogbackConfiguration extends AbstractLogConfiguration {
 		}
 	}
 
+	@Override
 	public void save()
 		throws IOException
 	{
 		// nop
 	}
 
+	@Override
 	public void destroy() {
 		// look up all loggers in the logger context and close
 		// all appenders configured for them.
@@ -115,10 +119,12 @@ public class LogbackConfiguration extends AbstractLogConfiguration {
 		return f;
 	}
 
+	@Override
 	public LogReader getLogReader(String appender) {
 		return this.configurator.getLogReader(appender);
 	}
 
+	@Override
 	public LogReader getDefaultLogReader() {
 		LogReader logReader = this.configurator.getDefaultLogReader();
 		if (logReader != null) {

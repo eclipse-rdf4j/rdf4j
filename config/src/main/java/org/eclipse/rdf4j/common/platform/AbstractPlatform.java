@@ -26,6 +26,7 @@ public abstract class AbstractPlatform implements Platform {
 
 	protected String colonReplacement = "";
 
+	@Override
 	public File getUserHome() {
 		File result = null;
 
@@ -35,6 +36,7 @@ public abstract class AbstractPlatform implements Platform {
 		return result;
 	}
 
+	@Override
 	public final File getApplicationDataDir() {
 		File result;
 		String sysProp;
@@ -57,14 +59,17 @@ public abstract class AbstractPlatform implements Platform {
 		return result;
 	}
 
+	@Override
 	public final File getApplicationDataDir(String applicationName) {
 		return new File(getApplicationDataDir(), getRelativeApplicationDataDir(applicationName));
 	}
 
+	@Override
 	public final File getOSApplicationDataDir(String applicationName) {
 		return new File(getOSApplicationDataDir(), getRelativeApplicationDataDir(applicationName));
 	}
 
+	@Override
 	public String getRelativeApplicationDataDir(String applicationName) {
 		return getRelativeApplicationDataDir(applicationName, dataDirPreserveCase(),
 				dataDirReplaceWhitespace(), dataDirReplaceColon());

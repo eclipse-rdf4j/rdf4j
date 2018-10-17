@@ -150,6 +150,7 @@ public class HeaderElement {
 		return parameters.remove(param);
 	}
 
+	@Override
 	public boolean equals(Object obj) {
 		if (obj instanceof HeaderElement) {
 			HeaderElement other = (HeaderElement)obj;
@@ -160,10 +161,12 @@ public class HeaderElement {
 		return false;
 	}
 
+	@Override
 	public int hashCode() {
 		return value.hashCode();
 	}
 
+	@Override
 	public String toString() {
 		StringBuilder sb = new StringBuilder(32);
 		sb.append(value);

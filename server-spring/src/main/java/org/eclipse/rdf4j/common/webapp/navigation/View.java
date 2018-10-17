@@ -24,6 +24,7 @@ public class View extends AbstractNavigationNode {
 		super(id);
 	}
 
+	@Override
 	public String getPath() {
 		if (path == null) {
 			StringBuilder result = new StringBuilder();
@@ -34,6 +35,7 @@ public class View extends AbstractNavigationNode {
 		return path;
 	}
 
+	@Override
 	public Object clone() {
 		View result = new View(getId());
 		copyCommonAttributes(result);

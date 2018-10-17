@@ -26,22 +26,27 @@ public class SimpleLogRecord implements LogRecord {
 
 	private Date time;
 
+	@Override
 	public LogLevel getLevel() {
 		return level;
 	}
 
+	@Override
 	public String getMessage() {
 		return message;
 	}
 
+	@Override
 	public List<String> getStackTrace() {
 		return stackTrace;
 	}
 
+	@Override
 	public String getThreadName() {
 		return threadName;
 	}
 
+	@Override
 	public Date getTime() {
 		return time;
 	}
@@ -66,6 +71,7 @@ public class SimpleLogRecord implements LogRecord {
 		this.time = time;
 	}
 
+	@Override
 	public String toString() {
 		StringBuilder result = new StringBuilder();
 		result.append(level);

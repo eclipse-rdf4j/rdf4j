@@ -124,12 +124,14 @@ public class AppConfiguration implements Configuration {
 	 * Methods *
 	 ----------*/
 
+	@Override
 	public void load()
 		throws IOException
 	{
 		properties = ConfigurationUtil.loadConfigurationProperties(APP_CONFIG_FILE, null);
 	}
 
+	@Override
 	public void save()
 		throws IOException
 	{
@@ -139,6 +141,7 @@ public class AppConfiguration implements Configuration {
 		proxySettings.save();
 	}
 
+	@Override
 	public void init()
 		throws IOException
 	{
@@ -176,6 +179,7 @@ public class AppConfiguration implements Configuration {
 		save();
 	}
 
+	@Override
 	public void destroy()
 		throws IOException
 	{

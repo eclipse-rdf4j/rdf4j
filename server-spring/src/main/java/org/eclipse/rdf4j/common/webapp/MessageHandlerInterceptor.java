@@ -24,12 +24,14 @@ import org.springframework.web.servlet.view.RedirectView;
  */
 public class MessageHandlerInterceptor implements HandlerInterceptor {
 
+	@Override
 	public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler,
 			Exception ex)
 	{
 		// nop
 	}
 
+	@Override
 	public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler,
 			ModelAndView mav)
 	{
@@ -55,6 +57,7 @@ public class MessageHandlerInterceptor implements HandlerInterceptor {
 		}
 	}
 
+	@Override
 	public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
 		throws Exception
 	{

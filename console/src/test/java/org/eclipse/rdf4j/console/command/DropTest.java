@@ -69,6 +69,7 @@ public class DropTest extends AbstractCommandTest {
 	}
 
 	@After
+	@Override
 	public void tearDown()
 		throws RDF4JException
 	{
