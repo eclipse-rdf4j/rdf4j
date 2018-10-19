@@ -324,6 +324,7 @@ class SailDatasetImpl implements SailDataset {
 		}
 		return new FilterIteration<Statement, SailException>(result) {
 
+			@Override
 			protected boolean accept(Statement stmt) {
 				return !excluded.contains(stmt);
 			}

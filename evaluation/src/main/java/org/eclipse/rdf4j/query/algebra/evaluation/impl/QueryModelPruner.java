@@ -42,6 +42,7 @@ public class QueryModelPruner implements QueryOptimizer {
 	 * 
 	 * @param tupleExpr
 	 */
+	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(new TreeSanitizer());
 	}

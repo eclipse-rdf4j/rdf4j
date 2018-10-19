@@ -289,6 +289,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	 * Methods *
 	 *---------*/
 
+	@Override
 	protected Iteration<BindingSet, QueryEvaluationException> createIteration()
 		throws QueryEvaluationException
 	{

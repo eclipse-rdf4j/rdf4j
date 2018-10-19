@@ -19,6 +19,7 @@ class SizeComparator implements Comparator<BindingSet>, Serializable {
 	 */
 	private static final long serialVersionUID = 1L;
 
+	@Override
 	public int compare(BindingSet o1, BindingSet o2) {
 		return Integer.valueOf(o1.size()).compareTo(Integer.valueOf(o2.size()));
 	}

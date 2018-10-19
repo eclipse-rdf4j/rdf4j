@@ -24,6 +24,7 @@ public class MemorySPARQLQueryTest extends SPARQLQueryTest {
 	{
 		return SPARQL11ManifestTest.suite(new Factory() {
 
+			@Override
 			public MemorySPARQLQueryTest createSPARQLQueryTest(String testURI, String name,
 					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality)
 			{
@@ -31,6 +32,7 @@ public class MemorySPARQLQueryTest extends SPARQLQueryTest {
 						laxCardinality, false);
 			}
 
+			@Override
 			public MemorySPARQLQueryTest createSPARQLQueryTest(String testURI, String name,
 					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality,
 					boolean checkOrder)
@@ -59,6 +61,7 @@ public class MemorySPARQLQueryTest extends SPARQLQueryTest {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
 
+	@Override
 	protected Repository newRepository() {
 		return new DatasetRepository(new SailRepository(new MemoryStore()));
 	}

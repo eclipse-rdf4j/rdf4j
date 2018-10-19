@@ -146,6 +146,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 		}
 	}
 
+	@Override
 	public void initialize()
 		throws SailException
 	{
@@ -181,11 +182,13 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 		}
 
 		// called by base sail
+		@Override
 		public void statementAdded(Statement st) {
 			checkUpdatedStatement(st);
 		}
 
 		// called by base sail
+		@Override
 		public void statementRemoved(Statement st) {
 			checkUpdatedStatement(st);
 		}

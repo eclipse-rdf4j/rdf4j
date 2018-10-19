@@ -265,6 +265,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		return new SailUpdate(parsedUpdate, this);
 	}
 
+	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts)
 		throws RepositoryException

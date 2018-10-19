@@ -23,6 +23,7 @@ public class SeRQLQueryTest extends SeRQLQueryTestCase {
 	{
 		return SeRQLQueryTestCase.suite(new Factory() {
 
+			@Override
 			public Test createTest(String name, String dataFile, List<String> graphNames, String queryFile,
 					String resultFile, String entailment)
 			{

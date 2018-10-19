@@ -99,6 +99,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 	ElasticsearchIndex index;
 
 	@Before
+	@Override
 	public void setUp()
 		throws Exception
 	{
@@ -127,6 +128,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 	}
 
 	@After
+	@Override
 	public void tearDown()
 		throws Exception
 	{

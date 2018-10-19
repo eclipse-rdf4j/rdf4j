@@ -30,14 +30,17 @@ public class ForwardChainingRDFSInferencerFactory implements SailFactory {
 	/**
 	 * Returns the Sail's type: <tt>openrdf:ForwardChainingRDFSInferencer</tt>.
 	 */
+	@Override
 	public String getSailType() {
 		return SAIL_TYPE;
 	}
 
+	@Override
 	public SailImplConfig getConfig() {
 		return new ForwardChainingRDFSInferencerConfig();
 	}
 
+	@Override
 	public Sail getSail(SailImplConfig config)
 		throws SailConfigException
 	{

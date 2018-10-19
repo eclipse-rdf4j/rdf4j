@@ -21,6 +21,7 @@ public class SeRQLParserTest extends SeRQLParserTestCase {
 	{
 		return SeRQLParserTestCase.suite(new Factory() {
 
+			@Override
 			public Test createTest(String name, String queryFile, Value result) {
 				return new SeRQLParserTest(name, queryFile, result);
 			}

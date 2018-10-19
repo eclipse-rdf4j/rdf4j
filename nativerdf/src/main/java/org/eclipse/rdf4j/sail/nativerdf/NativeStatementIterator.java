@@ -50,6 +50,7 @@ class NativeStatementIterator extends LookAheadIteration<Statement, SailExceptio
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public Statement getNextElement()
 		throws SailException
 	{

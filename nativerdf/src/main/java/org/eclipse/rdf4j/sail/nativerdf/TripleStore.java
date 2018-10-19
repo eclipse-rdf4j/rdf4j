@@ -567,6 +567,7 @@ class TripleStore implements Closeable {
 			this.wrappedIter = wrappedIter;
 		}
 
+		@Override
 		public byte[] next()
 			throws IOException
 		{
@@ -587,12 +588,14 @@ class TripleStore implements Closeable {
 			return result;
 		}
 
+		@Override
 		public void set(byte[] value)
 			throws IOException
 		{
 			wrappedIter.set(value);
 		}
 
+		@Override
 		public void close()
 			throws IOException
 		{
@@ -608,6 +611,7 @@ class TripleStore implements Closeable {
 			this.wrappedIter = wrappedIter;
 		}
 
+		@Override
 		public byte[] next()
 			throws IOException
 		{
@@ -626,12 +630,14 @@ class TripleStore implements Closeable {
 			return result;
 		}
 
+		@Override
 		public void set(byte[] value)
 			throws IOException
 		{
 			wrappedIter.set(value);
 		}
 
+		@Override
 		public void close()
 			throws IOException
 		{
@@ -1265,6 +1271,7 @@ class TripleStore implements Closeable {
 			return fieldSeq;
 		}
 
+		@Override
 		public final int compareBTreeValues(byte[] key, byte[] data, int offset, int length) {
 			for (char field : fieldSeq) {
 				int fieldIdx = 0;

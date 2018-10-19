@@ -96,12 +96,14 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	public AbstractFederationConnection(Federation federation, List<RepositoryConnection> members) {
 		super(new AbstractSail() {
 
+			@Override
 			public boolean isWritable()
 				throws SailException
 			{
 				return false;
 			}
 
+			@Override
 			public ValueFactory getValueFactory() {
 				return SimpleValueFactory.getInstance();
 			}
@@ -155,6 +157,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	{
 		excute(new Procedure() {
 
+			@Override
 			public void run(RepositoryConnection con)
 				throws RepositoryException
 			{
@@ -169,6 +172,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	{
 		CloseableIteration<? extends Resource, SailException> cursor = union(new Function<Resource>() {
 
+			@Override
 			public CloseableIteration<? extends Resource, RepositoryException> call(
 					RepositoryConnection member)
 				throws RepositoryException
@@ -188,6 +192,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 		return federatedServiceResolver;
 	}
 
+	@Override
 	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
 		this.federatedServiceResolver = resolver;
 		for (RepositoryConnection member : members) {
@@ -351,6 +356,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	{
 		CloseableIteration<? extends Statement, SailException> cursor = union(new Function<Statement>() {
 
+			@Override
 			public CloseableIteration<? extends Statement, RepositoryException> call(
 					RepositoryConnection member)
 				throws RepositoryException
@@ -392,6 +398,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 			this.inf = includeInferred;
 		}
 
+		@Override
 		public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
 				IRI pred, Value obj, Resource... contexts)
 			throws QueryEvaluationException
@@ -412,6 +419,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 			}
 		}
 
+		@Override
 		public ValueFactory getValueFactory() {
 			return valueFactory;
 		}

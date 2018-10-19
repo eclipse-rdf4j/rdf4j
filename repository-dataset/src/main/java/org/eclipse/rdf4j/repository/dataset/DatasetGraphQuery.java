@@ -23,6 +23,7 @@ class DatasetGraphQuery extends DatasetQuery implements GraphQuery {
 		super(con, sailQuery);
 	}
 
+	@Override
 	public GraphQueryResult evaluate()
 		throws QueryEvaluationException
 	{
@@ -30,6 +31,7 @@ class DatasetGraphQuery extends DatasetQuery implements GraphQuery {
 		return ((GraphQuery)sailQuery).evaluate();
 	}
 
+	@Override
 	public void evaluate(RDFHandler handler)
 		throws QueryEvaluationException, RDFHandlerException
 	{

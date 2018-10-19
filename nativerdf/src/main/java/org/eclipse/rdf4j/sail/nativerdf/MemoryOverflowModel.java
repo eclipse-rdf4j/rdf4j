@@ -87,51 +87,63 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		}
 	}
 
+	@Override
 	public synchronized Set<Namespace> getNamespaces() {
 		return memory.getNamespaces();
 	}
 
+	@Override
 	public synchronized Optional<Namespace> getNamespace(String prefix) {
 		return memory.getNamespace(prefix);
 	}
 
+	@Override
 	public synchronized Namespace setNamespace(String prefix, String name) {
 		return memory.setNamespace(prefix, name);
 	}
 
+	@Override
 	public void setNamespace(Namespace namespace) {
 		memory.setNamespace(namespace);
 	}
 
+	@Override
 	public synchronized Optional<Namespace> removeNamespace(String prefix) {
 		return memory.removeNamespace(prefix);
 	}
 
+	@Override
 	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return getDelegate().contains(subj, pred, obj, contexts);
 	}
 
+	@Override
 	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		checkMemoryOverflow();
 		return getDelegate().add(subj, pred, obj, contexts);
 	}
 
+	@Override
 	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return getDelegate().remove(subj, pred, obj, contexts);
 	}
 
+	@Override
 	public int size() {
 		return getDelegate().size();
 	}
 
+	@Override
 	public Iterator<Statement> iterator() {
 		return getDelegate().iterator();
 	}
 
+	@Override
 	public boolean clear(Resource... contexts) {
 		return getDelegate().clear(contexts);
 	}
 
+	@Override
 	public Model filter(final Resource subj, final IRI pred, final Value obj, final Resource... contexts) {
 		return new FilteredModel(this, subj, pred, obj, contexts) {
 

@@ -27,34 +27,42 @@ abstract class DatasetQuery implements Query {
 		this.sailQuery = sailQuery;
 	}
 
+	@Override
 	public final void setBinding(String name, Value value) {
 		sailQuery.setBinding(name, value);
 	}
 
+	@Override
 	public final void removeBinding(String name) {
 		sailQuery.removeBinding(name);
 	}
 
+	@Override
 	public final void clearBindings() {
 		sailQuery.clearBindings();
 	}
 
+	@Override
 	public final BindingSet getBindings() {
 		return sailQuery.getBindings();
 	}
 
+	@Override
 	public final void setDataset(Dataset dataset) {
 		sailQuery.setDataset(dataset);
 	}
 
+	@Override
 	public final Dataset getDataset() {
 		return sailQuery.getDataset();
 	}
 
+	@Override
 	public final void setIncludeInferred(boolean includeInferred) {
 		sailQuery.setIncludeInferred(includeInferred);
 	}
 
+	@Override
 	public final boolean getIncludeInferred() {
 		return sailQuery.getIncludeInferred();
 	}
@@ -70,11 +78,13 @@ abstract class DatasetQuery implements Query {
 	}
 
 	@Deprecated
+	@Override
 	public void setMaxQueryTime(int maxQueryTime) {
 		setMaxExecutionTime(maxQueryTime);
 	}
 
 	@Deprecated
+	@Override
 	public int getMaxQueryTime() {
 		return getMaxExecutionTime();
 	}

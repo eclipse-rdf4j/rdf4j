@@ -58,6 +58,7 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 		this.cmp = vcmp;
 	}
 
+	@Override
 	public int compare(BindingSet o1, BindingSet o2) {
 
 		try {

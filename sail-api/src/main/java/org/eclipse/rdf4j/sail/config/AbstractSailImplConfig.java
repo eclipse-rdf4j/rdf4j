@@ -43,6 +43,7 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 		setType(type);
 	}
 
+	@Override
 	public String getType() {
 		return type;
 	}
@@ -51,6 +52,7 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 		this.type = type;
 	}
 
+	@Override
 	public void validate()
 		throws SailConfigException
 	{
@@ -59,6 +61,7 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 		}
 	}
 
+	@Override
 	public Resource export(Model m) {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		BNode implNode = vf.createBNode();
@@ -80,6 +83,7 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 		return implNode;
 	}
 
+	@Override
 	public void parse(Model m, Resource implNode)
 		throws SailConfigException
 	{
@@ -101,6 +105,7 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 	/**
 	 * @return Returns the iterationCacheSize.
 	 */
+	@Override
 	public long getIterationCacheSyncThreshold() {
 		return iterationCacheSyncThreshold;
 	}

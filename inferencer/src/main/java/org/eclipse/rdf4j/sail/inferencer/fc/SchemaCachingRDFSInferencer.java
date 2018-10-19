@@ -204,6 +204,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		}
 	}
 
+	@Override
 	public void initialize()
 		throws SailException
 	{
@@ -243,6 +244,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 	}
 
+	@Override
 	public SchemaCachingRDFSInferencerConnection getConnection()
 		throws SailException
 	{
@@ -250,6 +252,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		return new SchemaCachingRDFSInferencerConnection(this, e);
 	}
 
+	@Override
 	public ValueFactory getValueFactory() {
 		return getBaseSail().getValueFactory();
 	}

@@ -106,6 +106,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	 * will be stored in <tt>_nextStatement</tt> and <tt>_nextStatementIdx</tt> points to the index of this
 	 * statement in <tt>_statementList</tt>. Otherwise, <tt>_nextStatement</tt> will set to <tt>null</tt>.
 	 */
+	@Override
 	protected MemStatement getNextElement() {
 		statementIdx++;
 

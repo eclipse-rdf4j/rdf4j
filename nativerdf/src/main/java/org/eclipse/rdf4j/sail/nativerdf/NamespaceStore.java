@@ -132,6 +132,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 		}
 	}
 
+	@Override
 	public Iterator<SimpleNamespace> iterator() {
 		return namespacesMap.values().iterator();
 	}

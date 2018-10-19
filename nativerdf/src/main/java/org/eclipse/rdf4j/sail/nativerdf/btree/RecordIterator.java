@@ -44,6 +44,7 @@ public interface RecordIterator extends Closeable {
 	 * @exception IOException
 	 *            In case an I/O error occurred.
 	 */
+	@Override
 	public void close()
 		throws IOException;
 }
