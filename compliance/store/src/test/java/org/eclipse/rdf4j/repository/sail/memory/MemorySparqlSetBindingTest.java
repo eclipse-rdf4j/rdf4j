@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class MemorySparqlSetBindingTest extends SparqlSetBindingTest {
 
+	@Override
 	protected Repository newRepository() {
 		return new SailRepository(new MemoryStore());
 	}

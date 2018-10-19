@@ -26,10 +26,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
  */
 public class LowerCase implements Function {
 
+	@Override
 	public String getURI() {
 		return FN.LOWER_CASE.toString();
 	}
 
+	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args)
 		throws ValueExprEvaluationException
 	{

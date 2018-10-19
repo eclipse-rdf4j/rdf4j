@@ -27,10 +27,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
  */
 public class Ceil implements Function {
 
+	@Override
 	public String getURI() {
 		return FN.NUMERIC_CEIL.toString();
 	}
 
+	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args)
 		throws ValueExprEvaluationException
 	{

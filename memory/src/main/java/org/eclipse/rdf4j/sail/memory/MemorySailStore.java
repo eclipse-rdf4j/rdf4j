@@ -326,6 +326,7 @@ class MemorySailStore implements SailStore {
 			if (toCheckSnapshotCleanupThread == null || !toCheckSnapshotCleanupThread.isAlive()) {
 				Runnable runnable = new Runnable() {
 
+					@Override
 					public void run() {
 						try {
 							cleanSnapshots();
@@ -402,6 +403,7 @@ class MemorySailStore implements SailStore {
 			txnStLock = openStatementsReadLock();
 		}
 
+		@Override
 		public String toString() {
 			StringBuilder sb = new StringBuilder();
 			if (explicit) {
@@ -654,6 +656,7 @@ class MemorySailStore implements SailStore {
 			this.lock = openStatementsReadLock();
 		}
 
+		@Override
 		public String toString() {
 			StringBuilder sb = new StringBuilder();
 			if (explicit) {

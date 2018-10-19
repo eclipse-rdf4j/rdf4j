@@ -120,6 +120,7 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsDepth
 		};
 	}
 
+	@Override
 	public int depth() {
 		return parent.depth() + 1;
 	}

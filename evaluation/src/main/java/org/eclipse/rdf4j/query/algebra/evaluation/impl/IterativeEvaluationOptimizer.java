@@ -23,6 +23,7 @@ public class IterativeEvaluationOptimizer implements QueryOptimizer {
 	public IterativeEvaluationOptimizer() {
 	}
 
+	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(new IEOVisitor());
 	}

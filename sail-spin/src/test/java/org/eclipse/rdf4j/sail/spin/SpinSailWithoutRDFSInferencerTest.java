@@ -170,6 +170,7 @@ public class SpinSailWithoutRDFSInferencerTest {
 	{
 		tx(new Callable<Void>() {
 
+			@Override
 			public Void call()
 				throws Exception
 			{
@@ -179,6 +180,7 @@ public class SpinSailWithoutRDFSInferencerTest {
 		});
 		tx(new Callable<Void>() {
 
+			@Override
 			public Void call()
 				throws Exception
 			{
@@ -188,6 +190,7 @@ public class SpinSailWithoutRDFSInferencerTest {
 		});
 		tx(new Callable<Void>() {
 
+			@Override
 			public Void call()
 				throws Exception
 			{

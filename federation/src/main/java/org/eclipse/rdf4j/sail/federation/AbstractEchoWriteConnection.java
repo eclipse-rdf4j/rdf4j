@@ -33,6 +33,7 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 	{
 		excute(new Procedure() {
 
+			@Override
 			public void run(RepositoryConnection con)
 				throws RepositoryException
 			{
@@ -47,6 +48,7 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 	{
 		excute(new Procedure() {
 
+			@Override
 			public void run(RepositoryConnection con)
 				throws RepositoryException
 			{
@@ -61,6 +63,7 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 	{
 		excute(new Procedure() {
 
+			@Override
 			public void run(RepositoryConnection con)
 				throws RepositoryException
 			{
@@ -69,11 +72,13 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 		});
 	}
 
+	@Override
 	public void setNamespaceInternal(final String prefix, final String name)
 		throws SailException
 	{
 		excute(new Procedure() {
 
+			@Override
 			public void run(RepositoryConnection con)
 				throws RepositoryException
 			{
@@ -88,6 +93,7 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 	{
 		excute(new Procedure() {
 
+			@Override
 			public void run(RepositoryConnection con)
 				throws RepositoryException
 			{
@@ -102,6 +108,7 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 	{
 		excute(new Procedure() {
 
+			@Override
 			public void run(RepositoryConnection con)
 				throws RepositoryException
 			{
@@ -117,6 +124,7 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 	{
 		excute(new Procedure() {
 
+			@Override
 			public void run(RepositoryConnection con)
 				throws RepositoryException
 			{

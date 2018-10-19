@@ -165,12 +165,14 @@ public class LockManager {
 		}
 		Lock lock = new Lock() {
 
+			@Override
 			public synchronized boolean isActive() {
 				synchronized (activeLocks) {
 					return activeLocks.contains(weak);
 				}
 			}
 
+			@Override
 			public synchronized void release() {
 				synchronized (activeLocks) {
 					if (activeLocks.remove(weak)) {

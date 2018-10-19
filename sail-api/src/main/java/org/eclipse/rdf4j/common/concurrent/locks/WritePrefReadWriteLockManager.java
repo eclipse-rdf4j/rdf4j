@@ -56,6 +56,7 @@ public class WritePrefReadWriteLockManager extends AbstractReadWriteLockManager 
 	 * Gets a read lock, if available. This method will return <tt>null</tt> if the read lock is not
 	 * immediately available.
 	 */
+	@Override
 	public Lock tryReadLock() {
 		if (writeRequested || isWriterActive()) {
 			return null;
@@ -73,6 +74,7 @@ public class WritePrefReadWriteLockManager extends AbstractReadWriteLockManager 
 	 * Gets a read lock. This method blocks when a write lock is in use or has been requested until the write
 	 * lock is released.
 	 */
+	@Override
 	public Lock getReadLock()
 		throws InterruptedException
 	{
@@ -88,6 +90,7 @@ public class WritePrefReadWriteLockManager extends AbstractReadWriteLockManager 
 	 * Gets an exclusive write lock, if available. This method will return <tt>null</tt> if the write lock is
 	 * not immediately available.
 	 */
+	@Override
 	public Lock tryWriteLock() {
 		if (isWriterActive() || isReaderActive()) {
 			return null;
@@ -106,6 +109,7 @@ public class WritePrefReadWriteLockManager extends AbstractReadWriteLockManager 
 	 * requested until the write lock is released. This method also block when read locks are active until all
 	 * of them are released.
 	 */
+	@Override
 	public synchronized Lock getWriteLock()
 		throws InterruptedException
 	{

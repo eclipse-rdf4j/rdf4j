@@ -26,6 +26,7 @@ public class OwnedTupleExprPruner extends AbstractQueryModelVisitor<RuntimeExcep
 
 	private OwnedTupleExpr owned;
 
+	@Override
 	public void optimize(TupleExpr query, Dataset dataset, BindingSet bindings) {
 		owned = null; // NOPMD
 		query.visit(this);

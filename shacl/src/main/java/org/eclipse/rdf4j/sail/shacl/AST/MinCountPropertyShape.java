@@ -62,6 +62,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		return "MinCountPropertyShape{" + "maxCount=" + minCount + '}';
 	}
 
+	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 
 		PlanNode topNode;

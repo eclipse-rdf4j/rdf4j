@@ -66,6 +66,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 
 	private boolean distinct;
 
+	@Override
 	public void optimize(TupleExpr query, Dataset dataset, BindingSet bindings) {
 		try {
 			query.visit(this);

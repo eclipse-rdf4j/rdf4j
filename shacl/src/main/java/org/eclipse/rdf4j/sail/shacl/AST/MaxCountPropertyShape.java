@@ -55,6 +55,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 		return "MaxCountPropertyShape{" + "maxCount=" + maxCount + '}';
 	}
 
+	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 
 

@@ -37,6 +37,7 @@ public class QueryModelPruner implements QueryOptimizer {
 	/**
 	 * Applies generally applicable optimizations: path expressions are sorted from more to less specific.
 	 */
+	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(new TreeSanitizer());
 	}

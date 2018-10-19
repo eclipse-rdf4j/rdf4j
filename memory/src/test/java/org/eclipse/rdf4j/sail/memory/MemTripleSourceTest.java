@@ -1134,6 +1134,7 @@ public class MemTripleSourceTest {
 		final ValueFactory vf = store.getValueFactory();
 		return new TripleSource() {
 
+			@Override
 			public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(
 					Resource subj, IRI pred, Value obj, Resource... contexts)
 				throws QueryEvaluationException
@@ -1143,6 +1144,7 @@ public class MemTripleSourceTest {
 							snapshot.getStatements(subj, pred, obj, contexts))
 					{
 
+						@Override
 						protected QueryEvaluationException convert(Exception e) {
 							return new QueryEvaluationException(e);
 						}
@@ -1153,6 +1155,7 @@ public class MemTripleSourceTest {
 				}
 			}
 
+			@Override
 			public ValueFactory getValueFactory() {
 				return vf;
 			}

@@ -216,6 +216,7 @@ public class DirectoryLockManager implements LockManager {
 				try {
 					Thread hook = new Thread(new Runnable() {
 
+						@Override
 						public void run() {
 							delete();
 						}
@@ -228,10 +229,12 @@ public class DirectoryLockManager implements LockManager {
 				}
 			}
 
+			@Override
 			public boolean isActive() {
 				return fileLock.isValid() || hook != null;
 			}
 
+			@Override
 			public void release() {
 				try {
 					if (hook != null) {

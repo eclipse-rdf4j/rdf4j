@@ -28,6 +28,7 @@ public class NativeSPARQLQueryTest extends SPARQLQueryTest {
 	{
 		return SPARQL11ManifestTest.suite(new Factory() {
 
+			@Override
 			public NativeSPARQLQueryTest createSPARQLQueryTest(String testURI, String name,
 					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality)
 			{
@@ -35,6 +36,7 @@ public class NativeSPARQLQueryTest extends SPARQLQueryTest {
 						laxCardinality, false);
 			}
 
+			@Override
 			public NativeSPARQLQueryTest createSPARQLQueryTest(String testURI, String name,
 					String queryFileURL, String resultFileURL, Dataset dataSet, boolean laxCardinality,
 					boolean checkOrder)

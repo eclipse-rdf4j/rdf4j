@@ -174,6 +174,7 @@ public class SpinSailTest {
 	{
 		tx(new Callable<Void>() {
 
+			@Override
 			public Void call()
 				throws Exception
 			{
@@ -183,6 +184,7 @@ public class SpinSailTest {
 		});
 		tx(new Callable<Void>() {
 
+			@Override
 			public Void call()
 				throws Exception
 			{
@@ -192,6 +194,7 @@ public class SpinSailTest {
 		});
 		tx(new Callable<Void>() {
 
+			@Override
 			public Void call()
 				throws Exception
 			{

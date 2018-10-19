@@ -218,6 +218,7 @@ public class StrictEvaluationStrategy
 		serviceResolver = resolver;
 	}
 
+	@Override
 	public FederatedService getService(String serviceUrl)
 		throws QueryEvaluationException
 	{

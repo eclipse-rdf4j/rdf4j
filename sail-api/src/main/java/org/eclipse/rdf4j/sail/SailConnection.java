@@ -44,6 +44,7 @@ public interface SailConnection extends AutoCloseable {
 	 * Closes the connection. Any updates that haven't been committed yet will be rolled back. The connection
 	 * can no longer be used once it is closed.
 	 */
+	@Override
 	public void close()
 		throws SailException;
 

@@ -304,6 +304,7 @@ class SailSourceBranch implements SailSource {
 		}
 	}
 
+	@Override
 	public String toString() {
 		return backingSource.toString() + "\n" + changes.toString();
 	}

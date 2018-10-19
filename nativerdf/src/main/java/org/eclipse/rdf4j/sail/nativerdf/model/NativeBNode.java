@@ -48,15 +48,18 @@ public class NativeBNode extends SimpleBNode implements NativeResource {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public void setInternalID(int internalID, ValueStoreRevision revision) {
 		this.internalID = internalID;
 		this.revision = revision;
 	}
 
+	@Override
 	public ValueStoreRevision getValueStoreRevision() {
 		return revision;
 	}
 
+	@Override
 	public int getInternalID() {
 		return internalID;
 	}

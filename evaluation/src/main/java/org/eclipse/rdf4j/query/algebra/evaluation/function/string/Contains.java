@@ -24,10 +24,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
  */
 public class Contains implements Function {
 
+	@Override
 	public String getURI() {
 		return FN.CONTAINS.toString();
 	}
 
+	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args)
 		throws ValueExprEvaluationException
 	{
