@@ -323,9 +323,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder.toString());
 		query.setBinding("name", nameBob);
 
-		TupleQueryResult result = query.evaluate();
-
-		try {
+		try (TupleQueryResult result = query.evaluate()) {
 			assertTrue(result != null);
 			assertTrue(result.hasNext());
 
@@ -340,9 +338,6 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 				assertEquals("unexpected value for name: " + nameResult, nameBob, nameResult);
 				assertEquals("unexpected value for mbox: " + mboxResult, mboxBob, mboxResult);
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -411,9 +406,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder.toString());
 		query.setBinding("VAR", bob);
 
-		TupleQueryResult result = query.evaluate();
-
-		try {
+		try (TupleQueryResult result = query.evaluate()) {
 			assertTrue(result != null);
 			assertTrue(result.hasNext());
 
@@ -428,9 +421,6 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 				assertEquals("unexpected value for name: " + nameResult, nameBob, nameResult);
 				assertEquals("unexpected value for mbox: " + mboxResult, mboxBob, mboxResult);
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -448,9 +438,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder.toString());
 		query.setBinding("name", Александър);
 
-		TupleQueryResult result = query.evaluate();
-
-		try {
+		try (TupleQueryResult result = query.evaluate()) {
 			assertNotNull(result);
 			assertTrue(result.hasNext());
 
@@ -459,9 +447,6 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 				assertTrue(solution.hasBinding("person"));
 				assertEquals(alexander, solution.getValue("person"));
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -483,10 +468,8 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		queryBuilder.append(" WHERE { [] foaf:name ?name; ");
 		queryBuilder.append("            foaf:mbox ?mbox. }");
 
-		GraphQueryResult result = testCon.prepareGraphQuery(QueryLanguage.SPARQL,
-				queryBuilder.toString()).evaluate();
-
-		try {
+		try (GraphQueryResult result = testCon.prepareGraphQuery(QueryLanguage.SPARQL,
+			queryBuilder.toString()).evaluate()) {
 			assertTrue(result != null);
 			assertTrue(result.hasNext());
 
@@ -500,9 +483,6 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 					assertTrue(mboxAlice.equals(st.getObject()) || mboxBob.equals(st.getObject()));
 				}
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -528,9 +508,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		GraphQuery query = testCon.prepareGraphQuery(QueryLanguage.SPARQL, queryBuilder.toString());
 		query.setBinding("name", nameBob);
 
-		GraphQueryResult result = query.evaluate();
-
-		try {
+		try (GraphQueryResult result = query.evaluate()) {
 			assertTrue(result != null);
 			assertTrue(result.hasNext());
 
@@ -548,9 +526,6 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 				}
 
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 
@@ -572,10 +547,8 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		queryBuilder.append(" WHERE { [] foaf:name ?name ;");
 		queryBuilder.append("            foaf:mbox ?mbox . ");
 		queryBuilder.append(" } ");
-		TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SPARQL,
-				queryBuilder.toString()).evaluate();
-
-		try {
+		try (TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SPARQL,
+			queryBuilder.toString()).evaluate()) {
 			assertTrue(result != null);
 			assertTrue(result.hasNext());
 
@@ -591,9 +564,6 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 				assertTrue((mboxAlice.equals(mboxResult) || mboxBob.equals(mboxResult)));
 			}
 		}
-		finally {
-			result.close();
-		}
 	}
 
 	@Override
@@ -607,10 +577,8 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		queryBuilder.append(" SELECT ?person");
 		queryBuilder.append(" WHERE { ?person foaf:name \"").append(Александър.getLabel()).append("\" . } ");
 
-		TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SPARQL,
-				queryBuilder.toString()).evaluate();
-
-		try {
+		try (TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SPARQL,
+			queryBuilder.toString()).evaluate()) {
 			assertNotNull(result);
 			assertTrue(result.hasNext());
 
@@ -619,9 +587,6 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 				assertTrue(solution.hasBinding("person"));
 				assertEquals(alexander, solution.getValue("person"));
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 

@@ -109,12 +109,8 @@ public class EarlReport {
 				Rio.unsupportedFormat(RDFFormat.TURTLE));
 		File outFile = File.createTempFile("sesame-sparql-compliance",
 				"." + RDFFormat.TURTLE.getDefaultFileExtension());
-		FileOutputStream out = new FileOutputStream(outFile);
-		try {
+		try (FileOutputStream out = new FileOutputStream(outFile)) {
 			con.export(factory.getWriter(out));
-		}
-		finally {
-			out.close();
 		}
 
 		con.close();

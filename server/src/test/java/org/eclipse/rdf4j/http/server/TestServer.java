@@ -83,12 +83,8 @@ public class TestServer {
 	{
 		Repository systemRepo = new HTTPRepository(
 				Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
-		RepositoryConnection con = systemRepo.getConnection();
-		try {
+		try (RepositoryConnection con = systemRepo.getConnection()) {
 			con.clear();
-		}
-		finally {
-			con.close();
 		}
 
 		jetty.stop();

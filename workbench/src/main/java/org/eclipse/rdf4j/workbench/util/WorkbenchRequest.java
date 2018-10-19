@@ -303,12 +303,8 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 		throws IOException
 	{
 		InputStream stream = item.openStream();
-		BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
-		try {
+		try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream))) {
 			return reader.readLine();
-		}
-		finally {
-			reader.close();
 		}
 	}
 

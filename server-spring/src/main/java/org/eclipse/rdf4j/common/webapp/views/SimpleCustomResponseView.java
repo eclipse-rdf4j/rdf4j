@@ -59,20 +59,20 @@ public class SimpleCustomResponseView implements View {
 		try {
 			response.setStatus(sc);
 
-			ServletOutputStream out = response.getOutputStream();
-			if (content != null) {
-				if (contentType != null) {
-					response.setContentType(contentType);
+			try (ServletOutputStream out = response.getOutputStream()) {
+				if (content != null) {
+					if (contentType != null) {
+						response.setContentType(contentType);
+					}
+					if (contentLength != null) {
+						response.setContentLength(contentLength);
+					}
+					IOUtil.transfer(content, out);
 				}
-				if (contentLength != null) {
-					response.setContentLength(contentLength);
+				else {
+					response.setContentLength(0);
 				}
-				IOUtil.transfer(content, out);
 			}
-			else {
-				response.setContentLength(0);
-			}
-			out.close();
 		}
 		finally {
 			if (content != null) {

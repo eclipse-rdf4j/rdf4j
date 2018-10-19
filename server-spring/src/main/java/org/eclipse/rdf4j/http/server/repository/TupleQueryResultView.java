@@ -74,8 +74,7 @@ public class TupleQueryResultView extends QueryResultView {
 
 		final Boolean headersOnly = (Boolean)model.get(HEADERS_ONLY);
 		if (headersOnly == null || !headersOnly.booleanValue()) {
-			OutputStream out = response.getOutputStream();
-			try {
+			try (OutputStream out = response.getOutputStream()) {
 				TupleQueryResultWriter qrWriter = qrWriterFactory.getWriter(out);
 				TupleQueryResult tupleQueryResult = (TupleQueryResult)model.get(QUERY_RESULT_KEY);
 
@@ -112,9 +111,6 @@ public class TupleQueryResultView extends QueryResultView {
 			catch (TupleQueryResultHandlerException e) {
 				logger.error("Serialization error", e);
 				response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
-			}
-			finally {
-				out.close();
 			}
 		}
 		logEndOfRequest(request);

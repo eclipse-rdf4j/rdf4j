@@ -109,13 +109,9 @@ class ServerValidator {
 		boolean success = false;
 		try {
 			final URL url = new URL(server + "/protocol");
-			final BufferedReader reader = new BufferedReader(new InputStreamReader(url.openStream()));
-			try {
+			try (BufferedReader reader = new BufferedReader(new InputStreamReader(url.openStream()))) {
 				Integer.parseInt(reader.readLine());
 				success = true;
-			}
-			finally {
-				reader.close();
 			}
 		}
 		catch (NumberFormatException e) {

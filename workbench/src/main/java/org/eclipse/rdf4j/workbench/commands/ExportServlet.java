@@ -72,15 +72,11 @@ public class ExportServlet extends TupleServlet {
 		if (req.getInt(ExploreServlet.LIMIT) > 0) {
 			limit = req.getInt(ExploreServlet.LIMIT);
 		}
-		RepositoryResult<Statement> result = con.getStatements(null, null, null, false);
-		try {
+		try (RepositoryResult<Statement> result = con.getStatements(null, null, null, false)) {
 			for (int i = 0; result.hasNext() && (i < limit || limit < 1); i++) {
 				Statement st = result.next();
 				builder.result(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 

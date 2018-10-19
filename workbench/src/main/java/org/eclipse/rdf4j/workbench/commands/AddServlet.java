@@ -96,8 +96,7 @@ public class AddServlet extends TransformationServlet {
 					() -> new BadRequestException("Unknown Content-Type: " + contentType));
 		}
 
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			con.add(stream, baseURI, format, context);
 		}
 		catch (RDFParseException exc) {
@@ -105,9 +104,6 @@ public class AddServlet extends TransformationServlet {
 		}
 		catch (IllegalArgumentException exc) {
 			throw new BadRequestException(exc.getMessage(), exc);
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -129,12 +125,8 @@ public class AddServlet extends TransformationServlet {
 		}
 
 		try {
-			RepositoryConnection con = repository.getConnection();
-			try {
+			try (RepositoryConnection con = repository.getConnection()) {
 				con.add(url, baseURI, format, context);
-			}
-			finally {
-				con.close();
 			}
 		}
 		catch (RDFParseException exc) {

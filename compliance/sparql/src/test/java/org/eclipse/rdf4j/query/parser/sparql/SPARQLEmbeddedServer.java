@@ -96,12 +96,10 @@ public class SPARQLEmbeddedServer {
 	{
 		Repository systemRepo = new HTTPRepository(
 				Protocol.getRepositoryLocation(getServerUrl(), SystemRepository.ID));
-		RepositoryConnection con = systemRepo.getConnection();
-		try {
+		try (RepositoryConnection con = systemRepo.getConnection()) {
 			con.clear();
 		}
 		finally {
-			con.close();
 			systemRepo.shutDown();
 		}
 

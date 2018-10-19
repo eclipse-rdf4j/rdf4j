@@ -130,12 +130,8 @@ class ValueDecoder {
 	private String getNamespace(String prefix)
 		throws RepositoryException
 	{
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			return con.getNamespace(prefix);
-		}
-		finally {
-			con.close();
 		}
 	}
 

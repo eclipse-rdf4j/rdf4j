@@ -43,8 +43,7 @@ public class SummaryServlet extends TransformationServlet {
 		builder.transform(xslPath, "summary.xsl");
 		builder.start("id", "description", "location", "server", "size", "contexts");
 		builder.link(Arrays.asList(INFO));
-		final RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			String size = null;
 			String numContexts = null;
 			try {
@@ -58,9 +57,6 @@ public class SummaryServlet extends TransformationServlet {
 			builder.result(info.getId(), info.getDescription(), info.getLocation(), getServer(), size,
 					numContexts);
 			builder.end();
-		}
-		finally {
-			con.close();
 		}
 	}
 

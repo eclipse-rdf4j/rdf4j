@@ -26,8 +26,7 @@ public class NamespacesServlet extends TransformationServlet {
 	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
 		throws Exception
 	{
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			String prefix = req.getParameter("prefix");
 			String namespace = req.getParameter("namespace");
 			if (namespace.length() > 0) {
@@ -36,9 +35,6 @@ public class NamespacesServlet extends TransformationServlet {
 			else {
 				con.removeNamespace(prefix);
 			}
-		}
-		finally {
-			con.close();
 		}
 		super.service(req, resp, xslPath);
 	}

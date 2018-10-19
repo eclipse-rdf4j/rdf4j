@@ -60,16 +60,11 @@ public class ContextsController extends AbstractController {
 			List<BindingSet> contexts = new ArrayList<BindingSet>();
 			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
 			try {
-				CloseableIteration<? extends Resource, RepositoryException> contextIter = repositoryCon.getContextIDs();
-
-				try {
+				try (CloseableIteration<? extends Resource, RepositoryException> contextIter = repositoryCon.getContextIDs()) {
 					while (contextIter.hasNext()) {
 						BindingSet bindingSet = new ListBindingSet(columnNames, contextIter.next());
 						contexts.add(bindingSet);
 					}
-				}
-				finally {
-					contextIter.close();
 				}
 				model.put(QueryResultView.QUERY_RESULT_KEY,
 						new IteratingTupleQueryResult(columnNames, contexts));

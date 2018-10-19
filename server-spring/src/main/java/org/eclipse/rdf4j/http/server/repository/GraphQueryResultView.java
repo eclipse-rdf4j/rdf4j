@@ -69,8 +69,7 @@ public class GraphQueryResultView extends QueryResultView {
 		boolean headersOnly = (Boolean)model.get(HEADERS_ONLY);
 
 		if (!headersOnly) {
-			OutputStream out = response.getOutputStream();
-			try {
+			try (OutputStream out = response.getOutputStream()) {
 				RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
 				GraphQueryResult graphQueryResult = (GraphQueryResult)model.get(QUERY_RESULT_KEY);
 				QueryResults.report(graphQueryResult, rdfWriter);
@@ -86,9 +85,6 @@ public class GraphQueryResultView extends QueryResultView {
 			catch (RDFHandlerException e) {
 				logger.error("Serialization error", e);
 				response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
-			}
-			finally {
-				out.close();
 			}
 		}
 		logEndOfRequest(request);

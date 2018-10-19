@@ -166,8 +166,7 @@ public class ExploreServlet extends TupleServlet {
 			Resource subj, IRI pred, Value obj, Resource... context)
 		throws RDF4JException, MalformedQueryException, QueryEvaluationException
 	{
-		RepositoryResult<Statement> result = con.getStatements(subj, pred, obj, true, context);
-		try {
+		try (RepositoryResult<Statement> result = con.getStatements(subj, pred, obj, true, context)) {
 			while (result.hasNext()) {
 				Statement statement = result.next();
 				if (isFirstTimeSeen(statement, pred, obj, context)) {
@@ -178,9 +177,6 @@ public class ExploreServlet extends TupleServlet {
 					cursor.advance();
 				}
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 

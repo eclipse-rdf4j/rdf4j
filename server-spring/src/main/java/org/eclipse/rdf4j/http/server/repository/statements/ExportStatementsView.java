@@ -87,30 +87,30 @@ public class ExportStatementsView implements View {
 		RDFFormat rdfFormat = rdfWriterFactory.getRDFFormat();
 
 		try {
-			OutputStream out = response.getOutputStream();
-			RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
-
-			response.setStatus(SC_OK);
-
-			String mimeType = rdfFormat.getDefaultMIMEType();
-			if (rdfFormat.hasCharset()) {
-				Charset charset = rdfFormat.getCharset();
-				mimeType += "; charset=" + charset.name();
-			}
-			response.setContentType(mimeType);
-
-			String filename = "statements";
-			if (rdfFormat.getDefaultFileExtension() != null) {
-				filename += "." + rdfFormat.getDefaultFileExtension();
-			}
-			response.setHeader("Content-Disposition", "attachment; filename=" + filename);
-
-			if (!headersOnly) {
-				try (RepositoryConnection conn = RepositoryInterceptor.getRepositoryConnection(request)) {
-					conn.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
+			try (OutputStream out = response.getOutputStream()) {
+				RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
+				
+				response.setStatus(SC_OK);
+				
+				String mimeType = rdfFormat.getDefaultMIMEType();
+				if (rdfFormat.hasCharset()) {
+					Charset charset = rdfFormat.getCharset();
+					mimeType += "; charset=" + charset.name();
+				}
+				response.setContentType(mimeType);
+				
+				String filename = "statements";
+				if (rdfFormat.getDefaultFileExtension() != null) {
+					filename += "." + rdfFormat.getDefaultFileExtension();
+				}
+				response.setHeader("Content-Disposition", "attachment; filename=" + filename);
+				
+				if (!headersOnly) {
+					try (RepositoryConnection conn = RepositoryInterceptor.getRepositoryConnection(request)) {
+						conn.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
+					}
 				}
 			}
-			out.close();
 		}
 		catch (RDFHandlerException e) {
 			throw new ServerHTTPException("Serialization error: " + e.getMessage(), e);
