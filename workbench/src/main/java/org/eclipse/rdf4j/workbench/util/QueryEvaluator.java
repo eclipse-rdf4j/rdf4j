@@ -187,8 +187,7 @@ public final class QueryEvaluator {
 	public void evaluateTupleQuery(final TupleResultBuilder builder, final TupleQuery query)
 		throws QueryEvaluationException, QueryResultHandlerException
 	{
-		final TupleQueryResult result = query.evaluate();
-		try {
+		try (TupleQueryResult result = query.evaluate()) {
 			final String[] names = result.getBindingNames().toArray(new String[0]);
 			builder.variables(names);
 			builder.link(Arrays.asList(INFO));
@@ -197,9 +196,6 @@ public final class QueryEvaluator {
 				final BindingSet set = result.next();
 				addResult(builder, names, values, set);
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 

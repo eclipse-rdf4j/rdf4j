@@ -538,10 +538,8 @@ public class ProtocolTest {
 				fail(response);
 			}
 
-			CSVReader reader = new CSVReader(
-					new InputStreamReader(conn.getInputStream(), Charset.forName("UTF-8")));
-
-			try {
+			try (CSVReader reader = new CSVReader(
+				new InputStreamReader(conn.getInputStream(), Charset.forName("UTF-8")))) {
 				String[] headerRow = reader.readNext();
 
 				if (headerRow == null) {
@@ -563,9 +561,6 @@ public class ProtocolTest {
 				}
 				return namespaces;
 			}
-			finally {
-				reader.close();
-			}
 		}
 		finally {
 			conn.disconnect();
@@ -582,8 +577,7 @@ public class ProtocolTest {
 		conn.setRequestMethod("PUT");
 		conn.setDoOutput(true);
 
-		InputStream dataStream = new ByteArrayInputStream(namespace.getBytes("UTF-8"));
-		try {
+		try (InputStream dataStream = new ByteArrayInputStream(namespace.getBytes("UTF-8"))) {
 			OutputStream connOut = conn.getOutputStream();
 
 			try {
@@ -592,9 +586,6 @@ public class ProtocolTest {
 			finally {
 				connOut.close();
 			}
-		}
-		finally {
-			dataStream.close();
 		}
 
 		conn.connect();
@@ -648,8 +639,7 @@ public class ProtocolTest {
 		RDFFormat dataFormat = Rio.getParserFormatForFileName(file).orElse(RDFFormat.RDFXML);
 		conn.setRequestProperty("Content-Type", dataFormat.getDefaultMIMEType());
 
-		InputStream dataStream = ProtocolTest.class.getResourceAsStream(file);
-		try {
+		try (InputStream dataStream = ProtocolTest.class.getResourceAsStream(file)) {
 			OutputStream connOut = conn.getOutputStream();
 
 			try {
@@ -658,9 +648,6 @@ public class ProtocolTest {
 			finally {
 				connOut.close();
 			}
-		}
-		finally {
-			dataStream.close();
 		}
 
 		conn.connect();

@@ -66,18 +66,16 @@ public class SimpleResponseView implements View {
 			}
 		}
 
-		OutputStream out = response.getOutputStream();
-
-		String content = (String)model.get(CONTENT_KEY);
-		if (content != null) {
-			byte[] contentBytes = content.getBytes("UTF-8");
-			response.setContentLength(contentBytes.length);
-			out.write(contentBytes);
+		try (OutputStream out = response.getOutputStream()) {
+			String content = (String)model.get(CONTENT_KEY);
+			if (content != null) {
+				byte[] contentBytes = content.getBytes("UTF-8");
+				response.setContentLength(contentBytes.length);
+				out.write(contentBytes);
+			}
+			else {
+				response.setContentLength(0);
+			}
 		}
-		else {
-			response.setContentLength(0);
-		}
-
-		out.close();
 	}
 }

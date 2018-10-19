@@ -31,8 +31,7 @@ public class ClearServlet extends TransformationServlet {
 		throws IOException, RepositoryException, QueryResultHandlerException
 	{
 		try {
-			RepositoryConnection con = repository.getConnection();
-			try {
+			try (RepositoryConnection con = repository.getConnection()) {
 				if (req.isParameterPresent(CONTEXT)) {
 					con.clear(req.getResource(CONTEXT));
 				}
@@ -42,9 +41,6 @@ public class ClearServlet extends TransformationServlet {
 			}
 			catch (ClassCastException exc) {
 				throw new BadRequestException(exc.getMessage(), exc);
-			}
-			finally {
-				con.close();
 			}
 			resp.sendRedirect("summary");
 		}

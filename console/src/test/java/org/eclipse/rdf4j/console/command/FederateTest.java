@@ -200,12 +200,8 @@ public class FederateTest extends AbstractCommandTest {
 	private long getSize(String memberID)
 		throws Exception
 	{
-		RepositoryConnection connection = manager.getRepository(memberID).getConnection();
-		try {
+		try (RepositoryConnection connection = manager.getRepository(memberID).getConnection()) {
 			return connection.size();
-		}
-		finally {
-			connection.close();
 		}
 	}
 

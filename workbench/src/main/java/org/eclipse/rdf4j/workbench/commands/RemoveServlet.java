@@ -37,8 +37,7 @@ public class RemoveServlet extends TransformationServlet {
 	{
 		String objectParameter = req.getParameter("obj");
 		try {
-			RepositoryConnection con = repository.getConnection();
-			try {
+			try (RepositoryConnection con = repository.getConnection()) {
 				Resource subj = req.getResource("subj");
 				IRI pred = req.getURI("pred");
 				Value obj = req.getValue("obj");
@@ -54,9 +53,6 @@ public class RemoveServlet extends TransformationServlet {
 			}
 			catch (ClassCastException exc) {
 				throw new BadRequestException(exc.getMessage(), exc);
-			}
-			finally {
-				con.close();
 			}
 			resp.sendRedirect("summary");
 		}

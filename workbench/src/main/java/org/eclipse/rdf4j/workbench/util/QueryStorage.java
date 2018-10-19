@@ -153,17 +153,13 @@ public class QueryStorage {
 	{
 		LOGGER.info("repository: {}", repository.getRepositoryURL());
 		boolean rval = true;
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			// Manufacture an unlikely unique statement to check.
 			IRI uri = con.getValueFactory().createIRI("urn:uuid:" + UUID.randomUUID());
 			con.hasStatement(uri, uri, uri, false, uri);
 		}
 		catch (RepositoryException re) {
 			rval = false;
-		}
-		finally {
-			con.close();
 		}
 		return rval;
 	}
@@ -250,12 +246,8 @@ public class QueryStorage {
 		canDelete.replaceURI(QUERY, query.toString());
 		canDelete.replaceQuote(USER_NAME, currentUser);
 		LOGGER.info("{}", canDelete);
-		final RepositoryConnection connection = this.queries.getConnection();
-		try {
+		try (RepositoryConnection connection = this.queries.getConnection()) {
 			return connection.prepareBooleanQuery(QueryLanguage.SPARQL, canDelete.toString()).evaluate();
-		}
-		finally {
-			connection.close();
 		}
 	}
 
@@ -267,12 +259,8 @@ public class QueryStorage {
 		ask.replaceQuote(QUERY_NAME, queryName);
 		ask.replaceQuote(USER_NAME, userName);
 		LOGGER.info("{}", ask);
-		final RepositoryConnection connection = this.queries.getConnection();
-		try {
+		try (RepositoryConnection connection = this.queries.getConnection()) {
 			return connection.prepareBooleanQuery(QueryLanguage.SPARQL, ask.toString()).evaluate();
-		}
-		finally {
-			connection.close();
 		}
 	}
 
@@ -359,13 +347,9 @@ public class QueryStorage {
 		final QueryStringBuilder select = new QueryStringBuilder(SELECT);
 		select.replaceQuote(USER_NAME, userName);
 		select.replaceURI(REPOSITORY, repository.getRepositoryURL());
-		final RepositoryConnection connection = this.queries.getConnection();
-		try {
+		try (RepositoryConnection connection = this.queries.getConnection()) {
 			EVAL.evaluateTupleQuery(builder,
 					connection.prepareTupleQuery(QueryLanguage.SPARQL, select.toString()));
-		}
-		finally {
-			connection.close();
 		}
 	}
 
@@ -451,12 +435,8 @@ public class QueryStorage {
 		throws RepositoryException, UpdateExecutionException, MalformedQueryException
 	{
 		LOGGER.info("SPARQL/Update of Query Storage:\n--\n{}\n--", update);
-		final RepositoryConnection connection = this.queries.getConnection();
-		try {
+		try (RepositoryConnection connection = this.queries.getConnection()) {
 			connection.prepareUpdate(QueryLanguage.SPARQL, update).execute();
-		}
-		finally {
-			connection.close();
 		}
 	}
 

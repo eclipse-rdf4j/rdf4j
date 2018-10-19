@@ -169,8 +169,7 @@ public class SPARQLServiceEvaluationTest {
 		qb.append("     ?X a <" + FOAF.PERSON + "> . \n");
 		qb.append(" } \n");
 
-		RepositoryConnection conn = localRepository.getConnection();
-		try {
+		try (RepositoryConnection conn = localRepository.getConnection()) {
 			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb.toString());
 
 			TupleQueryResult tqr = tq.evaluate();
@@ -205,9 +204,6 @@ public class SPARQLServiceEvaluationTest {
 		}
 		catch (QueryEvaluationException e) {
 			fail(e.getMessage());
-		}
-		finally {
-			conn.close();
 		}
 	}
 

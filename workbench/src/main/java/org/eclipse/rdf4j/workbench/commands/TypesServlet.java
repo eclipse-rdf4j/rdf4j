@@ -28,14 +28,10 @@ public class TypesServlet extends TupleServlet {
 		throws Exception
 	{
 		TupleQuery query = con.prepareTupleQuery(SPARQL, DISTINCT_TYPE);
-		TupleQueryResult result = query.evaluate();
-		try {
+		try (TupleQueryResult result = query.evaluate()) {
 			while (result.hasNext()) {
 				builder.result(result.next().getValue("type"));
 			}
-		}
-		finally {
-			result.close();
 		}
 	}
 

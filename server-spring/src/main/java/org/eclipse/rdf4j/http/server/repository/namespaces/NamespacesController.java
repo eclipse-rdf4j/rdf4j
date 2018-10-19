@@ -92,9 +92,7 @@ public class NamespacesController extends AbstractController {
 			{
 				final ValueFactory vf = repositoryCon.getValueFactory();
 				try {
-					CloseableIteration<? extends Namespace, RepositoryException> iter = repositoryCon.getNamespaces();
-
-					try {
+					try (CloseableIteration<? extends Namespace, RepositoryException> iter = repositoryCon.getNamespaces()) {
 						while (iter.hasNext()) {
 							Namespace ns = iter.next();
 
@@ -104,9 +102,6 @@ public class NamespacesController extends AbstractController {
 							BindingSet bindingSet = new ListBindingSet(columnNames, prefix, namespace);
 							namespaces.add(bindingSet);
 						}
-					}
-					finally {
-						iter.close();
 					}
 				}
 				catch (RepositoryException e) {

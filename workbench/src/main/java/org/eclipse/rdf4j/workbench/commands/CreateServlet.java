@@ -142,13 +142,9 @@ public class CreateServlet extends TransformationServlet {
 	private ConfigTemplate getConfigTemplate(final String type)
 		throws IOException
 	{
-		final InputStream ttlInput = RepositoryConfig.class.getResourceAsStream(type + ".ttl");
-		try {
+		try (InputStream ttlInput = RepositoryConfig.class.getResourceAsStream(type + ".ttl")) {
 			final String template = IOUtil.readString(new InputStreamReader(ttlInput, "UTF-8"));
 			return new ConfigTemplate(template);
-		}
-		finally {
-			ttlInput.close();
 		}
 	}
 }
