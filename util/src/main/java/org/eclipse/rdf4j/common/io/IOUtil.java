@@ -41,12 +41,8 @@ public class IOUtil {
 	public static String readString(File file)
 		throws IOException
 	{
-		FileInputStream in = new FileInputStream(file);
-		try {
+		try (FileInputStream in = new FileInputStream(file)) {
 			return readString(in);
-		}
-		finally {
-			in.close();
 		}
 	}
 
@@ -60,12 +56,8 @@ public class IOUtil {
 	public static String readString(URL url)
 		throws IOException
 	{
-		Reader reader = urlToReader(url);
-		try {
+		try (Reader reader = urlToReader(url)) {
 			return readString(reader);
-		}
-		finally {
-			reader.close();
 		}
 	}
 
@@ -125,12 +117,8 @@ public class IOUtil {
 	public static char[] readChars(URL url)
 		throws IOException
 	{
-		Reader reader = urlToReader(url);
-		try {
+		try (Reader reader = urlToReader(url)) {
 			return readChars(reader);
-		}
-		finally {
-			reader.close();
 		}
 	}
 
@@ -200,12 +188,8 @@ public class IOUtil {
 					"File size exceeds maximum array length (" + fileSize + " > " + Integer.MAX_VALUE + ")");
 		}
 
-		FileInputStream in = new FileInputStream(file);
-		try {
+		try (FileInputStream in = new FileInputStream(file)) {
 			return readBytes(in, (int)fileSize);
-		}
-		finally {
-			in.close();
 		}
 	}
 
@@ -443,12 +427,8 @@ public class IOUtil {
 	public static void writeString(String contents, File file)
 		throws IOException
 	{
-		FileWriter out = new FileWriter(file);
-		try {
+		try (FileWriter out = new FileWriter(file)) {
 			out.write(contents);
-		}
-		finally {
-			out.close();
 		}
 	}
 
@@ -462,12 +442,8 @@ public class IOUtil {
 	public static void writeBytes(byte[] data, File file)
 		throws IOException
 	{
-		FileOutputStream out = new FileOutputStream(file);
-		try {
+		try (FileOutputStream out = new FileOutputStream(file)) {
 			writeBytes(data, out);
-		}
-		finally {
-			out.close();
 		}
 	}
 
@@ -561,13 +537,8 @@ public class IOUtil {
 	public static final long transfer(InputStream in, File file)
 		throws IOException
 	{
-		FileOutputStream out = new FileOutputStream(file);
-
-		try {
+		try (FileOutputStream out = new FileOutputStream(file)) {
 			return transfer(in, out);
-		}
-		finally {
-			out.close();
 		}
 	}
 
@@ -611,13 +582,8 @@ public class IOUtil {
 	public static final long transfer(Reader reader, File file)
 		throws IOException
 	{
-		FileWriter writer = new FileWriter(file);
-
-		try {
+		try (FileWriter writer = new FileWriter(file)) {
 			return transfer(reader, writer);
-		}
-		finally {
-			writer.close();
 		}
 	}
 }

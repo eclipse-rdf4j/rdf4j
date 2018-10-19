@@ -599,9 +599,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 				if (modifiedContexts != null) {
 					logger.debug("React to commit on SystemRepository for contexts {}", modifiedContexts);
 					try {
-						RepositoryConnection cleanupCon = getSystemRepository().getConnection();
-
-						try {
+						try (RepositoryConnection cleanupCon = getSystemRepository().getConnection()) {
 							// refresh all modified contexts
 							for (Resource context : modifiedContexts) {
 								logger.debug("Processing modified context {}.", context);
@@ -637,9 +635,6 @@ public class LocalRepositoryManager extends RepositoryManager {
 									logger.error("Failed to process repository configuration changes", re);
 								}
 							}
-						}
-						finally {
-							cleanupCon.close();
 						}
 					}
 					catch (RepositoryException re) {
@@ -677,16 +672,12 @@ public class LocalRepositoryManager extends RepositoryManager {
 		{
 			String result = null;
 
-			RepositoryResult<Statement> idStatements = con.getStatements(null, REPOSITORYID, null, true,
-					context);
-			try {
+			try (RepositoryResult<Statement> idStatements = con.getStatements(null, REPOSITORYID, null, true,
+			    context)) {
 				if (idStatements.hasNext()) {
 					Statement idStatement = idStatements.next();
 					result = idStatement.getObject().stringValue();
 				}
-			}
-			finally {
-				idStatements.close();
 			}
 
 			return result;

@@ -48,12 +48,8 @@ public class ZipUtil {
 	public static void extract(File zipFile, File destDir)
 		throws IOException
 	{
-		ZipFile zf = new ZipFile(zipFile);
-		try {
+		try (ZipFile zf = new ZipFile(zipFile)) {
 			extract(zf, destDir);
-		}
-		finally {
-			zf.close();
 		}
 	}
 
@@ -102,12 +98,8 @@ public class ZipUtil {
 		else {
 			outFile.getParentFile().mkdirs();
 
-			InputStream in = zipFile.getInputStream(entry);
-			try {
+			try (InputStream in = zipFile.getInputStream(entry)) {
 				IOUtil.writeStream(in, outFile);
-			}
-			finally {
-				in.close();
 			}
 		}
 	}

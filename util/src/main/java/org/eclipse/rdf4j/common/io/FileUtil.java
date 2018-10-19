@@ -168,14 +168,8 @@ public class FileUtil {
 	public static void copyFile(File source, File destination)
 		throws IOException
 	{
-		FileInputStream in = null;
-		try {
-			in = new FileInputStream(source);
+		try (FileInputStream in = new FileInputStream(source)) {
 			IOUtil.writeStream(in, destination);
-		}
-		finally {
-			if (in != null)
-				in.close();
 		}
 	}
 
