@@ -40,10 +40,12 @@ public abstract class AbstractRepositoryServlet extends AbstractServlet implemen
 
 	protected ValueFactory vf;
 
+	@Override
 	public void setRepositoryManager(RepositoryManager manager) {
 		this.manager = manager;
 	}
 
+	@Override
 	public void setRepositoryInfo(RepositoryInfo info) {
 		this.info = info;
 	}
