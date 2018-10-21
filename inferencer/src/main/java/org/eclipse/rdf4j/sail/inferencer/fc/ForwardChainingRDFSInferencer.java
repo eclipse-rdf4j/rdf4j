@@ -57,14 +57,10 @@ public class ForwardChainingRDFSInferencer extends AbstractForwardChainingInfere
 	{
 		super.initialize();
 
-		ForwardChainingRDFSInferencerConnection con = getConnection();
-		try {
+		try (ForwardChainingRDFSInferencerConnection con = getConnection()) {
 			con.begin();
 			con.addAxiomStatements();
 			con.commit();
-		}
-		finally {
-			con.close();
 		}
 	}
 }

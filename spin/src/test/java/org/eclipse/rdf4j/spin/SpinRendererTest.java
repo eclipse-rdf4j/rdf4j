@@ -75,9 +75,9 @@ public class SpinRendererTest {
 		StatementCollector expected = new StatementCollector();
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 		parser.setRDFHandler(expected);
-		InputStream rdfStream = testURL.openStream();
-		parser.parse(rdfStream, testURL.toString());
-		rdfStream.close();
+		try (InputStream rdfStream = testURL.openStream()) {
+			parser.parse(rdfStream, testURL.toString());
+		}
 
 		// get query from sp:text
 		String query = null;

@@ -302,10 +302,9 @@ public class SolrIndexTest {
 		SailRepository repository = new SailRepository(sail);
 		repository.initialize();
 
-		// now add the statements through the repo
+		try ( // now add the statements through the repo
 		// add statements with context
-		SailRepositoryConnection connection = repository.getConnection();
-		try {
+			SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -332,9 +331,8 @@ public class SolrIndexTest {
 			assertStatement(statementContext232);
 		}
 		finally {
-			// close repo
-			connection.close();
-			repository.shutDown();
+// close repo
+						repository.shutDown();
 		}
 	}
 
@@ -360,10 +358,9 @@ public class SolrIndexTest {
 		SailRepository repository = new SailRepository(sail);
 		repository.initialize();
 
-		// now add the statements through the repo
+		try ( // now add the statements through the repo
 		// add statements with context
-		SailRepositoryConnection connection = repository.getConnection();
-		try {
+			SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -390,9 +387,8 @@ public class SolrIndexTest {
 			assertNoStatement(statementContext232);
 		}
 		finally {
-			// close repo
-			connection.close();
-			repository.shutDown();
+// close repo
+						repository.shutDown();
 		}
 	}
 

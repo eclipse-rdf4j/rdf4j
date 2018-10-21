@@ -77,17 +77,13 @@ public class ZeroLengthPathIterationTest {
 
 		Var subjectVar = new Var("x");
 		Var objVar = new Var("y");
-		ZeroLengthPathIteration zlp = new ZeroLengthPathIteration(evaluator, subjectVar, objVar, null, null,
-				null, bindings);
-		try {
+		try (ZeroLengthPathIteration zlp = new ZeroLengthPathIteration(evaluator, subjectVar, objVar, null, null,
+			null, bindings)) {
 			BindingSet result = zlp.getNextElement();
 
 			assertTrue("zlp evaluation should have retained unrelated input binding", result.hasBinding("a"));
 			assertTrue("zlp evaluation should binding for subject var", result.hasBinding("x"));
 			assertTrue("zlp evaluation should binding for object var", result.hasBinding("y"));
-		}
-		finally {
-			zlp.close();
 		}
 	}
 }

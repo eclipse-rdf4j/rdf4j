@@ -68,12 +68,8 @@ public class TestProxyRepository {
 		assertThat(repository.isInitialized()).isFalse();
 		assertThat(repository.isWritable()).isEqualTo(proxied.isWritable());
 		repository.initialize();
-		RepositoryConnection connection = repository.getConnection();
-		try {
+		try (RepositoryConnection connection = repository.getConnection()) {
 			assertThat(connection).isInstanceOf(SailRepositoryConnection.class);
-		}
-		finally {
-			connection.close();
 		}
 	}
 
