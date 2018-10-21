@@ -151,14 +151,10 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 	{
 		super.initialize();
 
-		InferencerConnection con = getConnection();
-		try {
+		try (InferencerConnection con = getConnection()) {
 			con.begin();
 			con.flushUpdates();
 			con.commit();
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -272,10 +268,8 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 		private void evaluateIntoStatements(ParsedGraphQuery query, Collection<Statement> statements)
 			throws SailException, RDFHandlerException, QueryEvaluationException
 		{
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection().evaluate(
-					query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true);
-
-			try {
+			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection().evaluate(
+				query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
 				ValueFactory vf = getValueFactory();
 
 				while (bindingsIter.hasNext()) {
@@ -289,9 +283,6 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 						statements.add(vf.createStatement((Resource)subj, (IRI)pred, obj));
 					}
 				}
-			}
-			finally {
-				bindingsIter.close();
 			}
 		}
 	} // end inner class DirectTypeHierarchyInferencerConnection

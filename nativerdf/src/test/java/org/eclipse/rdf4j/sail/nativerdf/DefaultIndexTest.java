@@ -51,13 +51,9 @@ public class DefaultIndexTest {
 		throws Exception
 	{
 		Properties properties = new Properties();
-		InputStream in = new FileInputStream(new File(dir, "triples.prop"));
-		try {
+		try (InputStream in = new FileInputStream(new File(dir, "triples.prop"))) {
 			properties.clear();
 			properties.load(in);
-		}
-		finally {
-			in.close();
 		}
 		return (String)properties.get("triple-indexes");
 	}

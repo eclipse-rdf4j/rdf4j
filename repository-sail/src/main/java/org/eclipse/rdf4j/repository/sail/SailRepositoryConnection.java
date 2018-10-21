@@ -315,16 +315,12 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	{
 		handler.startRDF();
 
-		// Export namespace information
-		CloseableIteration<? extends Namespace, RepositoryException> nsIter = getNamespaces();
-		try {
+		try ( // Export namespace information
+			CloseableIteration<? extends Namespace, RepositoryException> nsIter = getNamespaces()) {
 			while (nsIter.hasNext()) {
 				Namespace ns = nsIter.next();
 				handler.handleNamespace(ns.getPrefix(), ns.getName());
 			}
-		}
-		finally {
-			nsIter.close();
 		}
 
 		// Export statements

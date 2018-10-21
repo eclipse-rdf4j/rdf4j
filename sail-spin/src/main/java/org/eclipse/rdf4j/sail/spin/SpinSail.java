@@ -147,8 +147,7 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 		SpinFunctionInterpreter.registerSpinParsingFunctions(parser, functionRegistry);
 		SpinMagicPropertyInterpreter.registerSpinParsingTupleFunctions(parser, tupleFunctionRegistry);
 
-		SpinSailConnection con = getConnection();
-		try {
+		try (SpinSailConnection con = getConnection()) {
 			con.begin();
 			Set<Statement> stmts = Iterations.asSet(con.getStatements(
 					getValueFactory().createIRI("http://spinrdf.org/sp"), RDF.TYPE, OWL.ONTOLOGY, true));
@@ -156,9 +155,6 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 				con.addAxiomStatements();
 			}
 			con.commit();
-		}
-		finally {
-			con.close();
 		}
 	}
 }

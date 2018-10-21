@@ -60,15 +60,15 @@ public class LuceneIndexLocationTest {
 		repository.setDataDir(dataDir);
 		repository.initialize();
 
-		// create temporary transaction to load data
-		SailRepositoryConnection cnx = repository.getConnection();
-		cnx.begin();
-
-		IntStream.rangeClosed(0, 50).forEach(i -> cnx.add(
+		try ( // create temporary transaction to load data
+			SailRepositoryConnection cnx = repository.getConnection()) {
+			cnx.begin();
+			
+			IntStream.rangeClosed(0, 50).forEach(i -> cnx.add(
 				vf.createStatement(vf.createIRI("urn:subject" + i), vf.createIRI("urn:predicate:" + i),
-						vf.createLiteral("Value" + i))));
-		cnx.commit();
-		cnx.close();
+					vf.createLiteral("Value" + i))));
+			cnx.commit();
+		}
 		connection = repository.getConnection();
 	}
 

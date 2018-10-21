@@ -221,12 +221,8 @@ public class SpinSailTest {
 		throws RepositoryException, RDFParseException, IOException
 	{
 		URL url = getClass().getResource(BASE_DIR + ttl);
-		InputStream in = url.openStream();
-		try {
+		try (InputStream in = url.openStream()) {
 			conn.add(in, url.toString(), RDFFormat.TURTLE);
-		}
-		finally {
-			in.close();
 		}
 	}
 
@@ -237,9 +233,9 @@ public class SpinSailTest {
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 		parser.setRDFHandler(expected);
 		URL url = getClass().getResource(BASE_DIR + ttl);
-		InputStream rdfStream = url.openStream();
-		parser.parse(rdfStream, url.toString());
-		rdfStream.close();
+		try (InputStream rdfStream = url.openStream()) {
+			parser.parse(rdfStream, url.toString());
+		}
 
 		for (Statement stmt : expected.getStatements()) {
 			assertTrue("Expected statement: " + stmt, conn.hasStatement(stmt, true));

@@ -268,9 +268,8 @@ public class SpinParser {
 		throws RDF4JException
 	{
 		Map<IRI, RuleProperty> rules = new HashMap<IRI, RuleProperty>();
-		CloseableIteration<? extends IRI, ? extends RDF4JException> rulePropIter = TripleSources.getSubjectURIs(
-				RDFS.SUBPROPERTYOF, SPIN.RULE_PROPERTY, store);
-		try {
+		try (CloseableIteration<? extends IRI, ? extends RDF4JException> rulePropIter = TripleSources.getSubjectURIs(
+			RDFS.SUBPROPERTYOF, SPIN.RULE_PROPERTY, store)) {
 			while (rulePropIter.hasNext()) {
 				IRI ruleProp = rulePropIter.next();
 				RuleProperty ruleProperty = new RuleProperty(ruleProp);
@@ -284,9 +283,6 @@ public class SpinParser {
 				rules.put(ruleProp, ruleProperty);
 			}
 		}
-		finally {
-			rulePropIter.close();
-		}
 		return rules;
 	}
 
@@ -294,15 +290,11 @@ public class SpinParser {
 		throws RDF4JException
 	{
 		List<IRI> nextRules = new ArrayList<IRI>();
-		CloseableIteration<? extends IRI, ? extends RDF4JException> iter = TripleSources.getObjectURIs(ruleProp,
-				SPIN.NEXT_RULE_PROPERTY_PROPERTY, store);
-		try {
+		try (CloseableIteration<? extends IRI, ? extends RDF4JException> iter = TripleSources.getObjectURIs(ruleProp,
+			SPIN.NEXT_RULE_PROPERTY_PROPERTY, store)) {
 			while (iter.hasNext()) {
 				nextRules.add(iter.next());
 			}
-		}
-		finally {
-			iter.close();
 		}
 		return nextRules;
 	}
@@ -409,9 +401,8 @@ public class SpinParser {
 		Boolean isQueryElseTemplate = null;
 		Set<IRI> possibleQueryTypes = new HashSet<IRI>();
 		Set<IRI> possibleTemplates = new HashSet<IRI>();
-		CloseableIteration<? extends IRI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(
-				queryResource, RDF.TYPE, store);
-		try {
+		try (CloseableIteration<? extends IRI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(
+			queryResource, RDF.TYPE, store)) {
 			while (typeIter.hasNext()) {
 				IRI type = typeIter.next();
 				if (isQueryElseTemplate == null && SPIN.TEMPLATES_CLASS.equals(type)) {
@@ -429,9 +420,6 @@ public class SpinParser {
 					possibleTemplates.add(type);
 				}
 			}
-		}
-		finally {
-			typeIter.close();
 		}
 
 		ParsedOperation parsedOp;
@@ -538,18 +526,14 @@ public class SpinParser {
 		throws RDF4JException
 	{
 		Set<IRI> possibleTmplTypes = new HashSet<IRI>();
-		CloseableIteration<? extends IRI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(
-				tmplUri, RDF.TYPE, store);
-		try {
+		try (CloseableIteration<? extends IRI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(
+			tmplUri, RDF.TYPE, store)) {
 			while (typeIter.hasNext()) {
 				IRI type = typeIter.next();
 				if (TEMPLATE_TYPES.contains(type)) {
 					possibleTmplTypes.add(type);
 				}
 			}
-		}
-		finally {
-			typeIter.close();
 		}
 
 		if (possibleTmplTypes.isEmpty()) {
@@ -679,9 +663,8 @@ public class SpinParser {
 	private void parseArguments(IRI moduleUri, TripleSource store, Map<IRI, Argument> args)
 		throws RDF4JException
 	{
-		CloseableIteration<? extends Resource, ? extends RDF4JException> argIter = TripleSources.getObjectResources(
-				moduleUri, SPIN.CONSTRAINT_PROPERTY, store);
-		try {
+		try (CloseableIteration<? extends Resource, ? extends RDF4JException> argIter = TripleSources.getObjectResources(
+			moduleUri, SPIN.CONSTRAINT_PROPERTY, store)) {
 			while (argIter.hasNext()) {
 				Resource possibleArg = argIter.next();
 				Statement argTmpl = TripleSources.single(possibleArg, RDF.TYPE, SPL.ARGUMENT_TEMPLATE, store);
@@ -695,9 +678,6 @@ public class SpinParser {
 					args.put(argUri, new Argument(argUri, (IRI)valueType, optional, defaultValue));
 				}
 			}
-		}
-		finally {
-			argIter.close();
 		}
 	}
 

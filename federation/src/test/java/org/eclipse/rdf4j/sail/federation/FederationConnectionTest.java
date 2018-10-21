@@ -43,8 +43,7 @@ public class FederationConnectionTest {
 
 		federation.initialize();
 		try {
-			SailConnection connection = federation.getConnection();
-			try {
+			try (SailConnection connection = federation.getConnection()) {
 				assertEquals("Should get size", 0, connection.size());
 
 				connection.begin();
@@ -55,9 +54,6 @@ public class FederationConnectionTest {
 
 				connection.commit();
 				assertEquals("Should get size", 1, connection.size());
-			}
-			finally {
-				connection.close();
 			}
 		}
 		finally {
@@ -77,8 +73,7 @@ public class FederationConnectionTest {
 
 		federation.initialize();
 		try {
-			SailConnection connection = federation.getConnection();
-			try {
+			try (SailConnection connection = federation.getConnection()) {
 				connection.begin();
 				connection.addStatement(OWL.CLASS, RDFS.COMMENT, RDF.REST);
 				connection.commit();
@@ -90,9 +85,6 @@ public class FederationConnectionTest {
 
 				assertEquals("Should get explicit statement size", 1, connection.size());
 			}
-			finally {
-				connection.close();
-			}
 		}
 		finally {
 			federation.shutDown();
@@ -103,13 +95,9 @@ public class FederationConnectionTest {
 			SailConnection connection)
 		throws SailException
 	{
-		CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
-				(IRI)predicate, object, true);
-		try {
+		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
+			(IRI)predicate, object, true)) {
 			assertTrue(message, statements.hasNext());
-		}
-		finally {
-			statements.close();
 		}
 	}
 

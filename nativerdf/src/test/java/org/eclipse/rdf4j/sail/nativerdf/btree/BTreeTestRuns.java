@@ -51,14 +51,15 @@ public class BTreeTestRuns {
 
 			System.out.println("Iterating over all values in sequential order...");
 			startTime = System.currentTimeMillis();
-			RecordIterator iter = btree.iterateAll();
-			value = iter.next();
-			int count = 0;
-			while (value != null) {
-				count++;
+			int count;
+			try (RecordIterator iter = btree.iterateAll()) {
 				value = iter.next();
+				count = 0;
+				while (value != null) {
+					count++;
+					value = iter.next();
+				}
 			}
-			iter.close();
 			System.out.println("Iteration over " + count + " items finished in "
 					+ (System.currentTimeMillis() - startTime) + " ms");
 

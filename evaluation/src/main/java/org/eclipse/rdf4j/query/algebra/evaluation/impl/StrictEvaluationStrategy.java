@@ -1857,9 +1857,8 @@ public class StrictEvaluationStrategy
 		// Use first binding name from tuple expr to compare values
 		String bindingName = node.getSubQuery().getBindingNames().iterator().next();
 
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(),
-				bindings);
-		try {
+		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(),
+			bindings)) {
 			while (result == false && iter.hasNext()) {
 				BindingSet bindingSet = iter.next();
 
@@ -1868,9 +1867,6 @@ public class StrictEvaluationStrategy
 				result = leftValue == null && rightValue == null
 						|| leftValue != null && leftValue.equals(rightValue);
 			}
-		}
-		finally {
-			iter.close();
 		}
 
 		return BooleanLiteral.valueOf(result);
@@ -1922,9 +1918,8 @@ public class StrictEvaluationStrategy
 		// Use first binding name from tuple expr to compare values
 		String bindingName = node.getSubQuery().getBindingNames().iterator().next();
 
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(),
-				bindings);
-		try {
+		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(),
+			bindings)) {
 			while (result == false && iter.hasNext()) {
 				BindingSet bindingSet = iter.next();
 
@@ -1937,9 +1932,6 @@ public class StrictEvaluationStrategy
 					// ignore, maybe next value will match
 				}
 			}
-		}
-		finally {
-			iter.close();
 		}
 
 		return BooleanLiteral.valueOf(result);
@@ -1956,9 +1948,8 @@ public class StrictEvaluationStrategy
 		// Use first binding name from tuple expr to compare values
 		String bindingName = node.getSubQuery().getBindingNames().iterator().next();
 
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(),
-				bindings);
-		try {
+		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(),
+			bindings)) {
 			while (result == true && iter.hasNext()) {
 				BindingSet bindingSet = iter.next();
 
@@ -1973,9 +1964,6 @@ public class StrictEvaluationStrategy
 				}
 			}
 		}
-		finally {
-			iter.close();
-		}
 
 		return BooleanLiteral.valueOf(result);
 	}
@@ -1983,13 +1971,9 @@ public class StrictEvaluationStrategy
 	public Value evaluate(Exists node, BindingSet bindings)
 		throws ValueExprEvaluationException, QueryEvaluationException
 	{
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(),
-				bindings);
-		try {
+		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(),
+			bindings)) {
 			return BooleanLiteral.valueOf(iter.hasNext());
-		}
-		finally {
-			iter.close();
 		}
 	}
 

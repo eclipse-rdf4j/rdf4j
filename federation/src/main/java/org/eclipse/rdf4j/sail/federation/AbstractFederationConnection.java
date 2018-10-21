@@ -283,8 +283,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 
 		try {
 			for (RepositoryConnection member : members) {
-				RepositoryResult<Namespace> memberNamespaces = member.getNamespaces();
-				try {
+				try (RepositoryResult<Namespace> memberNamespaces = member.getNamespaces()) {
 					while (memberNamespaces.hasNext()) {
 						Namespace next = memberNamespaces.next();
 						String prefix = next.getPrefix();
@@ -296,9 +295,6 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 							conflictedPrefixes.add(prefix);
 						}
 					}
-				}
-				finally {
-					memberNamespaces.close();
 				}
 			}
 		}
@@ -324,18 +320,14 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 				return size; // NOPMD
 			}
 			else {
-				CloseableIteration<? extends Statement, SailException> cursor = getStatements(null, null,
-						null, false, contexts);
-				try {
+				try (CloseableIteration<? extends Statement, SailException> cursor = getStatements(null, null,
+					null, false, contexts)) {
 					long size = 0;
 					while (cursor.hasNext()) {
 						cursor.next();
 						size++;
 					}
 					return size;
-				}
-				finally {
-					cursor.close();
 				}
 			}
 		}

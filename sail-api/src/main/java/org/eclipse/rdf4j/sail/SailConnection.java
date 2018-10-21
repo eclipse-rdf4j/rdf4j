@@ -151,13 +151,9 @@ public interface SailConnection extends AutoCloseable {
 			Resource... contexts)
 		throws SailException
 	{
-		CloseableIteration<? extends Statement, SailException> stIter = getStatements(subj, pred, obj,
-				includeInferred, contexts);
-		try {
+		try (CloseableIteration<? extends Statement, SailException> stIter = getStatements(subj, pred, obj,
+			includeInferred, contexts)) {
 			return stIter.hasNext();
-		}
-		finally {
-			stIter.close();
 		}
 	}
 
