@@ -266,4 +266,9 @@ final class DefaultSpatialAlgebra implements SpatialAlgebra {
 	public boolean rcc8ntppi(Shape s1, Shape s2) {
 		return notSupported();
 	}
+
+	@Override
+	public Shape buffer(Shape s, double distance) {
+		return s.getBuffered(distance, SpatialSupport.getSpatialContext());
+	}
 }

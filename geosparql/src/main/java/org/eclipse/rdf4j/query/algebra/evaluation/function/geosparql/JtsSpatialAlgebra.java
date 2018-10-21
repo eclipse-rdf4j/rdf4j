@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.spatial4j.context.jts.JtsSpatialContext;
-import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Shape;
 import org.locationtech.spatial4j.shape.jts.JtsShapeFactory;
 
@@ -23,6 +22,11 @@ public class JtsSpatialAlgebra implements SpatialAlgebra {
 
 	public JtsSpatialAlgebra(JtsSpatialContext context) {
 		this.shapeFactory = context.getShapeFactory();
+	}
+	
+	@Override
+	public Shape buffer(Shape s, double distance) {
+		return shapeFactory.makeShapeFromGeometry(shapeFactory.getGeometryFrom(s).buffer(distance));
 	}
 
 	public Shape convexHull(Shape s) {
@@ -182,5 +186,7 @@ public class JtsSpatialAlgebra implements SpatialAlgebra {
 	public boolean rcc8ntppi(Shape s1, Shape s2) {
 		return relate(s1, s2, "TTTFFTFFT");
 	}
+
+
 
 }

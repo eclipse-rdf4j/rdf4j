@@ -11,6 +11,8 @@ import org.locationtech.spatial4j.shape.Shape;
 
 public interface SpatialAlgebra {
 
+	Shape buffer(Shape s, double distance);
+	
 	Shape convexHull(Shape s);
 
 	Shape boundary(Shape s);

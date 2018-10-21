@@ -16,8 +16,11 @@ import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.locationtech.jts.geom.Geometry;
 import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.context.jts.JtsSpatialContext;
 import org.locationtech.spatial4j.shape.Shape;
+import org.locationtech.spatial4j.shape.impl.GeoCircle;
 
 /**
  * The GeoSPARQL {@link Function} geof:buffer, as defined in
@@ -44,7 +47,7 @@ public class Buffer implements Function {
 		IRI units = FunctionArguments.getUnits(this, args[2]);
 		double radiusDegs = FunctionArguments.convertToDegrees(radiusUom, units);
 
-		Shape buffered = geom.getBuffered(radiusDegs, geoContext);
+		Shape buffered = SpatialSupport.getSpatialAlgebra().buffer(geom, radiusDegs);
 
 		String wkt;
 		try {
