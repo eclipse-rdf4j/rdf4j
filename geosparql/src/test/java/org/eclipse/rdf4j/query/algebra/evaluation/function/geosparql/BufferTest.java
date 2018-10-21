@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
 import static org.junit.Assert.assertNotNull;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -38,24 +39,32 @@ public class BufferTest {
 		Value result = buffer.evaluate(f, point, f.createLiteral(1), unit);
 		assertNotNull(result);
 	}
-	
+
 	@Test
 	public void testEvaluateWithDoubleRadius() {
 		Value result = buffer.evaluate(f, point, f.createLiteral(1.0), unit);
 		assertNotNull(result);
 	}
-	
+
 	@Test
 	public void testEvaluateWithDecimalRadius() {
 		Value result = buffer.evaluate(f, point, f.createLiteral("1.0", XMLSchema.DECIMAL), unit);
 		assertNotNull(result);
 	}
-	
+
+	@Test
+	public void resultIsPolygonWKT() {
+		Literal result = (Literal)buffer.evaluate(f, point, f.createLiteral(1), unit);
+		assertNotNull(result);
+		assertThat(result.getDatatype()).isEqualTo(GEO.WKT_LITERAL);
+		assertThat(result.getLabel()).startsWith( "POLYGON ((23.708505");
+	}
+
 	@Test(expected = ValueExprEvaluationException.class)
 	public void testEvaluateWithInvalidRadius() {
 		buffer.evaluate(f, point, f.createLiteral("foobar", XMLSchema.DECIMAL), unit);
 	}
-	
+
 	@Test(expected = ValueExprEvaluationException.class)
 	public void testEvaluateWithInvalidUnit() {
 		buffer.evaluate(f, point, f.createLiteral(1.0), FOAF.PERSON);
