@@ -256,4 +256,4 @@ RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
 rdfParser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 ----
 
-The {javadoc}rio/helpers/BasicParserSettings.html[BasicParserSettings] holds a collection of various parser settings that can be reconfigured this way. These are settings that can be used with most Rio parsers. {javadoc}rio/helpers/TurtleParserSettings.html[TurtleParserSettings] has additional settings specific for the Turtle and TriG parsers, and {javadoc}rio/helper/NTriplesParserSettings.html[NTriplesParserSettings] has additional settings specific to N-Triples and N-Quads parsing. 
+The {javadoc}rio/helpers/BasicParserSettings.html[BasicParserSettings] holds a collection of various parser settings that can be reconfigured this way. These are settings that can be used with most Rio parsers. {javadoc}rio/helpers/TurtleParserSettings.html[TurtleParserSettings] has additional settings specific for the Turtle and TriG parsers, and {javadoc}rio/helpers/NTriplesParserSettings.html[NTriplesParserSettings] has additional settings specific to N-Triples and N-Quads parsing. 
