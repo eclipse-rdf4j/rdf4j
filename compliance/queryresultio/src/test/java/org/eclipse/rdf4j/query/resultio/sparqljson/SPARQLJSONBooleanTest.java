@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOBooleanTest;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
-import org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLBooleanJSONParser;
 import org.junit.Test;
 
 /**

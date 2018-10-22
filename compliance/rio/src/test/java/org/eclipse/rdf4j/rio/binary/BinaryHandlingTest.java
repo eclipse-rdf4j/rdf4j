@@ -19,8 +19,6 @@ import org.eclipse.rdf4j.rio.AbstractParserHandlingTest;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriter;
-import org.eclipse.rdf4j.rio.binary.BinaryRDFParser;
-import org.eclipse.rdf4j.rio.binary.BinaryRDFWriter;
 
 /**
  * Test for error handling by Binary Parser.

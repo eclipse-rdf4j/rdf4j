@@ -7,10 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.nquads;
 
-import org.eclipse.rdf4j.rio.nquads.AbstractNQuadsWriterTest;
-import org.eclipse.rdf4j.rio.nquads.NQuadsParserFactory;
-import org.eclipse.rdf4j.rio.nquads.NQuadsWriterFactory;
-
 public class NQuadsWriterTest extends AbstractNQuadsWriterTest {
 
 	public NQuadsWriterTest() {

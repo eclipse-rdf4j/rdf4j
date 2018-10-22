@@ -10,8 +10,6 @@ package org.eclipse.rdf4j.rio.turtle;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.eclipse.rdf4j.rio.turtle.TurtleParserFactory;
-import org.eclipse.rdf4j.rio.turtle.TurtleWriterFactory;
 
 /**
  * @author Arjohn Kampman

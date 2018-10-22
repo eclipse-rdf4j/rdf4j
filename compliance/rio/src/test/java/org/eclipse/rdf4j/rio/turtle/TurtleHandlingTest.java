@@ -18,8 +18,6 @@ import org.eclipse.rdf4j.rio.AbstractParserHandlingTest;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriter;
-import org.eclipse.rdf4j.rio.turtle.TurtleParser;
-import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
 
 /**
  * Test for error handling by Turtle Parser.
