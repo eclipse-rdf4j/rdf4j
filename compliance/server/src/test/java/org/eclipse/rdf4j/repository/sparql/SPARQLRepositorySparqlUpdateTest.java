@@ -5,12 +5,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql;
 
-import org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateTest;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.http.HTTPMemServer;
-import org.junit.Ignore;
-import org.junit.Test;
-
 /**
  * @author Jeen Broekstra
  */

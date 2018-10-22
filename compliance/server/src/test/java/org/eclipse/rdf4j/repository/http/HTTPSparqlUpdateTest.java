@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateTest;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Ignore;

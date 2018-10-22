@@ -12,7 +12,6 @@ import static javax.servlet.http.HttpServletResponse.SC_OK;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 
 import javax.servlet.http.HttpServletRequest;

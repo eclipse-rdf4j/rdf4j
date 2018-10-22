@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.repository.http;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryTest;
-import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 

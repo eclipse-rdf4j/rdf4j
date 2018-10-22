@@ -11,7 +11,6 @@ import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.repository.GraphQueryResultTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.http.HTTPMemServer;
-import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 
