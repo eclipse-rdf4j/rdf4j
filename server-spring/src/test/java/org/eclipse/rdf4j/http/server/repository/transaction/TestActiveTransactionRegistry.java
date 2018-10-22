@@ -7,16 +7,11 @@
  */
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
-import static org.junit.Assert.fail;
 
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
 
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryException;
 import org.junit.Before;
-import org.junit.Test;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -10,8 +10,6 @@ package org.eclipse.rdf4j.query.parser.sparql.manifest;
 import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11ManifestTest;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQLUpdateConformanceTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.contextaware.ContextAwareRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;

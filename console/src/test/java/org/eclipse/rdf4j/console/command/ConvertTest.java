@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.console.command;
 
 import com.github.jsonldjava.utils.JsonUtils;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.verify;
 
 import static org.junit.Assert.assertTrue;
 

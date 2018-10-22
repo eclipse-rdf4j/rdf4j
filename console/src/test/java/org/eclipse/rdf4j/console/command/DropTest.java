@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.ProxyRepositoryConfig;
 
-import static org.junit.Assert.assertThat;
 
 import org.junit.After;
 import org.junit.Before;

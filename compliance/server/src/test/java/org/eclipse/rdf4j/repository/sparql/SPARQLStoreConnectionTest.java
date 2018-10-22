@@ -33,8 +33,6 @@ import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.http.HTTPMemServer;
-import org.eclipse.rdf4j.repository.sparql.SPARQLConnection;
-import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Before;
