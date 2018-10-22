@@ -228,7 +228,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	 * Overrides the {@link FederatedServiceResolver} used by this instance, but the given resolver is not
 	 * shutDown when this instance is.
 	 * 
-	 * @param reslover
+	 * @param resolver
 	 *        The SERVICE resolver to set.
 	 */
 	@Override
