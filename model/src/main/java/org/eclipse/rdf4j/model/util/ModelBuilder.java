@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.model.util;
 
 import java.util.Date;
-import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 

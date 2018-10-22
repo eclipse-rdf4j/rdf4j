@@ -14,7 +14,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 
 /**
  * Makes working with a queue easier by adding the methods {@link #done()} and {@link #toss(Exception)} and

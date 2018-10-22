@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.rio.languages;
 
 import java.util.IllformedLocaleException;
-import java.util.Locale;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.model.Literal;

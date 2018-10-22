@@ -7,9 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model;
 
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.ModelNamespacesTest;
-import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 
 /**

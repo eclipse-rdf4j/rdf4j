@@ -7,9 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model;
 
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.ModelTest;
-import org.eclipse.rdf4j.model.TreeModelTest;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 
 import junit.framework.Test;

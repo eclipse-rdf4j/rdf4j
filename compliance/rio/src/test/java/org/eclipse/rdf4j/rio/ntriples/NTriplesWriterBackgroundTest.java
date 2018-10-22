@@ -15,8 +15,6 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
-import org.eclipse.rdf4j.rio.ntriples.NTriplesParserFactory;
-import org.eclipse.rdf4j.rio.ntriples.NTriplesWriterFactory;
 
 /**
  * JUnit test for the N-Triples parser/writer combination.

@@ -13,8 +13,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.DatatypeHandler;
-import org.eclipse.rdf4j.rio.datatypes.AbstractDatatypeHandlerTest;
-import org.eclipse.rdf4j.rio.datatypes.VirtuosoGeometryDatatypeHandler;
 
 /**
  * Test for {@link VirtuosoDatatypeHandler} with http://www.openlinksw.com/schemas/virtrdf#Geometry .
