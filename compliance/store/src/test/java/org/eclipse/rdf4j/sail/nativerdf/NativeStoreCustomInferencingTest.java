@@ -14,7 +14,6 @@ import java.io.IOException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.sail.CustomGraphQueryInferencerTest;
 import org.eclipse.rdf4j.sail.NotifyingSail;
-import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 

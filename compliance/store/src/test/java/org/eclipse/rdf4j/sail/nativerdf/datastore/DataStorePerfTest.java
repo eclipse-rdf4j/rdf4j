@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
-import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 
 /**
  * 

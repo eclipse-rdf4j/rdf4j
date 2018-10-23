@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
 import org.locationtech.spatial4j.context.SpatialContext;
 import org.locationtech.spatial4j.context.jts.JtsSpatialContext;
-import org.locationtech.spatial4j.io.ShapeWriter;
 
 /**
  * This class is responsible for creating the {@link org.locationtech.spatial4j.context.SpatialContext},

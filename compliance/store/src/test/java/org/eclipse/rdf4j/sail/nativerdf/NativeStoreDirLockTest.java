@@ -13,7 +13,6 @@ import static org.junit.Assert.fail;
 import java.io.File;
 
 import org.eclipse.rdf4j.sail.SailLockedException;
-import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
