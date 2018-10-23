@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.spatial4j.context.jts.JtsSpatialContext;
-import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Shape;
 import org.locationtech.spatial4j.shape.jts.JtsShapeFactory;
 

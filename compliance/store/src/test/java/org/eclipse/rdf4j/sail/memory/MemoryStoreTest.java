@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.memory;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.RDFNotifyingStoreTest;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
  * An extension of RDFStoreTest for testing the class

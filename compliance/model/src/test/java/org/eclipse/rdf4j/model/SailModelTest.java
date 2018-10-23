@@ -9,8 +9,6 @@ package org.eclipse.rdf4j.model;
 
 import junit.framework.Test;
 
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.ModelTest;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;

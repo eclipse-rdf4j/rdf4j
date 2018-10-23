@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 
 
