@@ -72,8 +72,7 @@ public class RDFXMLParserTest {
 	public void rdfXmlLoadedFromInsideAJarResolvesRelativeUris()
 		throws Exception
 	{
-		URL zipfileUrl = this.getClass().getResource(
-				"/org/eclipse/rdf4j/rio/rdfxml/sample-with-rdfxml-data.zip");
+		URL zipfileUrl = this.getClass().getResource("/org/eclipse/rdf4j/rio/rdfxml/sample-with-rdfxml-data.zip");
 
 		assertNotNull("The sample-data.zip file must be present for this test", zipfileUrl);
 
@@ -112,6 +111,90 @@ public class RDFXMLParserTest {
 		assertEquals(res, stmt2.getSubject());
 		assertEquals(DC.TITLE, stmt2.getPredicate());
 		assertEquals(vf.createLiteral("Empty File"), stmt2.getObject());
+	}
+
+	@Test
+	public void testFatalErrorExternalGeneralEntity()
+		throws Exception
+	{
+		// Temporarily override System.err to verify that nothing is being
+		// printed to it for this test
+		PrintStream oldErr = System.err;
+		ByteArrayOutputStream tempErr = new ByteArrayOutputStream();
+		System.setErr(new PrintStream(tempErr));
+		PrintStream oldOut = System.out;
+		ByteArrayOutputStream tempOut = new ByteArrayOutputStream();
+		System.setOut(new PrintStream(tempOut));
+		try (final InputStream in = this.getClass().getResourceAsStream(
+				"/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-general-entity.rdf");)
+		{
+			parser.parse(in, "");
+		}
+		catch (RDFParseException e) {
+			assertEquals(
+					"DOCTYPE is disallowed when the feature \"http://apache.org/xml/features/disallow-doctype-decl\" set to true. [line 2, column 10]",
+					e.getMessage());
+		}
+		finally {
+			// Reset System Error output to ensure that we don't interfere with
+			// other tests
+			System.setErr(oldErr);
+			// Reset System Out output to ensure that we don't interfere with
+			// other tests
+			System.setOut(oldOut);
+		}
+		// Verify nothing was printed to System.err during test
+		assertEquals(0, tempErr.size());
+		// Verify nothing was printed to System.out during test
+		assertEquals(0, tempOut.size());
+		assertEquals(0, el.getWarnings().size());
+		assertEquals(0, el.getErrors().size());
+		assertEquals(1, el.getFatalErrors().size());
+		assertEquals(
+				"[Rio fatal] DOCTYPE is disallowed when the feature \"http://apache.org/xml/features/disallow-doctype-decl\" set to true. (2, 10)",
+				el.getFatalErrors().get(0));
+	}
+
+	@Test
+	public void testFatalErrorExternalParameterEntity()
+		throws Exception
+	{
+		// Temporarily override System.err to verify that nothing is being
+		// printed to it for this test
+		PrintStream oldErr = System.err;
+		ByteArrayOutputStream tempErr = new ByteArrayOutputStream();
+		System.setErr(new PrintStream(tempErr));
+		PrintStream oldOut = System.out;
+		ByteArrayOutputStream tempOut = new ByteArrayOutputStream();
+		System.setOut(new PrintStream(tempOut));
+		try (final InputStream in = this.getClass().getResourceAsStream(
+				"/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-param-entity.rdf");)
+		{
+			parser.parse(in, "");
+		}
+		catch (RDFParseException e) {
+			assertEquals(
+					"DOCTYPE is disallowed when the feature \"http://apache.org/xml/features/disallow-doctype-decl\" set to true. [line 2, column 10]",
+					e.getMessage());
+		}
+		finally {
+			// Reset System Error output to ensure that we don't interfere with
+			// other tests
+			System.setErr(oldErr);
+			// Reset System Out output to ensure that we don't interfere with
+			// other tests
+			System.setOut(oldOut);
+		}
+		// Verify nothing was printed to System.err during test
+		assertEquals(0, tempErr.size());
+		// Verify nothing was printed to System.out during test
+		assertEquals(0, tempOut.size());
+		assertEquals(0, el.getWarnings().size());
+		assertEquals(0, el.getErrors().size());
+		assertEquals(1, el.getFatalErrors().size());
+		assertEquals(
+				"[Rio fatal] DOCTYPE is disallowed when the feature \"http://apache.org/xml/features/disallow-doctype-decl\" set to true. (2, 10)",
+				el.getFatalErrors().get(0));
 	}
 
 	@Test
