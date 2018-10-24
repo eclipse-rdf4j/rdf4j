@@ -19,7 +19,7 @@ import org.xml.sax.XMLReader;
  * @author Michael Grove
  * @author Peter Ansell
  * @see XMLConstants
- * @see <a href="http://xerces.apache.org/xerces-j/features.html">Apache XML Project - Features</a>
+ * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
  */
 public final class XMLParserSettings {
 
@@ -36,14 +36,52 @@ public final class XMLParserSettings {
 			XMLConstants.FEATURE_SECURE_PROCESSING, "Secure processing feature of XMLConstants", true);
 
 	/**
+	 * Parser setting specifying whether DOCTYPE declaration should be allowed.
+	 * <p>
+	 * Defaults to false.
+	 * 
+	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
+	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE
+	 *      Prevention Cheat Sheet</a>
+	 */
+	public static final RioSetting<Boolean> DISALLOW_DOCTYPE_DECL = new RioSettingImpl<Boolean>(
+			"http://apache.org/xml/features/disallow-doctype-decl", "Disallow DOCTYPE declaration in document",
+			true);
+
+	/**
 	 * Parser setting specifying whether external DTDs should be loaded.
 	 * <p>
-	 * Defaults to true.
+	 * Defaults to false.
 	 * 
-	 * @see <a href="http://xerces.apache.org/xerces-j/features.html">Apache XML Project - Features</a>
+	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
 	 */
 	public static final RioSetting<Boolean> LOAD_EXTERNAL_DTD = new RioSettingImpl<Boolean>(
-			"http://apache.org/xml/features/nonvalidating/load-external-dtd", "Load External DTD", true);
+			"http://apache.org/xml/features/nonvalidating/load-external-dtd", "Load External DTD", false);
+
+	/**
+	 * Parser setting specifying whether external text entities should be included.
+	 * <p>
+	 * Defaults to false.
+	 * 
+	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
+	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE
+	 *      Prevention Cheat Sheet</a>
+	 */
+	public static final RioSetting<Boolean> EXTERNAL_GENERAL_ENTITIES = new RioSettingImpl<Boolean>(
+			"http://xml.org/sax/features/external-general-entities", "Include external general entities", false);
+
+	/**
+	 * Parser setting specifying whether external parameter entities should be included.
+	 * <p>
+	 * Defaults to false.
+	 * 
+	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
+	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE
+	 *      Prevention Cheat Sheet</a>
+	 */
+	public static final RioSetting<Boolean> EXTERNAL_PARAMETER_ENTITIES = new RioSettingImpl<Boolean>(
+			"http://xml.org/sax/features/external-parameter-entities", "Include external parameter entities",
+			false);
 
 	/**
 	 * Parser setting to customise the XMLReader that is used by an XML based Rio parser.
@@ -65,8 +103,7 @@ public final class XMLParserSettings {
 			"org.eclipse.rdf4j.rio.failonsaxnonfatalerrors", "Fail on SAX non-fatal errors", true);
 
 	/**
-	 * Parser setting to determine whether to ignore non-standard attributes that are found in an XML
-	 * document.
+	 * Parser setting to determine whether to ignore non-standard attributes that are found in an XML document.
 	 * <p>
 	 * Defaults to true
 	 */
@@ -82,8 +119,7 @@ public final class XMLParserSettings {
 			"org.eclipse.rdf4j.rio.failoninvalidncname", "Fail on invalid NCName", true);
 
 	/**
-	 * Parser setting to determine whether to throw an error for duplicate uses of rdf:ID in a single
-	 * document.
+	 * Parser setting to determine whether to throw an error for duplicate uses of rdf:ID in a single document.
 	 * <p>
 	 * Defaults to true
 	 */

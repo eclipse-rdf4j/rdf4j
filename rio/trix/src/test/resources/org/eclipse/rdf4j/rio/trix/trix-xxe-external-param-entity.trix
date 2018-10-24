@@ -1,5 +1,5 @@
 <!DOCTYPE TriX [
-        <!ENTITY % xxe SYSTEM "file:///etc/passwd" >
+        <!ENTITY % xxe SYSTEM "external-file-nonexistent.txt" >
         %xxe;
         ]>
 <TriX>

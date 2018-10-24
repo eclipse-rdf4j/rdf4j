@@ -204,12 +204,6 @@ public class SimpleSAXParser {
    */
   public synchronized void parse(InputSource inputSource) throws SAXException, IOException {
     xmlReader.setContentHandler(new SimpleSAXDefaultHandler());
-    // Via https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet
-    xmlReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-    // This may not be strictly required as DTDs shouldn't be allowed at all, per previous line.
-    xmlReader.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-    xmlReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
-    xmlReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
     xmlReader.parse(inputSource);
   }
 
