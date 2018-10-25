@@ -53,7 +53,6 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 		results.add(XMLParserSettings.DISALLOW_DOCTYPE_DECL);
 		results.add(XMLParserSettings.EXTERNAL_GENERAL_ENTITIES);
 		results.add(XMLParserSettings.EXTERNAL_PARAMETER_ENTITIES);
-		results.add(XMLParserSettings.LOAD_EXTERNAL_DTD);
 		return results;
 	}
 
@@ -80,7 +79,9 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 	 *         {@link XMLReader#setFeature(String, boolean)}.
 	 */
 	public Collection<RioSetting<Boolean>> getOptionalXmlFeatureSettings() {
-		return Collections.<RioSetting<Boolean>> emptyList();
+		Set<RioSetting<Boolean>> results = new HashSet<RioSetting<Boolean>>();
+		results.add(XMLParserSettings.LOAD_EXTERNAL_DTD);
+		return results;
 	}
 
 	/**
