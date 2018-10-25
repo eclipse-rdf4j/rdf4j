@@ -20,8 +20,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.common.xml.SimpleSAXAdapter;
@@ -39,6 +42,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
+import org.eclipse.rdf4j.rio.helpers.XMLReaderBasedParser;
 import org.eclipse.rdf4j.rio.helpers.TriXParserSettings;
 import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
 import org.xml.sax.ErrorHandler;
@@ -56,7 +60,7 @@ import org.xml.sax.XMLReader;
  * 
  * @author Arjohn Kampman
  */
-public class TriXParser extends AbstractRDFParser implements ErrorHandler {
+public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 
 	/*--------------*
 	 * Constructors *
@@ -91,6 +95,24 @@ public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 	public final RDFFormat getRDFFormat() {
 		return RDFFormat.TRIX;
 	}
+	
+	@Override
+	public Collection<RioSetting<?>> getSupportedSettings() {
+		// Override to add TriX/XML specific supported settings
+		Set<RioSetting<?>> results = new HashSet<RioSetting<?>>(super.getSupportedSettings());
+
+		results.addAll(getCompulsoryXmlPropertySettings());
+		results.addAll(getCompulsoryXmlFeatureSettings());
+		results.addAll(getOptionalXmlPropertySettings());
+		results.addAll(getOptionalXmlFeatureSettings());
+
+		results.add(XMLParserSettings.CUSTOM_XML_READER);
+		results.add(XMLParserSettings.FAIL_ON_MISMATCHED_TAGS);
+		results.add(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS);
+
+		return results;
+	}
+
 
 	/**
 	 * Parses the data from the supplied InputStream, using the supplied baseURI to resolve any relative URI
@@ -170,15 +192,7 @@ public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 				rdfHandler.startRDF();
 			}
 
-			XMLReader xmlReader;
-
-			if (getParserConfig().isSet(XMLParserSettings.CUSTOM_XML_READER)) {
-				xmlReader = getParserConfig().get(XMLParserSettings.CUSTOM_XML_READER);
-			}
-			else {
-				xmlReader = XMLReaderFactory.createXMLReader();
-			}
-
+			XMLReader xmlReader = getXMLReader();
 			xmlReader.setErrorHandler(this);
 
 			saxParser = new SimpleSAXParser(xmlReader);
