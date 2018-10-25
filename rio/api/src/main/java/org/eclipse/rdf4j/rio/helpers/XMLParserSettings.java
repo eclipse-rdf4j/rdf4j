@@ -36,9 +36,9 @@ public final class XMLParserSettings {
 			XMLConstants.FEATURE_SECURE_PROCESSING, "Secure processing feature of XMLConstants", true);
 
 	/**
-	 * Parser setting specifying whether DOCTYPE declaration should be allowed.
+	 * Parser setting specifying whether DOCTYPE declaration should be disallowed.
 	 * <p>
-	 * Defaults to false.
+	 * Defaults to true.
 	 * 
 	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
 	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE
