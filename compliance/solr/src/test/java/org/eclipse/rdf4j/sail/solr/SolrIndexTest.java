@@ -50,37 +50,37 @@ public class SolrIndexTest {
 
 	private static final String DATA_DIR = "target/test-data";
 	
-	private static final SimpleValueFactory FAC = SimpleValueFactory.getInstance();
+	private static final SimpleValueFactory fac = SimpleValueFactory.getInstance();
 	
-	public static final IRI CONTEXT_1 = FAC.createIRI("urn:context1");
-	public static final IRI CONTEXT_2 = FAC.createIRI("urn:context2");
-	public static final IRI CONTEXT_3 = FAC.createIRI("urn:context3");
+	public static final IRI CONTEXT_1 = fac.createIRI("urn:context1");
+	public static final IRI CONTEXT_2 = fac.createIRI("urn:context2");
+	public static final IRI CONTEXT_3 = fac.createIRI("urn:context3");
 
 	// create some objects that we will use throughout this test
-	IRI subject = FAC.createIRI("urn:subj");
-	IRI subject2 = FAC.createIRI("urn:subj2");
+	IRI subject = fac.createIRI("urn:subj");
+	IRI subject2 = fac.createIRI("urn:subj2");
 
-	IRI predicate1 = FAC.createIRI("urn:pred1");
-	IRI predicate2 = FAC.createIRI("urn:pred2");
+	IRI predicate1 = fac.createIRI("urn:pred1");
+	IRI predicate2 = fac.createIRI("urn:pred2");
 
-	Literal object1 = FAC.createLiteral("object1");
-	Literal object2 = FAC.createLiteral("object2");
-	Literal object3 = FAC.createLiteral("cats");
-	Literal object4 = FAC.createLiteral("dogs");
-	Literal object5 = FAC.createLiteral("chicken");
+	Literal object1 = fac.createLiteral("object1");
+	Literal object2 = fac.createLiteral("object2");
+	Literal object3 = fac.createLiteral("cats");
+	Literal object4 = fac.createLiteral("dogs");
+	Literal object5 = fac.createLiteral("chicken");
 
-	Statement statement11 = FAC.createStatement(subject, predicate1, object1);
-	Statement statement12 = FAC.createStatement(subject, predicate2, object2);
-	Statement statement21 = FAC.createStatement(subject2, predicate1, object3);
-	Statement statement22 = FAC.createStatement(subject2, predicate2, object4);
-	Statement statement23 = FAC.createStatement(subject2, predicate2, object5);
+	Statement statement11 = fac.createStatement(subject, predicate1, object1);
+	Statement statement12 = fac.createStatement(subject, predicate2, object2);
+	Statement statement21 = fac.createStatement(subject2, predicate1, object3);
+	Statement statement22 = fac.createStatement(subject2, predicate2, object4);
+	Statement statement23 = fac.createStatement(subject2, predicate2, object5);
 	
 	
-	Statement statementContext111 = FAC.createStatement(subject, predicate1, object1, CONTEXT_1);
-	Statement statementContext121 = FAC.createStatement(subject, predicate2, object2, CONTEXT_1);
-	Statement statementContext211 = FAC.createStatement(subject2, predicate1, object3, CONTEXT_1);
-	Statement statementContext222 = FAC.createStatement(subject2, predicate2, object4, CONTEXT_2);
-	Statement statementContext232 = FAC.createStatement(subject2, predicate2, object5, CONTEXT_2);
+	Statement statementContext111 = fac.createStatement(subject, predicate1, object1, CONTEXT_1);
+	Statement statementContext121 = fac.createStatement(subject, predicate2, object2, CONTEXT_1);
+	Statement statementContext211 = fac.createStatement(subject2, predicate1, object3, CONTEXT_1);
+	Statement statementContext222 = fac.createStatement(subject2, predicate2, object4, CONTEXT_2);
+	Statement statementContext232 = fac.createStatement(subject2, predicate2, object5, CONTEXT_2);
 
 	SolrIndex index;
 	SolrClient client;
@@ -361,10 +361,10 @@ public class SolrIndexTest {
 
 	@Test
 	public void testRejectedDatatypes() {
-		Literal literal1 = FAC.createLiteral("hi there");
-		Literal literal2 = FAC.createLiteral("hi there, too", XMLSchema.STRING);
-		Literal literal3 = FAC.createLiteral("1.0");
-		Literal literal4 = FAC.createLiteral("1.0", XMLSchema.FLOAT);
+		Literal literal1 = fac.createLiteral("hi there");
+		Literal literal2 = fac.createLiteral("hi there, too", XMLSchema.STRING);
+		Literal literal3 = fac.createLiteral("1.0");
+		Literal literal4 = fac.createLiteral("1.0", XMLSchema.FLOAT);
 
 		assertEquals("Is the first literal accepted?", true, index.accept(literal1));
 		assertEquals("Is the second literal accepted?", true, index.accept(literal2));
