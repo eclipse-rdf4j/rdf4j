@@ -25,6 +25,6 @@ public class EhEquals extends GeometricRelationFunction {
 
 	@Override
 	protected boolean relation(Shape s1, Shape s2) {
-		return SpatialSupport.getSpatialAlgebra().equals(s1, s2);
+		return SpatialSupport.getSpatialAlgebra().ehEquals(s1, s2);
 	}
 }
