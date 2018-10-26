@@ -14,7 +14,6 @@ import org.locationtech.spatial4j.shape.jts.JtsShapeFactory;
 
 /**
  * JTS-enabled implementation of spatial algebra, with full support for polygon-related geospatial functions
- * 
  */
 public class JtsSpatialAlgebra implements SpatialAlgebra {
 
@@ -25,6 +24,10 @@ public class JtsSpatialAlgebra implements SpatialAlgebra {
 	}
 
 	@Override
+	public Shape buffer(Shape s, double distance) {
+		return shapeFactory.makeShapeFromGeometry(shapeFactory.getGeometryFrom(s).buffer(distance));
+	}
+
 	public Shape convexHull(Shape s) {
 		return shapeFactory.makeShapeFromGeometry(shapeFactory.getGeometryFrom(s).convexHull());
 	}
@@ -78,8 +81,8 @@ public class JtsSpatialAlgebra implements SpatialAlgebra {
 	}
 
 	@Override
-	public boolean equals(Shape s1, Shape s2) {
-		return shapeFactory.getGeometryFrom(s1).equalsNorm(shapeFactory.getGeometryFrom(s2));
+	public boolean sfEquals(Shape s1, Shape s2) {
+		return relate(s1, s2, "TFFFTFFFT");
 	}
 
 	@Override
@@ -140,6 +143,11 @@ public class JtsSpatialAlgebra implements SpatialAlgebra {
 		else {
 			return false;
 		}
+	}
+
+	@Override
+	public boolean ehEquals(Shape s1, Shape s2) {
+		return ehInside(s1, s2) && ehContains(s1, s2);
 	}
 
 	@Override
@@ -210,6 +218,11 @@ public class JtsSpatialAlgebra implements SpatialAlgebra {
 	@Override
 	public boolean rcc8ntppi(Shape s1, Shape s2) {
 		return relate(s1, s2, "TTTFFTFFT");
+	}
+
+	@Override
+	public boolean rcc8eq(Shape s1, Shape s2) {
+		return relate(s1, s2, "TFFFTFFFT");
 	}
 
 }

@@ -24,7 +24,7 @@ import static org.junit.Assert.assertTrue;
  *
  * @author Bart Hanssens
  */
-public class SfContainsTest extends AbstractGeoSPARQLTest {
+public class SfContainsTest extends GeometricRelationFunctionTest {
 	
 	/**
 	 * Test sfContains.
@@ -33,7 +33,7 @@ public class SfContainsTest extends AbstractGeoSPARQLTest {
 	 */
 	@Test
 	public void testSfContainsDenver() throws IOException {
-		List<BindingSet> list = getResults("sfcontains.rq");
+		List<BindingSet> list = GeoSPARQLTests.getResults("sfcontains.rq");
 		
 		assertNotNull("Resultset is null", list);
 		assertEquals("Number of results must be one", 1, list.size());
@@ -45,5 +45,10 @@ public class SfContainsTest extends AbstractGeoSPARQLTest {
 		IRI iri = (IRI) value;
 
 		assertEquals("City is not Denver", "http://example.org/denver", iri.stringValue());
+	}
+
+	@Override
+	protected GeometricRelationFunction testedFunction() {
+		return new SfContains();
 	}
 }
