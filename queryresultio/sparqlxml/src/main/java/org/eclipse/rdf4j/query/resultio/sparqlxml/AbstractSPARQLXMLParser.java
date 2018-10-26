@@ -278,6 +278,9 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	public Collection<RioSetting<Boolean>> getCompulsoryXmlFeatureSettings() {
 		Set<RioSetting<Boolean>> results = new HashSet<RioSetting<Boolean>>();
 		results.add(XMLParserSettings.SECURE_PROCESSING);
+		results.add(XMLParserSettings.DISALLOW_DOCTYPE_DECL);
+		results.add(XMLParserSettings.EXTERNAL_GENERAL_ENTITIES);
+		results.add(XMLParserSettings.EXTERNAL_PARAMETER_ENTITIES);
 		return results;
 	}
 

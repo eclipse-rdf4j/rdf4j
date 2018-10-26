@@ -1,0 +1,13 @@
+<!DOCTYPE TriX [
+        <!ENTITY % xxe SYSTEM "external-file-nonexistent.txt" >
+        %xxe;
+        ]>
+<TriX>
+    <graph>
+        <triple>
+            <uri>http://example.org/Bob</uri>
+            <uri>http://example.org/wife</uri>
+            <uri>http://example.org/Mary</uri>
+        </triple>
+    </graph>
+</TriX>

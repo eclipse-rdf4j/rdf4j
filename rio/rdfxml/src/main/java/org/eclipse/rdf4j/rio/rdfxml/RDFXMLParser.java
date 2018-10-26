@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
+import org.eclipse.rdf4j.rio.helpers.XMLReaderBasedParser;
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.Locator;
@@ -84,7 +85,7 @@ import org.xml.sax.XMLReader;
  * @see org.eclipse.rdf4j.rio.ParseLocationListener
  * @author Arjohn Kampman
  */
-public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
+public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 	/*-----------*
 	 * Variables *
@@ -131,8 +132,7 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	/**
-	 * Creates a new RDFXMLParser that will use the supplied <tt>ValueFactory</tt> to create RDF model
-	 * objects.
+	 * Creates a new RDFXMLParser that will use the supplied <tt>ValueFactory</tt> to create RDF model objects.
 	 * 
 	 * @param valueFactory
 	 *        A ValueFactory.
@@ -154,9 +154,9 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	/**
-	 * Sets the parser in a mode to parse stand-alone RDF documents. In stand-alone RDF documents, the
-	 * enclosing <tt>rdf:RDF</tt> root element is optional if this root element contains just one element
-	 * (e.g. <tt>rdf:Description</tt>.
+	 * Sets the parser in a mode to parse stand-alone RDF documents. In stand-alone RDF documents, the enclosing
+	 * <tt>rdf:RDF</tt> root element is optional if this root element contains just one element (e.g.
+	 * <tt>rdf:Description</tt>.
 	 */
 	public void setParseStandAloneDocuments(boolean standAloneDocs) {
 		getParserConfig().set(XMLParserSettings.PARSE_STANDALONE_DOCUMENTS, standAloneDocs);
@@ -190,7 +190,9 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	 */
 	@Override
 	public synchronized void parse(InputStream in, String baseURI)
-		throws IOException, RDFParseException, RDFHandlerException
+		throws IOException,
+		RDFParseException,
+		RDFHandlerException
 	{
 		if (in == null) {
 			throw new IllegalArgumentException("Input stream cannot be 'null'");
@@ -224,7 +226,9 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	 */
 	@Override
 	public synchronized void parse(Reader reader, String baseURI)
-		throws IOException, RDFParseException, RDFHandlerException
+		throws IOException,
+		RDFParseException,
+		RDFHandlerException
 	{
 		if (reader == null) {
 			throw new IllegalArgumentException("Reader cannot be 'null'");
@@ -240,10 +244,12 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	private void parse(InputSource inputSource)
-		throws IOException, RDFParseException, RDFHandlerException
+		throws IOException,
+		RDFParseException,
+		RDFHandlerException
 	{
 		clear();
-		
+
 		try {
 			documentURI = inputSource.getSystemId();
 
@@ -253,78 +259,9 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 			// saxFilter.clear();
 			saxFilter.setDocumentURI(documentURI);
 
-			XMLReader xmlReader;
-
-			if (getParserConfig().isSet(XMLParserSettings.CUSTOM_XML_READER)) {
-				xmlReader = getParserConfig().get(XMLParserSettings.CUSTOM_XML_READER);
-			}
-			else {
-				xmlReader = XMLReaderFactory.createXMLReader();
-			}
-
+			XMLReader xmlReader = getXMLReader();
 			xmlReader.setContentHandler(saxFilter);
 			xmlReader.setErrorHandler(this);
-
-			// Set all compulsory feature settings, using the defaults if they are
-			// not explicitly set
-			for (RioSetting<Boolean> aSetting : getCompulsoryXmlFeatureSettings()) {
-				try {
-					xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));
-				}
-				catch (SAXNotRecognizedException e) {
-					reportWarning(String.format("%s is not a recognized SAX feature.", aSetting.getKey()));
-				}
-				catch (SAXNotSupportedException e) {
-					reportWarning(String.format("%s is not a supported SAX feature.", aSetting.getKey()));
-				}
-			}
-
-			// Set all compulsory property settings, using the defaults if they are
-			// not explicitly set
-			for (RioSetting<?> aSetting : getCompulsoryXmlPropertySettings()) {
-				try {
-					xmlReader.setProperty(aSetting.getKey(), getParserConfig().get(aSetting));
-				}
-				catch (SAXNotRecognizedException e) {
-					reportWarning(String.format("%s is not a recognized SAX property.", aSetting.getKey()));
-				}
-				catch (SAXNotSupportedException e) {
-					reportWarning(String.format("%s is not a supported SAX property.", aSetting.getKey()));
-				}
-			}
-
-			// Check for any optional feature settings that are explicitly set in
-			// the parser config
-			for (RioSetting<Boolean> aSetting : getOptionalXmlFeatureSettings()) {
-				try {
-					if (getParserConfig().isSet(aSetting)) {
-						xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));
-					}
-				}
-				catch (SAXNotRecognizedException e) {
-					reportWarning(String.format("%s is not a recognized SAX feature.", aSetting.getKey()));
-				}
-				catch (SAXNotSupportedException e) {
-					reportWarning(String.format("%s is not a supported SAX feature.", aSetting.getKey()));
-				}
-			}
-
-			// Check for any optional property settings that are explicitly set in
-			// the parser config
-			for (RioSetting<?> aSetting : getOptionalXmlPropertySettings()) {
-				try {
-					if (getParserConfig().isSet(aSetting)) {
-						xmlReader.setProperty(aSetting.getKey(), getParserConfig().get(aSetting));
-					}
-				}
-				catch (SAXNotRecognizedException e) {
-					reportWarning(String.format("%s is not a recognized SAX property.", aSetting.getKey()));
-				}
-				catch (SAXNotSupportedException e) {
-					reportWarning(String.format("%s is not a supported SAX property.", aSetting.getKey()));
-				}
-			}
-
 			xmlReader.parse(inputSource);
 		}
 		catch (SAXParseException e) {
@@ -363,61 +300,6 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 		}
 	}
 
-	/**
-	 * Returns a collection of settings that will always be set as XML parser properties using
-	 * {@link XMLReader#setProperty(String, Object)}
-	 * <p>
-	 * Subclasses can override this to specify more supported settings.
-	 * 
-	 * @return A collection of {@link RioSetting}s that indicate which properties will always be setup using
-	 *         {@link XMLReader#setProperty(String, Object)}.
-	 */
-	public Collection<RioSetting<?>> getCompulsoryXmlPropertySettings() {
-		return Collections.<RioSetting<?>> emptyList();
-	}
-
-	/**
-	 * Returns a collection of settings that will always be set as XML parser features using
-	 * {@link XMLReader#setFeature(String, boolean)}.
-	 * <p>
-	 * Subclasses can override this to specify more supported settings.
-	 * 
-	 * @return A collection of {@link RioSetting}s that indicate which boolean settings will always be setup
-	 *         using {@link XMLReader#setFeature(String, boolean)}.
-	 */
-	public Collection<RioSetting<Boolean>> getCompulsoryXmlFeatureSettings() {
-		Set<RioSetting<Boolean>> results = new HashSet<RioSetting<Boolean>>();
-		results.add(XMLParserSettings.SECURE_PROCESSING);
-		return results;
-	}
-
-	/**
-	 * Returns a collection of settings that will be used, if set in {@link #getParserConfig()}, as XML parser
-	 * properties using {@link XMLReader#setProperty(String, Object)}
-	 * <p>
-	 * Subclasses can override this to specify more supported settings.
-	 * 
-	 * @return A collection of {@link RioSetting}s that indicate which properties can be setup using
-	 *         {@link XMLReader#setProperty(String, Object)}.
-	 */
-	public Collection<RioSetting<?>> getOptionalXmlPropertySettings() {
-		return Collections.<RioSetting<?>> emptyList();
-	}
-
-	/**
-	 * Returns a collection of settings that will be used, if set in {@link #getParserConfig()}, as XML parser
-	 * features using {@link XMLReader#setFeature(String, boolean)}.
-	 * <p>
-	 * Subclasses can override this to specify more supported settings.
-	 * 
-	 * @return A collection of {@link RioSetting}s that indicate which boolean settings can be setup using
-	 *         {@link XMLReader#setFeature(String, boolean)}.
-	 */
-	public Collection<RioSetting<Boolean>> getOptionalXmlFeatureSettings() {
-		Set<RioSetting<Boolean>> results = new HashSet<RioSetting<Boolean>>();
-		results.add(XMLParserSettings.LOAD_EXTERNAL_DTD);
-		return results;
-	}
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
@@ -452,7 +334,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	void startDocument()
-		throws RDFParseException, RDFHandlerException
+		throws RDFParseException,
+		RDFHandlerException
 	{
 		if (rdfHandler != null) {
 			rdfHandler.startRDF();
@@ -460,7 +343,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	void endDocument()
-		throws RDFParseException, RDFHandlerException
+		throws RDFParseException,
+		RDFHandlerException
 	{
 		if (rdfHandler != null) {
 			rdfHandler.endRDF();
@@ -493,7 +377,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	void startElement(String namespaceURI, String localName, String qName, Atts atts)
-		throws RDFParseException, RDFHandlerException
+		throws RDFParseException,
+		RDFHandlerException
 	{
 		if (topIsProperty()) {
 			// this element represents the subject and/or object of a statement
@@ -506,7 +391,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	void endElement(String namespaceURI, String localName, String qName)
-		throws RDFParseException, RDFHandlerException
+		throws RDFParseException,
+		RDFHandlerException
 	{
 		Object topElement = peekStack(0);
 
@@ -544,7 +430,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	void emptyElement(String namespaceURI, String localName, String qName, Atts atts)
-		throws RDFParseException, RDFHandlerException
+		throws RDFParseException,
+		RDFHandlerException
 	{
 		if (topIsProperty()) {
 			// this element represents the subject and/or object of a statement
@@ -557,7 +444,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	void text(String text)
-		throws RDFParseException, RDFHandlerException
+		throws RDFParseException,
+		RDFHandlerException
 	{
 		if (!topIsProperty()) {
 			reportError("unexpected literal", XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
@@ -584,7 +472,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	/* Process a node element (can be both subject and object) */
 	private void processNodeElt(String namespaceURI, String localName, String qName, Atts atts,
 			boolean isEmptyElt)
-		throws RDFParseException, RDFHandlerException
+		throws RDFParseException,
+		RDFHandlerException
 	{
 		if (getParserConfig().get(XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES)) {
 			// Check the element name
@@ -658,8 +547,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	/**
-	 * Retrieves the resource of a node element (subject or object) using relevant attributes (rdf:ID,
-	 * rdf:about and rdf:nodeID) from its attributes list.
+	 * Retrieves the resource of a node element (subject or object) using relevant attributes (rdf:ID, rdf:about
+	 * and rdf:nodeID) from its attributes list.
 	 * 
 	 * @return a resource or a bNode.
 	 */
@@ -710,7 +599,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 
 	/** processes subject attributes. */
 	private void processSubjectAtts(NodeElement nodeElt, Atts atts)
-		throws RDFParseException, RDFHandlerException
+		throws RDFParseException,
+		RDFHandlerException
 	{
 		Resource subject = nodeElt.getResource();
 
@@ -728,11 +618,11 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 
 	private void processPropertyElt(String namespaceURI, String localName, String qName, Atts atts,
 			boolean isEmptyElt)
-		throws RDFParseException, RDFHandlerException
+		throws RDFParseException,
+		RDFHandlerException
 	{
 		if (getParserConfig().get(XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES)) {
-			checkPropertyEltName(namespaceURI, localName, qName,
-					XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
+			checkPropertyEltName(namespaceURI, localName, qName, XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
 		}
 
 		// Get the URI of the property
@@ -947,7 +837,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	 * that.
 	 */
 	private void handleReification(Value value)
-		throws RDFParseException, RDFHandlerException
+		throws RDFParseException,
+		RDFHandlerException
 	{
 		PropertyElement predicate = (PropertyElement)peekStack(0);
 
@@ -959,7 +850,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	private void reifyStatement(Resource reifNode, Resource subj, IRI pred, Value obj)
-		throws RDFParseException, RDFHandlerException
+		throws RDFParseException,
+		RDFHandlerException
 	{
 		reportStatement(reifNode, RDF.TYPE, RDF.STATEMENT);
 		reportStatement(reifNode, RDF.SUBJECT, subj);
@@ -996,8 +888,7 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 			if (!usedIDs.add(uri)) {
 				// URI was not added because the set already contained an equal
 				// strings
-				reportError("ID '" + id + "' has already been defined",
-						XMLParserSettings.FAIL_ON_DUPLICATE_RDF_ID);
+				reportError("ID '" + id + "' has already been defined", XMLParserSettings.FAIL_ON_DUPLICATE_RDF_ID);
 			}
 		}
 
@@ -1027,10 +918,10 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	/**
-	 * Checks whether the node element name is from the RDF namespace and, if so, if it is allowed to be used
-	 * in a node element. If the name is equal to one of the disallowed names (RDF, ID, about, parseType,
-	 * resource, nodeID, datatype and li), an error is generated. If the name is not defined in the RDF
-	 * namespace, but it claims that it is from this namespace, a warning is generated.
+	 * Checks whether the node element name is from the RDF namespace and, if so, if it is allowed to be used in
+	 * a node element. If the name is equal to one of the disallowed names (RDF, ID, about, parseType, resource,
+	 * nodeID, datatype and li), an error is generated. If the name is not defined in the RDF namespace, but it
+	 * claims that it is from this namespace, a warning is generated.
 	 */
 	private void checkNodeEltName(String namespaceURI, String localName, String qName)
 		throws RDFParseException
@@ -1038,18 +929,17 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 		if (RDF.NAMESPACE.equals(namespaceURI)) {
 
 			if (localName.equals("Description") || localName.equals("Seq") || localName.equals("Bag")
-					|| localName.equals("Alt") || localName.equals("Statement")
-					|| localName.equals("Property") || localName.equals("List") || localName.equals("subject")
-					|| localName.equals("predicate") || localName.equals("object") || localName.equals("type")
-					|| localName.equals("value") || localName.equals("first") || localName.equals("rest")
-					|| localName.equals("nil") || localName.startsWith("_"))
+					|| localName.equals("Alt") || localName.equals("Statement") || localName.equals("Property")
+					|| localName.equals("List") || localName.equals("subject") || localName.equals("predicate")
+					|| localName.equals("object") || localName.equals("type") || localName.equals("value")
+					|| localName.equals("first") || localName.equals("rest") || localName.equals("nil")
+					|| localName.startsWith("_"))
 			{
 				// These are OK
 			}
 			else if (localName.equals("li") || localName.equals("RDF") || localName.equals("ID")
-					|| localName.equals("about") || localName.equals("parseType")
-					|| localName.equals("resource") || localName.equals("nodeID")
-					|| localName.equals("datatype"))
+					|| localName.equals("about") || localName.equals("parseType") || localName.equals("resource")
+					|| localName.equals("nodeID") || localName.equals("datatype"))
 			{
 				reportError("<" + qName + "> not allowed as node element",
 						XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
@@ -1069,8 +959,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	/**
 	 * Checks whether the property element name is from the RDF namespace and, if so, if it is allowed to be
 	 * used in a property element. If the name is equal to one of the disallowed names (RDF, ID, about,
-	 * parseType, resource and li), an error is generated. If the name is not defined in the RDF namespace,
-	 * but it claims that it is from this namespace, a warning is generated.
+	 * parseType, resource and li), an error is generated. If the name is not defined in the RDF namespace, but
+	 * it claims that it is from this namespace, a warning is generated.
 	 * 
 	 * @param setting
 	 */
@@ -1081,18 +971,17 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 		if (RDF.NAMESPACE.equals(namespaceURI)) {
 
 			if (localName.equals("li") || localName.equals("Seq") || localName.equals("Bag")
-					|| localName.equals("Alt") || localName.equals("Statement")
-					|| localName.equals("Property") || localName.equals("List") || localName.equals("subject")
-					|| localName.equals("predicate") || localName.equals("object") || localName.equals("type")
-					|| localName.equals("value") || localName.equals("first") || localName.equals("rest")
-					|| localName.equals("nil") || localName.startsWith("_"))
+					|| localName.equals("Alt") || localName.equals("Statement") || localName.equals("Property")
+					|| localName.equals("List") || localName.equals("subject") || localName.equals("predicate")
+					|| localName.equals("object") || localName.equals("type") || localName.equals("value")
+					|| localName.equals("first") || localName.equals("rest") || localName.equals("nil")
+					|| localName.startsWith("_"))
 			{
 				// These are OK
 			}
 			else if (localName.equals("Description") || localName.equals("RDF") || localName.equals("ID")
-					|| localName.equals("about") || localName.equals("parseType")
-					|| localName.equals("resource") || localName.equals("nodeID")
-					|| localName.equals("datatype"))
+					|| localName.equals("about") || localName.equals("parseType") || localName.equals("resource")
+					|| localName.equals("nodeID") || localName.equals("datatype"))
 			{
 				reportError("<" + qName + "> not allowed as property element", setting);
 			}
@@ -1110,8 +999,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	/**
 	 * Checks whether 'atts' contains attributes from the RDF namespace that are not allowed as attributes. If
 	 * such an attribute is found, an error is generated and the attribute is removed from 'atts'. If the
-	 * attribute is not defined in the RDF namespace, but it claims that it is from this namespace, a warning
-	 * is generated.
+	 * attribute is not defined in the RDF namespace, but it claims that it is from this namespace, a warning is
+	 * generated.
 	 */
 	private void checkRDFAtts(Atts atts)
 		throws RDFParseException
@@ -1125,18 +1014,16 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 				String localName = att.getLocalName();
 
 				if (localName.equals("Seq") || localName.equals("Bag") || localName.equals("Alt")
-						|| localName.equals("Statement") || localName.equals("Property")
-						|| localName.equals("List") || localName.equals("subject")
-						|| localName.equals("predicate") || localName.equals("object")
+						|| localName.equals("Statement") || localName.equals("Property") || localName.equals("List")
+						|| localName.equals("subject") || localName.equals("predicate") || localName.equals("object")
 						|| localName.equals("type") || localName.equals("value") || localName.equals("first")
 						|| localName.equals("rest") || localName.equals("nil") || localName.startsWith("_"))
 				{
 					// These are OK
 				}
 				else if (localName.equals("Description") || localName.equals("li") || localName.equals("RDF")
-						|| localName.equals("ID") || localName.equals("about")
-						|| localName.equals("parseType") || localName.equals("resource")
-						|| localName.equals("nodeID") || localName.equals("datatype"))
+						|| localName.equals("ID") || localName.equals("about") || localName.equals("parseType")
+						|| localName.equals("resource") || localName.equals("nodeID") || localName.equals("datatype"))
 				{
 					reportError("'" + att.getQName() + "' not allowed as attribute name",
 							XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
@@ -1188,7 +1075,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	 *         If the configured RDFHandlerException throws an RDFHandlerException.
 	 */
 	private void reportStatement(Resource subject, IRI predicate, Value object)
-		throws RDFParseException, RDFHandlerException
+		throws RDFParseException,
+		RDFHandlerException
 	{
 		Statement st = createStatement(subject, predicate, object);
 		if (rdfHandler != null) {
@@ -1210,8 +1098,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	/**
-	 * Overrides {@link AbstractRDFParser#reportWarning(String)}, adding line- and column number information
-	 * to the error.
+	 * Overrides {@link AbstractRDFParser#reportWarning(String)}, adding line- and column number information to
+	 * the error.
 	 */
 	@Override
 	protected void reportWarning(String msg) {
@@ -1259,8 +1147,8 @@ public class RDFXMLParser extends AbstractRDFParser implements ErrorHandler {
 	}
 
 	/**
-	 * Overrides {@link AbstractRDFParser#reportFatalError(String)}, adding line- and column number
-	 * information to the error.
+	 * Overrides {@link AbstractRDFParser#reportFatalError(String)}, adding line- and column number information
+	 * to the error.
 	 */
 	@Override
 	protected void reportFatalError(String msg)
