@@ -60,8 +60,8 @@ import org.xml.sax.helpers.DefaultHandler;
 public class SimpleSAXParser {
 
 	/*-----------*
-	* Variables *
-	*-----------*/
+	 * Variables *
+	 *-----------*/
 	/**
 	 * The XMLReader to use for parsing the XML.
 	 */
@@ -83,8 +83,8 @@ public class SimpleSAXParser {
 	private Locator locator;
 
 	/*--------------*
-	* Constructors *
-	*--------------*/
+	 * Constructors *
+	 *--------------*/
 	/**
 	 * Creates a new SimpleSAXParser that will use the supplied <tt>XMLReader</tt> for parsing the XML. One
 	 * must set a
@@ -113,8 +113,8 @@ public class SimpleSAXParser {
 	}
 
 	/*---------*
-   * Methods *
-   *---------*/
+	 * Methods *
+	 *---------*/
 	/**
 	 * Sets the (new) listener that should receive any events from this parser. This listener will replace any
 	 * previously set listener.
@@ -200,8 +200,8 @@ public class SimpleSAXParser {
 	}
 
 	/*-------------------------------------*
-   * Inner class SimpleSAXDefaultHandler *
-   *-------------------------------------*/
+	 * Inner class SimpleSAXDefaultHandler *
+	 *-------------------------------------*/
 	class SimpleSAXDefaultHandler extends DefaultHandler {
 
 		/*-----------*
@@ -230,8 +230,8 @@ public class SimpleSAXParser {
 		}
 
 		/*---------*
-		* Methods *
-		*---------*/
+		 * Methods *
+		 *---------*/
 		// overrides DefaultHandler.startDocument()
 		@Override
 		public void startDocument() throws SAXException {
