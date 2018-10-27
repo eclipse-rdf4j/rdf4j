@@ -168,7 +168,7 @@ We need to set the project version to `2.2.1` by using:
 +
     mvn versions:set
 +
-This will ask for the new version number. Enter `2.2.1` to indicate that this is the release branch for 2.2.1 release.
+This will ask for the new version number. Enter `2.2.1` to indicate that this is the 2.2.1 release.
 +
 After this is done, execute
 +
@@ -178,12 +178,14 @@ which will remove backup files.
 +
 Finally, commit the version number changes:
 +
-    git commit -s -a -m "release branch for 2.2.1"
+    git commit -s -a -m "release 2.2.1"
 
 4. Tag the version and push the tag upstream:
 +
     git tag 2.2.1
     git push origin 2.2.1
+
+NOTE: The release branch itself is usually not pushed upstream - you only use it locally to prepare the commit that sets the pom version numbers for the release. Also, the branch is not merged back into the master branch (because we want to keep the SNAPSHOT version number on the master branch). Once you pushed the tag, you can delete your local branch.
 
 == Hotfix releases
 
@@ -225,7 +227,7 @@ Finally, commit the version number changes:
 +
     git push origin releases/2.1.6
 
-Bug fixes are typically added to a hotfix release branch by https://git-scm.com/docs/git-cherry-pick[cherry-picking] the relevant commits from the _master_ branch. 
+Bug fixes are typically added to a hotfix release branch by https://git-scm.com/docs/git-cherry-pick[cherry-picking] the relevant commits from the _master_ branch.
 
 This works as follows:
 
@@ -235,7 +237,7 @@ This works as follows:
 +
     jeenbroekstra merged commit 5d13554 into eclipse:master
 +
-The commit number (5d13554) is what you're after. 
+The commit number (5d13554) is what you're after.
 
 3. Add this fix to the release branch by executing the following command:
 +
@@ -299,7 +301,7 @@ Note that after successful completion, the artifacts may not be available on the
 
 === Building and uploading SDK and onejar
 
-The SDK and onejar archives are hosted on https://www.eclipse.org/downloads/ . The archives need to be built locally, and uploaded manually, via secure FTP. 
+The SDK and onejar archives are hosted on https://www.eclipse.org/downloads/ . The archives need to be built locally, and uploaded manually, via secure FTP.
 
 === Building the SDK and onejar
 
@@ -316,7 +318,7 @@ The SDK and onejar archives are hosted on https://www.eclipse.org/downloads/ . T
 === Uploading the SDK and onejar
 
 1. SFTP to `build.eclipse.org`. You will need to provide your eclipse username and password.
-2. Go to remote directory `/home/data/httpd/download.eclipse.org/rdf4j`. 
+2. Go to remote directory `/home/data/httpd/download.eclipse.org/rdf4j`.
 3. Upload the SDK and onejar archives to this directory (NB we currently only distribute the SDK zip file, not the tar.gz file)
 
 == Minor and Major releases
@@ -334,17 +336,17 @@ A release review runs for a week. Although mostly a formality, it does need some
 
 1. The project's https://www.eclipse.org/projects/handbook/#ip-iplog-generator[IP log] needs to be filed and approved by the Eclipse legal team;
 +
-The IP log can be automatically generated and submitted to the legal team. Obtaining approval may require several days, so it's good practice to submit this at least two weeks before the planned release date. 
-2. The project's https://projects.eclipse.org/projects/technology.rdf4j[review documentation], part of the application, needs to be in order. 
+The IP log can be automatically generated and submitted to the legal team. Obtaining approval may require several days, so it's good practice to submit this at least two weeks before the planned release date.
+2. The project's https://projects.eclipse.org/projects/technology.rdf4j[review documentation], part of the application, needs to be in order.
 
 Typical review documentation can be a simple reiteration of the most important new features, a link to the issue tracker/release notes and documentation, and a remark about compatibility (if applicable). Once the review documentation is up, a mail needs to be sent to technology-pmc@eclipse.org to ask for approval. Here's an example of such a message, which was to get approval for the RDF4J 2.2 release:
 
 ----
 Dear PMC members,
 
-Can I get your approval for RDF4J release 2.2, scheduled for February 2. 
+Can I get your approval for RDF4J release 2.2, scheduled for February 2.
 
-Release review info: https://projects.eclipse.org/projects/technology.rdf4j/reviews/2.2-release-review 
+Release review info: https://projects.eclipse.org/projects/technology.rdf4j/reviews/2.2-release-review
 
 Issue tracking the release: https://bugs.eclipse.org/bugs/show_bug.cgi?id=510577
 
