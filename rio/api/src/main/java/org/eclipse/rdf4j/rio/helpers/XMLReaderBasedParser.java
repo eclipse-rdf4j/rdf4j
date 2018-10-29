@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.rio.helpers;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -8,7 +9,6 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.xml.XMLReaderFactory;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.rio.RioSetting;
-import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
 import org.xml.sax.SAXException;
 import org.xml.sax.SAXNotRecognizedException;
 import org.xml.sax.SAXNotSupportedException;
@@ -20,6 +20,13 @@ import org.xml.sax.XMLReader;
  * @author Jeen Broekstra
  */
 public abstract class XMLReaderBasedParser extends AbstractRDFParser {
+
+	private final static Set<RioSetting<Boolean>> compulsoryXmlFeatureSettings = new HashSet<>(
+			Arrays.asList(XMLParserSettings.SECURE_PROCESSING, XMLParserSettings.DISALLOW_DOCTYPE_DECL,
+					XMLParserSettings.EXTERNAL_GENERAL_ENTITIES, XMLParserSettings.EXTERNAL_PARAMETER_ENTITIES));
+
+	private final static Set<RioSetting<Boolean>> optionalXmlFeatureSettings = new HashSet<>(
+			Arrays.asList(XMLParserSettings.LOAD_EXTERNAL_DTD));
 
 	public XMLReaderBasedParser(ValueFactory f) {
 		super(f);
@@ -48,12 +55,7 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 	 *         using {@link XMLReader#setFeature(String, boolean)}.
 	 */
 	public Collection<RioSetting<Boolean>> getCompulsoryXmlFeatureSettings() {
-		Set<RioSetting<Boolean>> results = new HashSet<RioSetting<Boolean>>();
-		results.add(XMLParserSettings.SECURE_PROCESSING);
-		results.add(XMLParserSettings.DISALLOW_DOCTYPE_DECL);
-		results.add(XMLParserSettings.EXTERNAL_GENERAL_ENTITIES);
-		results.add(XMLParserSettings.EXTERNAL_PARAMETER_ENTITIES);
-		return results;
+		return Collections.unmodifiableSet(compulsoryXmlFeatureSettings);
 	}
 
 	/**
@@ -79,9 +81,7 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 	 *         {@link XMLReader#setFeature(String, boolean)}.
 	 */
 	public Collection<RioSetting<Boolean>> getOptionalXmlFeatureSettings() {
-		Set<RioSetting<Boolean>> results = new HashSet<RioSetting<Boolean>>();
-		results.add(XMLParserSettings.LOAD_EXTERNAL_DTD);
-		return results;
+		return Collections.unmodifiableSet(optionalXmlFeatureSettings);
 	}
 
 	/**
