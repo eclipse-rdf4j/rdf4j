@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -16,6 +17,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -109,6 +111,32 @@ public class QueryJoinOptimizerTest {
 		Assert.assertTrue("Extension must be evaluated before StatementPattern", leaf.getParentNode() instanceof Extension);
 	}
 
+	@Test
+	public void bindSubselectJoinOrder() throws Exception
+	{
+		String query = "SELECT * WHERE {\n" + 
+				"    BIND (bnode() as ?ct01) \n" + 
+				"    { SELECT ?s WHERE {\n" + 
+				"            ?s ?p ?o .\n" + 
+				"      }\n" + 
+				"      LIMIT 10\n" + 
+				"    }\n" + 
+				"}";
+		
+		SPARQLParser parser = new SPARQLParser();
+		ParsedQuery q = parser.parseQuery(query, null);
+		QueryJoinOptimizer opt = new QueryJoinOptimizer();
+		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
+		opt.optimize(optRoot, null, null);
+		
+		JoinFinder joinFinder = new JoinFinder();
+		optRoot.visit(joinFinder);
+		Join join = joinFinder.getJoin();
+		
+		assertThat(join.getLeftArg()).as("BIND clause should be left-most argument of join").isInstanceOf(Extension.class);
+	}
+	
+	
 	private TupleExpr findLeaf(TupleExpr expr) {
 		if (expr instanceof UnaryTupleOperator) {
 			return findLeaf(((UnaryTupleOperator)expr).getArg());
@@ -135,5 +163,18 @@ public class QueryJoinOptimizerTest {
 
 	private void assertQueryModelTrees(QueryModelNode expected, QueryModelNode actual) {
 		assertEquals(expected, actual);
+	}
+	
+	class JoinFinder extends AbstractQueryModelVisitor<RuntimeException> {
+		
+		private Join join;
+		
+		public void meet(Join join) {
+			this.join = join;
+		}
+		
+		public Join getJoin() {
+			return join;
+		}
 	}
 }
