@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.inferencer.fc.DedupingInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.spin.SpinSail;
 
 public class GenerateFullAxioms {
 
@@ -30,10 +29,11 @@ public class GenerateFullAxioms {
 		SpinSail spinSail = new SpinSail(rdfsInferencer);
 		Repository repo = new SailRepository(spinSail);
 		repo.initialize();
-		RepositoryConnection conn = repo.getConnection();
-		FileWriter writer = new FileWriter("spin-full.ttl");
-		conn.exportStatements(null, null, null, true, Rio.createWriter(RDFFormat.TURTLE, writer));
-		conn.close();
+		FileWriter writer;
+		try (RepositoryConnection conn = repo.getConnection()) {
+			writer = new FileWriter("spin-full.ttl");
+			conn.exportStatements(null, null, null, true, Rio.createWriter(RDFFormat.TURTLE, writer));
+		}
 		writer.close();
 		repo.shutDown();
 	}

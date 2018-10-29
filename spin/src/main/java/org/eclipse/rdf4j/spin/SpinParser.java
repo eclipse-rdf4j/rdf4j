@@ -269,7 +269,7 @@ public class SpinParser {
 	{
 		Map<IRI, RuleProperty> rules = new HashMap<IRI, RuleProperty>();
 		CloseableIteration<? extends IRI, ? extends RDF4JException> rulePropIter = TripleSources.getSubjectURIs(
-				RDFS.SUBPROPERTYOF, SPIN.RULE_PROPERTY, store);
+			RDFS.SUBPROPERTYOF, SPIN.RULE_PROPERTY, store);
 		try {
 			while (rulePropIter.hasNext()) {
 				IRI ruleProp = rulePropIter.next();
@@ -283,8 +283,7 @@ public class SpinParser {
 
 				rules.put(ruleProp, ruleProperty);
 			}
-		}
-		finally {
+		} finally {
 			rulePropIter.close();
 		}
 		return rules;
@@ -295,13 +294,12 @@ public class SpinParser {
 	{
 		List<IRI> nextRules = new ArrayList<IRI>();
 		CloseableIteration<? extends IRI, ? extends RDF4JException> iter = TripleSources.getObjectURIs(ruleProp,
-				SPIN.NEXT_RULE_PROPERTY_PROPERTY, store);
+			SPIN.NEXT_RULE_PROPERTY_PROPERTY, store);
 		try {
 			while (iter.hasNext()) {
 				nextRules.add(iter.next());
 			}
-		}
-		finally {
+		} finally {
 			iter.close();
 		}
 		return nextRules;
@@ -410,7 +408,7 @@ public class SpinParser {
 		Set<IRI> possibleQueryTypes = new HashSet<IRI>();
 		Set<IRI> possibleTemplates = new HashSet<IRI>();
 		CloseableIteration<? extends IRI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(
-				queryResource, RDF.TYPE, store);
+			queryResource, RDF.TYPE, store);
 		try {
 			while (typeIter.hasNext()) {
 				IRI type = typeIter.next();
@@ -429,8 +427,7 @@ public class SpinParser {
 					possibleTemplates.add(type);
 				}
 			}
-		}
-		finally {
+		} finally {
 			typeIter.close();
 		}
 
@@ -539,7 +536,7 @@ public class SpinParser {
 	{
 		Set<IRI> possibleTmplTypes = new HashSet<IRI>();
 		CloseableIteration<? extends IRI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(
-				tmplUri, RDF.TYPE, store);
+			tmplUri, RDF.TYPE, store);
 		try {
 			while (typeIter.hasNext()) {
 				IRI type = typeIter.next();
@@ -547,8 +544,7 @@ public class SpinParser {
 					possibleTmplTypes.add(type);
 				}
 			}
-		}
-		finally {
+		} finally {
 			typeIter.close();
 		}
 
@@ -680,7 +676,7 @@ public class SpinParser {
 		throws RDF4JException
 	{
 		CloseableIteration<? extends Resource, ? extends RDF4JException> argIter = TripleSources.getObjectResources(
-				moduleUri, SPIN.CONSTRAINT_PROPERTY, store);
+			moduleUri, SPIN.CONSTRAINT_PROPERTY, store);
 		try {
 			while (argIter.hasNext()) {
 				Resource possibleArg = argIter.next();
@@ -695,8 +691,7 @@ public class SpinParser {
 					args.put(argUri, new Argument(argUri, (IRI)valueType, optional, defaultValue));
 				}
 			}
-		}
-		finally {
+		} finally {
 			argIter.close();
 		}
 	}

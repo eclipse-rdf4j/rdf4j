@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 
 public class TupleFunctionEvaluationStatistics extends EvaluationStatistics {
 
+	@Override
 	protected CardinalityCalculator createCardinalityCalculator() {
 		return new TupleFunctionCardinalityCalculator();
 	}

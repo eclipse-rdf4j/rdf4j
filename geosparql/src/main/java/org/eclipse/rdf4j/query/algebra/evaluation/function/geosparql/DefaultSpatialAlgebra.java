@@ -158,7 +158,7 @@ final class DefaultSpatialAlgebra implements SpatialAlgebra {
 	}
 
 	@Override
-	public boolean equals(Shape s1, Shape s2) {
+	public boolean sfEquals(Shape s1, Shape s2) {
 		return s1.equals(s2);
 	}
 
@@ -264,6 +264,21 @@ final class DefaultSpatialAlgebra implements SpatialAlgebra {
 
 	@Override
 	public boolean rcc8ntppi(Shape s1, Shape s2) {
+		return notSupported();
+	}
+
+	@Override
+	public Shape buffer(Shape s, double distance) {
+		return s.getBuffered(distance, SpatialSupport.getSpatialContext());
+	}
+
+	@Override
+	public boolean ehEquals(Shape s1, Shape s2) {
+		return notSupported();
+	}
+
+	@Override
+	public boolean rcc8eq(Shape s1, Shape s2) {
 		return notSupported();
 	}
 }

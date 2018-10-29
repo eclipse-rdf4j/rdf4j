@@ -332,9 +332,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		}
 
 		classToSuperclassMap = new HashMap<IRI, Set<IRI>>();
-		CloseableIteration<? extends Statement, QueryEvaluationException> stmtIter = tripleSource.getStatements(
-				null, RDFS.SUBCLASSOF, null);
-		try {
+		try (CloseableIteration<? extends Statement, QueryEvaluationException> stmtIter = tripleSource.getStatements(
+			null, RDFS.SUBCLASSOF, null)) {
 			while (stmtIter.hasNext()) {
 				Statement stmt = stmtIter.next();
 				if (stmt.getSubject() instanceof IRI && stmt.getObject() instanceof IRI) {
@@ -348,9 +347,6 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 					superclasses.add(superclass);
 				}
 			}
-		}
-		finally {
-			stmtIter.close();
 		}
 	}
 
@@ -392,13 +388,9 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		parser.setRDFHandler(inserter);
 		URL url = getClass().getResource(file);
 		try {
-			InputStream in = new BufferedInputStream(url.openStream());
-			try {
+			try (InputStream in = new BufferedInputStream(url.openStream())) {
 				logger.debug("loading axioms statements from {}", file);
 				parser.parse(in, url.toString());
-			}
-			finally {
-				in.close();
 			}
 		}
 		catch (IOException ioe) {
@@ -638,9 +630,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		throws QueryEvaluationException
 	{
 		String comment = null;
-		CloseableIteration<? extends Literal, QueryEvaluationException> iter = TripleSources.getObjectLiterals(
-				subj, RDFS.COMMENT, tripleSource);
-		try {
+		try (CloseableIteration<? extends Literal, QueryEvaluationException> iter = TripleSources.getObjectLiterals(
+			subj, RDFS.COMMENT, tripleSource)) {
 			while (iter.hasNext()) {
 				Literal l = iter.next();
 				String label = l.getLabel();
@@ -648,9 +639,6 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 					comment = label;
 				}
 			}
-		}
-		finally {
-			iter.close();
 		}
 		return comment;
 	}

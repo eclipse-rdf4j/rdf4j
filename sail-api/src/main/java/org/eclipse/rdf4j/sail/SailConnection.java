@@ -44,6 +44,7 @@ public interface SailConnection extends AutoCloseable {
 	 * Closes the connection. Any updates that haven't been committed yet will be rolled back. The connection
 	 * can no longer be used once it is closed.
 	 */
+	@Override
 	public void close()
 		throws SailException;
 
@@ -151,13 +152,9 @@ public interface SailConnection extends AutoCloseable {
 			Resource... contexts)
 		throws SailException
 	{
-		CloseableIteration<? extends Statement, SailException> stIter = getStatements(subj, pred, obj,
-				includeInferred, contexts);
-		try {
+		try (CloseableIteration<? extends Statement, SailException> stIter = getStatements(subj, pred, obj,
+			includeInferred, contexts)) {
 			return stIter.hasNext();
-		}
-		finally {
-			stIter.close();
 		}
 	}
 

@@ -138,20 +138,20 @@ public class BTreeTest {
 		btree.insert(TEST_VALUES.get(meanIdx));
 		btree.insert(TEST_VALUES.get(meanIdx + 1));
 
-		RecordIterator iter1 = btree.iterateAll();
-		iter1.next();
-
-		RecordIterator iter2 = btree.iterateAll();
-		iter2.next();
-		iter2.next();
-		iter2.next();
-
-		for (byte[] value : TEST_VALUES) {
-			btree.insert(value);
+		try (RecordIterator iter1 = btree.iterateAll()) {
+			iter1.next();
+			
+			RecordIterator iter2 = btree.iterateAll();
+			iter2.next();
+			iter2.next();
+			iter2.next();
+			
+			for (byte[] value : TEST_VALUES) {
+				btree.insert(value);
+			}
+			
+			iter2.close();
 		}
-
-		iter2.close();
-		iter1.close();
 	}
 
 	@Test

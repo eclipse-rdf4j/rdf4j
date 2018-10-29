@@ -82,6 +82,7 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 		return new LimitedSizeDistinctIteration(evaluate(distinct.getArg(), bindings), used, maxSize);
 	}
 
+	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Difference difference,
 			final BindingSet bindings)
 		throws QueryEvaluationException
@@ -141,6 +142,7 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 		return new LimitedSizeIntersectIteration(leftArg, rightArg, used, maxSize);
 	}
 
+	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Join join, BindingSet bindings)
 		throws QueryEvaluationException
 	{

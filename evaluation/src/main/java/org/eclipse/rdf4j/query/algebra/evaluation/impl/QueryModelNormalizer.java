@@ -46,6 +46,7 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 	public QueryModelNormalizer() {
 	}
 
+	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(this);
 	}

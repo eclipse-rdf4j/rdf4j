@@ -28,20 +28,20 @@ import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.URI;
-import org.eclipse.rdf4j.model.impl.ContextStatementImpl;
-import org.eclipse.rdf4j.model.impl.LiteralImpl;
-import org.eclipse.rdf4j.model.impl.StatementImpl;
-import org.eclipse.rdf4j.model.impl.URIImpl;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -49,65 +49,44 @@ import org.junit.Test;
 public class SolrIndexTest {
 
 	private static final String DATA_DIR = "target/test-data";
-
-	public static final URI CONTEXT_1 = new URIImpl("urn:context1");
-
-	public static final URI CONTEXT_2 = new URIImpl("urn:context2");
-
-	public static final URI CONTEXT_3 = new URIImpl("urn:context3");
+	
+	private static final SimpleValueFactory fac = SimpleValueFactory.getInstance();
+	
+	public static final IRI CONTEXT_1 = fac.createIRI("urn:context1");
+	public static final IRI CONTEXT_2 = fac.createIRI("urn:context2");
+	public static final IRI CONTEXT_3 = fac.createIRI("urn:context3");
 
 	// create some objects that we will use throughout this test
-	URI subject = new URIImpl("urn:subj");
+	IRI subject = fac.createIRI("urn:subj");
+	IRI subject2 = fac.createIRI("urn:subj2");
 
-	URI subject2 = new URIImpl("urn:subj2");
+	IRI predicate1 = fac.createIRI("urn:pred1");
+	IRI predicate2 = fac.createIRI("urn:pred2");
 
-	URI predicate1 = new URIImpl("urn:pred1");
+	Literal object1 = fac.createLiteral("object1");
+	Literal object2 = fac.createLiteral("object2");
+	Literal object3 = fac.createLiteral("cats");
+	Literal object4 = fac.createLiteral("dogs");
+	Literal object5 = fac.createLiteral("chicken");
 
-	URI predicate2 = new URIImpl("urn:pred2");
-
-	Literal object1 = new LiteralImpl("object1");
-
-	Literal object2 = new LiteralImpl("object2");
-
-	Literal object3 = new LiteralImpl("cats");
-
-	Literal object4 = new LiteralImpl("dogs");
-
-	Literal object5 = new LiteralImpl("chicken");
-
-	Statement statement11 = new StatementImpl(subject, predicate1, object1);
-
-	Statement statement12 = new StatementImpl(subject, predicate2, object2);
-
-	Statement statement21 = new StatementImpl(subject2, predicate1, object3);
-
-	Statement statement22 = new StatementImpl(subject2, predicate2, object4);
-
-	Statement statement23 = new StatementImpl(subject2, predicate2, object5);
-
-	ContextStatementImpl statementContext111 = new ContextStatementImpl(subject, predicate1, object1,
-			CONTEXT_1);
-
-	ContextStatementImpl statementContext121 = new ContextStatementImpl(subject, predicate2, object2,
-			CONTEXT_1);
-
-	ContextStatementImpl statementContext211 = new ContextStatementImpl(subject2, predicate1, object3,
-			CONTEXT_1);
-
-	ContextStatementImpl statementContext222 = new ContextStatementImpl(subject2, predicate2, object4,
-			CONTEXT_2);
-
-	ContextStatementImpl statementContext232 = new ContextStatementImpl(subject2, predicate2, object5,
-			CONTEXT_2);
+	Statement statement11 = fac.createStatement(subject, predicate1, object1);
+	Statement statement12 = fac.createStatement(subject, predicate2, object2);
+	Statement statement21 = fac.createStatement(subject2, predicate1, object3);
+	Statement statement22 = fac.createStatement(subject2, predicate2, object4);
+	Statement statement23 = fac.createStatement(subject2, predicate2, object5);
+	
+	
+	Statement statementContext111 = fac.createStatement(subject, predicate1, object1, CONTEXT_1);
+	Statement statementContext121 = fac.createStatement(subject, predicate2, object2, CONTEXT_1);
+	Statement statementContext211 = fac.createStatement(subject2, predicate1, object3, CONTEXT_1);
+	Statement statementContext222 = fac.createStatement(subject2, predicate2, object4, CONTEXT_2);
+	Statement statementContext232 = fac.createStatement(subject2, predicate2, object5, CONTEXT_2);
 
 	SolrIndex index;
-
 	SolrClient client;
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		index = new SolrIndex();
 		Properties sailProperties = new Properties();
 		sailProperties.put(SolrIndex.SERVER_KEY, "embedded:");
@@ -116,17 +95,13 @@ public class SolrIndexTest {
 	}
 
 	@After
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 		index.shutDown();
 		FileUtils.deleteDirectory(new File(DATA_DIR));
 	}
 
 	@Test
-	public void testAddStatement()
-		throws IOException, SolrServerException
-	{
+	public void testAddStatement() throws IOException, SolrServerException {
 		// add a statement to an index
 		index.begin();
 		index.addStatement(statement11);
@@ -218,12 +193,10 @@ public class SolrIndexTest {
 	}
 
 	@Test
-	public void testAddMultiple()
-		throws Exception
-	{
+	public void testAddMultiple() throws Exception {
 		// add a statement to an index
-		HashSet<Statement> added = new HashSet<Statement>();
-		HashSet<Statement> removed = new HashSet<Statement>();
+		HashSet<Statement> added = new HashSet<>();
+		HashSet<Statement> removed = new HashSet<>();
 		added.add(statement11);
 		added.add(statement12);
 		added.add(statement21);
@@ -248,7 +221,7 @@ public class SolrIndexTest {
 		assertStatement(statement22, document);
 
 		// check if the text field stores all added string values
-		Set<String> texts = new HashSet<String>();
+		Set<String> texts = new HashSet<>();
 		texts.add("cats");
 		texts.add("dogs");
 		// FIXME
@@ -287,9 +260,7 @@ public class SolrIndexTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void testContexts()
-		throws Exception
-	{
+	public void testContexts() throws Exception {
 		// add a sail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
@@ -302,10 +273,9 @@ public class SolrIndexTest {
 		SailRepository repository = new SailRepository(sail);
 		repository.initialize();
 
-		// now add the statements through the repo
-		// add statements with context
-		SailRepositoryConnection connection = repository.getConnection();
-		try {
+		try ( // now add the statements through the repo
+			// add statements with context
+			SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -330,10 +300,8 @@ public class SolrIndexTest {
 			assertNoStatement(statementContext211);
 			assertStatement(statementContext222);
 			assertStatement(statementContext232);
-		}
-		finally {
-			// close repo
-			connection.close();
+		} finally {
+		// close repo
 			repository.shutDown();
 		}
 	}
@@ -345,9 +313,7 @@ public class SolrIndexTest {
 	 * @throws Exception
 	 */
 	@Test
-	public void testContextsRemoveContext2()
-		throws Exception
-	{
+	public void testContextsRemoveContext2() throws Exception {
 		// add a sail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
@@ -360,10 +326,9 @@ public class SolrIndexTest {
 		SailRepository repository = new SailRepository(sail);
 		repository.initialize();
 
-		// now add the statements through the repo
+		try ( // now add the statements through the repo
 		// add statements with context
-		SailRepositoryConnection connection = repository.getConnection();
-		try {
+			SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -388,43 +353,38 @@ public class SolrIndexTest {
 			assertStatement(statementContext211);
 			assertNoStatement(statementContext222);
 			assertNoStatement(statementContext232);
-		}
-		finally {
+		} finally {
 			// close repo
-			connection.close();
 			repository.shutDown();
 		}
 	}
 
 	@Test
 	public void testRejectedDatatypes() {
-		URI STRING = new URIImpl("http://www.w3.org/2001/XMLSchema#string");
-		URI FLOAT = new URIImpl("http://www.w3.org/2001/XMLSchema#float");
-		Literal literal1 = new LiteralImpl("hi there");
-		Literal literal2 = new LiteralImpl("hi there, too", STRING);
-		Literal literal3 = new LiteralImpl("1.0");
-		Literal literal4 = new LiteralImpl("1.0", FLOAT);
+		Literal literal1 = fac.createLiteral("hi there");
+		Literal literal2 = fac.createLiteral("hi there, too", XMLSchema.STRING);
+		Literal literal3 = fac.createLiteral("1.0");
+		Literal literal4 = fac.createLiteral("1.0", XMLSchema.FLOAT);
+
 		assertEquals("Is the first literal accepted?", true, index.accept(literal1));
 		assertEquals("Is the second literal accepted?", true, index.accept(literal2));
 		assertEquals("Is the third literal accepted?", true, index.accept(literal3));
 		assertEquals("Is the fourth literal accepted?", false, index.accept(literal4));
 	}
 
-	private void assertStatement(Statement statement)
-		throws Exception
-	{
+	private void assertStatement(Statement statement) throws Exception {
 		SearchDocument document = index.getDocument(statement.getSubject(), statement.getContext());
-		if (document == null)
+		if (document == null) {
 			fail("Missing document " + statement.getSubject());
+		}
 		assertStatement(statement, document);
 	}
 
-	private void assertNoStatement(Statement statement)
-		throws Exception
-	{
+	private void assertNoStatement(Statement statement) throws Exception {
 		SearchDocument document = index.getDocument(statement.getSubject(), statement.getContext());
-		if (document == null)
+		if (document == null) {
 			return;
+		}
 		assertNoStatement(statement, document);
 	}
 
@@ -448,23 +408,14 @@ public class SolrIndexTest {
 	 */
 	private void assertNoStatement(Statement statement, SearchDocument document) {
 		List<String> fields = document.getProperty(SearchFields.getPropertyField(statement.getPredicate()));
-		if (fields == null)
+		if (fields == null) {
 			return;
+		}
 		for (String f : fields) {
-			if (((Literal)statement.getObject()).getLabel().equals(f))
+			if (((Literal)statement.getObject()).getLabel().equals(f)) {
 				fail("Statement should not be found in document " + statement);
+			}
 		}
 
 	}
-
-	/*
-	 * private void assertTexts(Set<String> texts, Document document) { Set<String> toFind = new
-	 * HashSet<String>(texts); Set<String> found = new HashSet<String>(); for(Field field :
-	 * document.getFields(LuceneIndex.TEXT_FIELD_NAME)) { // is the field value expected and not yet been
-	 * found? if(toFind.remove(field.stringValue())) { // add it to the found set // (it was already remove
-	 * from the toFind list in the if clause) found.add(field.stringValue()); } else { assertEquals(
-	 * "Was the text value '" + field.stringValue() + "' expected to exist?", false, true); } } for(String
-	 * notFound : toFind) { assertEquals("Was the expected text value '" + notFound + "' found?", true,
-	 * false); } }
-	 */
 }

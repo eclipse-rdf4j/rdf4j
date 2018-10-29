@@ -724,19 +724,12 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		throws SailException
 	{
 		boolean statementsRemoved = false;
-		CloseableIteration<? extends Statement, SailException> iter = null;
-		try {
-			iter = dataset.getStatements(subj, pred, obj, contexts);
+		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj, contexts)) {
 			while (iter.hasNext()) {
 				Statement st = iter.next();
 				sink.deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
 				statementsRemoved = true;
 				notifyStatementRemoved(st);
-			}
-		}
-		finally {
-			if (iter != null) {
-				iter.close();
 			}
 		}
 		return statementsRemoved;
@@ -937,15 +930,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	private boolean hasStatement(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException
 	{
-		CloseableIteration<? extends Statement, SailException> iter = null;
-		try {
-			iter = dataset.getStatements(subj, pred, obj, contexts);
+		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj, contexts)) {
 			return iter.hasNext();
-		}
-		finally {
-			if (iter != null) {
-				iter.close();
-			}
 		}
 	}
 

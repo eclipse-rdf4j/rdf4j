@@ -30,6 +30,7 @@ public interface SailDataset extends SailClosable {
 	 * {@link SailDataset} dose not change between the first call to this object until {@link #release()} is
 	 * called.
 	 */
+	@Override
 	void close()
 		throws SailException;
 

@@ -42,6 +42,7 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 		return (ParsedGraphQuery) super.getParsedQuery();
 	}
 
+	@Override
 	public GraphQueryResult evaluate() throws QueryEvaluationException {
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
@@ -129,6 +130,7 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 		}
 	}
 
+	@Override
 	public void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException {
 		GraphQueryResult queryResult = evaluate();
 		QueryResults.report(queryResult, handler);

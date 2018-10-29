@@ -46,6 +46,7 @@ public abstract class AbstractNaryTupleOperator extends AbstractNaryOperator<Tup
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public Set<String> getBindingNames() {
 		Set<String> bindingNames = new LinkedHashSet<String>(16);
 
@@ -56,6 +57,7 @@ public abstract class AbstractNaryTupleOperator extends AbstractNaryOperator<Tup
 		return bindingNames;
 	}
 
+	@Override
 	public Set<String> getAssuredBindingNames() {
 		Set<String> bindingNames = new LinkedHashSet<String>(16);
 

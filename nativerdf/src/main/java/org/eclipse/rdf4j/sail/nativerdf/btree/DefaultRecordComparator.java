@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.nativerdf.btree;
 public class DefaultRecordComparator implements RecordComparator {
 
 	// implements RecordComparator.compareBTreeValues()
+	@Override
 	public int compareBTreeValues(byte[] key, byte[] data, int offset, int length) {
 		int result = 0;
 		for (int i = 0; result == 0 && i < length; i++) {

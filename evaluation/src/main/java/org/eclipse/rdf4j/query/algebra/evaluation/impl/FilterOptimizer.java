@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
  */
 public class FilterOptimizer implements QueryOptimizer {
 
+	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(new FilterFinder(tupleExpr));
 	}

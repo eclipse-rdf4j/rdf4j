@@ -123,6 +123,7 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 		};
 	}
 
+	@Override
 	public List<PlanNode> parent() {
 		return Arrays.asList(parent);
 	}

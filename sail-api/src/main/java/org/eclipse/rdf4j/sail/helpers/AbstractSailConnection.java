@@ -252,6 +252,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
+	@Override
 	public final CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(
 			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
 		throws SailException
@@ -1003,16 +1004,19 @@ public abstract class AbstractSailConnection implements SailConnection {
 		 *---------*/
 
 		// Implements Statement.getSubject()
+		@Override
 		public Resource getSubject() {
 			return subject;
 		}
 
 		// Implements Statement.getPredicate()
+		@Override
 		public IRI getPredicate() {
 			return predicate;
 		}
 
 		// Implements Statement.getObject()
+		@Override
 		public Value getObject() {
 			return object;
 		}
@@ -1050,10 +1054,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 			javaLock.lock();
 		}
 
+		@Override
 		public synchronized boolean isActive() {
 			return isActive;
 		}
 
+		@Override
 		public synchronized void release() {
 			if (isActive) {
 				javaLock.unlock();

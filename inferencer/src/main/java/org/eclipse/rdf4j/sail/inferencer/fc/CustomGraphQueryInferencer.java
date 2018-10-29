@@ -177,14 +177,10 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 		throws SailException
 	{
 		super.initialize();
-		InferencerConnection con = getConnection();
-		try {
+		try (InferencerConnection con = getConnection()) {
 			con.begin();
 			con.flushUpdates();
 			con.commit();
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -311,9 +307,8 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 		private void evaluateIntoStatements(ParsedGraphQuery query, Collection<Statement> statements)
 			throws SailException, RDFHandlerException, QueryEvaluationException
 		{
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection().evaluate(
-					query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true);
-			try {
+			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection().evaluate(
+				query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
 				ValueFactory factory = getValueFactory();
 				while (bindingsIter.hasNext()) {
 					BindingSet bindings = bindingsIter.next();
@@ -324,9 +319,6 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 						statements.add(factory.createStatement((Resource)subj, (IRI)pred, obj));
 					}
 				}
-			}
-			finally {
-				bindingsIter.close();
 			}
 		}
 	}

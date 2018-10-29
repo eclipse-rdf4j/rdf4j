@@ -80,9 +80,8 @@ public class SplSailTest {
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL,
 				"prefix spin: <http://spinrdf.org/spin#> " + "prefix spl: <http://spinrdf.org/spl#> "
 						+ "select ?testCase ?expected ?actual where {(<test:run>) spin:select (?testCase ?expected ?actual)}");
-		// returns failed tests
-		TupleQueryResult tqr = tq.evaluate();
-		try {
+		try ( // returns failed tests
+			TupleQueryResult tqr = tq.evaluate()) {
 			while (tqr.hasNext()) {
 				BindingSet bs = tqr.next();
 				Value testCase = bs.getValue("testCase");
@@ -91,21 +90,14 @@ public class SplSailTest {
 				assertEquals(testCase.stringValue(), expected, actual);
 			}
 		}
-		finally {
-			tqr.close();
-		}
 	}
 
 	private void loadRDF(String path)
 		throws IOException, RDFParseException, RepositoryException
 	{
 		URL url = getClass().getResource(path);
-		InputStream in = url.openStream();
-		try {
+		try (InputStream in = url.openStream()) {
 			conn.add(in, url.toString(), RDFFormat.TURTLE);
-		}
-		finally {
-			in.close();
 		}
 	}
 }

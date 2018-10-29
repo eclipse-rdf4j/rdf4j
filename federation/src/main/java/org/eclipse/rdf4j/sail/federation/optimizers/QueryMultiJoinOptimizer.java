@@ -50,6 +50,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 	 * 
 	 * @throws StoreException
 	 */
+	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(new JoinVisitor());
 	}

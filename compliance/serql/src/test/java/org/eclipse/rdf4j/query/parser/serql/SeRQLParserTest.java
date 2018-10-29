@@ -11,8 +11,6 @@ import junit.framework.Test;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.parser.QueryParser;
-import org.eclipse.rdf4j.query.parser.serql.SeRQLParser;
-import org.eclipse.rdf4j.query.parser.serql.SeRQLParserTestCase;
 
 public class SeRQLParserTest extends SeRQLParserTestCase {
 
@@ -21,6 +19,7 @@ public class SeRQLParserTest extends SeRQLParserTestCase {
 	{
 		return SeRQLParserTestCase.suite(new Factory() {
 
+			@Override
 			public Test createTest(String name, String queryFile, Value result) {
 				return new SeRQLParserTest(name, queryFile, result);
 			}

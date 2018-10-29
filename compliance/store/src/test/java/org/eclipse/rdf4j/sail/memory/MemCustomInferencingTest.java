@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.memory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.sail.CustomGraphQueryInferencerTest;
 import org.eclipse.rdf4j.sail.NotifyingSail;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class MemCustomInferencingTest extends CustomGraphQueryInferencerTest {
 

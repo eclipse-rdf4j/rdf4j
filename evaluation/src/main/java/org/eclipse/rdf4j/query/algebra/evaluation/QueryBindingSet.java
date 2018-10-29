@@ -101,14 +101,17 @@ public class QueryBindingSet extends AbstractBindingSet {
 		bindings.keySet().retainAll(bindingNames);
 	}
 
+	@Override
 	public Set<String> getBindingNames() {
 		return bindings.keySet();
 	}
 
+	@Override
 	public Value getValue(String bindingName) {
 		return bindings.get(bindingName);
 	}
 
+	@Override
 	public Binding getBinding(String bindingName) {
 		Value value = getValue(bindingName);
 
@@ -119,12 +122,15 @@ public class QueryBindingSet extends AbstractBindingSet {
 		return null;
 	}
 
+	@Override
 	public boolean hasBinding(String bindingName) {
 		return bindings.containsKey(bindingName);
 	}
 
+	@Override
 	public Iterator<Binding> iterator() {
-		Iterator<Map.Entry<String, Value>> entries = bindings.entrySet().iterator();
+		Iterator<Map.Entry<String, Value>> entries = bindings.entrySet().stream().filter(
+				entry -> entry.getValue() != null).iterator();
 
 		return new ConvertingIterator<Map.Entry<String, Value>, Binding>(entries) {
 
@@ -135,6 +141,7 @@ public class QueryBindingSet extends AbstractBindingSet {
 		};
 	}
 
+	@Override
 	public int size() {
 		return bindings.size();
 	}
@@ -148,5 +155,4 @@ public class QueryBindingSet extends AbstractBindingSet {
 			return super.equals(other);
 		}
 	}
-
 }

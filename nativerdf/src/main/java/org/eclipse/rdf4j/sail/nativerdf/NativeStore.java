@@ -216,6 +216,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 * @param resolver
 	 *        The SERVICE resolver to set.
 	 */
+	@Override
 	public synchronized void setFederatedServiceResolver(FederatedServiceResolver resolver) {
 		this.serviceResolver = resolver;
 		if (resolver != null && evalStratFactory instanceof FederatedServiceResolverClient) {
@@ -337,6 +338,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 		}
 	}
 
+	@Override
 	public boolean isWritable() {
 		return getDataDir().canWrite();
 	}
@@ -353,6 +355,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 		}
 	}
 
+	@Override
 	public ValueFactory getValueFactory() {
 		return store.getValueFactory();
 	}

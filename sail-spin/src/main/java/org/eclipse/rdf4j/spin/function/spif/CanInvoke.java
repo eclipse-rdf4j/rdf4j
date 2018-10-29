@@ -226,9 +226,8 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 				}
 			};
 
-			CloseableIteration<? extends Resource, QueryEvaluationException> iter = TripleSources.getObjectResources(
-					func, SPIN.CONSTRAINT_PROPERTY, qpTripleSource);
-			try {
+			try (CloseableIteration<? extends Resource, QueryEvaluationException> iter = TripleSources.getObjectResources(
+				func, SPIN.CONSTRAINT_PROPERTY, qpTripleSource)) {
 				while (iter.hasNext()) {
 					Resource constraint = iter.next();
 					Set<IRI> constraintTypes = Iterations.asSet(
@@ -242,9 +241,6 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 						}
 					}
 				}
-			}
-			finally {
-				iter.close();
 			}
 		}
 		catch (RDF4JException e) {

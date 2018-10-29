@@ -12,7 +12,6 @@ import java.util.List;
 import junit.framework.Test;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.parser.serql.SeRQLQueryTestCase;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
@@ -23,6 +22,7 @@ public class SeRQLQueryTest extends SeRQLQueryTestCase {
 	{
 		return SeRQLQueryTestCase.suite(new Factory() {
 
+			@Override
 			public Test createTest(String name, String dataFile, List<String> graphNames, String queryFile,
 					String resultFile, String entailment)
 			{

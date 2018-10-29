@@ -164,8 +164,7 @@ public class DirectoryLockManager implements LockManager {
 			boolean revokeLock = false;
 
 			File lockedFile = new File(lockDir, LOCK_FILE_NAME);
-			RandomAccessFile raf = new RandomAccessFile(lockedFile, "rw");
-			try {
+			try (RandomAccessFile raf = new RandomAccessFile(lockedFile, "rw")) {
 				FileLock fileLock = raf.getChannel().tryLock();
 
 				if (fileLock != null) {
@@ -176,9 +175,6 @@ public class DirectoryLockManager implements LockManager {
 			}
 			catch (OverlappingFileLockException exc) {
 				// lock is still valid
-			}
-			finally {
-				raf.close();
 			}
 
 			if (revokeLock) {
@@ -194,12 +190,8 @@ public class DirectoryLockManager implements LockManager {
 		try {
 			File lockDir = getLockDir();
 			File infoFile = new File(lockDir, INFO_FILE_NAME);
-			BufferedReader reader = new BufferedReader(new FileReader(infoFile));
-			try {
+			try (BufferedReader reader = new BufferedReader(new FileReader(infoFile))) {
 				return reader.readLine();
-			}
-			finally {
-				reader.close();
 			}
 		}
 		catch (IOException e) {
@@ -216,6 +208,7 @@ public class DirectoryLockManager implements LockManager {
 				try {
 					Thread hook = new Thread(new Runnable() {
 
+						@Override
 						public void run() {
 							delete();
 						}
@@ -228,10 +221,12 @@ public class DirectoryLockManager implements LockManager {
 				}
 			}
 
+			@Override
 			public boolean isActive() {
 				return fileLock.isValid() || hook != null;
 			}
 
+			@Override
 			public void release() {
 				try {
 					if (hook != null) {
@@ -267,13 +262,9 @@ public class DirectoryLockManager implements LockManager {
 	private void sign(File infoFile)
 		throws IOException
 	{
-		FileWriter out = new FileWriter(infoFile);
-		try {
+		try (FileWriter out = new FileWriter(infoFile)) {
 			out.write(getProcessName());
 			out.flush();
-		}
-		finally {
-			out.close();
 		}
 	}
 

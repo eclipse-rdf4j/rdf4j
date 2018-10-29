@@ -52,15 +52,18 @@ public class NativeIRI extends SimpleIRI implements NativeResource {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public void setInternalID(int internalID, ValueStoreRevision revision) {
 		this.internalID = internalID;
 		this.revision = revision;
 	}
 
+	@Override
 	public ValueStoreRevision getValueStoreRevision() {
 		return revision;
 	}
 
+	@Override
 	public int getInternalID() {
 		return internalID;
 	}

@@ -104,17 +104,13 @@ abstract class RecordCache {
 		throws IOException
 	{
 		if (recordCount.get() <= maxRecords.get()) {
-			RecordIterator recIter = otherCache.getRecords();
-			try {
+			try (RecordIterator recIter = otherCache.getRecords()) {
 				byte[] record;
 				while ((record = recIter.next()) != null
 						&& recordCount.incrementAndGet() <= maxRecords.get())
 				{
 					storeRecordInternal(record);
 				}
-			}
-			finally {
-				recIter.close();
 			}
 		}
 	}

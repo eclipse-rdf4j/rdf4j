@@ -44,7 +44,7 @@ public class Buffer implements Function {
 		IRI units = FunctionArguments.getUnits(this, args[2]);
 		double radiusDegs = FunctionArguments.convertToDegrees(radiusUom, units);
 
-		Shape buffered = geom.getBuffered(radiusDegs, geoContext);
+		Shape buffered = SpatialSupport.getSpatialAlgebra().buffer(geom, radiusDegs);
 
 		String wkt;
 		try {

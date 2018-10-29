@@ -178,6 +178,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		originalSchemaSize = sail.getSchemaSize();
 	}
 
+	@Override
 	public void addStatement(Resource subject, IRI predicate, Value object, Resource... contexts)
 		throws SailException
 	{

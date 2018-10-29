@@ -44,6 +44,7 @@ public class QueryOptimizerList implements QueryOptimizer {
 		optimizers.add(optimizer);
 	}
 
+	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		for (QueryOptimizer optimizer : optimizers) {
 			optimizer.optimize(tupleExpr, dataset, bindings);
