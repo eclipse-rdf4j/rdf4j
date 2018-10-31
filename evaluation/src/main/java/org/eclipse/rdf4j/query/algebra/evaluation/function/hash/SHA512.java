@@ -25,10 +25,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
  */
 public class SHA512 extends HashFunction {
 
+	@Override
 	public String getURI() {
 		return "SHA512";
 	}
 
+	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args)
 		throws ValueExprEvaluationException
 	{

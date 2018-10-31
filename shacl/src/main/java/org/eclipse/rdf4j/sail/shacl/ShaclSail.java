@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
-import org.eclipse.rdf4j.sail.shacl.AST.Shape;
+import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
 
 import java.util.List;
 
@@ -23,14 +23,15 @@ import java.util.List;
  */
 public class ShaclSail extends NotifyingSailWrapper {
 
-	public List<Shape> shapes;
+	public List<NodeShape> nodeShapes;
+	boolean debugPrintPlans = false;
 
 	ShaclSailConfig config = new ShaclSailConfig();
 
 	public ShaclSail(NotifyingSail baseSail, SailRepository shaclSail) {
 		super(baseSail);
 		try (SailRepositoryConnection shaclSailConnection = shaclSail.getConnection()) {
-			shapes = Shape.Factory.getShapes(shaclSailConnection);
+			nodeShapes = NodeShape.Factory.getShapes(shaclSailConnection);
 		}
 	}
 
@@ -48,6 +49,13 @@ public class ShaclSail extends NotifyingSailWrapper {
 		config.validationEnabled = true;
 	}
 
+	public boolean isDebugPrintPlans() {
+		return debugPrintPlans;
+	}
+
+	public void setDebugPrintPlans(boolean debugPrintPlans) {
+		this.debugPrintPlans = debugPrintPlans;
+	}
 }
 
 class ShaclSailConfig {

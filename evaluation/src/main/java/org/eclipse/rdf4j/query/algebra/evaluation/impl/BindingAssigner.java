@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  */
 public class BindingAssigner implements QueryOptimizer {
 
+	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		if (bindings.size() > 0) {
 			tupleExpr.visit(new VarVisitor(bindings));

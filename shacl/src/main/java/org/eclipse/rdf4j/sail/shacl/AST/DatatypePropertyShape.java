@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -14,6 +15,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
@@ -34,8 +36,8 @@ public class DatatypePropertyShape extends PathPropertyShape {
 
 	private final Resource datatype;
 
-	DatatypePropertyShape(Resource id, SailRepositoryConnection connection, Shape shape) {
-		super(id, connection, shape);
+	DatatypePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+		super(id, connection, nodeShape);
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.DATATYPE, null, true))) {
 			datatype = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:datatype on " + id));
@@ -45,9 +47,9 @@ public class DatatypePropertyShape extends PathPropertyShape {
 
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
 
-		PlanNode addedByShape = new LoggingNode(shape.getPlanAddedStatements(shaclSailConnection, shape));
+		PlanNode addedByShape = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape));
 
 		BufferedSplitter bufferedSplitter = new BufferedSplitter(addedByShape);
 
@@ -63,8 +65,8 @@ public class DatatypePropertyShape extends PathPropertyShape {
 		PlanNode top = new LoggingNode(new InnerJoin(bufferedSplitter.getPlanNode(), invalidValuesDirectOnPath, null, discardedRight));
 
 
-		if (shape instanceof TargetClass) {
-			PlanNode typeFilterPlan = new LoggingNode(((TargetClass) shape).getTypeFilterPlan(shaclSailConnection.getPreviousStateConnection(), discardedRight));
+		if (nodeShape instanceof TargetClass) {
+			PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection.getPreviousStateConnection(), discardedRight));
 
 			top = new LoggingNode(new UnionNode(top, typeFilterPlan));
 		}
@@ -76,6 +78,9 @@ public class DatatypePropertyShape extends PathPropertyShape {
 		DirectTupleFromFilter invalidValues = new DirectTupleFromFilter();
 		new DatatypeFilter(top, null, invalidValues, datatype);
 
+		if(printPlans){
+			printPlan(invalidValues, shaclSailConnection);
+		}
 
 		return new LoggingNode(invalidValues);
 

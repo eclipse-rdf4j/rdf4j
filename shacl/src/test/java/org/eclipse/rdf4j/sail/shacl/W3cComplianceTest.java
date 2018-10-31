@@ -3,6 +3,7 @@ package org.eclipse.rdf4j.sail.shacl;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -34,7 +35,7 @@ import static org.junit.Assert.assertEquals;
 @RunWith(Parameterized.class)
 public class W3cComplianceTest {
 
-	URL testCasePath;
+	private URL testCasePath;
 
 
 	public W3cComplianceTest(URL testCasePath) {
@@ -62,7 +63,7 @@ public class W3cComplianceTest {
 	}
 
 
-	public static Set<URL> getTestFiles() {
+	private static Set<URL> getTestFiles() {
 
 		Set<URL> testFiles = new HashSet<>();
 
@@ -102,14 +103,17 @@ public class W3cComplianceTest {
 
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, connection.getValueFactory().createIRI("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#include"), null))) {
-					include = stream.map(Statement::getObject).map(value -> value.stringValue()).map(v -> {
-						try {
-							return new URL(v);
-						} catch (MalformedURLException e) {
+					include = stream
+						.map(Statement::getObject)
+						.map(Value::stringValue)
+						.map(v -> {
+							try {
+								return new URL(v);
+							} catch (MalformedURLException e) {
 
-							throw new RuntimeException(e);
-						}
-					}).collect(Collectors.toList());
+								throw new RuntimeException(e);
+							}
+						}).collect(Collectors.toList());
 				}
 			}
 
@@ -141,7 +145,7 @@ public class W3cComplianceTest {
 
 	class W3C_shaclTestValidate {
 
-		public W3C_shaclTestValidate(URL filename) {
+		W3C_shaclTestValidate(URL filename) {
 			this.filename = filename.getPath();
 			SailRepository sailRepository = Utils.getSailRepository(filename);
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {

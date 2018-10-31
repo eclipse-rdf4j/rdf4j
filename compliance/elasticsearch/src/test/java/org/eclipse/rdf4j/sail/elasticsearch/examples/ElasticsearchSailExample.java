@@ -65,9 +65,8 @@ public class ElasticsearchSailExample {
 		SailRepository repository = new SailRepository(lucenesail);
 		repository.initialize();
 
-		// add some test data, the FOAF ont
-		SailRepositoryConnection connection = repository.getConnection();
-		try {
+		try ( // add some test data, the FOAF ont
+			SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(ElasticsearchSailExample.class.getResourceAsStream(
 					"/org/openrdf/sail/lucene/examples/foaf.rdfs"), "", RDFFormat.RDFXML);
@@ -111,7 +110,6 @@ public class ElasticsearchSailExample {
 			graphQuery(queryString, connection);
 		}
 		finally {
-			connection.close();
 			repository.shutDown();
 		}
 	}
@@ -121,8 +119,7 @@ public class ElasticsearchSailExample {
 	{
 		System.out.println("Running query: \n" + queryString);
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-		TupleQueryResult result = query.evaluate();
-		try {
+		try (TupleQueryResult result = query.evaluate()) {
 			// print the results
 			System.out.println("Query results:");
 			while (result.hasNext()) {
@@ -133,9 +130,6 @@ public class ElasticsearchSailExample {
 				}
 			}
 		}
-		finally {
-			result.close();
-		}
 	}
 
 	private static void graphQuery(String queryString, RepositoryConnection connection)
@@ -143,17 +137,13 @@ public class ElasticsearchSailExample {
 	{
 		System.out.println("Running query: \n" + queryString);
 		GraphQuery query = connection.prepareGraphQuery(QueryLanguage.SPARQL, queryString);
-		GraphQueryResult result = query.evaluate();
-		try {
+		try (GraphQueryResult result = query.evaluate()) {
 			// print the results
 			while (result.hasNext()) {
 				Statement stmt = result.next();
 				System.out.println("found match: " + stmt.getSubject().stringValue() + "\t"
 						+ stmt.getPredicate().stringValue() + "\t" + stmt.getObject().stringValue());
 			}
-		}
-		finally {
-			result.close();
 		}
 
 	}

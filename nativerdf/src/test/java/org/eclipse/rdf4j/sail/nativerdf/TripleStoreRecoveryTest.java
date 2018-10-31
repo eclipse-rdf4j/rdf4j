@@ -58,12 +58,8 @@ public class TripleStoreRecoveryTest {
 		// Try to restore from the uncompleted transaction
 		tripleStore = new TripleStore(dataDir, "spoc");
 		try {
-			RecordIterator iter = tripleStore.getTriples(-1, -1, -1, -1);
-			try {
+			try (RecordIterator iter = tripleStore.getTriples(-1, -1, -1, -1)) {
 				assertNull(iter.next());
-			}
-			finally {
-				iter.close();
 			}
 		}
 		finally {
@@ -97,14 +93,10 @@ public class TripleStoreRecoveryTest {
 		// Try to restore from the uncompleted transaction
 		tripleStore = new TripleStore(dataDir, "spoc");
 		try {
-			RecordIterator iter = tripleStore.getTriples(-1, -1, -1, -1);
-			try {
+			try (RecordIterator iter = tripleStore.getTriples(-1, -1, -1, -1)) {
 				// iter should contain exactly one element
 				assertNotNull(iter.next());
 				assertNull(iter.next());
-			}
-			finally {
-				iter.close();
 			}
 		}
 		finally {

@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.AST.Shape;
+import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.slf4j.Logger;
@@ -90,6 +90,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 	public Repository getRemovedStatements() {
 		return removedStatements;
+	}
+
+	@Override
+	public void begin() throws SailException {
+		begin(sail.getDefaultIsolationLevel());
 	}
 
 	@Override
@@ -172,15 +177,15 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 		boolean allValid = true;
 
-		for (Shape shape : sail.shapes) {
-			List<PlanNode> planNodes = shape.generatePlans(this, shape);
+		for (NodeShape nodeShape : sail.nodeShapes) {
+			List<PlanNode> planNodes = nodeShape.generatePlans(this, nodeShape, sail.debugPrintPlans);
 			for (PlanNode planNode : planNodes) {
 				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
 					List<Tuple> collect = stream.collect(Collectors.toList());
 
 					boolean valid = collect.size() == 0;
 					if (!valid) {
-						logger.warn("SHACL not valid. The following experimental debug results were produced: \n\tShape: {} \n\t\t{}", shape.toString(), String.join("\n\t\t", collect.stream().map(a -> a.toString()+" -cause-> "+a.getCause()).collect(Collectors.toList())));
+						logger.warn("SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {} \n\t\t{}", nodeShape.toString(), String.join("\n\t\t", collect.stream().map(a -> a.toString()+" -cause-> "+a.getCause()).collect(Collectors.toList())));
 					}
 					allValid = allValid && valid;
 				}

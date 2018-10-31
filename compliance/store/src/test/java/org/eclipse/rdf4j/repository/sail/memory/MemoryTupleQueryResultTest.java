@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class MemoryTupleQueryResultTest extends TupleQueryResultTest {
 
+	@Override
 	protected Repository newRepository() {
 		return new SailRepository(new MemoryStore());
 	}

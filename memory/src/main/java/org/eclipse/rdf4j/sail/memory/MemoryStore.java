@@ -228,9 +228,10 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	 * Overrides the {@link FederatedServiceResolver} used by this instance, but the given resolver is not
 	 * shutDown when this instance is.
 	 * 
-	 * @param reslover
+	 * @param resolver
 	 *        The SERVICE resolver to set.
 	 */
+	@Override
 	public synchronized void setFederatedServiceResolver(FederatedServiceResolver resolver) {
 		this.serviceResolver = resolver;
 		if (resolver != null && evalStratFactory instanceof FederatedServiceResolverClient) {
@@ -245,6 +246,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	 * @throws SailException
 	 *         when initialization of the store failed.
 	 */
+	@Override
 	protected void initializeInternal()
 		throws SailException
 	{
@@ -366,6 +368,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	 * Checks whether this Sail object is writable. A MemoryStore is not writable if a read-only data file is
 	 * used.
 	 */
+	@Override
 	public boolean isWritable() {
 		// Sail is not writable when it has a dataDir but no directory lock
 		return !persist || dirLock != null;
@@ -378,6 +381,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 		return new MemoryStoreConnection(this);
 	}
 
+	@Override
 	public ValueFactory getValueFactory() {
 		if (store == null) {
 			throw new IllegalStateException("sail not initialized.");

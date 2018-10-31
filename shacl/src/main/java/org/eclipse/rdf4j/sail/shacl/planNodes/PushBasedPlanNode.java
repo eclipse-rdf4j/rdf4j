@@ -20,4 +20,5 @@ public interface PushBasedPlanNode {
 
 	void parentIterator(CloseableIteration<Tuple, SailException> iterator);
 
+
 }

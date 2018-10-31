@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.repository.sail.helpers;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;

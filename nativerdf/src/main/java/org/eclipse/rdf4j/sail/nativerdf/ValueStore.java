@@ -46,22 +46,22 @@ public class ValueStore extends AbstractValueFactory {
 	 *-----------*/
 
 	/**
-	 * The default value cache size: 512.
+	 * The default value cache size.
 	 */
 	public static final int VALUE_CACHE_SIZE = 512;
 
 	/**
-	 * The default value id cache size: 128.
+	 * The default value id cache size.
 	 */
 	public static final int VALUE_ID_CACHE_SIZE = 128;
 
 	/**
-	 * The default namespace cache size: 64.
+	 * The default namespace cache size.
 	 */
 	public static final int NAMESPACE_CACHE_SIZE = 64;
 
 	/**
-	 * The default namespace id cache size: 32.
+	 * The default namespace id cache size.
 	 */
 	public static final int NAMESPACE_ID_CACHE_SIZE = 32;
 
@@ -98,23 +98,23 @@ public class ValueStore extends AbstractValueFactory {
 	/**
 	 * A simple cache containing the [VALUE_CACHE_SIZE] most-recently used values stored by their ID.
 	 */
-	private final LRUCache<Integer, NativeValue> valueCache;
+	private final ConcurrentCache<Integer, NativeValue> valueCache;
 
 	/**
 	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
 	 */
-	private final LRUCache<NativeValue, Integer> valueIDCache;
+	private final ConcurrentCache<NativeValue, Integer> valueIDCache;
 
 	/**
 	 * A simple cache containing the [NAMESPACE_CACHE_SIZE] most-recently used namespaces stored by their ID.
 	 */
-	private final LRUCache<Integer, String> namespaceCache;
+	private final ConcurrentCache<Integer, String> namespaceCache;
 
 	/**
 	 * A simple cache containing the [NAMESPACE_ID_CACHE_SIZE] most-recently used namespace-IDs stored by
 	 * their namespace.
 	 */
-	private final LRUCache<String, Integer> namespaceIDCache;
+	private final ConcurrentCache<String, Integer> namespaceIDCache;
 
 	/*--------------*
 	 * Constructors *
@@ -140,10 +140,10 @@ public class ValueStore extends AbstractValueFactory {
 		super();
 		dataStore = new DataStore(dataDir, FILENAME_PREFIX, forceSync);
 
-		valueCache = new LRUCache<Integer, NativeValue>(valueCacheSize);
-		valueIDCache = new LRUCache<NativeValue, Integer>(valueIDCacheSize);
-		namespaceCache = new LRUCache<Integer, String>(namespaceCacheSize);
-		namespaceIDCache = new LRUCache<String, Integer>(namespaceIDCacheSize);
+		valueCache = new ConcurrentCache<Integer, NativeValue>(valueCacheSize);
+		valueIDCache = new ConcurrentCache<NativeValue, Integer>(valueIDCacheSize);
+		namespaceCache = new ConcurrentCache<Integer, String>(namespaceCacheSize);
+		namespaceIDCache = new ConcurrentCache<String, Integer>(namespaceIDCacheSize);
 
 		setNewRevision();
 	}
@@ -404,7 +404,8 @@ public class ValueStore extends AbstractValueFactory {
 	 * @throws IOException
 	 */
 	public void checkConsistency()
-		throws SailException, IOException
+		throws SailException,
+		IOException
 	{
 		int maxID = dataStore.getMaxID();
 		for (int id = 1; id <= maxID; id++) {
@@ -534,7 +535,8 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private byte[] literal2data(String label, Optional<String> lang, IRI dt, boolean create)
-		throws IOException, UnsupportedEncodingException
+		throws IOException,
+		UnsupportedEncodingException
 	{
 		// Get datatype ID
 		int datatypeID = NativeValue.UNKNOWN_ID;

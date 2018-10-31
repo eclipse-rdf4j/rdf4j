@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -15,17 +15,13 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.common.io.NioFile;
+import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,7 +35,6 @@ import org.slf4j.LoggerFactory;
  * </ul>
  * The first reference was used to implement this class.
  * <p>
- * TODO: clean up code
  * 
  * @author Arjohn Kampman
  * @author Enrico Minack
@@ -55,30 +50,19 @@ public class BTree implements Closeable {
 	 * the file should be equal to this magic number. Note: this header has only been introduced in Sesame
 	 * 2.3. The old "header" can be recognized using {@link BTree#OLD_MAGIC_NUMBER}.
 	 */
-	private static final byte[] MAGIC_NUMBER = new byte[] { 'b', 't', 'f' };
+	static final byte[] MAGIC_NUMBER = new byte[] { 'b', 't', 'f' };
 
-	private static final byte[] OLD_MAGIC_NUMBER = new byte[] { 0, 0, 0 };
+	static final byte[] OLD_MAGIC_NUMBER = new byte[] { 0, 0, 0 };
 
 	/**
 	 * The file format version number, stored as the fourth byte in BTree files.
 	 */
-	private static final byte FILE_FORMAT_VERSION = 1;
+	static final byte FILE_FORMAT_VERSION = 1;
 
 	/**
 	 * The length of the header field.
 	 */
-	private static final int HEADER_LENGTH = 16;
-
-	/**
-	 * The size of the node cache. Note that this is not a hard limit. All nodes that are actively used are
-	 * always cached. Also, a minimum of {@link NODE_CACHE_SIZE} nodes of unused nodes is kept in the cache.
-	 */
-	private static final int NODE_CACHE_SIZE = 10;
-
-	/**
-	 * The minimum number of most recently released nodes to keep in the cache.
-	 */
-	private static final int MIN_MRU_CACHE_SIZE = 4;
+	static final int HEADER_LENGTH = 16;
 
 	/*-----------*
 	 * Variables *
@@ -89,7 +73,7 @@ public class BTree implements Closeable {
 	/**
 	 * The BTree file, accessed using java.nio-channels.
 	 */
-	private final NioFile nioFile;
+	final NioFile nioFile;
 
 	/**
 	 * Flag indicating whether file writes should be forced to disk using {@link FileChannel#force(boolean)}.
@@ -100,29 +84,24 @@ public class BTree implements Closeable {
 	 * Object used to determine whether one value is lower, equal or greater than another value. This
 	 * determines the order of values in the BTree.
 	 */
-	private final RecordComparator comparator;
+	final RecordComparator comparator;
 
 	/**
 	 * A read/write lock that is used to prevent changes to the BTree while readers are active in order to
 	 * prevent concurrency issues.
 	 */
-	private final ReentrantReadWriteLock btreeLock = new ReentrantReadWriteLock();
+	final ReentrantReadWriteLock btreeLock = new ReentrantReadWriteLock();
 
-	/*
-	 * Node caching
-	 */
-
-	/**
-	 * Map containing cached nodes, indexed by their ID.
-	 */
-	private final Map<Integer, Node> nodeCache = new HashMap<Integer, Node>(NODE_CACHE_SIZE);
-
-	/**
-	 * Map of cached nodes that are no longer "in use", sorted from least recently used to most recently used.
-	 * This collection is used to remove nodes from the cache when it is full. Note: needs to be synchronized
-	 * through nodeCache (data strucures should prob be merged in a NodeCache class)
-	 */
-	private final Map<Integer, Node> mruNodes = new LinkedHashMap<Integer, Node>(NODE_CACHE_SIZE);
+	private final ConcurrentNodeCache nodeCache = new ConcurrentNodeCache(id -> {
+		Node node = new Node(id, this);
+		try {
+			node.read();
+		}
+		catch (IOException exc) {
+			throw new SailException("Error reading B-tree node", exc);
+		}
+		return node;
+	});
 
 	/*
 	 * Info about allocated and unused nodes in the file
@@ -141,32 +120,32 @@ public class BTree implements Closeable {
 	 * The block size to use for calculating BTree node size. For optimal performance, the specified block
 	 * size should be equal to the file system's block size.
 	 */
-	private final int blockSize;
+	final int blockSize;
 
 	/**
 	 * The size of the values (byte arrays) in this BTree.
 	 */
-	private final int valueSize;
+	final int valueSize;
 
 	/**
 	 * The size of a slot storing a node ID and a value. Value derived from valueSize.
 	 */
-	private final int slotSize;
+	final int slotSize;
 
 	/**
 	 * The maximum number of outgoing branches for a node. Value derived from blockSize and slotSize.
 	 */
-	private final int branchFactor;
+	final int branchFactor;
 
 	/**
 	 * The minimum number of values for a node (except for the root). Value derived from branchFactor.
 	 */
-	private final int minValueCount;
+	final int minValueCount;
 
 	/**
 	 * The size of a node in bytes. Value derived from branchFactor and slotSize.
 	 */
-	private final int nodeSize;
+	final int nodeSize;
 
 	/*-----------*
 	 * Variables *
@@ -451,14 +430,7 @@ public class BTree implements Closeable {
 			}
 			finally {
 				try {
-					synchronized (nodeCache) {
-						try {
-							nodeCache.clear();
-						}
-						finally {
-							mruNodes.clear();
-						}
-					}
+					nodeCache.clear();
 				}
 				finally {
 					try {
@@ -486,13 +458,7 @@ public class BTree implements Closeable {
 		btreeLock.readLock().lock();
 		try {
 			// Write any changed nodes that still reside in the cache to disk
-			synchronized (nodeCache) {
-				for (Node node : nodeCache.values()) {
-					if (node.dataChanged()) {
-						node.write();
-					}
-				}
-			}
+			nodeCache.flush();
 
 			if (forceSync) {
 				nioFile.force(false);
@@ -557,14 +523,14 @@ public class BTree implements Closeable {
 	 * Returns an iterator that iterates over all values in this B-Tree.
 	 */
 	public RecordIterator iterateAll() {
-		return new RangeIterator(null, null, null, null);
+		return new RangeIterator(this, null, null, null, null);
 	}
 
 	/**
 	 * Returns an iterator that iterates over all values between minValue and maxValue, inclusive.
 	 */
 	public RecordIterator iterateRange(byte[] minValue, byte[] maxValue) {
-		return new RangeIterator(null, null, minValue, maxValue);
+		return new RangeIterator(this, null, null, minValue, maxValue);
 	}
 
 	/**
@@ -572,7 +538,7 @@ public class BTree implements Closeable {
 	 * searchKey after searchMask has been applied to the value.
 	 */
 	public RecordIterator iterateValues(byte[] searchKey, byte[] searchMask) {
-		return new RangeIterator(searchKey, searchMask, null, null);
+		return new RangeIterator(this, searchKey, searchMask, null, null);
 	}
 
 	/**
@@ -582,7 +548,7 @@ public class BTree implements Closeable {
 	public RecordIterator iterateRangedValues(byte[] searchKey, byte[] searchMask, byte[] minValue,
 			byte[] maxValue)
 	{
-		return new RangeIterator(searchKey, searchMask, minValue, maxValue);
+		return new RangeIterator(this, searchKey, searchMask, minValue, maxValue);
 	}
 
 	/**
@@ -1085,7 +1051,8 @@ public class BTree implements Closeable {
 			// Child node contains too few values, try to borrow one from its right
 			// sibling
 			Node rightSibling = (childIdx < parentNode.getValueCount())
-					? parentNode.getChildNode(childIdx + 1) : null;
+					? parentNode.getChildNode(childIdx + 1)
+					: null;
 
 			if (rightSibling != null && rightSibling.getValueCount() > minValueCount) {
 				// Right sibling has enough values to give one up
@@ -1134,10 +1101,7 @@ public class BTree implements Closeable {
 	{
 		btreeLock.writeLock().lock();
 		try {
-			synchronized (nodeCache) {
-				nodeCache.clear();
-				mruNodes.clear();
-			}
+			nodeCache.clear();
 			nioFile.truncate(HEADER_LENGTH);
 
 			if (rootNodeID != 0) {
@@ -1157,18 +1121,10 @@ public class BTree implements Closeable {
 	{
 		int newNodeID = allocatedNodesList.allocateNode();
 
-		Node node = new Node(newNodeID);
+		Node node = new Node(newNodeID, this);
+		node.use();
 
-		synchronized (nodeCache) {
-			if (nodeCache.size() >= NODE_CACHE_SIZE && mruNodes.size() > MIN_MRU_CACHE_SIZE) {
-				// Make some room for the new node
-				expelNodeFromCache();
-			}
-
-			node.use();
-
-			nodeCache.put(node.getID(), node);
-		}
+		nodeCache.put(node);
 
 		return node;
 	}
@@ -1182,60 +1138,24 @@ public class BTree implements Closeable {
 		return null;
 	}
 
-	private Node readNode(int id)
+	Node readNode(int id)
 		throws IOException
 	{
 		if (id <= 0) {
 			throw new IllegalArgumentException("id must be larger than 0, is: " + id + " in " + getFile());
 		}
 
-		// Check node cache
-		synchronized (nodeCache) {
-			Node node = nodeCache.get(id);
-
-			if (node != null) {
-				// Found node in cache
-				int usageCount = node.use();
-				if (usageCount == 1) {
-					mruNodes.remove(id);
-				}
-			}
-			else {
-				if (nodeCache.size() >= NODE_CACHE_SIZE && mruNodes.size() > MIN_MRU_CACHE_SIZE) {
-					// Make some room for the new node
-					expelNodeFromCache();
-				}
-
-				// Read node from disk and add to cache
-				node = new Node(id);
-
-				// FIXME: this blocks the (synchronized) access to the cache for
-				// quite some time
-				node.read();
-
-				nodeCache.put(id, node);
-
-				node.use();
-			}
-
-			return node;
-		}
+		return nodeCache.readAndUse(id);
 	}
 
-	private void releaseNode(Node node)
+	void releaseNode(Node node)
 		throws IOException
 	{
-		// Note: this method is called by Node.release(), which already
-		// synchronizes on nodeCache. This method should not be called directly to
-		// prevent concurrency issues!!!
+		// Note: this method is called by Node.release()
+		// This method should not be called directly (to prevent concurrency issues)!!!
 
-		// synchronized (nodeCache) {
-		if (node.isEmpty() && node.isLeaf()) {
-			// Discard node
-			node.write();
-			nodeCache.remove(node.getID());
-
-			// allow the node ID to be reused
+		if (node.isEmpty() && node.isLeaf() && nodeCache.discardEmptyUnused(node.getID())) {
+			// allow the discarded node ID to be reused
 			synchronized (allocatedNodesList) {
 				allocatedNodesList.freeNode(node.getID());
 
@@ -1246,32 +1166,8 @@ public class BTree implements Closeable {
 				}
 			}
 		}
-		else {
-			mruNodes.put(node.getID(), node);
-
-			if (nodeCache.size() > NODE_CACHE_SIZE && mruNodes.size() > MIN_MRU_CACHE_SIZE) {
-				expelNodeFromCache();
-			}
-		}
-		// }
-	}
-
-	/**
-	 * Tries to expel the least recently used node from the cache.
-	 */
-	private void expelNodeFromCache()
-		throws IOException
-	{
-		if (!mruNodes.isEmpty()) {
-			Iterator<Node> iter = mruNodes.values().iterator();
-			Node lruNode = iter.next();
-
-			if (lruNode.dataChanged()) {
-				lruNode.write();
-			}
-			iter.remove();
-			nodeCache.remove(lruNode.getID());
-		}
+		else
+			nodeCache.release(node, forceSync);
 	}
 
 	private void writeFileHeader()
@@ -1289,1244 +1185,12 @@ public class BTree implements Closeable {
 		nioFile.write(buf, 0L);
 	}
 
-	private long nodeID2offset(int id) {
+	long nodeID2offset(int id) {
 		return (long)blockSize * id;
 	}
 
 	private int offset2nodeID(long offset) {
 		return (int)(offset / blockSize);
-	}
-
-	/*------------------*
-	 * Inner class Node *
-	 *------------------*/
-
-	class Node {
-
-		/** This node's ID. */
-		private final int id;
-
-		/** This node's data. */
-		private final byte[] data;
-
-		/** The number of values containined in this node. */
-		private int valueCount;
-
-		/** The number of objects currently 'using' this node. */
-		private int usageCount;
-
-		/** Flag indicating whether the contents of data has changed. */
-		private boolean dataChanged;
-
-		/** Registered listeners that want to be notified of changes to the node. */
-		private final LinkedList<NodeListener> listeners = new LinkedList<NodeListener>();
-
-		/**
-		 * Creates a new Node object with the specified ID.
-		 * 
-		 * @param id
-		 *        The node's ID, must be larger than <tt>0</tt>.
-		 * @throws IllegalArgumentException
-		 *         If the specified <tt>id</tt> is &lt;= <tt>0</tt>.
-		 */
-		public Node(int id) {
-			if (id <= 0) {
-				throw new IllegalArgumentException(
-						"id must be larger than 0, is: " + id + " in " + getFile());
-			}
-
-			this.id = id;
-			this.valueCount = 0;
-			this.usageCount = 0;
-
-			// Allocate enough room to store one more value and node ID;
-			// this greatly simplifies the algorithm for splitting a node.
-			this.data = new byte[nodeSize + slotSize];
-		}
-
-		public int getID() {
-			return id;
-		}
-
-		@Override
-		public String toString() {
-			return "node " + getID();
-		}
-
-		public boolean isLeaf() {
-			return getChildNodeID(0) == 0;
-		}
-
-		public int use() {
-			// synchronize on nodeCache because release() can call
-			// releaseNode(Node) and readNode(int) calls this method
-			synchronized (nodeCache) {
-				return ++usageCount;
-			}
-		}
-
-		public void release()
-			throws IOException
-		{
-			// synchronize on nodeCache because this method can call
-			// releaseNode(Node) and readNode(int) can call use()
-			synchronized (nodeCache) {
-				assert usageCount > 0 : "Releasing node while usage count is " + usageCount;
-
-				usageCount--;
-
-				if (usageCount == 0) {
-					releaseNode(this);
-				}
-			}
-		}
-
-		public int getUsageCount() {
-			return usageCount;
-		}
-
-		public boolean dataChanged() {
-			return dataChanged;
-		}
-
-		public int getValueCount() {
-			return valueCount;
-		}
-
-		public int getNodeCount() {
-			if (isLeaf()) {
-				return 0;
-			}
-			else {
-				return valueCount + 1;
-			}
-		}
-
-		/**
-		 * Checks if this node has any values.
-		 * 
-		 * @return <tt>true</tt> if this node has no values, <tt>fals</tt> if it has.
-		 */
-		public boolean isEmpty() {
-			return valueCount == 0;
-		}
-
-		public boolean isFull() {
-			return valueCount == branchFactor - 1;
-		}
-
-		public byte[] getValue(int valueIdx) {
-			assert valueIdx >= 0 : "valueIdx must be positive, is: " + valueIdx;
-			assert valueIdx < valueCount : "valueIdx out of range (" + valueIdx + " >= " + valueCount + ")";
-
-			return ByteArrayUtil.get(data, valueIdx2offset(valueIdx), valueSize);
-		}
-
-		public void setValue(int valueIdx, byte[] value) {
-			assert value != null : "value must not be null";
-			assert valueIdx >= 0 : "valueIdx must be positive, is: " + valueIdx;
-			assert valueIdx < valueCount : "valueIdx out of range (" + valueIdx + " >= " + valueCount + ")";
-
-			ByteArrayUtil.put(value, data, valueIdx2offset(valueIdx));
-			dataChanged = true;
-		}
-
-		/**
-		 * Removes the value that can be found at the specified valueIdx and the node ID directly to the right
-		 * of it.
-		 * 
-		 * @param valueIdx
-		 *        A legal value index.
-		 * @return The value that was removed.
-		 * @see #removeValueLeft
-		 */
-		public byte[] removeValueRight(int valueIdx) {
-			assert valueIdx >= 0 : "valueIdx must be positive, is: " + valueIdx;
-			assert valueIdx < valueCount : "valueIdx out of range (" + valueIdx + " >= " + valueCount + ")";
-
-			byte[] value = getValue(valueIdx);
-
-			int endOffset = valueIdx2offset(valueCount);
-
-			if (valueIdx < valueCount - 1) {
-				// Shift the rest of the data one slot to the left
-				shiftData(valueIdx2offset(valueIdx + 1), endOffset, -slotSize);
-			}
-
-			// Clear last slot
-			clearData(endOffset - slotSize, endOffset);
-
-			setValueCount(--valueCount);
-
-			dataChanged = true;
-
-			notifyValueRemoved(valueIdx);
-
-			return value;
-		}
-
-		/**
-		 * Removes the value that can be found at the specified valueIdx and the node ID directly to the left
-		 * of it.
-		 * 
-		 * @param valueIdx
-		 *        A legal value index.
-		 * @return The value that was removed.
-		 * @see #removeValueRight
-		 */
-		public byte[] removeValueLeft(int valueIdx) {
-			assert valueIdx >= 0 : "valueIdx must be positive, is: " + valueIdx;
-			assert valueIdx < valueCount : "valueIdx out of range (" + valueIdx + " >= " + valueCount + ")";
-
-			byte[] value = getValue(valueIdx);
-
-			int endOffset = valueIdx2offset(valueCount);
-
-			// Move the rest of the data one slot to the left
-			shiftData(nodeIdx2offset(valueIdx + 1), endOffset, -slotSize);
-
-			// Clear last slot
-			clearData(endOffset - slotSize, endOffset);
-
-			setValueCount(--valueCount);
-
-			dataChanged = true;
-
-			notifyValueRemoved(valueIdx);
-
-			return value;
-		}
-
-		public int getChildNodeID(int nodeIdx) {
-			assert nodeIdx >= 0 : "nodeIdx must be positive, is: " + nodeIdx;
-			assert nodeIdx <= valueCount : "nodeIdx out of range (" + nodeIdx + " > " + valueCount + ")";
-
-			return ByteArrayUtil.getInt(data, nodeIdx2offset(nodeIdx));
-		}
-
-		public void setChildNodeID(int nodeIdx, int nodeID) {
-			assert nodeIdx >= 0 : "nodeIdx must not be negative, is: " + nodeIdx;
-			assert nodeIdx <= valueCount : "nodeIdx out of range (" + nodeIdx + " > " + valueCount + ")";
-			assert nodeID >= 0 : "nodeID must not be negative, is: " + nodeID;
-
-			ByteArrayUtil.putInt(nodeID, data, nodeIdx2offset(nodeIdx));
-			dataChanged = true;
-		}
-
-		public Node getChildNode(int nodeIdx)
-			throws IOException
-		{
-			assert nodeIdx >= 0 : "nodeIdx must be positive, is: " + nodeIdx;
-			assert nodeIdx <= valueCount : "nodeIdx out of range (" + nodeIdx + " > " + valueCount + ")";
-
-			int childNodeID = getChildNodeID(nodeIdx);
-			return readNode(childNodeID);
-		}
-
-		/**
-		 * Searches the node for values that match the specified key and returns its index. If no such value
-		 * can be found, the index of the first value that is larger is returned as a negative value by
-		 * multiplying the index with -1 and substracting 1 (result = -index - 1). The index can be calculated
-		 * from this negative value using the same function, i.e.: index = -result - 1.
-		 */
-		public int search(byte[] key) {
-			int low = 0;
-			int high = valueCount - 1;
-
-			while (low <= high) {
-				int mid = (low + high) >> 1;
-				int diff = comparator.compareBTreeValues(key, data, valueIdx2offset(mid), valueSize);
-
-				if (diff < 0) {
-					// key smaller than middle value
-					high = mid - 1;
-				}
-				else if (diff > 0) {
-					// key larger than middle value
-					low = mid + 1;
-				}
-				else {
-					// key equal to middle value
-					return mid;
-				}
-			}
-			return -low - 1;
-		}
-
-		public void insertValueNodeIDPair(int valueIdx, byte[] value, int nodeID) {
-			assert valueIdx >= 0 : "valueIdx must be positive, is: " + valueIdx;
-			assert valueIdx <= valueCount : "valueIdx out of range (" + valueIdx + " > " + valueCount + ")";
-			assert value != null : "value must not be null";
-			assert nodeID >= 0 : "nodeID must not be negative, is: " + nodeID;
-
-			int offset = valueIdx2offset(valueIdx);
-
-			if (valueIdx < valueCount) {
-				// Shift values right of <offset> to the right
-				shiftData(offset, valueIdx2offset(valueCount), slotSize);
-			}
-
-			// Insert the new value-nodeID pair
-			ByteArrayUtil.put(value, data, offset);
-			ByteArrayUtil.putInt(nodeID, data, offset + valueSize);
-
-			// Raise the value count
-			setValueCount(++valueCount);
-
-			notifyValueAdded(valueIdx);
-
-			dataChanged = true;
-		}
-
-		public void insertNodeIDValuePair(int nodeIdx, int nodeID, byte[] value) {
-			assert nodeIdx >= 0 : "nodeIdx must not be negative, is: " + nodeIdx;
-			assert nodeIdx <= valueCount : "nodeIdx out of range (" + nodeIdx + " > " + valueCount + ")";
-			assert nodeID >= 0 : "nodeID must not be negative, is: " + nodeID;
-			assert value != null : "value must not be null";
-
-			int offset = nodeIdx2offset(nodeIdx);
-
-			// Shift values right of <offset> to the right
-			shiftData(offset, valueIdx2offset(valueCount), slotSize);
-
-			// Insert the new slot
-			ByteArrayUtil.putInt(nodeID, data, offset);
-			ByteArrayUtil.put(value, data, offset + 4);
-
-			// Raise the value count
-			setValueCount(++valueCount);
-
-			notifyValueAdded(nodeIdx);
-
-			dataChanged = true;
-		}
-
-		/**
-		 * Splits the node, moving half of its values to the supplied new node, inserting the supplied
-		 * value-nodeID pair and returning the median value. The behaviour of this method when called on a
-		 * node that isn't full is not specified and can produce unexpected results!
-		 * 
-		 * @throws IOException
-		 */
-		public byte[] splitAndInsert(byte[] newValue, int newNodeID, int newValueIdx, Node newNode)
-			throws IOException
-		{
-			// First store the new value-node pair in data, then split it. This
-			// can be done because data got one spare slot when it was allocated.
-			insertValueNodeIDPair(newValueIdx, newValue, newNodeID);
-
-			assert valueCount == branchFactor : "Node contains " + valueCount + " values, expected "
-					+ branchFactor;
-
-			// Node now contains exactly [branchFactor] values. The median
-			// value at index [branchFactor/2] is moved to the parent
-			// node, the values left of the median stay in this node, the
-			// values right of the median are moved to the new node.
-			int medianIdx = branchFactor / 2;
-			int medianOffset = valueIdx2offset(medianIdx);
-			int splitOffset = medianOffset + valueSize;
-
-			// Move all data (including the spare slot) to the right of
-			// <splitOffset> to the new node
-			System.arraycopy(data, splitOffset, newNode.data, 4, data.length - splitOffset);
-
-			// Get the median value
-			byte[] medianValue = getValue(medianIdx);
-
-			// Clear the right half of the data in this node
-			clearData(medianOffset, data.length);
-
-			// Update the value counts
-			setValueCount(medianIdx);
-			newNode.setValueCount(branchFactor - medianIdx - 1);
-			newNode.dataChanged = true;
-
-			notifyNodeSplit(newNode, medianIdx);
-
-			// Return the median value; it should be inserted into the parent node
-			return medianValue;
-		}
-
-		public void mergeWithRightSibling(byte[] medianValue, Node rightSibling)
-			throws IOException
-		{
-			assert valueCount + rightSibling.getValueCount()
-					+ 1 < branchFactor : "Nodes contain too many values to be merged; left: " + valueCount
-							+ "; right: " + rightSibling.getValueCount();
-
-			// Append median value from parent node
-			insertValueNodeIDPair(valueCount, medianValue, 0);
-
-			int rightIdx = valueCount;
-
-			// Append all values and node references from right sibling
-			System.arraycopy(rightSibling.data, 4, data, nodeIdx2offset(rightIdx),
-					valueIdx2offset(rightSibling.valueCount) - 4);
-
-			setValueCount(valueCount + rightSibling.valueCount);
-
-			rightSibling.clearData(4, valueIdx2offset(rightSibling.valueCount));
-			rightSibling.setValueCount(0);
-			rightSibling.dataChanged = true;
-
-			rightSibling.notifyNodeMerged(this, rightIdx);
-		}
-
-		public void rotateLeft(int valueIdx, Node leftChildNode, Node rightChildNode)
-			throws IOException
-		{
-			leftChildNode.insertValueNodeIDPair(leftChildNode.getValueCount(), this.getValue(valueIdx),
-					rightChildNode.getChildNodeID(0));
-			setValue(valueIdx, rightChildNode.removeValueLeft(0));
-			notifyRotatedLeft(valueIdx, leftChildNode, rightChildNode);
-		}
-
-		public void rotateRight(int valueIdx, Node leftChildNode, Node rightChildNode)
-			throws IOException
-		{
-			rightChildNode.insertNodeIDValuePair(0,
-					leftChildNode.getChildNodeID(leftChildNode.getValueCount()), this.getValue(valueIdx - 1));
-			setValue(valueIdx - 1, leftChildNode.removeValueRight(leftChildNode.getValueCount() - 1));
-			notifyRotatedRight(valueIdx, leftChildNode, rightChildNode);
-		}
-
-		public void register(NodeListener listener) {
-			synchronized (listeners) {
-				assert !listeners.contains(listener);
-				listeners.add(listener);
-			}
-		}
-
-		public void deregister(NodeListener listener) {
-			synchronized (listeners) {
-				assert listeners.contains(listener);
-				listeners.remove(listener);
-			}
-		}
-
-		private void notifyValueAdded(int index) {
-			synchronized (listeners) {
-				Iterator<NodeListener> iter = listeners.iterator();
-
-				while (iter.hasNext()) {
-					// Deregister if listener return true
-					if (iter.next().valueAdded(this, index)) {
-						iter.remove();
-					}
-				}
-			}
-		}
-
-		private void notifyValueRemoved(int index) {
-			synchronized (listeners) {
-				Iterator<NodeListener> iter = listeners.iterator();
-
-				while (iter.hasNext()) {
-					// Deregister if listener return true
-					if (iter.next().valueRemoved(this, index)) {
-						iter.remove();
-					}
-				}
-			}
-		}
-
-		private void notifyRotatedLeft(int index, Node leftChildNode, Node rightChildNode)
-			throws IOException
-		{
-			synchronized (listeners) {
-				Iterator<NodeListener> iter = listeners.iterator();
-
-				while (iter.hasNext()) {
-					// Deregister if listener return true
-					if (iter.next().rotatedLeft(this, index, leftChildNode, rightChildNode)) {
-						iter.remove();
-					}
-				}
-			}
-		}
-
-		private void notifyRotatedRight(int index, Node leftChildNode, Node rightChildNode)
-			throws IOException
-		{
-			synchronized (listeners) {
-				Iterator<NodeListener> iter = listeners.iterator();
-
-				while (iter.hasNext()) {
-					// Deregister if listener return true
-					if (iter.next().rotatedRight(this, index, leftChildNode, rightChildNode)) {
-						iter.remove();
-					}
-				}
-			}
-		}
-
-		private void notifyNodeSplit(Node rightNode, int medianIdx)
-			throws IOException
-		{
-			synchronized (listeners) {
-				Iterator<NodeListener> iter = listeners.iterator();
-
-				while (iter.hasNext()) {
-					boolean deregister = iter.next().nodeSplit(this, rightNode, medianIdx);
-
-					if (deregister) {
-						iter.remove();
-					}
-				}
-			}
-		}
-
-		private void notifyNodeMerged(Node targetNode, int mergeIdx)
-			throws IOException
-		{
-			synchronized (listeners) {
-				Iterator<NodeListener> iter = listeners.iterator();
-
-				while (iter.hasNext()) {
-					boolean deregister = iter.next().nodeMergedWith(this, targetNode, mergeIdx);
-
-					if (deregister) {
-						iter.remove();
-					}
-				}
-			}
-		}
-
-		public void read()
-			throws IOException
-		{
-			ByteBuffer buf = ByteBuffer.wrap(data);
-
-			// Don't fill the spare slot in data:
-			buf.limit(nodeSize);
-
-			int bytesRead = nioFile.read(buf, nodeID2offset(id));
-			assert bytesRead == nodeSize : "Read operation didn't read the entire node (" + bytesRead + " of "
-					+ nodeSize + " bytes)";
-
-			valueCount = ByteArrayUtil.getInt(data, 0);
-		}
-
-		public void write()
-			throws IOException
-		{
-			ByteBuffer buf = ByteBuffer.wrap(data);
-
-			// Don't write the spare slot in data to the file:
-			buf.limit(nodeSize);
-
-			int bytesWritten = nioFile.write(buf, nodeID2offset(id));
-			assert bytesWritten == nodeSize : "Write operation didn't write the entire node (" + bytesWritten
-					+ " of " + nodeSize + " bytes)";
-
-			dataChanged = false;
-		}
-
-		/**
-		 * Shifts the data between <tt>startOffset</tt> (inclusive) and <tt>endOffset</tt> (exclusive)
-		 * <tt>shift</tt> positions to the right. Negative shift values can be used to shift data to the left.
-		 */
-		private void shiftData(int startOffset, int endOffset, int shift) {
-			System.arraycopy(data, startOffset, data, startOffset + shift, endOffset - startOffset);
-		}
-
-		/**
-		 * Clears the data between <tt>startOffset</tt> (inclusive) and <tt>endOffset</tt> (exclusive). All
-		 * bytes in this range will be set to 0.
-		 */
-		private void clearData(int startOffset, int endOffset) {
-			Arrays.fill(data, startOffset, endOffset, (byte)0);
-		}
-
-		private void setValueCount(int valueCount) {
-			this.valueCount = valueCount;
-			ByteArrayUtil.putInt(valueCount, data, 0);
-		}
-
-		private int valueIdx2offset(int id) {
-			return 8 + id * slotSize;
-		}
-
-		private int nodeIdx2offset(int id) {
-			return 4 + id * slotSize;
-		}
-	}
-
-	/*--------------------------*
-	 * Inner class NodeListener *
-	 *--------------------------*/
-
-	private interface NodeListener {
-
-		/**
-		 * Signals to registered node listeners that a value has been added to a node.
-		 * 
-		 * @param node
-		 *        The node which the value has been added to.
-		 * @param index
-		 *        The index where the value was inserted.
-		 * @return Indicates whether the node listener should be deregistered as a result of this event.
-		 */
-		public boolean valueAdded(Node node, int index);
-
-		/**
-		 * Signals to registered node listeners that a value has been removed from a node.
-		 * 
-		 * @param node
-		 *        The node which the value has been removed from.
-		 * @param index
-		 *        The index where the value was removed.
-		 * @return Indicates whether the node listener should be deregistered as a result of this event.
-		 */
-		public boolean valueRemoved(Node node, int index);
-
-		public boolean rotatedLeft(Node node, int index, Node leftChildNode, Node rightChildNode)
-			throws IOException;
-
-		public boolean rotatedRight(Node node, int index, Node leftChildNode, Node rightChildNode)
-			throws IOException;
-
-		/**
-		 * Signals to registered node listeners that a node has been split.
-		 * 
-		 * @param node
-		 *        The node which has been split.
-		 * @param newNode
-		 *        The newly allocated node containing the "right" half of the values.
-		 * @param medianIdx
-		 *        The index where the node has been split. The value at this index has been moved to the
-		 *        node's parent.
-		 * @return Indicates whether the node listener should be deregistered as a result of this event.
-		 */
-		public boolean nodeSplit(Node node, Node newNode, int medianIdx)
-			throws IOException;
-
-		/**
-		 * Signals to registered node listeners that two nodes have been merged. All values from the source
-		 * node have been appended to the value of the target node.
-		 * 
-		 * @param sourceNode
-		 *        The node that donated its values to the target node.
-		 * @param targetNode
-		 *        The node in which the values have been merged.
-		 * @param mergeIdx
-		 *        The index of <tt>sourceNode</tt>'s values in <tt>targetNode</tt> .
-		 * @return Indicates whether the node listener should be deregistered with the <em>source node</em> as
-		 *         a result of this event.
-		 */
-		public boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx)
-			throws IOException;
-	}
-
-	/*-----------------------------*
-	 * Inner class SeqScanIterator *
-	 *-----------------------------*/
-
-	// private class SeqScanIterator implements RecordIterator {
-	//
-	// private byte[] searchKey;
-	//
-	// private byte[] searchMask;
-	//
-	// private int currentNodeID;
-	//
-	// private Node currentNode;
-	//
-	// private int currentIdx;
-	//
-	// public SeqScanIterator(byte[] searchKey, byte[] searchMask) {
-	// this.searchKey = searchKey;
-	// this.searchMask = searchMask;
-	// }
-	//
-	// public byte[] next()
-	// throws IOException
-	// {
-	// while (currentNodeID <= maxNodeID) {
-	// if (currentNode == null) {
-	// // Read first node
-	// currentNodeID = 1;
-	// currentNode = readNode(currentNodeID);
-	// currentIdx = 0;
-	// }
-	//
-	// while (currentIdx < currentNode.getValueCount()) {
-	// byte[] value = currentNode.getValue(currentIdx++);
-	//
-	// if (searchKey == null || ByteArrayUtil.matchesPattern(value, searchMask,
-	// searchKey)) {
-	// // Found a matches value
-	// return value;
-	// }
-	// }
-	//
-	// currentNode.release();
-	//
-	// currentNodeID++;
-	// currentNode = (currentNodeID <= maxNodeID) ? readNode(currentNodeID) :
-	// null;
-	// currentIdx = 0;
-	// }
-	//
-	// return null;
-	// }
-	//
-	// public void set(byte[] value) {
-	// if (currentNode == null || currentIdx > currentNode.getValueCount()) {
-	// throw new IllegalStateException();
-	// }
-	//
-	// currentNode.setValue(currentIdx - 1, value);
-	// }
-	//
-	// public void close()
-	// throws IOException
-	// {
-	// if (currentNode != null) {
-	// currentNodeID = maxNodeID + 1;
-	//
-	// currentNode.release();
-	// currentNode = null;
-	// }
-	// }
-	// }
-	/*---------------------------*
-	 * Inner class RangeIterator *
-	 *---------------------------*/
-
-	private class RangeIterator implements RecordIterator, NodeListener {
-
-		private final byte[] searchKey;
-
-		private final byte[] searchMask;
-
-		private final byte[] minValue;
-
-		private final byte[] maxValue;
-
-		private volatile boolean started;
-
-		private volatile Node currentNode;
-
-		private final AtomicBoolean revisitValue = new AtomicBoolean();
-
-		/**
-		 * Tracks the parent nodes of {@link #currentNode}.
-		 */
-		private final LinkedList<Node> parentNodeStack = new LinkedList<Node>();
-
-		/**
-		 * Tracks the index of child nodes in parent nodes.
-		 */
-		private final LinkedList<Integer> parentIndexStack = new LinkedList<Integer>();
-
-		private volatile int currentIdx;
-
-		public RangeIterator(byte[] searchKey, byte[] searchMask, byte[] minValue, byte[] maxValue) {
-			this.searchKey = searchKey;
-			this.searchMask = searchMask;
-			this.minValue = minValue;
-			this.maxValue = maxValue;
-			this.started = false;
-		}
-
-		@Override
-		public byte[] next()
-			throws IOException
-		{
-			btreeLock.readLock().lock();
-			try {
-				if (!started) {
-					started = true;
-					findMinimum();
-				}
-
-				byte[] value = findNext(revisitValue.getAndSet(false));
-				while (value != null) {
-					if (maxValue != null
-							&& comparator.compareBTreeValues(maxValue, value, 0, value.length) < 0)
-					{
-						// Reached maximum value, stop iterating
-						close();
-						value = null;
-						break;
-					}
-					else if (searchKey != null
-							&& !ByteArrayUtil.matchesPattern(value, searchMask, searchKey))
-					{
-						// Value doesn't match search key/mask
-						value = findNext(false);
-						continue;
-					}
-					else {
-						// Matching value found
-						break;
-					}
-				}
-
-				return value;
-			}
-			finally {
-				btreeLock.readLock().unlock();
-			}
-		}
-
-		private void findMinimum()
-			throws IOException
-		{
-			Node nextCurrentNode = currentNode = readRootNode();
-
-			if (nextCurrentNode == null) {
-				// Empty BTree
-				return;
-			}
-
-			nextCurrentNode.register(this);
-			currentIdx = 0;
-
-			// Search first value >= minValue, or the left-most value in case
-			// minValue is null
-			while (true) {
-				if (minValue != null) {
-					currentIdx = nextCurrentNode.search(minValue);
-
-					if (currentIdx >= 0) {
-						// Found exact match with minimum value
-						break;
-					}
-					else {
-						// currentIdx indicates the first value larger than the
-						// minimum value
-						currentIdx = -currentIdx - 1;
-					}
-				}
-
-				if (nextCurrentNode.isLeaf()) {
-					break;
-				}
-				else {
-					// [SES-725] must change stacks after node loading has succeeded
-					Node childNode = nextCurrentNode.getChildNode(currentIdx);
-					pushStacks(childNode);
-					// pushStacks updates the current node
-					nextCurrentNode = currentNode;
-				}
-			}
-		}
-
-		private byte[] findNext(boolean returnedFromRecursion)
-			throws IOException
-		{
-			Node nextCurrentNode = currentNode;
-			if (nextCurrentNode == null) {
-				return null;
-			}
-
-			if (returnedFromRecursion || nextCurrentNode.isLeaf()) {
-				if (currentIdx >= nextCurrentNode.getValueCount()) {
-					// No more values in this node, continue with parent node
-					popStacks();
-					return findNext(true);
-				}
-				else {
-					return nextCurrentNode.getValue(currentIdx++);
-				}
-			}
-			else {
-				// [SES-725] must change stacks after node loading has succeeded
-				Node childNode = nextCurrentNode.getChildNode(currentIdx);
-				pushStacks(childNode);
-				return findNext(false);
-			}
-		}
-
-		@Override
-		public void set(byte[] value) {
-			btreeLock.readLock().lock();
-			try {
-				Node nextCurrentNode = currentNode;
-				if (nextCurrentNode == null || currentIdx > nextCurrentNode.getValueCount()) {
-					throw new IllegalStateException();
-				}
-
-				nextCurrentNode.setValue(currentIdx - 1, value);
-			}
-			finally {
-				btreeLock.readLock().unlock();
-			}
-		}
-
-		@Override
-		public synchronized void close()
-			throws IOException
-		{
-			btreeLock.readLock().lock();
-			try {
-				while (popStacks()) {
-					;
-				}
-
-				assert parentNodeStack.isEmpty();
-				assert parentIndexStack.isEmpty();
-			}
-			finally {
-				btreeLock.readLock().unlock();
-			}
-		}
-
-		private void pushStacks(Node newChildNode) {
-			newChildNode.register(this);
-			parentNodeStack.add(currentNode);
-			parentIndexStack.add(currentIdx);
-			currentNode = newChildNode;
-			currentIdx = 0;
-		}
-
-		private boolean popStacks()
-			throws IOException
-		{
-			Node nextCurrentNode = currentNode;
-			if (nextCurrentNode == null) {
-				// There's nothing to pop
-				return false;
-			}
-
-			nextCurrentNode.deregister(this);
-			nextCurrentNode.release();
-
-			if (!parentNodeStack.isEmpty()) {
-				currentNode = parentNodeStack.removeLast();
-				currentIdx = parentIndexStack.removeLast();
-				return true;
-			}
-			else {
-				currentNode = null;
-				currentIdx = 0;
-				return false;
-			}
-		}
-
-		@Override
-		public boolean valueAdded(Node node, int addedIndex) {
-			assert btreeLock.isWriteLockedByCurrentThread();
-
-			if (node == currentNode) {
-				if (addedIndex < currentIdx) {
-					currentIdx++;
-				}
-			}
-			else {
-				for (int i = 0; i < parentNodeStack.size(); i++) {
-					if (node == parentNodeStack.get(i)) {
-						int parentIdx = parentIndexStack.get(i);
-						if (addedIndex < parentIdx) {
-							parentIndexStack.set(i, parentIdx + 1);
-						}
-
-						break;
-					}
-				}
-			}
-
-			return false;
-		}
-
-		@Override
-		public boolean valueRemoved(Node node, int removedIndex) {
-			assert btreeLock.isWriteLockedByCurrentThread();
-
-			if (node == currentNode) {
-				if (removedIndex < currentIdx) {
-					currentIdx--;
-				}
-			}
-			else {
-				for (int i = 0; i < parentNodeStack.size(); i++) {
-					if (node == parentNodeStack.get(i)) {
-						int parentIdx = parentIndexStack.get(i);
-						if (removedIndex < parentIdx) {
-							parentIndexStack.set(i, parentIdx - 1);
-						}
-
-						break;
-					}
-				}
-			}
-
-			return false;
-		}
-
-		@Override
-		public boolean rotatedLeft(Node node, int valueIndex, Node leftChildNode, Node rightChildNode)
-			throws IOException
-		{
-			Node nextCurrentNode = currentNode;
-			if (nextCurrentNode == node) {
-				if (valueIndex == currentIdx - 1) {
-					// the value that was removed had just been visited
-					currentIdx = valueIndex;
-					revisitValue.set(true);
-
-					if (!node.isLeaf()) {
-						pushStacks(leftChildNode);
-						leftChildNode.use();
-					}
-				}
-			}
-			else if (nextCurrentNode == rightChildNode) {
-				if (currentIdx == 0) {
-					// the value that would be visited next has been moved to the
-					// parent node
-					popStacks();
-					currentIdx = valueIndex;
-					revisitValue.set(true);
-				}
-			}
-			else {
-				for (int i = 0; i < parentNodeStack.size(); i++) {
-					Node stackNode = parentNodeStack.get(i);
-
-					if (stackNode == rightChildNode) {
-						int stackIdx = parentIndexStack.get(i);
-
-						if (stackIdx == 0) {
-							// this node is no longer the parent, replace with left
-							// sibling
-							rightChildNode.deregister(this);
-							rightChildNode.release();
-
-							leftChildNode.use();
-							leftChildNode.register(this);
-
-							parentNodeStack.set(i, leftChildNode);
-							parentIndexStack.set(i, leftChildNode.getValueCount());
-						}
-
-						break;
-					}
-				}
-			}
-
-			return false;
-		}
-
-		@Override
-		public boolean rotatedRight(Node node, int valueIndex, Node leftChildNode, Node rightChildNode)
-			throws IOException
-		{
-			for (int i = 0; i < parentNodeStack.size(); i++) {
-				Node stackNode = parentNodeStack.get(i);
-
-				if (stackNode == leftChildNode) {
-					int stackIdx = parentIndexStack.get(i);
-
-					if (stackIdx == leftChildNode.getValueCount()) {
-						// this node is no longer the parent, replace with right
-						// sibling
-						leftChildNode.deregister(this);
-						leftChildNode.release();
-
-						rightChildNode.use();
-						rightChildNode.register(this);
-
-						parentNodeStack.set(i, rightChildNode);
-						parentIndexStack.set(i, 0);
-					}
-
-					break;
-				}
-			}
-
-			return false;
-		}
-
-		@Override
-		public boolean nodeSplit(Node node, Node newNode, int medianIdx)
-			throws IOException
-		{
-			assert btreeLock.isWriteLockedByCurrentThread();
-
-			boolean deregister = false;
-
-			Node nextCurrentNode = currentNode;
-			if (node == nextCurrentNode) {
-				if (currentIdx > medianIdx) {
-					nextCurrentNode.release();
-					deregister = true;
-
-					newNode.use();
-					newNode.register(this);
-
-					currentNode = newNode;
-					currentIdx -= medianIdx + 1;
-				}
-			}
-			else {
-				for (int i = 0; i < parentNodeStack.size(); i++) {
-					Node parentNode = parentNodeStack.get(i);
-
-					if (node == parentNode) {
-						int parentIdx = parentIndexStack.get(i);
-
-						if (parentIdx > medianIdx) {
-							parentNode.release();
-							deregister = true;
-
-							newNode.use();
-							newNode.register(this);
-
-							parentNodeStack.set(i, newNode);
-							parentIndexStack.set(i, parentIdx - medianIdx - 1);
-						}
-
-						break;
-					}
-				}
-			}
-
-			return deregister;
-		}
-
-		@Override
-		public boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx)
-			throws IOException
-		{
-			assert btreeLock.isWriteLockedByCurrentThread();
-
-			boolean deregister = false;
-
-			Node nextCurrentNode = currentNode;
-			if (sourceNode == nextCurrentNode) {
-				nextCurrentNode.release();
-				deregister = true;
-
-				targetNode.use();
-				targetNode.register(this);
-
-				currentNode = targetNode;
-				currentIdx += mergeIdx;
-			}
-			else {
-				for (int i = 0; i < parentNodeStack.size(); i++) {
-					Node parentNode = parentNodeStack.get(i);
-
-					if (sourceNode == parentNode) {
-						parentNode.release();
-						deregister = true;
-
-						targetNode.use();
-						targetNode.register(this);
-
-						parentNodeStack.set(i, targetNode);
-						parentIndexStack.set(i, mergeIdx + parentIndexStack.get(i));
-
-						break;
-					}
-				}
-			}
-
-			return deregister;
-		}
-	}
-
-	/*--------------*
-	 * Test methods *
-	 *--------------*/
-
-	public static void main(String[] args)
-		throws Exception
-	{
-		System.out.println("Running BTree test...");
-		if (args.length > 2) {
-			runPerformanceTest(args);
-		}
-		else {
-			runDebugTest(args);
-		}
-		System.out.println("Done.");
-	}
-
-	public static void runPerformanceTest(String[] args)
-		throws Exception
-	{
-		File dataDir = new File(args[0]);
-		String filenamePrefix = args[1];
-		int valueCount = Integer.parseInt(args[2]);
-		RecordComparator comparator = new DefaultRecordComparator();
-		try (BTree btree = new BTree(dataDir, filenamePrefix, 501, 13, comparator);) {
-
-			java.util.Random random = new java.util.Random(0L);
-			byte[] value = new byte[13];
-
-			long startTime = System.currentTimeMillis();
-			for (int i = 1; i <= valueCount; i++) {
-				random.nextBytes(value);
-				btree.insert(value);
-				if (i % 50000 == 0) {
-					System.out.println("Inserted " + i + " values in "
-							+ (System.currentTimeMillis() - startTime) + " ms");
-				}
-			}
-
-			System.out.println("Iterating over all values in sequential order...");
-			startTime = System.currentTimeMillis();
-			RecordIterator iter = btree.iterateAll();
-			value = iter.next();
-			int count = 0;
-			while (value != null) {
-				count++;
-				value = iter.next();
-			}
-			iter.close();
-			System.out.println("Iteration over " + count + " items finished in "
-					+ (System.currentTimeMillis() - startTime) + " ms");
-
-			// byte[][] values = new byte[count][13];
-			//
-			// iter = btree.iterateAll();
-			// for (int i = 0; i < values.length; i++) {
-			// values[i] = iter.next();
-			// }
-			// iter.close();
-			//
-			// startTime = System.currentTimeMillis();
-			// for (int i = values.length - 1; i >= 0; i--) {
-			// btree.remove(values[i]);
-			// }
-			// System.out.println("Removed all item in " + (System.currentTimeMillis()
-			// - startTime) + " ms");
-		}
-	}
-
-	public static void runDebugTest(String[] args)
-		throws Exception
-	{
-		File dataDir = new File(args[0]);
-		String filenamePrefix = args[1];
-		try (BTree btree = new BTree(dataDir, filenamePrefix, 28, 1);) {
-
-			btree.print(System.out);
-
-			/*
-			 * System.out.println("Adding values..."); btree.startTransaction(); btree.insert("C".getBytes());
-			 * btree.insert("N".getBytes()); btree.insert("G".getBytes()); btree.insert("A".getBytes());
-			 * btree.insert("H".getBytes()); btree.insert("E".getBytes()); btree.insert("K".getBytes());
-			 * btree.insert("Q".getBytes()); btree.insert("M".getBytes()); btree.insert("F".getBytes());
-			 * btree.insert("W".getBytes()); btree.insert("L".getBytes()); btree.insert("T".getBytes());
-			 * btree.insert("Z".getBytes()); btree.insert("D".getBytes()); btree.insert("P".getBytes());
-			 * btree.insert("R".getBytes()); btree.insert("X".getBytes()); btree.insert("Y".getBytes());
-			 * btree.insert("S".getBytes()); btree.commitTransaction(); btree.print(System.out);
-			 * System.out.println("Removing values..."); System.out.println("Removing H..."); btree.remove("
-			 * H".getBytes()); btree.commitTransaction(); btree.print(System.out); System.out.println(
-			 * "Removing T..."); btree.remove("T".getBytes()); btree.commitTransaction();
-			 * btree.print(System.out); System.out.println("Removing R..."); btree.remove("R".getBytes());
-			 * btree.commitTransaction(); btree.print(System.out); System.out.println("Removing E...");
-			 * btree.remove("E".getBytes()); btree.commitTransaction(); btree.print(System.out);
-			 * System.out.println("Values from I to U:"); RecordIterator iter =
-			 * btree.iterateRange("I".getBytes(), "V".getBytes()); byte[] value = iter.next(); while (value !=
-			 * null) { System.out.print(new String(value) + " "); value = iter.next(); } System.out.println();
-			 */
-		}
 	}
 
 	public void print(PrintStream out)

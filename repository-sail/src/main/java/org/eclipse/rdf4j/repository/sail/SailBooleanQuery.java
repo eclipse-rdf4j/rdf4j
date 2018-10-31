@@ -31,6 +31,7 @@ public class SailBooleanQuery extends SailQuery implements BooleanQuery {
 		return (ParsedBooleanQuery)super.getParsedQuery();
 	}
 
+	@Override
 	public boolean evaluate()
 		throws QueryEvaluationException
 	{

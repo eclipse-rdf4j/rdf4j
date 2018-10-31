@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
-import org.eclipse.rdf4j.model.impl.TreeModelFactory;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailException;
@@ -304,6 +303,7 @@ class SailSourceBranch implements SailSource {
 		}
 	}
 
+	@Override
 	public String toString() {
 		return backingSource.toString() + "\n" + changes.toString();
 	}

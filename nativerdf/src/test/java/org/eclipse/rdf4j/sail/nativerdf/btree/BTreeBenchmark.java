@@ -124,13 +124,9 @@ public class BTreeBenchmark {
 		Thread.sleep(500L);
 		long startTime = System.currentTimeMillis();
 
-		RecordIterator iter = btree.iterateAll();
-		try {
+		try (RecordIterator iter = btree.iterateAll()) {
 			while (iter.next() != null) {
 			}
-		}
-		finally {
-			iter.close();
 		}
 
 		long endTime = System.currentTimeMillis();
@@ -174,13 +170,9 @@ public class BTreeBenchmark {
 			ByteArrayUtil.putLong(minValue, minData, 0);
 			ByteArrayUtil.putLong(minValue + rangeSize, maxData, 0);
 
-			RecordIterator iter = btree.iterateRange(minData, maxData);
-			try {
+			try (RecordIterator iter = btree.iterateRange(minData, maxData)) {
 				while (iter.next() != null) {
 				}
-			}
-			finally {
-				iter.close();
 			}
 		}
 

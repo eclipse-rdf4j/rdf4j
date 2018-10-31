@@ -57,6 +57,7 @@ class MemNamespaceStore implements Iterable<SimpleNamespace> {
 		namespacesMap.remove(prefix);
 	}
 
+	@Override
 	public Iterator<SimpleNamespace> iterator() {
 		return namespacesMap.values().iterator();
 	}

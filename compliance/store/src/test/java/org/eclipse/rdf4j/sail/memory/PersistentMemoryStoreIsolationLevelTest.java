@@ -11,7 +11,6 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 

@@ -5,20 +5,13 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
+package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
-package org.eclipse.rdf4j.sail.shacl.planNodes;
+public class RCC8DCTest extends GeometricRelationFunctionTest {
 
-public interface SupportsDepthProvider {
-
-	void receiveDepthProvider(DepthProvider depthProvider);
-
-}
-
-/**
- * @author Håvard Ottestad
- */
-interface DepthProvider {
-
-	int depth();
+	@Override
+	protected GeometricRelationFunction testedFunction() {
+		return new RCC8DC();
+	}
 
 }

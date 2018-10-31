@@ -86,8 +86,7 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 						}
 					}
 
-					DistanceQuerySpec spec = new DistanceQuerySpec(f, dist,
-							distanceVar, filter);
+					DistanceQuerySpec spec = new DistanceQuerySpec(f, dist, distanceVar, filter);
 					specs.put(spec.getGeoVar(), spec);
 				}
 			}
@@ -106,7 +105,9 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 							// constant optimizer
 							results.add(spec);
 						}
-						else {
+						else if (spec.getDistanceFunctionCall() != null && spec.getDistanceExpr() != null
+								&& spec.getGeoProperty() != null)
+						{
 							// evaluate later
 							TupleFunctionCall funcCall = new TupleFunctionCall();
 							funcCall.setURI(LuceneSailSchema.WITHIN_DISTANCE.toString());

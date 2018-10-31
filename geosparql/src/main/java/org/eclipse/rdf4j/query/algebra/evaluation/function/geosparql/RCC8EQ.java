@@ -25,6 +25,6 @@ public class RCC8EQ extends GeometricRelationFunction {
 
 	@Override
 	protected boolean relation(Shape s1, Shape s2) {
-		return SpatialSupport.getSpatialAlgebra().equals(s1, s2);
+		return SpatialSupport.getSpatialAlgebra().rcc8eq(s1, s2);
 	}
 }

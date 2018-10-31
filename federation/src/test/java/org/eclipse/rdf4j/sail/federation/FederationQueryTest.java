@@ -146,14 +146,10 @@ public class FederationQueryTest {
 	{
 		SailRepository member = new SailRepository(new MemoryStore());
 		member.initialize();
-		SailRepositoryConnection con = member.getConnection();
-		try {
+		try (SailRepositoryConnection con = member.getConnection()) {
 			String resource = "testcases/federation-member-" + memberID + ".ttl";
 			con.add(classLoader.getResource(resource), "", RDFFormat.TURTLE);
 			reference.add(classLoader.getResource(resource), "", RDFFormat.TURTLE);
-		}
-		finally {
-			con.close();
 		}
 		return member;
 	}

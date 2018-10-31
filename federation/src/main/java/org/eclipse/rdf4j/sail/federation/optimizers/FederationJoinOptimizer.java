@@ -91,8 +91,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 		Map<Resource, List<RepositoryConnection>> contextToMemberMap = new HashMap<Resource, List<RepositoryConnection>>(
 				members.size() + 1);
 		for (RepositoryConnection member : members) {
-			RepositoryResult<Resource> res = member.getContextIDs();
-			try {
+			try (RepositoryResult<Resource> res = member.getContextIDs()) {
 				while (res.hasNext()) {
 					Resource ctx = res.next();
 					List<RepositoryConnection> contextMembers = contextToMemberMap.get(ctx);
@@ -102,9 +101,6 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 					}
 					contextMembers.add(member);
 				}
-			}
-			finally {
-				res.close();
 			}
 		}
 		return contextToMemberMap;

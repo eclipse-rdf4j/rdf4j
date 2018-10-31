@@ -36,6 +36,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @throws QueryEvaluationException
 	 * @see org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver#getService(java.lang.String)
 	 */
+	@Override
 	public FederatedService getService(String serviceUrl)
 		throws QueryEvaluationException;
 

@@ -23,6 +23,7 @@ public class BloomFilterFederationQueryTest extends FederationQueryTest {
 		super(name, pattern);
 	}
 
+	@Override
 	protected void configure(Federation federation)
 		throws Exception
 	{

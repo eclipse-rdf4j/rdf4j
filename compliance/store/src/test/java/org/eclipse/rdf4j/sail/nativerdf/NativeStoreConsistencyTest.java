@@ -74,6 +74,7 @@ public class NativeStoreConsistencyTest {
 		conn.begin();
 		RDFInserter inserter = new RDFInserter(conn) {
 			private int count;
+			@Override
 			protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) {
 				super.addStatement(subj, pred, obj, ctxt);
 				if (count++ % 1000 == 0) {

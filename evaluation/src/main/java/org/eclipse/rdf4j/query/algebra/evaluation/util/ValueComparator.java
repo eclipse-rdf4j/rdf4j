@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
  */
 public class ValueComparator implements Comparator<Value> {
 
+	@Override
 	public int compare(Value o1, Value o2) {
 		// check equality
 		if (ObjectUtil.nullEquals(o1, o2)) {

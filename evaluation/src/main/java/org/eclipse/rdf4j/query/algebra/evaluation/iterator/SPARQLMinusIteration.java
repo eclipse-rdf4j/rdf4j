@@ -85,6 +85,7 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	 *--------------*/
 
 	// implements LookAheadIteration.getNextElement()
+	@Override
 	protected boolean accept(BindingSet object)
 		throws X
 	{

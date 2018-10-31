@@ -37,7 +37,13 @@ public class ShaclTest {
 
 	static final List<String> testCasePaths = Arrays.asList(
 		"test-cases/datatype/simple",
-		"test-cases/minCount/simple"
+		"test-cases/minCount/simple",
+		"test-cases/maxCount/simple",
+		"test-cases/or/datatype",
+		"test-cases/or/minCountMaxCount",
+		"test-cases/or/maxCount",
+		"test-cases/or/minCount"
+
 	);
 
 	private final String testCasePath;
@@ -133,7 +139,9 @@ public class ShaclTest {
 
 		String shaclFile = shaclPath + "shacl.ttl";
 		System.out.println(shaclFile);
-		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository(shaclFile)));
+		ShaclSail innerShaclSail = new ShaclSail(new MemoryStore(), Utils.getSailRepository(shaclFile));
+		innerShaclSail.setDebugPrintPlans(true);
+		SailRepository shaclSail = new SailRepository(innerShaclSail);
 		shaclSail.initialize();
 
 		boolean exception = false;
@@ -151,9 +159,10 @@ public class ShaclTest {
 			System.out.println(name);
 
 			try (SailRepositoryConnection connection = shaclSail.getConnection()) {
+				connection.begin();
 				String query = IOUtil.readString(resourceAsStream);
 				connection.prepareUpdate(query).execute();
-
+				connection.commit();
 			} catch (RepositoryException sailException) {
 				exception = true;
 				System.out.println(sailException.getMessage());
@@ -165,9 +174,9 @@ public class ShaclTest {
 		}
 		if (ran) {
 			if (expectedResult == ExpectedResult.valid) {
-				assertFalse(exception);
+				assertFalse("Expected transaction to succeed", exception);
 			} else {
-				assertTrue(exception);
+				assertTrue("Expected transaction to fail", exception);
 			}
 		}
 

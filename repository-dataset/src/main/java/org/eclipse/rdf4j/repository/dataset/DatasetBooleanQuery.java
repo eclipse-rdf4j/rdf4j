@@ -20,6 +20,7 @@ class DatasetBooleanQuery extends DatasetQuery implements BooleanQuery {
 		super(con, sailQuery);
 	}
 
+	@Override
 	public boolean evaluate()
 		throws QueryEvaluationException
 	{

@@ -53,6 +53,7 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 		this.bloomFilters = bloomFilters;
 	}
 
+	@Override
 	public void optimize(TupleExpr query, Dataset dataset, BindingSet bindings) {
 		try {
 			query.visit(this);

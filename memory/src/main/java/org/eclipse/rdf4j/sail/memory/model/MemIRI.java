@@ -90,14 +90,17 @@ public class MemIRI implements IRI, MemResource {
 		return namespace + localName;
 	}
 
+	@Override
 	public String stringValue() {
 		return toString();
 	}
 
+	@Override
 	public String getNamespace() {
 		return namespace;
 	}
 
+	@Override
 	public String getLocalName() {
 		return localName;
 	}
@@ -131,15 +134,18 @@ public class MemIRI implements IRI, MemResource {
 		return hashCode;
 	}
 
+	@Override
 	public Object getCreator() {
 		return creator;
 	}
 
+	@Override
 	public boolean hasStatements() {
 		return subjectStatements != null || predicateStatements != null || objectStatements != null
 				|| contextStatements != null;
 	}
 
+	@Override
 	public MemStatementList getSubjectStatementList() {
 		if (subjectStatements == null) {
 			return EMPTY_LIST;
@@ -149,6 +155,7 @@ public class MemIRI implements IRI, MemResource {
 		}
 	}
 
+	@Override
 	public int getSubjectStatementCount() {
 		if (subjectStatements == null) {
 			return 0;
@@ -158,6 +165,7 @@ public class MemIRI implements IRI, MemResource {
 		}
 	}
 
+	@Override
 	public void addSubjectStatement(MemStatement st) {
 		if (subjectStatements == null) {
 			subjectStatements = new MemStatementList(4);
@@ -166,6 +174,7 @@ public class MemIRI implements IRI, MemResource {
 		subjectStatements.add(st);
 	}
 
+	@Override
 	public void removeSubjectStatement(MemStatement st) {
 		subjectStatements.remove(st);
 
@@ -174,6 +183,7 @@ public class MemIRI implements IRI, MemResource {
 		}
 	}
 
+	@Override
 	public void cleanSnapshotsFromSubjectStatements(int currentSnapshot) {
 		if (subjectStatements != null) {
 			subjectStatements.cleanSnapshots(currentSnapshot);
@@ -251,6 +261,7 @@ public class MemIRI implements IRI, MemResource {
 		}
 	}
 
+	@Override
 	public MemStatementList getObjectStatementList() {
 		if (objectStatements == null) {
 			return EMPTY_LIST;
@@ -260,6 +271,7 @@ public class MemIRI implements IRI, MemResource {
 		}
 	}
 
+	@Override
 	public int getObjectStatementCount() {
 		if (objectStatements == null) {
 			return 0;
@@ -269,6 +281,7 @@ public class MemIRI implements IRI, MemResource {
 		}
 	}
 
+	@Override
 	public void addObjectStatement(MemStatement st) {
 		if (objectStatements == null) {
 			objectStatements = new MemStatementList(4);
@@ -276,6 +289,7 @@ public class MemIRI implements IRI, MemResource {
 		objectStatements.add(st);
 	}
 
+	@Override
 	public void removeObjectStatement(MemStatement st) {
 		objectStatements.remove(st);
 		if (objectStatements.isEmpty()) {
@@ -283,6 +297,7 @@ public class MemIRI implements IRI, MemResource {
 		}
 	}
 
+	@Override
 	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) {
 		if (objectStatements != null) {
 			objectStatements.cleanSnapshots(currentSnapshot);
@@ -293,6 +308,7 @@ public class MemIRI implements IRI, MemResource {
 		}
 	}
 
+	@Override
 	public MemStatementList getContextStatementList() {
 		if (contextStatements == null) {
 			return EMPTY_LIST;
@@ -302,6 +318,7 @@ public class MemIRI implements IRI, MemResource {
 		}
 	}
 
+	@Override
 	public int getContextStatementCount() {
 		if (contextStatements == null) {
 			return 0;
@@ -311,6 +328,7 @@ public class MemIRI implements IRI, MemResource {
 		}
 	}
 
+	@Override
 	public void addContextStatement(MemStatement st) {
 		if (contextStatements == null) {
 			contextStatements = new MemStatementList(4);
@@ -319,6 +337,7 @@ public class MemIRI implements IRI, MemResource {
 		contextStatements.add(st);
 	}
 
+	@Override
 	public void removeContextStatement(MemStatement st) {
 		contextStatements.remove(st);
 
@@ -327,6 +346,7 @@ public class MemIRI implements IRI, MemResource {
 		}
 	}
 
+	@Override
 	public void cleanSnapshotsFromContextStatements(int currentSnapshot) {
 		if (contextStatements != null) {
 			contextStatements.cleanSnapshots(currentSnapshot);

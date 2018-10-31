@@ -8,13 +8,15 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
+
 
 /**
  * @author Håvard Ottestad
@@ -27,6 +29,8 @@ public class BufferedSplitter {
 
 	PlanNode parent;
 	private List<Tuple> tuplesBuffer;
+	private BufferedSplitter that = this;
+	boolean printed = false;
 
 	public BufferedSplitter(PlanNode planNode) {
 		parent = planNode;
@@ -84,6 +88,32 @@ public class BufferedSplitter {
 			@Override
 			public int depth() {
 				return parent.depth() + 1;
+			}
+
+			@Override
+			public void printPlan() {
+				if(printed) return;
+				printed = true;
+				System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
+				System.out.println(parent.getId()+" -> "+getId());
+				parent.printPlan();
+			}
+
+
+
+			@Override
+			public String getId() {
+				return System.identityHashCode(that)+"";
+			}
+
+			@Override
+			public IteratorData getIteratorDataType() {
+				return parent.getIteratorDataType();
+			}
+
+			@Override
+			public String toString() {
+				return "BufferedSplitter";
 			}
 		};
 

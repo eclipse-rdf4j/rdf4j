@@ -41,14 +41,10 @@ public class FederationNamespacesTest {
 	public void testTwoMatchingNamespaces()
 		throws RepositoryException, RDFParseException, IOException
 	{
-		RepositoryConnection con = createFederationWithMemberNamespaces("a", "a");
-		try {
+		try (RepositoryConnection con = createFederationWithMemberNamespaces("a", "a")) {
 			assertThat(con.getNamespace(PREFIX)).isEqualTo(EXPECTED_NAME);
 			List<Namespace> asList = Iterations.asList(con.getNamespaces());
 			assertThat(asList).contains(EXPECTED_NAMESPACE);
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -56,14 +52,10 @@ public class FederationNamespacesTest {
 	public void testThreeMatchingNamespaces()
 		throws RepositoryException, RDFParseException, IOException
 	{
-		RepositoryConnection con = createFederationWithMemberNamespaces("a", "a", "a");
-		try {
+		try (RepositoryConnection con = createFederationWithMemberNamespaces("a", "a", "a")) {
 			assertThat(con.getNamespace(PREFIX)).isEqualTo(EXPECTED_NAME);
 			List<Namespace> asList = Iterations.asList(con.getNamespaces());
 			assertThat(asList).contains(EXPECTED_NAMESPACE);
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -71,14 +63,10 @@ public class FederationNamespacesTest {
 	public void testTwoMismatchedNamespaces()
 		throws RepositoryException, RDFParseException, IOException
 	{
-		RepositoryConnection con = createFederationWithMemberNamespaces("a", "b");
-		try {
+		try (RepositoryConnection con = createFederationWithMemberNamespaces("a", "b")) {
 			assertThat(con.getNamespace(PREFIX)).isNull();;
 			List<Namespace> asList = Iterations.asList(con.getNamespaces());
 			assertThat(asList).doesNotContain(EXPECTED_NAMESPACE);
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -86,14 +74,10 @@ public class FederationNamespacesTest {
 	public void testThreeMismatchedNamespaces()
 		throws RepositoryException, RDFParseException, IOException
 	{
-		RepositoryConnection con = createFederationWithMemberNamespaces("a", "b", "c");
-		try {
+		try (RepositoryConnection con = createFederationWithMemberNamespaces("a", "b", "c")) {
 			assertThat(con.getNamespace(PREFIX)).isNull();
 			List<Namespace> asList = Iterations.asList(con.getNamespaces());
 			assertThat(asList).doesNotContain(EXPECTED_NAMESPACE);
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -114,12 +98,8 @@ public class FederationNamespacesTest {
 	{
 		SailRepository member = new SailRepository(new MemoryStore());
 		member.initialize();
-		SailRepositoryConnection con = member.getConnection();
-		try {
+		try (SailRepositoryConnection con = member.getConnection()) {
 			con.setNamespace(PREFIX, name);
-		}
-		finally {
-			con.close();
 		}
 		return member;
 	}

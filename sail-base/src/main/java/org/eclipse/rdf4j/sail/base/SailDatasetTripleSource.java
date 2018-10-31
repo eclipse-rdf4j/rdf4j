@@ -62,6 +62,7 @@ class SailDatasetTripleSource implements TripleSource {
 			super(iter);
 		}
 
+		@Override
 		protected QueryEvaluationException convert(Exception e) {
 			return new QueryEvaluationException(e);
 		}

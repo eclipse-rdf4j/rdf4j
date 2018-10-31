@@ -33,6 +33,7 @@ public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
 	AbstractLuceneSailGeoSPARQLTest delegateTest;
 
 	@Before
+	@Override
 	public void setUp()
 		throws Exception
 	{
@@ -67,6 +68,7 @@ public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
 	}
 
 	@After
+	@Override
 	public void tearDown()
 		throws Exception
 	{

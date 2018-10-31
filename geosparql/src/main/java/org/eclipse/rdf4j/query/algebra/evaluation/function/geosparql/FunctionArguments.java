@@ -7,53 +7,108 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
+import java.io.IOException;
 import java.text.ParseException;
 
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.URI;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+
 import org.locationtech.spatial4j.context.SpatialContext;
 import org.locationtech.spatial4j.distance.DistanceUtils;
+import org.locationtech.spatial4j.exception.InvalidShapeException;
+import org.locationtech.spatial4j.io.ShapeReader;
 import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Shape;
 
 class FunctionArguments {
 
+	/**
+	 * Empty constructor
+	 */
 	private FunctionArguments() {
 	}
 
-	public static double getDouble(Function func, Value v)
-		throws ValueExprEvaluationException
-	{
-		Literal l = getLiteral(func, v, XMLSchema.DOUBLE);
-		return l.doubleValue();
+	/**
+	 * Get the double value
+	 * 
+	 * @param func
+	 *        function
+	 * @param v
+	 *        value
+	 * @return double
+	 * @throws ValueExprEvaluationException
+	 */
+	public static double getDouble(Function func, Value v) throws ValueExprEvaluationException {
+		if (!(v instanceof Literal)) {
+			throw new ValueExprEvaluationException("Invalid argument for " + func.getURI() + ": " + v);
+		}
+
+		try {
+			return ((Literal)v).doubleValue();
+		}
+		catch (NumberFormatException e) {
+			throw new ValueExprEvaluationException(e);
+		}
+
 	}
 
-	public static String getString(Function func, Value v)
-		throws ValueExprEvaluationException
-	{
+	/**
+	 * Get the string value
+	 * 
+	 * @param func
+	 *        function
+	 * @param v
+	 *        value
+	 * @return string
+	 * @throws ValueExprEvaluationException
+	 */
+	public static String getString(Function func, Value v) throws ValueExprEvaluationException {
 		Literal l = getLiteral(func, v, XMLSchema.STRING);
 		return l.stringValue();
 	}
 
+	/**
+	 * Get the geo shape
+	 * 
+	 * @param func
+	 *        function
+	 * @param v
+	 *        value
+	 * @param context
+	 * @return shape
+	 * @throws ValueExprEvaluationException
+	 */
 	public static Shape getShape(Function func, Value v, SpatialContext context)
 		throws ValueExprEvaluationException
 	{
 		Literal wktLiteral = getLiteral(func, v, GEO.WKT_LITERAL);
 		try {
-			return context.readShapeFromWkt(wktLiteral.getLabel());
+			ShapeReader reader = context.getFormats().getWktReader();
+			return reader.read(wktLiteral.getLabel());
 		}
-		catch (ParseException e) {
+		catch (IOException | InvalidShapeException | ParseException e) {
 			throw new ValueExprEvaluationException(
 					"Invalid argument for " + func.getURI() + ": " + wktLiteral, e);
 		}
 	}
 
+	/**
+	 * Get the geo point
+	 * 
+	 * @param func
+	 *        function
+	 * @param v
+	 *        value
+	 * @param geoContext
+	 * @return point
+	 * @throws ValueExprEvaluationException
+	 */
 	public static Point getPoint(Function func, Value v, SpatialContext geoContext)
 		throws ValueExprEvaluationException
 	{
@@ -65,7 +120,18 @@ class FunctionArguments {
 		return (Point)p;
 	}
 
-	public static Literal getLiteral(Function func, Value v, URI expectedDatatype)
+	/**
+	 * Get the literal of a specific data type
+	 * 
+	 * @param func
+	 *        function
+	 * @param v
+	 *        value
+	 * @param expectedDatatype
+	 * @return literal
+	 * @throws ValueExprEvaluationException
+	 */
+	public static Literal getLiteral(Function func, Value v, IRI expectedDatatype)
 		throws ValueExprEvaluationException
 	{
 		if (!(v instanceof Literal)) {
@@ -79,13 +145,21 @@ class FunctionArguments {
 		return lit;
 	}
 
-	public static URI getUnits(Function func, Value v)
-		throws ValueExprEvaluationException
-	{
-		if (!(v instanceof URI)) {
+	/**
+	 * Get the UoM IRI of the unit
+	 * 
+	 * @param func
+	 *        function
+	 * @param v
+	 *        value
+	 * @return UoM IRI
+	 * @throws ValueExprEvaluationException
+	 */
+	public static IRI getUnits(Function func, Value v) throws ValueExprEvaluationException {
+		if (!(v instanceof IRI)) {
 			throw new ValueExprEvaluationException("Invalid argument for " + func.getURI() + ": " + v);
 		}
-		URI unitUri = (URI)v;
+		IRI unitUri = (IRI)v;
 		if (!unitUri.getNamespace().equals(GEOF.UOM_NAMESPACE)) {
 			throw new ValueExprEvaluationException(
 					"Invalid unit of measurement URI for " + func.getURI() + ": " + v);
@@ -93,10 +167,19 @@ class FunctionArguments {
 		return unitUri;
 	}
 
-	public static double convertFromDegrees(double degs, URI units)
-		throws ValueExprEvaluationException
-	{
+	/**
+	 * Convert degrees to another unit
+	 * 
+	 * @param degs
+	 *        degrees
+	 * @param units
+	 *        UoM IRI of the unit to convert to
+	 * @return converted value as a double
+	 * @throws ValueExprEvaluationException
+	 */
+	public static double convertFromDegrees(double degs, IRI units) throws ValueExprEvaluationException {
 		double v;
+
 		if (GEOF.UOM_DEGREE.equals(units)) {
 			v = degs;
 		}
@@ -115,10 +198,19 @@ class FunctionArguments {
 		return v;
 	}
 
-	public static double convertToDegrees(double v, URI units)
-		throws ValueExprEvaluationException
-	{
+	/**
+	 * Convert a value to degrees
+	 * 
+	 * @param v
+	 *        value
+	 * @param units
+	 *        UoM IRI of the unit
+	 * @return degrees as a double
+	 * @throws ValueExprEvaluationException
+	 */
+	public static double convertToDegrees(double v, IRI units) throws ValueExprEvaluationException {
 		double degs;
+
 		if (GEOF.UOM_DEGREE.equals(units)) {
 			degs = v;
 		}
