@@ -1,0 +1,159 @@
+/*
+ * Copyright (c) 2018 Eclipse Foundation, Inc.
+ * 
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License v. 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0.
+ * 
+ * Contributors:
+ *   Christopher Guindon <chris.guindon@eclipse-foundation.org>
+ * 
+ * SPDX-License-Identifier: EPL-2.0
+*/
+
+// Solstice default barebone core styles
+
+@import "~bootstrap/less/mixins.less";
+
+.thin-header * {
+  .box-sizing (border-box);
+}
+
+.thin-header *:before , .thin-header *:after {
+  .box-sizing (border-box);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+.sr-only-focusable {
+  &:active , &:focus {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+  }
+}
+
+@import '../../_components/breadcrumb.less';
+@import "~bootstrap/less/grid.less";
+.form-inline {
+  @media (min-width: @screen-sm-min) {
+    .form-group {
+      display: inline-block;
+      margin-bottom: 0;
+      vertical-align: middle;
+    }
+
+    .form-control {
+      display: inline-block;
+      width: auto;
+      vertical-align: middle;
+    }
+
+    .input-group {
+      display: inline-table;
+      vertical-align: middle;
+      .input-group-addon , .input-group-btn , .form-control {
+        width: auto;
+      }
+    }
+
+    .input-group > .form-control {
+      width: 100%;
+    }
+
+    .control-label {
+      margin-bottom: 0;
+      vertical-align: middle;
+    }
+
+    .radio , .checkbox {
+      display: inline-block;
+      margin-top: 0;
+      margin-bottom: 0;
+      vertical-align: middle;
+      label {
+        padding-left: 0;
+      }
+    }
+
+    .radio input[type="radio"] , .checkbox input[type="checkbox"] {
+      position: relative;
+      margin-left: 0;
+    }
+
+    .has-feedback .form-control-feedback {
+      top: 0;
+    }
+  }
+}
+
+@import "~bootstrap/less/component-animations.less";
+@import "~bootstrap/less/breadcrumbs.less";
+@import "~bootstrap/less/dropdowns.less";
+@import "~bootstrap/less/navs.less";
+@import "~bootstrap/less/navbar.less";
+@import "~bootstrap/less/utilities.less";
+@import "~bootstrap/less/responsive-utilities.less";
+@import "~bootstrap/less/responsive-utilities.less";
+@import "../../_components/classes-padding-margin.less";
+//@import "../../_components/classes.less";
+@import "~Yamm/yamm/yamm.less";
+@import "../_default/header.less";
+
+.img-responsive {
+  display: block;
+  max-width: 100%; // Part 1: Set a maximum relative to the parent
+  height: auto; // Part 2: Scale the height according to the width, otherwise you get stretching
+}
+
+.list-unstyled {
+  list-style: none;
+}
+
+.barebone-layout {
+  color: #333;
+  font-family: 'Open Sans', "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.42857;
+  a{
+    text-decoration: none;
+  }
+  .nav {
+    a {
+      text-decoration: none;
+    }
+  }
+
+  .navbar-toggle {
+    cursor: pointer;
+    &.collapsed {
+      display: block;
+    }
+  }
+}
+
+.logo-eclipse-default{
+  max-height:50px;
+}
+
+// Bug 498088 - [CLA 2.0] New ECA decorators
+.cla_dec {
+  opacity: 0.33;
+  vertical-align: bottom;
+}
+
+.cla_dec:hover {
+  opacity: 1.0;
+}

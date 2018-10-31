@@ -1,0 +1,486 @@
+/*
+ * Copyright (c) 2018 Eclipse Foundation, Inc.
+ * 
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License v. 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0.
+ * 
+ * Contributors:
+ *   Christopher Guindon <chris.guindon@eclipse-foundation.org>
+ * 
+ * SPDX-License-Identifier: EPL-2.0
+*/
+
+//
+// Templates
+//
+// author: Christopher Guindon <chris.guindon@eclipse.org>
+// -------------------------------------------------------
+
+// Custom
+.catlinks {
+  padding: 5px 10px;
+  background: @gray-lighter;
+  border: 1px solid @gray-light;
+  margin-top: 25px;
+  clear: both;
+}
+
+#toc , .toc {
+  margin: 0 0 0 0;
+  padding: 0 0 0 0;
+  border-spacing: 0;
+  background-color: #f0f0f0;
+  border: solid 1px #bbbbbb;
+  min-width: 200px;
+  clear: both;
+}
+
+#toc {
+  tr , td {
+    margin: 0 0 0 0;
+    padding: 0 0 0 0;
+  }
+}
+
+#toctitle {
+  border-bottom: solid 1px #3c78b5;
+  background-color: #dddddd;
+  margin: 0 0 6px 0;
+  padding: 4px 8px;
+}
+
+#toc h2 , .toc h2 {
+  display: inline;
+  border: none;
+  padding: 0;
+  font-size: 100%;
+  font-weight: bold;
+}
+
+#toc #toctitle , .toc #toctitle , #toc .toctitle , .toc .toctitle {
+  text-align: center;
+}
+
+#toc ul , .toc ul {
+  list-style-type: none;
+  list-style-image: none;
+  margin: 0 1em 0 1em;
+  padding: 0;
+  text-align: left;
+}
+
+#toc ul ul , .toc ul ul {
+  margin: 0 0 0 2em;
+}
+
+#toc .toctoggle , .toc .toctoggle {
+  font-size: 94%;
+}
+
+.editsection {
+  font-size: 0;
+  font-size: 0;
+  a {
+    font-size: 14px;
+    font-size: 14px;
+  }
+}
+
+.editOptions , .mw-editTools , .editButtons {
+  margin-top: 25px;
+  input[type="submit"] {
+    .btn;
+    .btn-warning;
+    &#wpSave {
+      .btn-primary;
+    }
+  }
+
+  .cancelLink {
+    a {
+      .btn;
+      .btn-danger;
+    }
+  }
+}
+
+.editCheckboxes {
+  padding-bottom: 10px;
+}
+
+label {
+  display: inline-block;
+}
+
+input[type="radio"] , input[type="checkbox"] {
+  margin-top: 0;
+}
+
+input + label {
+  margin-left: 0.5ex;
+}
+
+#editform textarea , #wpTextbox1 {
+  width: 100%;
+  font-family: monospace;
+  padding: 10px;
+}
+
+.printfooter {
+  display: none;
+}
+
+.align-right {
+  text-align: right;
+}
+
+input , button , textarea {
+  font: inherit;
+}
+
+select {
+  font: inherit;
+  height: auto;
+}
+
+#mw-history-compare {
+  padding: 5px 0 15px 0;
+}
+
+#pagehistory {
+  padding-left: 0;
+  margin-top: 25px;
+  list-style: none;
+  li {
+    margin: 5px 0;
+  }
+
+  .mw-history-histlinks {
+    width: 30px;
+    margin-right: 10px
+  }
+
+  .mw-changeslist-date {
+    margin-left: 5px;
+  }
+}
+
+#mw-search-top-table {
+  margin: 3em auto 0;
+  input {
+    vertical-align: top;
+  }
+
+  input[type=submit] {
+    padding: 2px 6px;
+  }
+}
+
+#content .search-types li {
+  margin-top: 0;
+}
+
+.mw-search-formheader {
+  background: none;
+  border: none;
+}
+
+.search-types {
+  float: none;
+  padding: 0;
+}
+
+.mw-search-createlink {
+  text-align: center;
+  b {
+    font-weight: normal;
+  }
+
+  a {
+  }
+}
+
+.not-editable .mw-search-createlink {
+  display: none;
+}
+
+.mw-search-results {
+  margin: 20px;
+}
+
+.searchresult {
+  color: #555555;
+}
+
+.searchmatch {
+  color: #333333;
+}
+
+.mw-search-result-data {
+  color: #999999;
+}
+
+.mw-search-nonefound {
+  color: #999999;
+  font-size: 2em;
+  padding: 1em;
+  text-align: center;
+}
+
+.mw-search-nonefound:after {
+  content: "ಠ ̯ಠ";
+  color: #cccccc;
+  margin-left: 3ex;
+}
+
+.mw-search-pager-bottom {
+  position: relative;
+  color: transparent;
+  a {
+    float: left;
+    padding: 0 20px;
+  }
+}
+
+.mw-numlink {
+  display: none;
+}
+
+.mw-contributions-form {
+  fieldset {
+    margin: 20px 20px 10px 20px;
+  }
+
+  .mw-contributions-table {
+    margin: 0 10px;
+  }
+}
+
+#preferences {
+  border: 1px solid #cccccc;
+  margin: 0;
+  .mainLegend {
+    display: none;
+  }
+
+  fieldset.prefsection {
+    margin: 0;
+    padding: 40px;
+  }
+
+  legend {
+    border-bottom: none;
+  }
+
+  fieldset + fieldset > legend {
+    padding-top: 40px;
+  }
+
+  .mw-label label {
+    white-space: nowrap;
+    margin: 0;
+    color: #777777;
+  }
+
+  td {
+    padding: 5px;
+  }
+
+  .htmlform-tip {
+    color: #999999;
+    padding: 1em 0 3em 12em;
+  }
+
+  div.mw-prefs-buttons {
+    margin: 20px auto 0;
+    padding: 40px 40px 20px;
+    text-align: center;
+    overflow: hidden;
+  }
+}
+
+#preftoc {
+  margin: 0px 20px -2px 0px;
+  padding-left: 0;
+  ul , li {
+    display: inline;
+    list-style: none;
+  }
+
+  li a {
+    position: relative;
+    z-index: 2;
+    font: inherit;
+    margin: 0;
+    padding: 8px 15px;
+    display: inline-block;
+  }
+
+  li.selected a {
+    background-color: white;
+    border: 1px solid #cccccc;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    color: inherit;
+    cursor: default;
+    padding: 7px 14px;
+  }
+}
+
+.mw-prefs-buttons a {
+  font: inherit;
+  padding: 3px 15px;
+  padding: 8px 20px;
+  float: left;
+}
+
+.mw-prefs-buttons input {
+  font: inherit;
+  padding: 3px 15px;
+  float: right;
+}
+
+#contentSub br {
+  display: none;
+}
+
+#mw-revision-info {
+  background: #f6f6f6;
+  border: 1px solid #eeeeee;
+  display: block;
+  margin: 0 auto;
+  padding: 20px;
+  text-align: center;
+  width: auto;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  font-size: 16px;
+  padding-bottom: 0.25em;
+}
+
+#mw-revision-nav {
+  background: #f6f6f6;
+  border: 1px solid #eeeeee;
+  display: block;
+  margin: 0 auto;
+  padding: 20px;
+  text-align: center;
+  width: auto;
+  border-radius: 0 0 6px 6px;
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+#tab-pane-main-page-content {
+  #toolbar img {
+    display: initial;
+  }
+}
+
+#tab-pane-main-page-content a.external[href ^= "http://"] {
+  background: url(/skins/solstice/public/images/external-link-ltr-icon.png) center right no-repeat;
+  padding-right: 13px;
+}
+
+#tab-pane-main-page-content a.external[href ^= "https://"] , .link-https {
+  background: url(/skins/solstice/public/images/lock-icon.png) center right no-repeat;
+  padding-right: 13px;
+}
+
+#tab-pane-main-page-content a.external[href ^= "mailto:"] , .link-mailto {
+  background: url(/skins/solstice/public/images/mail-icon.png) center right no-repeat;
+  padding-right: 13px;
+}
+
+#tab-pane-main-page-content a.external[href ^= "ftp://"] , .link-ftp {
+  background: url(/skins/solstice/public/images/file-icon.png) center right no-repeat;
+  padding-right: 13px;
+}
+
+#tab-pane-main-page-content a.external[href ^= "irc://"] , #tab-pane-main-page-content a.external[href ^= "ircs://"] , .link-irc {
+  background: url(/skins/solstice/public/images/talk-icon.png) center right no-repeat;
+  padding-right: 13px;
+}
+
+#tab-pane-main-page-content a.external[href $= ".ogg"] , #tab-pane-main-page-content a.external[href $= ".OGG"] , #tab-pane-main-page-content a.external[href $= ".mid"] , #tab-pane-main-page-content a.external[href $= ".MID"] , #tab-pane-main-page-content a.external[href $= ".midi"] , #tab-pane-main-page-content a.external[href $= ".MIDI"] , #tab-pane-main-page-content a.external[href $= ".mp3"] , #tab-pane-main-page-content a.external[href $= ".MP3"] , #tab-pane-main-page-content a.external[href $= ".wav"] , #tab-pane-main-page-content a.external[href $= ".WAV"] , #tab-pane-main-page-content a.external[href $= ".wma"] , #tab-pane-main-page-content a.external[href $= ".WMA"] , .link-audio {
+  background: url(/skins/solstice/public/images/audio-icon.png) center right no-repeat;
+  padding-right: 13px;
+}
+
+#tab-pane-main-page-content a.external[href $= ".ogm"] , #tab-pane-main-page-content a.external[href $= ".OGM"] , #tab-pane-main-page-content a.external[href $= ".avi"] , #tab-pane-main-page-content a.external[href $= ".AVI"] , #tab-pane-main-page-content a.external[href $= ".mpeg"] , #tab-pane-main-page-content a.external[href $= ".MPEG"] , .link-video {
+  background: url(/skins/solstice/public/images/video-icon.png) center right no-repeat;
+  padding-right: 13px;
+}
+
+input:not([type]) {
+  background-color: #ffffff;
+  border: 1px solid #cccccc;
+  box-shadow: 0px 1px 1px rgba(0, 0, 0, 0.075) inset;
+  transition: border 0.2s linear 0s, box-shadow 0.2s linear 0s;
+  display: inline-block;
+  padding: 4px 6px;
+  margin-bottom: 9px;
+  font-size: 14px;
+  line-height: 20px;
+  color: #555555;
+  border-radius: 3px 3px 3px 3px;
+}
+
+input:not([type]):focus {
+  border-color: rgba(82, 168, 236, 0.8);
+  outline: 0px none;
+  box-shadow: 0px 1px 1px rgba(0, 0, 0, 0.075) inset, 0px 0px 8px rgba(82, 168, 236, 0.6);
+}
+
+input[type="text"] , input[type="password"] , input[type="datetime"] , input[type="datetime-local"] , input[type="date"] , input[type="month"] , input[type="time"] , input[type="week"] , input[type="number"] , input[type="email"] , input[type="url"] , input[type="search"] , input[type="tel"] , input[type="color"] , .uneditable-input {
+  height: auto;
+}
+
+.mw-specialpagesgroup {
+  padding-bottom: 20px;
+}
+
+.alert-small {
+  font-size: 10px;
+  padding: 5px;
+}
+
+
+
+.page-Main_Page {
+  #mw-content-text {
+    table , td , th , tr {
+      border: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    img {
+      float: left;
+      padding-right: 8px;
+    }
+  }
+}
+.thin-header #main-menu-wrapper{
+  padding-top:7px;
+}
+
+.wrapper-logo-default {
+  .logo-eclipse-default{
+    max-width:186px;
+  }
+}
+
+.default-breadcrumbs .breadcrumb{
+  margin-top:0;
+  margin-bottom:0;
+  padding-bottom:5px;
+  font-size:0.9em;
+}
+
+@media print {
+  @import 'print.less';
+}
+

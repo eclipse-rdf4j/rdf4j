@@ -1,0 +1,40 @@
+/*
+ * Copyright (c) 2018 Eclipse Foundation, Inc.
+ * 
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License v. 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0.
+ * 
+ * Contributors:
+ *   Christopher Guindon <chris.guindon@eclipse-foundation.org>
+ * 
+ * SPDX-License-Identifier: EPL-2.0
+*/
+
+// Solstice default barebone footer styles
+
+@import "styles.less";
+@import '~font-awesome/less/font-awesome.less';
+
+footer , footer#solstice-footer , .thin-header {
+  * {
+    .box-sizing (border-box);
+  }
+
+  *:before , *:after {
+    .box-sizing (border-box);
+  }
+
+  .list-inline {
+    .list-unstyled ();
+    margin-left: -5px;
+    > li {
+      display: inline-block;
+      padding-left: 5px;
+      padding-right: 5px;
+    }
+  }
+}
+
+@import '../../_components/back-to-top.less';
+@import '../../_components/footer.less';

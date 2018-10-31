@@ -1,0 +1,50 @@
+/*
+ * Copyright (c) 2018 Eclipse Foundation, Inc.
+ * 
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License v. 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0.
+ * 
+ * Contributors:
+ *   Christopher Guindon <chris.guindon@eclipse-foundation.org>
+ * 
+ * SPDX-License-Identifier: EPL-2.0
+*/
+
+/* Eclipse Installer */
+
+.eclipse-installer{
+  background-image: url('../../images/eclipse_org/downloads/downloads-header-bg.jpg');
+  background-repeat: repeat-x;
+  background-position:bottom right;
+  background-size:cover;
+  color:#fff;
+  box-shadow: 0px 9px 4px -8px rgba(0,0,0,0.3) inset;
+  padding:30px;
+  h2{
+   color:#fff;
+   font-weight:100;
+   margin-top:0;
+  }
+  p{
+    font-size: 18px;
+    font-weight: 100;
+  }
+  .eclipse-installer-download-col{
+    @media (min-width: @screen-md){
+      border-left:1px solid #fff;
+      text-align: center;
+    }
+  }
+  a:link{
+    color: @brand-warning;
+  }
+  .eclipse-installer-download-links{
+    a {
+      padding:0 2px;
+    }
+    .fa{
+      font-size:19px;
+    }
+  }
+}
