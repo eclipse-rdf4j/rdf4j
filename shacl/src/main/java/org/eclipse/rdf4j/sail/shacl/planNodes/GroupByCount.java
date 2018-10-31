@@ -131,4 +131,9 @@ public class GroupByCount implements PlanNode {
 	public String getId() {
 		return System.identityHashCode(this)+"";
 	}
+
+	@Override
+	public IteratorData getIteratorDataType() {
+		return IteratorData.aggregated;
+	}
 }

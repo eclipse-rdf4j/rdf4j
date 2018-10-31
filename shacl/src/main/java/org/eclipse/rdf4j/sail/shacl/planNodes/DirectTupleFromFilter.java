@@ -13,16 +13,19 @@ import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 /**
  * @author Håvard Ottestad
  */
-public class DirectTupleFromFilter implements PlanNode, PushBasedPlanNode, SupportsDepthProvider {
+public class DirectTupleFromFilter implements PlanNode, PushBasedPlanNode, SupportsParentProvider {
 
 
 	private CloseableIteration<Tuple, SailException> parentIterator;
 
 	Tuple next = null;
-	private DepthProvider depthProvider;
+	private ParentProvider parentProvider;
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
@@ -64,20 +67,20 @@ public class DirectTupleFromFilter implements PlanNode, PushBasedPlanNode, Suppo
 
 	@Override
 	public int depth() {
-		return depthProvider.depth() + 1;
+		return parentProvider.parent().stream().mapToInt(PlanNode::depth).sum()+1;
 	}
 
 	@Override
 	public void printPlan() {
 		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
 
-		if(depthProvider instanceof PlanNode){
-			((PlanNode) depthProvider).printPlan();
+		if(parentProvider instanceof PlanNode){
+			((PlanNode) parentProvider).printPlan();
 
 		}
 
-		if(depthProvider instanceof FilterPlanNode){
-			((FilterPlanNode) depthProvider).printPlan();
+		if(parentProvider instanceof FilterPlanNode){
+			((FilterPlanNode) parentProvider).printPlan();
 
 		}
 	}
@@ -93,6 +96,14 @@ public class DirectTupleFromFilter implements PlanNode, PushBasedPlanNode, Suppo
 	}
 
 	@Override
+	public IteratorData getIteratorDataType() {
+		List<IteratorData> collect = parentProvider.parent().stream().map(PlanNode::getIteratorDataType).distinct().collect(Collectors.toList());
+		if(collect.size() == 1) return collect.get(0);
+
+		throw new IllegalStateException("Not implemented yet");
+	}
+
+	@Override
 	public void push(Tuple t) {
 		next = t;
 	}
@@ -104,7 +115,7 @@ public class DirectTupleFromFilter implements PlanNode, PushBasedPlanNode, Suppo
 
 
 	@Override
-	public void receiveDepthProvider(DepthProvider depthProvider) {
-		this.depthProvider = depthProvider;
+	public void receiveParentProvider(ParentProvider parentProvider) {
+		this.parentProvider = parentProvider;
 	}
 }

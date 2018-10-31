@@ -159,6 +159,14 @@ public class LeftOuterJoin implements PlanNode {
 	}
 
 	@Override
+	public IteratorData getIteratorDataType() {
+		if(left.getIteratorDataType() == right.getIteratorDataType()) return left.getIteratorDataType();
+
+		throw new IllegalStateException("Not implemented support for when left and right have different types of data");
+
+	}
+
+	@Override
 	public String toString() {
 		return "LeftOuterJoin";
 	}

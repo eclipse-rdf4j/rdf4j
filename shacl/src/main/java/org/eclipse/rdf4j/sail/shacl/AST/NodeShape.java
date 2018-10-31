@@ -39,11 +39,11 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	public NodeShape(Resource id, SailRepositoryConnection connection) {
 		this.id = id;
-		propertyShapes = PropertyShape.Factory.getProprtyShapes(id, connection, this);
+		propertyShapes = PropertyShape.Factory.getPropertyShapes(id, connection, this);
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
 		throw new UnsupportedOperationException();
 	}
 
@@ -57,10 +57,10 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getRemovedStatements(), getQuery())), 1);
 	}
 
-	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans) {
 		return propertyShapes.stream()
 			.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
-			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape))
+			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, true))
 			.collect(Collectors.toList());
 	}
 

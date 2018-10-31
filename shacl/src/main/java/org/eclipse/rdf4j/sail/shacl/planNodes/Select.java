@@ -120,6 +120,11 @@ public class Select implements PlanNode {
 	}
 
 	@Override
+	public IteratorData getIteratorDataType() {
+		return IteratorData.tripleBased;
+	}
+
+	@Override
 	public String toString() {
 		return "Select{" +
 			"query='" + query + '\'' +

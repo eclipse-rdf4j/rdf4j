@@ -33,7 +33,7 @@ public class PathPropertyShape extends PropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
 		return new Select(shaclSailConnection, path.getQuery());
 	}
 
@@ -52,5 +52,8 @@ public class PathPropertyShape extends PropertyShape {
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return super.requiresEvaluation(addedStatements, removedStatements) || path.requiresEvaluation(addedStatements, removedStatements);
 	}
+
+
+
 }
 

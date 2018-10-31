@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 
-import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -48,7 +47,7 @@ public class DatatypePropertyShape extends PathPropertyShape {
 
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
 
 		PlanNode addedByShape = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape));
 
@@ -79,20 +78,10 @@ public class DatatypePropertyShape extends PathPropertyShape {
 		DirectTupleFromFilter invalidValues = new DirectTupleFromFilter();
 		new DatatypeFilter(top, null, invalidValues, datatype);
 
-
-		if(shaclSailConnection.sail.isDebugPrintPlans()){
-			System.out.println("digraph  {");
-			System.out.println("labelloc=t;\nfontsize=30;\nlabel=\""+this.getClass().getSimpleName()+"\";");
-
-			invalidValues.printPlan();
-			System.out.println(System.identityHashCode(shaclSailConnection) + " [label=\"" + StringEscapeUtils.escapeJava("Base sail") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
-			System.out.println(System.identityHashCode(shaclSailConnection.getAddedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Added statements") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
-			System.out.println(System.identityHashCode(shaclSailConnection.getRemovedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Removed statements") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
-			System.out.println(System.identityHashCode(shaclSailConnection.getPreviousStateConnection()) + " [label=\"" + StringEscapeUtils.escapeJava("Previous state connection") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];");
-
-			System.out.println("}");
-
+		if(printPlans){
+			printPlan(invalidValues, shaclSailConnection);
 		}
+
 		return new LoggingNode(invalidValues);
 
 	}
