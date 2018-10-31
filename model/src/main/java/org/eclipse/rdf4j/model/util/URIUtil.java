@@ -30,8 +30,8 @@ public class URIUtil {
 			Arrays.asList(new Character[] { ';', '/', '?', ':', '@', '&', '=', '+', '$', ',' }));
 
 	/**
-	 * Punctuation mark characters, which are part of the set of unreserved chars and therefore allowed to
-	 * occur in unescaped form. See http://www.isi.edu/in-notes/rfc2396.txt
+	 * Punctuation mark characters, which are part of the set of unreserved chars and therefore allowed to occur
+	 * in unescaped form. See http://www.isi.edu/in-notes/rfc2396.txt
 	 */
 	private static final Set<Character> mark = new HashSet<Character>(
 			Arrays.asList(new Character[] { '-', '_', '.', '!', '~', '*', '\'', '(', ')' }));
@@ -46,8 +46,8 @@ public class URIUtil {
 	 * <li>Add <tt>1<tt> to the found index and return this value.
 	 * </ul>
 	 * Note that the third step should never fail as every legal (non-relative) URI contains at least one ':'
-	 * character to seperate the scheme from the rest of the URI. If this fails anyway, the method will throw
-	 * an {@link IllegalArgumentException}.
+	 * character to seperate the scheme from the rest of the URI. If this fails anyway, the method will throw an
+	 * {@link IllegalArgumentException}.
 	 * 
 	 * @param uri
 	 *        A URI string.
@@ -107,15 +107,13 @@ public class URIUtil {
 		}
 		else if (lastNsChar == '/') {
 			// correct split if local name has no '/' and URI contains no '#'
-			return localName.indexOf('/') == -1 && localName.indexOf('#') == -1
-					&& namespace.indexOf('#') == -1;
+			return localName.indexOf('/') == -1 && localName.indexOf('#') == -1 && namespace.indexOf('#') == -1;
 		}
 		else if (lastNsChar == ':') {
 			// correct split if local name has no ':' and URI contains no '#' or
 			// '/'
-			return localName.indexOf(':') == -1 && localName.indexOf('#') == -1
-					&& localName.indexOf('/') == -1 && namespace.indexOf('#') == -1
-					&& namespace.indexOf('/') == -1;
+			return localName.indexOf(':') == -1 && localName.indexOf('#') == -1 && localName.indexOf('/') == -1
+					&& namespace.indexOf('#') == -1 && namespace.indexOf('/') == -1;
 		}
 
 		return false;
@@ -123,14 +121,14 @@ public class URIUtil {
 
 	/**
 	 * Verifies that the supplied string is a valid RDF (1.0) URI reference, as defined in
-	 * <a href= "http://www.w3.org/TR/2004/REC-rdf-concepts-20040210/#section-Graph-URIref" >section 6.4 of
-	 * the RDF Concepts and Abstract Syntax specification</a> (RDF 1.0 Recommendation of February 10, 2004).
+	 * <a href= "http://www.w3.org/TR/2004/REC-rdf-concepts-20040210/#section-Graph-URIref" >section 6.4 of the
+	 * RDF Concepts and Abstract Syntax specification</a> (RDF 1.0 Recommendation of February 10, 2004).
 	 * <p>
 	 * An RDF URI reference is valid if it is a Unicode string that:
 	 * <ul>
 	 * <li>does not contain any control characters ( #x00 - #x1F, #x7F-#x9F)
-	 * <li>and would produce a valid URI character sequence (per RFC2396 , section 2.1) representing an
-	 * absolute URI with optional fragment identifier when subjected to the encoding described below
+	 * <li>and would produce a valid URI character sequence (per RFC2396 , section 2.1) representing an absolute
+	 * URI with optional fragment identifier when subjected to the encoding described below
 	 * </ul>
 	 * The encoding consists of:
 	 * <ol>
@@ -150,7 +148,7 @@ public class URIUtil {
 	public static boolean isValidURIReference(String uriRef) {
 
 		// check that string contains no Unicode control characters.
-		boolean valid = !uriRef.matches("[\u0000-\u001F\u007F-\u009F]");
+		boolean valid = !uriRef.matches(".*[\u0000-\u001F\u007F-\u009F].*");
 		if (valid) {
 			// check that proper encoding/escaping would yield a valid absolute
 			// RFC 2396 URI
@@ -158,9 +156,9 @@ public class URIUtil {
 			try {
 				/*
 				 * NOTE we use java.net.URI parsing to check compliance to the RFC, which is almost, but not
-				 * completely, in alignment with RFC 2396, and has not been updated for compatibility with RFC
-				 * 3986. See the java.net.URI javadoc (
-				 * https://docs.oracle.com/javase/8/docs/api/java/net/URI.html ) for details."
+				 * completely, in alignment with RFC 2396, and has not been updated for compatibility with RFC 3986.
+				 * See the java.net.URI javadoc ( https://docs.oracle.com/javase/8/docs/api/java/net/URI.html ) for
+				 * details."
 				 */
 				final java.net.URI uri = new java.net.URI(escaped);
 				valid = uri.isAbsolute();
