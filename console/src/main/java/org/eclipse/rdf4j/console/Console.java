@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,8 +19,6 @@ import java.util.regex.Pattern;
 import org.eclipse.rdf4j.RDF4J;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.common.app.AppVersion;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.UserInterruptException;
@@ -46,6 +43,7 @@ import org.eclipse.rdf4j.console.command.SetParameters;
 import org.eclipse.rdf4j.console.command.Show;
 import org.eclipse.rdf4j.console.command.Sparql;
 import org.eclipse.rdf4j.console.command.Verify;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 
 
 /**
@@ -63,67 +61,8 @@ public class Console {
 	private final static String APP_NAME = "Console";
 	private final static AppConfiguration APP_CFG = new AppConfiguration(APP_NAME, VERSION);
 
-	/**
-	 * Console state
-	 */
-	private static final ConsoleState STATE = new ConsoleState() {
-		private RepositoryManager manager;
-		private String managerID;
-
-		private Repository repository;
-		private String repositoryID;
+	private final static ConsoleState STATE = new DefaultConsoleState(APP_CFG);
 	
-		@Override
-		public String getApplicationName() {
-			return APP_CFG.getFullName();
-		}
-
-		@Override
-		public File getDataDirectory() {
-			return APP_CFG.getDataDir();
-		}
-
-		@Override
-		public String getManagerID() {
-			return this.managerID;
-		}
-
-		@Override
-		public String getRepositoryID() {
-			return this.repositoryID;
-		}
-
-		@Override
-		public RepositoryManager getManager() {
-			return this.manager;
-		}
-
-		@Override
-		public void setManager(RepositoryManager manager) {
-			this.manager = manager;
-		}
-
-		@Override
-		public void setManagerID(String managerID) {
-			this.managerID = managerID;
-		}
-
-		@Override
-		public Repository getRepository() {
-			return this.repository;
-		}
-
-		@Override
-		public void setRepositoryID(String repositoryID) {
-			this.repositoryID = repositoryID;
-		}
-
-		@Override
-		public void setRepository(Repository repository) {
-			this.repository = repository;
-		}
-	};
-
 	/**
 	 * Basic console parameters
 	 */
@@ -170,6 +109,7 @@ public class Console {
 	private final ConsoleIO consoleIO;
 
 	private final SortedMap<String,ConsoleCommand> commandMap = new TreeMap<>();
+	private final SortedMap<String,ConsoleSetting> settingMap = new TreeMap<>();
 
 	// "Core" commands
 	private final Connect connect;
@@ -177,7 +117,6 @@ public class Console {
 	private final Open open;
 	private final Close close;
 	
-
 	/**
 	 * Get console state
 	 * 
@@ -206,7 +145,6 @@ public class Console {
 		Console.exitOnError = mode;
 	}
 	
-
 	/**
 	 * Main
 	 * 
@@ -272,6 +210,15 @@ public class Console {
 	 */
 	public final void register(ConsoleCommand cmd) {
 		commandMap.put(cmd.getName(), cmd);
+	}
+
+	/**
+	 * Add setting to register of known settings
+	 * 
+	 * @param setting setting to be added
+	 */
+	public final void register(ConsoleSetting setting) {
+		settingMap.put(setting.getName(), setting);
 	}
 	
 	/**
