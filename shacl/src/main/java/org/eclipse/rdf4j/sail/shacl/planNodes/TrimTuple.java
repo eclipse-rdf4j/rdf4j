@@ -76,10 +76,10 @@ public class TrimTuple implements PlanNode {
 	}
 
 	@Override
-	public void printPlan() {
-		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
-		System.out.println(parent.getId()+" -> "+getId());
-		parent.printPlan();
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
+		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
 
 	@Override

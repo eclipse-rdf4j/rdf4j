@@ -91,12 +91,12 @@ public class BufferedSplitter {
 			}
 
 			@Override
-			public void printPlan() {
+			public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
 				if(printed) return;
 				printed = true;
-				System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
-				System.out.println(parent.getId()+" -> "+getId());
-				parent.printPlan();
+				stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+				stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
+				parent.getPlanAsGraphvizDot(stringBuilder);
 			}
 
 

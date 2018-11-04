@@ -71,16 +71,16 @@ public class DirectTupleFromFilter implements PlanNode, PushBasedPlanNode, Suppo
 	}
 
 	@Override
-	public void printPlan() {
-		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 
 		if(parentProvider instanceof PlanNode){
-			((PlanNode) parentProvider).printPlan();
+			((PlanNode) parentProvider).getPlanAsGraphvizDot(stringBuilder);
 
 		}
 
 		if(parentProvider instanceof FilterPlanNode){
-			((FilterPlanNode) parentProvider).printPlan();
+			((FilterPlanNode) parentProvider).getPlanAsGraphvizDot(stringBuilder);
 
 		}
 	}

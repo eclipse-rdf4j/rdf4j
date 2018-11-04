@@ -131,23 +131,23 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 
 	boolean printed = false;
 
-	public void printPlan() {
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
 		if(printed) return;
 		printed = true;
-		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
-		System.out.println(parent.getId()+" -> "+getId());
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
 		if(trueNode != null){
 			String id = getId(trueNode);
-			System.out.println(getId()+" -> "+id+ " [label=\"true values\"]");
+			stringBuilder.append(getId()+" -> "+id+ " [label=\"true values\"]").append("\n");
 
 		}
 		if(falseNode != null){
 			String id = getId(falseNode);
-			System.out.println(getId()+" -> "+id+ " [label=\"false values\"]");
+			stringBuilder.append(getId()+" -> "+id+ " [label=\"false values\"]").append("\n");
 
 		}
 
-		parent.printPlan();
+		parent.getPlanAsGraphvizDot(stringBuilder);
 
 
 

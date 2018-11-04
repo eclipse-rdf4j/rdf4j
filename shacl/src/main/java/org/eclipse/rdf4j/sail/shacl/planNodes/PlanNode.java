@@ -21,7 +21,7 @@ public interface PlanNode {
 	int depth();
 
 
-	void printPlan();
+	void getPlanAsGraphvizDot(StringBuilder stringBuilder);
 
 	String getId();
 

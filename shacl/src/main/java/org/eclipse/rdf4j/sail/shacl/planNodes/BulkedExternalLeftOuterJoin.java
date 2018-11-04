@@ -214,20 +214,20 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 	}
 
 	@Override
-	public void printPlan() {
-		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 
-		leftNode.printPlan();
+		leftNode.getPlanAsGraphvizDot(stringBuilder);
 
 
 		if(repository != null){
-			System.out.println( System.identityHashCode(repository)+" -> "+getId()+ " [label=\"right\"]");
+			stringBuilder.append( System.identityHashCode(repository)+" -> "+getId()+ " [label=\"right\"]").append("\n");
 		}
 		if(baseSailConnection != null){
-			System.out.println( System.identityHashCode(baseSailConnection)+" -> "+getId()+ " [label=\"right\"]");
+			stringBuilder.append( System.identityHashCode(baseSailConnection)+" -> "+getId()+ " [label=\"right\"]").append("\n");
 		}
 
-		System.out.println(leftNode.getId()+" -> "+getId()+ " [label=\"left\"]");
+		stringBuilder.append(leftNode.getId()+" -> "+getId()+ " [label=\"left\"]").append("\n");
 
 
 	}
