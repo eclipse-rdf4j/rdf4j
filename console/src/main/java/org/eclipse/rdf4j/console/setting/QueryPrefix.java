@@ -8,39 +8,23 @@
 package org.eclipse.rdf4j.console.setting;
 
 /**
- * Console value setting
+ * Use prefixes when querying.
  * 
  * @author Bart Hanssens
  */
-public class ConsoleWidth extends ConsoleSetting<Integer> {
-	
+public class QueryPrefix extends ConsoleSetting<Boolean> {
+
 	/**
 	 * Constructor
 	 * 
-	 * @param width
+	 * @param defaultValue
 	 */
-	public ConsoleWidth(int width) {
-		super(width);
+	public QueryPrefix(Boolean defaultValue) {
+		super(defaultValue);
 	}
 	
 	@Override
 	public String getName() {
-		return "width";
-	}
-
-	@Override
-	public void set(Integer value) throws IllegalArgumentException {
-		int val = value;
-
-		if (val > 0) {
-			super.set(val);
-		} else {
-			throw new IllegalArgumentException("Width must be a positive integer");
-		}
-	}
-
-	@Override
-	public void clear() {
-		set(getDefault());
+		return "queryprefix";
 	}
 }

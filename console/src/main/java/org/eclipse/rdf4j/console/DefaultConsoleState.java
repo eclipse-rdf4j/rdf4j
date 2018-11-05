@@ -8,13 +8,13 @@
 package org.eclipse.rdf4j.console;
 
 import java.io.File;
+
 import org.eclipse.rdf4j.common.app.AppConfiguration;
-import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
 /**
- * Console state
+ * Console state helper class
  */
 class DefaultConsoleState implements ConsoleState {
 	private final AppConfiguration cfg;
@@ -79,5 +79,3 @@ class DefaultConsoleState implements ConsoleState {
 		this.cfg = cfg;
 	}
 }
-
-

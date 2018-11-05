@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.setting;
 
-
 import org.eclipse.rdf4j.console.Help;
 import org.eclipse.rdf4j.console.Setting;
 
@@ -18,6 +17,38 @@ import org.eclipse.rdf4j.console.Setting;
  * @param <T>
  */
 public abstract class ConsoleSetting<T> implements Setting<T>, Help {
+	private final T defaultValue;
+	private T value;
+	
+	/**
+	 * Constructor
+	 * 
+	 * @param defaultValue default (and initial) value
+	 */
+	public ConsoleSetting(T defaultValue) {
+		this.defaultValue = defaultValue;
+		this.value = defaultValue;
+	}
+	
+	@Override
+	public T getDefault() {
+		return this.defaultValue;
+	}
+
+	@Override
+	public T get() {
+		return this.value;
+	}
+	
+	@Override
+	public void set(T value) {
+		this.value = value;
+	}
+	
+	@Override
+	public void clear() {
+		this.value = defaultValue;
+	}
 	/**
 	 * Get short description, small enough to fit on one console row
 	 * 
@@ -47,4 +78,5 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 	public void save() {
 		throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
 	}
+	
 }

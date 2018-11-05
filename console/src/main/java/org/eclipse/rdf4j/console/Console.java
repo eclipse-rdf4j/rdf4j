@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
+import org.eclipse.rdf4j.console.setting.DefaultConsoleParameters;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,7 +45,10 @@ import org.eclipse.rdf4j.console.command.SetParameters;
 import org.eclipse.rdf4j.console.command.Show;
 import org.eclipse.rdf4j.console.command.Sparql;
 import org.eclipse.rdf4j.console.command.Verify;
+
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.ConsoleWidth;
+import org.eclipse.rdf4j.console.setting.DefaultConsoleParameters;
 
 
 /**
@@ -63,47 +68,6 @@ public class Console {
 
 	private final static ConsoleState STATE = new DefaultConsoleState(APP_CFG);
 	
-	/**
-	 * Basic console parameters
-	 */
-	private final static ConsoleParameters PARAMS = new ConsoleParameters() {
-		private int consoleWidth = 80;
-
-		private boolean showPrefix = true;
-		private boolean queryPrefix = true;
-
-		@Override
-		public int getWidth() {
-			return this.consoleWidth;
-		}
-
-		@Override
-		public void setWidth(int width) {
-			this.consoleWidth = width;
-		}
-
-		@Override
-		public boolean isShowPrefix() {
-			return this.showPrefix;
-		}
-
-		@Override
-		public void setShowPrefix(boolean value) {
-			this.showPrefix = value;
-		}
-
-		@Override
-		public boolean isQueryPrefix() {
-			return this.queryPrefix;
-		}
-
-		@Override
-		public void setQueryPrefix(boolean value) {
-			this.queryPrefix = value;
-		}
-	};
-	
-	
 	private static boolean exitOnError;
 
 	private final ConsoleIO consoleIO;
@@ -111,6 +75,7 @@ public class Console {
 	private final SortedMap<String,ConsoleCommand> commandMap = new TreeMap<>();
 	private final SortedMap<String,ConsoleSetting> settingMap = new TreeMap<>();
 
+	
 	// "Core" commands
 	private final Connect connect;
 	private final Disconnect disconnect;
@@ -234,7 +199,12 @@ public class Console {
 		this.disconnect = new Disconnect(consoleIO, STATE, close);
 		this.connect = new Connect(consoleIO, STATE, disconnect);
 		this.open = new Open(consoleIO, STATE, close);
+	
+		register(new ConsoleWidth(80));
 		
+		// Basic console parameters
+		ConsoleParameters PARAMS = new DefaultConsoleParameters();
+
 		// "core" commands for connnecting
 		register(open);
 		register(close);

@@ -31,9 +31,9 @@ public interface Setting<T> {
 	/**
 	 * Set the value for this setting
 	 * 
-	 * @param settings 
+	 * @param value 
 	 */
-	public void set(T settings) throws IllegalArgumentException;
+	public void set(T value) throws IllegalArgumentException;
 	
 	/**
 	 * Clear setting

@@ -9,17 +9,10 @@ package org.eclipse.rdf4j.console.command;
 
 import java.util.Objects;
 
-import org.slf4j.LoggerFactory;
-
-import com.google.common.collect.BiMap;
-import com.google.common.collect.ImmutableBiMap;
-import com.google.common.collect.ImmutableBiMap.Builder;
-
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.setting.LogLevel;
 
 /**
  * Set parameters command
@@ -27,25 +20,11 @@ import org.eclipse.rdf4j.console.ConsoleState;
  * @author dale
  */
 public class SetParameters extends ConsoleCommand {
-
 	private static final String QUERYPREFIX_COMMAND = "queryprefix";
 	private static final String SHOWPREFIX_COMMAND = "showprefix";
 	private static final String WIDTH_COMMAND = "width";
 	private static final String LOG_COMMAND = "log";
-
-	private static final BiMap<String, Level> LOG_LEVELS;
 	
-	static {
-		Builder<String, Level> logLevels = ImmutableBiMap.<String, Level>builder();
-
-		logLevels.put("none", Level.OFF);
-		logLevels.put("error", Level.ERROR);
-		logLevels.put("warning", Level.WARN);
-		logLevels.put("info", Level.INFO);
-		logLevels.put("debug", Level.DEBUG);
-		LOG_LEVELS = logLevels.build();
-	}
-
 	@Override
 	public String getName() {
 		return "set";
@@ -68,7 +47,8 @@ public class SetParameters extends ConsoleCommand {
 	}
 	
 	private final ConsoleParameters parameters;
-
+	private final LogLevel logLevel = new LogLevel();
+	
 	/**
 	 * Constructor
 	 * 
@@ -116,16 +96,23 @@ public class SetParameters extends ConsoleCommand {
 	 * @param key parameter key
 	 */
 	private void showParameter(String key) {
-		if (LOG_COMMAND.equalsIgnoreCase(key)) {
-			showLogLevel();
-		} else if (WIDTH_COMMAND.equalsIgnoreCase(key)) {
-			showWidth();
-		} else if (SHOWPREFIX_COMMAND.equalsIgnoreCase(key)) {
-			showPrefix();
-		} else if (QUERYPREFIX_COMMAND.equalsIgnoreCase(key)) {
-			showQueryPrefix();
-		} else {
-			consoleIO.writeError("unknown parameter: " + key);
+		String str = key.toLowerCase();
+		
+		switch(str) {
+			case LOG_COMMAND:
+				showLogLevel();
+				break;
+			case WIDTH_COMMAND:
+				showWidth();
+				break;
+			case QUERYPREFIX_COMMAND:
+				showQueryPrefix();
+				break;
+			case SHOWPREFIX_COMMAND:
+				showPrefix();
+				break;
+			default:
+				consoleIO.writeError("unknown parameter: " + key);
 		}
 	}
 
@@ -139,16 +126,23 @@ public class SetParameters extends ConsoleCommand {
 		Objects.requireNonNull(key, "parameter key was missing");
 		Objects.requireNonNull(value, "parameter value was missing");
 		
-		if (LOG_COMMAND.equalsIgnoreCase(key)) {
-			setLog(value);
-		} else if (WIDTH_COMMAND.equalsIgnoreCase(key)) {
-			setWidth(value);
-		} else if (SHOWPREFIX_COMMAND.equalsIgnoreCase(key)) {
-			setShowPrefix(value);
-		} else if (QUERYPREFIX_COMMAND.equalsIgnoreCase(key)) {
-			setQueryPrefix(value);
-		} else {
-			consoleIO.writeError("unknown parameter: " + key);
+		String str = key.toLowerCase();
+		
+		switch(str) {
+			case LOG_COMMAND:
+				setLog(value);
+				break;
+			case WIDTH_COMMAND:
+				setWidth(value);
+				break;
+			case QUERYPREFIX_COMMAND:
+				setQueryPrefix(value);
+				break;
+			case SHOWPREFIX_COMMAND:
+				setShowPrefix(value);
+				break;
+			default:
+				consoleIO.writeError("unknown parameter: " + key);
 		}
 	}
 
@@ -156,12 +150,7 @@ public class SetParameters extends ConsoleCommand {
 	 * Show log level
 	 */
 	private void showLogLevel() {
-		Logger logbackRootLogger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-		Level currentLevel = logbackRootLogger.getLevel();
-
-		String levelString = LOG_LEVELS.inverse().getOrDefault(currentLevel, currentLevel.levelStr);
-
-		consoleIO.writeln("log: " + levelString);
+		consoleIO.writeln("log: " + logLevel.get());
 	}
 
 	/**
@@ -170,12 +159,9 @@ public class SetParameters extends ConsoleCommand {
 	 * @param value 
 	 */
 	private void setLog(final String value) {
-		// Assume Logback
-		Level logLevel = LOG_LEVELS.get(value.toLowerCase());
-		if (logLevel != null) {
-			Logger logbackRootLogger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-			logbackRootLogger.setLevel(logLevel);
-		} else {
+		try {
+			logLevel.set(value);
+		} catch (IllegalArgumentException iae) {
 			consoleIO.writeError("unknown logging level: " + value);
 		}
 	}
