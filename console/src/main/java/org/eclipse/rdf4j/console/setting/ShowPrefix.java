@@ -13,7 +13,8 @@ package org.eclipse.rdf4j.console.setting;
  * @author Bart Hanssens
  */
 public class ShowPrefix extends ConsoleSetting<Boolean> {
-
+	public final static String NAME = "showprefix";
+	
 	/**
 	 * Constructor
 	 * 
@@ -25,6 +26,6 @@ public class ShowPrefix extends ConsoleSetting<Boolean> {
 	
 	@Override
 	public String getName() {
-		return "showprefix";
+		return NAME;
 	}
 }

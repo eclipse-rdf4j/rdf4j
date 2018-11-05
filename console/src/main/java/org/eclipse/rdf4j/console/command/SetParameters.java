@@ -12,7 +12,10 @@ import java.util.Objects;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.setting.ConsoleWidth;
 import org.eclipse.rdf4j.console.setting.LogLevel;
+import org.eclipse.rdf4j.console.setting.QueryPrefix;
+import org.eclipse.rdf4j.console.setting.ShowPrefix;
 
 /**
  * Set parameters command
@@ -20,10 +23,6 @@ import org.eclipse.rdf4j.console.setting.LogLevel;
  * @author dale
  */
 public class SetParameters extends ConsoleCommand {
-	private static final String QUERYPREFIX_COMMAND = "queryprefix";
-	private static final String SHOWPREFIX_COMMAND = "showprefix";
-	private static final String WIDTH_COMMAND = "width";
-	private static final String LOG_COMMAND = "log";
 	
 	@Override
 	public String getName() {
@@ -99,16 +98,16 @@ public class SetParameters extends ConsoleCommand {
 		String str = key.toLowerCase();
 		
 		switch(str) {
-			case LOG_COMMAND:
+			case LogLevel.NAME:
 				showLogLevel();
 				break;
-			case WIDTH_COMMAND:
+			case ConsoleWidth.NAME:
 				showWidth();
 				break;
-			case QUERYPREFIX_COMMAND:
+			case QueryPrefix.NAME:
 				showQueryPrefix();
 				break;
-			case SHOWPREFIX_COMMAND:
+			case ShowPrefix.NAME:
 				showPrefix();
 				break;
 			default:
@@ -129,16 +128,16 @@ public class SetParameters extends ConsoleCommand {
 		String str = key.toLowerCase();
 		
 		switch(str) {
-			case LOG_COMMAND:
+			case LogLevel.NAME:
 				setLog(value);
 				break;
-			case WIDTH_COMMAND:
+			case ConsoleWidth.NAME:
 				setWidth(value);
 				break;
-			case QUERYPREFIX_COMMAND:
+			case QueryPrefix.NAME:
 				setQueryPrefix(value);
 				break;
-			case SHOWPREFIX_COMMAND:
+			case ShowPrefix.NAME:
 				setShowPrefix(value);
 				break;
 			default:

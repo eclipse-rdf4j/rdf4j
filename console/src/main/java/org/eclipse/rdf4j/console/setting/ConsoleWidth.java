@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.console.setting;
  * @author Bart Hanssens
  */
 public class ConsoleWidth extends ConsoleSetting<Integer> {
+	public final static String NAME = "width";
 	
 	/**
 	 * Constructor
@@ -25,7 +26,7 @@ public class ConsoleWidth extends ConsoleSetting<Integer> {
 	
 	@Override
 	public String getName() {
-		return "width";
+		return NAME;
 	}
 
 	@Override

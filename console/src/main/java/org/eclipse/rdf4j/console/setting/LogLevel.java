@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
  * @author Bart Hanssens
  */
 public class LogLevel extends ConsoleSetting<String> {
+	public final static String NAME = "log";
 	
 	private static final BiMap<String,Level> LOG_LEVELS;
 	static {
@@ -36,7 +37,7 @@ public class LogLevel extends ConsoleSetting<String> {
 	
 	@Override
 	public String getName() {
-		return "log";
+		return NAME;
 	}
 
 	@Override

@@ -27,38 +27,39 @@ public class DefaultConsoleParameters implements ConsoleParameters {
 	 */
 	public DefaultConsoleParameters() {
 		this.settings = new HashMap<>();
-		settings.put("width", new ConsoleWidth(80));
-		settings.put("queryprefix", new QueryPrefix(true));
-		settings.put("showprefix", new ShowPrefix(true));
+		settings.put(ConsoleWidth.NAME, new ConsoleWidth(80));
+		settings.put(QueryPrefix.NAME, new QueryPrefix(true));
+		settings.put(ShowPrefix.NAME, new ShowPrefix(true));
 	}
+
 	
 	@Override
 	public int getWidth() {
-		return ((ConsoleWidth) settings.get("width")).get();
+		return (Integer) settings.get(ConsoleWidth.NAME).get();
 	}
 
 	@Override
 	public void setWidth(int width) {
-		((ConsoleWidth) settings.get("width")).set(width);
+		settings.get(ConsoleWidth.NAME).set(width);
 	}
 
 	@Override
 	public boolean isShowPrefix() {
-		return ((ShowPrefix) settings.get("showprefix")).get();
+		return (Boolean) settings.get(ShowPrefix.NAME).get();
 	}
 
 	@Override
 	public void setShowPrefix(boolean value) {
-		((ShowPrefix) settings.get("showprefix")).set(value);
+		settings.get(ShowPrefix.NAME).set(value);
 	}
 
 	@Override
 	public boolean isQueryPrefix() {
-		return ((QueryPrefix) settings.get("queryprefix")).get();
+		return (Boolean) settings.get(QueryPrefix.NAME).get();
 	}
 	
 	@Override
 	public void setQueryPrefix(boolean value) {
-		((QueryPrefix) settings.get("queryprefix")).set(value);
+		settings.get(QueryPrefix.NAME).set(value);
 	}
 }

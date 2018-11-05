@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.console.setting;
  * @author Bart Hanssens
  */
 public class QueryPrefix extends ConsoleSetting<Boolean> {
+	public final static String NAME = "queryprefix";
 
 	/**
 	 * Constructor
@@ -25,6 +26,6 @@ public class QueryPrefix extends ConsoleSetting<Boolean> {
 	
 	@Override
 	public String getName() {
-		return "queryprefix";
+		return NAME;
 	}
 }
