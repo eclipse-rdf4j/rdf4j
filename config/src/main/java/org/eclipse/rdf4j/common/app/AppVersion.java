@@ -20,7 +20,8 @@ import org.eclipse.rdf4j.common.lang.ObjectUtil;
  */
 public class AppVersion implements Comparable<AppVersion> {
 
-	private static final Pattern VERSION_REGEX = Pattern.compile("^\\s*(\\d+)(?:\\.(\\d+)(?:\\.(\\d+))?)?(M[^\\-\\+]*)?(?:-([^\\+]+))?(?:\\+(.+))?\\s*$");
+	private static final Pattern VERSION_REGEX = 
+		Pattern.compile("^\\s*(\\d+)(?:\\.(\\d+)(?:\\.(\\d+))?)?(M[^\\-\\+]*)?(?:-([^\\+]+))?(?:\\+(.+))?\\s*$");
 
 	/**
 	 * The version's major version number.

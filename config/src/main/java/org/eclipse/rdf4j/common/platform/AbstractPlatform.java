@@ -21,9 +21,7 @@ public abstract class AbstractPlatform implements Platform {
 	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	protected String whitespaceReplacement = "-";
-
 	protected String separatorReplacement = "-";
-
 	protected String colonReplacement = "";
 
 	@Override
@@ -75,9 +73,17 @@ public abstract class AbstractPlatform implements Platform {
 				dataDirReplaceWhitespace(), dataDirReplaceColon());
 	}
 
+	/**
+	 * Get the relative name of the application directory
+	 * 
+	 * @param applicationName name of the application
+	 * @param caseSensitive true when case-sensitive
+	 * @param replaceWhitespace true when whitespace is to be replaced
+	 * @param replaceColon true when colon needs to be replaced
+	 * @return name of the application directory
+	 */
 	public String getRelativeApplicationDataDir(String applicationName, boolean caseSensitive,
-			boolean replaceWhitespace, boolean replaceColon)
-	{
+			boolean replaceWhitespace, boolean replaceColon) {
 		String result = applicationName.replace(File.separator, separatorReplacement);
 
 		if (!caseSensitive) {

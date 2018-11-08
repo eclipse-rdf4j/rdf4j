@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 import ch.qos.logback.classic.PatternLayout;
 
 /**
- * PatternLayout that also prints stacktraces.
+ * PatternLayout that also prints stack traces.
  * 
  * @author Herko ter Horst
  */

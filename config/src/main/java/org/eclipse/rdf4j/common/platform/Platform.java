@@ -23,17 +23,24 @@ public interface Platform {
 
 	/**
 	 * Get a descriptive name for this platform.
+	 * 
+	 * @return name of the platform
 	 */
 	public String getName();
 
 	/**
-	 * Returns the operating system dependend application data dir.
+	 * Returns the operating system dependent application data directory.
+	 * 
+	 * @return application directory
 	 */
 	public File getOSApplicationDataDir();
 
 	/**
-	 * Returns the operating system dependend application data dir. This will be a sub-directory of the
+	 * Returns the operating system dependent application data directory. This will be a sub-directory of the
 	 * directory returned by the no-argument version of this method.
+	 * 
+	 * @param applicationName name of the application
+	 * @return application directory
 	 */
 	public File getOSApplicationDataDir(String applicationName);
 
@@ -73,9 +80,24 @@ public interface Platform {
 	 */
 	public String getRelativeApplicationDataDir(String applicationName);
 
+	/**
+	 * Check if case is preserved
+	 * 
+	 * @return 
+	 */
 	public boolean dataDirPreserveCase();
 
+	/**
+	 * Check if whitespace is replaced
+	 * 
+	 * @return 
+	 */
 	public boolean dataDirReplaceWhitespace();
 
+	/**
+	 * Check if colon is replaced
+	 * 
+	 * @return 
+	 */
 	public boolean dataDirReplaceColon();
 }

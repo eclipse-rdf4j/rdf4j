@@ -16,6 +16,9 @@ import org.eclipse.rdf4j.common.logging.LogRecord;
 
 import ch.qos.logback.core.Appender;
 
+/**
+ * Abstract log reader
+ */
 public abstract class AbstractLogReader implements LogReader {
 
 	@Override
@@ -115,7 +118,9 @@ public abstract class AbstractLogReader implements LogReader {
 	}
 
 	/**
-	 * @return Returns the limit.
+	 * Get the limit.
+	 * 
+	 * @return limit
 	 */
 	@Override
 	public int getLimit() {
@@ -123,6 +128,8 @@ public abstract class AbstractLogReader implements LogReader {
 	}
 
 	/**
+	 * Set the limit
+	 * 
 	 * @param limit
 	 *        The limit to set.
 	 */
@@ -132,7 +139,9 @@ public abstract class AbstractLogReader implements LogReader {
 	}
 
 	/**
-	 * @return Returns the offset.
+	 * Get the offset
+	 * 
+	 * @return offset.
 	 */
 	@Override
 	public int getOffset() {
@@ -140,6 +149,8 @@ public abstract class AbstractLogReader implements LogReader {
 	}
 
 	/**
+	 * Set the offset
+	 * 
 	 * @param offset
 	 *        The offset to set.
 	 */
@@ -152,5 +163,4 @@ public abstract class AbstractLogReader implements LogReader {
 	public List<String> getThreadNames() {
 		return null;
 	}
-
 }

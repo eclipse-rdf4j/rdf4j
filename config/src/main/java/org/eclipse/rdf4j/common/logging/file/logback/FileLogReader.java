@@ -26,23 +26,31 @@ import org.eclipse.rdf4j.common.logging.base.SimpleLogRecord;
 import ch.qos.logback.core.Appender;
 import ch.qos.logback.core.FileAppender;
 
+/**
+ * File log reader
+ */
 public class FileLogReader extends AbstractLogReader {
 
 	private File logFile = null;
-
 	private RandomAccessFile log = null;
 
 	private long fileLength;
-
 	private long byteOffset;
 
 	private LogRecord next = null;
-
 	private int count = 0;
 
+	/**
+	 * Constructor
+	 */
 	public FileLogReader() {
 	}
 
+	/**
+	 * Constructor
+	 * 
+	 * @param logFile 
+	 */
 	public FileLogReader(File logFile) {
 		this.logFile = logFile;
 	}
@@ -60,9 +68,7 @@ public class FileLogReader extends AbstractLogReader {
 	}
 
 	@Override
-	public void init()
-		throws Exception
-	{
+	public void init() throws Exception {
 		if (logFile == null) {
 			throw new RuntimeException("Log file is undefined for this FileLogReader!");
 		}
@@ -79,6 +85,11 @@ public class FileLogReader extends AbstractLogReader {
 		}
 	}
 
+	/**
+	 * Skip for a specific offset
+	 * 
+	 * @param offset offset
+	 */
 	private void doSkip(int offset) {
 		while (this.hasNext() && (count < offset)) {
 			this.next();
@@ -119,9 +130,13 @@ public class FileLogReader extends AbstractLogReader {
 		return result;
 	}
 
-	private LogRecord getNext()
-		throws IOException
-	{
+	/**
+	 * Get next log record
+	 *
+	 * @return log record
+	 * @throws IOException 
+	 */
+	private LogRecord getNext() throws IOException {
 		SimpleLogRecord result = null;
 
 		StringBuilder message = new StringBuilder();
@@ -204,9 +219,7 @@ public class FileLogReader extends AbstractLogReader {
 	}
 
 	@Override
-	public void destroy()
-		throws IOException
-	{
+	public void destroy() throws IOException {
 		if (log != null) {
 			log.close();
 		}
