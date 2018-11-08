@@ -28,9 +28,7 @@ public class AppConfiguration implements Configuration {
 	 *-----------*/
 
 	private static final String APP_CONFIG_FILE = "application.properties";
-
 	private static final String DEFAULT_PREFIX = "RDF4J";
-
 	private static final String DEFAULT_LOGGING = "org.eclipse.rdf4j.common.app.logging.logback.LogbackConfiguration";
 
 	/*-----------*

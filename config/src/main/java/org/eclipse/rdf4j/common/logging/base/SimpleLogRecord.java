@@ -14,16 +14,15 @@ import java.util.List;
 import org.eclipse.rdf4j.common.logging.LogLevel;
 import org.eclipse.rdf4j.common.logging.LogRecord;
 
+/**
+ * Simple log record, containing only the basics
+ */
 public class SimpleLogRecord implements LogRecord {
 
 	private LogLevel level;
-
 	private String message;
-
 	private List<String> stackTrace;
-
 	private String threadName;
-
 	private Date time;
 
 	@Override
@@ -51,22 +50,47 @@ public class SimpleLogRecord implements LogRecord {
 		return time;
 	}
 
+	/**
+	 * Set log level
+	 * 
+	 * @param level 
+	 */
 	public void setLevel(LogLevel level) {
 		this.level = level;
 	}
 
+	/**
+	 * Set message
+	 * 
+	 * @param message text
+	 */
 	public void setMessage(String message) {
 		this.message = message;
 	}
 
+	/**
+	 * Set stack trace as list of strings
+	 * 
+	 * @param stackTrace list of strings
+	 */
 	public void setStackTrace(List<String> stackTrace) {
 		this.stackTrace = stackTrace;
 	}
 
+	/**
+	 * Set thread name
+	 * 
+	 * @param threadName 
+	 */
 	public void setThreadName(String threadName) {
 		this.threadName = threadName;
 	}
 
+	/**
+	 * Set date time
+	 * 
+	 * @param time time
+	 */
 	public void setTime(Date time) {
 		this.time = time;
 	}

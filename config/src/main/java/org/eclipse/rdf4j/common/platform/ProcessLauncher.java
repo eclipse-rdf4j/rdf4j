@@ -30,28 +30,31 @@ public final class ProcessLauncher {
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	private String commandLine;
-
 	private String[] commandArray;
 
 	private final File baseDir;
-
 	private final List<OutputListener> listeners = new ArrayList<OutputListener>(1);
-
 	private volatile Process subProcess;
-
 	private final AtomicBoolean finished = new AtomicBoolean(false);
 
 	private final StringBuilder out = new StringBuilder();
-
 	private final StringBuilder err = new StringBuilder();
 
 	/**
 	 * Constructs a new ProcessLauncher with the given command line.
+	 * 
+	 * @param commandLine command line
 	 */
 	public ProcessLauncher(String commandLine) {
 		this(commandLine, null);
 	}
 
+	/**
+	 * Constructs a new ProcessLauncher with the given command line and base directory
+	 * 
+	 * @param commandLine command line
+	 * @param baseDir base directory
+	 */
 	public ProcessLauncher(String commandLine, File baseDir) {
 		this.commandLine = commandLine;
 		this.baseDir = baseDir;
@@ -59,11 +62,19 @@ public final class ProcessLauncher {
 
 	/**
 	 * Constructs a new ProcessLauncher with the given command array.
+	 * 
+	 * @param commandArray command as array of strings
 	 */
 	public ProcessLauncher(String[] commandArray) {
 		this(commandArray, null);
 	}
 
+	/**
+	 * Constructs a new ProcessLauncher with the given command array and base directory.
+	 * 
+	 * @param commandArray command as array of strings
+	 * @param baseDir base directory
+	 */
 	public ProcessLauncher(String[] commandArray, File baseDir) {
 		this.commandArray = commandArray;
 		this.baseDir = baseDir;
@@ -71,15 +82,30 @@ public final class ProcessLauncher {
 
 	/**
 	 * Constructs new process launcher with the given command element list.
+	 * 
+	 * @param commandList command list
 	 */
 	public ProcessLauncher(ArrayList<?> commandList) {
 		this(commandList, null);
 	}
 
+	/**
+	 * Constructs new process launcher with the given command element list and base directory.
+	 * 
+	 * @param commandList command list
+	 * @param baseDir base directory
+	 */
 	public ProcessLauncher(ArrayList<?> commandList, File baseDir) {
 		this(toStringArray(commandList), baseDir);
 	}
 
+	/**
+	 * Turn a list of objects into an array of strings
+	 * 
+	 * @param <T>
+	 * @param list list of objects
+	 * @return array of strings
+	 */
 	private static <T> String[] toStringArray(ArrayList<T> list) {
 		String[] result = new String[list.size()];
 		Iterator<T> iter = list.iterator();
@@ -96,19 +122,35 @@ public final class ProcessLauncher {
 	 */
 	public interface OutputListener {
 
+		/**
+		 * Send to standard output
+		 * 
+		 * @param output text to output
+		 */
 		public void standardOutput(char[] output);
 
+		/**
+		 * Send to standard error
+		 * 
+		 * @param output test to output
+		 */
 		public void errorOutput(char[] output);
 	}
 
 	/**
 	 * Add a listener for output from the to-be-launched process.
+	 * 
+	 * @param listener output listener
 	 */
 	public void addOutputListener(OutputListener listener) {
 		this.listeners.add(listener);
 	}
 
-	/** fire error output event */
+	/**
+	 * Fire error output event 
+	 * 
+	 * @param err
+	 */
 	private void fireErr(char[] err) {
 		if (this.listeners.isEmpty()) {
 			this.err.append(out);
@@ -119,7 +161,11 @@ public final class ProcessLauncher {
 		}
 	}
 
-	/** fire standard output event */
+	/**
+	 * Fire standard output event
+	 * 
+	 * @param out
+	 */
 	private void fireOut(char[] out) {
 		if (this.listeners.isEmpty()) {
 			this.out.append(out);
@@ -132,6 +178,8 @@ public final class ProcessLauncher {
 
 	/**
 	 * Get standard output, in case no listeners were registered - never returns null.
+	 * 
+	 * @return standard output as string
 	 */
 	public String getStandardOutput() {
 		if (!this.listeners.isEmpty()) {
@@ -143,6 +191,8 @@ public final class ProcessLauncher {
 
 	/**
 	 * Get error output, in case no listeners were registered - never returns null.
+	 * 
+	 * @return standard error as string
 	 */
 	public String getErrorOutput() {
 		if (!this.listeners.isEmpty()) {
@@ -154,6 +204,8 @@ public final class ProcessLauncher {
 
 	/**
 	 * Get the commandline that is used to launch the process.
+	 * 
+	 * @return command line
 	 */
 	public String getCommandLine() {
 		if (this.commandLine != null) {
@@ -176,6 +228,8 @@ public final class ProcessLauncher {
 
 	/**
 	 * Check whether execution has finished.
+	 * 
+	 * @return true when finished
 	 */
 	public boolean hasFinished() {
 		return finished.get();
@@ -184,12 +238,11 @@ public final class ProcessLauncher {
 	/**
 	 * Launches the process, and blocks until that process completes execution.
 	 *
+	 * @return command exit value
 	 * @throws CommandNotExistsException
 	 *         If the command could not be executed because it does not exist
 	 */
-	public int launch()
-		throws CommandNotExistsException
-	{
+	public int launch() throws CommandNotExistsException {
 		this.err.setLength(0);
 		this.out.setLength(0);
 		BackgroundPrinter stdout = null;
@@ -275,6 +328,12 @@ public final class ProcessLauncher {
 
 		boolean isErrorOutput;
 
+		/**
+		 * Constructor
+		 * 
+		 * @param in inputstream
+		 * @param isErrorOutput true if standard error
+		 */
 		public BackgroundPrinter(InputStream in, boolean isErrorOutput) {
 			this.in = in;
 			this.isErrorOutput = isErrorOutput;

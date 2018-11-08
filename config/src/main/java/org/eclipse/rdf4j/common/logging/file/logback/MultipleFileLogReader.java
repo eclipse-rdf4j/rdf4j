@@ -30,28 +30,22 @@ import ch.qos.logback.core.rolling.RollingPolicy;
 import ch.qos.logback.core.rolling.TimeBasedRollingPolicy;
 
 /**
- * Date range-enabled wrapper for FileLogReader. Reads multiple logfiles chunked by dates as a single log.
+ * Date range-enabled wrapper for FileLogReader. Reads multiple log files chunked by dates as a single log.
  * 
  * @author alex
  */
 public class MultipleFileLogReader extends AbstractLogReader implements LogReader {
 
 	private Date startDate = null;
-
 	private Date endDate = null;
-
 	private Date minDate = new Date();
-
 	private Date maxDate = new Date();
 
 	private String fileNamePattern = null;
-
 	private Vector<File> logFiles = new Vector<File>();
-
 	private Iterator<File> logFilesIterator = null;
 
 	private LogRecord next = null;
-
 	private int count = 0;
 
 	private FileLogReader currentReader = null;
@@ -80,9 +74,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	}
 
 	@Override
-	public void init()
-		throws Exception
-	{
+	public void init() throws Exception {
 		if (this.getAppender() == null) {
 			throw new RuntimeException("Appender must be set before initialization!");
 		}
@@ -104,6 +96,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		if (!dfMatcher.matches()) {
 			throw new RuntimeException("Wrong filename pattern: " + fileNamePattern);
 		}
+		
 		String dfs = dfMatcher.group(2);
 		SimpleDateFormat df = new SimpleDateFormat(dfs);
 		String spattern = new File(fileNamePattern).getName();
@@ -111,6 +104,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		spattern = spattern.replace("%d{" + dfs + "}", "(.*)");
 		Pattern pattern = Pattern.compile(spattern);
 		File dir = new File(fileNamePattern).getParentFile();
+		
 		String[] files = dir.list(new DateRangeFilenameFilter(pattern, df, startCal, endCal));
 		Arrays.sort(files);
 		for (int i = files.length - 1; i >= 0; i--) {
@@ -162,9 +156,13 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		return result;
 	}
 
-	private LogRecord getNext()
-		throws Exception
-	{
+	/**
+	 * Get next log record
+	 * 
+	 * @return log record
+	 * @throws Exception 
+	 */
+	private LogRecord getNext() throws Exception {
 		if (currentReader.hasNext()) {
 			return currentReader.next();
 		}
@@ -176,6 +174,11 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		return null;
 	}
 
+	/**
+	 * Skip for a specific offset
+	 * 
+	 * @param offset offset
+	 */
 	private void doSkip(int offset) {
 		while (this.hasNext() && (count < offset)) {
 			this.next();
@@ -183,16 +186,16 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	}
 
 	@Override
-	public void destroy()
-		throws IOException
-	{
+	public void destroy() throws IOException {
 		if (currentReader.hasNext()) {
 			currentReader.destroy();
 		}
 	}
 
 	/**
-	 * @return Returns the startDate.
+	 * Return the start date
+	 * 
+	 * @return start date.
 	 */
 	@Override
 	public Date getStartDate() {
@@ -200,6 +203,8 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	}
 
 	/**
+	 * Set start date
+	 * 
 	 * @param startDate
 	 *        The startDate to set.
 	 */
@@ -209,7 +214,9 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	}
 
 	/**
-	 * @return Returns the endDate.
+	 * Return the end date
+	 * 
+	 * @return end date
 	 */
 	@Override
 	public Date getEndDate() {
@@ -217,6 +224,8 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	}
 
 	/**
+	 * Set the end date
+	 * 
 	 * @param endDate
 	 *        The endDate to set.
 	 */
@@ -236,6 +245,8 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	}
 
 	/**
+	 * Custom filename filter
+	 * 
 	 * @author alex
 	 */
 	public class DateRangeFilenameFilter implements FilenameFilter {
@@ -247,14 +258,15 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 		Calendar startCal, endCal;
 
 		/**
+		 * Constructor
+		 * 
 		 * @param pattern
 		 * @param df
 		 * @param startCal
 		 * @param endCal
 		 */
 		public DateRangeFilenameFilter(Pattern pattern, SimpleDateFormat df, Calendar startCal,
-				Calendar endCal)
-		{
+																			Calendar endCal) {
 			this.pattern = pattern;
 			this.df = df;
 			this.startCal = startCal;
