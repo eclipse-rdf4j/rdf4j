@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -69,10 +68,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 		stringBuilder.append("labelloc=t;\nfontsize=30;\nlabel=\"" + this.getClass().getSimpleName() + "\";").append("\n");
 
 		planNode.getPlanAsGraphvizDot(stringBuilder);
-		stringBuilder.append(System.identityHashCode(shaclSailConnection) + " [label=\"" + StringEscapeUtils.escapeJava("Base sail") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
-		stringBuilder.append(System.identityHashCode(shaclSailConnection.getAddedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Added statements") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
-		stringBuilder.append(System.identityHashCode(shaclSailConnection.getRemovedStatements()) + " [label=\"" + StringEscapeUtils.escapeJava("Removed statements") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
-		stringBuilder.append(System.identityHashCode(shaclSailConnection.getPreviousStateConnection()) + " [label=\"" + StringEscapeUtils.escapeJava("Previous state connection") + "\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
+		stringBuilder.append(System.identityHashCode(shaclSailConnection) + " [label=\"Base sail\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
+		stringBuilder.append(System.identityHashCode(shaclSailConnection.getAddedStatements()) + " [label=\"Added statements\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
+		stringBuilder.append(System.identityHashCode(shaclSailConnection.getRemovedStatements()) + " [label=\"Removed statements\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
+		stringBuilder.append(System.identityHashCode(shaclSailConnection.getPreviousStateConnection()) + " [label=\"Previous state connection\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
 
 		stringBuilder.append("}").append("\n");
 
@@ -137,7 +136,6 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 		private static boolean hasDatatype(Resource id, SailRepositoryConnection connection) {
 			return connection.hasStatement(id, SHACL.DATATYPE, null, true);
 		}
-
 
 
 	}
