@@ -83,7 +83,9 @@ public class WindowsPlatform extends AbstractPlatform {
 	}
 
 	/**
-	 * Returns an application data directory in the "Application Data" userdir of Windows.
+	 * Returns an application data directory in the "Application Data" user directory of Windows.
+	 * 
+	 * @return directory
 	 */
 	@Override
 	public File getOSApplicationDataDir() {
@@ -102,7 +104,9 @@ public class WindowsPlatform extends AbstractPlatform {
 	}
 
 	/**
-	 * Returns true when the platform is not a Windows 9x platform.
+	 * Warns when the platform is not a Windows 9x, NT or 2000 platform.
+	 * 
+	 * @return true when not Win9x/NT/2000
 	 */
 	public boolean warnsWhenOpeningExecutable() {
 		return !isWin9x() && !isWinNT() && !isWin2000();
@@ -110,6 +114,8 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Check whether this is windows 9x, or windows NT and higher.
+	 * 
+	 * @return true when Win9x or higher
 	 */
 	public boolean isWin9x() {
 		if (isWin9x == 0) {
@@ -131,6 +137,8 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Check whether this is an Windows NT environment.
+	 * 
+	 * @return true when WinNT
 	 */
 	public boolean isWinNT() {
 		return System.getProperty("os.name").toLowerCase().indexOf("nt") >= 0;
@@ -138,13 +146,17 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Check whether this is an Windows 2000 environment.
+	 * 
+	 * @return true when Win2000
 	 */
 	public boolean isWin2000() {
 		return System.getProperty("os.name").indexOf("2000") >= 0;
 	}
 
 	/**
-	 * Check whether this is an Windows NT environment.
+	 * Check whether this is an Windows XP environment.
+	 * 
+	 * @return true wen WinXP
 	 */
 	public boolean isWinXP() {
 		return System.getProperty("os.name").toLowerCase().indexOf("xp") >= 0;
@@ -152,6 +164,8 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Check whether this is an Windows 2003 environment.
+	 * 
+	 * @return true when Win2003
 	 */
 	public boolean isWin2003() {
 		return System.getProperty("os.name").indexOf("2003") >= 0;
@@ -159,6 +173,8 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Check whether this is an Windows Vista environment.
+	 * 
+	 * @return true when Vista
 	 */
 	public boolean isWinVista() {
 		return System.getProperty("os.name").indexOf("Vista") >= 0;
@@ -166,6 +182,8 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Returns appropriate command shell for the current windows shell.
+	 * 
+	 * @return name of the command shell
 	 */
 	public String getCommandShell() {
 		if (isWin9x()) {

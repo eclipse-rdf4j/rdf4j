@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.common.platform.support.PosixGnomePlatform;
 import org.eclipse.rdf4j.common.platform.support.PosixKDEPlatform;
 import org.eclipse.rdf4j.common.platform.support.PosixPlatform;
 import org.eclipse.rdf4j.common.platform.support.WindowsPlatform;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,6 +26,8 @@ public class PlatformFactory {
 
 	/**
 	 * Returns the Platform instance corresponding with the current platform.
+	 * 
+	 * @return factory
 	 */
 	public static PlatformFactory getInstance() {
 		if (sharedInstance == null) {
@@ -119,6 +122,8 @@ public class PlatformFactory {
 
 	/**
 	 * Detect gnome environments.
+	 * 
+	 * @return true when Gnome session
 	 */
 	private boolean isGnome() {
 		// check gdm session
@@ -144,6 +149,8 @@ public class PlatformFactory {
 
 	/**
 	 * Detect KDE environments.
+	 * 
+	 * @return true when KDE
 	 */
 	private boolean isKDE() {
 		// check gdm session
@@ -167,6 +174,12 @@ public class PlatformFactory {
 		return false;
 	}
 
+	/**
+	 * Get system environment variable
+	 * 
+	 * @param propertyName
+	 * @return system environment variable
+	 */
 	private String getSystemEnv(String propertyName) {
 		try {
 			return System.getenv(propertyName);
@@ -177,6 +190,11 @@ public class PlatformFactory {
 		}
 	}
 
+	/**
+	 * Main
+	 * 
+	 * @param args  arguments
+	 */
 	public static void main(String[] args) {
 		System.out.println(getPlatform().getApplicationDataDir("My Application: Test").getAbsolutePath());
 	}

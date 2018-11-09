@@ -13,6 +13,9 @@ import java.util.List;
 
 import ch.qos.logback.core.Appender;
 
+/**
+ * Log reader interface
+ */
 public interface LogReader extends Iterator<LogRecord> {
 
 	/**
@@ -92,6 +95,8 @@ public interface LogReader extends Iterator<LogRecord> {
 
 	/**
 	 * Level of the log records returned by this log reader.
+	 * 
+	 * @param level log level
 	 */
 	public void setLevel(LogLevel level);
 
@@ -111,6 +116,8 @@ public interface LogReader extends Iterator<LogRecord> {
 
 	/**
 	 * Thread name of the log records returned by this log reader.
+	 * 
+	 * @param threadname thread name
 	 */
 	public void setThread(String threadname);
 
@@ -150,6 +157,8 @@ public interface LogReader extends Iterator<LogRecord> {
 
 	/**
 	 * End (latest) date of of the log records returned by this log reader.
+	 * 
+	 * @param date end date
 	 */
 	public void setEndDate(Date date);
 
@@ -162,11 +171,15 @@ public interface LogReader extends Iterator<LogRecord> {
 
 	/**
 	 * Min (earliest) available date of the log records.
+	 * 
+	 * @return minimum date
 	 */
 	public Date getMinDate();
 
 	/**
 	 * Max (latest) available date of the log records.
+	 * 
+	 * @return maximum date
 	 */
 	public Date getMaxDate();
 

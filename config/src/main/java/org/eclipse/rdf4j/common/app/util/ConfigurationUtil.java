@@ -16,6 +16,9 @@ import org.eclipse.rdf4j.common.app.config.Configuration;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.io.ResourceUtil;
 
+/**
+ * Configuration helper class
+ */
 public class ConfigurationUtil {
 
 	/**
@@ -27,9 +30,7 @@ public class ConfigurationUtil {
 	 * @throws IOException
 	 *         if the contents of the file could not be read due to an I/O problem
 	 */
-	public static String loadConfigurationContents(File file)
-		throws IOException
-	{
+	public static String loadConfigurationContents(File file) throws IOException {
 		String result = null;
 		if (file.exists()) {
 			result = IOUtil.readString(file);
@@ -47,9 +48,7 @@ public class ConfigurationUtil {
 	 * @throws IOException
 	 *         if the resource could not be read due to an I/O problem
 	 */
-	public static String loadConfigurationContents(String resourceName)
-		throws IOException
-	{
+	public static String loadConfigurationContents(String resourceName) throws IOException {
 		String result = null;
 		InputStream in = ResourceUtil.getInputStream(getResourceName(resourceName));
 		if (in == null) {
@@ -66,13 +65,12 @@ public class ConfigurationUtil {
 	 * 
 	 * @param file
 	 *        the file to load from
+	 * @param defaults default properties
 	 * @return the contents of the file as Properties, or null if the file did not exist
 	 * @throws IOException
 	 *         if the contents of the file could not be read due to an I/O problem
 	 */
-	public static Properties loadConfigurationProperties(File file, Properties defaults)
-		throws IOException
-	{
+	public static Properties loadConfigurationProperties(File file, Properties defaults) throws IOException {
 		Properties result = null;
 		if (file.exists()) {
 			result = IOUtil.readProperties(file, defaults);
@@ -88,13 +86,13 @@ public class ConfigurationUtil {
 	 * 
 	 * @param resourceName
 	 *        the name of the resource
+	 * @param defaults default properties
 	 * @return the contents of the resource as Properties
 	 * @throws IOException
 	 *         if the resource could not be read due to an I/O problem
 	 */
 	public static Properties loadConfigurationProperties(String resourceName, Properties defaults)
-		throws IOException
-	{
+																						throws IOException {
 		Properties result = null;
 
 		String defaultResourceName = getDefaultResourceName(resourceName);
@@ -120,6 +118,12 @@ public class ConfigurationUtil {
 		return result;
 	}
 
+	/**
+	 * Get full resource name
+	 *
+	 * @param resourceName relative resource name
+	 * @return full resource location
+	 */
 	private static String getResourceName(String resourceName) {
 		StringBuilder result = new StringBuilder(Configuration.RESOURCES_LOCATION);
 		if (resourceName.startsWith("/")) {
@@ -129,6 +133,12 @@ public class ConfigurationUtil {
 		return result.toString();
 	}
 
+	/**
+	 * Get full resource name from default location
+	 * 
+	 * @param resourceName relative resource name
+	 * @return full default resource location
+	 */
 	private static String getDefaultResourceName(String resourceName) {
 		StringBuilder result = new StringBuilder(Configuration.DEFAULT_RESOURCES_LOCATION);
 		if (resourceName.startsWith("/")) {
@@ -148,9 +158,7 @@ public class ConfigurationUtil {
 	 * @throws IOException
 	 *         if the settings could not be saved because of an I/O problem
 	 */
-	public static void saveConfigurationContents(String contents, File file)
-		throws IOException
-	{
+	public static void saveConfigurationContents(String contents, File file) throws IOException {
 		if (file.getParentFile().mkdirs() || file.getParentFile().canWrite()) {
 			IOUtil.writeString(contents, file);
 		}
@@ -163,12 +171,12 @@ public class ConfigurationUtil {
 	 *        the configuration properties
 	 * @param file
 	 *        the file to write to
+	 * @param includeDefaults
 	 * @throws IOException
 	 *         if the settings could not be saved because of an I/O problem
 	 */
 	public static void saveConfigurationProperties(Properties props, File file, boolean includeDefaults)
-		throws IOException
-	{
+		throws IOException {
 		if (file.getParentFile().mkdirs() || file.getParentFile().canWrite()) {
 			IOUtil.writeProperties(props, file, includeDefaults);
 		}

@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.logging;
 
+/**
+ * Generic log level enumeration
+ */
 public enum LogLevel {
 	ERROR,
 	WARN,
