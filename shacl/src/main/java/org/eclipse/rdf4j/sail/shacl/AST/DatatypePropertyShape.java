@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.stream.Stream;
 
@@ -35,6 +37,7 @@ import java.util.stream.Stream;
 public class DatatypePropertyShape extends PathPropertyShape {
 
 	private final Resource datatype;
+	private static final Logger logger = LoggerFactory.getLogger(DatatypePropertyShape.class);
 
 	DatatypePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
 		super(id, connection, nodeShape);
@@ -79,7 +82,8 @@ public class DatatypePropertyShape extends PathPropertyShape {
 		new DatatypeFilter(top, null, invalidValues, datatype);
 
 		if(printPlans){
-			printPlan(invalidValues, shaclSailConnection);
+			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);
+			logger.info(planAsGraphvizDot);
 		}
 
 		return new LoggingNode(invalidValues);

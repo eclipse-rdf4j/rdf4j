@@ -102,14 +102,14 @@ public class Select implements PlanNode {
 	}
 
 	@Override
-	public void printPlan() {
-		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		if(repository != null){
 
-				System.out.println(System.identityHashCode(repository)+ " -> " +getId());
+				stringBuilder.append(System.identityHashCode(repository)+ " -> " +getId()).append("\n");
 		}
 		if(connection != null){
-			System.out.println( System.identityHashCode(connection)+ " -> " +getId());
+			stringBuilder.append( System.identityHashCode(connection)+ " -> " +getId()).append("\n");
 		}
 
 	}

@@ -143,13 +143,13 @@ public class LeftOuterJoin implements PlanNode {
 	}
 
 	@Override
-	public void printPlan() {
-		left.printPlan();
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		left.getPlanAsGraphvizDot(stringBuilder);
 
-		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
-		System.out.println(left.getId()+" -> "+getId()+ " [label=\"left\"];");
-		System.out.println(right.getId()+" -> "+getId()+ " [label=\"right\"];");
-		right.printPlan();
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(left.getId()+" -> "+getId()+ " [label=\"left\"];").append("\n");
+		stringBuilder.append(right.getId()+" -> "+getId()+ " [label=\"right\"];").append("\n");
+		right.getPlanAsGraphvizDot(stringBuilder);
 
 	}
 

@@ -28,6 +28,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.stream.Stream;
 
@@ -37,6 +39,8 @@ import java.util.stream.Stream;
  * @author Håvard Ottestad
  */
 public class MaxCountPropertyShape extends PathPropertyShape {
+
+	private static final Logger logger = LoggerFactory.getLogger(MaxCountPropertyShape.class);
 
 	private long maxCount;
 
@@ -94,7 +98,8 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 		PlanNode mergeNode1 = new UnionNode(new LoggingNode(directTupleFromFilter), new LoggingNode(invalidValues));
 
 		if(printPlans){
-			printPlan(mergeNode1, shaclSailConnection);
+			String planAsGraphvizDot = getPlanAsGraphvizDot(mergeNode1, shaclSailConnection);
+			logger.info(planAsGraphvizDot);
 		}
 
 		return new LoggingNode(mergeNode1);

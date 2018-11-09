@@ -22,6 +22,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +36,9 @@ import java.util.stream.Stream;
 public class OrPropertyShape extends PathPropertyShape {
 
 	private final List<PropertyShape> or;
+
+	private static final Logger logger = LoggerFactory.getLogger(OrPropertyShape.class);
+
 
 	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
 		super(id, connection, nodeShape);
@@ -107,7 +112,8 @@ public class OrPropertyShape extends PathPropertyShape {
 		}
 
 		if(printPlans){
-			printPlan(ret, shaclSailConnection);
+			String planAsGraphiz = getPlanAsGraphvizDot(ret, shaclSailConnection);
+			logger.info(planAsGraphiz);
 		}
 
 		return ret;
