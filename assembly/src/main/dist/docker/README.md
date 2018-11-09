@@ -19,11 +19,11 @@ The Dockerfile exposes two volumes:
 ## Building a docker images
 
 The RDF4J version can be selected by setting the `VERSION` build argument
-(default version is 2.4.0).
+(default version is 2.4.1).
 
 Example:
 ```
-docker build --build-arg VERSION=2.4.0 -t eclipse/rdf4j .
+docker build --build-arg VERSION=2.4.1 -t eclipse/rdf4j .
 ```
 
 ## Running the docker container 
@@ -50,4 +50,4 @@ The server will be accessible via http://yourhost:8080/rdf4j-server
 Please note that the RDF4J server in the docker container is not 
 password-protected, nor is it configured to use HTTPS. 
 Additional configuration may be required for running the container in 
-production environments. 
+production environments.
