@@ -16,9 +16,12 @@ import java.io.IOException;
 @Deprecated
 public abstract class LogConfigurationBase extends AbstractLogConfiguration {
 
-	protected LogConfigurationBase()
-		throws IOException
-	{
+	/**
+	 * Constructor
+	 * 
+	 * @throws IOException
+	 */
+	protected LogConfigurationBase() throws IOException {
 		super();
 	}
 
