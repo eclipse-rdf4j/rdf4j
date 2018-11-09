@@ -28,15 +28,11 @@ import org.eclipse.rdf4j.common.app.util.ConfigurationUtil;
 public abstract class AbstractLogConfiguration implements LogConfiguration {
 
 	private static final String LOGGING_CONFIG_FILE = "logging.properties";
-
 	private static final String PACKAGES_SLF4J_KEY = "packages.slf4j";
-
 	private static final String PACKAGES_JUL_KEY = "packages.jul";
 
 	private File baseDir;
-
 	private File confDir;
-
 	private File loggingDir;
 
 	private boolean debugLoggingEnabled;
@@ -45,18 +41,19 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 
 	private AppConfiguration config;
 
-	protected AbstractLogConfiguration()
-		throws IOException
-	{
+	/**
+	 * Constructor
+	 * 
+	 * @throws IOException 
+	 */
+	protected AbstractLogConfiguration() throws IOException {
 		debugLoggingEnabled = false;
 		packages = new LinkedHashSet<String>();
 		initBase();
 	}
 
 	@Override
-	public void setBaseDir(File baseDir)
-		throws IOException
-	{
+	public void setBaseDir(File baseDir) throws IOException {
 		this.baseDir = baseDir;
 		confDir = new File(baseDir, DIR);
 		loggingDir = new File(baseDir, LOGGING_DIR);
@@ -80,9 +77,12 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 		return loggingDir;
 	}
 
-	private void initBase()
-		throws IOException
-	{
+	/**
+	 * Initialize logging, setting log levels and handlers.
+	 * 
+	 * @throws IOException 
+	 */
+	private void initBase() throws IOException {
 		Properties loggingConfig = ConfigurationUtil.loadConfigurationProperties(LOGGING_CONFIG_FILE, null);
 
 		String slf4jPackages = loggingConfig.getProperty(PACKAGES_SLF4J_KEY);
@@ -121,6 +121,11 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 		this.debugLoggingEnabled = debugLoggingEnabled;
 	}
 
+	/**
+	 * Get packages as a set
+	 * 
+	 * @return packages as set of string
+	 */
 	protected Set<String> getPackages() {
 		return Collections.unmodifiableSet(packages);
 	}

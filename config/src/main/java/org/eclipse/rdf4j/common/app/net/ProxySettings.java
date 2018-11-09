@@ -81,32 +81,64 @@ public class ProxySettings implements Configuration {
 		return String.valueOf(true).equalsIgnoreCase(val);
 	}
 
+	/**
+	 *
+	 * @param proxiesEnabled
+	 */
 	public void setProxiesEnabled(boolean proxiesEnabled) {
 		props.setProperty(PROPNAME_PROXIES_ENABLED, String.valueOf(proxiesEnabled));
 	}
 
+	/**
+	 *
+	 * @return
+	 */
 	public String getHttpProxyHost() {
 		return props.getProperty(PROPNAME_HTTP_PROXYHOST);
 	}
 
+	/**
+	 *
+	 * @param httpProxyHost
+	 */
 	public void setHttpProxyHost(String httpProxyHost) {
 		setProperty(PROPNAME_HTTP_PROXYHOST, httpProxyHost);
 		setProxySystemProperty(PROPNAME_HTTP_PROXYHOST, httpProxyHost);
 	}
 
+	/**
+	 * Get HTTP proxy port as string
+	 * 
+	 * @return proxy port
+	 */
 	public String getHttpProxyPort() {
 		return props.getProperty(PROPNAME_HTTP_PROXYPORT);
 	}
 
+	/**
+	 * Set HTTP proxy port
+	 * 
+	 * @param httpProxyPort proxy port
+	 */
 	public void setHttpProxyPort(String httpProxyPort) {
 		setProperty(PROPNAME_HTTP_PROXYPORT, httpProxyPort);
 		setProxySystemProperty(PROPNAME_HTTP_PROXYPORT, httpProxyPort);
 	}
 
+	/**
+	 * Get HTTPS proxy host
+	 * 
+	 * @return proxy host as string
+	 */
 	public String getHttpsProxyHost() {
 		return props.getProperty(PROPNAME_HTTPS_PROXYHOST);
 	}
 
+	/**
+	 * Get HTTPS proxy host
+	 * 
+	 * @param httpsProxyHost 
+	 */
 	public void setHttpsProxyHost(String httpsProxyHost) {
 		setProperty(PROPNAME_HTTPS_PROXYHOST, httpsProxyHost);
 		setProxySystemProperty(PROPNAME_HTTPS_PROXYHOST, httpsProxyHost);

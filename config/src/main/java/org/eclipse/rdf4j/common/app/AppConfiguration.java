@@ -36,23 +36,17 @@ public class AppConfiguration implements Configuration {
 	 *-----------*/
 
 	private String applicationId;
-
 	private String longName;
-
 	private String fullName;
-
 	private AppVersion version;
-
+	
 	private String[] commandLineArgs;
-
+	
 	private String dataDirName;
-
 	private File dataDir;
 
 	private LogConfiguration loggingConfiguration;
-
 	private ProxySettings proxySettings;
-
 	private Properties properties;
 
 	/*--------------*
@@ -123,16 +117,12 @@ public class AppConfiguration implements Configuration {
 	 ----------*/
 
 	@Override
-	public void load()
-		throws IOException
-	{
+	public void load() throws IOException {
 		properties = ConfigurationUtil.loadConfigurationProperties(APP_CONFIG_FILE, null);
 	}
 
 	@Override
-	public void save()
-		throws IOException
-	{
+	public void save() throws IOException {
 		if (null != loggingConfiguration) {
 			loggingConfiguration.save();
 		}
@@ -140,15 +130,17 @@ public class AppConfiguration implements Configuration {
 	}
 
 	@Override
-	public void init()
-		throws IOException
-	{
+	public void init() throws IOException {
 		this.init(true);
 	}
 
-	public void init(final boolean loadLogConfig)
-		throws IOException
-	{
+	/**
+	 * Initialize configuration and proxy settings, optionally load (logback) logging
+	 * 
+	 * @param loadLogConfig load logging configuration
+	 * @throws IOException 
+	 */
+	public void init(final boolean loadLogConfig) throws IOException {
 		if (longName == null) {
 			setLongName(DEFAULT_PREFIX + " " + applicationId);
 		}
@@ -178,9 +170,7 @@ public class AppConfiguration implements Configuration {
 	}
 
 	@Override
-	public void destroy()
-		throws IOException
-	{
+	public void destroy() throws IOException {
 		loggingConfiguration.destroy();
 		// proxySettings.destroy();
 	}
@@ -194,10 +184,20 @@ public class AppConfiguration implements Configuration {
 		return applicationId;
 	}
 
+	/**
+	 * Set the application ID string
+	 * 
+	 * @param applicationId string
+	 */
 	public final void setApplicationId(final String applicationId) {
 		this.applicationId = applicationId;
 	}
 
+	/**
+	 * Set the name of the data directory
+	 * 
+	 * @param dataDirName
+	 */
 	public void setDataDirName(final String dataDirName) {
 		this.dataDirName = dataDirName;
 	}
@@ -231,6 +231,9 @@ public class AppConfiguration implements Configuration {
 		return fullName;
 	}
 
+	/**
+	 * Set full name based upon long name and version
+	 */
 	private void setFullName() {
 		this.fullName = longName;
 		if (version != null) {
@@ -280,27 +283,45 @@ public class AppConfiguration implements Configuration {
 		this.commandLineArgs = (String[])args.clone();
 	}
 
+	/**
+	 * Get the data directory as File
+	 * 
+	 * @return data directory
+	 */
 	public File getDataDir() {
 		return dataDir;
 	}
 
+	/**
+	 * Get logging configuration
+	 * 
+	 * @return log configuration
+	 */
 	public LogConfiguration getLogConfiguration() {
 		return loggingConfiguration;
 	}
 
+	/**
+	 * Get proxy settings
+	 * 
+	 * @return proxy settings
+	 */
 	public ProxySettings getProxySettings() {
 		return proxySettings;
 	}
 
+	/**
+	 * Set proxy settings
+	 * 
+	 * @param proxySettings proxy settings
+	 */
 	public void setProxySettings(final ProxySettings proxySettings) {
 		this.proxySettings = proxySettings;
 	}
 
 	/**
 	 * Configure the data dir.
-	 * 
-	 * @param dataDirParam
-	 *        the data dir to use. If null, determination of the data dir will be deferred to Platform.
+	 * Determination of the data dir might be deferred to Platform.
 	 */
 	private void configureDataDir() {
 		if (dataDirName != null) {
@@ -326,9 +347,8 @@ public class AppConfiguration implements Configuration {
 	 * @throws IllegalAccessException
 	 * @throws InstantiationException
 	 */
-	private LogConfiguration loadLogConfiguration()
-		throws ClassNotFoundException, InstantiationException, IllegalAccessException
-	{
+	private LogConfiguration loadLogConfiguration() 
+							throws ClassNotFoundException, InstantiationException, IllegalAccessException {
 		String classname = this.properties.getProperty("feature.logging.impl");
 		if (classname == null) {
 			classname = DEFAULT_LOGGING;
@@ -342,6 +362,8 @@ public class AppConfiguration implements Configuration {
 	}
 
 	/**
+	 * Get the properties
+	 * 
 	 * @return Returns the properties.
 	 */
 	public Properties getProperties() {

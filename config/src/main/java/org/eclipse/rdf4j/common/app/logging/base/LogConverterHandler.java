@@ -21,14 +21,15 @@ import org.slf4j.LoggerFactory;
  */
 public class LogConverterHandler extends Handler {
 
+	/**
+	 * Constructor
+	 */
 	public LogConverterHandler() {
 		setLevel(Level.ALL);
 	}
 
 	@Override
-	public void close()
-		throws SecurityException
-	{
+	public void close() throws SecurityException {
 		// do nothing
 	}
 

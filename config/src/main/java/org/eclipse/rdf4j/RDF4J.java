@@ -16,10 +16,20 @@ public class RDF4J {
 
 	private static final String VERSION = loadVersion();
 
+	/**
+	 * Get version number string
+	 * 
+	 * @return version as string
+	 */
 	public final static String getVersion() {
 		return VERSION;
 	}
 
+	/**
+	 * Load version string from java package
+	 * 
+	 * @return version string
+	 */
 	private static String loadVersion() {
 		String impl = RDF4J.class.getPackage().getImplementationVersion();
 		if (impl == null) {

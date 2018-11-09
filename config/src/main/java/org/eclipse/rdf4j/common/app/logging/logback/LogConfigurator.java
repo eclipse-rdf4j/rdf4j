@@ -29,9 +29,13 @@ public class LogConfigurator extends JoranConfigurator {
 	Map<String, String> logReaderClassNames = new HashMap<String, String>();
 
 	Map<String, Appender<?>> appenders = new HashMap<String, Appender<?>>();
-
 	String defaultAppender = null;
 
+	/**
+	 * Get default log reader
+	 * 
+	 * @return
+	 */
 	public LogReader getDefaultLogReader() {
 		if (defaultAppender == null) {
 			if (appenders.keySet().iterator().hasNext()) {
@@ -41,6 +45,11 @@ public class LogConfigurator extends JoranConfigurator {
 		return this.getLogReader(defaultAppender);
 	}
 
+	/**
+	 * 
+	 * @param appenderName
+	 * @return log reader
+	 */
 	public LogReader getLogReader(String appenderName) {
 		if (appenderName != null) {
 			String className = logReaderClassNames.get(appenderName);

@@ -22,15 +22,12 @@ import org.eclipse.rdf4j.common.logging.LogReader;
 public interface LogConfiguration extends Configuration {
 
 	public static final String LOGGING_DIR = "logs";
-
 	public static final String LOG_FILE = "main.log";
 
 	public static final String USER_EVENT_LOG_FILE = "user-event.log";
-
 	public static final String ADMIN_EVENT_LOG_FILE = "admin-event.log";
 
 	public static final String USER_EVENT_LOGGER_NAME = "event.user";
-
 	public static final String ADMIN_EVENT_LOGGER_NAME = "event.admin";
 
 	/**
@@ -40,8 +37,7 @@ public interface LogConfiguration extends Configuration {
 	 *        the base location on the file system for logging configuration and data
 	 * @throws IOException
 	 */
-	public abstract void setBaseDir(File baseDir)
-		throws IOException;
+	public abstract void setBaseDir(File baseDir) throws IOException;
 
 	/**
 	 * The base location on the file system for logging configuration and data
@@ -96,8 +92,18 @@ public interface LogConfiguration extends Configuration {
 	 */
 	public abstract void setDebugLoggingEnabled(boolean enabled);
 
+	/**
+	 * Set application configuration
+	 * 
+	 * @param config application configuration
+	 */
 	public abstract void setAppConfiguration(AppConfiguration config);
 
+	/**
+	 * Get application configuration
+	 * 
+	 * @return application configuration
+	 */
 	public abstract AppConfiguration getAppConfiguration();
 
 }
