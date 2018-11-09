@@ -39,15 +39,4 @@ public interface Setting<T> {
 	 * Clear setting
 	 */
 	public void clear();
-	
-	
-	/**
-	 * Load setting from config file
-	 */
-	public void load();
-	
-	/**
-	 * Save setting to config file
-	 */
-	public void save();
 }

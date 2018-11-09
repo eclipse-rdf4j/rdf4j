@@ -7,12 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import org.eclipse.rdf4j.console.setting.DefaultConsoleParameters;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Properties;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
@@ -21,6 +20,7 @@ import java.util.regex.Pattern;
 import org.eclipse.rdf4j.RDF4J;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.common.app.AppVersion;
+import org.eclipse.rdf4j.common.app.util.ConfigurationUtil;
 
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.UserInterruptException;
@@ -49,6 +49,8 @@ import org.eclipse.rdf4j.console.command.Verify;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
 import org.eclipse.rdf4j.console.setting.DefaultConsoleParameters;
+import org.eclipse.rdf4j.console.setting.QueryPrefix;
+import org.eclipse.rdf4j.console.setting.ShowPrefix;
 
 
 /**
@@ -65,8 +67,9 @@ public class Console {
 	private final static AppVersion VERSION = AppVersion.parse(RDF4J.getVersion());
 	private final static String APP_NAME = "Console";
 	private final static AppConfiguration APP_CFG = new AppConfiguration(APP_NAME, VERSION);
-
 	private final static ConsoleState STATE = new DefaultConsoleState(APP_CFG);
+	
+	private final static String PROP_PREFIX = "org.eclipse.rdf4j.console.setting.";
 	
 	private static boolean exitOnError;
 
@@ -75,7 +78,7 @@ public class Console {
 	private final SortedMap<String,ConsoleCommand> commandMap = new TreeMap<>();
 	private final SortedMap<String,ConsoleSetting> settingMap = new TreeMap<>();
 
-	
+		
 	// "Core" commands
 	private final Connect connect;
 	private final Disconnect disconnect;
@@ -193,18 +196,21 @@ public class Console {
 	 */
 	public Console() throws IOException {
 		APP_CFG.init();
+		
+		// Basic console parameters
+		register(new ConsoleWidth(80));
+		register(new QueryPrefix(true));
+		register(new ShowPrefix(true));
+		// FIXME: to be removed in 3.0 release + pass a Map to Commands (breaks signature)
+		DefaultConsoleParameters PARAMS = new DefaultConsoleParameters(settingMap);
+
 		consoleIO = new ConsoleIO(STATE);
 
 		this.close = new Close(consoleIO, STATE);
 		this.disconnect = new Disconnect(consoleIO, STATE, close);
 		this.connect = new Connect(consoleIO, STATE, disconnect);
 		this.open = new Open(consoleIO, STATE, close);
-	
-		register(new ConsoleWidth(80));
-		
-		// Basic console parameters
-		ConsoleParameters PARAMS = new DefaultConsoleParameters();
-
+			
 		// "core" commands for connnecting
 		register(open);
 		register(close);
@@ -232,6 +238,35 @@ public class Console {
 	}
 
 	/**
+	 * Load settings from properties file (application.properties)
+	 */
+	private void loadSettings() {
+		Properties prop = APP_CFG.getProperties();
+		settingMap.forEach((k,v) -> {
+				String val = prop.getProperty(PROP_PREFIX + k, "");
+				try {
+					v.set(val);
+				} catch (IllegalArgumentException iae) {
+					consoleIO.writeError("Could not load property for " + k);
+				}
+			});
+	}
+	
+	/**
+	 * Save settings to default properties file (application.properties)
+	 */
+	private void saveSettings() {
+		Properties prop = APP_CFG.getProperties();
+		settingMap.forEach((k,v) -> {
+				String oldval = prop.getProperty(PROP_PREFIX + k, "");
+				String newval = v.get() != null ? String.valueOf(v.get()) : oldval;
+				prop.setProperty(PROP_PREFIX + k, newval);
+			});
+		//ConfigurationUtil.saveConfigurationProperties(prop, file, exitOnError);
+	}
+	
+	
+	/**
 	 * Start the interactive console, return error code on exit
 	 * 
 	 * @throws IOException 
@@ -241,6 +276,8 @@ public class Console {
 		consoleIO.writeln();
 		consoleIO.writeln(RDF4J.getVersion());
 		consoleIO.writeln("Type 'help' for help.");
+		
+		loadSettings();
 		
 		int exitCode = 0;
 		try {
@@ -262,6 +299,9 @@ public class Console {
 		} finally {
 			disconnect.execute(false);
 		}
+		
+		saveSettings();
+		
 		if (exitCode != 0) {
 			System.exit(exitCode);
 		}

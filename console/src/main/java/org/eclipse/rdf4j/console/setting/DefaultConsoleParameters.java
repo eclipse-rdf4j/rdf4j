@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.console.setting;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
 
 import org.eclipse.rdf4j.console.ConsoleParameters;
 
@@ -25,14 +27,10 @@ public class DefaultConsoleParameters implements ConsoleParameters {
 	/**
 	 * Constructor
 	 */
-	public DefaultConsoleParameters() {
-		this.settings = new HashMap<>();
-		settings.put(ConsoleWidth.NAME, new ConsoleWidth(80));
-		settings.put(QueryPrefix.NAME, new QueryPrefix(true));
-		settings.put(ShowPrefix.NAME, new ShowPrefix(true));
+	public DefaultConsoleParameters(Map<String,ConsoleSetting> settings) {
+		this.settings = settings;
 	}
 
-	
 	@Override
 	public int getWidth() {
 		return (Integer) settings.get(ConsoleWidth.NAME).get();

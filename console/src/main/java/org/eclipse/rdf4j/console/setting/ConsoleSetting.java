@@ -68,15 +68,4 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 	public String getHelpLong() {
 		return "No additional help available";
 	}
-	
-	@Override
-	public void load() {
-		throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-	}
-
-	@Override
-	public void save() {
-		throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-	}
-	
 }
