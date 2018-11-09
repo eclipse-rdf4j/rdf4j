@@ -20,7 +20,8 @@ import org.eclipse.rdf4j.common.lang.ObjectUtil;
  */
 public class AppVersion implements Comparable<AppVersion> {
 
-	private static final Pattern VERSION_REGEX = Pattern.compile("^\\s*(\\d+)(?:\\.(\\d+)(?:\\.(\\d+))?)?(M[^\\-\\+]*)?(?:-([^\\+]+))?(?:\\+(.+))?\\s*$");
+	private static final Pattern VERSION_REGEX = 
+		Pattern.compile("^\\s*(\\d+)(?:\\.(\\d+)(?:\\.(\\d+))?)?(M[^\\-\\+]*)?(?:-([^\\+]+))?(?:\\+(.+))?\\s*$");
 
 	/**
 	 * The version's major version number.
@@ -60,41 +61,73 @@ public class AppVersion implements Comparable<AppVersion> {
 	}
 
 	/**
-	 * Creates a new <tt>major.minor</tt> version number, e.g. <tt>1.0</tt>.
+	 * Creates a new <tt>major.minor</tt> version number, e.g.<tt>1.0</tt>.
+	 * 
+	 * @param major major number
+	 * @param minor minor number
 	 */
 	public AppVersion(int major, int minor) {
 		this(major, minor, -1, -1, null);
 	}
 
 	/**
-	 * Creates a new <tt>major.minor.patch</tt> version number, e.g. <tt>1.0.1</tt>.
+	 * Creates a new <tt>major.minor.patch</tt> version number, e.g.<tt>1.0.1</tt>.
+	 * 
+	 * @param major major number
+	 * @param minor minor number
+	 * @param patch patch number
 	 */
 	public AppVersion(int major, int minor, int patch) {
 		this(major, minor, patch, -1, null);
 	}
 
 	/**
-	 * Creates a new <tt>major.minor-modifier</tt> version number, e.g. <tt>1.0-beta1</tt>.
+	 * Creates a new <tt>major.minor-modifier</tt> version number, e.g.<tt>1.0-beta1</tt>.
+	 * 
+	 * @param major major number
+	 * @param minor minor number
+	 * @param modifier additional string
 	 */
 	public AppVersion(int major, int minor, String modifier) {
 		this(major, minor, -1, -1, modifier);
 	}
 
 	/**
-	 * Creates a new <tt>major.minor.patch-modifier</tt> version number, e.g. <tt>1.0.1-SNAPSHOT</tt>.
+	 * Creates a new <tt>major.minor.patch-modifier</tt> version number, e.g.<tt>1.0.1-SNAPSHOT</tt>.
+	 * 
+	 * @param major major number
+	 * @param minor minor number
+	 * @param patch patch number
+	 * @param modifier additional string
 	 */
 	public AppVersion(int major, int minor, int patch, String modifier) {
 		this(major, minor, patch, -1, modifier);
 	}
 
 	/**
-	 * Creates a new <tt>major.minor.patchMmilestone-modifier</tt> version number, e.g.
-	 * <tt>1.0.1M1-SNAPSHOT</tt>.
+	 * Creates a new <tt>major.minor.patchMmilestone-modifier</tt> version number, 
+	 * e.g.<tt>1.0.1M1-SNAPSHOT</tt>.
+	 * 
+	 * @param major major number
+	 * @param minor minor number
+	 * @param patch patch number
+	 * @param milestone milestone number
+	 * @param modifier additional string
 	 */
 	public AppVersion(int major, int minor, int patch, int milestone, String modifier) {
 		this(major, minor, patch, milestone, modifier, null);
 	}
 
+	/**
+	 * Creates a new version number
+	 * 
+	 * @param major major number
+	 * @param minor minor number
+	 * @param patch patch number
+	 * @param milestone milestone number
+	 * @param modifier additional string
+	 * @param build build string
+	 */
 	public AppVersion(int major, int minor, int patch, int milestone, String modifier, String build) {
 		this.major = major;
 		this.minor = minor;
@@ -106,56 +139,100 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Gets the version's major version number.
+	 * 
+	 * @return major number
 	 */
 	public int getMajor() {
 		return major;
 	}
 
+	/**
+	 * Set major number
+	 * 
+	 * @param major major number
+	 */
 	public void setMajor(int major) {
 		this.major = major;
 	}
 
 	/**
 	 * Gets the version's minor version number.
+	 * 
+	 * @return minor number
 	 */
 	public int getMinor() {
 		return minor;
 	}
 
+	/**
+	 * Set minor number
+	 * 
+	 * @param minor minor number
+	 */
 	public void setMinor(int minor) {
 		this.minor = minor;
 	}
 
 	/**
-	 * Gets the version's micro version number.
+	 * Gets the version's micro version / patch level number.
+	 * 
+	 * @return patch level number
 	 */
 	public int getPatch() {
 		return patch;
 	}
 
+	/**
+	 * Sets the version's micro version / patch level number.
+	 * 
+	 * @param micro patch level number
+	 */
 	public void setPatch(int micro) {
 		this.patch = micro;
 	}
 
+	/**
+	 * Set the milestone number
+	 * 
+	 * @param milestone milestone number
+	 */
 	public void setMilestone(int milestone) {
 		this.milestone = milestone;
 	}
 
+	/**
+	 * Get the milestone number
+	 * 
+	 * @return milestone number
+	 */
 	public int getMilestone() {
 		return milestone;
 	}
 
 	/**
 	 * Gets the version's release modifier part.
+	 * 
+	 * @return modifier string
 	 */
 	public String getModifier() {
 		return modifier;
 	}
 
+	/**
+	 * Set the version's release modifier part.
+	 * 
+	 * @param modifier modifier string
+	 */
 	public void setModifier(String modifier) {
 		this.modifier = modifier;
 	}
 
+	/**
+	 * Check if two versions are exactly equal, modifier is case insensitive.
+	 * 
+	 * @param other second object
+	 * @return true if equal
+	 */
 	@Override
 	public boolean equals(Object other) {
 		boolean isEqual = false;
@@ -195,6 +272,9 @@ public class AppVersion implements Comparable<AppVersion> {
 	/**
 	 * Checks if this version is older than the specified version, according to the result of
 	 * {@link #compareTo(AppVersion)}.
+	 * 
+	 * @param other other version
+	 * @return true if this version is older than other
 	 */
 	public boolean olderThan(AppVersion other) {
 		return this.compareTo(other) < 0;
@@ -203,6 +283,9 @@ public class AppVersion implements Comparable<AppVersion> {
 	/**
 	 * Checks if this version is newer than the specified version, according to the result of
 	 * {@link #compareTo(AppVersion)}.
+	 * 
+	 * @param other other version
+	 * @return true if this version is newer than other
 	 */
 	public boolean newerThan(AppVersion other) {
 		return this.compareTo(other) > 0;
@@ -210,11 +293,13 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Compares two version numbers according to their major, minor, patch and milestone version numbers,
-	 * ordering from oldest to newest version. If all version numbers are equal then their modifiers are
-	 * compared lexicographically (based on the Unicode value of each character), ignoring case. Versions
-	 * without a modifier or milestone are considered to be the "final" versions and come after otherwise
-	 * equal versions with a modifier or milestone.
+	 * ordering from oldest to newest version.
+	 * If all version numbers are equal, then their modifiers are compared lexicographically 
+	 * (based on the Unicode value of each character), ignoring case. 
+	 * Versions without a modifier or milestone are considered to be the "final" versions 
+	 * and come after other versions with a modifier or milestone.
 	 * 
+	 * @param other
 	 * @return <tt>0</tt> if both versions are equal, a negative number if this version is older than
 	 *         <tt>other</tt>, or a positive number otherwise.
 	 */

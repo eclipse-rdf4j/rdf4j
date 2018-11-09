@@ -23,17 +23,20 @@ public interface Platform {
 
 	/**
 	 * Get a descriptive name for this platform.
+	 * @return 
 	 */
 	public String getName();
 
 	/**
 	 * Returns the operating system dependend application data dir.
+	 * @return 
 	 */
 	public File getOSApplicationDataDir();
 
 	/**
-	 * Returns the operating system dependend application data dir. This will be a sub-directory of the
-	 * directory returned by the no-argument version of this method.
+	 * Returns the operating system dependend application data dir.This will be a sub-directory of the
+ directory returned by the no-argument version of this method.
+	 * @param applicationName
 	 */
 	public File getOSApplicationDataDir(String applicationName);
 
