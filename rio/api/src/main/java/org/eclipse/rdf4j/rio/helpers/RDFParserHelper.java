@@ -444,6 +444,30 @@ public class RDFParserHelper {
 	}
 
 	/**
+	 * Reports a fatal error with associated line- and column number to the registered ParseErrorListener, if
+	 * any, and throws a <tt>ParseException</tt> wrapped the supplied exception afterwards. An exception is
+	 * made for the case where the supplied exception is a {@link RDFParseException}; in that case the
+	 * supplied exception is not wrapped in another ParseException and the error message is not reported to
+	 * the ParseErrorListener, assuming that it has already been reported when the original ParseException was
+	 * thrown.
+	 */
+	public static void reportFatalError(String message, Exception e, long lineNo, long columnNo,
+			ParseErrorListener errListener)
+		throws RDFParseException
+	{
+		if (e instanceof RDFParseException) {
+			throw (RDFParseException)e;
+		}
+		else {
+			if (errListener != null) {
+				errListener.fatalError(message, lineNo, columnNo);
+			}
+
+			throw new RDFParseException(message, e, lineNo, columnNo);
+		}
+	}
+
+	/**
 	 * Protected constructor to prevent direct instantiation.
 	 */
 	protected RDFParserHelper() {
