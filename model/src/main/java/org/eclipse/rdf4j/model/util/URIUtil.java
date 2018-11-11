@@ -11,6 +11,7 @@ import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.URI;
 
@@ -36,6 +37,11 @@ public class URIUtil {
 	private static final Set<Character> mark = new HashSet<Character>(
 			Arrays.asList(new Character[] { '-', '_', '.', '!', '~', '*', '\'', '(', ')' }));
 
+	/**
+	 * Regular expression pattern for matching unicode control characters.
+	 */
+	private static final Pattern unicodeControlCharPattern = Pattern.compile(".*[\u0000-\u001F\u007F-\u009F].*");
+	
 	/**
 	 * Finds the index of the first local name character in an (non-relative) URI. This index is determined by
 	 * the following the following steps:
@@ -146,9 +152,8 @@ public class URIUtil {
 	 * @see <a href="http://www.ietf.org/rfc/rfc2396.txt">RFC 2396</a>
 	 */
 	public static boolean isValidURIReference(String uriRef) {
-
 		// check that string contains no Unicode control characters.
-		boolean valid = !uriRef.matches(".*[\u0000-\u001F\u007F-\u009F].*");
+		boolean valid = !unicodeControlCharPattern.matcher(uriRef).matches();
 		if (valid) {
 			// check that proper encoding/escaping would yield a valid absolute
 			// RFC 2396 URI
