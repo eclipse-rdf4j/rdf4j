@@ -25,6 +25,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Launches a process, redirecting the output of that sub-process to the output of this (the parent) process.
  */
+@Deprecated
 public final class ProcessLauncher {
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());

@@ -27,6 +27,7 @@ public class WindowsPlatform extends AbstractPlatform {
 	/**
 	 * indication whether this is a windows9x platform: 0 means not initialized, -1 means false, 1 means true
 	 */
+	@Deprecated
 	private int isWin9x = 0;
 
 	/**
@@ -108,6 +109,7 @@ public class WindowsPlatform extends AbstractPlatform {
 	 * 
 	 * @return true when not Win9x/NT/2000
 	 */
+	@Deprecated
 	public boolean warnsWhenOpeningExecutable() {
 		return !isWin9x() && !isWinNT() && !isWin2000();
 	}
@@ -117,6 +119,7 @@ public class WindowsPlatform extends AbstractPlatform {
 	 * 
 	 * @return true when Win9x or higher
 	 */
+	@Deprecated
 	public boolean isWin9x() {
 		if (isWin9x == 0) {
 			// let's see if this is windows 9x
@@ -140,6 +143,7 @@ public class WindowsPlatform extends AbstractPlatform {
 	 * 
 	 * @return true when WinNT
 	 */
+	@Deprecated
 	public boolean isWinNT() {
 		return System.getProperty("os.name").toLowerCase().indexOf("nt") >= 0;
 	}
@@ -149,6 +153,7 @@ public class WindowsPlatform extends AbstractPlatform {
 	 * 
 	 * @return true when Win2000
 	 */
+	@Deprecated
 	public boolean isWin2000() {
 		return System.getProperty("os.name").indexOf("2000") >= 0;
 	}
@@ -158,6 +163,7 @@ public class WindowsPlatform extends AbstractPlatform {
 	 * 
 	 * @return true wen WinXP
 	 */
+	@Deprecated
 	public boolean isWinXP() {
 		return System.getProperty("os.name").toLowerCase().indexOf("xp") >= 0;
 	}
@@ -167,6 +173,7 @@ public class WindowsPlatform extends AbstractPlatform {
 	 * 
 	 * @return true when Win2003
 	 */
+	@Deprecated
 	public boolean isWin2003() {
 		return System.getProperty("os.name").indexOf("2003") >= 0;
 	}
@@ -176,6 +183,7 @@ public class WindowsPlatform extends AbstractPlatform {
 	 * 
 	 * @return true when Vista
 	 */
+	@Deprecated
 	public boolean isWinVista() {
 		return System.getProperty("os.name").indexOf("Vista") >= 0;
 	}
