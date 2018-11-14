@@ -14,6 +14,8 @@ import java.util.Locale;
 import java.util.Properties;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -77,8 +79,7 @@ public class Console {
 
 	private final SortedMap<String,ConsoleCommand> commandMap = new TreeMap<>();
 	private final SortedMap<String,ConsoleSetting> settingMap = new TreeMap<>();
-
-		
+	
 	// "Core" commands
 	private final Connect connect;
 	private final Disconnect disconnect;
@@ -102,8 +103,7 @@ public class Console {
 	public ConsoleIO getConsoleIO() {
 		return this.consoleIO;
 	}
-	
-	
+		
 	/**
 	 * Set exit on error mode
 	 * 
@@ -241,13 +241,16 @@ public class Console {
 	 * Load settings from properties file (application.properties)
 	 */
 	private void loadSettings() {
-		Properties prop = APP_CFG.getProperties();
+		Properties props = APP_CFG.getProperties();
+		
 		settingMap.forEach((k,v) -> {
-				String val = prop.getProperty(PROP_PREFIX + k, "");
+				String val = props.getProperty(PROP_PREFIX + k, "");
 				try {
-					v.set(val);
+					if (!val.isEmpty()) {
+						v.setFromString(val);
+					}
 				} catch (IllegalArgumentException iae) {
-					consoleIO.writeError("Could not load property for " + k);
+					consoleIO.writeError("Illegal value for property " + k);
 				}
 			});
 	}
@@ -256,13 +259,24 @@ public class Console {
 	 * Save settings to default properties file (application.properties)
 	 */
 	private void saveSettings() {
-		Properties prop = APP_CFG.getProperties();
+		Properties props = APP_CFG.getProperties();
+		
 		settingMap.forEach((k,v) -> {
-				String oldval = prop.getProperty(PROP_PREFIX + k, "");
-				String newval = v.get() != null ? String.valueOf(v.get()) : oldval;
-				prop.setProperty(PROP_PREFIX + k, newval);
+				String prop = PROP_PREFIX + k;
+				String oldval = props.getProperty(prop, "");
+				String val = v.get() != null ? String.valueOf(v.get()) : oldval;
+				
+				if (!val.isEmpty()) {
+					props.setProperty(prop, val);
+				} else {
+					props.remove(prop);
+				}
 			});
-		//ConfigurationUtil.saveConfigurationProperties(prop, file, exitOnError);
+		try {
+			APP_CFG.save();
+		} catch (IOException ex) {
+			consoleIO.writeError("Could not save properties: " + ex.getMessage());
+		}
 	}
 	
 	

@@ -14,6 +14,14 @@ package org.eclipse.rdf4j.console;
  * @param <T>
  */
 public interface Setting<T> {
+
+	/**
+	 * Get the parameter type
+	 * 
+	 * @return class type
+	 */
+	public Class getType();
+	
 	/**
 	 * Get the default value
 	 * 

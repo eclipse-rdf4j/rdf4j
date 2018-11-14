@@ -28,4 +28,9 @@ public class QueryPrefix extends ConsoleSetting<Boolean> {
 	public String getName() {
 		return NAME;
 	}
+	
+	@Override
+	public void setFromString(String value) throws IllegalArgumentException {
+		set(Boolean.valueOf(value));
+	}
 }

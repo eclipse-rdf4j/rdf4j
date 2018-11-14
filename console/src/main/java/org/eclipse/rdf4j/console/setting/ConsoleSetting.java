@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.setting;
 
+import java.util.Map;
 import org.eclipse.rdf4j.console.Help;
 import org.eclipse.rdf4j.console.Setting;
 
@@ -19,6 +20,7 @@ import org.eclipse.rdf4j.console.Setting;
 public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 	private final T defaultValue;
 	private T value;
+	private final Class clazz;
 	
 	/**
 	 * Constructor
@@ -28,6 +30,12 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 	public ConsoleSetting(T defaultValue) {
 		this.defaultValue = defaultValue;
 		this.value = defaultValue;
+		this.clazz = defaultValue.getClass();
+	}
+	
+	@Override
+	public Class getType() {
+		return this.clazz;
 	}
 	
 	@Override
@@ -45,10 +53,19 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 		this.value = value;
 	}
 	
+	/**
+	 * Set the value for this setting from a string
+	 *
+	 * @param value string  value
+	 */
+	public abstract void setFromString(String value) throws IllegalArgumentException;
+	
+	
 	@Override
 	public void clear() {
 		this.value = defaultValue;
 	}
+	
 	/**
 	 * Get short description, small enough to fit on one console row
 	 * 

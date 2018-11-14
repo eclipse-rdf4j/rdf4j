@@ -35,6 +35,13 @@ public class LogLevel extends ConsoleSetting<String> {
 		LOG_LEVELS = logLevels.build();
 	}
 	
+	/**
+	 * Constructor
+	 */
+	public LogLevel() {
+		super("info");
+	}
+	
 	@Override
 	public String getName() {
 		return NAME;
@@ -65,11 +72,9 @@ public class LogLevel extends ConsoleSetting<String> {
 	public void clear() {
 		set(getDefault());
 	}
-
-	/**
-	 * Constructor
-	 */
-	public LogLevel() {
-		super("info");
+	
+	@Override
+	public void setFromString(String value) throws IllegalArgumentException {
+		set(value);
 	}
 }

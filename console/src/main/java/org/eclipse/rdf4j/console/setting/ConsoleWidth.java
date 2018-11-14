@@ -44,4 +44,13 @@ public class ConsoleWidth extends ConsoleSetting<Integer> {
 	public void clear() {
 		set(getDefault());
 	}
+
+	@Override
+	public void setFromString(String value) throws IllegalArgumentException {
+		try {
+			set(Integer.valueOf(value));
+		} catch (NumberFormatException nfe) {
+			throw new IllegalArgumentException();
+		}
+	}
 }
