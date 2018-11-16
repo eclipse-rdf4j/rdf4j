@@ -15,6 +15,11 @@ package org.eclipse.rdf4j.console.setting;
 public class QueryPrefix extends ConsoleSetting<Boolean> {
 	public final static String NAME = "queryprefix";
 
+	@Override
+	public String getHelpLong() {
+		return "set queryPrefix=<true|false>   Toggles automatic use of known namespace prefixes in queries\n";
+	}
+	
 	/**
 	 * Constructor
 	 */

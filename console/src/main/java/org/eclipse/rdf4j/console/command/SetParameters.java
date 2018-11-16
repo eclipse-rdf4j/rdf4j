@@ -37,9 +37,8 @@ public class SetParameters extends ConsoleCommand {
 	public String getHelpLong() {
 		StringBuilder builder = new StringBuilder(settings.size() * 80);
 		for (ConsoleSetting setting: settings.values()) {
-			builder.append(setting.getHelpShort()).append("\n");
+			builder.append(setting.getHelpLong());
 		}
-
 		return PrintHelp.USAGE
 			+ "set                            Shows all parameter values\n"
 			+ builder.toString();

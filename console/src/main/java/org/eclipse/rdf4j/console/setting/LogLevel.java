@@ -35,6 +35,11 @@ public class LogLevel extends ConsoleSetting<String> {
 		LOG_LEVELS = logLevels.build();
 	}
 	
+	@Override
+	public String getHelpLong() {
+		return "set log=<level>                Set the logging level (none, error, warning, info or debug)\n";
+	}
+	
 	/**
 	 * Constructor
 	 */

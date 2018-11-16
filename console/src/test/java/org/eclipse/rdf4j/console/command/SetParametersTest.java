@@ -19,9 +19,13 @@ import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
+import java.util.HashMap;
+import java.util.Map;
 
-import org.eclipse.rdf4j.console.ConsoleParameters;
-import org.eclipse.rdf4j.console.ConsoleParametersConverter;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.ConsoleWidth;
+import org.eclipse.rdf4j.console.setting.QueryPrefix;
+import org.eclipse.rdf4j.console.setting.ShowPrefix;
 
 public class SetParametersTest extends AbstractCommandTest {
 	SetParameters setParameters;
@@ -30,8 +34,12 @@ public class SetParametersTest extends AbstractCommandTest {
 
 	@Before
 	public void setUp() {
-		ConsoleParameters consoleParameters = new ConsoleParametersConverter();
-		setParameters = new SetParameters(mockConsoleIO, mockConsoleState, consoleParameters);
+		Map<String,ConsoleSetting> settings = new HashMap<>();
+		settings.put(ConsoleWidth.NAME, new ConsoleWidth());
+		settings.put(QueryPrefix.NAME, new QueryPrefix());
+		settings.put(ShowPrefix.NAME, new ShowPrefix());
+		
+		setParameters = new SetParameters(mockConsoleIO, mockConsoleState, settings);
 
 		originalLevel = ((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).getLevel();
 		// Start all tests assuming a base of Debug logging, then revert after the test

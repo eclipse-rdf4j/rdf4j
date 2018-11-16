@@ -15,6 +15,11 @@ package org.eclipse.rdf4j.console.setting;
 public class ConsoleWidth extends ConsoleSetting<Integer> {
 	public final static String NAME = "width";
 	
+	@Override
+	public String getHelpLong() {
+		return "set width=<number>             Set the width for query result tables\n";
+	}
+	
 	/**
 	 * Constructor
 	 * 
