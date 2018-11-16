@@ -18,10 +18,19 @@ public class ConsoleWidth extends ConsoleSetting<Integer> {
 	/**
 	 * Constructor
 	 * 
-	 * @param width
+	 * Default width is 80.
 	 */
-	public ConsoleWidth(int width) {
-		super(width);
+	public ConsoleWidth() {
+		super(80);
+	}
+	
+	/**
+	 * Constructor
+	 * 
+	 * @param initValue
+	 */
+	public ConsoleWidth(Integer initValue) {
+		super(initValue);
 	}
 	
 	@Override
@@ -38,11 +47,6 @@ public class ConsoleWidth extends ConsoleSetting<Integer> {
 		} else {
 			throw new IllegalArgumentException("Width must be a positive integer");
 		}
-	}
-
-	@Override
-	public void clear() {
-		set(getDefault());
 	}
 
 	@Override

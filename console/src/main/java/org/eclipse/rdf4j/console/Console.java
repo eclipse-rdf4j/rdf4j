@@ -14,15 +14,12 @@ import java.util.Locale;
 import java.util.Properties;
 import java.util.SortedMap;
 import java.util.TreeMap;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.RDF4J;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.common.app.AppVersion;
-import org.eclipse.rdf4j.common.app.util.ConfigurationUtil;
 
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.UserInterruptException;
@@ -50,7 +47,6 @@ import org.eclipse.rdf4j.console.command.Verify;
 
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
-import org.eclipse.rdf4j.console.setting.DefaultConsoleParameters;
 import org.eclipse.rdf4j.console.setting.QueryPrefix;
 import org.eclipse.rdf4j.console.setting.ShowPrefix;
 
@@ -198,11 +194,11 @@ public class Console {
 		APP_CFG.init();
 		
 		// Basic console parameters
-		register(new ConsoleWidth(80));
-		register(new QueryPrefix(true));
-		register(new ShowPrefix(true));
+		register(new ConsoleWidth());
+		register(new QueryPrefix());
+		register(new ShowPrefix());
 		// FIXME: to be removed in 3.0 release + pass a Map to Commands (breaks signature)
-		DefaultConsoleParameters PARAMS = new DefaultConsoleParameters(settingMap);
+		//ConsoleParametersWrapper PARAMS = new ConsoleParametersWrapper(settingMap);
 
 		consoleIO = new ConsoleIO(STATE);
 
@@ -218,8 +214,8 @@ public class Console {
 		register(disconnect);
 		// querying
 		register(new Federate(consoleIO, STATE));
-		register(new Sparql(consoleIO, STATE, PARAMS));
-		register(new Serql(consoleIO, STATE, PARAMS));
+		register(new Sparql(consoleIO, STATE, settingMap));
+		register(new Serql(consoleIO, STATE, settingMap));
 		// information
 		register(new PrintHelp(consoleIO, commandMap));
 		register(new PrintInfo(consoleIO, STATE));
@@ -234,7 +230,7 @@ public class Console {
 		register(new Export(consoleIO, STATE));
 		register(new Convert(consoleIO, STATE));
 		// parameters
-		register(new SetParameters(consoleIO, STATE, PARAMS));
+		register(new SetParameters(consoleIO, STATE, settingMap));
 	}
 
 	/**

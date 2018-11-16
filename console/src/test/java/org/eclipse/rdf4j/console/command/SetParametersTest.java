@@ -21,7 +21,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 
 import org.eclipse.rdf4j.console.ConsoleParameters;
-import org.eclipse.rdf4j.console.setting.DefaultConsoleParameters;
+import org.eclipse.rdf4j.console.ConsoleParametersConverter;
 
 public class SetParametersTest extends AbstractCommandTest {
 	SetParameters setParameters;
@@ -30,7 +30,7 @@ public class SetParametersTest extends AbstractCommandTest {
 
 	@Before
 	public void setUp() {
-		ConsoleParameters consoleParameters = new DefaultConsoleParameters();
+		ConsoleParameters consoleParameters = new ConsoleParametersConverter();
 		setParameters = new SetParameters(mockConsoleIO, mockConsoleState, consoleParameters);
 
 		originalLevel = ((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).getLevel();

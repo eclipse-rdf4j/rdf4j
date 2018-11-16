@@ -17,11 +17,18 @@ public class ShowPrefix extends ConsoleSetting<Boolean> {
 	
 	/**
 	 * Constructor
-	 * 
-	 * @param defaultValue
 	 */
-	public ShowPrefix(Boolean defaultValue) {
-		super(defaultValue);
+	public ShowPrefix() {
+		super(true);
+		
+	}
+	/**
+	 * Constructor
+	 * 
+	 * @param initValue
+	 */
+	public ShowPrefix(Boolean initValue) {
+		super(initValue);
 	}
 	
 	@Override

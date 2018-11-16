@@ -9,12 +9,18 @@ package org.eclipse.rdf4j.console.command;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.text.StringUtil;
+
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.ConsoleWidth;
+import org.eclipse.rdf4j.console.setting.ShowPrefix;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
@@ -40,7 +46,7 @@ public class TupleAndGraphQueryEvaluator {
 
 	private final ConsoleIO consoleIO;
 	private final ConsoleState state;
-	private final ConsoleParameters parameters;
+	private final Map<String,ConsoleSetting> settings;
 
 	private static final ParserConfig nonVerifyingParserConfig;
 
@@ -58,10 +64,44 @@ public class TupleAndGraphQueryEvaluator {
 	 * @param state
 	 * @param parameters 
 	 */
+	@Deprecated
 	TupleAndGraphQueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
 		this.consoleIO = consoleIO;
 		this.state = state;
-		this.parameters = parameters;
+		this.settings = ConsoleCommand.convertParams(parameters);
+	}
+	
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param state
+	 * @param settings 
+	 */
+	TupleAndGraphQueryEvaluator(ConsoleIO consoleIO, ConsoleState state, Map<String,ConsoleSetting> settings) {
+		this.consoleIO = consoleIO;
+		this.state = state;
+		this.settings = settings;
+	}
+
+	/**
+	 * Get console width from settings.
+	 * Use a new width setting when not found.
+	 * 
+	 * @return width of console in columns
+	 */
+	private int getConsoleWidth() {
+		return ((ConsoleWidth) settings.getOrDefault(ConsoleWidth.NAME, new ConsoleWidth())).get();
+	}
+	
+	/**
+	 * Get show prefix setting
+	 * Use a new show prefix setting when not found.
+	 * 
+	 * @return boolean
+	 */
+	private boolean getShowPrefix() {
+		return ((ShowPrefix) settings.getOrDefault(ShowPrefix.NAME, new ShowPrefix())).get();
 	}
 
 	/**
@@ -82,29 +122,31 @@ public class TupleAndGraphQueryEvaluator {
 			consoleIO.writeUnopenedError();
 			return;
 		}
+		
 		try (RepositoryConnection con = repository.getConnection()) {
-			final long startTime = System.nanoTime();
+			long startTime = System.nanoTime();
 			consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
+		
 			try (TupleQueryResult tupleQueryResult = con.prepareTupleQuery(queryLn, queryString).evaluate()) {
 				int resultCount = 0;
-				final List<String> bindingNames = tupleQueryResult.getBindingNames();
+				List<String> bindingNames = tupleQueryResult.getBindingNames();
 				if (bindingNames.isEmpty()) {
 					while (tupleQueryResult.hasNext()) {
 						tupleQueryResult.next();
 						resultCount++;
 					}
 				} else {
-					int consoleWidth = parameters.getWidth();
-					final int columnWidth = (consoleWidth - 1) / bindingNames.size() - 3;
+					int consoleWidth = getConsoleWidth();
+					int columnWidth = (consoleWidth - 1) / bindingNames.size() - 3;
 
 					// Build table header
-					final StringBuilder builder = new StringBuilder(consoleWidth);
+					StringBuilder builder = new StringBuilder(consoleWidth);
 					for (String bindingName : bindingNames) {
 						builder.append("| ").append(bindingName);
 						StringUtil.appendN(' ', columnWidth - bindingName.length(), builder);
 					}
 					builder.append("|");
-					final String header = builder.toString();
+					String header = builder.toString();
 
 					// Build separator line
 					builder.setLength(0);
@@ -113,7 +155,7 @@ public class TupleAndGraphQueryEvaluator {
 						StringUtil.appendN('-', columnWidth + 1, builder);
 					}
 					builder.append('+');
-					final String separatorLine = builder.toString();
+					String separatorLine = builder.toString();
 
 					// consoleIO.write table header
 					consoleIO.writeln(separatorLine);
@@ -121,14 +163,15 @@ public class TupleAndGraphQueryEvaluator {
 					consoleIO.writeln(separatorLine);
 
 					// consoleIO.write table rows
-					final Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
+					Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
 					while (tupleQueryResult.hasNext()) {
-						final BindingSet bindingSet = tupleQueryResult.next();
+						BindingSet bindingSet = tupleQueryResult.next();
 						resultCount++;
 						builder.setLength(0);
+						
 						for (String bindingName : bindingNames) {
-							final Value value = bindingSet.getValue(bindingName);
-							final String valueStr = getStringRepForValue(value, namespaces);
+							Value value = bindingSet.getValue(bindingName);
+							String valueStr = getStringRepForValue(value, namespaces);
 							builder.append("| ").append(valueStr);
 							StringUtil.appendN(' ', columnWidth - valueStr.length(), builder);
 						}
@@ -137,7 +180,7 @@ public class TupleAndGraphQueryEvaluator {
 					}
 					consoleIO.writeln(separatorLine);
 				}
-				final long endTime = System.nanoTime();
+				long endTime = System.nanoTime();
 				consoleIO.writeln(resultCount + " result(s) (" + (endTime - startTime) / 1000000 + " ms)");
 			}
 		}
@@ -165,8 +208,9 @@ public class TupleAndGraphQueryEvaluator {
 		try(RepositoryConnection con = repository.getConnection()) {
 			con.setParserConfig(nonVerifyingParserConfig);
 			consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
-			final long startTime = System.nanoTime();
-			final Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
+			long startTime = System.nanoTime();
+			Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
+			
 			try (GraphQueryResult queryResult = con.prepareGraphQuery(queryLn, queryString).evaluate()) {
 				int resultCount = 0;
 				while (queryResult.hasNext()) {
@@ -179,7 +223,7 @@ public class TupleAndGraphQueryEvaluator {
 					consoleIO.write(getStringRepForValue(statement.getObject(), namespaces));
 					consoleIO.writeln();
 				}
-				final long endTime = System.nanoTime();
+				long endTime = System.nanoTime();
 				consoleIO.writeln(resultCount + " results (" + (endTime - startTime) / 1000000 + " ms)");
 			}
 		}
@@ -197,9 +241,9 @@ public class TupleAndGraphQueryEvaluator {
 	private String getStringRepForValue(final Value value, final Collection<Namespace> namespaces) {
 		String result = "";
 		if (value != null) {
-			if (parameters.isShowPrefix() && value instanceof IRI) {
-				final IRI uri = (IRI) value;
-				final String prefix = getPrefixForNamespace(uri.getNamespace(), namespaces);
+			if (getShowPrefix() && value instanceof IRI) {
+				IRI uri = (IRI) value;
+				String prefix = getPrefixForNamespace(uri.getNamespace(), namespaces);
 
 				if (prefix == null) {
 					result = NTriplesUtil.toNTriplesString(value);

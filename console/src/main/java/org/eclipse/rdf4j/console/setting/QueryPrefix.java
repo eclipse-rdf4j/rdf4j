@@ -17,11 +17,18 @@ public class QueryPrefix extends ConsoleSetting<Boolean> {
 
 	/**
 	 * Constructor
-	 * 
-	 * @param defaultValue
 	 */
-	public QueryPrefix(Boolean defaultValue) {
-		super(defaultValue);
+	public QueryPrefix() {
+		super(true);
+	}
+	
+	/**
+	 * Constructor
+	 * 
+	 * @param initValue
+	 */
+	public QueryPrefix(Boolean initValue) {
+		super(initValue);
 	}
 	
 	@Override

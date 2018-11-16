@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.setting;
 
-import java.util.Map;
 import org.eclipse.rdf4j.console.Help;
 import org.eclipse.rdf4j.console.Setting;
 
@@ -18,19 +17,19 @@ import org.eclipse.rdf4j.console.Setting;
  * @param <T>
  */
 public abstract class ConsoleSetting<T> implements Setting<T>, Help {
-	private final T defaultValue;
+	private final T initValue;
 	private T value;
 	private final Class clazz;
 	
 	/**
 	 * Constructor
 	 * 
-	 * @param defaultValue default (and initial) value
+	 * @param initValue initial value
 	 */
-	public ConsoleSetting(T defaultValue) {
-		this.defaultValue = defaultValue;
-		this.value = defaultValue;
-		this.clazz = defaultValue.getClass();
+	public ConsoleSetting(T initValue) {
+		this.initValue = initValue;
+		this.value = initValue;
+		this.clazz = initValue.getClass();
 	}
 	
 	@Override
@@ -39,8 +38,8 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 	}
 	
 	@Override
-	public T getDefault() {
-		return this.defaultValue;
+	public T getInitValue() {
+		return this.initValue;
 	}
 
 	@Override
@@ -60,10 +59,18 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 	 */
 	public abstract void setFromString(String value) throws IllegalArgumentException;
 	
+	/**
+	 * Get the value for this setting as a string
+	 * 
+	 * @return string value
+	 */
+	public String getAsString() {
+		return String.valueOf(this.value);
+	}
 	
 	@Override
 	public void clear() {
-		this.value = defaultValue;
+		this.value = initValue;
 	}
 	
 	/**

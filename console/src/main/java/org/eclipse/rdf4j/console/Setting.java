@@ -23,11 +23,11 @@ public interface Setting<T> {
 	public Class getType();
 	
 	/**
-	 * Get the default value
+	 * Get the initial value
 	 * 
 	 * @return T
 	 */
-	public T getDefault();
+	public T getInitValue();
 	
 	/**
 	 * Get the current value for this setting

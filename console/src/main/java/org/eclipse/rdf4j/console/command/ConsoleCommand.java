@@ -8,11 +8,18 @@
 package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.eclipse.rdf4j.console.Help;
 import org.eclipse.rdf4j.console.Command;
 import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.ConsoleWidth;
+import org.eclipse.rdf4j.console.setting.QueryPrefix;
+import org.eclipse.rdf4j.console.setting.ShowPrefix;
 
 /**
  * Abstract command
@@ -22,6 +29,23 @@ import org.eclipse.rdf4j.console.ConsoleState;
 public abstract class ConsoleCommand implements Command, Help {
 	final ConsoleIO consoleIO;
 	final ConsoleState state;
+	
+	/**
+	 * Convert old console parameters to new way (map) of storing parameters.
+	 * 
+	 * @param parameters console parameters
+	 * @return map of console settings
+	 */
+	@Deprecated
+	public static Map<String,ConsoleSetting> convertParams(ConsoleParameters parameters) {
+		Map<String,ConsoleSetting> settings = new HashMap<>();
+		
+		settings.put(ConsoleWidth.NAME, new ConsoleWidth(parameters.getWidth()));
+		settings.put(QueryPrefix.NAME, new QueryPrefix(parameters.isQueryPrefix()));
+		settings.put(ShowPrefix.NAME, new ShowPrefix(parameters.isShowPrefix()));
+		
+		return settings;
+	}
 	
 	/**
 	 * Get console IO

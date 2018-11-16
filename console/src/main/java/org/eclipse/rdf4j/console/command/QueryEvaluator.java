@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-
 import static org.eclipse.rdf4j.query.QueryLanguage.SERQL;
 import static org.eclipse.rdf4j.query.QueryLanguage.SPARQL;
 
@@ -16,11 +15,16 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
+
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.QueryPrefix;
+
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -50,7 +54,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryEvaluator.class);
 
-	private final ConsoleParameters parameters;
+	private final Map<String,ConsoleSetting> settings;
 	private final TupleAndGraphQueryEvaluator tg_eval;
 
 	/**
@@ -62,10 +66,33 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 */
 	public QueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
 		super(consoleIO, state);
-		this.parameters = parameters;
+		this.settings = convertParams(parameters);
 		this.tg_eval = new TupleAndGraphQueryEvaluator(consoleIO, state, parameters);
 	}
 
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param state
+	 * @param settings 
+	 */
+	public QueryEvaluator(ConsoleIO consoleIO, ConsoleState state, Map<String,ConsoleSetting> settings) {
+		super(consoleIO, state);
+		this.settings = settings;
+		this.tg_eval = new TupleAndGraphQueryEvaluator(consoleIO, state, settings);
+	}
+	
+	/**
+	 * Get show prefix setting
+	 * Use a new show prefix setting when not found.
+	 * 
+	 * @return boolean
+	 */
+	private boolean getQueryPrefix() {
+		return ((QueryPrefix) settings.getOrDefault(QueryPrefix.NAME, new QueryPrefix())).get();
+	}
+	
 	/**
 	 * Execute a SPARQL or SERQL query, defaults to SPARQL
 	 * 
@@ -92,15 +119,15 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * @param queryLn query language
 	 * @param queryText query string
 	 */
-	private void evaluateQuery(final QueryLanguage queryLn, String queryText) {
+	private void evaluateQuery(QueryLanguage queryLn, String queryText) {
 		try {
 			if (queryText.trim().isEmpty()) {
 				consoleIO.writeln("enter multi-line " + queryLn.getName()
 						+ " query (terminate with line containing single '.')");
 				queryText = consoleIO.readMultiLineInput();
 			}
-			final String queryString = addQueryPrefixes(queryLn, queryText);
-			final ParsedOperation query = QueryParserUtil.parseOperation(queryLn, queryString, null);
+			String queryString = addQueryPrefixes(queryLn, queryText);
+			ParsedOperation query = QueryParserUtil.parseOperation(queryLn, queryString, null);
 
 			evaluateQuery(queryLn, queryString, query);
 		} catch (UnsupportedQueryLanguageException e) {
@@ -161,14 +188,14 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * @return query string with prefixes
 	 */
 	private String addQueryPrefixes(final QueryLanguage queryLn, final String queryString) {
-		final StringBuffer result = new StringBuffer(queryString.length() + 512);
+		StringBuffer result = new StringBuffer(queryString.length() + 512);
 		result.append(queryString);
 		
-		final String lowerCaseQuery = queryString.toLowerCase(Locale.ENGLISH);
+		String lowerCaseQuery = queryString.toLowerCase(Locale.ENGLISH);
 		Repository repository = state.getRepository();
-		
-		if (repository != null && parameters.isQueryPrefix()
-				&& ((SERQL.equals(queryLn) && lowerCaseQuery.indexOf("using namespace ") == -1)
+			
+		if (repository != null && getQueryPrefix()
+				&& ((SERQL.equals(queryLn) && !lowerCaseQuery.contains("using namespace "))
 				|| SPARQL.equals(queryLn) && !lowerCaseQuery.startsWith("prefix"))) {
 			// FIXME this is a bit of a sloppy hack, a better way would be to
 			// explicitly provide the query parser with name space mappings in
@@ -197,7 +224,8 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 */
 	private void addQueryPrefixes(final QueryLanguage queryLn, final StringBuffer result,
 			final Collection<Namespace> namespaces) {
-		final StringBuilder namespaceClause = new StringBuilder(512);
+		StringBuilder namespaceClause = new StringBuilder(512);
+		
 		if (SERQL.equals(queryLn)) {
 			namespaceClause.append(" USING NAMESPACE ");
 			for (Namespace namespace : namespaces) {

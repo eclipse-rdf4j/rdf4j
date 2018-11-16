@@ -67,11 +67,6 @@ public class LogLevel extends ConsoleSetting<String> {
 			throw new IllegalArgumentException("unknown logging level: " + value);
 		}
 	}
-
-	@Override
-	public void clear() {
-		set(getDefault());
-	}
 	
 	@Override
 	public void setFromString(String value) throws IllegalArgumentException {
