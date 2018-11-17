@@ -73,4 +73,10 @@ public class URIUtilTest {
 		assertFalse("reserved char should not be allowed in conflicting spot",
 				URIUtil.isValidURIReference("http;://foo.com/bar/"));
 	}
+
+	@Test
+	public void controlCharacterInURI() {
+		assertFalse("URI containing Unicode control char should be invalid",
+				URIUtil.isValidURIReference("http://example.org/foo\u001F/bar/"));
+	}
 }
