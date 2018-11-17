@@ -42,6 +42,7 @@ public abstract class ConvertingIterator<S, T> implements Iterator<T> {
 	 * 
 	 * @return <tt>true</tt> if the source type itertor contains more elements, <tt>false</tt> otherwise.
 	 */
+	@Override
 	public boolean hasNext() {
 		return sourceIter.hasNext();
 	}
@@ -54,6 +55,7 @@ public abstract class ConvertingIterator<S, T> implements Iterator<T> {
 	 * @throws IllegalStateException
 	 *         If the itertor has been closed.
 	 */
+	@Override
 	public T next() {
 		return convert(sourceIter.next());
 	}
@@ -67,6 +69,7 @@ public abstract class ConvertingIterator<S, T> implements Iterator<T> {
 	 *         If the itertor has been closed, or if {@link #next} has not yet been called, or {@link #remove}
 	 *         has already been called after the last call to {@link #next}.
 	 */
+	@Override
 	public void remove() {
 		sourceIter.remove();
 	}

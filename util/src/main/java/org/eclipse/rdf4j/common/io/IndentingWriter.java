@@ -86,22 +86,42 @@ public class IndentingWriter extends Writer {
 		return indentationString;
 	}
 
+	/**
+	 * Get the indentation level (number of tabs or indentation string).
+	 * 
+	 * @return level as an integer
+	 */
 	public int getIndentationLevel() {
 		return indentationLevel;
 	}
 
+	/**
+	 * Set indentation level (number of tabs or indentation string).
+	 * 
+	 * @param indentationLevel level as an integer
+	 */
 	public void setIndentationLevel(int indentationLevel) {
 		this.indentationLevel = indentationLevel;
 	}
 
+	/**
+	 * Get the number of characters read since end-of-line.
+	 * @return 
+	 */
 	public int getCharactersSinceEOL() {
 		return charactersSinceEOL;
 	}
 
+	/**
+	 * Increase indentation level by 1.
+	 */
 	public void increaseIndentation() {
 		indentationLevel++;
 	}
 
+	/**
+	 * Decrease indentation level by 1.
+	 */
 	public void decreaseIndentation() {
 		indentationLevel--;
 	}
@@ -109,6 +129,8 @@ public class IndentingWriter extends Writer {
 	/**
 	 * Writes an end-of-line character sequence and triggers the indentation for the text written on the next
 	 * line.
+	 * 
+	 * @throws IOException
 	 */
 	public void writeEOL()
 		throws IOException

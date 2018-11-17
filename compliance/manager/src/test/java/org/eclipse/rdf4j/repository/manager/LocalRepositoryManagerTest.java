@@ -113,13 +113,11 @@ public class LocalRepositoryManagerTest {
 		Repository rep = manager.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep);
 		assertTrue("Expected repository to be initialized.", rep.isInitialized());
-		RepositoryConnection conn = rep.getConnection();
-		try {
+		try (RepositoryConnection conn = rep.getConnection()) {
 			conn.add(conn.getValueFactory().createIRI("urn:sesame:test:subject"), RDF.TYPE, OWL.ONTOLOGY);
 			assertEquals(1, conn.size());
 		}
 		finally {
-			conn.close();
 			rep.shutDown();
 			manager.shutDown();
 		}
@@ -129,12 +127,10 @@ public class LocalRepositoryManagerTest {
 		Repository rep2 = manager.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep2);
 		assertTrue("Expected repository to be initialized.", rep2.isInitialized());
-		RepositoryConnection conn2 = rep2.getConnection();
-		try {
+		try (RepositoryConnection conn2 = rep2.getConnection()) {
 			assertEquals(1, conn2.size());
 		}
 		finally {
-			conn2.close();
 			rep2.shutDown();
 			manager.shutDown();
 		}
@@ -148,15 +144,13 @@ public class LocalRepositoryManagerTest {
 		Repository rep = manager.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep);
 		assertTrue("Expected repository to be initialized.", rep.isInitialized());
-		RepositoryConnection conn = rep.getConnection();
-		try {
+		try (RepositoryConnection conn = rep.getConnection()) {
 			conn.begin();
 			conn.add(conn.getValueFactory().createIRI("urn:sesame:test:subject"), RDF.TYPE, OWL.ONTOLOGY);
 			conn.commit();
 			assertEquals(1, conn.size());
 		}
 		finally {
-			conn.close();
 			rep.shutDown();
 			manager.shutDown();
 		}
@@ -166,12 +160,10 @@ public class LocalRepositoryManagerTest {
 		Repository rep2 = manager.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep2);
 		assertTrue("Expected repository to be initialized.", rep2.isInitialized());
-		RepositoryConnection conn2 = rep2.getConnection();
-		try {
+		try (RepositoryConnection conn2 = rep2.getConnection()) {
 			assertEquals(1, conn2.size());
 		}
 		finally {
-			conn2.close();
 			rep2.shutDown();
 			manager.shutDown();
 		}

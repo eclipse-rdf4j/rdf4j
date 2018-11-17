@@ -48,20 +48,12 @@ public class RepositoryUtil {
 		// Fetch statements from rep1 and rep2
 		Set<Statement> model1, model2;
 
-		RepositoryConnection con1 = rep1.getConnection();
-		try {
+		try (RepositoryConnection con1 = rep1.getConnection()) {
 			model1 = Iterations.asSet(con1.getStatements(null, null, null, true));
 		}
-		finally {
-			con1.close();
-		}
 
-		RepositoryConnection con2 = rep2.getConnection();
-		try {
+		try (RepositoryConnection con2 = rep2.getConnection()) {
 			model2 = Iterations.asSet(con2.getStatements(null, null, null, true));
-		}
-		finally {
-			con2.close();
 		}
 
 		return Models.isomorphic(model1, model2);
@@ -77,20 +69,12 @@ public class RepositoryUtil {
 	{
 		Set<Statement> model1, model2;
 
-		RepositoryConnection con1 = rep1.getConnection();
-		try {
+		try (RepositoryConnection con1 = rep1.getConnection()) {
 			model1 = Iterations.asSet(con1.getStatements(null, null, null, true));
 		}
-		finally {
-			con1.close();
-		}
 
-		RepositoryConnection con2 = rep2.getConnection();
-		try {
+		try (RepositoryConnection con2 = rep2.getConnection()) {
 			model2 = Iterations.asSet(con2.getStatements(null, null, null, true));
-		}
-		finally {
-			con2.close();
 		}
 
 		return Models.isSubset(model1, model2);
@@ -114,20 +98,12 @@ public class RepositoryUtil {
 		Collection<Statement> model1 = new HashSet<Statement>();
 		Collection<Statement> model2 = new HashSet<Statement>();
 
-		RepositoryConnection con1 = rep1.getConnection();
-		try {
+		try (RepositoryConnection con1 = rep1.getConnection()) {
 			Iterations.addAll(con1.getStatements(null, null, null, false), model1);
 		}
-		finally {
-			con1.close();
-		}
 
-		RepositoryConnection con2 = rep2.getConnection();
-		try {
+		try (RepositoryConnection con2 = rep2.getConnection()) {
 			Iterations.addAll(con2.getStatements(null, null, null, false), model2);
-		}
-		finally {
-			con2.close();
 		}
 
 		return difference(model1, model2);

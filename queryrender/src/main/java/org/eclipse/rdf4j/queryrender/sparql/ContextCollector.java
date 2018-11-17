@@ -53,6 +53,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 		return aContextVisitor.mContexts;
 	}
 
+	@Override
 	public void meet(Join theJoin)
 		throws Exception
 	{

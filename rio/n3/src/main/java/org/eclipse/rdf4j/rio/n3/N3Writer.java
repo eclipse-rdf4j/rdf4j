@@ -83,34 +83,40 @@ public class N3Writer extends AbstractRDFWriter implements RDFWriter {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.N3;
 	}
 
+	@Override
 	public void startRDF()
 		throws RDFHandlerException
 	{
 		ttlWriter.startRDF();
 	}
 
+	@Override
 	public void endRDF()
 		throws RDFHandlerException
 	{
 		ttlWriter.endRDF();
 	}
 
+	@Override
 	public void handleNamespace(String prefix, String name)
 		throws RDFHandlerException
 	{
 		ttlWriter.handleNamespace(prefix, name);
 	}
 
+	@Override
 	public void handleStatement(Statement st)
 		throws RDFHandlerException
 	{
 		ttlWriter.handleStatement(st);
 	}
 
+	@Override
 	public void handleComment(String comment)
 		throws RDFHandlerException
 	{

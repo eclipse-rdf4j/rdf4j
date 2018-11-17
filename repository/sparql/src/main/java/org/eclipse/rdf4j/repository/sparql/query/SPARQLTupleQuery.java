@@ -34,6 +34,7 @@ public class SPARQLTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 		super(httpClient, QueryLanguage.SPARQL, queryString, baseUri);
 	}
 
+	@Override
 	public TupleQueryResult evaluate()
 		throws QueryEvaluationException
 	{
@@ -54,6 +55,7 @@ public class SPARQLTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 		}
 	}
 
+	@Override
 	public void evaluate(TupleQueryResultHandler handler)
 		throws QueryEvaluationException, TupleQueryResultHandlerException
 	{

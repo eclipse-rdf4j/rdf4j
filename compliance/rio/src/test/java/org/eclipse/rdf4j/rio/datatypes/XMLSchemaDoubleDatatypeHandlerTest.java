@@ -14,8 +14,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.rio.DatatypeHandler;
-import org.eclipse.rdf4j.rio.datatypes.AbstractDatatypeHandlerTest;
-import org.eclipse.rdf4j.rio.datatypes.XMLSchemaDatatypeHandler;
 
 /**
  * Test for {@link XMLSchemaDatatypeHandler} with {@link XMLSchema#DOUBLE}.

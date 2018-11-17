@@ -27,6 +27,7 @@ public class In extends CompareSubQueryValueOperator {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

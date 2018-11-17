@@ -90,6 +90,7 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 		return targetNames;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

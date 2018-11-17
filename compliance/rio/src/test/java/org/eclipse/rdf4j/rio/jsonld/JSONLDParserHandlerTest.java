@@ -19,8 +19,6 @@ import org.eclipse.rdf4j.rio.AbstractParserHandlingTest;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriter;
-import org.eclipse.rdf4j.rio.jsonld.JSONLDParser;
-import org.eclipse.rdf4j.rio.jsonld.JSONLDWriter;
 
 /**
  * Unit tests for {@link JSONLDParser} related to handling of datatypes and languages.

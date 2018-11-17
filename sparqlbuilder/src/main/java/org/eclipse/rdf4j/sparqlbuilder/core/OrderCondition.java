@@ -41,6 +41,7 @@ public class OrderCondition implements Orderable {
 	 * 
 	 * @return this
 	 */
+	@Override
 	public OrderCondition asc() {
 		this.isAscending = true;
 
@@ -52,6 +53,7 @@ public class OrderCondition implements Orderable {
 	 * 
 	 * @return this
 	 */
+	@Override
 	public OrderCondition desc() {
 		this.isAscending = false;
 

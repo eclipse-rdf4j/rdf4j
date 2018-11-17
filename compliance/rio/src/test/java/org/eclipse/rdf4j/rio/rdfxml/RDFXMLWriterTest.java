@@ -9,9 +9,6 @@ package org.eclipse.rdf4j.rio.rdfxml;
 
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.eclipse.rdf4j.rio.rdfxml.RDFXMLParserFactory;
-import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriterFactory;
-import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriterTestCase;
 
 public class RDFXMLWriterTest extends RDFXMLWriterTestCase {
 

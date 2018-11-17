@@ -741,22 +741,27 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			// Create a RequestEntity for the transaction data
 			method.setEntity(new AbstractHttpEntity() {
 
+				@Override
 				public long getContentLength() {
 					return -1; // don't know
 				}
 
+				@Override
 				public Header getContentType() {
 					return new BasicHeader("Content-Type", Protocol.TXN_MIME_TYPE);
 				}
 
+				@Override
 				public boolean isRepeatable() {
 					return true;
 				}
 
+				@Override
 				public boolean isStreaming() {
 					return true;
 				}
 
+				@Override
 				public InputStream getContent()
 					throws IOException, IllegalStateException
 				{
@@ -765,6 +770,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 					return new ByteArrayInputStream(buf.toByteArray());
 				}
 
+				@Override
 				public void writeTo(OutputStream out)
 					throws IOException
 				{
@@ -905,23 +911,28 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 			private InputStream content;
 
+			@Override
 			public long getContentLength() {
 				return -1; // don't know
 			}
 
+			@Override
 			public Header getContentType() {
 				return new BasicHeader("Content-Type",
 						dataFormat.getDefaultMIMEType() + "; charset=" + charset.name());
 			}
 
+			@Override
 			public boolean isRepeatable() {
 				return false;
 			}
 
+			@Override
 			public boolean isStreaming() {
 				return true;
 			}
 
+			@Override
 			public synchronized InputStream getContent()
 				throws IOException, IllegalStateException
 			{
@@ -933,6 +944,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				return content;
 			}
 
+			@Override
 			public void writeTo(OutputStream out)
 				throws IOException
 			{

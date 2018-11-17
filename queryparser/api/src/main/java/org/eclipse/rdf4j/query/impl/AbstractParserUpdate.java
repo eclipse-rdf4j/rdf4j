@@ -11,8 +11,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.impl.AbstractUpdate;
-import org.eclipse.rdf4j.query.impl.DatasetImpl;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 
 /**

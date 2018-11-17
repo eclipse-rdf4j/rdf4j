@@ -19,6 +19,7 @@ import org.junit.Test;
  */
 public abstract class CloseableIterationTest extends IterationTest {
 
+	@Override
 	protected abstract CloseableIteration<String, Exception> createTestIteration()
 		throws Exception;
 

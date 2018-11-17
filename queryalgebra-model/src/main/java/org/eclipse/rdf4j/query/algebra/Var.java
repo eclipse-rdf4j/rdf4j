@@ -74,6 +74,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		return value;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

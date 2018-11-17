@@ -19,8 +19,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriter;
-import org.eclipse.rdf4j.rio.rdfjson.RDFJSONParser;
-import org.eclipse.rdf4j.rio.rdfjson.RDFJSONWriter;
 
 /**
  * Test for error handling by RDFJSON Parser.

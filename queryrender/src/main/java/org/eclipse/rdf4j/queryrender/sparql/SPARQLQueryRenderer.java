@@ -35,6 +35,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 	/**
 	 * @inheritDoc
 	 */
+	@Override
 	public QueryLanguage getLanguage() {
 		return QueryLanguage.SPARQL;
 	}
@@ -42,6 +43,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 	/**
 	 * @inheritDoc
 	 */
+	@Override
 	public String render(final ParsedQuery theQuery)
 		throws Exception
 	{

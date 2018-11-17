@@ -12,5 +12,6 @@ package org.eclipse.rdf4j.query.algebra;
  */
 public interface ValueExpr extends QueryModelNode {
 
+	@Override
 	public ValueExpr clone();
 }

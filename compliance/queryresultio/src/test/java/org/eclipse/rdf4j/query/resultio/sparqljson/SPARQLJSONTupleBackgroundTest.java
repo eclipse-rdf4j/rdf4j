@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
-import org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLResultsJSONParser;
 import org.junit.Test;
 
 /**
@@ -52,6 +51,7 @@ public class SPARQLJSONTupleBackgroundTest extends AbstractQueryResultIOTupleTes
 		return BooleanQueryResultFormat.JSON;
 	}
 
+	@Override
 	protected TupleQueryResult parseTupleInternal(TupleQueryResultFormat format, InputStream in)
 		throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
 		UnsupportedQueryResultFormatException

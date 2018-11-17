@@ -24,6 +24,7 @@ public class GroupConcat extends AbstractAggregateOperator {
 		super(arg, distinct);
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

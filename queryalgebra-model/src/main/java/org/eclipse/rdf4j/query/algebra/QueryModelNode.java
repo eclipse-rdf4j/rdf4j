@@ -72,11 +72,13 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	 * Returns <tt>true</tt> if this query model node and its children are recursively equal to <tt>o</tt> and
 	 * its children.
 	 */
+	@Override
 	public boolean equals(Object o);
 
 	/**
 	 * Returns an indented print of the node tree, starting from this node.
 	 */
+	@Override
 	public String toString();
 
 	/**

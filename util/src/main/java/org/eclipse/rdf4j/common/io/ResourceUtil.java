@@ -29,7 +29,7 @@ import javax.swing.ImageIcon;
 public class ResourceUtil {
 
 	/**
-	 * The the URL to the specified resource
+	 * The URL to the specified resource
 	 * 
 	 * @param resourceName
 	 *        the name of the resource
@@ -57,6 +57,13 @@ public class ResourceUtil {
 		return result;
 	}
 
+	/**
+	 * Get the URLs for a resource name using the class loaders of the current thread and of the caller.
+	 * 
+	 * @param resourceName
+	 * @return set of URLs
+	 * @throws IOException 
+	 */
 	public static Set<URL> getURLs(String resourceName)
 		throws IOException
 	{
@@ -74,6 +81,12 @@ public class ResourceUtil {
 		return result;
 	}
 
+	/**
+	 * Add an enumeration of URLs to a set of URLs
+	 * 
+	 * @param result result set
+	 * @param urls urls to add
+	 */
 	private static void addAll(Set<URL> result, Enumeration<URL> urls) {
 		if (urls != null) {
 			while (urls.hasMoreElements()) {
@@ -195,15 +208,10 @@ public class ResourceUtil {
 		URL resourceURL = getURL(resourceName);
 
 		if (resourceURL != null) {
-			InputStream in = resourceURL.openStream();
-
-			try {
+			try (InputStream in = resourceURL.openStream()) {
 				Properties result = new Properties();
 				result.load(in);
 				return result;
-			}
-			finally {
-				in.close();
 			}
 		}
 

@@ -51,16 +51,19 @@ public class BinaryRDFParser extends AbstractRDFParser {
 
 	private byte[] buf = null;
 
+	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.BINARY;
 	}
 
+	@Override
 	public void parse(Reader reader, String baseURI)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
 		throw new UnsupportedOperationException();
 	}
 
+	@Override
 	public void parse(InputStream in, String baseURI)
 		throws IOException, RDFParseException, RDFHandlerException
 	{

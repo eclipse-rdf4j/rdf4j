@@ -46,18 +46,21 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 		wrappedIter = iter;
 	}
 
+	@Override
 	public boolean hasNext()
 		throws RepositoryException
 	{
 		return wrappedIter.hasNext();
 	}
 
+	@Override
 	public T next()
 		throws RepositoryException
 	{
 		return wrappedIter.next();
 	}
 
+	@Override
 	public void remove()
 		throws RepositoryException
 	{

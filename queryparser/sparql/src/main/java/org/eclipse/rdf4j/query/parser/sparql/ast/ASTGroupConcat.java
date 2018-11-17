@@ -20,6 +20,7 @@ public class ASTGroupConcat extends ASTAggregate {
 	}
 
 	/** Accept the visitor. **/
+	@Override
 	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
 		throws VisitorException
 	{

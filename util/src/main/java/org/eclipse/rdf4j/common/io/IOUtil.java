@@ -32,32 +32,42 @@ import java.util.Properties;
 public class IOUtil {
 
 	/**
-	 * Read the contents as a string from the given file.
+	 * Read the contents as a string from the given (unbuffered) file.
+	 * 
+	 * @param file file to read
+	 * @return content as one single string
+	 * @throws IOException 
 	 */
 	public static String readString(File file)
 		throws IOException
 	{
-		FileInputStream in = new FileInputStream(file);
-		try {
+		try (FileInputStream in = new FileInputStream(file)) {
 			return readString(in);
-		}
-		finally {
-			in.close();
 		}
 	}
 
+	/**
+	 * Read the contents of a (unbuffered) resource into one single string.
+	 * 
+	 * @param url url to get the data from
+	 * @return string
+	 * @throws IOException 
+	 */
 	public static String readString(URL url)
 		throws IOException
 	{
-		Reader reader = urlToReader(url);
-		try {
+		try (Reader reader = urlToReader(url)) {
 			return readString(reader);
-		}
-		finally {
-			reader.close();
 		}
 	}
 
+	/**
+	 * Read the contents of an (unbuffered) input stream into a single string.
+	 * 
+	 * @param in input stream
+	 * @return string
+	 * @throws IOException 
+	 */
 	public static String readString(InputStream in)
 		throws IOException
 	{
@@ -65,11 +75,12 @@ public class IOUtil {
 	}
 
 	/**
-	 * Reads all characters from the supplied reader and returns them as a String.
+	 * Reads all characters from the supplied reader and returns them as a string.
 	 * 
 	 * @param r
 	 *        The Reader supplying the characters
 	 * @return A String containing all characters from the supplied reader.
+	 * @throws IOException
 	 */
 	public static String readString(Reader r)
 		throws IOException
@@ -86,6 +97,7 @@ public class IOUtil {
 	 *        The maximum number of characters to read.
 	 * @return A String of length <tt>maxChars</tt>, or less if the supplied Reader did not contain that much
 	 *         characters.
+	 * @throws IOException
 	 */
 	public static String readString(Reader r, int maxChars)
 		throws IOException
@@ -95,15 +107,18 @@ public class IOUtil {
 		return new String(charBuf, 0, charsRead);
 	}
 
+	/**
+	 * Read the contents of a (unbuffered) resource into a character array.
+	 * 
+	 * @param url url to get the data from
+	 * @return character array
+	 * @throws IOException 
+	 */
 	public static char[] readChars(URL url)
 		throws IOException
 	{
-		Reader reader = urlToReader(url);
-		try {
+		try (Reader reader = urlToReader(url)) {
 			return readChars(reader);
-		}
-		finally {
-			reader.close();
 		}
 	}
 
@@ -113,6 +128,7 @@ public class IOUtil {
 	 * @param r
 	 *        The Reader supplying the characters
 	 * @return A character array containing all characters from the supplied reader.
+	 * @throws IOException
 	 */
 	public static char[] readChars(Reader r)
 		throws IOException
@@ -130,6 +146,7 @@ public class IOUtil {
 	 * @param charArray
 	 *        The character array to fill with characters.
 	 * @return The number of characters written to the character array.
+	 * @throws IOException
 	 */
 	public static int readChars(Reader r, char[] charArray)
 		throws IOException
@@ -171,12 +188,8 @@ public class IOUtil {
 					"File size exceeds maximum array length (" + fileSize + " > " + Integer.MAX_VALUE + ")");
 		}
 
-		FileInputStream in = new FileInputStream(file);
-		try {
+		try (FileInputStream in = new FileInputStream(file)) {
 			return readBytes(in, (int)fileSize);
-		}
-		finally {
-			in.close();
 		}
 	}
 
@@ -186,6 +199,7 @@ public class IOUtil {
 	 * @param in
 	 *        The InputStream supplying the bytes.
 	 * @return A byte array containing all bytes from the supplied input stream.
+	 * @throws IOException
 	 */
 	public static byte[] readBytes(InputStream in)
 		throws IOException
@@ -204,6 +218,7 @@ public class IOUtil {
 	 *        The maximum number of bytes to read from the input stream.
 	 * @return A byte array of size <tt>maxBytes</tt> if the input stream can produce that amount of bytes, or
 	 *         a smaller byte array containing all available bytes from the stream otherwise.
+	 * @throws IOException
 	 */
 	public static byte[] readBytes(InputStream in, int maxBytes)
 		throws IOException
@@ -231,6 +246,7 @@ public class IOUtil {
 	 * @param byteArray
 	 *        The byte array to fill with bytes.
 	 * @return The number of bytes written to the byte array.
+	 * @throws IOException
 	 */
 	public static int readBytes(InputStream in, byte[] byteArray)
 		throws IOException
@@ -330,6 +346,7 @@ public class IOUtil {
 	 *        the properties to write
 	 * @param file
 	 *        the file to write to
+	 * @param includeDefaults true when default values need to be included
 	 * @throws IOException
 	 *         when the properties could not be written to the file properly
 	 */
@@ -346,6 +363,7 @@ public class IOUtil {
 	 *        the properties to write
 	 * @param out
 	 *        the output stream to write to
+	 * @param includeDefaults true if default values need to be included
 	 * @throws IOException
 	 *         when the properties could not be written to the output stream properly
 	 */
@@ -399,36 +417,57 @@ public class IOUtil {
 		}
 	}
 
+	/**
+	 * Write the contents of a string (unbuffered) to a file
+	 * 
+	 * @param contents string contents to write
+	 * @param file file to write to
+	 * @throws IOException 
+	 */
 	public static void writeString(String contents, File file)
 		throws IOException
 	{
-		FileWriter out = new FileWriter(file);
-		try {
+		try (FileWriter out = new FileWriter(file)) {
 			out.write(contents);
-		}
-		finally {
-			out.close();
 		}
 	}
 
+	/**
+	 * Write the contents of a byte array (unbuffered) to a file.
+	 * 
+	 * @param data data to write
+	 * @param file file
+	 * @throws IOException 
+	 */
 	public static void writeBytes(byte[] data, File file)
 		throws IOException
 	{
-		FileOutputStream out = new FileOutputStream(file);
-		try {
+		try (FileOutputStream out = new FileOutputStream(file)) {
 			writeBytes(data, out);
-		}
-		finally {
-			out.close();
 		}
 	}
 
+	/**
+	 * Write he contents of a byte array (unbuffered) to an output stream.
+	 * 
+	 * @param data data to write
+	 * @param out file
+	 * @throws IOException 
+	 */
 	public static void writeBytes(byte[] data, OutputStream out)
 		throws IOException
 	{
 		transfer(new ByteArrayInputStream(data), out);
 	}
 
+	/**
+	 * Read the contents of a resource into a reader.
+	 * Currently ignores HTTP Content-Encoding response header.
+	 * 
+	 * @param url url
+	 * @return reader
+	 * @throws IOException 
+	 */
 	public static Reader urlToReader(URL url)
 		throws IOException
 	{
@@ -438,6 +477,13 @@ public class IOUtil {
 		return new InputStreamReader(con.getInputStream());
 	}
 
+	/**
+	 * Read into a character array writer.
+	 * 
+	 * @param r input reader
+	 * @return character array writer
+	 * @throws IOException 
+	 */
 	private static CharArrayWriter readFully(Reader r)
 		throws IOException
 	{
@@ -460,6 +506,7 @@ public class IOUtil {
 	 * @param out
 	 *        The OutputStream to write data to.
 	 * @return The total number of bytes transfered.
+	 * @throws IOException
 	 */
 	public static final long transfer(InputStream in, OutputStream out)
 		throws IOException
@@ -485,18 +532,13 @@ public class IOUtil {
 	 *        The file to write the data to.
 	 * @return The total number of bytes written.
 	 * @throws IOException
-	 *         If an I/O error occured while trying to write the data to the file.
+	 *         If an I/O error occurred while trying to write the data to the file.
 	 */
 	public static final long transfer(InputStream in, File file)
 		throws IOException
 	{
-		FileOutputStream out = new FileOutputStream(file);
-
-		try {
+		try (FileOutputStream out = new FileOutputStream(file)) {
 			return transfer(in, out);
-		}
-		finally {
-			out.close();
 		}
 	}
 
@@ -508,6 +550,7 @@ public class IOUtil {
 	 * @param out
 	 *        The Writer to write characters to.
 	 * @return The total number of characters transfered.
+	 * @throws IOException
 	 */
 	public static final long transfer(Reader in, Writer out)
 		throws IOException
@@ -533,19 +576,14 @@ public class IOUtil {
 	 *        The file to write the data to.
 	 * @return The total number of characters written.
 	 * @throws IOException
-	 *         If an I/O error occured while trying to write the data to the file.
+	 *         If an I/O error occurred while trying to write the data to the file.
 	 * @see java.io.FileWriter
 	 */
 	public static final long transfer(Reader reader, File file)
 		throws IOException
 	{
-		FileWriter writer = new FileWriter(file);
-
-		try {
+		try (FileWriter writer = new FileWriter(file)) {
 			return transfer(reader, writer);
-		}
-		finally {
-			writer.close();
 		}
 	}
 }

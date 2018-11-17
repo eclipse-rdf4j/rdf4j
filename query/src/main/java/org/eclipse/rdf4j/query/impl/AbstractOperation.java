@@ -45,34 +45,42 @@ public abstract class AbstractOperation implements Operation {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public void setBinding(String name, Value value) {
 		bindings.addBinding(name, value);
 	}
 
+	@Override
 	public void removeBinding(String name) {
 		bindings.removeBinding(name);
 	}
 
+	@Override
 	public void clearBindings() {
 		bindings.clear();
 	}
 
+	@Override
 	public BindingSet getBindings() {
 		return bindings;
 	}
 
+	@Override
 	public void setDataset(Dataset dataset) {
 		this.dataset = dataset;
 	}
 
+	@Override
 	public Dataset getDataset() {
 		return dataset;
 	}
 
+	@Override
 	public void setIncludeInferred(boolean includeInferred) {
 		this.includeInferred = includeInferred;
 	}
 
+	@Override
 	public boolean getIncludeInferred() {
 		return includeInferred;
 	}

@@ -20,7 +20,6 @@ import java.io.OutputStream;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
@@ -154,6 +153,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	 * @throws MalformedURLException
 	 *         If the path cannot be parsed as a URL
 	 */
+	@Override
 	public URL getLocation()
 		throws MalformedURLException
 	{
@@ -386,6 +386,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 		File repositoriesDir = resolvePath(REPOSITORIES_DIR);
 		String[] dirs = repositoriesDir.list(new FilenameFilter() {
 
+			@Override
 			public boolean accept(File repositories, String name) {
 				File dataDir = new File(repositories, name);
 				return dataDir.isDirectory() && new File(dataDir, CFG_FILE).exists();
@@ -480,6 +481,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 		File repositoriesDir = resolvePath(REPOSITORIES_DIR);
 		String[] dirs = repositoriesDir.list(new FilenameFilter() {
 
+			@Override
 			public boolean accept(File repositories, String name) {
 				File dataDir = new File(repositories, name);
 				return dataDir.isDirectory() && new File(dataDir, CFG_FILE).exists();
@@ -596,9 +598,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 				if (modifiedContexts != null) {
 					logger.debug("React to commit on SystemRepository for contexts {}", modifiedContexts);
 					try {
-						RepositoryConnection cleanupCon = getSystemRepository().getConnection();
-
-						try {
+						try (RepositoryConnection cleanupCon = getSystemRepository().getConnection()) {
 							// refresh all modified contexts
 							for (Resource context : modifiedContexts) {
 								logger.debug("Processing modified context {}.", context);
@@ -634,9 +634,6 @@ public class LocalRepositoryManager extends RepositoryManager {
 									logger.error("Failed to process repository configuration changes", re);
 								}
 							}
-						}
-						finally {
-							cleanupCon.close();
 						}
 					}
 					catch (RepositoryException re) {
@@ -674,16 +671,12 @@ public class LocalRepositoryManager extends RepositoryManager {
 		{
 			String result = null;
 
-			RepositoryResult<Statement> idStatements = con.getStatements(null, REPOSITORYID, null, true,
-					context);
-			try {
+			try (RepositoryResult<Statement> idStatements = con.getStatements(null, REPOSITORYID, null, true,
+			    context)) {
 				if (idStatements.hasNext()) {
 					Statement idStatement = idStatements.next();
 					result = idStatement.getObject().stringValue();
 				}
-			}
-			finally {
-				idStatements.close();
 			}
 
 			return result;

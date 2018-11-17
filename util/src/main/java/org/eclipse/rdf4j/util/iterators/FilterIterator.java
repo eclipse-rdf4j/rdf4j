@@ -25,12 +25,14 @@ public abstract class FilterIterator<E> implements Iterator<E> {
 		this.filteredIter = iter;
 	}
 
+	@Override
 	public boolean hasNext() {
 		findNextElement();
 
 		return nextElement != null;
 	}
 
+	@Override
 	public E next() {
 		findNextElement();
 
@@ -55,6 +57,7 @@ public abstract class FilterIterator<E> implements Iterator<E> {
 		}
 	}
 
+	@Override
 	public void remove() {
 		filteredIter.remove();
 	}

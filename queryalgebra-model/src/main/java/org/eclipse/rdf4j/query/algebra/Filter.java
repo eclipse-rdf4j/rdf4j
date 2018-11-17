@@ -53,6 +53,7 @@ public class Filter extends UnaryTupleOperator {
 		this.condition = condition;
 	}
 
+	@Override
 	public Set<String> getBindingNames() {
 		Set<String> result = getArg().getBindingNames();
 		if (condition instanceof SubQueryValueOperator) {
@@ -64,6 +65,7 @@ public class Filter extends UnaryTupleOperator {
 		return result;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}

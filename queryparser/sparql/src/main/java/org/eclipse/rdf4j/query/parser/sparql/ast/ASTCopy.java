@@ -22,6 +22,7 @@ public class ASTCopy extends ASTUpdate {
 	}
 
 	/** Accept the visitor. **/
+	@Override
 	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
 		throws VisitorException
 	{

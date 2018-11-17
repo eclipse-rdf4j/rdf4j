@@ -30,14 +30,17 @@ public class HTTPRepositoryFactory implements RepositoryFactory {
 	/**
 	 * Returns the repository's type: <tt>openrdf:HTTPRepository</tt>.
 	 */
+	@Override
 	public String getRepositoryType() {
 		return REPOSITORY_TYPE;
 	}
 
+	@Override
 	public RepositoryImplConfig getConfig() {
 		return new HTTPRepositoryConfig();
 	}
 
+	@Override
 	public Repository getRepository(RepositoryImplConfig config)
 		throws RepositoryConfigException
 	{

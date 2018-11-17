@@ -86,6 +86,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	private static final Comparator<int[]> CMP = new Comparator<int[]>() {
 
+		@Override
 		public int compare(int[] o1, int[] o2) {
 			return o1[0] - o2[0];
 		}
@@ -382,6 +383,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	 *
 	 * @return The string form of this IRI
 	 */
+	@Override
 	public String toString() {
 		return iri;
 	}

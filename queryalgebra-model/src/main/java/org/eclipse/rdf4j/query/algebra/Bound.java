@@ -60,6 +60,7 @@ public class Bound extends AbstractQueryModelNode implements ValueExpr {
 		this.arg = arg;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{
