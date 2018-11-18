@@ -256,4 +256,15 @@ RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
 rdfParser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 ----
 
-The {javadoc}rio/helpers/BasicParserSettings.html[BasicParserSettings] holds a collection of various parser settings that can be reconfigured this way. These are settings that can be used with most Rio parsers. {javadoc}rio/helpers/TurtleParserSettings.html[TurtleParserSettings] has additional settings specific for the Turtle and TriG parsers, and {javadoc}rio/helpers/NTriplesParserSettings.html[NTriplesParserSettings] has additional settings specific to N-Triples and N-Quads parsing. 
+The {javadoc}rio/helpers/BasicParserSettings.html[BasicParserSettings] holds a collection of various parser settings that can be reconfigured this way. These are settings that can be used with most Rio parsers. {javadoc}rio/helpers/TurtleParserSettings.html[TurtleParserSettings] has additional settings specific for the Turtle and TriG parsers, and {javadoc}rio/helpers/NTriplesParserSettings.html[NTriplesParserSettings] has additional settings specific to N-Triples and N-Quads parsing.
+
+=== Note on parsing RDF/XML and JAXP limits
+
+Check the documentation on <a href="https://docs.oracle.com/javase/tutorial/jaxp/limits/limits.html">limits</a> 
+and using the <a href="https://docs.oracle.com/javase/tutorial/jaxp/limits/using.html">jaxp.properties file</a> if you get one of the following errors:
+---- 
+JAXP00010001: The parser has encountered more than "64000" entity expansions in this document
+JAXP00010004: The accumulated size of entities is ... that exceeded the "50,000,000" limit
+----
+
+As a work-around, try passing `-DtotalEntitySizeLimit=0 -DentityExpansionLimit=0` to the JVM.
