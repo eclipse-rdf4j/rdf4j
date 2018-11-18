@@ -260,8 +260,8 @@ The {javadoc}rio/helpers/BasicParserSettings.html[BasicParserSettings] holds a c
 
 === Note on parsing RDF/XML and JAXP limits
 
-Check the documentation on <a href="https://docs.oracle.com/javase/tutorial/jaxp/limits/limits.html">limits</a> 
-and using the <a href="https://docs.oracle.com/javase/tutorial/jaxp/limits/using.html">jaxp.properties file</a> if you get one of the following errors:
+Check the documentation on https://docs.oracle.com/javase/tutorial/jaxp/limits/limits.html[limits]
+and using the https://docs.oracle.com/javase/tutorial/jaxp/limits/using.html[jaxp.properties file] if you get one of the following errors:
 ---- 
 JAXP00010001: The parser has encountered more than "64000" entity expansions in this document
 JAXP00010004: The accumulated size of entities is ... that exceeded the "50,000,000" limit
