@@ -92,15 +92,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				// Reorder the subselects and extensions to a more optimal sequence
 				List<TupleExpr> priorityArgs = new ArrayList<TupleExpr>(joinArgs.size());
 
-				// first get all subselects and order them
-				List<TupleExpr> orderedSubselects = reorderSubselects(getSubSelects(joinArgs));
-				joinArgs.removeAll(orderedSubselects);
-				priorityArgs.addAll(orderedSubselects);
-
-				// second get all extensions (BIND clause)
+				// get all extensions (BIND clause)
 				List<Extension> orderedExtensions = getExtensions(joinArgs);
 				joinArgs.removeAll(orderedExtensions);
 				priorityArgs.addAll(orderedExtensions);
+				
+				// get all subselects and order them
+				List<TupleExpr> orderedSubselects = reorderSubselects(getSubSelects(joinArgs));
+				joinArgs.removeAll(orderedSubselects);
+				priorityArgs.addAll(orderedSubselects);
 
 				// We order all remaining join arguments based on cardinality and
 				// variable frequency statistics
