@@ -78,7 +78,17 @@ import org.xml.sax.XMLReader;
  * // relative URIs against http://foo/bar:
  * parser.parse(inputStream, &quot;http://foo/bar&quot;);
  * </pre>
- * 
+ *
+ * Note that JAXP entity expansion limits may apply.
+ * Check the documentation on <a href="https://docs.oracle.com/javase/tutorial/jaxp/limits/limits.html">limits</a> 
+ * and using the <a href="https://docs.oracle.com/javase/tutorial/jaxp/limits/using.html">jaxp.properties file</a>
+ *  if you get one of the following errors:
+ * <pre> 
+ * JAXP00010001: The parser has encountered more than "64000" entity expansions in this document
+ * JAXP00010004: The accumulated size of entities is ... that exceeded the "50,000,000" limit
+ * </pre>
+ * As a work-around, try passing <code>-DtotalEntitySizeLimit=0 -DentityExpansionLimit=0</code> to the JVM.
+ *
  * @see org.eclipse.rdf4j.model.ValueFactory
  * @see org.eclipse.rdf4j.rio.RDFHandler
  * @see org.eclipse.rdf4j.rio.ParseErrorListener
