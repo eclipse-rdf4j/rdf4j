@@ -65,7 +65,7 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 	 * @return string value
 	 */
 	public String getAsString() {
-		return String.valueOf(this.value);
+		return String.valueOf(get());
 	}
 	
 	@Override

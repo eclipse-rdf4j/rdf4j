@@ -56,15 +56,13 @@ public class LogLevel extends ConsoleSetting<String> {
 	public String get() {
 		Logger logbackRootLogger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
 		Level currentLevel = logbackRootLogger.getLevel();
-
 		return LOG_LEVELS.inverse().getOrDefault(currentLevel, currentLevel.levelStr);
 	}
 
 	@Override
 	public void set(String value) throws IllegalArgumentException {
 		// Assume Logback
-		Level logLevel = LOG_LEVELS.get(value.toLowerCase());
-		
+		Level logLevel = LOG_LEVELS.get(value.toLowerCase());		
 		if (logLevel != null) {
 			Logger logbackRootLogger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
 			logbackRootLogger.setLevel(logLevel);
