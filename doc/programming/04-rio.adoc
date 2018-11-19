@@ -267,4 +267,4 @@ JAXP00010001: The parser has encountered more than "64000" entity expansions in 
 JAXP00010004: The accumulated size of entities is ... that exceeded the "50,000,000" limit
 ----
 
-As a work-around, try passing `-DtotalEntitySizeLimit=0 -DentityExpansionLimit=0` to the JVM.
+As a work-around, try passing `-Djdk.xml.totalEntitySizeLimit=0 -DentityExpansionLimit=0` to the JVM.
