@@ -87,7 +87,7 @@ import org.xml.sax.XMLReader;
  * JAXP00010001: The parser has encountered more than "64000" entity expansions in this document
  * JAXP00010004: The accumulated size of entities is ... that exceeded the "50,000,000" limit
  * </pre>
- * As a work-around, try passing <code>-DtotalEntitySizeLimit=0 -DentityExpansionLimit=0</code> to the JVM.
+ * As a work-around, try passing <code>-Djdk.xml.totalEntitySizeLimit=0 -DentityExpansionLimit=0</code> to the JVM.
  *
  * @see org.eclipse.rdf4j.model.ValueFactory
  * @see org.eclipse.rdf4j.rio.RDFHandler
