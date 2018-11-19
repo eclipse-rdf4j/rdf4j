@@ -101,7 +101,7 @@ public class SetParameters extends ConsoleCommand {
 		
 		ConsoleSetting setting = settings.get(str);
 		if (setting != null) {
-			consoleIO.writeln(key + " : " + setting.getAsString());
+			consoleIO.writeln(key + ": " + setting.getAsString());
 		} else {
 			consoleIO.writeError("unknown parameter: " + key);
 		}
@@ -121,7 +121,11 @@ public class SetParameters extends ConsoleCommand {
 
 		ConsoleSetting setting = settings.get(str);
 		if (setting != null) {
-			setting.setFromString(value);
+			try {
+				setting.setFromString(value);
+			} catch (IllegalArgumentException iae) {
+				consoleIO.writeError(iae.getMessage());
+			}
 		} else {
 			consoleIO.writeError("unknown parameter: " + key);
 		}

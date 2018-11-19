@@ -24,6 +24,7 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
+import org.eclipse.rdf4j.console.setting.LogLevel;
 import org.eclipse.rdf4j.console.setting.QueryPrefix;
 import org.eclipse.rdf4j.console.setting.ShowPrefix;
 
@@ -36,6 +37,7 @@ public class SetParametersTest extends AbstractCommandTest {
 	public void setUp() {
 		Map<String,ConsoleSetting> settings = new HashMap<>();
 		settings.put(ConsoleWidth.NAME, new ConsoleWidth());
+		settings.put(LogLevel.NAME, new LogLevel());
 		settings.put(QueryPrefix.NAME, new QueryPrefix());
 		settings.put(ShowPrefix.NAME, new ShowPrefix());
 		
