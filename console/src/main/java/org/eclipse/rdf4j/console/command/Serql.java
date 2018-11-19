@@ -7,11 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import java.io.IOException;
+import java.util.Map;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 
 /**
  * SERQL query command
@@ -36,10 +37,6 @@ public class Serql extends QueryEvaluator {
 			+ "serql                         Starts multi-line input for large SeRQL queries.\n";
 	}
 
-	@Override
-	public void execute(String... parameters) throws IOException {
-	}
-
 	/**
 	 * Constructor
 	 * 
@@ -47,7 +44,19 @@ public class Serql extends QueryEvaluator {
 	 * @param state
 	 * @param params 
 	 */
+	@Deprecated
 	public Serql(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters params) {
 		super(consoleIO, state, params);
+	}
+	
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param state
+	 * @param settings 
+	 */
+	public Serql(ConsoleIO consoleIO, ConsoleState state, Map<String,ConsoleSetting> settings) {
+		super(consoleIO, state, settings);
 	}
 }

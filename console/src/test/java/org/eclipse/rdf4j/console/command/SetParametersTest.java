@@ -14,43 +14,46 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
 
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
+import java.util.HashMap;
+import java.util.Map;
 
-import org.eclipse.rdf4j.console.ConsoleParameters;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.ConsoleWidth;
+import org.eclipse.rdf4j.console.setting.LogLevel;
+import org.eclipse.rdf4j.console.setting.QueryPrefix;
+import org.eclipse.rdf4j.console.setting.ShowPrefix;
 
 public class SetParametersTest extends AbstractCommandTest {
-
-	@Mock
-	ConsoleParameters consoleParameters;
-
-	@InjectMocks
 	SetParameters setParameters;
-
+	
 	private Level originalLevel;
 
 	@Before
 	public void setUp() {
-		originalLevel = ((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).getLevel();
+		Map<String,ConsoleSetting> settings = new HashMap<>();
+		settings.put(ConsoleWidth.NAME, new ConsoleWidth());
+		settings.put(LogLevel.NAME, new LogLevel());
+		settings.put(QueryPrefix.NAME, new QueryPrefix());
+		settings.put(ShowPrefix.NAME, new ShowPrefix());
 		
+		setParameters = new SetParameters(mockConsoleIO, mockConsoleState, settings);
+
+		originalLevel = ((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).getLevel();
 		// Start all tests assuming a base of Debug logging, then revert after the test
 		((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).setLevel(Level.DEBUG);
 	}
 
 	@After
 	@Override
-	public void tearDown()
-		throws Exception
-	{
+	public void tearDown() throws Exception {
 		try {
 			super.tearDown();
-		}
-		finally {
+		} finally {
 			((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).setLevel(originalLevel);
 		}
 	}
@@ -105,10 +108,28 @@ public class SetParametersTest extends AbstractCommandTest {
 
 	@Test
 	public void testShowWidth() {
+		setParameters.execute("set", "width=42");
 		setParameters.execute("set", "width");
-		// Mocks have int's setup to be 0, so not actually testing the real behaviour here which would be a positive value
-		verify(mockConsoleIO).writeln("width: 0");
+		
+		verify(mockConsoleIO).writeln("width: 42");
 		verifyNoMoreInteractions(mockConsoleIO);
 	}
 
+	@Test
+	public void testShowQueryPrefix() {
+		setParameters.execute("set", "showPrefix=true");
+		setParameters.execute("set", "showPrefix");
+		
+		verify(mockConsoleIO).writeln("showPrefix: true");
+		verifyNoMoreInteractions(mockConsoleIO);
+	}
+	
+	@Test
+	public void testQueryPrefix() {
+		setParameters.execute("set", "queryPrefix=false");
+		setParameters.execute("set", "queryPrefix");
+		
+		verify(mockConsoleIO).writeln("queryPrefix: false");
+		verifyNoMoreInteractions(mockConsoleIO);
+	}
 }

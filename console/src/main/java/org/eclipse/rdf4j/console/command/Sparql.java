@@ -7,11 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import java.io.IOException;
+import java.util.Map;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 
 /**
  * SPARQL query command
@@ -45,12 +46,19 @@ public class Sparql extends QueryEvaluator {
 	 * @param state
 	 * @param params 
 	 */
+	@Deprecated
 	public Sparql(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters params) {
 		super(consoleIO, state, params);
 	}
-
-	@Override
-	public void execute(String... parameters) throws IOException {
-		throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+	
+	/**
+	 * Constructor
+	 * 
+	 * @param consoleIO
+	 * @param state
+	 * @param settings 
+	 */
+	public Sparql(ConsoleIO consoleIO, ConsoleState state, Map<String,ConsoleSetting> settings) {
+		super(consoleIO, state, settings);
 	}
 }

@@ -7,11 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Properties;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
@@ -20,8 +20,6 @@ import java.util.regex.Pattern;
 import org.eclipse.rdf4j.RDF4J;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.common.app.AppVersion;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.UserInterruptException;
@@ -47,6 +45,12 @@ import org.eclipse.rdf4j.console.command.Show;
 import org.eclipse.rdf4j.console.command.Sparql;
 import org.eclipse.rdf4j.console.command.Verify;
 
+import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.ConsoleWidth;
+import org.eclipse.rdf4j.console.setting.LogLevel;
+import org.eclipse.rdf4j.console.setting.QueryPrefix;
+import org.eclipse.rdf4j.console.setting.ShowPrefix;
+
 
 /**
  * The RDF4J Console is a command-line application for interacting with RDF4J. 
@@ -62,122 +66,23 @@ public class Console {
 	private final static AppVersion VERSION = AppVersion.parse(RDF4J.getVersion());
 	private final static String APP_NAME = "Console";
 	private final static AppConfiguration APP_CFG = new AppConfiguration(APP_NAME, VERSION);
-
-	/**
-	 * Console state
-	 */
-	private static final ConsoleState STATE = new ConsoleState() {
-		private RepositoryManager manager;
-		private String managerID;
-
-		private Repository repository;
-		private String repositoryID;
+	private final static ConsoleState STATE = new DefaultConsoleState(APP_CFG);
 	
-		@Override
-		public String getApplicationName() {
-			return APP_CFG.getFullName();
-		}
-
-		@Override
-		public File getDataDirectory() {
-			return APP_CFG.getDataDir();
-		}
-
-		@Override
-		public String getManagerID() {
-			return this.managerID;
-		}
-
-		@Override
-		public String getRepositoryID() {
-			return this.repositoryID;
-		}
-
-		@Override
-		public RepositoryManager getManager() {
-			return this.manager;
-		}
-
-		@Override
-		public void setManager(RepositoryManager manager) {
-			this.manager = manager;
-		}
-
-		@Override
-		public void setManagerID(String managerID) {
-			this.managerID = managerID;
-		}
-
-		@Override
-		public Repository getRepository() {
-			return this.repository;
-		}
-
-		@Override
-		public void setRepositoryID(String repositoryID) {
-			this.repositoryID = repositoryID;
-		}
-
-		@Override
-		public void setRepository(Repository repository) {
-			this.repository = repository;
-		}
-	};
-
-	/**
-	 * Basic console parameters
-	 */
-	private final static ConsoleParameters PARAMS = new ConsoleParameters() {
-		private int consoleWidth = 80;
-
-		private boolean showPrefix = true;
-		private boolean queryPrefix = true;
-
-		@Override
-		public int getWidth() {
-			return this.consoleWidth;
-		}
-
-		@Override
-		public void setWidth(int width) {
-			this.consoleWidth = width;
-		}
-
-		@Override
-		public boolean isShowPrefix() {
-			return this.showPrefix;
-		}
-
-		@Override
-		public void setShowPrefix(boolean value) {
-			this.showPrefix = value;
-		}
-
-		@Override
-		public boolean isQueryPrefix() {
-			return this.queryPrefix;
-		}
-
-		@Override
-		public void setQueryPrefix(boolean value) {
-			this.queryPrefix = value;
-		}
-	};
-	
+	private final static String PROP_PREFIX = "org.eclipse.rdf4j.console.setting.";
 	
 	private static boolean exitOnError;
 
 	private final ConsoleIO consoleIO;
 
 	private final SortedMap<String,ConsoleCommand> commandMap = new TreeMap<>();
-
+	private final SortedMap<String,ConsoleSetting> settingMap = new TreeMap<>();
+	
 	// "Core" commands
 	private final Connect connect;
 	private final Disconnect disconnect;
 	private final Open open;
 	private final Close close;
 	
-
 	/**
 	 * Get console state
 	 * 
@@ -195,8 +100,7 @@ public class Console {
 	public ConsoleIO getConsoleIO() {
 		return this.consoleIO;
 	}
-	
-	
+		
 	/**
 	 * Set exit on error mode
 	 * 
@@ -206,7 +110,6 @@ public class Console {
 		Console.exitOnError = mode;
 	}
 	
-
 	/**
 	 * Main
 	 * 
@@ -273,6 +176,15 @@ public class Console {
 	public final void register(ConsoleCommand cmd) {
 		commandMap.put(cmd.getName(), cmd);
 	}
+
+	/**
+	 * Add setting to register of known settings
+	 * 
+	 * @param setting setting to be added
+	 */
+	public final void register(ConsoleSetting setting) {
+		settingMap.put(setting.getName(), setting);
+	}
 	
 	/**
 	 * Constructor
@@ -281,13 +193,22 @@ public class Console {
 	 */
 	public Console() throws IOException {
 		APP_CFG.init();
+		
+		// Basic console parameters
+		register(new ConsoleWidth());
+		register(new LogLevel());
+		register(new QueryPrefix());
+		register(new ShowPrefix());
+		// FIXME: to be removed in 3.0 release + pass a Map to Commands (breaks signature)
+		//ConsoleParametersWrapper PARAMS = new ConsoleParametersWrapper(settingMap);
+
 		consoleIO = new ConsoleIO(STATE);
 
 		this.close = new Close(consoleIO, STATE);
 		this.disconnect = new Disconnect(consoleIO, STATE, close);
 		this.connect = new Connect(consoleIO, STATE, disconnect);
 		this.open = new Open(consoleIO, STATE, close);
-		
+			
 		// "core" commands for connnecting
 		register(open);
 		register(close);
@@ -295,8 +216,8 @@ public class Console {
 		register(disconnect);
 		// querying
 		register(new Federate(consoleIO, STATE));
-		register(new Sparql(consoleIO, STATE, PARAMS));
-		register(new Serql(consoleIO, STATE, PARAMS));
+		register(new Sparql(consoleIO, STATE, settingMap));
+		register(new Serql(consoleIO, STATE, settingMap));
 		// information
 		register(new PrintHelp(consoleIO, commandMap));
 		register(new PrintInfo(consoleIO, STATE));
@@ -311,9 +232,52 @@ public class Console {
 		register(new Export(consoleIO, STATE));
 		register(new Convert(consoleIO, STATE));
 		// parameters
-		register(new SetParameters(consoleIO, STATE, PARAMS));
+		register(new SetParameters(consoleIO, STATE, settingMap));
 	}
 
+	/**
+	 * Load settings from properties file (application.properties)
+	 */
+	private void loadSettings() {
+		Properties props = APP_CFG.getProperties();
+		
+		settingMap.forEach((k,v) -> {
+				String val = props.getProperty(PROP_PREFIX + k, "");
+				try {
+					if (!val.isEmpty()) {
+						v.setFromString(val);
+					}
+				} catch (IllegalArgumentException iae) {
+					consoleIO.writeError("Illegal value for property " + k);
+				}
+			});
+	}
+	
+	/**
+	 * Save settings to default properties file (application.properties)
+	 */
+	private void saveSettings() {
+		Properties props = APP_CFG.getProperties();
+		
+		settingMap.forEach((k,v) -> {
+				String prop = PROP_PREFIX + k;
+				String oldval = props.getProperty(prop, "");
+				String val = v.get() != null ? String.valueOf(v.get()) : oldval;
+				
+				if (!val.isEmpty()) {
+					props.setProperty(prop, val);
+				} else {
+					props.remove(prop);
+				}
+			});
+		try {
+			APP_CFG.save();
+		} catch (IOException ex) {
+			consoleIO.writeError("Could not save properties: " + ex.getMessage());
+		}
+	}
+	
+	
 	/**
 	 * Start the interactive console, return error code on exit
 	 * 
@@ -324,6 +288,8 @@ public class Console {
 		consoleIO.writeln();
 		consoleIO.writeln(RDF4J.getVersion());
 		consoleIO.writeln("Type 'help' for help.");
+		
+		loadSettings();
 		
 		int exitCode = 0;
 		try {
@@ -345,6 +311,9 @@ public class Console {
 		} finally {
 			disconnect.execute(false);
 		}
+		
+		saveSettings();
+		
 		if (exitCode != 0) {
 			System.exit(exitCode);
 		}

@@ -8,10 +8,12 @@
 package org.eclipse.rdf4j.console;
 
 /**
- * Console parameters interface
+ * Console parameters interface.
+ * Deprecated: to be replaced by a collection of Setting's.
  * 
  * @author dale
  */
+@Deprecated
 public interface ConsoleParameters {
 
 	/**
