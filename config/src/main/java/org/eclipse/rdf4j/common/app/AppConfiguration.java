@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.common.app;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.util.Properties;
 
 import org.eclipse.rdf4j.RDF4J;
@@ -118,13 +119,22 @@ public class AppConfiguration implements Configuration {
 
 	@Override
 	public void load() throws IOException {
+		// load from resource
 		properties = ConfigurationUtil.loadConfigurationProperties(APP_CONFIG_FILE, null);
+		// load from properties file
+		File f = Paths.get(getDataDir().toString(), Configuration.DIR, APP_CONFIG_FILE).toFile();
+		properties = ConfigurationUtil.loadConfigurationProperties(f, properties);
 	}
 
 	@Override
 	public void save() throws IOException {
-		if (null != loggingConfiguration) {
+		if (loggingConfiguration != null) {
 			loggingConfiguration.save();
+		}
+		// save to properties file
+		if (properties != null) {
+			File f = Paths.get(getDataDir().toString(), Configuration.DIR, APP_CONFIG_FILE).toFile();
+			ConfigurationUtil.saveConfigurationProperties(properties, f, false);
 		}
 		proxySettings.save();
 	}
@@ -154,13 +164,7 @@ public class AppConfiguration implements Configuration {
 				loggingConfiguration.setAppConfiguration(this);
 				loggingConfiguration.init();
 			}
-			catch (ClassNotFoundException e) {
-				e.printStackTrace();
-			}
-			catch (InstantiationException e) {
-				e.printStackTrace();
-			}
-			catch (IllegalAccessException e) {
+			catch (ClassNotFoundException | InstantiationException | IllegalAccessException e) {
 				e.printStackTrace();
 			}
 		}
