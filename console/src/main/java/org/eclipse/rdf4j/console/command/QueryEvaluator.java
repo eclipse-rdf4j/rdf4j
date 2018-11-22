@@ -51,7 +51,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryEvaluator.class);
 
 	private final Map<String,ConsoleSetting> settings;
-	private final TupleAndGraphQueryEvaluator tg_eval;
+	private final TupleAndGraphQueryEvaluator evaluator;
 
 	private final List<String> sparqlQueryStart = Arrays.asList(
 								new String[]{"select", "construct", "describe", "ask", "prefix", "base"});
@@ -67,7 +67,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	public QueryEvaluator(ConsoleIO consoleIO, ConsoleState state, ConsoleParameters parameters) {
 		super(consoleIO, state);
 		this.settings = convertParams(parameters);
-		this.tg_eval = new TupleAndGraphQueryEvaluator(consoleIO, state, parameters);
+		this.evaluator = new TupleAndGraphQueryEvaluator(consoleIO, state, parameters);
 	}
 
 	/**
@@ -79,7 +79,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	public QueryEvaluator(TupleAndGraphQueryEvaluator evaluator, Map<String,ConsoleSetting> settings) {
 		super(evaluator.getConsoleIO(), evaluator.getConsoleState());
 		this.settings = settings;
-		this.tg_eval = evaluator;
+		this.evaluator = evaluator;
 	}
 	
 	/**
@@ -184,13 +184,13 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			throws MalformedQueryException, QueryEvaluationException, RepositoryException,
 				UpdateExecutionException {
 		if (query instanceof ParsedTupleQuery) {
-			tg_eval.evaluateTupleQuery(queryLn, queryString);
+			evaluator.evaluateTupleQuery(queryLn, queryString);
 		} else if (query instanceof ParsedGraphQuery) {
-			tg_eval.evaluateGraphQuery(queryLn, queryString);
+			evaluator.evaluateGraphQuery(queryLn, queryString);
 		} else if (query instanceof ParsedBooleanQuery) {
-			tg_eval.evaluateBooleanQuery(queryLn, queryString);
+			evaluator.evaluateBooleanQuery(queryLn, queryString);
 		} else if (query instanceof ParsedUpdate) {
-			tg_eval.executeUpdate(queryLn, queryString);
+			evaluator.executeUpdate(queryLn, queryString);
 		} else {
 			consoleIO.writeError("Unexpected query type");
 		}

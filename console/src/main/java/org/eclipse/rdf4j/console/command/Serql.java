@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.model.Namespace;
-import static org.eclipse.rdf4j.query.QueryLanguage.SERQL;
 import org.eclipse.rdf4j.query.parser.serql.SeRQLUtil;
 
 /**

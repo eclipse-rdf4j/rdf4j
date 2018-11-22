@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.console.command.Export;
 import org.eclipse.rdf4j.console.command.Federate;
 import org.eclipse.rdf4j.console.command.Load;
 import org.eclipse.rdf4j.console.command.Open;
+import org.eclipse.rdf4j.console.command.Output;
 import org.eclipse.rdf4j.console.command.PrintHelp;
 import org.eclipse.rdf4j.console.command.PrintInfo;
 import org.eclipse.rdf4j.console.command.QueryEvaluator;
@@ -223,6 +224,7 @@ public class Console {
 		register(new Federate(consoleIO, STATE));
 		register(new Sparql(eval, settingMap));
 		register(new Serql(eval, settingMap));
+		register(new Output(eval, settingMap));
 		// information
 		register(new PrintHelp(consoleIO, commandMap));
 		register(new PrintInfo(consoleIO, STATE));
