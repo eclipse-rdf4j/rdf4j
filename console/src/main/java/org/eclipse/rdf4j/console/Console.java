@@ -16,6 +16,7 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.apache.commons.lang.CharSet;
 
 import org.eclipse.rdf4j.RDF4J;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
@@ -43,13 +44,16 @@ import org.eclipse.rdf4j.console.command.Serql;
 import org.eclipse.rdf4j.console.command.SetParameters;
 import org.eclipse.rdf4j.console.command.Show;
 import org.eclipse.rdf4j.console.command.Sparql;
+import org.eclipse.rdf4j.console.command.TupleAndGraphQueryEvaluator;
 import org.eclipse.rdf4j.console.command.Verify;
+import org.eclipse.rdf4j.console.setting.CharacterSet;
 
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
 import org.eclipse.rdf4j.console.setting.LogLevel;
 import org.eclipse.rdf4j.console.setting.QueryPrefix;
 import org.eclipse.rdf4j.console.setting.ShowPrefix;
+import org.eclipse.rdf4j.console.setting.WorkDir;
 
 
 /**
@@ -199,8 +203,8 @@ public class Console {
 		register(new LogLevel());
 		register(new QueryPrefix());
 		register(new ShowPrefix());
-		// FIXME: to be removed in 3.0 release + pass a Map to Commands (breaks signature)
-		//ConsoleParametersWrapper PARAMS = new ConsoleParametersWrapper(settingMap);
+		register(new CharacterSet());
+		register(new WorkDir());
 
 		consoleIO = new ConsoleIO(STATE);
 
@@ -215,9 +219,10 @@ public class Console {
 		register(connect);
 		register(disconnect);
 		// querying
+		TupleAndGraphQueryEvaluator eval = new TupleAndGraphQueryEvaluator(consoleIO, STATE, settingMap);
 		register(new Federate(consoleIO, STATE));
-		register(new Sparql(consoleIO, STATE, settingMap));
-		register(new Serql(consoleIO, STATE, settingMap));
+		register(new Sparql(eval, settingMap));
+		register(new Serql(eval, settingMap));
 		// information
 		register(new PrintHelp(consoleIO, commandMap));
 		register(new PrintInfo(consoleIO, STATE));
@@ -337,8 +342,7 @@ public class Console {
 			
 			exit = "quit".equals(operation) || "exit".equals(operation);
 			if (!exit) {
-				ConsoleCommand cmd = commandMap.getOrDefault(operation, 
-									commandMap.get("sparql"));
+				ConsoleCommand cmd = commandMap.getOrDefault(operation, commandMap.get("sparql"));
 				if (cmd instanceof QueryEvaluator) {
 					((QueryEvaluator) cmd).executeQuery(command, operation);
 				} else {

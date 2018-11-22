@@ -7,12 +7,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
+import java.util.Collection;
 import java.util.Map;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.model.Namespace;
+import static org.eclipse.rdf4j.query.QueryLanguage.SERQL;
+import org.eclipse.rdf4j.query.parser.serql.SeRQLUtil;
 
 /**
  * SERQL query command
@@ -20,6 +24,8 @@ import org.eclipse.rdf4j.console.setting.ConsoleSetting;
  * @author Bart Hanssens
  */
 public class Serql extends QueryEvaluator {
+	private static final String NAMESPACE = "USING NAMESPACE";
+	
 	@Override
 	public String getName() {
 		return "serql";
@@ -52,11 +58,27 @@ public class Serql extends QueryEvaluator {
 	/**
 	 * Constructor
 	 * 
-	 * @param consoleIO
-	 * @param state
+	 * @param evaluator
 	 * @param settings 
 	 */
-	public Serql(ConsoleIO consoleIO, ConsoleState state, Map<String,ConsoleSetting> settings) {
-		super(consoleIO, state, settings);
+	public Serql(TupleAndGraphQueryEvaluator evaluator, Map<String,ConsoleSetting> settings) {
+		super(evaluator, settings);
+	}
+	
+	@Override
+	protected boolean hasQueryPrefixes(String query) {
+		return query.contains(NAMESPACE + " ");
+	}
+
+	@Override
+	protected void addQueryPrefixes(StringBuffer result, Collection<Namespace> namespaces) {
+		StringBuilder str = new StringBuilder(512);
+		
+		str.append(" ").append(NAMESPACE).append(" ");
+		for (Namespace namespace : namespaces) {
+			str.append(namespace.getPrefix()).append(" = ");
+			str.append("<").append(SeRQLUtil.encodeString(namespace.getName())).append(">, ");
+		}
+		
 	}
 }

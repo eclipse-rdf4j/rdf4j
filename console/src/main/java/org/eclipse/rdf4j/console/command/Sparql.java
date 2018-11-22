@@ -7,12 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
+import java.util.Collection;
 import java.util.Map;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLUtil;
 
 /**
  * SPARQL query command
@@ -54,11 +57,26 @@ public class Sparql extends QueryEvaluator {
 	/**
 	 * Constructor
 	 * 
-	 * @param consoleIO
-	 * @param state
+	 * @param evaluator
 	 * @param settings 
 	 */
-	public Sparql(ConsoleIO consoleIO, ConsoleState state, Map<String,ConsoleSetting> settings) {
-		super(consoleIO, state, settings);
+	public Sparql(TupleAndGraphQueryEvaluator evaluator, Map<String,ConsoleSetting> settings) {
+		super(evaluator, settings);
+	}
+
+	@Override
+	protected boolean hasQueryPrefixes(String qry) {
+		return qry.startsWith("prefix");
+	}
+	
+	@Override
+	protected void addQueryPrefixes(StringBuffer result, Collection<Namespace> namespaces) {
+		StringBuilder str = new StringBuilder(512);
+
+		for (Namespace namespace : namespaces) {
+			str.append("PREFIX ").append(namespace.getPrefix()).append(": ");
+			str.append("<").append(SPARQLUtil.encodeString(namespace.getName())).append("> ");
+		}
+		result.insert(0, str);
 	}
 }

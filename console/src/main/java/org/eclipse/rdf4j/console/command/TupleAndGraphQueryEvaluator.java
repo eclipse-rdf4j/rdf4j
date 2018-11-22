@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -57,6 +58,8 @@ public class TupleAndGraphQueryEvaluator {
 		nonVerifyingParserConfig.set(BasicParserSettings.VERIFY_RELATIVE_URIS, false);
 	}
 
+	private String lastQuery = "";
+
 	/**
 	 * Constructor
 	 * 
@@ -70,7 +73,7 @@ public class TupleAndGraphQueryEvaluator {
 		this.state = state;
 		this.settings = ConsoleCommand.convertParams(parameters);
 	}
-	
+
 	/**
 	 * Constructor
 	 * 
@@ -78,10 +81,38 @@ public class TupleAndGraphQueryEvaluator {
 	 * @param state
 	 * @param settings 
 	 */
-	TupleAndGraphQueryEvaluator(ConsoleIO consoleIO, ConsoleState state, Map<String,ConsoleSetting> settings) {
+	public TupleAndGraphQueryEvaluator(ConsoleIO consoleIO, ConsoleState state, 
+															Map<String,ConsoleSetting> settings) {
 		this.consoleIO = consoleIO;
 		this.state = state;
 		this.settings = settings;
+	}
+
+	/**
+	 * Get console IO
+	 * 
+	 * @return console IO
+	 */
+	protected ConsoleIO getConsoleIO() {
+		return this.consoleIO;
+	}
+	
+	/**
+	 * Get console State
+	 * 
+	 * @return console state
+	 */	
+	protected ConsoleState getConsoleState() {
+		return this.state;
+	}
+
+	/**
+	 * Get the last query as a string
+	 * 
+	 * @return query string
+	 */
+	public String getLastQuery() {
+		return this.lastQuery;
 	}
 
 	/**
@@ -114,9 +145,9 @@ public class TupleAndGraphQueryEvaluator {
 	 * @throws QueryEvaluationException
 	 * @throws RepositoryException 
 	 */
-	protected void evaluateTupleQuery(final QueryLanguage queryLn, final String queryString)
+	protected void evaluateTupleQuery(QueryLanguage queryLn, String queryString)
 			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
-			RepositoryException {
+					RepositoryException {
 		Repository repository = state.getRepository();
 		if (repository == null) {
 			consoleIO.writeUnopenedError();
@@ -125,6 +156,7 @@ public class TupleAndGraphQueryEvaluator {
 		
 		try (RepositoryConnection con = repository.getConnection()) {
 			long startTime = System.nanoTime();
+			lastQuery = queryString;
 			consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
 		
 			try (TupleQueryResult tupleQueryResult = con.prepareTupleQuery(queryLn, queryString).evaluate()) {
@@ -196,9 +228,9 @@ public class TupleAndGraphQueryEvaluator {
 	 * @throws QueryEvaluationException
 	 * @throws RepositoryException 
 	 */
-	protected void evaluateGraphQuery(final QueryLanguage queryLn, final String queryString)
+	protected void evaluateGraphQuery(QueryLanguage queryLn, String queryString)
 			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
-			RepositoryException {
+					RepositoryException {
 		Repository repository = state.getRepository();
 		if (repository == null) {
 			consoleIO.writeUnopenedError();
@@ -230,6 +262,61 @@ public class TupleAndGraphQueryEvaluator {
 	}
 	
 	/**
+	 * Evaluate a boolean SPARQL or SERQL query
+	 * 
+	 * @param queryLn query language
+	 * @param queryString query string
+	 * @throws UnsupportedQueryLanguageException
+	 * @throws MalformedQueryException
+	 * @throws QueryEvaluationException
+	 * @throws RepositoryException 
+	 */
+	protected void evaluateBooleanQuery(QueryLanguage queryLn, String queryString)
+			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
+					RepositoryException {
+		Repository repository = state.getRepository();
+		if (repository == null) {
+			consoleIO.writeUnopenedError();
+			return;
+		}
+		
+		try (RepositoryConnection con = repository.getConnection()) {
+			consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
+			long startTime = System.nanoTime();
+			boolean result = con.prepareBooleanQuery(queryLn, queryString).evaluate();
+			consoleIO.writeln("Answer: " + result);
+			long endTime = System.nanoTime();
+			consoleIO.writeln("Query evaluated in " + (endTime - startTime) / 1000000 + " ms");
+		}
+	}
+
+	/**
+	 * Execute a SPARQL or SERQL update
+	 * 
+	 * @param queryLn query language
+	 * @param queryString query string
+	 * @throws RepositoryException
+	 * @throws UpdateExecutionException
+	 * @throws MalformedQueryException 
+	 */
+	protected void executeUpdate(QueryLanguage queryLn, String queryString)
+			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
+		Repository repository = state.getRepository();
+		if (repository == null) {
+			consoleIO.writeUnopenedError();
+			return;
+		}
+		
+		try (RepositoryConnection con = repository.getConnection()) {
+			consoleIO.writeln("Executing update...");
+			long startTime = System.nanoTime();
+			con.prepareUpdate(queryLn, queryString).execute();
+			long endTime = System.nanoTime();
+			consoleIO.writeln("Update executed in " + (endTime - startTime) / 1000000 + " ms");
+		}
+	}
+
+	/**
 	 * Get string representation for a value.
 	 * If the value is an IRI and is part of a known namespace, 
 	 * the prefix will be used to create a shorter string.
@@ -238,7 +325,7 @@ public class TupleAndGraphQueryEvaluator {
 	 * @param namespaces known namespaces
 	 * @return string representation
 	 */
-	private String getStringRepForValue(final Value value, final Collection<Namespace> namespaces) {
+	private String getStringRepForValue(Value value, Collection<Namespace> namespaces) {
 		String result = "";
 		if (value != null) {
 			if (getShowPrefix() && value instanceof IRI) {
@@ -264,7 +351,7 @@ public class TupleAndGraphQueryEvaluator {
 	 * @param namespaces known namespaces
 	 * @return namespace prefix or null
 	 */
-	private String getPrefixForNamespace(final String namespace, final Collection<Namespace> namespaces) {
+	private String getPrefixForNamespace(String namespace, Collection<Namespace> namespaces) {
 		String result = null;
 
 		for (Namespace ns : namespaces) {
