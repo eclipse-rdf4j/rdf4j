@@ -88,10 +88,10 @@ public class OrPropertyShape extends PathPropertyShape {
 
 		if (iteratorDataTypes.get(0) == IteratorData.tripleBased) {
 
-			EqualsJoin equalsJoin = new EqualsJoin(plannodes.get(0), plannodes.get(1));
+			EqualsJoin equalsJoin = new EqualsJoin(plannodes.get(0), plannodes.get(1), true);
 
 			for (int i = 2; i < or.size(); i++) {
-				equalsJoin = new EqualsJoin(equalsJoin, plannodes.get(i));
+				equalsJoin = new EqualsJoin(equalsJoin, plannodes.get(i), true);
 			}
 
 			ret =  new LoggingNode(equalsJoin);
