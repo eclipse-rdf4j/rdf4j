@@ -56,6 +56,11 @@ public class JSONLDParserCustomTest {
 	 */
 	private static final String NON_NUMERIC_NUMBERS_TEST_STRING = "[{\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": NaN}]";
 
+	/**
+	 * Tests for numeric leading zeroes
+	 */
+	private static final String NUMERIC_LEADING_ZEROES_TEST_STRING = "[{\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": 000042}]";
+
 	private RDFParser parser;
 
 	@Rule
@@ -74,6 +79,9 @@ public class JSONLDParserCustomTest {
 	private final Literal testObjectLiteralNotANumber = SimpleValueFactory.getInstance().createLiteral("NaN",
 			XMLSchema.DOUBLE);
 
+	private final Literal testObjectLiteralNumber = SimpleValueFactory.getInstance().createLiteral("42",
+			XMLSchema.INTEGER);
+	
 	@Before
 	public void setUp()
 		throws Exception
@@ -93,7 +101,7 @@ public class JSONLDParserCustomTest {
 		assertEquals(0, errors.getFatalErrors().size());
 
 		assertEquals(1, model.size());
-		assertTrue(model.contains(nextSubject, nextPredicate, nextObject));
+		assertTrue("model was not as expected: " + model.toString(), model.contains(nextSubject, nextPredicate, nextObject));
 	}
 
 	@Test
@@ -188,5 +196,34 @@ public class JSONLDParserCustomTest {
 		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS, false);
 		parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), "");
+	}
+
+
+	@Test
+	public void testAllowNumericLeadingZeroesDefault()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.parse(new StringReader(NUMERIC_LEADING_ZEROES_TEST_STRING), "");
+	}
+
+	@Test
+	public void testAllowNumericLeadingZeroesEnabled()
+		throws Exception
+	{
+		parser.set(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS, true);
+		parser.parse(new StringReader(NUMERIC_LEADING_ZEROES_TEST_STRING), "");
+		verifyParseResults(testSubjectIRI, testPredicate, testObjectLiteralNumber);
+	}
+
+	@Test
+	public void testAllowNumericLeadingZeroesDisabled()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.set(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS, false);
+		parser.parse(new StringReader(NUMERIC_LEADING_ZEROES_TEST_STRING), "");
 	}
 }
