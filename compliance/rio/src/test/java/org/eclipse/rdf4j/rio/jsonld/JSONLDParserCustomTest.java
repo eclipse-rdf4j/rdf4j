@@ -8,7 +8,9 @@
 package org.eclipse.rdf4j.rio.jsonld;
 
 import static org.junit.Assert.*;
+import static org.junit.Assume.assumeTrue;
 
+import java.io.Reader;
 import java.io.StringReader;
 import java.util.Collection;
 
@@ -33,6 +35,9 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
+
+import com.fasterxml.jackson.core.JsonParseException;
+import com.fasterxml.jackson.core.JsonProcessingException;
 
 /**
  * Custom (non-manifest) tests for JSON-LD parser.
@@ -79,7 +84,7 @@ public class JSONLDParserCustomTest {
 	/**
 	 * YAML style comments
 	 */
-	private static final String YAML_COMMENTS_TEST_STRING = "[{#This is a non-standard yaml style comment/*\n\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"}]}]";
+	private static final String YAML_COMMENTS_TEST_STRING = "[\n{#This is a non-standard yaml style comment/*\n\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"}]}]";
 
 	/**
 	 * Strict duplicate detection
@@ -368,12 +373,72 @@ public class JSONLDParserCustomTest {
 	}
 
 	@Test
+	public void testIncludeSourceLocationDefault()
+		throws Exception
+	{
+		final Reader source = new StringReader(YAML_COMMENTS_TEST_STRING);
+		try {
+			parser.parse(source, "");
+			fail("Expected to find an exception");
+		}
+		catch (RDFParseException e) {
+			assertNotNull(e.getCause());
+			assertTrue(e.getCause() instanceof JsonProcessingException);
+			JsonProcessingException cause = (JsonProcessingException)e.getCause();
+			assertEquals(2, cause.getLocation().getLineNr());
+			assertEquals(1, cause.getLocation().getColumnNr());
+			assertNotNull(cause.getLocation().getSourceRef());
+			assertEquals(source, cause.getLocation().getSourceRef());
+		}
+	}
+
+	@Test
+	public void testIncludeSourceLocationEnabled()
+		throws Exception
+	{
+		final Reader source = new StringReader(YAML_COMMENTS_TEST_STRING);
+		try {
+			parser.set(JSONSettings.INCLUDE_SOURCE_IN_LOCATION, true);
+			parser.parse(source, "");
+			fail("Expected to find an exception");
+		}
+		catch (RDFParseException e) {
+			assertNotNull(e.getCause());
+			assertTrue(e.getCause() instanceof JsonProcessingException);
+			JsonProcessingException cause = (JsonProcessingException)e.getCause();
+			assertEquals(2, cause.getLocation().getLineNr());
+			assertEquals(1, cause.getLocation().getColumnNr());
+			assertNotNull(cause.getLocation().getSourceRef());
+			assertEquals(source, cause.getLocation().getSourceRef());
+		}
+	}
+
+	@Test
+	public void testIncludeSourceLocationDisabled()
+		throws Exception
+	{
+		try {
+			parser.set(JSONSettings.INCLUDE_SOURCE_IN_LOCATION, false);
+			parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), "");
+			fail("Expected to find an exception");
+		}
+		catch (RDFParseException e) {
+			assertNotNull(e.getCause());
+			assertTrue(e.getCause() instanceof JsonProcessingException);
+			JsonProcessingException cause = (JsonProcessingException)e.getCause();
+			assertEquals(2, cause.getLocation().getLineNr());
+			assertEquals(1, cause.getLocation().getColumnNr());
+			assertNull(cause.getLocation().getSourceRef());
+		}
+	}
+
+	@Test
 	public void testStrictDuplicateDetectionDefault()
 		throws Exception
 	{
-		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Could not parse JSONLD");
-		parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), "");
+		parser.set(JSONSettings.STRICT_DUPLICATE_DETECTION, false);
+		parser.parse(new StringReader(STRICT_DUPLICATE_DETECTION_TEST_STRING), "");
+		verifyParseResults(testSubjectIRI, testPredicate, testObjectIRI);
 	}
 
 	@Test
