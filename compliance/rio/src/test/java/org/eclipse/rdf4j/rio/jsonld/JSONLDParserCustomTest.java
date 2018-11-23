@@ -81,6 +81,11 @@ public class JSONLDParserCustomTest {
 	 */
 	private static final String YAML_COMMENTS_TEST_STRING = "[{#This is a non-standard yaml style comment/*\n\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"}]}]";
 
+	/**
+	 * Strict duplicate detection
+	 */
+	private static final String STRICT_DUPLICATE_DETECTION_TEST_STRING = "[{\"@context\": {}, \"@context\": {}, \"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"}]}]";
+
 	private RDFParser parser;
 
 	@Rule
@@ -360,6 +365,34 @@ public class JSONLDParserCustomTest {
 		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_YAML_COMMENTS, false);
 		parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), "");
+	}
+
+	@Test
+	public void testStrictDuplicateDetectionDefault()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), "");
+	}
+
+	@Test
+	public void testStrictDuplicateDetectionEnabled()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.set(JSONSettings.STRICT_DUPLICATE_DETECTION, true);
+		parser.parse(new StringReader(STRICT_DUPLICATE_DETECTION_TEST_STRING), "");
+	}
+
+	@Test
+	public void testStrictDuplicateDetectionDisabled()
+		throws Exception
+	{
+		parser.set(JSONSettings.STRICT_DUPLICATE_DETECTION, false);
+		parser.parse(new StringReader(STRICT_DUPLICATE_DETECTION_TEST_STRING), "");
+		verifyParseResults(testSubjectIRI, testPredicate, testObjectIRI);
 	}
 
 }
