@@ -61,6 +61,11 @@ public class JSONLDParserCustomTest {
 	 */
 	private static final String NUMERIC_LEADING_ZEROES_TEST_STRING = "[{\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": 000042}]";
 
+	/**
+	 * Tests for single-quotes
+	 */
+	private static final String SINGLE_QUOTES_TEST_STRING = "[{\'@id\': \"http://example.com/Subj1\",\'http://example.com/prop1\': 42}]";
+
 	private RDFParser parser;
 
 	@Rule
@@ -81,7 +86,7 @@ public class JSONLDParserCustomTest {
 
 	private final Literal testObjectLiteralNumber = SimpleValueFactory.getInstance().createLiteral("42",
 			XMLSchema.INTEGER);
-	
+
 	@Before
 	public void setUp()
 		throws Exception
@@ -101,7 +106,8 @@ public class JSONLDParserCustomTest {
 		assertEquals(0, errors.getFatalErrors().size());
 
 		assertEquals(1, model.size());
-		assertTrue("model was not as expected: " + model.toString(), model.contains(nextSubject, nextPredicate, nextObject));
+		assertTrue("model was not as expected: " + model.toString(),
+				model.contains(nextSubject, nextPredicate, nextObject));
 	}
 
 	@Test
@@ -198,7 +204,6 @@ public class JSONLDParserCustomTest {
 		parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), "");
 	}
 
-
 	@Test
 	public void testAllowNumericLeadingZeroesDefault()
 		throws Exception
@@ -225,5 +230,33 @@ public class JSONLDParserCustomTest {
 		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS, false);
 		parser.parse(new StringReader(NUMERIC_LEADING_ZEROES_TEST_STRING), "");
+	}
+
+	@Test
+	public void testAllowSingleQuotesDefault()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.parse(new StringReader(SINGLE_QUOTES_TEST_STRING), "");
+	}
+
+	@Test
+	public void testAllowSingleQuotesEnabled()
+		throws Exception
+	{
+		parser.set(JSONSettings.ALLOW_SINGLE_QUOTES, true);
+		parser.parse(new StringReader(SINGLE_QUOTES_TEST_STRING), "");
+		verifyParseResults(testSubjectIRI, testPredicate, testObjectLiteralNumber);
+	}
+
+	@Test
+	public void testAllowSingleQuotesDisabled()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.set(JSONSettings.ALLOW_SINGLE_QUOTES, false);
+		parser.parse(new StringReader(SINGLE_QUOTES_TEST_STRING), "");
 	}
 }
