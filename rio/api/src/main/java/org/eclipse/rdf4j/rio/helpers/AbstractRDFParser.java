@@ -737,6 +737,47 @@ public abstract class AbstractRDFParser implements RDFParser {
 	}
 
 	/**
+	 * Reports an error with associated line- and column number to the registered
+	 * ParseErrorListener, if the given setting has been set to true.
+	 * <p>
+	 * This method also throws an {@link RDFParseException} when the given setting
+	 * has been set to <tt>true</tt> and it is not a nonFatalError.
+	 * 
+	 * @param msg
+	 *            The message to use for
+	 *            {@link ParseErrorListener#error(String, long, long)} and for
+	 *            {@link RDFParseException#RDFParseException(String, long, long)} .
+	 * @param e
+	 *            The exception whose message will be used for
+	 *            {@link ParseErrorListener#error(String, long, long)} and for
+	 *            {@link RDFParseException#RDFParseException(String, long, long)} .
+	 * @param lineNo
+	 *            Optional line number, should default to setting this as -1 if not
+	 *            known. Used for
+	 *            {@link ParseErrorListener#error(String, long, long)} and for
+	 *            {@link RDFParseException#RDFParseException(String, long, long)} .
+	 * @param columnNo
+	 *            Optional column number, should default to setting this as -1 if
+	 *            not known. Used for
+	 *            {@link ParseErrorListener#error(String, long, long)} and for
+	 *            {@link RDFParseException#RDFParseException(String, long, long)} .
+	 * @param relevantSetting
+	 *            The boolean setting that will be checked to determine if this is
+	 *            an issue that we need to look at at all. If this setting is true,
+	 *            then the error listener will receive the error, and if
+	 *            {@link ParserConfig#isNonFatalError(RioSetting)} returns true an
+	 *            exception will be thrown.
+	 * @throws RDFParseException
+	 *             If {@link ParserConfig#get(RioSetting)} returns true, and
+	 *             {@link ParserConfig#isNonFatalError(RioSetting)} returns true for
+	 *             the given setting.
+	 */
+	protected void reportError(String msg, Exception e, long lineNo, long columnNo, RioSetting<Boolean> relevantSetting)
+			throws RDFParseException {
+		RDFParserHelper.reportError(e, lineNo, columnNo, relevantSetting, getParserConfig(), getParseErrorListener());
+	}
+
+	/**
 	 * Reports a fatal error to the registered ParseErrorListener, if any, and
 	 * throws a <tt>ParseException</tt> afterwards. This method simply calls
 	 * {@link #reportFatalError(String,long,long)} supplying <tt>-1</tt> for the
@@ -781,6 +822,19 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 */
 	protected void reportFatalError(Exception e, long lineNo, long columnNo) throws RDFParseException {
 		RDFParserHelper.reportFatalError(e, lineNo, columnNo, getParseErrorListener());
+	}
+
+	/**
+	 * Reports a fatal error with associated line- and column number to the
+	 * registered ParseErrorListener, if any, and throws a <tt>ParseException</tt>
+	 * wrapped the supplied exception afterwards. An exception is made for the case
+	 * where the supplied exception is a {@link RDFParseException}; in that case the
+	 * supplied exception is not wrapped in another ParseException and the error
+	 * message is not reported to the ParseErrorListener, assuming that it has
+	 * already been reported when the original ParseException was thrown.
+	 */
+	protected void reportFatalError(String message, Exception e, long lineNo, long columnNo) throws RDFParseException {
+		RDFParserHelper.reportFatalError(message, e, lineNo, columnNo, getParseErrorListener());
 	}
 
 	private final String createUniqueBNodePrefix() {
