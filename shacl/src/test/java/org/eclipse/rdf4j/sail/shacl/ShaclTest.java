@@ -42,6 +42,7 @@ public class ShaclTest {
 		"test-cases/or/inheritance",
 		"test-cases/or/inheritance-deep",
 		"test-cases/or/inheritance-deep-minCountMaxCount",
+		"test-cases/or/inheritanceNodeShape",
 		"test-cases/or/datatype",
 		"test-cases/or/minCountMaxCount",
 		"test-cases/or/maxCount",

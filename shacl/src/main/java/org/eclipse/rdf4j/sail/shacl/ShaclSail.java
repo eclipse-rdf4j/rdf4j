@@ -31,10 +31,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	ShaclSailConfig config = new ShaclSailConfig();
 	private static String SH_OR_UPDATE_QUERY;
+	private static String SH_OR_NODE_SHAPE_UPDATE_QUERY;
 
 	static {
 		try {
 			SH_OR_UPDATE_QUERY = IOUtils.toString(ShaclSail.class.getClassLoader().getResourceAsStream("shacl-sparql-inference/sh_or.rq"), "UTF-8");
+			SH_OR_NODE_SHAPE_UPDATE_QUERY = IOUtils.toString(ShaclSail.class.getClassLoader().getResourceAsStream("shacl-sparql-inference/sh_or_node_shape.rq"), "UTF-8");
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
@@ -56,6 +58,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 		long currentSize= shaclSailConnection.size();
 		do {
 			prevSize = currentSize;
+			shaclSailConnection.prepareUpdate(SH_OR_NODE_SHAPE_UPDATE_QUERY).execute();
 			shaclSailConnection.prepareUpdate(SH_OR_UPDATE_QUERY).execute();
 			currentSize = shaclSailConnection.size();
 		}while(prevSize != currentSize);
