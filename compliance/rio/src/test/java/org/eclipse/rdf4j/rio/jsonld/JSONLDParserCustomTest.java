@@ -87,6 +87,11 @@ public class JSONLDParserCustomTest {
 	private static final String YAML_COMMENTS_TEST_STRING = "[\n{#This is a non-standard yaml style comment/*\n\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"}]}]";
 
 	/**
+	 * Trailing comma
+	 */
+	private static final String TRAILING_COMMA_TEST_STRING = "[{\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"},]}]";
+
+	/**
 	 * Strict duplicate detection
 	 */
 	private static final String STRICT_DUPLICATE_DETECTION_TEST_STRING = "[{\"@context\": {}, \"@context\": {}, \"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"}]}]";
@@ -142,8 +147,8 @@ public class JSONLDParserCustomTest {
 	public void testSupportedSettings()
 		throws Exception
 	{
-		// 10 supported in JSONLDParser + 12 from AbstractRDFParser
-		assertEquals(22, parser.getSupportedSettings().size());
+		// 11 supported in JSONLDParser + 12 from AbstractRDFParser
+		assertEquals(23, parser.getSupportedSettings().size());
 	}
 
 	@Test
@@ -370,6 +375,34 @@ public class JSONLDParserCustomTest {
 		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_YAML_COMMENTS, false);
 		parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), "");
+	}
+
+	@Test
+	public void testAllowTrailingCommaDefault()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.parse(new StringReader(TRAILING_COMMA_TEST_STRING), "");
+	}
+
+	@Test
+	public void testAllowTrailingCommaEnabled()
+		throws Exception
+	{
+		parser.set(JSONSettings.ALLOW_TRAILING_COMMA, true);
+		parser.parse(new StringReader(TRAILING_COMMA_TEST_STRING), "");
+		verifyParseResults(testSubjectIRI, testPredicate, testObjectIRI);
+	}
+
+	@Test
+	public void testAllowTrailingCommaDisabled()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.set(JSONSettings.ALLOW_TRAILING_COMMA, false);
+		parser.parse(new StringReader(TRAILING_COMMA_TEST_STRING), "");
 	}
 
 	@Test

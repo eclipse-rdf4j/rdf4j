@@ -86,6 +86,14 @@ public class JSONSettings {
 			"org.eclipse.rdf4j.rio.json.allow_yaml_comments", "Allow YAML comments", Boolean.FALSE);
 
 	/**
+	 * Boolean setting for JSON parsers to determine if trailing commas are allows.
+	 * <p>
+	 * Defaults to false.
+	 */
+	public static final RioSetting<Boolean> ALLOW_TRAILING_COMMA = new RioSettingImpl<>(
+			"org.eclipse.rdf4j.rio.json.allow_yaml_comments", "Allow trailing comma", Boolean.FALSE);
+
+	/**
 	 * Boolean setting for JSON parsers to determine if errors should include a reference to the source or
 	 * not.
 	 * <p>
