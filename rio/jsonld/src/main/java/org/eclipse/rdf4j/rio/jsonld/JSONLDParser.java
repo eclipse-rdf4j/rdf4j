@@ -204,6 +204,10 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_YAML_COMMENTS,
 					getParserConfig().get(JSONSettings.ALLOW_YAML_COMMENTS));
 		}
+		if (getParserConfig().isSet(JSONSettings.ALLOW_TRAILING_COMMA)) {
+			nextJsonFactory.configure(JsonParser.Feature.ALLOW_TRAILING_COMMA,
+					getParserConfig().get(JSONSettings.ALLOW_TRAILING_COMMA));
+		}
 		if (getParserConfig().isSet(JSONSettings.INCLUDE_SOURCE_IN_LOCATION)) {
 			nextJsonFactory.configure(JsonParser.Feature.INCLUDE_SOURCE_IN_LOCATION,
 					getParserConfig().get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
