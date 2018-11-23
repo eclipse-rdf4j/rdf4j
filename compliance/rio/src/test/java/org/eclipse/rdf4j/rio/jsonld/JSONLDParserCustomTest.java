@@ -76,6 +76,11 @@ public class JSONLDParserCustomTest {
 	 */
 	private static final String UNQUOTED_FIELD_NAMES_TEST_STRING = "[{@id: \"http://example.com/Subj1\",\"http://example.com/prop1\": 42}]";
 
+	/**
+	 * YAML style comments
+	 */
+	private static final String YAML_COMMENTS_TEST_STRING = "[{#This is a non-standard yaml style comment/*\n\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"}]}]";
+
 	private RDFParser parser;
 
 	@Rule
@@ -328,4 +333,33 @@ public class JSONLDParserCustomTest {
 		parser.set(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES, false);
 		parser.parse(new StringReader(UNQUOTED_FIELD_NAMES_TEST_STRING), "");
 	}
+
+	@Test
+	public void testAllowYamlCommentsDefault()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), "");
+	}
+
+	@Test
+	public void testAllowYamlCommentsEnabled()
+		throws Exception
+	{
+		parser.set(JSONSettings.ALLOW_YAML_COMMENTS, true);
+		parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), "");
+		verifyParseResults(testSubjectIRI, testPredicate, testObjectIRI);
+	}
+
+	@Test
+	public void testAllowYamlCommentsDisabled()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.set(JSONSettings.ALLOW_YAML_COMMENTS, false);
+		parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), "");
+	}
+
 }
