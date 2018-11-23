@@ -13,12 +13,14 @@ import java.io.StringReader;
 import java.util.Collection;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.rio.ParseErrorListener;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -48,7 +50,12 @@ public class JSONLDParserCustomTest {
 	 * Java/C++ style comments
 	 */
 	private static final String COMMENTS_TEST_STRING = "[{/*This is a non-standard java/c++ style comment\n*/\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"}]}]";
-	
+
+	/**
+	 * Tests for NaN
+	 */
+	private static final String NON_NUMERIC_NUMBERS_TEST_STRING = "[{\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": NaN}]";
+
 	private RDFParser parser;
 
 	@Rule
@@ -58,52 +65,67 @@ public class JSONLDParserCustomTest {
 
 	private Model model;
 
-	private final Resource testSubject = SimpleValueFactory.getInstance().createIRI("http://example.com/Subj1");
+	private final IRI testSubjectIRI = SimpleValueFactory.getInstance().createIRI("http://example.com/Subj1");
 
 	private final IRI testPredicate = SimpleValueFactory.getInstance().createIRI("http://example.com/prop1");
 
-	private final Value testObject = SimpleValueFactory.getInstance().createIRI("http://example.com/Obj1");
+	private final IRI testObjectIRI = SimpleValueFactory.getInstance().createIRI("http://example.com/Obj1");
+
+	private final Literal testObjectLiteralNotANumber = SimpleValueFactory.getInstance().createLiteral("NaN",
+			XMLSchema.DOUBLE);
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp()
+		throws Exception
+	{
 		parser = Rio.createParser(RDFFormat.JSONLD);
 		errors = new ParseErrorCollector();
 		model = new LinkedHashModel();
 		parser.setParseErrorListener(errors);
 		parser.setRDFHandler(new ContextStatementCollector(model, SimpleValueFactory.getInstance()));
 	}
-	
-	private void verifyParseResults() throws Exception {
+
+	private void verifyParseResults(Resource nextSubject, IRI nextPredicate, Value nextObject)
+		throws Exception
+	{
 		assertEquals(0, errors.getWarnings().size());
 		assertEquals(0, errors.getErrors().size());
 		assertEquals(0, errors.getFatalErrors().size());
-		
+
 		assertEquals(1, model.size());
-		assertTrue(model.contains(testSubject, testPredicate, testObject));
+		assertTrue(model.contains(nextSubject, nextPredicate, nextObject));
 	}
 
 	@Test
-	public void testSupportedSettings() throws Exception {
+	public void testSupportedSettings()
+		throws Exception
+	{
 		// 10 supported in JSONLDParser + 12 from AbstractRDFParser
 		assertEquals(22, parser.getSupportedSettings().size());
 	}
 
 	@Test
-	public void testAllowBackslashEscapingAnyCharacterDefault() throws Exception {
+	public void testAllowBackslashEscapingAnyCharacterDefault()
+		throws Exception
+	{
 		thrown.expect(RDFParseException.class);
 		thrown.expectMessage("Could not parse JSONLD");
 		parser.parse(new StringReader(BACKSLASH_ESCAPED_TEST_STRING), "");
 	}
 
 	@Test
-	public void testAllowBackslashEscapingAnyCharacterEnabled() throws Exception {
+	public void testAllowBackslashEscapingAnyCharacterEnabled()
+		throws Exception
+	{
 		parser.set(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER, true);
 		parser.parse(new StringReader(BACKSLASH_ESCAPED_TEST_STRING), "");
-		verifyParseResults();
+		verifyParseResults(testSubjectIRI, testPredicate, testObjectIRI);
 	}
 
 	@Test
-	public void testAllowBackslashEscapingAnyCharacterDisabled() throws Exception {
+	public void testAllowBackslashEscapingAnyCharacterDisabled()
+		throws Exception
+	{
 		thrown.expect(RDFParseException.class);
 		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER, false);
@@ -111,24 +133,60 @@ public class JSONLDParserCustomTest {
 	}
 
 	@Test
-	public void testAllowCommentsDefault() throws Exception {
+	public void testAllowCommentsDefault()
+		throws Exception
+	{
 		thrown.expect(RDFParseException.class);
 		thrown.expectMessage("Could not parse JSONLD");
 		parser.parse(new StringReader(COMMENTS_TEST_STRING), "");
 	}
 
 	@Test
-	public void testAllowCommentsEnabled() throws Exception {
+	public void testAllowCommentsEnabled()
+		throws Exception
+	{
 		parser.set(JSONSettings.ALLOW_COMMENTS, true);
 		parser.parse(new StringReader(COMMENTS_TEST_STRING), "");
-		verifyParseResults();
+		verifyParseResults(testSubjectIRI, testPredicate, testObjectIRI);
 	}
 
 	@Test
-	public void testAllowCommentsDisabled() throws Exception {
+	public void testAllowCommentsDisabled()
+		throws Exception
+	{
 		thrown.expect(RDFParseException.class);
 		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_COMMENTS, false);
 		parser.parse(new StringReader(COMMENTS_TEST_STRING), "");
+	}
+
+	@Test
+	public void testAllowNonNumericNumbersDefault()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), "");
+	}
+
+	@Test
+	public void testAllowNonNumericNumbersEnabled()
+		throws Exception
+	{
+		parser.set(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS, true);
+		parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), "");
+		// FIXME: The literal being created has the replacement character as its label,
+		// indicating it is failing somewhere in the pipeline
+		verifyParseResults(testSubjectIRI, testPredicate, testObjectLiteralNotANumber);
+	}
+
+	@Test
+	public void testAllowNonNumericNumbersDisabled()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.set(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS, false);
+		parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), "");
 	}
 }
