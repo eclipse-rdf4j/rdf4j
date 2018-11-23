@@ -66,6 +66,11 @@ public class JSONLDParserCustomTest {
 	 */
 	private static final String SINGLE_QUOTES_TEST_STRING = "[{\'@id\': \"http://example.com/Subj1\",\'http://example.com/prop1\': 42}]";
 
+	/**
+	 * Tests for unquoted control char
+	 */
+	private static final String UNQUOTED_CONTROL_CHARS_TEST_STRING = "[{\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": \"42\u0009\"}]";
+
 	private RDFParser parser;
 
 	@Rule
@@ -86,6 +91,9 @@ public class JSONLDParserCustomTest {
 
 	private final Literal testObjectLiteralNumber = SimpleValueFactory.getInstance().createLiteral("42",
 			XMLSchema.INTEGER);
+
+	private final Literal testObjectLiteralUnquotedControlChar = SimpleValueFactory.getInstance().createLiteral(
+			"42\u0009", XMLSchema.STRING);
 
 	@Before
 	public void setUp()
@@ -258,5 +266,33 @@ public class JSONLDParserCustomTest {
 		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_SINGLE_QUOTES, false);
 		parser.parse(new StringReader(SINGLE_QUOTES_TEST_STRING), "");
+	}
+
+	@Test
+	public void testAllowUnquotedControlCharactersDefault()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.parse(new StringReader(UNQUOTED_CONTROL_CHARS_TEST_STRING), "");
+	}
+
+	@Test
+	public void testAllowUnquotedControlCharactersEnabled()
+		throws Exception
+	{
+		parser.set(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS, true);
+		parser.parse(new StringReader(UNQUOTED_CONTROL_CHARS_TEST_STRING), "");
+		verifyParseResults(testSubjectIRI, testPredicate, testObjectLiteralUnquotedControlChar);
+	}
+
+	@Test
+	public void testAllowUnquotedControlCharactersDisabled()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.set(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS, false);
+		parser.parse(new StringReader(UNQUOTED_CONTROL_CHARS_TEST_STRING), "");
 	}
 }
