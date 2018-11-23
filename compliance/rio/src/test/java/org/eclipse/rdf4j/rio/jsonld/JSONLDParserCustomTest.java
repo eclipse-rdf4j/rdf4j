@@ -71,6 +71,11 @@ public class JSONLDParserCustomTest {
 	 */
 	private static final String UNQUOTED_CONTROL_CHARS_TEST_STRING = "[{\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": \"42\u0009\"}]";
 
+	/**
+	 * Tests for unquoted field names
+	 */
+	private static final String UNQUOTED_FIELD_NAMES_TEST_STRING = "[{@id: \"http://example.com/Subj1\",\"http://example.com/prop1\": 42}]";
+
 	private RDFParser parser;
 
 	@Rule
@@ -294,5 +299,33 @@ public class JSONLDParserCustomTest {
 		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS, false);
 		parser.parse(new StringReader(UNQUOTED_CONTROL_CHARS_TEST_STRING), "");
+	}
+
+	@Test
+	public void testAllowUnquotedFieldNamesDefault()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.parse(new StringReader(UNQUOTED_FIELD_NAMES_TEST_STRING), "");
+	}
+
+	@Test
+	public void testAllowUnquotedFieldNamesEnabled()
+		throws Exception
+	{
+		parser.set(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES, true);
+		parser.parse(new StringReader(UNQUOTED_FIELD_NAMES_TEST_STRING), "");
+		verifyParseResults(testSubjectIRI, testPredicate, testObjectLiteralNumber);
+	}
+
+	@Test
+	public void testAllowUnquotedFieldNamesDisabled()
+		throws Exception
+	{
+		thrown.expect(RDFParseException.class);
+		thrown.expectMessage("Could not parse JSONLD");
+		parser.set(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES, false);
+		parser.parse(new StringReader(UNQUOTED_FIELD_NAMES_TEST_STRING), "");
 	}
 }
