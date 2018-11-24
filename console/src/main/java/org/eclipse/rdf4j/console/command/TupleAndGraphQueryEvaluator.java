@@ -149,10 +149,6 @@ public class TupleAndGraphQueryEvaluator {
 			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
 					RepositoryException {
 		Repository repository = state.getRepository();
-		if (repository == null) {
-			consoleIO.writeUnopenedError();
-			return;
-		}
 		
 		try (RepositoryConnection con = repository.getConnection()) {
 			long startTime = System.nanoTime();
@@ -232,13 +228,10 @@ public class TupleAndGraphQueryEvaluator {
 			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
 					RepositoryException {
 		Repository repository = state.getRepository();
-		if (repository == null) {
-			consoleIO.writeUnopenedError();
-			return;
-		}
-		
+	
 		try(RepositoryConnection con = repository.getConnection()) {
 			con.setParserConfig(nonVerifyingParserConfig);
+			lastQuery = queryString;
 			consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
 			long startTime = System.nanoTime();
 			Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
@@ -275,10 +268,6 @@ public class TupleAndGraphQueryEvaluator {
 			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
 					RepositoryException {
 		Repository repository = state.getRepository();
-		if (repository == null) {
-			consoleIO.writeUnopenedError();
-			return;
-		}
 		
 		try (RepositoryConnection con = repository.getConnection()) {
 			consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
@@ -302,11 +291,7 @@ public class TupleAndGraphQueryEvaluator {
 	protected void executeUpdate(QueryLanguage queryLn, String queryString)
 			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
 		Repository repository = state.getRepository();
-		if (repository == null) {
-			consoleIO.writeUnopenedError();
-			return;
-		}
-		
+
 		try (RepositoryConnection con = repository.getConnection()) {
 			consoleIO.writeln("Executing update...");
 			long startTime = System.nanoTime();

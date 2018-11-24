@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
@@ -183,6 +182,12 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	private void evaluateQuery(QueryLanguage queryLn, String queryString,  ParsedOperation query)
 			throws MalformedQueryException, QueryEvaluationException, RepositoryException,
 				UpdateExecutionException {
+		Repository repository = state.getRepository();
+		if (repository == null) {
+			consoleIO.writeUnopenedError();
+			return;
+		}
+	
 		if (query instanceof ParsedTupleQuery) {
 			evaluator.evaluateTupleQuery(queryLn, queryString);
 		} else if (query instanceof ParsedGraphQuery) {

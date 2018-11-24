@@ -62,6 +62,26 @@ public class Output extends ConsoleCommand {
 		this.settings = settings;
 	}
 
+	/**
+	 * Get working directory.
+	 * Use a new working directory setting when not found.
+	 * 
+	 * @return boolean
+	 */
+	private Path getWorkDir() {
+		return ((WorkDir) settings.getOrDefault(WorkDir.NAME, new WorkDir())).get();
+	}
+	
+	/**
+	 * Get character set
+	 * Use a new character set setting when not found.
+	 * 
+	 * @return boolean
+	 */
+	private Charset getCharSet() {
+		return ((CharacterSet) settings.getOrDefault(CharacterSet.NAME, new CharacterSet())).get();
+	}
+	
 	@Override
 	public void execute(String... tokens) {
 		Repository repository = state.getRepository();
@@ -120,25 +140,6 @@ public class Output extends ConsoleCommand {
 		} catch (IOException ex) {
 			consoleIO.writeError("Could not write string to file: " + ex.getMessage());
 		}
-	}
-
-	/**
-	 * Get working directory.
-	 * Use a new working directory setting when not found.
-	 * 
-	 * @return boolean
-	 */
-	private Path getWorkDir() {
-		return ((WorkDir) settings.getOrDefault(WorkDir.NAME, new WorkDir())).get();
-	}
-	
-	/**
-	 * Get character set
-	 * Use a new character set setting when not found.
-	 * 
-	 * @return boolean
-	 */
-	private Charset getCharSet() {
-		return ((CharacterSet) settings.getOrDefault(CharacterSet.NAME, new CharacterSet())).get();
+		consoleIO.writeError("Query saved to " + p.toAbsolutePath().toString());
 	}
 }
