@@ -69,7 +69,9 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 
 	@Override
 	public void parse(final InputStream inputStream, final String baseUri)
-		throws IOException, RDFParseException, RDFHandlerException
+		throws IOException,
+		RDFParseException,
+		RDFHandlerException
 	{
 		JsonParser jp = null;
 
@@ -156,7 +158,9 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 
 	@Override
 	public void parse(final Reader reader, final String baseUri)
-		throws IOException, RDFParseException, RDFHandlerException
+		throws IOException,
+		RDFParseException,
+		RDFHandlerException
 	{
 		JsonParser jp = null;
 
@@ -196,7 +200,10 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 
 	private void rdfJsonToHandlerInternal(final RDFHandler handler, final ValueFactory vf,
 			final JsonParser jp)
-		throws IOException, JsonParseException, RDFParseException, RDFHandlerException
+		throws IOException,
+		JsonParseException,
+		RDFParseException,
+		RDFHandlerException
 	{
 		if (jp.nextToken() != JsonToken.START_OBJECT) {
 			reportFatalError("Expected RDF/JSON document to start with an Object", jp.getCurrentLocation());

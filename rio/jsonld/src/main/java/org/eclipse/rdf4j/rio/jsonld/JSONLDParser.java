@@ -109,7 +109,8 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 			throw new RDFParseException("Could not parse JSONLD", e);
 		}
 		catch (final JsonProcessingException e) {
-			throw new RDFParseException("Could not parse JSONLD", e);
+			throw new RDFParseException("Could not parse JSONLD", e, e.getLocation().getLineNr(),
+					e.getLocation().getColumnNr());
 		}
 		catch (final RuntimeException e) {
 			if (e.getCause() != null && e.getCause() instanceof RDFParseException) {
