@@ -26,11 +26,16 @@ public class ExternalTypeFilterNode implements PlanNode {
 	private NotifyingSailConnection shaclSailConnection;
 	private Resource filterOnType;
 	PlanNode parent;
+	int index = 0;
+	private final boolean returnMatching;
 
-	public ExternalTypeFilterNode(NotifyingSailConnection shaclSailConnection, Resource filterOnType, PlanNode parent) {
+
+	public ExternalTypeFilterNode(NotifyingSailConnection shaclSailConnection, Resource filterOnType, PlanNode parent, int index, boolean returnMatching) {
 		this.shaclSailConnection = shaclSailConnection;
 		this.filterOnType = filterOnType;
 		this.parent = parent;
+		this.index = index;
+		this.returnMatching = returnMatching;
 	}
 
 	@Override
@@ -48,11 +53,18 @@ public class ExternalTypeFilterNode implements PlanNode {
 				while (next == null && parentIterator.hasNext()) {
 					Tuple temp = parentIterator.next();
 
-					Resource subject = (Resource) temp.line.get(0);
+					Resource subject = (Resource) temp.line.get(index);
 
-					if (shaclSailConnection.hasStatement(subject, RDF.TYPE, filterOnType, true)) {
-						next = temp;
-						next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, filterOnType)));
+					if (returnMatching) {
+						if (shaclSailConnection.hasStatement(subject, RDF.TYPE, filterOnType, true)) {
+							next = temp;
+							next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, filterOnType)));
+						}
+					}else{
+						if (!shaclSailConnection.hasStatement(subject, RDF.TYPE, filterOnType, true)) {
+							next = temp;
+							next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, filterOnType)));
+						}
 					}
 
 				}
@@ -94,10 +106,10 @@ public class ExternalTypeFilterNode implements PlanNode {
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
-		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
+		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 
-		if(shaclSailConnection != null){
-			stringBuilder.append( System.identityHashCode(shaclSailConnection)+" -> "+getId()+" [label=\"filter source\"]").append("\n");
+		if (shaclSailConnection != null) {
+			stringBuilder.append(System.identityHashCode(shaclSailConnection) + " -> " + getId() + " [label=\"filter source\"]").append("\n");
 		}
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
@@ -111,7 +123,7 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public String getId() {
-		return System.identityHashCode(this)+"";
+		return System.identityHashCode(this) + "";
 	}
 
 	@Override
