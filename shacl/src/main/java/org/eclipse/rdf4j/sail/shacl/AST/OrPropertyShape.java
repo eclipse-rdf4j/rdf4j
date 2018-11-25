@@ -33,7 +33,7 @@ import java.util.stream.Stream;
 /**
  * @author Håvard Ottestad
  */
-public class OrPropertyShape extends PathPropertyShape {
+public class OrPropertyShape extends PropertyShape {
 
 	private final List<PropertyShape> or;
 
@@ -41,7 +41,7 @@ public class OrPropertyShape extends PathPropertyShape {
 
 
 	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
-		super(id, connection, nodeShape);
+		super(id, nodeShape);
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.OR, null, true))) {
 			Resource orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:or on " + id));
@@ -88,10 +88,10 @@ public class OrPropertyShape extends PathPropertyShape {
 
 		if (iteratorDataTypes.get(0) == IteratorData.tripleBased) {
 
-			EqualsJoin equalsJoin = new EqualsJoin(plannodes.get(0), plannodes.get(1));
+			EqualsJoin equalsJoin = new EqualsJoin(plannodes.get(0), plannodes.get(1), true);
 
 			for (int i = 2; i < or.size(); i++) {
-				equalsJoin = new EqualsJoin(equalsJoin, plannodes.get(i));
+				equalsJoin = new EqualsJoin(equalsJoin, plannodes.get(i), true);
 			}
 
 			ret =  new LoggingNode(equalsJoin);

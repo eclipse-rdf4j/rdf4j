@@ -67,7 +67,7 @@ public class DirectTupleFromFilter implements PlanNode, PushBasedPlanNode, Suppo
 
 	@Override
 	public int depth() {
-		return parentProvider.parent().stream().mapToInt(PlanNode::depth).sum()+1;
+		return parentProvider.parent().stream().mapToInt(PlanNode::depth).sum()+2;
 	}
 
 	@Override

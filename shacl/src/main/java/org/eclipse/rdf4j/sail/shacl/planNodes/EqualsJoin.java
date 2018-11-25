@@ -7,10 +7,12 @@ import org.eclipse.rdf4j.sail.SailException;
 public class EqualsJoin implements PlanNode{
 	PlanNode left;
 	PlanNode right;
+	boolean useAsFilter;
 
-	public EqualsJoin(PlanNode left, PlanNode right) {
+	public EqualsJoin(PlanNode left, PlanNode right, boolean useAsFilter) {
 		this.left = left;
 		this.right = right;
+		this.useAsFilter = useAsFilter;
 	}
 
 	@Override
@@ -57,7 +59,11 @@ public class EqualsJoin implements PlanNode{
 					if (nextRight != null) {
 
 						if (nextLeft.line == nextRight.line || nextLeft.line.equals(nextRight.line)) {
-							next = TupleHelper.join(nextLeft, nextRight);
+							if(useAsFilter){
+								next = nextLeft;
+							}else{
+								next = TupleHelper.join(nextLeft, nextRight);
+							}
 							nextRight = null;
 						} else {
 

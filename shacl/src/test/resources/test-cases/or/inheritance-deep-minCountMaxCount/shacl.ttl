@@ -10,14 +10,13 @@ ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetClass ex:Person ;
 	sh:property [
+		sh:path ex:age ;
                 sh:or (
                     [
-                    sh:path ex:age ;
-                      sh:datatype xsd:integer ;
+                      sh:or ([sh:or ([sh:minCount 4] [sh:minCount 4])] [sh:or ([sh:minCount 5] [sh:minCount 6])] [sh:or ([sh:minCount 7] [sh:minCount 8])]) ;
                     ]
                     [
-                    sh:path ex:age ;
-                      sh:datatype xsd:long ;
+                      sh:or ( [sh:maxCount 2] [sh:maxCount 1]) ;
                     ]
                   ) ;
     	] .

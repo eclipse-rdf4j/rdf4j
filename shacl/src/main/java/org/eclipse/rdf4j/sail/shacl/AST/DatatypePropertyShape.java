@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.DatatypeFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PushBasedLoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -60,7 +61,7 @@ public class DatatypePropertyShape extends PathPropertyShape {
 
 		// this is essentially pushing the filter down below the join
 		DirectTupleFromFilter invalidValuesDirectOnPath = new DirectTupleFromFilter();
-		new DatatypeFilter(addedByPath, null, invalidValuesDirectOnPath, datatype);
+		new DatatypeFilter(addedByPath, null, new PushBasedLoggingNode(invalidValuesDirectOnPath), datatype);
 
 		BufferedTupleFromFilter discardedRight = new BufferedTupleFromFilter();
 

@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSail;
@@ -16,6 +18,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
 
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -27,12 +30,38 @@ public class ShaclSail extends NotifyingSailWrapper {
 	boolean debugPrintPlans = false;
 
 	ShaclSailConfig config = new ShaclSailConfig();
+	private static String SH_OR_UPDATE_QUERY;
+	private static String SH_OR_NODE_SHAPE_UPDATE_QUERY;
+
+	static {
+		try {
+			SH_OR_UPDATE_QUERY = IOUtils.toString(ShaclSail.class.getClassLoader().getResourceAsStream("shacl-sparql-inference/sh_or.rq"), "UTF-8");
+			SH_OR_NODE_SHAPE_UPDATE_QUERY = IOUtils.toString(ShaclSail.class.getClassLoader().getResourceAsStream("shacl-sparql-inference/sh_or_node_shape.rq"), "UTF-8");
+		} catch (IOException e) {
+			throw new IllegalStateException(e);
+		}
+
+	}
 
 	public ShaclSail(NotifyingSail baseSail, SailRepository shaclSail) {
 		super(baseSail);
 		try (SailRepositoryConnection shaclSailConnection = shaclSail.getConnection()) {
+			runInferencingSparqlQueries(shaclSailConnection);
 			nodeShapes = NodeShape.Factory.getShapes(shaclSailConnection);
 		}
+	}
+
+	private void runInferencingSparqlQueries(SailRepositoryConnection shaclSailConnection) {
+
+
+		long prevSize;
+		long currentSize= shaclSailConnection.size();
+		do {
+			prevSize = currentSize;
+			shaclSailConnection.prepareUpdate(SH_OR_NODE_SHAPE_UPDATE_QUERY).execute();
+			shaclSailConnection.prepareUpdate(SH_OR_UPDATE_QUERY).execute();
+			currentSize = shaclSailConnection.size();
+		}while(prevSize != currentSize);
 	}
 
 	@Override
