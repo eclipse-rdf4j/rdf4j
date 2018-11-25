@@ -81,7 +81,7 @@ public class MockInputPlanNode implements PlanNode {
 	}
 
 	@Override
-	public void printPlan() {
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
 
 	}
 

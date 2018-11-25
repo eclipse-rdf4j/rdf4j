@@ -54,6 +54,7 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 	}
 
 	private CloseableIteration<Tuple, SailException> iterator() {
+		FilterPlanNode<T> that = this;
 		return new CloseableIteration<Tuple, SailException>() {
 
 			CloseableIteration<Tuple, SailException> parentIterator;
@@ -74,11 +75,19 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 
 					if (checkTuple(temp)) {
 						if (trueNode != null) {
+							if(LoggingNode.loggingEnabled){
+								System.out.println(leadingSpace() + that.getClass().getSimpleName() + ";trueNode: " + " " + temp.toString());
+							}
 							trueNode.push(temp);
+
 						}
 					} else {
 						if (falseNode != null) {
+							if(LoggingNode.loggingEnabled){
+								System.out.println(leadingSpace() + that.getClass().getSimpleName() + ";falseNode: " + " " + temp.toString());
+							}
 							falseNode.push(temp);
+
 						}
 					}
 
@@ -131,23 +140,23 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 
 	boolean printed = false;
 
-	public void printPlan() {
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
 		if(printed) return;
 		printed = true;
-		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
-		System.out.println(parent.getId()+" -> "+getId());
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
 		if(trueNode != null){
 			String id = getId(trueNode);
-			System.out.println(getId()+" -> "+id+ " [label=\"true values\"]");
+			stringBuilder.append(getId()+" -> "+id+ " [label=\"true values\"]").append("\n");
 
 		}
 		if(falseNode != null){
 			String id = getId(falseNode);
-			System.out.println(getId()+" -> "+id+ " [label=\"false values\"]");
+			stringBuilder.append(getId()+" -> "+id+ " [label=\"false values\"]").append("\n");
 
 		}
 
-		parent.printPlan();
+		parent.getPlanAsGraphvizDot(stringBuilder);
 
 
 
@@ -164,5 +173,15 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 
 	public String getId() {
 		return System.identityHashCode(this)+"";
+	}
+
+
+	private String leadingSpace() {
+		StringBuilder ret = new StringBuilder();
+		int depth = parent.depth()+1;
+		while (--depth > 0) {
+			ret.append("    ");
+		}
+		return ret.toString();
 	}
 }

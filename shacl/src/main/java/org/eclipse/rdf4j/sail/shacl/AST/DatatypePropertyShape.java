@@ -23,9 +23,12 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.DatatypeFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PushBasedLoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.stream.Stream;
 
@@ -35,6 +38,7 @@ import java.util.stream.Stream;
 public class DatatypePropertyShape extends PathPropertyShape {
 
 	private final Resource datatype;
+	private static final Logger logger = LoggerFactory.getLogger(DatatypePropertyShape.class);
 
 	DatatypePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
 		super(id, connection, nodeShape);
@@ -57,7 +61,7 @@ public class DatatypePropertyShape extends PathPropertyShape {
 
 		// this is essentially pushing the filter down below the join
 		DirectTupleFromFilter invalidValuesDirectOnPath = new DirectTupleFromFilter();
-		new DatatypeFilter(addedByPath, null, invalidValuesDirectOnPath, datatype);
+		new DatatypeFilter(addedByPath, null, new PushBasedLoggingNode(invalidValuesDirectOnPath), datatype);
 
 		BufferedTupleFromFilter discardedRight = new BufferedTupleFromFilter();
 
@@ -79,7 +83,8 @@ public class DatatypePropertyShape extends PathPropertyShape {
 		new DatatypeFilter(top, null, invalidValues, datatype);
 
 		if(printPlans){
-			printPlan(invalidValues, shaclSailConnection);
+			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);
+			logger.info(planAsGraphvizDot);
 		}
 
 		return new LoggingNode(invalidValues);

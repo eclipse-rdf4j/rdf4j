@@ -1,16 +1,18 @@
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 
 public class EqualsJoin implements PlanNode{
 	PlanNode left;
 	PlanNode right;
+	boolean useAsFilter;
 
-	public EqualsJoin(PlanNode left, PlanNode right) {
+	public EqualsJoin(PlanNode left, PlanNode right, boolean useAsFilter) {
 		this.left = left;
 		this.right = right;
+		this.useAsFilter = useAsFilter;
 	}
 
 	@Override
@@ -57,7 +59,11 @@ public class EqualsJoin implements PlanNode{
 					if (nextRight != null) {
 
 						if (nextLeft.line == nextRight.line || nextLeft.line.equals(nextRight.line)) {
-							next = TupleHelper.join(nextLeft, nextRight);
+							if(useAsFilter){
+								next = nextLeft;
+							}else{
+								next = TupleHelper.join(nextLeft, nextRight);
+							}
 							nextRight = null;
 						} else {
 
@@ -129,8 +135,28 @@ public class EqualsJoin implements PlanNode{
 	}
 
 	@Override
-	public void printPlan() {
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		left.getPlanAsGraphvizDot(stringBuilder);
 
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(left.getId()+" -> "+getId()+ " [label=\"left\"];").append("\n");
+		stringBuilder.append(right.getId()+" -> "+getId()+ " [label=\"right\"];").append("\n");
+		right.getPlanAsGraphvizDot(stringBuilder);
+
+		// if this plan node implements discardedRight/Left, then this is the code to print the plan.
+//		if(discardedRight != null){
+//			if(discardedRight instanceof PlanNode){
+//				stringBuilder.append(getId()+" -> "+((PlanNode) discardedRight).getId()+ " [label=\"discardedRight\"];").append("\n");
+//			}
+//
+//		}
+//		if(discardedLeft != null){
+//			if(discardedLeft instanceof PlanNode){
+//				stringBuilder.append(getId()+" -> "+((PlanNode) discardedLeft).getId()+ " [label=\"discardedLeft\"];").append("\n");
+//			}
+//
+//
+//		}
 	}
 
 	@Override

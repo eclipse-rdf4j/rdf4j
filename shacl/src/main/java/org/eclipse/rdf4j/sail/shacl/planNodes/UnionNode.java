@@ -117,11 +117,11 @@ public class UnionNode implements PlanNode {
 	}
 
 	@Override
-	public void printPlan() {
-		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		for (PlanNode node : nodes) {
-			System.out.println(node.getId()+" -> "+getId());
-			node.printPlan();
+			stringBuilder.append(node.getId()+" -> "+getId()).append("\n");
+			node.getPlanAsGraphvizDot(stringBuilder);
 
 		}
 	}

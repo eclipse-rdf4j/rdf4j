@@ -92,14 +92,14 @@ public class ExternalTypeFilterNode implements PlanNode {
 	}
 
 	@Override
-	public void printPlan() {
-		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
-		System.out.println(parent.getId()+" -> "+getId());
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
 
 		if(shaclSailConnection != null){
-			System.out.println( System.identityHashCode(shaclSailConnection)+" -> "+getId()+" [label=\"filter source\"]");
+			stringBuilder.append( System.identityHashCode(shaclSailConnection)+" -> "+getId()+" [label=\"filter source\"]").append("\n");
 		}
-		parent.printPlan();
+		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
 
 	@Override

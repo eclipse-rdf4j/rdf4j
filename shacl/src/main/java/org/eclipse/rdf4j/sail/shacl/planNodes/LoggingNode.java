@@ -125,8 +125,8 @@ public class LoggingNode implements PlanNode {
 	}
 
 	@Override
-	public void printPlan() {
-		parent.printPlan();
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
 
 	@Override

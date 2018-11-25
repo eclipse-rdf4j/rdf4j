@@ -30,6 +30,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.stream.Stream;
 
@@ -41,6 +43,7 @@ import java.util.stream.Stream;
 public class MinCountPropertyShape extends PathPropertyShape {
 
 	private long minCount;
+	private static final Logger logger = LoggerFactory.getLogger(MinCountPropertyShape.class);
 
 	// toggle for switching on and off the optimization used when no statements have been removed in a transaction
 	private boolean optimizeWhenNoStatementsRemoved = true;
@@ -136,7 +139,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		new MinCountFilter(groupBy2, null, filteredStatements2, minCount);
 
 		if (printPlans) {
-			printPlan(filteredStatements2, shaclSailConnection);
+			String planAsGraphvizDot = getPlanAsGraphvizDot(filteredStatements2, shaclSailConnection);
+			logger.info(planAsGraphvizDot);
 		}
 
 		return new LoggingNode(filteredStatements2);

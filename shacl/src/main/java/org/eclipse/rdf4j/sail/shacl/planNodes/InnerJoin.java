@@ -12,7 +12,6 @@ import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -171,23 +170,23 @@ public class InnerJoin implements PlanNode {
 	}
 
 	@Override
-	public void printPlan() {
-		left.printPlan();
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		left.getPlanAsGraphvizDot(stringBuilder);
 
-		System.out.println(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];");
-		System.out.println(left.getId()+" -> "+getId()+ " [label=\"left\"];");
-		System.out.println(right.getId()+" -> "+getId()+ " [label=\"right\"];");
-		right.printPlan();
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(left.getId()+" -> "+getId()+ " [label=\"left\"];").append("\n");
+		stringBuilder.append(right.getId()+" -> "+getId()+ " [label=\"right\"];").append("\n");
+		right.getPlanAsGraphvizDot(stringBuilder);
 
 		if(discardedRight != null){
 			if(discardedRight instanceof PlanNode){
-				System.out.println(getId()+" -> "+((PlanNode) discardedRight).getId()+ " [label=\"discardedRight\"];");
+				stringBuilder.append(getId()+" -> "+((PlanNode) discardedRight).getId()+ " [label=\"discardedRight\"];").append("\n");
 			}
 
 		}
 		if(discardedLeft != null){
 			if(discardedLeft instanceof PlanNode){
-				System.out.println(getId()+" -> "+((PlanNode) discardedLeft).getId()+ " [label=\"discardedLeft\"];");
+				stringBuilder.append(getId()+" -> "+((PlanNode) discardedLeft).getId()+ " [label=\"discardedLeft\"];").append("\n");
 			}
 
 
