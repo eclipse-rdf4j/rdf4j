@@ -186,6 +186,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 				propertyShapes.add(new MinInclusivePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.minInclusive));
 			}
 
+
+			if (hasClass(propertyShapeId, connection)) {
+				propertyShapes.add(new ClassPropertyShape(propertyShapeId, connection, nodeShape));
+			}
 			return propertyShapes;
 		}
 	}
