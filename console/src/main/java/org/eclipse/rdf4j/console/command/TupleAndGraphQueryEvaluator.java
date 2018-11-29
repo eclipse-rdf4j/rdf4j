@@ -104,26 +104,6 @@ public class TupleAndGraphQueryEvaluator {
 	}
 
 	/**
-	 * Get console width from settings.
-	 * Use a new width setting when not found.
-	 * 
-	 * @return width of console in columns
-	 */
-	private int getConsoleWidth() {
-		return ((ConsoleWidth) settings.getOrDefault(ConsoleWidth.NAME, new ConsoleWidth())).get();
-	}
-	
-	/**
-	 * Get show prefix setting
-	 * Use a new show prefix setting when not found.
-	 * 
-	 * @return boolean
-	 */
-	private boolean getShowPrefix() {
-		return ((ShowPrefix) settings.getOrDefault(ShowPrefix.NAME, new ShowPrefix())).get();
-	}
-
-	/**
 	 * Evaluate SPARQL or SERQL tuple query and send the output to a writer.
 	 * If writer is null, the console will be used for output.
 	 * 
@@ -179,6 +159,7 @@ public class TupleAndGraphQueryEvaluator {
 	 * 
 	 * @param queryLn query language
 	 * @param queryString query string
+	 * @param writer
 	 * @throws UnsupportedQueryLanguageException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
@@ -206,14 +187,6 @@ public class TupleAndGraphQueryEvaluator {
 
 			while (res.hasNext()) {
 				writer.handleStatement(res.next());
-	//			final Statement statement = queryResult.next(); // NOPMD
-//				resultCount++;
-//				while (res.hasNext()) {
-//					w.handleSolution(res.next());
-//					resultCount++;
-//				}
-
-				
 				resultCount++;
 			}
 			writer.endRDF();
