@@ -12,9 +12,13 @@ import java.net.URISyntaxException;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Map;
+import org.eclipse.rdf4j.model.IRI;
 
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.rio.ntriples.NTriplesUtil;
 
 /**
  * Helper class
@@ -79,5 +83,27 @@ public class Util {
 			}
 		}
 		return path;
+	}
+	
+	/**
+	 * Get string representation for a value.
+	 * If the value is an IRI and is part of a known namespace, the prefix will be used to shorten it.
+	 * 
+	 * @param value
+	 * @param namespaces
+	 * @return string representation
+	 */
+	public static String getPrefixedValue(Value value, Map<String,String> namespaces) {
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof IRI) {
+			IRI uri = (IRI) value;
+			String prefix = namespaces.get(uri.getNamespace());
+			if (prefix != null) {
+				return prefix + ":" + uri.getLocalName();
+			}
+		}
+		return NTriplesUtil.toNTriplesString(value);
 	}
 }

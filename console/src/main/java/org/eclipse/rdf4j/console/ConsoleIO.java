@@ -62,6 +62,14 @@ public class ConsoleIO {
 	}
 
 	/**
+	 * 
+	 * @return 
+	 */
+	public OutputStream getOutputStream() {
+		return terminal.output();
+	}
+	
+	/**
 	 * Read a command from input
 	 * 
 	 * @return one line of input, or null on error

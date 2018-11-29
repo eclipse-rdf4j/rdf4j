@@ -8,11 +8,23 @@
 package org.eclipse.rdf4j.console.command;
 
 import java.io.IOException;
+import java.io.OutputStream;
+
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 
@@ -20,9 +32,14 @@ import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.console.setting.ConsoleWidth;
 import org.eclipse.rdf4j.console.setting.QueryPrefix;
+import org.eclipse.rdf4j.console.setting.WorkDir;
+import org.eclipse.rdf4j.console.util.ConsoleQueryResultWriter;
+import org.eclipse.rdf4j.console.util.ConsoleRDFWriter;
 
 import org.eclipse.rdf4j.model.Namespace;
+
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
@@ -35,15 +52,25 @@ import org.eclipse.rdf4j.query.parser.ParsedOperation;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
+import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
+
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.rio.Rio;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
+ * Abstract query evaluator command
+ * 
  * @author Dale Visser
+ * @author Bart Hanssens
  */
 public abstract class QueryEvaluator extends ConsoleCommand {
 
@@ -54,6 +81,16 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 
 	private final List<String> sparqlQueryStart = Arrays.asList(
 								new String[]{"select", "construct", "describe", "ask", "prefix", "base"});
+	
+	private final long MAX_INPUT = 1_000_000;
+	private final static Pattern P_INFILE = Pattern.compile("^INFILE=(\"[^\"]+\")(,[\\w-]+)?");
+	private final static Pattern P_OUTFILE = Pattern.compile("^");
+	
+	// [INFILE="input file"[,enc]] [OUTPUT="out/file"[,enc]]
+	private final static Pattern PATTERN_IO = 
+			Pattern.compile("^('in'INFILE=('i'\"[^\"]+\")('ic',\\w[\\w-]+)?)? "
+							+ "('out'OUTFILE=('o'\"[^\"]+\")");
+	
 	
 	/**
 	 * Constructor
@@ -96,7 +133,16 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * @param namespaces collection of known namespaces
 	 */
 	protected abstract void addQueryPrefixes(StringBuffer result, Collection<Namespace> namespaces);
-	
+
+	/**
+	 * Get console width setting
+	 * Use a new console width setting when not found.
+	 * 
+	 * @return boolean
+	 */
+	private int getConsoleWidth() {
+		return ((ConsoleWidth) settings.getOrDefault(ConsoleWidth.NAME, new ConsoleWidth())).get();
+	}
 
 	/**
 	 * Get show prefix setting
@@ -107,7 +153,17 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	private boolean getQueryPrefix() {
 		return ((QueryPrefix) settings.getOrDefault(QueryPrefix.NAME, new QueryPrefix())).get();
 	}
-	
+
+	/**
+	 * Get working dir setting
+	 * Use a working dir setting when not found.
+	 * 
+	 * @return path of working dir
+	 */
+	private Path getWorkDir() {
+		return ((WorkDir) settings.getOrDefault(WorkDir.NAME, new WorkDir())).get();
+	}
+
 	/**
 	 * Execute a SPARQL or SERQL query, defaults to SPARQL
 	 * 
@@ -115,40 +171,146 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * @param operation "sparql", "serql", "base" or SPARQL query form
 	 */
 	public void executeQuery(final String command, final String operation) {
+		Repository repository = state.getRepository();
+		if (repository == null) {
+			consoleIO.writeUnopenedError();
+			return;
+		}
+		
 		if (sparqlQueryStart.contains(operation)) {
-			evaluateQuery(QueryLanguage.SPARQL, command);
+			parseAndEvaluateQuery(QueryLanguage.SPARQL, command);
 		} else if ("serql".equals(operation)) {
-			evaluateQuery(QueryLanguage.SERQL, command.substring("serql".length()));
+			parseAndEvaluateQuery(QueryLanguage.SERQL, command.substring("serql".length()));
 		} else if ("sparql".equals(operation)) {
-			evaluateQuery(QueryLanguage.SPARQL, command.substring("sparql".length()));
+			parseAndEvaluateQuery(QueryLanguage.SPARQL, command.substring("sparql".length()));
 		} else {
 			consoleIO.writeError("Unknown command");
 		}
 	}
 
 	/**
-	 * Evaluate a SERQL or SPARQL query
+	 * Read query string from a file.
+	 * Optionally a character set can be specified, otherwise UTF-8 will be used.
+	 *
+	 * @param filename file name
+	 * @param cset character set name or null
+	 * @return query from file as string
+	 * @throws IllegalArgumentException when character set was not recognized
+	 * @throws IOException when input file could not be read
+	 */
+	private String readFile(String filename, String cset) throws IllegalArgumentException, IOException {
+		if (filename == null || filename.isEmpty()) {
+			throw new IllegalArgumentException("Empty file name");
+		}
+		Charset charset = (cset == null || cset.isEmpty()) ? StandardCharsets.UTF_8 : Charset.forName(cset);
+		
+		Path p = Paths.get(filename);
+		if (!p.isAbsolute()) {
+			p = getWorkDir().resolve(p);
+		}
+		if (p.toFile().canRead()) {
+			throw new IOException("Cannot read file " + p);
+		}
+		// limit file size
+		if (p.toFile().length() > MAX_INPUT) {
+			throw new IOException("File larger than " + MAX_INPUT + " bytes");
+		}
+		byte[] bytes = Files.readAllBytes(p);
+		return new String(bytes, charset);
+	}
+
+	/**
+	 * Get absolute path to output file, using working directory for relative file name.
+	 * Verifies that the file doesn't exist or can be overwritten if it does exist.
+	 * 
+	 * @param filename file name
+	 * @return path absolute path
+	 * @throws IllegalArgumentException
+	 * @throws IOException
+	 */
+	private Path getPathForOutput(String filename) throws IllegalArgumentException, IOException {
+		if (filename == null || filename.isEmpty()) {
+			throw new IllegalArgumentException("Empty file name");
+		}
+
+		Path p = Paths.get(filename);
+		if (! p.isAbsolute()) {
+			p = getWorkDir().resolve(filename);
+		}
+		
+		if (!p.toFile().exists() || consoleIO.askProceed("File " + p + " exists", false)) {
+			return p;
+		}
+		throw new IOException("Could not open file for output");
+	}
+	
+	/**
+	 * Read (possibly multi-line) query.
+	 * Returns multi-line query as one string, or the original string if query is not multi-line.
 	 * 
 	 * @param queryLn query language
 	 * @param queryText query string
+	 * @return query or null
 	 */
-	private void evaluateQuery(QueryLanguage queryLn, String queryText) {
+	private String readMultiline(QueryLanguage queryLn, String queryText) {
+		String str = queryText.trim(); 
+		if (!str.isEmpty()) {
+			return str;
+		}
 		try {
-			if (queryText.trim().isEmpty()) {
-				consoleIO.writeln("enter multi-line " + queryLn.getName()
-						+ " query (terminate with line containing single '.')");
-				queryText = consoleIO.readMultiLineInput();
-			}
+			consoleIO.writeln("enter multi-line " + queryLn.getName() + " query "
+							+ "(terminate with line containing single '.')");
+			return consoleIO.readMultiLineInput();
 		} catch (IOException e) {
 			consoleIO.writeError("I/O error: " + e.getMessage());
 			LOGGER.error("Failed to read query", e);
 		}
+		return null;
+	}
 	
-		String queryString = addQueryPrefixes(queryText);
+	/**
+	 * Parse and evaluate a SERQL or SPARQL query.
+	 * Check if query is multi-line or to be read from input file, 
+	 * and check if results are to be written to an output file.
+	 * 
+	 * @param queryLn query language
+	 * @param queryText query string
+	 */
+	private void parseAndEvaluateQuery(QueryLanguage queryLn, String queryText) {
+		String str = readMultiline(queryLn, queryText);
+		if (str == null || str.isEmpty()) {
+			consoleIO.writeError("Empty query string");
+			return;
+		}
+
+		Path path = null;
+		
+		// check if input and/or output file are specified
+		Matcher m = PATTERN_IO.matcher(str);
+		if (m.matches()) {
+			try {
+				// check for output file first
+				String outfile = m.group("o");
+				if (outfile != null && !outfile.isEmpty()) {
+					path = getPathForOutput(outfile);
+					str = str.substring(m.group(0).length()); // strip both INPUT/OUTPUT from query
+				}
+				String infile = m.group("i");
+				if (infile != null && !infile.isEmpty()) {
+					str = readFile(infile, m.group("ic")); // ignore remainder of command line query
+				}
+			} catch (IOException|IllegalArgumentException ex) {
+				consoleIO.writeError(ex.getMessage());
+				return;
+			}
+		}
+		
+		// add namespace prefixes
+		String queryString = addRepositoryQueryPrefixes(str);
 
 		try {
 			ParsedOperation query = QueryParserUtil.parseOperation(queryLn, queryString, null);
-			evaluateQuery(queryLn, queryString, query);
+			evaluateQuery(queryLn, query, path);
 		} catch (UnsupportedQueryLanguageException e) {
 			consoleIO.writeError("Unsupported query language: " + queryLn.getName());
 		} catch (MalformedQueryException e) {
@@ -169,45 +331,109 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	}
 
 	/**
+	 * Get a query result writer based upon the file name (extension),
+	 * or return the console result writer when path is null.
+	 * 
+	 * @param path path or null
+	 * @param out output stream or null
+	 * @return result writer
+	 * @throws IllegalArgumentException
+	 */
+	private QueryResultWriter getQueryResultWriter(Path path, OutputStream out) 
+																		throws IllegalArgumentException {
+		if (path == null) {
+			return new ConsoleQueryResultWriter(consoleIO, getConsoleWidth());
+		}
+		Optional<QueryResultFormat> fmt = QueryResultIO.getWriterFormatForFileName(path.toFile().toString());
+		if (!fmt.isPresent()) {
+			throw new IllegalArgumentException("No suitable result writer found");
+		}
+		return QueryResultIO.createWriter(fmt.get(), out);	
+	}
+
+	/**
+	 * Get a graph result (RIO) writer based upon the file name (extension),
+	 * or return the console result writer when path is null.
+	 * 
+	 * @param path path or null
+	 * @param out output stream or null
+	 * @return result writer
+	 * @throws IllegalArgumentException
+	 */
+	private RDFWriter getRDFWriter(Path path, OutputStream out) throws IllegalArgumentException {
+		if (path == null) {
+			return new ConsoleRDFWriter(consoleIO, getConsoleWidth());
+		}
+		Optional<RDFFormat> fmt = Rio.getWriterFormatForFileName(path.toFile().toString());
+		if (!fmt.isPresent()) {
+			throw new IllegalArgumentException("No suitable result writer found");
+		}
+		return Rio.createWriter(fmt.get(), out);	
+	}
+	
+	/**
+	 * Get output stream for a file, or for the console output if path is null
+	 * 
+	 * @param path file path or null
+	 * @return file or console outputstream
+	 * @throws IOException
+	 */
+	private OutputStream getOutputStream(Path path) throws IOException {
+		return (path != null) 
+					? Files.newOutputStream(path, StandardOpenOption.CREATE_NEW, 
+													StandardOpenOption.TRUNCATE_EXISTING,
+													StandardOpenOption.WRITE)
+					: consoleIO.getOutputStream();
+	}
+
+			
+	/**
 	 * Evaluate a SPARQL or SERQL query that has already been parsed
 	 * 
 	 * @param queryLn query language
-	 * @param queryString query string
 	 * @param query parsed query
+	 * @param path
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 * @throws RepositoryException
 	 * @throws UpdateExecutionException 
 	 */
-	private void evaluateQuery(QueryLanguage queryLn, String queryString,  ParsedOperation query)
-			throws MalformedQueryException, QueryEvaluationException, RepositoryException,
-				UpdateExecutionException {
-		Repository repository = state.getRepository();
-		if (repository == null) {
-			consoleIO.writeUnopenedError();
-			return;
-		}
-	
-		if (query instanceof ParsedTupleQuery) {
-			evaluator.evaluateTupleQuery(queryLn, queryString);
-		} else if (query instanceof ParsedGraphQuery) {
-			evaluator.evaluateGraphQuery(queryLn, queryString);
-		} else if (query instanceof ParsedBooleanQuery) {
-			evaluator.evaluateBooleanQuery(queryLn, queryString);
-		} else if (query instanceof ParsedUpdate) {
-			evaluator.executeUpdate(queryLn, queryString);
-		} else {
-			consoleIO.writeError("Unexpected query type");
+	private void evaluateQuery(QueryLanguage queryLn, ParsedOperation query, Path path)
+			throws MalformedQueryException, QueryEvaluationException,  UpdateExecutionException {
+
+		String queryString = query.getSourceString();
+
+		try(OutputStream os = getOutputStream(path)) {
+			if (query instanceof ParsedTupleQuery) {
+				QueryResultWriter writer = getQueryResultWriter(path, os);
+				evaluator.evaluateTupleQuery(queryLn, queryString, writer);
+			} else if (query instanceof ParsedBooleanQuery) {
+				QueryResultWriter writer = getQueryResultWriter(path, os);
+				evaluator.evaluateBooleanQuery(queryLn, queryString, writer);
+			} if (query instanceof ParsedGraphQuery) {
+				RDFWriter writer = getRDFWriter(path, os);
+				evaluator.evaluateGraphQuery(queryLn, queryString, writer);
+			} else if (query instanceof ParsedUpdate) {
+				// no outputstream for updates, can only be console output
+				if (path != null) {
+					throw new IllegalArgumentException("Update query does not produce output");
+				}
+				evaluator.executeUpdate(queryLn, queryString);
+			} else {
+				consoleIO.writeError("Unexpected query type");
+			}
+		} catch (IllegalArgumentException | IOException ioe) {
+			consoleIO.writeError(ioe.getMessage());
 		}
 	}
 
 	/**
-	 * Add namespaces prefixes to SPARQL or SERQL query
+	 * Add namespaces prefixes to SPARQL or SERQL query from repository connection
 	 * 
 	 * @param queryString query string
 	 * @return query string with prefixes
 	 */
-	private String addQueryPrefixes(String queryString) {
+	private String addRepositoryQueryPrefixes(String queryString) {
 		StringBuffer result = new StringBuffer(queryString.length() + 512);
 		result.append(queryString);
 		

@@ -16,7 +16,6 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.apache.commons.lang.CharSet;
 
 import org.eclipse.rdf4j.RDF4J;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
@@ -37,7 +36,6 @@ import org.eclipse.rdf4j.console.command.Export;
 import org.eclipse.rdf4j.console.command.Federate;
 import org.eclipse.rdf4j.console.command.Load;
 import org.eclipse.rdf4j.console.command.Open;
-import org.eclipse.rdf4j.console.command.Output;
 import org.eclipse.rdf4j.console.command.PrintHelp;
 import org.eclipse.rdf4j.console.command.PrintInfo;
 import org.eclipse.rdf4j.console.command.QueryEvaluator;
@@ -47,7 +45,6 @@ import org.eclipse.rdf4j.console.command.Show;
 import org.eclipse.rdf4j.console.command.Sparql;
 import org.eclipse.rdf4j.console.command.TupleAndGraphQueryEvaluator;
 import org.eclipse.rdf4j.console.command.Verify;
-import org.eclipse.rdf4j.console.setting.CharacterSet;
 
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
@@ -204,7 +201,6 @@ public class Console {
 		register(new LogLevel());
 		register(new QueryPrefix());
 		register(new ShowPrefix());
-		register(new CharacterSet());
 		register(new WorkDir());
 
 		consoleIO = new ConsoleIO(STATE);
@@ -224,7 +220,6 @@ public class Console {
 		register(new Federate(consoleIO, STATE));
 		register(new Sparql(eval, settingMap));
 		register(new Serql(eval, settingMap));
-		register(new Output(eval, settingMap));
 		// information
 		register(new PrintHelp(consoleIO, commandMap));
 		register(new PrintInfo(consoleIO, STATE));

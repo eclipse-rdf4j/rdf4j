@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.common.text.StringUtil;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
@@ -21,11 +20,8 @@ import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
 import org.eclipse.rdf4j.console.setting.ShowPrefix;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.BindingSet;
+
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -33,12 +29,15 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
+import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
+
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+
 import org.eclipse.rdf4j.rio.ParserConfig;
+import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
-import org.eclipse.rdf4j.rio.ntriples.NTriplesUtil;
 
 /**
  * @author dale
@@ -57,8 +56,6 @@ public class TupleAndGraphQueryEvaluator {
 		nonVerifyingParserConfig.set(BasicParserSettings.VERIFY_LANGUAGE_TAGS, false);
 		nonVerifyingParserConfig.set(BasicParserSettings.VERIFY_RELATIVE_URIS, false);
 	}
-
-	private String lastQuery = "";
 
 	/**
 	 * Constructor
@@ -107,15 +104,6 @@ public class TupleAndGraphQueryEvaluator {
 	}
 
 	/**
-	 * Get the last query as a string
-	 * 
-	 * @return query string
-	 */
-	public String getLastQuery() {
-		return this.lastQuery;
-	}
-
-	/**
 	 * Get console width from settings.
 	 * Use a new width setting when not found.
 	 * 
@@ -136,82 +124,54 @@ public class TupleAndGraphQueryEvaluator {
 	}
 
 	/**
-	 * Evaluate SPARQL or SERQL tuple query
+	 * Evaluate SPARQL or SERQL tuple query and send the output to a writer.
+	 * If writer is null, the console will be used for output.
 	 * 
 	 * @param queryLn query language
-	 * @param queryString suery string
+	 * @param queryString query string
+	 * @param writer result writer or null
 	 * @throws UnsupportedQueryLanguageException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 * @throws RepositoryException 
 	 */
-	protected void evaluateTupleQuery(QueryLanguage queryLn, String queryString)
+	protected void evaluateTupleQuery(QueryLanguage queryLn, String queryString, QueryResultWriter writer)
 			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
 					RepositoryException {
 		Repository repository = state.getRepository();
 		
-		try (RepositoryConnection con = repository.getConnection()) {
-			long startTime = System.nanoTime();
-			lastQuery = queryString;
-			consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
-		
-			try (TupleQueryResult tupleQueryResult = con.prepareTupleQuery(queryLn, queryString).evaluate()) {
-				int resultCount = 0;
-				List<String> bindingNames = tupleQueryResult.getBindingNames();
-				if (bindingNames.isEmpty()) {
-					while (tupleQueryResult.hasNext()) {
-						tupleQueryResult.next();
-						resultCount++;
-					}
-				} else {
-					int consoleWidth = getConsoleWidth();
-					int columnWidth = (consoleWidth - 1) / bindingNames.size() - 3;
-
-					// Build table header
-					StringBuilder builder = new StringBuilder(consoleWidth);
-					for (String bindingName : bindingNames) {
-						builder.append("| ").append(bindingName);
-						StringUtil.appendN(' ', columnWidth - bindingName.length(), builder);
-					}
-					builder.append("|");
-					String header = builder.toString();
-
-					// Build separator line
-					builder.setLength(0);
-					for (int i = bindingNames.size(); i > 0; i--) {
-						builder.append('+');
-						StringUtil.appendN('-', columnWidth + 1, builder);
-					}
-					builder.append('+');
-					String separatorLine = builder.toString();
-
-					// consoleIO.write table header
-					consoleIO.writeln(separatorLine);
-					consoleIO.writeln(header);
-					consoleIO.writeln(separatorLine);
-
-					// consoleIO.write table rows
-					Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
-					while (tupleQueryResult.hasNext()) {
-						BindingSet bindingSet = tupleQueryResult.next();
-						resultCount++;
-						builder.setLength(0);
-						
-						for (String bindingName : bindingNames) {
-							Value value = bindingSet.getValue(bindingName);
-							String valueStr = getStringRepForValue(value, namespaces);
-							builder.append("| ").append(valueStr);
-							StringUtil.appendN(' ', columnWidth - valueStr.length(), builder);
-						}
-						builder.append("|");
-						consoleIO.writeln(builder.toString());
-					}
-					consoleIO.writeln(separatorLine);
+		consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
+		int resultCount = 0;
+		long startTime = System.nanoTime();	
+	
+		try (RepositoryConnection con = repository.getConnection();
+			TupleQueryResult res = con.prepareTupleQuery(queryLn, queryString).evaluate()) {
+	
+			List<String> bindingNames = res.getBindingNames();
+			if (bindingNames.isEmpty()) {
+				while (res.hasNext()) {
+					res.next();
+					resultCount++;
 				}
-				long endTime = System.nanoTime();
-				consoleIO.writeln(resultCount + " result(s) (" + (endTime - startTime) / 1000000 + " ms)");
+			} else {
+				Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
+				for (Namespace ns: namespaces) {
+					writer.handleNamespace(ns.getPrefix(), ns.getName());
+				}
+				writer.startDocument();
+				writer.startHeader();
+				writer.startQueryResult(bindingNames);
+				writer.endHeader();
+				
+				while (res.hasNext()) {
+					writer.handleSolution(res.next());
+					resultCount++;
+				}
+				writer.endQueryResult();
 			}
 		}
+		long endTime = System.nanoTime();
+		consoleIO.writeln(resultCount + " result(s) (" + (endTime - startTime) / 1000000 + " ms)");
 	}
 
 	/**
@@ -224,34 +184,42 @@ public class TupleAndGraphQueryEvaluator {
 	 * @throws QueryEvaluationException
 	 * @throws RepositoryException 
 	 */
-	protected void evaluateGraphQuery(QueryLanguage queryLn, String queryString)
+	protected void evaluateGraphQuery(QueryLanguage queryLn, String queryString, RDFWriter writer)
 			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
 					RepositoryException {
 		Repository repository = state.getRepository();
-	
-		try(RepositoryConnection con = repository.getConnection()) {
-			con.setParserConfig(nonVerifyingParserConfig);
-			lastQuery = queryString;
-			consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
-			long startTime = System.nanoTime();
-			Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
+
+		consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
+		int resultCount = 0;
+		long startTime = System.nanoTime();
 			
-			try (GraphQueryResult queryResult = con.prepareGraphQuery(queryLn, queryString).evaluate()) {
-				int resultCount = 0;
-				while (queryResult.hasNext()) {
-					final Statement statement = queryResult.next(); // NOPMD
-					resultCount++;
-					consoleIO.write(getStringRepForValue(statement.getSubject(), namespaces));
-					consoleIO.write("   ");
-					consoleIO.write(getStringRepForValue(statement.getPredicate(), namespaces));
-					consoleIO.write("   ");
-					consoleIO.write(getStringRepForValue(statement.getObject(), namespaces));
-					consoleIO.writeln();
-				}
-				long endTime = System.nanoTime();
-				consoleIO.writeln(resultCount + " results (" + (endTime - startTime) / 1000000 + " ms)");
+		try(RepositoryConnection con = repository.getConnection();
+			GraphQueryResult res = con.prepareGraphQuery(queryLn, queryString).evaluate()) {
+
+			con.setParserConfig(nonVerifyingParserConfig);
+
+			Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
+			for (Namespace ns: namespaces) {
+				writer.handleNamespace(ns.getPrefix(), ns.getName());
 			}
+			writer.startRDF();
+
+			while (res.hasNext()) {
+				writer.handleStatement(res.next());
+	//			final Statement statement = queryResult.next(); // NOPMD
+//				resultCount++;
+//				while (res.hasNext()) {
+//					w.handleSolution(res.next());
+//					resultCount++;
+//				}
+
+				
+				resultCount++;
+			}
+			writer.endRDF();
 		}
+		long endTime = System.nanoTime();
+		consoleIO.writeln(resultCount + " results (" + (endTime - startTime) / 1000000 + " ms)");
 	}
 	
 	/**
@@ -259,24 +227,30 @@ public class TupleAndGraphQueryEvaluator {
 	 * 
 	 * @param queryLn query language
 	 * @param queryString query string
+	 * @param writer
 	 * @throws UnsupportedQueryLanguageException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 * @throws RepositoryException 
 	 */
-	protected void evaluateBooleanQuery(QueryLanguage queryLn, String queryString)
+	protected void evaluateBooleanQuery(QueryLanguage queryLn, String queryString, QueryResultWriter writer)
 			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
 					RepositoryException {
 		Repository repository = state.getRepository();
 		
+		consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
+		long startTime = System.nanoTime();
+		
 		try (RepositoryConnection con = repository.getConnection()) {
-			consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
-			long startTime = System.nanoTime();
 			boolean result = con.prepareBooleanQuery(queryLn, queryString).evaluate();
-			consoleIO.writeln("Answer: " + result);
-			long endTime = System.nanoTime();
-			consoleIO.writeln("Query evaluated in " + (endTime - startTime) / 1000000 + " ms");
+			
+			writer.startDocument();
+			writer.handleBoolean(result);
+			writer.endQueryResult();
 		}
+		long endTime = System.nanoTime();
+		consoleIO.writeln("Query evaluated in " + (endTime - startTime) / 1000000 + " ms");
+		
 	}
 
 	/**
@@ -291,60 +265,15 @@ public class TupleAndGraphQueryEvaluator {
 	protected void executeUpdate(QueryLanguage queryLn, String queryString)
 			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
 		Repository repository = state.getRepository();
+		
+		consoleIO.writeln("Executing update...");
+		long startTime = System.nanoTime();
 
 		try (RepositoryConnection con = repository.getConnection()) {
-			consoleIO.writeln("Executing update...");
-			long startTime = System.nanoTime();
 			con.prepareUpdate(queryLn, queryString).execute();
-			long endTime = System.nanoTime();
-			consoleIO.writeln("Update executed in " + (endTime - startTime) / 1000000 + " ms");
 		}
-	}
 
-	/**
-	 * Get string representation for a value.
-	 * If the value is an IRI and is part of a known namespace, 
-	 * the prefix will be used to create a shorter string.
-	 * 
-	 * @param value
-	 * @param namespaces known namespaces
-	 * @return string representation
-	 */
-	private String getStringRepForValue(Value value, Collection<Namespace> namespaces) {
-		String result = "";
-		if (value != null) {
-			if (getShowPrefix() && value instanceof IRI) {
-				IRI uri = (IRI) value;
-				String prefix = getPrefixForNamespace(uri.getNamespace(), namespaces);
-
-				if (prefix == null) {
-					result = NTriplesUtil.toNTriplesString(value);
-				} else {
-					result = prefix + ":" + uri.getLocalName();
-				}
-			} else {
-				result = NTriplesUtil.toNTriplesString(value);
-			}
-		}
-		return result;
-	}
-
-	/**
-	 * Get prefix for a namespace
-	 * 
-	 * @param namespace namespace
-	 * @param namespaces known namespaces
-	 * @return namespace prefix or null
-	 */
-	private String getPrefixForNamespace(String namespace, Collection<Namespace> namespaces) {
-		String result = null;
-
-		for (Namespace ns : namespaces) {
-			if (namespace.equals(ns.getName())) {
-				result = ns.getPrefix();
-				break;
-			}
-		}
-		return result;
+		long endTime = System.nanoTime();
+		consoleIO.writeln("Update executed in " + (endTime - startTime) / 1000000 + " ms");		
 	}
 }
