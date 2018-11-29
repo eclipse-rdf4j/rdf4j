@@ -1,11 +1,11 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.rio.rdfjson;
+package org.eclipse.rdf4j.rio.jsonld;
 
 import static org.junit.Assert.*;
 
@@ -35,61 +35,61 @@ import org.junit.rules.ExpectedException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
 /**
- * Custom (non-manifest) tests for RDF/JSON parser.
+ * Custom (non-manifest) tests for JSON-LD parser.
  * 
  * @author Peter Ansell
  */
-public class RDFJSONParserCustomTest {
+public class JSONLDParserCustomTest {
 
 	/**
 	 * Backslash escaped "h" in "http"
 	 */
-	private static final String BACKSLASH_ESCAPED_TEST_STRING = "{\"\\http://example.com/Subj1\": { \"http://example.com/prop1\": [{\"value\": \"http://example.com/Obj1\", \"type\": \"uri\"}]}}";
+	private static final String BACKSLASH_ESCAPED_TEST_STRING = "[{\"@id\": \"\\http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"}]}]";
 
 	/**
 	 * Java/C++ style comments
 	 */
-	private static final String COMMENTS_TEST_STRING = "{/*This is a non-standard java/c++ style comment\n*/\"http://example.com/Subj1\": { \"http://example.com/prop1\": [{\"value\": \"http://example.com/Obj1\", \"type\": \"uri\"}]}}";
+	private static final String COMMENTS_TEST_STRING = "[{/*This is a non-standard java/c++ style comment\n*/\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"}]}]";
 
 	/**
 	 * Tests for NaN
 	 */
-	private static final String NON_NUMERIC_NUMBERS_TEST_STRING = "{\"http://example.com/Subj1\": { \"http://example.com/prop1\": [{\"value\": NaN, \"type\": \"literal\", \"datatype\": \"http://www.w3.org/2001/XMLSchema#double\"}]}}";
+	private static final String NON_NUMERIC_NUMBERS_TEST_STRING = "[{\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": NaN}]";
 
 	/**
 	 * Tests for numeric leading zeroes
 	 */
-	private static final String NUMERIC_LEADING_ZEROES_TEST_STRING = "{\"http://example.com/Subj1\": { \"http://example.com/prop1\": [{\"value\": 000042, \"type\": \"literal\", \"datatype\": \"http://www.w3.org/2001/XMLSchema#integer\"}]}}";
+	private static final String NUMERIC_LEADING_ZEROES_TEST_STRING = "[{\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": 000042}]";
 
 	/**
 	 * Tests for single-quotes
 	 */
-	private static final String SINGLE_QUOTES_TEST_STRING = "{\'http://example.com/Subj1\': { \"http://example.com/prop1\": [{\"value\": \"42\", \'type\': \"literal\", \"datatype\": \"http://www.w3.org/2001/XMLSchema#integer\"}]}}";
+	private static final String SINGLE_QUOTES_TEST_STRING = "[{\'@id\': \"http://example.com/Subj1\",\'http://example.com/prop1\': 42}]";
 
 	/**
 	 * Tests for unquoted control char
 	 */
-	private static final String UNQUOTED_CONTROL_CHARS_TEST_STRING = "{\"http://example.com/Subj1\": { \"http://example.com/prop1\": [{\"value\": \"42\u0009\", \"type\": \"literal\", \"datatype\": \"http://www.w3.org/2001/XMLSchema#string\"}]}}";
+	private static final String UNQUOTED_CONTROL_CHARS_TEST_STRING = "[{\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": \"42\u0009\"}]";
 
 	/**
 	 * Tests for unquoted field names
 	 */
-	private static final String UNQUOTED_FIELD_NAMES_TEST_STRING = "{\"http://example.com/Subj1\": { \"http://example.com/prop1\": [{value: \"42\", type: \"literal\", datatype: \"http://www.w3.org/2001/XMLSchema#integer\"}]}}";
+	private static final String UNQUOTED_FIELD_NAMES_TEST_STRING = "[{@id: \"http://example.com/Subj1\",\"http://example.com/prop1\": 42}]";
 
 	/**
 	 * YAML style comments
 	 */
-	private static final String YAML_COMMENTS_TEST_STRING = "{\n#This is a non-standard yaml style comment/*\n\"http://example.com/Subj1\": { \"http://example.com/prop1\": [{\"value\": \"http://example.com/Obj1\", \"type\": \"uri\"}]}}";
+	private static final String YAML_COMMENTS_TEST_STRING = "[\n{#This is a non-standard yaml style comment/*\n\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"}]}]";
 
 	/**
 	 * Trailing comma
 	 */
-	private static final String TRAILING_COMMA_TEST_STRING = "{\"http://example.com/Subj1\": { \"http://example.com/prop1\": [{\"value\": \"http://example.com/Obj1\", \"type\": \"uri\",}]}}";
+	private static final String TRAILING_COMMA_TEST_STRING = "[{\"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"},]}]";
 
 	/**
 	 * Strict duplicate detection
 	 */
-	private static final String STRICT_DUPLICATE_DETECTION_TEST_STRING = "{\"http://example.com/Subj1\": { \"http://example.com/prop1\": [{\"value\": \"http://example.com/Obj1\", \"type\": \"uri\", \"type\": \"uri\"}]}}";
+	private static final String STRICT_DUPLICATE_DETECTION_TEST_STRING = "[{\"@context\": {}, \"@context\": {}, \"@id\": \"http://example.com/Subj1\",\"http://example.com/prop1\": [{\"@id\": \"http://example.com/Obj1\"}]}]";
 
 	private RDFParser parser;
 
@@ -119,7 +119,7 @@ public class RDFJSONParserCustomTest {
 	public void setUp()
 		throws Exception
 	{
-		parser = Rio.createParser(RDFFormat.RDFJSON);
+		parser = Rio.createParser(RDFFormat.JSONLD);
 		errors = new ParseErrorCollector();
 		model = new LinkedHashModel();
 		parser.setParseErrorListener(errors);
@@ -142,8 +142,8 @@ public class RDFJSONParserCustomTest {
 	public void testSupportedSettings()
 		throws Exception
 	{
-		// 17 supported in RDFJSONParser + 12 from AbstractRDFParser
-		assertEquals(29, parser.getSupportedSettings().size());
+		// 11 supported in JSONLDParser + 12 from AbstractRDFParser
+		assertEquals(23, parser.getSupportedSettings().size());
 	}
 
 	@Test
@@ -151,7 +151,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 5]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.parse(new StringReader(BACKSLASH_ESCAPED_TEST_STRING), "");
 	}
 
@@ -169,7 +169,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 5]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER, false);
 		parser.parse(new StringReader(BACKSLASH_ESCAPED_TEST_STRING), "");
 	}
@@ -179,7 +179,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 3]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.parse(new StringReader(COMMENTS_TEST_STRING), "");
 	}
 
@@ -197,7 +197,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 3]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_COMMENTS, false);
 		parser.parse(new StringReader(COMMENTS_TEST_STRING), "");
 	}
@@ -207,7 +207,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 74]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), "");
 	}
 
@@ -217,6 +217,8 @@ public class RDFJSONParserCustomTest {
 	{
 		parser.set(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS, true);
 		parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), "");
+		// FIXME: The literal being created has the replacement character as its label,
+		// indicating it is failing somewhere in the pipeline
 		verifyParseResults(testSubjectIRI, testPredicate, testObjectLiteralNotANumber);
 	}
 
@@ -225,7 +227,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 74]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS, false);
 		parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), "");
 	}
@@ -235,7 +237,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 72]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.parse(new StringReader(NUMERIC_LEADING_ZEROES_TEST_STRING), "");
 	}
 
@@ -253,7 +255,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 72]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS, false);
 		parser.parse(new StringReader(NUMERIC_LEADING_ZEROES_TEST_STRING), "");
 	}
@@ -263,7 +265,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 3]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.parse(new StringReader(SINGLE_QUOTES_TEST_STRING), "");
 	}
 
@@ -281,7 +283,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 3]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_SINGLE_QUOTES, false);
 		parser.parse(new StringReader(SINGLE_QUOTES_TEST_STRING), "");
 	}
@@ -291,7 +293,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 75]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.parse(new StringReader(UNQUOTED_CONTROL_CHARS_TEST_STRING), "");
 	}
 
@@ -309,7 +311,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 75]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS, false);
 		parser.parse(new StringReader(UNQUOTED_CONTROL_CHARS_TEST_STRING), "");
 	}
@@ -319,7 +321,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 63]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.parse(new StringReader(UNQUOTED_FIELD_NAMES_TEST_STRING), "");
 	}
 
@@ -337,7 +339,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 63]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES, false);
 		parser.parse(new StringReader(UNQUOTED_FIELD_NAMES_TEST_STRING), "");
 	}
@@ -347,7 +349,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 2, column 2]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), "");
 	}
 
@@ -365,7 +367,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 2, column 2]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_YAML_COMMENTS, false);
 		parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), "");
 	}
@@ -375,7 +377,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 113]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.parse(new StringReader(TRAILING_COMMA_TEST_STRING), "");
 	}
 
@@ -393,7 +395,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 113]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.ALLOW_TRAILING_COMMA, false);
 		parser.parse(new StringReader(TRAILING_COMMA_TEST_STRING), "");
 	}
@@ -412,7 +414,7 @@ public class RDFJSONParserCustomTest {
 			assertTrue(e.getCause() instanceof JsonProcessingException);
 			JsonProcessingException cause = (JsonProcessingException)e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
-			assertEquals(2, cause.getLocation().getColumnNr());
+			assertEquals(1, cause.getLocation().getColumnNr());
 			assertNotNull(cause.getLocation().getSourceRef());
 			assertEquals(source, cause.getLocation().getSourceRef());
 		}
@@ -433,7 +435,7 @@ public class RDFJSONParserCustomTest {
 			assertTrue(e.getCause() instanceof JsonProcessingException);
 			JsonProcessingException cause = (JsonProcessingException)e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
-			assertEquals(2, cause.getLocation().getColumnNr());
+			assertEquals(1, cause.getLocation().getColumnNr());
 			assertNotNull(cause.getLocation().getSourceRef());
 			assertEquals(source, cause.getLocation().getSourceRef());
 		}
@@ -453,7 +455,7 @@ public class RDFJSONParserCustomTest {
 			assertTrue(e.getCause() instanceof JsonProcessingException);
 			JsonProcessingException cause = (JsonProcessingException)e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
-			assertEquals(2, cause.getLocation().getColumnNr());
+			assertEquals(1, cause.getLocation().getColumnNr());
 			assertNull(cause.getLocation().getSourceRef());
 		}
 	}
@@ -462,12 +464,9 @@ public class RDFJSONParserCustomTest {
 	public void testStrictDuplicateDetectionDefault()
 		throws Exception
 	{
-		thrown.expect(RDFParseException.class);
-		// Extra checking inbuilt in this case. This verifies it moves past Jackson into RDFJSONParser
-		thrown.expectMessage(
-				"Multiple types found for a single object: subject=http://example.com/Subj1 predicate=http://example.com/prop1 [line 1, column 122]");
 		parser.set(JSONSettings.STRICT_DUPLICATE_DETECTION, false);
 		parser.parse(new StringReader(STRICT_DUPLICATE_DETECTION_TEST_STRING), "");
+		verifyParseResults(testSubjectIRI, testPredicate, testObjectIRI);
 	}
 
 	@Test
@@ -475,7 +474,7 @@ public class RDFJSONParserCustomTest {
 		throws Exception
 	{
 		thrown.expect(RDFParseException.class);
-		thrown.expectMessage("Found IOException during parsing [line 1, column 119]");
+		thrown.expectMessage("Could not parse JSONLD");
 		parser.set(JSONSettings.STRICT_DUPLICATE_DETECTION, true);
 		parser.parse(new StringReader(STRICT_DUPLICATE_DETECTION_TEST_STRING), "");
 	}
@@ -484,10 +483,9 @@ public class RDFJSONParserCustomTest {
 	public void testStrictDuplicateDetectionDisabled()
 		throws Exception
 	{
-		thrown.expect(RDFParseException.class);
-		// Extra checking inbuilt in this case. This verifies it moves past Jackson into RDFJSONParser
-		thrown.expectMessage("Multiple types found for a single object: subject=http://example.com/Subj1 predicate=http://example.com/prop1 [line 1, column 122]");
 		parser.set(JSONSettings.STRICT_DUPLICATE_DETECTION, false);
 		parser.parse(new StringReader(STRICT_DUPLICATE_DETECTION_TEST_STRING), "");
+		verifyParseResults(testSubjectIRI, testPredicate, testObjectIRI);
 	}
+
 }
