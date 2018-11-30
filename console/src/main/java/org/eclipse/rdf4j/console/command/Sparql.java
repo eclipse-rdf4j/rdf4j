@@ -38,8 +38,13 @@ public class Sparql extends QueryEvaluator {
 		return PrintHelp.USAGE 
 			+ "sparql                               Starts multi-line input for large SPARQL queries.\n"
 			+ "sparql <query>                       Evaluates the SPARQL query on the currently open repository.\n"
-			+ "sparql INFILE=\"filename\"             Evaluates the query stored in a file.\n"
-			+ "sparql OUTFILE=\"filename\" <query>    Save the results to a file.\n"
+			+ "\n"
+			+ "sparql INFILE=\"infile.ext\"           Evaluates the query stored in a file.\n"
+			+ "    Supported extensions: .jsonld, .nt, .ttl, .xml\n"
+			+ "sparql OUTFILE=\"outfile.ext\" <query> Save the results to a file.\n"
+			+ "    Supported extensions; .csv, .srj, .srx, .tsv\n"
+			+ "sparql INFILE=\"infile.ext\" OUTFILE=\"outfile.ext\" \n"
+			+ "\n"
 			+ "select|construct|ask|describe|prefix|base <rest-of-query>\n"
 			+ "                                     Evaluates a SPARQL query on the currently open repository.\n";
 	}
