@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.console.setting.QueryPrefix;
 import org.eclipse.rdf4j.console.setting.WorkDir;
 import org.eclipse.rdf4j.console.util.ConsoleQueryResultWriter;
 import org.eclipse.rdf4j.console.util.ConsoleRDFWriter;
+import org.eclipse.rdf4j.console.util.UncloseableOutputStream;
 
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -83,13 +84,14 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 								new String[]{"select", "construct", "describe", "ask", "prefix", "base"});
 	
 	private final long MAX_INPUT = 1_000_000;
-	private final static Pattern P_INFILE = Pattern.compile("^INFILE=(\"[^\"]+\")(,[\\w-]+)?");
+	/* private final static Pattern P_INFILE = Pattern.compile("^INFILE=(\"[^\"]+\")(,[\\w-]+)?");
 	private final static Pattern P_OUTFILE = Pattern.compile("^");
+	*/
 	
-	// [INFILE="input file"[,enc]] [OUTPUT="out/file"[,enc]]
+	// [INFILE="input file"[,enc]] [OUTPUT="out/file"]
 	private final static Pattern PATTERN_IO = 
-			Pattern.compile("^('in'INFILE=('i'\"[^\"]+\")('ic',\\w[\\w-]+)?)? "
-							+ "('out'OUTFILE=('o'\"[^\"]+\")");
+			Pattern.compile("^('in'INFILE=('i'\"[^\"]+\")('ic',\\w[\\w-]+)?)? ?"
+							+ "('out'OUTFILE=('o'\"[^\"]+\"))?");
 	
 	
 	/**
@@ -288,6 +290,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		// check if input and/or output file are specified
 		Matcher m = PATTERN_IO.matcher(str);
 		if (m.matches()) {
+			System.err.println("macth");
 			try {
 				// check for output file first
 				String outfile = m.group("o");
@@ -304,7 +307,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 				return;
 			}
 		}
-		
+		System.err.println("beyond match");
 		// add namespace prefixes
 		String queryString = addRepositoryQueryPrefixes(str);
 
@@ -383,7 +386,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 					? Files.newOutputStream(path, StandardOpenOption.CREATE_NEW, 
 													StandardOpenOption.TRUNCATE_EXISTING,
 													StandardOpenOption.WRITE)
-					: consoleIO.getOutputStream();
+					: new UncloseableOutputStream(consoleIO.getOutputStream());
 	}
 
 			
@@ -410,7 +413,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			} else if (query instanceof ParsedBooleanQuery) {
 				QueryResultWriter writer = getQueryResultWriter(path, os);
 				evaluator.evaluateBooleanQuery(queryLn, queryString, writer);
-			} if (query instanceof ParsedGraphQuery) {
+			} else if (query instanceof ParsedGraphQuery) {
 				RDFWriter writer = getRDFWriter(path, os);
 				evaluator.evaluateGraphQuery(queryLn, queryString, writer);
 			} else if (query instanceof ParsedUpdate) {

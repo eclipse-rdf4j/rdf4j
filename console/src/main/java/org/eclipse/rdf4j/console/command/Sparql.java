@@ -36,8 +36,10 @@ public class Sparql extends QueryEvaluator {
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE 
-			+ "sparql <query>                       Evaluates the SPARQL query on the currently open repository.\n"
 			+ "sparql                               Starts multi-line input for large SPARQL queries.\n"
+			+ "sparql <query>                       Evaluates the SPARQL query on the currently open repository.\n"
+			+ "sparql INFILE=\"filename\"             Evaluates the query stored in a file.\n"
+			+ "sparql OUTFILE=\"filename\" <query>    Save the results to a file.\n"
 			+ "select|construct|ask|describe|prefix|base <rest-of-query>\n"
 			+ "                                     Evaluates a SPARQL query on the currently open repository.\n";
 	}
