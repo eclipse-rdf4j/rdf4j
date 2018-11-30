@@ -205,7 +205,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		if (!p.isAbsolute()) {
 			p = getWorkDir().resolve(p);
 		}
-		if (p.toFile().canRead()) {
+		if (!p.toFile().canRead()) {
 			throw new IOException("Cannot read file " + p);
 		}
 		// limit file size
