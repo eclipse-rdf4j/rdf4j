@@ -84,16 +84,11 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 								new String[]{"select", "construct", "describe", "ask", "prefix", "base"});
 	
 	private final long MAX_INPUT = 1_000_000;
-	/* private final static Pattern P_INFILE = Pattern.compile("^INFILE=(\"[^\"]+\")(,[\\w-]+)?");
-	private final static Pattern P_OUTFILE = Pattern.compile("^");
-	*/
-	
 	// [INFILE="input file"[,enc]] [OUTPUT="out/file"]
 	private final static Pattern PATTERN_IO = 
-			Pattern.compile("^('in'INFILE=('i'\"[^\"]+\")('ic',\\w[\\w-]+)?)? ?"
-							+ "('out'OUTFILE=('o'\"[^\"]+\"))?");
-	
-	
+			Pattern.compile(  "^(?<in>INFILE=\"(?<i>[^\"]+)\"" + ",?(?<enc>\\w[\\w-]+)?)? ?"
+							+ "(?<out>OUTFILE=\"(?<o>[^\"]+)\")?");	
+
 	/**
 	 * Constructor
 	 * 
@@ -178,7 +173,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			consoleIO.writeUnopenedError();
 			return;
 		}
-		
+
 		if (sparqlQueryStart.contains(operation)) {
 			parseAndEvaluateQuery(QueryLanguage.SPARQL, command);
 		} else if ("serql".equals(operation)) {
@@ -289,8 +284,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		
 		// check if input and/or output file are specified
 		Matcher m = PATTERN_IO.matcher(str);
-		if (m.matches()) {
-			System.err.println("macth");
+		if (m.lookingAt()) {
 			try {
 				// check for output file first
 				String outfile = m.group("o");
@@ -300,14 +294,14 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 				}
 				String infile = m.group("i");
 				if (infile != null && !infile.isEmpty()) {
-					str = readFile(infile, m.group("ic")); // ignore remainder of command line query
+					str = readFile(infile, m.group("enc")); // ignore remainder of command line query
 				}
 			} catch (IOException|IllegalArgumentException ex) {
 				consoleIO.writeError(ex.getMessage());
 				return;
 			}
 		}
-		System.err.println("beyond match");
+
 		// add namespace prefixes
 		String queryString = addRepositoryQueryPrefixes(str);
 
