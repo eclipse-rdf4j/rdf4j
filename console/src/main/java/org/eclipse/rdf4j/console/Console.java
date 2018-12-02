@@ -320,6 +320,7 @@ public class Console {
 			System.exit(exitCode);
 		}
 		consoleIO.writeln("Bye");
+		consoleIO.getOutputStream().close();
 	}
 
 	/**
