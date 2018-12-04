@@ -377,7 +377,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 */
 	private OutputStream getOutputStream(Path path) throws IOException {
 		return (path != null) 
-					? Files.newOutputStream(path, StandardOpenOption.CREATE_NEW, 
+					? Files.newOutputStream(path, StandardOpenOption.CREATE, 
 													StandardOpenOption.TRUNCATE_EXISTING,
 													StandardOpenOption.WRITE)
 					: new UncloseableOutputStream(consoleIO.getOutputStream());
