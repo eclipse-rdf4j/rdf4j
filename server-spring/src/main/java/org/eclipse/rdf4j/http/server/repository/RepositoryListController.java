@@ -76,8 +76,8 @@ public class RepositoryListController extends AbstractController {
 					if (info.getDescription() != null) {
 						bindings.addBinding("title", vf.createLiteral(info.getDescription()));
 					}
-					bindings.addBinding("readable", vf.createLiteral(true));
-					bindings.addBinding("writable", vf.createLiteral(true));
+					bindings.addBinding("readable", vf.createLiteral(info.isReadable()));
+					bindings.addBinding("writable", vf.createLiteral(info.isWritable()));
 					bindingSets.add(bindings);
 				});
 
