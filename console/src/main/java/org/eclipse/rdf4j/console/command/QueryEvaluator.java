@@ -107,11 +107,10 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * Constructor
 	 * 
 	 * @param evaluator
-	 * @param settings 
 	 */
-	public QueryEvaluator(TupleAndGraphQueryEvaluator evaluator, Map<String,ConsoleSetting> settings) {
+	public QueryEvaluator(TupleAndGraphQueryEvaluator evaluator) {
 		super(evaluator.getConsoleIO(), evaluator.getConsoleState());
-		this.settings = settings;
+		this.settings = evaluator.getConsoleSettings();
 		this.evaluator = evaluator;
 	}
 	

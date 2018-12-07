@@ -218,8 +218,8 @@ public class Console {
 		// querying
 		TupleAndGraphQueryEvaluator eval = new TupleAndGraphQueryEvaluator(consoleIO, STATE, settingMap);
 		register(new Federate(consoleIO, STATE));
-		register(new Sparql(eval, settingMap));
-		register(new Serql(eval, settingMap));
+		register(new Sparql(eval));
+		register(new Serql(eval));
 		// information
 		register(new PrintHelp(consoleIO, commandMap));
 		register(new PrintInfo(consoleIO, STATE));

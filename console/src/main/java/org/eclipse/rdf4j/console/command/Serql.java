@@ -8,12 +8,10 @@
 package org.eclipse.rdf4j.console.command;
 
 import java.util.Collection;
-import java.util.Map;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
-import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.query.parser.serql.SeRQLUtil;
 
@@ -63,10 +61,9 @@ public class Serql extends QueryEvaluator {
 	 * Constructor
 	 * 
 	 * @param evaluator
-	 * @param settings 
 	 */
-	public Serql(TupleAndGraphQueryEvaluator evaluator, Map<String,ConsoleSetting> settings) {
-		super(evaluator, settings);
+	public Serql(TupleAndGraphQueryEvaluator evaluator) {
+		super(evaluator);
 	}
 	
 	@Override
@@ -83,6 +80,5 @@ public class Serql extends QueryEvaluator {
 			str.append(namespace.getPrefix()).append(" = ");
 			str.append("<").append(SeRQLUtil.encodeString(namespace.getName())).append(">, ");
 		}
-		
 	}
 }

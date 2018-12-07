@@ -104,6 +104,15 @@ public class TupleAndGraphQueryEvaluator {
 	}
 
 	/**
+	 * Get console settings
+	 * 
+	 * @return console settings
+	 */	
+	protected Map<String,ConsoleSetting> getConsoleSettings() {
+		return this.settings;
+	}
+	
+	/**
 	 * Evaluate SPARQL or SERQL tuple query and send the output to a writer.
 	 * If writer is null, the console will be used for output.
 	 * 
