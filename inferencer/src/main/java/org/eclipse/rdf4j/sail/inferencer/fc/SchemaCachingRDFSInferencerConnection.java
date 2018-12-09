@@ -196,10 +196,10 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		}
 
 		if (sail.useAllRdfsRules) {
-			addInferredStatement(subject, RDF.TYPE, RDFS.RESOURCE);
+			addInferredStatement(subject, RDF.TYPE, RDFS.RESOURCE, resources);
 
 			if (object instanceof Resource) {
-				addInferredStatement((Resource)object, RDF.TYPE, RDFS.RESOURCE);
+				addInferredStatement((Resource)object, RDF.TYPE, RDFS.RESOURCE, resources);
 			}
 		}
 
@@ -208,13 +208,13 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 			try {
 				int i = Integer.parseInt(predicate.getLocalName().substring(1));
 				if (i >= 1) {
-					addInferredStatement(subject, RDFS.MEMBER, object);
+					addInferredStatement(subject, RDFS.MEMBER, object, resources);
 
-					addInferredStatement(predicate, RDF.TYPE, RDFS.RESOURCE);
-					addInferredStatement(predicate, RDF.TYPE, RDFS.CONTAINERMEMBERSHIPPROPERTY);
-					addInferredStatement(predicate, RDF.TYPE, RDF.PROPERTY);
-					addInferredStatement(predicate, RDFS.SUBPROPERTYOF, predicate);
-					addInferredStatement(predicate, RDFS.SUBPROPERTYOF, RDFS.MEMBER);
+					addInferredStatement(predicate, RDF.TYPE, RDFS.RESOURCE, resources);
+					addInferredStatement(predicate, RDF.TYPE, RDFS.CONTAINERMEMBERSHIPPROPERTY, resources);
+					addInferredStatement(predicate, RDF.TYPE, RDF.PROPERTY, resources);
+					addInferredStatement(predicate, RDFS.SUBPROPERTYOF, predicate, resources);
+					addInferredStatement(predicate, RDFS.SUBPROPERTYOF, RDFS.MEMBER, resources);
 
 				}
 			}
@@ -241,32 +241,38 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 
 			sail.resolveTypes((Resource)object).stream().peek(inferredType -> {
 				if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
-					addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+					addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE, resources);
 				}
 			}).filter(inferredType -> !inferredType.equals(object)).forEach(
-					inferredType -> addInferredStatement(subject, RDF.TYPE, inferredType));
+					inferredType -> addInferredStatement(subject, RDF.TYPE, inferredType, resources));
 		}
 
-		sail.resolveProperties(predicate).stream().filter(
-				inferredProperty -> !inferredProperty.equals(predicate)).filter(
-						inferredPropery -> inferredPropery instanceof IRI).map(
-								inferredPropery -> ((IRI)inferredPropery)).forEach(
-										inferredProperty -> addInferredStatement(subject, inferredProperty,
-												object));
+		sail.resolveProperties(predicate)
+			.stream()
+			.filter(inferredProperty -> !inferredProperty.equals(predicate))
+			.filter(inferredPropery -> inferredPropery instanceof IRI)
+			.map(inferredPropery -> ((IRI) inferredPropery))
+			.forEach(inferredProperty -> addInferredStatement(subject, inferredProperty, object, resources));
 
 		if (object instanceof Resource) {
-			sail.resolveRangeTypes(predicate).stream().peek(inferredType -> {
-				if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
-					addInferredStatement(((Resource)object), RDFS.SUBCLASSOF, RDFS.RESOURCE);
-				}
-			}).forEach(inferredType -> addInferredStatement(((Resource)object), RDF.TYPE, inferredType));
+			sail.resolveRangeTypes(predicate)
+				.stream()
+				.peek(inferredType -> {
+					if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
+						addInferredStatement(((Resource) object), RDFS.SUBCLASSOF, RDFS.RESOURCE, resources);
+					}
+				})
+				.forEach(inferredType -> addInferredStatement(((Resource) object), RDF.TYPE, inferredType, resources));
 		}
 
-		sail.resolveDomainTypes(predicate).stream().peek(inferredType -> {
-			if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
-				addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE);
-			}
-		}).forEach(inferredType -> addInferredStatement((subject), RDF.TYPE, inferredType));
+		sail.resolveDomainTypes(predicate)
+			.stream()
+			.peek(inferredType -> {
+				if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
+					addInferredStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE, resources);
+				}
+			})
+			.forEach(inferredType -> addInferredStatement((subject), RDF.TYPE, inferredType, resources));
 
 	}
 
@@ -522,8 +528,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
 		addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
-		statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDFS.SUBCLASSOF,
-				RDFS.CONTAINERMEMBERSHIPPROPERTY);
+		statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDFS.SUBCLASSOF, RDFS.CONTAINERMEMBERSHIPPROPERTY);
 		processForSchemaCache(statement);
 		addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
 		statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDFS.SUBCLASSOF, RDF.PROPERTY);
@@ -718,7 +723,6 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 			sail.rolledBackAfterModifyingSchemaCache = true;
 		}
 
-		statementsRemoved = false;
 		statementsRemoved = false;
 
 		sail.releaseExclusiveWriteLock();
