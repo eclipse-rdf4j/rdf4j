@@ -76,9 +76,7 @@ public class FederateTest extends AbstractCommandTest {
 	private Level originalLevel;
 
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		originalLevel = ((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).getLevel();
 
 		// Start all tests assuming a base of Debug logging, then revert after the test
@@ -86,7 +84,7 @@ public class FederateTest extends AbstractCommandTest {
 
 		manager = new LocalRepositoryManager(tempDir.newFolder("federate-test-repository-manager"));
 		manager.initialize();
-		addRepositories(MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID2, HTTP_MEMBER_ID, HTTP2_MEMBER_ID,
+		addRepositories("federate", MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID2, HTTP_MEMBER_ID, HTTP2_MEMBER_ID,
 				SPARQL_MEMBER_ID, SPARQL2_MEMBER_ID);
 		when(mockConsoleState.getManager()).thenReturn(manager);
 		when(mockConsoleIO.readln("Federation Description (optional): ")).thenReturn(FED_DESCRIPTION);

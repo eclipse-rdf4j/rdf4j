@@ -43,11 +43,11 @@ public class ExportTest extends AbstractCommandTest {
 	public final TemporaryFolder LOCATION = new TemporaryFolder();
 
 	@Before
-	public void prepareManager() throws IOException, RDF4JException {
+	public void setUp() throws IOException, RDF4JException {
 		manager = new LocalRepositoryManager(LOCATION.getRoot());
 		manager.initialize();
 		
-		addRepositories(MEMORY_MEMBER);
+		addRepositories("export", MEMORY_MEMBER);
 		
 		when(mockConsoleIO.askProceed("File exists, continue ?", false)).thenReturn(Boolean.TRUE);
 		when(mockConsoleState.getManager()).thenReturn(manager);

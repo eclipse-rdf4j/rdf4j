@@ -43,7 +43,7 @@ public class SparqlTest extends AbstractCommandTest {
 		manager = new LocalRepositoryManager(LOCATION.getRoot());
 		manager.initialize();
 		
-		addRepositories(MEMORY_MEMBER);
+		addRepositories("sparql", MEMORY_MEMBER);
 		
 		Map<String,ConsoleSetting> settings = new HashMap<>();
 		settings.put(WorkDir.NAME, new WorkDir(LOCATION.getRoot().toPath()));

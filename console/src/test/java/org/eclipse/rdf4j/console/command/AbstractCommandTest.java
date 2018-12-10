@@ -93,11 +93,12 @@ public class AbstractCommandTest {
 	/**
 	 * Add one or more repositories to the repository manager, and load some content (if any).
 	 * 
-	 * @param identities
+	 * @param command command / directory to load data from
+	 * @param identities name of the repository / file to load
 	 * @throws IOException
 	 * @throws RDF4JException 
 	 */
-	protected void addRepositories(String... identities) throws IOException, RDF4JException {
+	protected void addRepositories(String command, String... identities) throws IOException, RDF4JException {
 		// file types to check for
 		String[] filetypes = new String[2];
 		filetypes[0] = "ttl";
@@ -106,12 +107,12 @@ public class AbstractCommandTest {
 		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 	
 		for (String identity : identities) {
-			InputStream cfg = classLoader.getResourceAsStream("federate/" + identity + "-config.ttl");
+			InputStream cfg = classLoader.getResourceAsStream(command + "/" + identity + "-config.ttl");
 			String repID = addRepository(cfg);
 
 			for(String filetype: filetypes) {
 				String file = identity + "." + filetype;
- 				URL res = classLoader.getResource("federate/" + file);
+ 				URL res = classLoader.getResource(command + "/" + file);
 				if (res != null) {
 					loadData(repID, res, file);
 				}
