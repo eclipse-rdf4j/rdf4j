@@ -23,8 +23,11 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import static org.mockito.Mockito.when;
 
 /**
+ * Test SPARQL command
+ * 
  * @author Bart Hanssens
  */
 public class SparqlTest extends AbstractCommandTest {
@@ -47,7 +50,8 @@ public class SparqlTest extends AbstractCommandTest {
 		
 		TupleAndGraphQueryEvaluator tqe = 
 			new TupleAndGraphQueryEvaluator(mockConsoleIO, mockConsoleState, settings);
-		
+		when(mockConsoleState.getRepository()).thenReturn(manager.getRepository(MEMORY_MEMBER));
+
 		sparql = new Sparql(tqe);
 	}
 
@@ -59,7 +63,7 @@ public class SparqlTest extends AbstractCommandTest {
 	
 	@Test
 	public final void testSelect() throws IOException {
-		sparql.executeQuery("sparql", "select ?s ?p ?o where { ?s ?p ?o }");
+		sparql.executeQuery("select ?s ?p ?o where { ?s ?p ?o }", "sparql");
 	}
 	
 	@Test
@@ -68,9 +72,9 @@ public class SparqlTest extends AbstractCommandTest {
 	
 	@Test
 	public final void testOutputFile() throws IOException {
-		sparql.executeQuery("sparql","OUTFILE=\"out.ttl\" select ?s ?p ?o where { ?s ?p ?o }");
+		sparql.executeQuery("sparql OUTFILE=\"out.ttl\" select ?s ?p ?o where { ?s ?p ?o }", "sparql");
 		
 		String dir = LOCATION.getRoot().toString();
-		//assertTrue("File does not exist", Paths.get(dir, "out.ttl").toFile().exists());
+		assertTrue("File does not exist", Paths.get(dir, "out.ttl").toFile().exists());
 	}
 }
