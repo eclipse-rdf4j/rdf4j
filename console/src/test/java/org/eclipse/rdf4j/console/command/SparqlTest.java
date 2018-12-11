@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.HashMap;
@@ -18,11 +19,15 @@ import org.eclipse.rdf4j.console.setting.WorkDir;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 
 import org.junit.After;
-import static org.junit.Assert.assertTrue;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.verify;
+
 import static org.mockito.Mockito.when;
 
 /**
@@ -71,10 +76,21 @@ public class SparqlTest extends AbstractCommandTest {
 	}
 	
 	@Test
-	public final void testOutputFile() throws IOException {
-		sparql.executeQuery("sparql OUTFILE=\"out.ttl\" select ?s ?p ?o where { ?s ?p ?o }", "sparql");
+	public final void testOutputFileConstruct() throws IOException {
+		sparql.executeQuery("sparql OUTFILE=\"out.ttl\" construct { ?s ?p ?o } where { ?s ?p ?o }", "sparql");
 		
 		String dir = LOCATION.getRoot().toString();
-		assertTrue("File does not exist", Paths.get(dir, "out.ttl").toFile().exists());
+		File f = Paths.get(dir, "out.ttl").toFile();
+		
+		assertTrue("File does not exist", f.exists());
+		assertTrue("Empty file", f.length() > 0);
 	}
+	
+	@Test
+	public final void testOutputFileWrongFormat() throws IOException {
+		sparql.executeQuery("sparql OUTFILE=\"out.ttl\" select ?s ?p ?o where { ?s ?p ?o }", "sparql");
+		
+		verify(mockConsoleIO).writeError("No suitable result writer found");
+	}
+
 }

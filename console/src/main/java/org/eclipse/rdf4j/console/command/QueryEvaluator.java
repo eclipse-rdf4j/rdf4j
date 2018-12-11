@@ -84,10 +84,13 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 								new String[]{"select", "construct", "describe", "ask", "prefix", "base"});
 	
 	private final long MAX_INPUT = 1_000_000;
+
 	// [INFILE="input file"[,enc]] [OUTPUT="out/file"]
 	private final static Pattern PATTERN_IO = 
-			Pattern.compile(  "^(?<in>INFILE=\"(?<i>[^\"]+)\"" + ",?(?<enc>\\w[\\w-]+)?)? ?"
-							+ "(?<out>OUTFILE=\"(?<o>[^\"]+)\")?");	
+			Pattern.compile(	"^(?<in>INFILE=\"(?<i>[^\"]+)\"" + 
+								",?(?<enc>\\w[\\w-]+)?)? ?" +
+								"(?<out>OUTFILE=\"(?<o>[^\"]+)\")?", 
+								Pattern.CASE_INSENSITIVE);	
 
 	/**
 	 * Constructor

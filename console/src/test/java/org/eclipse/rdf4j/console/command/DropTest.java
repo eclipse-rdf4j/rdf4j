@@ -50,7 +50,9 @@ public class DropTest extends AbstractCommandTest {
 	public void setUp() throws UnsupportedEncodingException, IOException, RDF4JException {
 		manager = new LocalRepositoryManager(LOCATION.getRoot());
 		manager.initialize();
+		
 		addRepositories("drop", MEMORY_MEMBER_ID1);
+		
 		manager.addRepositoryConfig(
 				new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(MEMORY_MEMBER_ID1)));
 		ConsoleState state = mock(ConsoleState.class);
