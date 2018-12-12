@@ -27,6 +27,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
@@ -37,7 +38,6 @@ import org.eclipse.rdf4j.console.setting.QueryPrefix;
 import org.eclipse.rdf4j.console.setting.WorkDir;
 import org.eclipse.rdf4j.console.util.ConsoleQueryResultWriter;
 import org.eclipse.rdf4j.console.util.ConsoleRDFWriter;
-import org.eclipse.rdf4j.console.util.UncloseableOutputStream;
 
 import org.eclipse.rdf4j.model.Namespace;
 

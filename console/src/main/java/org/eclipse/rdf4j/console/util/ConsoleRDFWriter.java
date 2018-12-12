@@ -12,9 +12,10 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.Util;
-import org.eclipse.rdf4j.model.Statement;
 
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
+
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
@@ -79,5 +80,4 @@ public class ConsoleRDFWriter extends AbstractRDFWriter {
 	public void handleComment(String comment) throws RDFHandlerException {
 		// do nothing
 	}
-
 }

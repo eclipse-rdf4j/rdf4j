@@ -26,8 +26,10 @@ import org.junit.rules.TemporaryFolder;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.never;
 
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -67,17 +69,24 @@ public class SparqlTest extends AbstractCommandTest {
 	}
 	
 	@Test
-	public final void testSelect() throws IOException {
-		sparql.executeQuery("select ?s ?p ?o where { ?s ?p ?o }", "sparql");
+	public final void testSelectError() throws IOException {
+		sparql.executeQuery("select ?s ?p ?o where { ?s ?p ?o }", "select");
+		verify(mockConsoleIO, never()).writeError(anyString());
 	}
 	
 	@Test
 	public final void testInputFile() throws IOException {
+		File f = LOCATION.newFile("select.qr");
+		copyFromResource("sparql/select.qr", f);
+		
+		sparql.executeQuery("sparql INFILE=\"selct.qr\"", "sparql");
+		verify(mockConsoleIO, never()).writeError(anyString());
 	}
 	
 	@Test
 	public final void testOutputFileConstruct() throws IOException {
 		sparql.executeQuery("sparql OUTFILE=\"out.ttl\" construct { ?s ?p ?o } where { ?s ?p ?o }", "sparql");
+		verify(mockConsoleIO, never()).writeError(anyString());
 		
 		String dir = LOCATION.getRoot().toString();
 		File f = Paths.get(dir, "out.ttl").toFile();
@@ -88,9 +97,9 @@ public class SparqlTest extends AbstractCommandTest {
 	
 	@Test
 	public final void testOutputFileWrongFormat() throws IOException {
+		// SELECT should use sparql result format, not triple file
 		sparql.executeQuery("sparql OUTFILE=\"out.ttl\" select ?s ?p ?o where { ?s ?p ?o }", "sparql");
 		
 		verify(mockConsoleIO).writeError("No suitable result writer found");
 	}
-
 }

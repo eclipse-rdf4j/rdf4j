@@ -8,9 +8,6 @@
 package org.eclipse.rdf4j.console.command;
 
 import com.github.jsonldjava.utils.JsonUtils;
-import static org.mockito.Mockito.when;
-
-import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
@@ -25,8 +22,12 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+
+import static org.junit.Assert.assertTrue;
+
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * @author Bart Hanssens
@@ -45,10 +46,7 @@ public class ConvertTest extends AbstractCommandTest {
 		convert = new Convert(mockConsoleIO, mockConsoleState);
 		
 		from = LOCATION.newFile("alien.ttl");
-		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-		try (InputStream is = classLoader.getResourceAsStream("convert/alien.ttl")) {
-			Files.copy(is, from.toPath(), StandardCopyOption.REPLACE_EXISTING);
-		}
+		copyFromResource("convert/alien.ttl", from);
 	}
 	
 	@After

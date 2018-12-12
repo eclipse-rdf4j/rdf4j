@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -14,6 +15,9 @@ import java.io.StringReader;
 
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
@@ -71,6 +75,19 @@ public class AbstractCommandTest {
 		}
 	}
 
+	/**
+	 * Copy file from resource to a specific  path
+	 * 
+	 * @param fromRes file to load from resources
+	 * @param toFile target file
+	 * @throws IOException 
+	 */
+	public void copyFromResource(String fromRes, File toFile) throws IOException {
+		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+		try (InputStream is = classLoader.getResourceAsStream(fromRes)) {
+			Files.copy(is, toFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+		}
+	}
 	/**
 	 * Load triples or quads from a resource file into the repository
 	 * 
