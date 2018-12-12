@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.console.command;
 
 import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.HashMap;
@@ -16,7 +17,10 @@ import java.util.Map;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.WorkDir;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 
 import org.junit.After;
 import org.junit.Before;
@@ -24,7 +28,6 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.never;
@@ -79,7 +82,7 @@ public class SparqlTest extends AbstractCommandTest {
 		File f = LOCATION.newFile("select.qr");
 		copyFromResource("sparql/select.qr", f);
 		
-		sparql.executeQuery("sparql INFILE=\"selct.qr\"", "sparql");
+		sparql.executeQuery("sparql INFILE=\"select.qr\"", "sparql");
 		verify(mockConsoleIO, never()).writeError(anyString());
 	}
 	
@@ -93,13 +96,32 @@ public class SparqlTest extends AbstractCommandTest {
 		
 		assertTrue("File does not exist", f.exists());
 		assertTrue("Empty file", f.length() > 0);
+		
+		Model m = Rio.parse(new FileReader(f), "", RDFFormat.TURTLE);
+		assertTrue("Empty model", m.size() > 0);
 	}
 	
 	@Test
 	public final void testOutputFileWrongFormat() throws IOException {
-		// SELECT should use sparql result format, not triple file
+		// SELECT should use sparql result format, not a triple file format
 		sparql.executeQuery("sparql OUTFILE=\"out.ttl\" select ?s ?p ?o where { ?s ?p ?o }", "sparql");
 		
 		verify(mockConsoleIO).writeError("No suitable result writer found");
+	}
+	
+	@Test
+	public final void testInputOutputFile() throws IOException {
+		File f = LOCATION.newFile("select.qr");
+		copyFromResource("sparql/select.qr", f);
+		
+		sparql.executeQuery("sparql infile=\"select.qr\" outfile=\"out.srj\"", "sparql");
+	
+		verify(mockConsoleIO, never()).writeError(anyString());
+		
+		String dir = LOCATION.getRoot().toString();
+		File srj = Paths.get(dir, "out.srj").toFile();
+		
+		assertTrue("File does not exist", srj.exists());
+		assertTrue("Empty file", srj.length() > 0);
 	}
 }
