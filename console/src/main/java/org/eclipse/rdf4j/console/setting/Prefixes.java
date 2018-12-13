@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
  * 
  * @author Bart Hanssens
  */
-public class NameSpaces extends ConsoleSetting<Set<Namespace>> {
+public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	public final static String NAME = "ns";
 	
 	public final static Set<Namespace> DEFAULT = new HashSet<>();
@@ -55,7 +55,9 @@ public class NameSpaces extends ConsoleSetting<Set<Namespace>> {
 
 	@Override
 	public String getHelpLong() {
-		return "set ns                         Set the namespace prefixes\n";
+		return "set prefixes=<default> Set the prefixes to a default list of prefixes\n" +
+			   "set prefixes=<none>    Clear list of prefixes\n";
+		
 	}
 	
 	/**
@@ -63,7 +65,7 @@ public class NameSpaces extends ConsoleSetting<Set<Namespace>> {
 	 * 
 	 * Default set of namespaces are well-known ones
 	 */
-	public NameSpaces() {
+	public Prefixes() {
 		super(DEFAULT);
 	}
 	
@@ -72,7 +74,7 @@ public class NameSpaces extends ConsoleSetting<Set<Namespace>> {
 	 * 
 	 * @param initValue
 	 */
-	public NameSpaces(Set<Namespace> initValue) {
+	public Prefixes(Set<Namespace> initValue) {
 		super(initValue);
 	}
 	

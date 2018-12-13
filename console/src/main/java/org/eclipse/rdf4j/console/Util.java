@@ -89,8 +89,8 @@ public class Util {
 	 * Get string representation for a value.
 	 * If the value is an IRI and is part of a known namespace, the prefix will be used to shorten it.
 	 * 
-	 * @param value
-	 * @param namespaces
+	 * @param value value
+	 * @param namespaces mapping (uri,prefix)
 	 * @return string representation
 	 */
 	public static String getPrefixedValue(Value value, Map<String,String> namespaces) {

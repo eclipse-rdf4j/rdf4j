@@ -23,10 +23,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
+import org.eclipse.rdf4j.console.setting.Prefixes;
 import org.eclipse.rdf4j.console.setting.QueryPrefix;
 import org.eclipse.rdf4j.console.setting.WorkDir;
 import org.eclipse.rdf4j.console.util.ConsoleQueryResultWriter;
@@ -58,7 +59,6 @@ import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
 
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -151,6 +151,16 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 */
 	private boolean getQueryPrefix() {
 		return ((QueryPrefix) settings.getOrDefault(QueryPrefix.NAME, new QueryPrefix())).get();
+	}
+
+	/**
+	 * Get a set of namespaces and their prefixes
+	 * Use a list of default prefixes when not found.
+	 * 
+	 * @return boolean
+	 */
+	private Set<Namespace> getNamespaces() {
+		return ((Prefixes) settings.getOrDefault(Prefixes.NAME, new Prefixes())).get();
 	}
 
 	/**
@@ -335,19 +345,27 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * 
 	 * @param path path or null
 	 * @param out output stream or null
+	 * @param ns namespaces
 	 * @return result writer
 	 * @throws IllegalArgumentException
 	 */
-	private QueryResultWriter getQueryResultWriter(Path path, OutputStream out) 
+	private QueryResultWriter getQueryResultWriter(Path path, OutputStream out, Collection<Namespace> ns) 
 																		throws IllegalArgumentException {
+		QueryResultWriter w;
+
 		if (path == null) {
-			return new ConsoleQueryResultWriter(consoleIO, getConsoleWidth());
+			w = new ConsoleQueryResultWriter(consoleIO, getConsoleWidth());
+		} else {
+			Optional<QueryResultFormat> fmt = 
+										QueryResultIO.getWriterFormatForFileName(path.toFile().toString());
+			if (!fmt.isPresent()) {
+				throw new IllegalArgumentException("No suitable result writer found");
+			}
+			w = QueryResultIO.createWriter(fmt.get(), out);
 		}
-		Optional<QueryResultFormat> fmt = QueryResultIO.getWriterFormatForFileName(path.toFile().toString());
-		if (!fmt.isPresent()) {
-			throw new IllegalArgumentException("No suitable result writer found");
-		}
-		return QueryResultIO.createWriter(fmt.get(), out);	
+		ns.stream().forEach(n -> w.handleNamespace(n.getPrefix(), n.getName()));
+		
+		return w;
 	}
 
 	/**
@@ -356,18 +374,25 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * 
 	 * @param path path or null
 	 * @param out output stream or null
+	 * @param ns collection of namespaces
 	 * @return result writer
 	 * @throws IllegalArgumentException
 	 */
-	private RDFWriter getRDFWriter(Path path, OutputStream out) throws IllegalArgumentException {
+	private RDFWriter getRDFWriter(Path path, OutputStream out, Collection<Namespace> ns) 
+																		throws IllegalArgumentException {
+		RDFWriter w;
 		if (path == null) {
-			return new ConsoleRDFWriter(consoleIO, getConsoleWidth());
+			w = new ConsoleRDFWriter(consoleIO, getConsoleWidth());
+		} else {
+			Optional<RDFFormat> fmt = Rio.getWriterFormatForFileName(path.toFile().toString());
+			if (!fmt.isPresent()) {
+				throw new IllegalArgumentException("No suitable result writer found");
+			}
+			w = Rio.createWriter(fmt.get(), out);
 		}
-		Optional<RDFFormat> fmt = Rio.getWriterFormatForFileName(path.toFile().toString());
-		if (!fmt.isPresent()) {
-			throw new IllegalArgumentException("No suitable result writer found");
-		}
-		return Rio.createWriter(fmt.get(), out);	
+		ns.stream().forEach(n -> w.handleNamespace(n.getPrefix(), n.getName()));
+		
+		return w;
 	}
 	
 	/**
@@ -402,15 +427,17 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 
 		String queryString = query.getSourceString();
 
+		Collection<Namespace> ns = getNamespaces();
+
 		try(OutputStream os = getOutputStream(path)) {
 			if (query instanceof ParsedTupleQuery) {
-				QueryResultWriter writer = getQueryResultWriter(path, os);
+				QueryResultWriter writer = getQueryResultWriter(path, os, ns);
 				evaluator.evaluateTupleQuery(queryLn, queryString, writer);
 			} else if (query instanceof ParsedBooleanQuery) {
-				QueryResultWriter writer = getQueryResultWriter(path, os);
+				QueryResultWriter writer = getQueryResultWriter(path, os, ns);
 				evaluator.evaluateBooleanQuery(queryLn, queryString, writer);
 			} else if (query instanceof ParsedGraphQuery) {
-				RDFWriter writer = getRDFWriter(path, os);
+				RDFWriter writer = getRDFWriter(path, os, ns);
 				evaluator.evaluateGraphQuery(queryLn, queryString, writer);
 			} else if (query instanceof ParsedUpdate) {
 				// no outputstream for updates, can only be console output
@@ -440,20 +467,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		Repository repository = state.getRepository();
 			
 		if (repository != null && getQueryPrefix() && !hasQueryPrefixes(upperCaseQuery)) {
-			// FIXME this is a bit of a sloppy hack, a better way would be to
-			// explicitly provide the query parser with name space mappings in
-			// advance.
-			try {
-				try (RepositoryConnection con = repository.getConnection()) {
-					Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
-					if (!namespaces.isEmpty()) {
-						addQueryPrefixes(result, namespaces);
-					}
-				}
-			} catch (RepositoryException e) {
-				consoleIO.writeError("Error connecting to repository: " + e.getMessage());
-				LOGGER.error("Error connecting to repository", e);
-			}
+			addQueryPrefixes(result, getNamespaces());
 		}
 		return result.toString();
 	}

@@ -8,8 +8,10 @@
 package org.eclipse.rdf4j.console.util;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.text.StringUtil;
 
