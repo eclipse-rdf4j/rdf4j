@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
  * @author Bart Hanssens
  */
 public class Prefixes extends ConsoleSetting<Set<Namespace>> {
-	public final static String NAME = "ns";
+	public final static String NAME = "prefixes";
 	
 	public final static Set<Namespace> DEFAULT = new HashSet<>();
 	static {
@@ -123,6 +123,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 		}
 		if (value.equals("<default>")) {
 			set(DEFAULT);
+			return;
 		}
 		
 		String[] namespaces = value.split(",");

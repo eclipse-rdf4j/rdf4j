@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
 import org.eclipse.rdf4j.console.setting.Prefixes;
 import org.eclipse.rdf4j.console.setting.QueryPrefix;
+import org.eclipse.rdf4j.console.setting.ShowPrefix;
 import org.eclipse.rdf4j.console.setting.WorkDir;
 import org.eclipse.rdf4j.console.util.ConsoleQueryResultWriter;
 import org.eclipse.rdf4j.console.util.ConsoleRDFWriter;
@@ -144,22 +145,31 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	}
 
 	/**
-	 * Get show prefix setting
-	 * Use a new show prefix setting when not found.
+	 * Get query prefix setting
+	 * Use a new query prefix setting when not found.
 	 * 
 	 * @return boolean
 	 */
 	private boolean getQueryPrefix() {
 		return ((QueryPrefix) settings.getOrDefault(QueryPrefix.NAME, new QueryPrefix())).get();
 	}
-
 	/**
-	 * Get a set of namespaces and their prefixes
-	 * Use a list of default prefixes when not found.
+	 * Get show prefix setting
+	 * Use a new show prefix setting when not found.
 	 * 
 	 * @return boolean
 	 */
-	private Set<Namespace> getNamespaces() {
+	private boolean getShowPrefix() {
+		return ((ShowPrefix) settings.getOrDefault(ShowPrefix.NAME, new ShowPrefix())).get();
+	}
+	
+	/**
+	 * Get a set of namespaces
+	 * Use a list of default namespaces when not found.
+	 * 
+	 * @return boolean
+	 */
+	private Set<Namespace> getPrefixes() {
 		return ((Prefixes) settings.getOrDefault(Prefixes.NAME, new Prefixes())).get();
 	}
 
@@ -345,11 +355,10 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * 
 	 * @param path path or null
 	 * @param out output stream or null
-	 * @param ns namespaces
 	 * @return result writer
 	 * @throws IllegalArgumentException
 	 */
-	private QueryResultWriter getQueryResultWriter(Path path, OutputStream out, Collection<Namespace> ns) 
+	private QueryResultWriter getQueryResultWriter(Path path, OutputStream out) 
 																		throws IllegalArgumentException {
 		QueryResultWriter w;
 
@@ -363,8 +372,9 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			}
 			w = QueryResultIO.createWriter(fmt.get(), out);
 		}
-		ns.stream().forEach(n -> w.handleNamespace(n.getPrefix(), n.getName()));
-		
+		if (getShowPrefix()) {
+			getPrefixes().stream().forEach(ns -> w.handleNamespace(ns.getPrefix(), ns.getName()));
+		}		
 		return w;
 	}
 
@@ -374,12 +384,10 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * 
 	 * @param path path or null
 	 * @param out output stream or null
-	 * @param ns collection of namespaces
 	 * @return result writer
 	 * @throws IllegalArgumentException
 	 */
-	private RDFWriter getRDFWriter(Path path, OutputStream out, Collection<Namespace> ns) 
-																		throws IllegalArgumentException {
+	private RDFWriter getRDFWriter(Path path, OutputStream out) throws IllegalArgumentException {
 		RDFWriter w;
 		if (path == null) {
 			w = new ConsoleRDFWriter(consoleIO, getConsoleWidth());
@@ -390,8 +398,9 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			}
 			w = Rio.createWriter(fmt.get(), out);
 		}
-		ns.stream().forEach(n -> w.handleNamespace(n.getPrefix(), n.getName()));
-		
+		if (getShowPrefix()) {
+			getPrefixes().stream().forEach(ns -> w.handleNamespace(ns.getPrefix(), ns.getName()));
+		}
 		return w;
 	}
 	
@@ -427,17 +436,15 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 
 		String queryString = query.getSourceString();
 
-		Collection<Namespace> ns = getNamespaces();
-
 		try(OutputStream os = getOutputStream(path)) {
 			if (query instanceof ParsedTupleQuery) {
-				QueryResultWriter writer = getQueryResultWriter(path, os, ns);
+				QueryResultWriter writer = getQueryResultWriter(path, os);
 				evaluator.evaluateTupleQuery(queryLn, queryString, writer);
 			} else if (query instanceof ParsedBooleanQuery) {
-				QueryResultWriter writer = getQueryResultWriter(path, os, ns);
+				QueryResultWriter writer = getQueryResultWriter(path, os);
 				evaluator.evaluateBooleanQuery(queryLn, queryString, writer);
 			} else if (query instanceof ParsedGraphQuery) {
-				RDFWriter writer = getRDFWriter(path, os, ns);
+				RDFWriter writer = getRDFWriter(path, os);
 				evaluator.evaluateGraphQuery(queryLn, queryString, writer);
 			} else if (query instanceof ParsedUpdate) {
 				// no outputstream for updates, can only be console output
@@ -467,7 +474,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		Repository repository = state.getRepository();
 			
 		if (repository != null && getQueryPrefix() && !hasQueryPrefixes(upperCaseQuery)) {
-			addQueryPrefixes(result, getNamespaces());
+			addQueryPrefixes(result, getPrefixes());
 		}
 		return result.toString();
 	}
