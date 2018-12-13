@@ -7,12 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import java.util.Map;
+import java.util.Collection;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
-import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.query.parser.serql.SeRQLUtil;
 
 /**
  * SERQL query command
@@ -20,6 +21,8 @@ import org.eclipse.rdf4j.console.setting.ConsoleSetting;
  * @author Bart Hanssens
  */
 public class Serql extends QueryEvaluator {
+	private static final String NAMESPACE = "USING NAMESPACE";
+	
 	@Override
 	public String getName() {
 		return "serql";
@@ -33,8 +36,13 @@ public class Serql extends QueryEvaluator {
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE 
+			+ "serql                         Starts multi-line input for large SeRQL queries.\n"
 			+ "serql <query>                 Evaluates the SeRQL query on the currently open repository\n"
-			+ "serql                         Starts multi-line input for large SeRQL queries.\n";
+			+ "serql INFILE=\"infile.ext\"            Evaluates the query stored in a file.\n"
+			+ "serql OUTFILE=\"outfile.ext\" <query>  Save the results to a file.\n"
+			+ "    Supported extensions for graphs: jsonld, nt, ttl, xml\n"
+			+ "    Supported extensions for tuples: csv, srj, srx, tsv\n"
+			+ "serql INFILE=\"infile.ext\" OUTFILE=\"outfile.ext\" \n";
 	}
 
 	/**
@@ -52,11 +60,25 @@ public class Serql extends QueryEvaluator {
 	/**
 	 * Constructor
 	 * 
-	 * @param consoleIO
-	 * @param state
-	 * @param settings 
+	 * @param evaluator
 	 */
-	public Serql(ConsoleIO consoleIO, ConsoleState state, Map<String,ConsoleSetting> settings) {
-		super(consoleIO, state, settings);
+	public Serql(TupleAndGraphQueryEvaluator evaluator) {
+		super(evaluator);
+	}
+	
+	@Override
+	protected boolean hasQueryPrefixes(String query) {
+		return query.contains(NAMESPACE + " ");
+	}
+
+	@Override
+	protected void addQueryPrefixes(StringBuffer result, Collection<Namespace> namespaces) {
+		StringBuilder str = new StringBuilder(512);
+		
+		str.append(" ").append(NAMESPACE).append(" ");
+		for (Namespace namespace : namespaces) {
+			str.append(namespace.getPrefix()).append(" = ");
+			str.append("<").append(SeRQLUtil.encodeString(namespace.getName())).append(">, ");
+		}
 	}
 }

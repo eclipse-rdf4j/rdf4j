@@ -62,6 +62,15 @@ public class ConsoleIO {
 	}
 
 	/**
+	 * Get JLine terminal output stream
+	 * 
+	 * @return output stream
+	 */
+	public OutputStream getOutputStream() {
+		return terminal.output();
+	}
+	
+	/**
 	 * Read a command from input
 	 * 
 	 * @return one line of input, or null on error
