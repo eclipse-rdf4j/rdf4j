@@ -92,6 +92,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	public String getAsString() {
 		return get().stream()
 					.map(ns -> { return ns.getPrefix() + " " + ns.getName(); })
+					.sorted()
 					.collect(Collectors.joining(","));
 	}
 

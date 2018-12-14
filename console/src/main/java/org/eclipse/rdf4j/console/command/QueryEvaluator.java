@@ -277,7 +277,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			return str;
 		}
 		try {
-			consoleIO.writeln("enter multi-line " + queryLn.getName() + " query "
+			consoleIO.writeln("Enter multi-line " + queryLn.getName() + " query "
 							+ "(terminate with line containing single '.')");
 			return consoleIO.readMultiLineInput();
 		} catch (IOException e) {

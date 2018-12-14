@@ -17,8 +17,6 @@ import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
-import org.eclipse.rdf4j.console.setting.ConsoleWidth;
-import org.eclipse.rdf4j.console.setting.ShowPrefix;
 
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -143,10 +141,6 @@ public class TupleAndGraphQueryEvaluator {
 					resultCount++;
 				}
 			} else {
-				Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
-				for (Namespace ns: namespaces) {
-					writer.handleNamespace(ns.getPrefix(), ns.getName());
-				}
 				writer.startDocument();
 				writer.startHeader();
 				writer.startQueryResult(bindingNames);
@@ -188,10 +182,6 @@ public class TupleAndGraphQueryEvaluator {
 
 			con.setParserConfig(nonVerifyingParserConfig);
 
-			Collection<Namespace> namespaces = Iterations.asList(con.getNamespaces());
-			for (Namespace ns: namespaces) {
-				writer.handleNamespace(ns.getPrefix(), ns.getName());
-			}
 			writer.startRDF();
 
 			while (res.hasNext()) {
