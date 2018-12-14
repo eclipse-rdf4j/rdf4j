@@ -51,13 +51,14 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 		DEFAULT.add(VCARD4.NS);
 		DEFAULT.add(VOID.NS);
 		DEFAULT.add(XMLSchema.NS);
-	}
+	} 
 
 	@Override
 	public String getHelpLong() {
-		return "set prefixes=<default> Set the prefixes to a default list of prefixes\n" +
-			   "set prefixes=<none>    Clear list of prefixes\n";
-		
+		return "set prefixes=<default>         Set the prefixes to a default list of prefixes\n" +
+			   "    prefixes=<none>            Remove all namespace prefixes\n" +
+			   "	prefixes=prefix ns-url     Set prefix for namespace\n" +
+			   "	prefixes=prefix <none>     Remove namespace prefix\n";	
 	}
 	
 	/**
@@ -85,7 +86,16 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 
 	@Override
 	public void clear() {
-		set(Collections.EMPTY_SET);
+		get().clear();
+	}
+	
+	/**
+	 * Remove the namespace with specified prefix
+	 * 
+	 * @param prefix 
+	 */
+	private void clearNamespace(String prefix) {
+		get().removeIf(ns -> ns.getPrefix().equals(prefix));
 	}
 
 	@Override
@@ -97,15 +107,18 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	}
 
 	/**
-	 * Set one namespace from a string, using one whitespace to separate prefix and namespace URI
+	 * Set a namespace from a string, using one whitespace to separate prefix and namespace URI
 	 * E.g.   'dcterms http://purl.org/dc/terms/'
 	 * 
 	 * @param namespace 
 	 */
-	private void setOneFromString(String namespace) {
+	private void setNamespace(String namespace) {
 		String[] parts = namespace.split(" ");
 		if (parts.length != 2) {
 			throw new IllegalArgumentException("Error parsing namespace: " + namespace);
+		}
+		if (parts[1].equals("<none>")) {
+			clearNamespace(parts[0]);
 		}
 		if (!URIUtil.isValidURIReference(parts[1])) {
 			throw new IllegalArgumentException("Error parsing namespace  URI: " + parts[1]);
@@ -129,7 +142,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 		
 		String[] namespaces = value.split(",");
 		for (String namespace: namespaces) {
-			setOneFromString(namespace);
+			setNamespace(namespace);
 		}
 	}
 }
