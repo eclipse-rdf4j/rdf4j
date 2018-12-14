@@ -408,7 +408,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * Get output stream for a file, or for the console output if path is null
 	 * 
 	 * @param path file path or null
-	 * @return file or console outputstream
+	 * @return file or console output stream
 	 * @throws IOException
 	 */
 	private OutputStream getOutputStream(Path path) throws IOException {
@@ -461,7 +461,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	}
 
 	/**
-	 * Add namespaces prefixes to SPARQL or SERQL query from repository connection
+	 * Add namespace prefixes to SPARQL or SERQL query from repository connection
 	 * 
 	 * @param queryString query string
 	 * @return query string with prefixes

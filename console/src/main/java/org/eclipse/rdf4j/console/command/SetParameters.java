@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.console.command;
 
 import java.util.Map;
 import java.util.Objects;
-import org.eclipse.rdf4j.common.text.StringUtil;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;

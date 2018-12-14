@@ -7,18 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-
-import org.eclipse.rdf4j.common.iteration.Iterations;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
-
-import org.eclipse.rdf4j.model.Namespace;
 
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -38,6 +33,8 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 
 /**
+ * Evaluator tuple and graph queries
+ * 
  * @author dale
  */
 public class TupleAndGraphQueryEvaluator {
@@ -191,7 +188,7 @@ public class TupleAndGraphQueryEvaluator {
 			writer.endRDF();
 		}
 		long endTime = System.nanoTime();
-		consoleIO.writeln(resultCount + " results (" + (endTime - startTime) / 1000000 + " ms)");
+		consoleIO.writeln(resultCount + " results (" + (endTime - startTime) / 1_000_000 + " ms)");
 	}
 	
 	/**
@@ -221,8 +218,7 @@ public class TupleAndGraphQueryEvaluator {
 			writer.endQueryResult();
 		}
 		long endTime = System.nanoTime();
-		consoleIO.writeln("Query evaluated in " + (endTime - startTime) / 1000000 + " ms");
-		
+		consoleIO.writeln("Query evaluated in " + (endTime - startTime) / 1_000_000 + " ms");	
 	}
 
 	/**
@@ -246,6 +242,6 @@ public class TupleAndGraphQueryEvaluator {
 		}
 
 		long endTime = System.nanoTime();
-		consoleIO.writeln("Update executed in " + (endTime - startTime) / 1000000 + " ms");		
+		consoleIO.writeln("Update executed in " + (endTime - startTime) / 1_000_000 + " ms");		
 	}
 }

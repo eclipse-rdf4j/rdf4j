@@ -119,9 +119,10 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 		}
 		if (parts[1].equals("<none>")) {
 			clearNamespace(parts[0]);
+			return;
 		}
 		if (!URIUtil.isValidURIReference(parts[1])) {
-			throw new IllegalArgumentException("Error parsing namespace  URI: " + parts[1]);
+			throw new IllegalArgumentException("Error parsing namespace URI: " + parts[1]);
 		}
 		get().add(new SimpleNamespace(parts[0], parts[1]));
 	}
