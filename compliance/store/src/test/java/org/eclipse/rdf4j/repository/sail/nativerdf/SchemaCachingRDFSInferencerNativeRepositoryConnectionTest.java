@@ -48,8 +48,9 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest
 		throws IOException
 	{
 		dataDir = FileUtil.createTempDir("nativestore");
-		return new SailRepository(
-				new SchemaCachingRDFSInferencer(new NativeStore(dataDir, "spoc"), true));
+		SchemaCachingRDFSInferencer sail = new SchemaCachingRDFSInferencer(new NativeStore(dataDir, "spoc"), true);
+		sail.setAddInferredStatementsToDefaultContext(false);
+		return new SailRepository(sail);
 	}
 
 	@Override
