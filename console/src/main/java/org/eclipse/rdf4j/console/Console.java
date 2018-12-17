@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.console.command.Verify;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.ConsoleWidth;
 import org.eclipse.rdf4j.console.setting.LogLevel;
+import org.eclipse.rdf4j.console.setting.Prefixes;
 import org.eclipse.rdf4j.console.setting.QueryPrefix;
 import org.eclipse.rdf4j.console.setting.ShowPrefix;
 import org.eclipse.rdf4j.console.setting.WorkDir;
@@ -199,6 +200,7 @@ public class Console {
 		// Basic console parameters
 		register(new ConsoleWidth());
 		register(new LogLevel());
+		register(new Prefixes());
 		register(new QueryPrefix());
 		register(new ShowPrefix());
 		register(new WorkDir());
@@ -264,7 +266,8 @@ public class Console {
 		settingMap.forEach((k,v) -> {
 				String prop = PROP_PREFIX + k;
 				String oldval = props.getProperty(prop, "");
-				String val = v.get() != null ? String.valueOf(v.get()) : oldval;
+				String newval = v.getAsString();
+				String val = (newval != null) ? newval : oldval;
 				
 				if (!val.isEmpty()) {
 					props.setProperty(prop, val);

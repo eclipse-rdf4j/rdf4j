@@ -7,9 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import static org.junit.Assert.assertEquals;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import org.junit.After;
 import org.junit.Before;
@@ -19,6 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -28,6 +26,15 @@ import org.eclipse.rdf4j.console.setting.LogLevel;
 import org.eclipse.rdf4j.console.setting.QueryPrefix;
 import org.eclipse.rdf4j.console.setting.ShowPrefix;
 
+import static org.junit.Assert.assertEquals;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+
+/**
+ * Test setting parameters
+ * 
+ * @author Bart Hanssens
+ */
 public class SetParametersTest extends AbstractCommandTest {
 	SetParameters setParameters;
 	
@@ -62,7 +69,7 @@ public class SetParametersTest extends AbstractCommandTest {
 	public void testUnknownParametersAreErrors() {
 		setParameters.execute("set", "unknown");
 
-		verify(mockConsoleIO).writeError("unknown parameter: unknown");
+		verify(mockConsoleIO).writeError("Unknown parameter: unknown");
 		verifyNoMoreInteractions(mockConsoleIO);
 	}
 

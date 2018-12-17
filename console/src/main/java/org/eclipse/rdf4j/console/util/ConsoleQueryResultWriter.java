@@ -33,6 +33,7 @@ public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 	private final ConsoleIO consoleIO;
 	private final int consoleWidth;
 	private final Map<String,String> namespaces = new HashMap<>();
+	private List<String> bindingNames;
 	private int columnWidth;
 	private String separatorLine = "";
 	private String header = "";
@@ -71,14 +72,13 @@ public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 
 	@Override
 	public void startHeader() throws QueryResultHandlerException {
-		consoleIO.writeln(separatorLine);
-		consoleIO.writeln(header);
-		consoleIO.writeln(separatorLine);
 	}
 
 	@Override
 	public void endHeader() throws QueryResultHandlerException {
-		//
+		consoleIO.writeln(separatorLine);
+		consoleIO.writeln(header);
+		consoleIO.writeln(separatorLine);
 	}
 
 	@Override
@@ -93,6 +93,7 @@ public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 
 	@Override
 	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
+		this.bindingNames = bindingNames;
 		int columns = bindingNames.size();
 		columnWidth = (consoleWidth - 1) / columns  - 3;
 
@@ -125,7 +126,7 @@ public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		StringBuilder builder = new StringBuilder(512);
 						
-		for (String bindingName : bindingSet.getBindingNames()) {
+		for (String bindingName : bindingNames) {
 			Value value = bindingSet.getValue(bindingName);
 			String valueStr = Util.getPrefixedValue(value, namespaces);
 			builder.append("| ").append(valueStr);

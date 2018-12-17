@@ -72,22 +72,27 @@ public class SetParameters extends ConsoleCommand {
 	
 	@Override
 	public void execute(String... tokens) {
-		if (tokens.length == 1) {
-			for (String setting: settings.keySet()) {
-				showSetting(setting);
-			}
-		} else if (tokens.length == 2) {
-			String param = tokens[1];
-			int eqIdx = param.indexOf('=');
-			if (eqIdx < 0) {
-				showSetting(param);
-			} else {
-				String key = param.substring(0, eqIdx);
-				String value = param.substring(eqIdx + 1);
-				setParameter(key, value);
-			}
-		} else {
-			consoleIO.writeln(getHelpLong());
+		switch(tokens.length) {
+			case 0:
+				consoleIO.writeln(getHelpLong());
+				break;
+			case 1:
+				for (String setting: settings.keySet()) {
+					showSetting(setting);
+				}
+				break;
+			default:
+				String param = tokens[1];
+				int eqIdx = param.indexOf('=');
+				if (eqIdx < 0) {
+					showSetting(param);
+				} else {
+					String key = param.substring(0, eqIdx);
+					// FIXME: somewhat ugly, join back together to set parameter which may contain spaces
+					String values = String.join(" ", tokens);
+					eqIdx = values.indexOf('=');
+					setParameter(key, values.substring(eqIdx + 1));
+				}
 		}
 	}
 
@@ -103,7 +108,7 @@ public class SetParameters extends ConsoleCommand {
 		if (setting != null) {
 			consoleIO.writeln(key + ": " + setting.getAsString());
 		} else {
-			consoleIO.writeError("unknown parameter: " + key);
+			consoleIO.writeError("Unknown parameter: " + key);
 		}
 	}
 
@@ -127,7 +132,7 @@ public class SetParameters extends ConsoleCommand {
 				consoleIO.writeError(iae.getMessage());
 			}
 		} else {
-			consoleIO.writeError("unknown parameter: " + key);
+			consoleIO.writeError("Unknown parameter: " + key);
 		}
 	}
 }
