@@ -9,12 +9,12 @@ package org.eclipse.rdf4j.console;
 
 import org.apache.commons.cli.AlreadySelectedException;
 import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.OptionGroup;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
-import org.apache.commons.cli.PosixParser;
 
 /**
  * Helper class for configuring console
@@ -65,7 +65,7 @@ class CmdLineParser {
 	 */
 	protected CommandLine parse(String[] args) {
 		try {
-			commandLine = new PosixParser().parse(OPTIONS, args);
+			commandLine = new DefaultParser().parse(OPTIONS, args);
 		} catch (ParseException e) {
 			commandLine = null;
 			console.getConsoleIO().writeError(e.getMessage());
