@@ -26,9 +26,14 @@ public class ZipUtil {
 	 */
 	private final static byte MAGIC_NUMBER[] = { (byte)0x50, (byte)0x4B, (byte)0x03, (byte)0x04 };
 
-	public static boolean isZipStream(InputStream in)
-		throws IOException
-	{
+	/**
+	 * Test if an input stream is a zip input stream by checking the "magic number"
+	 * 
+	 * @param in input stream
+	 * @return true if start of input stream matches magic number
+	 * @throws IOException 
+	 */
+	public static boolean isZipStream(InputStream in) throws IOException {
 		in.mark(MAGIC_NUMBER.length);
 		byte[] fileHeader = IOUtil.readBytes(in, MAGIC_NUMBER.length);
 		in.reset();
@@ -45,9 +50,7 @@ public class ZipUtil {
 	 * @throws IOException
 	 *         when something untoward happens during the extraction process
 	 */
-	public static void extract(File zipFile, File destDir)
-		throws IOException
-	{
+	public static void extract(File zipFile, File destDir) throws IOException {
 		try (ZipFile zf = new ZipFile(zipFile)) {
 			extract(zf, destDir);
 		}
@@ -61,11 +64,9 @@ public class ZipUtil {
 	 * @param destDir
 	 *        the destination directory
 	 * @throws IOException
-	 *         when something untowards happens during the extraction process
+	 *         when something untoward happens during the extraction process
 	 */
-	public static void extract(ZipFile zipFile, File destDir)
-		throws IOException
-	{
+	public static void extract(ZipFile zipFile, File destDir) throws IOException {
 		assert destDir.isDirectory();
 
 		Enumeration<? extends ZipEntry> entries = zipFile.entries();
@@ -87,15 +88,16 @@ public class ZipUtil {
 	 * @throws IOException
 	 *         if the entry could not be processed
 	 */
-	public static void writeEntry(ZipFile zipFile, ZipEntry entry, File destDir)
-		throws IOException
-	{
+	public static void writeEntry(ZipFile zipFile, ZipEntry entry, File destDir) throws IOException {
 		File outFile = new File(destDir, entry.getName());
 
+		if (! outFile.getCanonicalFile().toPath().startsWith(destDir.toPath())) {
+			throw new IOException("Zip entry outside destination directory: " + entry.getName());
+		}
+				
 		if (entry.isDirectory()) {
 			outFile.mkdirs();
-		}
-		else {
+		} else {
 			outFile.getParentFile().mkdirs();
 
 			try (InputStream in = zipFile.getInputStream(entry)) {
