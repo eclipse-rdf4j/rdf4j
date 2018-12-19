@@ -11,9 +11,7 @@ import com.github.jsonldjava.utils.JsonUtils;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 
 import org.eclipse.rdf4j.RDF4JException;
 

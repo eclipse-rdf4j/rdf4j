@@ -8,8 +8,8 @@
 package org.eclipse.rdf4j.console.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Matchers.anyBoolean;
-import static org.mockito.Matchers.startsWith;
+import static org.mockito.Mockito.anyBoolean;
+import static org.mockito.Mockito.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
