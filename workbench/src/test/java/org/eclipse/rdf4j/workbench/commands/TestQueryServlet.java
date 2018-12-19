@@ -8,9 +8,10 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -21,7 +22,6 @@ import javax.servlet.ServletException;
 
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.ResourceUtil;
-import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
@@ -149,8 +149,7 @@ public class TestQueryServlet {
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
 		QueryStorage storage = mock(QueryStorage.class);
-		when(storage.getQueryText(any(HTTPRepository.class), anyString(), eq("test save name"))).thenReturn(
-				longQuery);
+		when(storage.getQueryText(any(), anyString(), eq("test save name"))).thenReturn(longQuery);
 		servlet.substituteQueryStorage(storage);
 		assertThat(servlet.getQueryText(request)).isEqualTo(longQuery);
 	}

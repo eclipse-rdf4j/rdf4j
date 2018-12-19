@@ -8,7 +8,8 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import static org.eclipse.rdf4j.workbench.base.TransformationServlet.CONTEXT;
-import static org.mockito.Matchers.eq;
+
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
