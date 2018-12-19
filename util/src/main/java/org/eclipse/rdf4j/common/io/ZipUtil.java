@@ -33,7 +33,7 @@ public class ZipUtil {
 	 * @return true if start of input stream matches magic number
 	 * @throws IOException 
 	 */
-	public static boolean isZipStream(InputStream in) 
+	public static boolean isZipStream(InputStream in)
 		throws IOException
 	{
 		in.mark(MAGIC_NUMBER.length);
@@ -52,7 +52,7 @@ public class ZipUtil {
 	 * @throws IOException
 	 *         when something untoward happens during the extraction process
 	 */
-	public static void extract(File zipFile, File destDir) 
+	public static void extract(File zipFile, File destDir)
 		throws IOException
 	{
 		try (ZipFile zf = new ZipFile(zipFile)) {
@@ -70,7 +70,7 @@ public class ZipUtil {
 	 * @throws IOException
 	 *         when something untoward happens during the extraction process
 	 */
-	public static void extract(ZipFile zipFile, File destDir) 
+	public static void extract(ZipFile zipFile, File destDir)
 		throws IOException
 	{
 		assert destDir.isDirectory();
@@ -94,7 +94,7 @@ public class ZipUtil {
 	 * @throws IOException
 	 *         if the entry could not be processed
 	 */
-	public static void writeEntry(ZipFile zipFile, ZipEntry entry, File destDir) 
+	public static void writeEntry(ZipFile zipFile, ZipEntry entry, File destDir)
 		throws IOException
 	{
 		File outFile = new File(destDir, entry.getName());
