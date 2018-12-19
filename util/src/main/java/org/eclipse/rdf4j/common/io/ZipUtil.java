@@ -26,6 +26,13 @@ public class ZipUtil {
 	 */
 	private final static byte MAGIC_NUMBER[] = { (byte)0x50, (byte)0x4B, (byte)0x03, (byte)0x04 };
 
+	/**
+	 * Test if an input stream is a zip input stream by checking the "magic number"
+	 * 
+	 * @param in input stream
+	 * @return true if start of input stream matches magic number
+	 * @throws IOException 
+	 */
 	public static boolean isZipStream(InputStream in)
 		throws IOException
 	{
@@ -61,7 +68,7 @@ public class ZipUtil {
 	 * @param destDir
 	 *        the destination directory
 	 * @throws IOException
-	 *         when something untowards happens during the extraction process
+	 *         when something untoward happens during the extraction process
 	 */
 	public static void extract(ZipFile zipFile, File destDir)
 		throws IOException
@@ -92,6 +99,10 @@ public class ZipUtil {
 	{
 		File outFile = new File(destDir, entry.getName());
 
+		if (! outFile.getCanonicalFile().toPath().startsWith(destDir.getCanonicalFile().toPath())) {
+			throw new IOException("Zip entry outside destination directory: " + entry.getName());
+		}
+				
 		if (entry.isDirectory()) {
 			outFile.mkdirs();
 		}
