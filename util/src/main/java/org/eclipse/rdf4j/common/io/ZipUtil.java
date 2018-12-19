@@ -34,7 +34,7 @@ public class ZipUtil {
 	 * @throws IOException 
 	 */
 	public static boolean isZipStream(InputStream in) 
-			throws IOException
+		throws IOException
 	{
 		in.mark(MAGIC_NUMBER.length);
 		byte[] fileHeader = IOUtil.readBytes(in, MAGIC_NUMBER.length);
@@ -53,7 +53,7 @@ public class ZipUtil {
 	 *         when something untoward happens during the extraction process
 	 */
 	public static void extract(File zipFile, File destDir) 
-			throws IOException
+		throws IOException
 	{
 		try (ZipFile zf = new ZipFile(zipFile)) {
 			extract(zf, destDir);
@@ -71,7 +71,7 @@ public class ZipUtil {
 	 *         when something untoward happens during the extraction process
 	 */
 	public static void extract(ZipFile zipFile, File destDir) 
-			throws IOException
+		throws IOException
 	{
 		assert destDir.isDirectory();
 
@@ -95,7 +95,7 @@ public class ZipUtil {
 	 *         if the entry could not be processed
 	 */
 	public static void writeEntry(ZipFile zipFile, ZipEntry entry, File destDir) 
-			throws IOException
+		throws IOException
 	{
 		File outFile = new File(destDir, entry.getName());
 
