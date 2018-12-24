@@ -68,8 +68,8 @@
 		<module>sail-spin</module>
 		<module>solr</module>
 		<module>spin</module>
-		<module>storage</module>
 		<module>shacl</module>
+		<module>storage</module>
 	</modules>
 
 	<profiles>
