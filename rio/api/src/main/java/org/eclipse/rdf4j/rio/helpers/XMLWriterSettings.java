@@ -27,7 +27,7 @@ public class XMLWriterSettings {
 	 * @see <a href="http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-complete-document">RDF/XML
 	 *      specification</a>
 	 */
-	public static final RioSetting<Boolean> INCLUDE_XML_PI = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> INCLUDE_XML_PI = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.includexmlpi", "Include XML Processing Instruction", Boolean.TRUE);
 
 	/**
@@ -39,7 +39,7 @@ public class XMLWriterSettings {
 	 * @see <a href="http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-complete-document">RDF/XML
 	 *      specification</a>
 	 */
-	public static final RioSetting<Boolean> INCLUDE_ROOT_RDF_TAG = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> INCLUDE_ROOT_RDF_TAG = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.includerootrdftag", "Include Root RDF Tag", Boolean.TRUE);
 
 	/**

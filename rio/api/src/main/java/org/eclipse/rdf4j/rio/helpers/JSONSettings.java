@@ -21,7 +21,7 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER = new RioSettingImpl<>(
+	public static final RioSetting<Boolean> ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_backslash_escaping_any_character",
 			"Allow backslash escaping any character", Boolean.FALSE);
 
@@ -30,7 +30,7 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> ALLOW_COMMENTS = new RioSettingImpl<>(
+	public static final RioSetting<Boolean> ALLOW_COMMENTS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_comments", "Allow comments", Boolean.FALSE);
 
 	/**
@@ -38,7 +38,7 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> ALLOW_NON_NUMERIC_NUMBERS = new RioSettingImpl<>(
+	public static final RioSetting<Boolean> ALLOW_NON_NUMERIC_NUMBERS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_non_numeric_numbers", "Allow non-numeric numbers",
 			Boolean.FALSE);
 
@@ -47,7 +47,7 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> ALLOW_NUMERIC_LEADING_ZEROS = new RioSettingImpl<>(
+	public static final RioSetting<Boolean> ALLOW_NUMERIC_LEADING_ZEROS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_numeric_leading_zeros", "Allow numeric leading zeros",
 			Boolean.FALSE);
 
@@ -56,7 +56,7 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> ALLOW_SINGLE_QUOTES = new RioSettingImpl<>(
+	public static final RioSetting<Boolean> ALLOW_SINGLE_QUOTES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_single_quotes", "Allow single quotes", Boolean.FALSE);
 
 	/**
@@ -64,7 +64,7 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> ALLOW_UNQUOTED_CONTROL_CHARS = new RioSettingImpl<>(
+	public static final RioSetting<Boolean> ALLOW_UNQUOTED_CONTROL_CHARS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_unquoted_control_chars", "Allow unquoted control chars",
 			Boolean.FALSE);
 
@@ -73,7 +73,7 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> ALLOW_UNQUOTED_FIELD_NAMES = new RioSettingImpl<>(
+	public static final RioSetting<Boolean> ALLOW_UNQUOTED_FIELD_NAMES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_unquoted_field_names", "Allow unquoted field names",
 			Boolean.FALSE);
 
@@ -82,7 +82,7 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> ALLOW_YAML_COMMENTS = new RioSettingImpl<>(
+	public static final RioSetting<Boolean> ALLOW_YAML_COMMENTS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_yaml_comments", "Allow YAML comments", Boolean.FALSE);
 
 	/**
@@ -90,7 +90,7 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> ALLOW_TRAILING_COMMA = new RioSettingImpl<>(
+	public static final RioSetting<Boolean> ALLOW_TRAILING_COMMA = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.allow_yaml_comments", "Allow trailing comma", Boolean.FALSE);
 
 	/**
@@ -99,7 +99,7 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to true.
 	 */
-	public static final RioSetting<Boolean> INCLUDE_SOURCE_IN_LOCATION = new RioSettingImpl<>(
+	public static final RioSetting<Boolean> INCLUDE_SOURCE_IN_LOCATION = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.include_source_in_location", "Include Source in Location",
 			Boolean.TRUE);
 
@@ -109,7 +109,7 @@ public class JSONSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> STRICT_DUPLICATE_DETECTION = new RioSettingImpl<>(
+	public static final RioSetting<Boolean> STRICT_DUPLICATE_DETECTION = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.json.strict_duplicate_detection", "Strict duplicate detection",
 			Boolean.FALSE);
 

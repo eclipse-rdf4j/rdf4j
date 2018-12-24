@@ -120,7 +120,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> VERIFY_DATATYPE_VALUES = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> VERIFY_DATATYPE_VALUES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.verifydatatypevalues", "Verify recognised datatype values", Boolean.FALSE);
 
 	/**
@@ -130,7 +130,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> FAIL_ON_UNKNOWN_DATATYPES = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> FAIL_ON_UNKNOWN_DATATYPES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.failonunknowndatatypes", "Fail on unknown datatypes", Boolean.FALSE);
 
 	/**
@@ -141,7 +141,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> NORMALIZE_DATATYPE_VALUES = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> NORMALIZE_DATATYPE_VALUES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.normalizedatatypevalues", "Normalize recognised datatype values",
 			Boolean.FALSE);
 
@@ -161,7 +161,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> FAIL_ON_UNKNOWN_LANGUAGES = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> FAIL_ON_UNKNOWN_LANGUAGES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.failonunknownlanguages", "Fail on unknown languages", Boolean.FALSE);
 
 	/**
@@ -172,7 +172,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 */
-	public static final RioSetting<Boolean> VERIFY_LANGUAGE_TAGS = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> VERIFY_LANGUAGE_TAGS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.verifylanguagevalues", "Verify language tags", Boolean.TRUE);
 
 	/**
@@ -183,7 +183,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> NORMALIZE_LANGUAGE_TAGS = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> NORMALIZE_LANGUAGE_TAGS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.normalizelanguagevalues", "Normalize recognised language tags",
 			Boolean.FALSE);
 
@@ -200,7 +200,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 */
-	public static final RioSetting<Boolean> VERIFY_RELATIVE_URIS = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> VERIFY_RELATIVE_URIS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.verifyrelativeuris", "Verify relative URIs", Boolean.TRUE);
 
 	/**
@@ -209,7 +209,7 @@ public class BasicParserSettings {
 	 * Defaults to {@code true}. If set to {@code false}, the parser will report syntactically illegal URIs to
 	 * the {@link RDFHandler}.
 	 */
-	public static final RioSetting<Boolean> VERIFY_URI_SYNTAX = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> VERIFY_URI_SYNTAX = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.verifyurisyntax", "Verify URI syntax", Boolean.TRUE);
 
 	/**
@@ -219,7 +219,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> PRESERVE_BNODE_IDS = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> PRESERVE_BNODE_IDS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.preservebnodeids", "Preserve blank node identifiers", Boolean.FALSE);
 
 	/**
@@ -229,7 +229,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Defaults to null (disabled).
 	 */
-	public static final RioSetting<String> SKOLEMIZE_ORIGIN = new RioSettingImpl<String>(
+	public static final RioSetting<String> SKOLEMIZE_ORIGIN = new StringRioSetting(
 			"org.eclipse.rdf4j.rio.skolemorigin",
 			"Replace blank nodes with well known genid IRIs using this scheme and authority", null);
 
@@ -256,7 +256,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Defaults to 1048576 bytes, which is equivalent to 1 megabyte.
 	 */
-	public static final RioSetting<Long> LARGE_LITERALS_LIMIT = new RioSettingImpl<Long>(
+	public static final RioSetting<Long> LARGE_LITERALS_LIMIT = new LongRioSetting(
 			"org.eclipse.rdf4j.rio.largeliteralslimit", "Size limit for large literals", 1048576L);
 
 	/**

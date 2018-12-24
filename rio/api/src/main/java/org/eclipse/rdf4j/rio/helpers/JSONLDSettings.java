@@ -25,7 +25,7 @@ public class JSONLDSettings {
 	 * 
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 */
-	public static final RioSetting<Boolean> COMPACT_ARRAYS = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> COMPACT_ARRAYS =  new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.jsonld.compactarrays", "Compact arrays", Boolean.TRUE);
 
 	/**
@@ -37,7 +37,7 @@ public class JSONLDSettings {
 	 * 
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 */
-	public static final RioSetting<Boolean> OPTIMIZE = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> OPTIMIZE =  new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.jsonld.optimize", "Optimize output", Boolean.FALSE);
 
 	/**
@@ -49,7 +49,7 @@ public class JSONLDSettings {
 	 * 
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 */
-	public static final RioSetting<Boolean> USE_NATIVE_TYPES = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> USE_NATIVE_TYPES =  new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.jsonld.usenativetypes", "Use Native JSON Types", Boolean.FALSE);
 
 	/**
@@ -60,7 +60,7 @@ public class JSONLDSettings {
 	 * 
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 */
-	public static final RioSetting<Boolean> USE_RDF_TYPE = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> USE_RDF_TYPE =  new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.jsonld.userdftype", "Use RDF Type", Boolean.FALSE);
 
 	/**
@@ -78,7 +78,7 @@ public class JSONLDSettings {
 	 * <p>
 	 * Default to false
 	 */
-	public static final RioSetting<Boolean> HIERARCHICAL_VIEW = new RioSettingImpl<>(
+	public static final RioSetting<Boolean> HIERARCHICAL_VIEW =  new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.jsonld.hierarchicalview", "Hierarchical representation of the JSON", Boolean.FALSE);
 
 	/**

@@ -22,7 +22,7 @@ public class NTriplesParserSettings {
 	 * <p>
 	 * Defaults to true.
 	 */
-	public static final RioSetting<Boolean> FAIL_ON_NTRIPLES_INVALID_LINES = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> FAIL_ON_NTRIPLES_INVALID_LINES =  new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.failonntriplesinvalidlines", "Fail on N-Triples invalid lines",
 			Boolean.TRUE);
 

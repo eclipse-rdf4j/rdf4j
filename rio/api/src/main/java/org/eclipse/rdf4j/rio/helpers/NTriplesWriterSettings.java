@@ -21,7 +21,7 @@ public class NTriplesWriterSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> ESCAPE_UNICODE = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> ESCAPE_UNICODE =  new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.escapeunicode", "Escape Unicode characters", Boolean.FALSE);
 
 	/**

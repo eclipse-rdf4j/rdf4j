@@ -22,7 +22,7 @@ public class TurtleParserSettings {
 	 * <p>
 	 * Defaults to false.
 	 */
-	public static final RioSetting<Boolean> CASE_INSENSITIVE_DIRECTIVES = new RioSettingImpl<Boolean>(
+	public static final RioSetting<Boolean> CASE_INSENSITIVE_DIRECTIVES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.turtle.caseinsensitivedirectives",
 			"Allows case-insensitive directives to be recognised", Boolean.FALSE);
 
