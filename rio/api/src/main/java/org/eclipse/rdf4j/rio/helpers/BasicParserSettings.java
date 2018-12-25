@@ -121,7 +121,7 @@ public class BasicParserSettings {
 	 * Defaults to false.
 	 */
 	public static final RioSetting<Boolean> VERIFY_DATATYPE_VALUES = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.verifydatatypevalues", "Verify recognised datatype values", Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.verify_datatype_values", "Verify recognised datatype values", Boolean.FALSE);
 
 	/**
 	 * Boolean setting for parser to determine whether to fail parsing if datatypes are not recognised.
@@ -131,7 +131,7 @@ public class BasicParserSettings {
 	 * Defaults to false.
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_UNKNOWN_DATATYPES = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.failonunknowndatatypes", "Fail on unknown datatypes", Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.fail_on_unknown_datatypes", "Fail on unknown datatypes", Boolean.FALSE);
 
 	/**
 	 * Boolean setting for parser to determine whether recognised datatypes need to have their values be
@@ -142,7 +142,7 @@ public class BasicParserSettings {
 	 * Defaults to false.
 	 */
 	public static final RioSetting<Boolean> NORMALIZE_DATATYPE_VALUES = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.normalizedatatypevalues", "Normalize recognised datatype values",
+			"org.eclipse.rdf4j.rio.normalize_datatype_values", "Normalize recognised datatype values",
 			Boolean.FALSE);
 
 	/**
@@ -162,7 +162,7 @@ public class BasicParserSettings {
 	 * Defaults to false.
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_UNKNOWN_LANGUAGES = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.failonunknownlanguages", "Fail on unknown languages", Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.fail_on_unknown_languages", "Fail on unknown languages", Boolean.FALSE);
 
 	/**
 	 * Boolean setting for parser to determine whether languages are to be verified based on a given set of
@@ -173,7 +173,7 @@ public class BasicParserSettings {
 	 * Defaults to true.
 	 */
 	public static final RioSetting<Boolean> VERIFY_LANGUAGE_TAGS = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.verifylanguagevalues", "Verify language tags", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.verify_language_values", "Verify language tags", Boolean.TRUE);
 
 	/**
 	 * Boolean setting for parser to determine whether languages need to be normalized, and to which format
@@ -184,7 +184,7 @@ public class BasicParserSettings {
 	 * Defaults to false.
 	 */
 	public static final RioSetting<Boolean> NORMALIZE_LANGUAGE_TAGS = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.normalizelanguagevalues", "Normalize recognised language tags",
+			"org.eclipse.rdf4j.rio.normalize_language_values", "Normalize recognised language tags",
 			Boolean.FALSE);
 
 	/**
@@ -201,7 +201,7 @@ public class BasicParserSettings {
 	 * Defaults to true.
 	 */
 	public static final RioSetting<Boolean> VERIFY_RELATIVE_URIS = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.verifyrelativeuris", "Verify relative URIs", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.verify_relative_uris", "Verify relative URIs", Boolean.TRUE);
 
 	/**
 	 * Boolean setting for parser to determine if URIs should be verified to contain only legal characters.
@@ -210,7 +210,7 @@ public class BasicParserSettings {
 	 * the {@link RDFHandler}.
 	 */
 	public static final RioSetting<Boolean> VERIFY_URI_SYNTAX = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.verifyurisyntax", "Verify URI syntax", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.verify_uri_syntax", "Verify URI syntax", Boolean.TRUE);
 
 	/**
 	 * Boolean setting for parser to determine whether parser should attempt to preserve identifiers for blank
@@ -220,7 +220,7 @@ public class BasicParserSettings {
 	 * Defaults to false.
 	 */
 	public static final RioSetting<Boolean> PRESERVE_BNODE_IDS = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.preservebnodeids", "Preserve blank node identifiers", Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.preserve_bnode_ids", "Preserve blank node identifiers", Boolean.FALSE);
 
 	/**
 	 * Scheme and authority of new mint Skolem IRIs that should replace Blank Nodes. For example a value of
@@ -230,7 +230,7 @@ public class BasicParserSettings {
 	 * Defaults to null (disabled).
 	 */
 	public static final RioSetting<String> SKOLEMIZE_ORIGIN = new StringRioSetting(
-			"org.eclipse.rdf4j.rio.skolemorigin",
+			"org.eclipse.rdf4j.rio.skolem_origin",
 			"Replace blank nodes with well known genid IRIs using this scheme and authority", null);
 
 	/**
@@ -241,7 +241,7 @@ public class BasicParserSettings {
 	 * Defaults to {@link LargeLiteralHandling#PRESERVE}.
 	 */
 	public static final RioSetting<LargeLiteralHandling> LARGE_LITERALS_HANDLING = new RioSettingImpl<LargeLiteralHandling>(
-			"org.eclipse.rdf4j.rio.largeliterals", "Large literals handling", LargeLiteralHandling.PRESERVE);
+			"org.eclipse.rdf4j.rio.large_literals", "Large literals handling", LargeLiteralHandling.PRESERVE);
 
 	/**
 	 * If {@link #LARGE_LITERALS_HANDLING} is set to {@link LargeLiteralHandling#PRESERVE}, which it is by
@@ -257,7 +257,7 @@ public class BasicParserSettings {
 	 * Defaults to 1048576 bytes, which is equivalent to 1 megabyte.
 	 */
 	public static final RioSetting<Long> LARGE_LITERALS_LIMIT = new LongRioSetting(
-			"org.eclipse.rdf4j.rio.largeliteralslimit", "Size limit for large literals", 1048576L);
+			"org.eclipse.rdf4j.rio.large_literals_limit", "Size limit for large literals", 1048576L);
 
 	/**
 	 * <p>
@@ -297,7 +297,7 @@ public class BasicParserSettings {
 			log.warn("Found an error loading DatatypeHandler services", e);
 		}
 
-		DATATYPE_HANDLERS = new RioSettingImpl<>("org.eclipse.rdf4j.rio.datatypehandlers",
+		DATATYPE_HANDLERS = new RioSettingImpl<>("org.eclipse.rdf4j.rio.datatype_handlers",
 				"Datatype Handlers", Collections.unmodifiableList(defaultDatatypeHandlers));
 
 		List<LanguageHandler> defaultLanguageHandlers = new ArrayList<>(1);
@@ -320,7 +320,7 @@ public class BasicParserSettings {
 			log.warn("Found an error loading LanguageHandler services", e);
 		}
 
-		LANGUAGE_HANDLERS = new RioSettingImpl<>("org.eclipse.rdf4j.rio.languagehandlers",
+		LANGUAGE_HANDLERS = new RioSettingImpl<>("org.eclipse.rdf4j.rio.language_handlers",
 				"Language Handlers", Collections.unmodifiableList(defaultLanguageHandlers));
 	}
 

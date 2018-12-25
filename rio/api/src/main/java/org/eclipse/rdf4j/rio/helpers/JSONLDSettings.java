@@ -26,7 +26,7 @@ public class JSONLDSettings {
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 */
 	public static final RioSetting<Boolean> COMPACT_ARRAYS =  new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.jsonld.compactarrays", "Compact arrays", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.jsonld.compact_arrays", "Compact arrays", Boolean.TRUE);
 
 	/**
 	 * If set to true, the JSON-LD processor is allowed to optimize the output of the
@@ -50,7 +50,7 @@ public class JSONLDSettings {
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 */
 	public static final RioSetting<Boolean> USE_NATIVE_TYPES =  new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.jsonld.usenativetypes", "Use Native JSON Types", Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.jsonld.use_native_types", "Use Native JSON Types", Boolean.FALSE);
 
 	/**
 	 * If set to true, the JSON-LD processor will use the expanded rdf:type IRI as the property instead
@@ -61,7 +61,7 @@ public class JSONLDSettings {
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 */
 	public static final RioSetting<Boolean> USE_RDF_TYPE =  new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.jsonld.userdftype", "Use RDF Type", Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.jsonld.use_rdf_type", "Use RDF Type", Boolean.FALSE);
 
 	/**
 	 * The {@link JSONLDMode} that the writer will use to reorganise the JSONLD document after it is created.
@@ -71,7 +71,7 @@ public class JSONLDSettings {
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#features">JSONLD Features</a>
 	 */
 	public static final RioSetting<JSONLDMode> JSONLD_MODE = new RioSettingImpl<JSONLDMode>(
-			"org.eclipse.rdf4j.rio.jsonld.mode", "JSONLD Mode", JSONLDMode.EXPAND);
+			"org.eclipse.rdf4j.rio.jsonld_mode", "JSONLD Mode", JSONLDMode.EXPAND);
 
 	/**
 	 * If set to true, the JSON-LD processor will try to represent the JSON-LD object in a hierarchical view.
@@ -79,7 +79,7 @@ public class JSONLDSettings {
 	 * Default to false
 	 */
 	public static final RioSetting<Boolean> HIERARCHICAL_VIEW =  new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.jsonld.hierarchicalview", "Hierarchical representation of the JSON", Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.jsonld.hierarchical_view", "Hierarchical representation of the JSON", Boolean.FALSE);
 
 	/**
 	 * Private default constructor.

@@ -28,7 +28,7 @@ public class XMLWriterSettings {
 	 *      specification</a>
 	 */
 	public static final RioSetting<Boolean> INCLUDE_XML_PI = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.includexmlpi", "Include XML Processing Instruction", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.include_xml_pi", "Include XML Processing Instruction", Boolean.TRUE);
 
 	/**
 	 * Boolean setting for RDF/XML Writer to determine whether the rdf:RDF root tag is to be written. The tag
@@ -40,7 +40,7 @@ public class XMLWriterSettings {
 	 *      specification</a>
 	 */
 	public static final RioSetting<Boolean> INCLUDE_ROOT_RDF_TAG = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.includerootrdftag", "Include Root RDF Tag", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.include_root_rdf_tag", "Include Root RDF Tag", Boolean.TRUE);
 
 	/**
 	 * Private default constructor.

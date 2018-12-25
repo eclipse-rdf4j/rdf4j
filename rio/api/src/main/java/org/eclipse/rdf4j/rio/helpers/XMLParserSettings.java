@@ -100,7 +100,7 @@ public final class XMLParserSettings {
 	 * Defaults to true
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_SAX_NON_FATAL_ERRORS = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.failonsaxnonfatalerrors", "Fail on SAX non-fatal errors", true);
+			"org.eclipse.rdf4j.rio.fail_on_sax_non_fatal_errors", "Fail on SAX non-fatal errors", true);
 
 	/**
 	 * Parser setting to determine whether to ignore non-standard attributes that are found in an XML document.
@@ -108,7 +108,7 @@ public final class XMLParserSettings {
 	 * Defaults to true
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_NON_STANDARD_ATTRIBUTES = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.failonnonstandardattributes", "Fail on non-standard attributes", true);
+			"org.eclipse.rdf4j.rio.fail_on_non_standard_attributes", "Fail on non-standard attributes", true);
 
 	/**
 	 * Parser setting to determine whether to ignore XML documents containing invalid NCNAMEs.
@@ -116,7 +116,7 @@ public final class XMLParserSettings {
 	 * Defaults to true
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_INVALID_NCNAME = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.failoninvalidncname", "Fail on invalid NCName", true);
+			"org.eclipse.rdf4j.rio.fail_on_invalid_ncname", "Fail on invalid NCName", true);
 
 	/**
 	 * Parser setting to determine whether to throw an error for duplicate uses of rdf:ID in a single document.
@@ -124,7 +124,7 @@ public final class XMLParserSettings {
 	 * Defaults to true
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_DUPLICATE_RDF_ID = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.failonduplicaterdfid", "Fail on duplicate RDF ID", true);
+			"org.eclipse.rdf4j.rio.fail_on_duplicate_rdf_id", "Fail on duplicate RDF ID", true);
 
 	/**
 	 * Parser setting to determine whether to ignore XML documents containing invalid QNAMEs.
@@ -132,7 +132,7 @@ public final class XMLParserSettings {
 	 * Defaults to true
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_INVALID_QNAME = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.failoninvalidqname", "Fail on invalid QName", true);
+			"org.eclipse.rdf4j.rio.fail_on_invalid_qname", "Fail on invalid QName", true);
 
 	/**
 	 * Parser setting to determine whether to throw an error for XML documents containing mismatched tags
@@ -140,7 +140,7 @@ public final class XMLParserSettings {
 	 * Defaults to true
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_MISMATCHED_TAGS = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.failonmismatchedtags", "Fail on mismatched tags", true);
+			"org.eclipse.rdf4j.rio.fail_on_mismatched_tags", "Fail on mismatched tags", true);
 
 	/**
 	 * Flag indicating whether the parser parses stand-alone RDF documents. In stand-alone documents, the
@@ -149,7 +149,7 @@ public final class XMLParserSettings {
 	 * Defaults to true
 	 */
 	public static final RioSetting<Boolean> PARSE_STANDALONE_DOCUMENTS = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.parsestandalonedocuments", "Parse standalone documents", true);
+			"org.eclipse.rdf4j.rio.parse_standalone_documents", "Parse standalone documents", true);
 
 	/**
 	 * Private constructor

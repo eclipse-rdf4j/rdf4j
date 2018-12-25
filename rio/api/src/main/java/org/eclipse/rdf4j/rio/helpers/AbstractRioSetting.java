@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
+import java.util.Objects;
+
 import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
@@ -45,18 +47,12 @@ public abstract class AbstractRioSetting<T> implements RioSetting<T> {
 	 * @param description
 	 *        A short human-readable description for this setting.
 	 * @param defaultValue
-	 *        An immutable value specifying the default for this setting. This can be optionally be overriden by means of an
-	 *        environment variable with a name equal to the setting key.
+	 *        An immutable value specifying the default for this setting. This can be optionally be overriden by
+	 *        means of a system property with a name equal to the setting key.
 	 */
 	public AbstractRioSetting(String key, String description, T defaultValue) {
-
-		if (key == null) {
-			throw new NullPointerException("Setting key cannot be null");
-		}
-
-		if (description == null) {
-			throw new NullPointerException("Setting description cannot be null");
-		}
+		Objects.requireNonNull(key, "Setting key cannot be null");
+		Objects.requireNonNull(description, "Setting description cannot be null");
 
 		this.key = key;
 		this.description = description;
@@ -79,9 +75,9 @@ public abstract class AbstractRioSetting<T> implements RioSetting<T> {
 	}
 
 	/**
-	 * Determines the default value for this {@link RioSetting}. If an environment variable with the setting {@link #getKey() key} is
-	 * specified, that property value is taken as the default and converted to the correct type. Otherwise, the
-	 * argument-supplied value is used.
+	 * Determines the default value for this {@link RioSetting}. If a system property with the setting
+	 * {@link #getKey() key} is specified, that property value is taken as the default and converted to the
+	 * correct type. Otherwise, the argument-supplied value is used.
 	 * 
 	 * @param suppliedDefaultValue
 	 *        the argument-supplied default value.

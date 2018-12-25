@@ -22,7 +22,7 @@ public class BasicWriterSettings {
 	 * Defaults to true
 	 */
 	public static final RioSetting<Boolean> PRETTY_PRINT = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.prettyprint", "Pretty print", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.pretty_print", "Pretty print", Boolean.TRUE);
 
 	/**
 	 * Inline blanks nodes by their value and don't write any blank node labels when this setting is true.
@@ -37,7 +37,7 @@ public class BasicWriterSettings {
 	 * @since 2.3
 	 */
 	public static final RioSetting<Boolean> INLINE_BLANK_NODES =  new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.inlineblanknodes",
+			"org.eclipse.rdf4j.rio.inline_blank_nodes",
 			"Use blank node property lists, collections, and anonymous nodes instead of blank node labels",
 			Boolean.FALSE);
 
@@ -51,7 +51,7 @@ public class BasicWriterSettings {
 	 * Defaults to true to allow for backwards compatibility without enforcing it.
 	 */
 	public static final RioSetting<Boolean> XSD_STRING_TO_PLAIN_LITERAL =  new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.rdf10plainliterals", "RDF-1.0 compatible Plain Literals", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.rdf10_plain_literals", "RDF-1.0 compatible Plain Literals", Boolean.TRUE);
 
 	/**
 	 * Boolean setting for writer to determine whether it should omit the rdf:langString datatype from
@@ -70,7 +70,7 @@ public class BasicWriterSettings {
 	 * Defaults to true as rdf:langString was not previously used, and should not be commonly required.
 	 */
 	public static final RioSetting<Boolean> RDF_LANGSTRING_TO_LANG_LITERAL =  new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.rdf10languageliterals", "RDF-1.0 compatible Language Literals",
+			"org.eclipse.rdf4j.rio.rdf10_language_literals", "RDF-1.0 compatible Language Literals",
 			Boolean.TRUE);
 
 	/**
@@ -79,7 +79,7 @@ public class BasicWriterSettings {
 	 * Defaults to true
 	 */
 	public static final RioSetting<Boolean> BASE_DIRECTIVE = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.basedirective", "Serialize base directive", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.base_directive", "Serialize base directive", Boolean.TRUE);
 
 	/**
 	 * Private default constructor.

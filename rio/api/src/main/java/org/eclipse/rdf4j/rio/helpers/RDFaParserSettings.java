@@ -35,7 +35,7 @@ public class RDFaParserSettings {
 	 *      Expansion</a>
 	 */
 	public static final RioSetting<Boolean> VOCAB_EXPANSION_ENABLED =  new BooleanRioSetting(
-			"http://www.w3.org/TR/2012/REC-rdfa-core-20120607/#s_vocab_expansion", "Vocabulary Expansion",
+			"org.eclipse.rdf4j.rio.rdfa.vocab_expansion", "Vocabulary Expansion",
 			Boolean.FALSE);
 
 	/**
@@ -48,7 +48,7 @@ public class RDFaParserSettings {
 	 */
 	@Deprecated
 	public static final RioSetting<Boolean> FAIL_ON_RDFA_UNDEFINED_PREFIXES =  new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.allowrdfaundefinedprefixes", "Allow RDFa Undefined Prefixes",
+			"org.eclipse.rdf4j.rio.allow_rdfa_undefined_prefixes", "Allow RDFa Undefined Prefixes",
 			Boolean.FALSE);
 
 	/**

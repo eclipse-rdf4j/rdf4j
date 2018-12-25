@@ -22,7 +22,7 @@ public class TriXParserSettings {
 	 * Defaults to true.
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_TRIX_MISSING_DATATYPE =  new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.ignoretrixmissingdatatype", "Ignore TriX missing datatype", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.ignore_trix_missing_datatype", "Ignore TriX missing datatype", Boolean.TRUE);
 
 	/**
 	 * Boolean setting for parser to determine whether invalid statements are ignored in TriX.
@@ -30,7 +30,7 @@ public class TriXParserSettings {
 	 * Defaults to true.
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_TRIX_INVALID_STATEMENT =  new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.ignoretrixmissingdatatype", "Ignore TriX missing datatype", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.ignore_trix_invalid_statement", "Ignore TriX invalid statement", Boolean.TRUE);
 
 	/**
 	 * Private constructor
