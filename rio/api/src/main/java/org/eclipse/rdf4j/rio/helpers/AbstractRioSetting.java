@@ -47,8 +47,8 @@ public abstract class AbstractRioSetting<T> implements RioSetting<T> {
 	 * @param description
 	 *        A short human-readable description for this setting.
 	 * @param defaultValue
-	 *        An immutable value specifying the default for this setting. This can be optionally be overriden by
-	 *        means of a system property with a name equal to the setting key.
+	 *        An immutable value specifying the default for this setting. This can be optionally be overridden
+	 *        by a system property with a name equal to the setting's unique key.
 	 */
 	public AbstractRioSetting(String key, String description, T defaultValue) {
 		Objects.requireNonNull(key, "Setting key cannot be null");
@@ -72,6 +72,20 @@ public abstract class AbstractRioSetting<T> implements RioSetting<T> {
 	@Override
 	public T getDefaultValue() {
 		return defaultValue;
+	}
+
+	@Override
+	public boolean equals(Object other) {
+		if (other instanceof RioSetting<?>) {
+			RioSetting<?> that = (RioSetting<?>)other;
+			return that.getKey().equals(this.getKey());
+		}
+		return false;
+	}
+
+	@Override
+	public int hashCode() {
+		return getKey().hashCode();
 	}
 
 	/**
