@@ -28,7 +28,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A class encapsulating the basic parser settings that most parsers may support.
+ * A class encapsulating the basic parser settings that most parsers may support. 
+ * <p>
+ * Several of these settings can be overridden by means of a system property, but only if specified at JVM startup time. 
  * 
  * @author Peter Ansell
  */
@@ -68,7 +70,7 @@ public class BasicParserSettings {
 		aNamespaces.add(new SimpleNamespace("skosxl", "http://www.w3.org/2008/05/skos-xl#"));
 		aNamespaces.add(new SimpleNamespace("ssn", "http://www.w3.org/ns/ssn/"));
 		aNamespaces.add(new SimpleNamespace("sosa", "http://www.w3.org/ns/sosa/"));
-		aNamespaces.add(new SimpleNamespace("time", "http://www.w3.org/2006/time#"));		
+		aNamespaces.add(new SimpleNamespace("time", "http://www.w3.org/2006/time#"));
 		aNamespaces.add(new SimpleNamespace("void", "http://rdfs.org/ns/void#"));
 		aNamespaces.add(new SimpleNamespace("wdr", "http://www.w3.org/2007/05/powder#"));
 		aNamespaces.add(new SimpleNamespace("wdrs", "http://www.w3.org/2007/05/powder-s#"));
@@ -79,7 +81,7 @@ public class BasicParserSettings {
 		// Some vocabularies are currently in development at W3C
 		aNamespaces.add(new SimpleNamespace("earl", "http://www.w3.org/ns/earl#"));
 		aNamespaces.add(new SimpleNamespace("odrl", "http://www.w3.org/ns/odrl/2/"));
-		
+
 		// Widely used Vocabulary prefixes based on the vocabulary usage on the Semantic Web
 		aNamespaces.add(new SimpleNamespace("cc", "http://creativecommons.org/ns#"));
 		aNamespaces.add(new SimpleNamespace("ctag", "http://commontag.org/ns#"));
@@ -94,12 +96,12 @@ public class BasicParserSettings {
 		aNamespaces.add(new SimpleNamespace("sioc", "http://rdfs.org/sioc/ns#"));
 		aNamespaces.add(new SimpleNamespace("v", "http://rdf.data-vocabulary.org/#"));
 		aNamespaces.add(new SimpleNamespace("vcard", "http://www.w3.org/2006/vcard/ns#"));
-		aNamespaces.add(new SimpleNamespace("schema", "http://schema.org/"));		
+		aNamespaces.add(new SimpleNamespace("schema", "http://schema.org/"));
 
 		// Terms defined by W3C Documents
 		aNamespaces.add(new SimpleNamespace("describedby", "http://www.w3.org/2007/05/powder-s#describedby"));
 		aNamespaces.add(new SimpleNamespace("license", "http://www.w3.org/1999/xhtml/vocab#license"));
-		aNamespaces.add(new SimpleNamespace("role", "http://www.w3.org/1999/xhtml/vocab#role"));	
+		aNamespaces.add(new SimpleNamespace("role", "http://www.w3.org/1999/xhtml/vocab#role"));
 
 		// JSON-LD Context
 		aNamespaces.add(new SimpleNamespace("cat", "http://www.w3.org/ns/dcat#"));
@@ -119,6 +121,8 @@ public class BasicParserSettings {
 	 * Verification is performed using registered DatatypeHandlers.
 	 * <p>
 	 * Defaults to false.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.verify_datatype_values}.
 	 */
 	public static final RioSetting<Boolean> VERIFY_DATATYPE_VALUES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.verify_datatype_values", "Verify recognised datatype values", Boolean.FALSE);
@@ -129,6 +133,8 @@ public class BasicParserSettings {
 	 * Datatypes are recognised based on matching one of the registered {@link DatatypeHandler}s.
 	 * <p>
 	 * Defaults to false.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_unknown_datatypes}.
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_UNKNOWN_DATATYPES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.fail_on_unknown_datatypes", "Fail on unknown datatypes", Boolean.FALSE);
@@ -140,6 +146,8 @@ public class BasicParserSettings {
 	 * Normalization is performed using registered DatatypeHandlers.
 	 * <p>
 	 * Defaults to false.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.normalize_datatype_values}.
 	 */
 	public static final RioSetting<Boolean> NORMALIZE_DATATYPE_VALUES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.normalize_datatype_values", "Normalize recognised datatype values",
@@ -149,17 +157,19 @@ public class BasicParserSettings {
 	 * Setting used to specify which {@link DatatypeHandler} implementations are to be used for a given parser
 	 * configuration.
 	 * <p>
-	 * Defaults to an XMLSchema DatatypeHandler implementation based on {@link DatatypeHandler#XMLSCHEMA} and
-	 * an RDF DatatypeHandler implementation based on {@link DatatypeHandler#RDFDATATYPES}.
+	 * Defaults to an XMLSchema DatatypeHandler implementation based on {@link DatatypeHandler#XMLSCHEMA} and an
+	 * RDF DatatypeHandler implementation based on {@link DatatypeHandler#RDFDATATYPES}.
 	 */
 	public static final RioSetting<List<DatatypeHandler>> DATATYPE_HANDLERS;
 
 	/**
-	 * Boolean setting for parser to determine whether to fail parsing if languages are not recognised.
+	 * Boolean setting for parser to determine whether to fail parsing if languages are not recognized.
 	 * <p>
-	 * Languages are recognised based on matching one of the registered {@link LanguageHandler}s.
+	 * Languages are recognized based on matching one of the registered {@link LanguageHandler}s.
 	 * <p>
 	 * Defaults to false.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_unknown_languages}.
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_UNKNOWN_LANGUAGES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.fail_on_unknown_languages", "Fail on unknown languages", Boolean.FALSE);
@@ -171,21 +181,24 @@ public class BasicParserSettings {
 	 * Verification is performed using registered {@link LanguageHandler}s.
 	 * <p>
 	 * Defaults to true.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.verify_language_tags}.
 	 */
 	public static final RioSetting<Boolean> VERIFY_LANGUAGE_TAGS = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.verify_language_values", "Verify language tags", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.verify_language_tags", "Verify language tags", Boolean.TRUE);
 
 	/**
-	 * Boolean setting for parser to determine whether languages need to be normalized, and to which format
-	 * they should be normalised.
+	 * Boolean setting for parser to determine whether languages need to be normalized, and to which format they
+	 * should be normalized.
 	 * <p>
 	 * Normalization is performed using registered {@link LanguageHandler}s.
 	 * <p>
 	 * Defaults to false.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.normalize_language_tags}.
 	 */
 	public static final RioSetting<Boolean> NORMALIZE_LANGUAGE_TAGS = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.normalize_language_values", "Normalize recognised language tags",
-			Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.normalize_language_tags", "Normalize recognised language tags", Boolean.FALSE);
 
 	/**
 	 * Setting used to specify which {@link LanguageHandler} implementations are to be used for a given parser
@@ -198,7 +211,9 @@ public class BasicParserSettings {
 	/**
 	 * Boolean setting for parser to determine whether relative URIs are verified.
 	 * <p>
-	 * Defaults to true.
+	 * Defaults to true..
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.verify_relative_uris}.
 	 */
 	public static final RioSetting<Boolean> VERIFY_RELATIVE_URIS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.verify_relative_uris", "Verify relative URIs", Boolean.TRUE);
@@ -208,6 +223,8 @@ public class BasicParserSettings {
 	 * <p>
 	 * Defaults to {@code true}. If set to {@code false}, the parser will report syntactically illegal URIs to
 	 * the {@link RDFHandler}.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.verify_uri_syntax}.
 	 */
 	public static final RioSetting<Boolean> VERIFY_URI_SYNTAX = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.verify_uri_syntax", "Verify URI syntax", Boolean.TRUE);
@@ -218,6 +235,8 @@ public class BasicParserSettings {
 	 * for it.
 	 * <p>
 	 * Defaults to false.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.preserve_bnode_ids}.
 	 */
 	public static final RioSetting<Boolean> PRESERVE_BNODE_IDS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.preserve_bnode_ids", "Preserve blank node identifiers", Boolean.FALSE);
@@ -228,6 +247,8 @@ public class BasicParserSettings {
 	 * "http://example.com/.well-known/genid/d26a2d0e98334696f4ad70a677abc1f6"
 	 * <p>
 	 * Defaults to null (disabled).
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.skolem_origin}.
 	 */
 	public static final RioSetting<String> SKOLEMIZE_ORIGIN = new StringRioSetting(
 			"org.eclipse.rdf4j.rio.skolem_origin",
@@ -247,14 +268,16 @@ public class BasicParserSettings {
 	 * If {@link #LARGE_LITERALS_HANDLING} is set to {@link LargeLiteralHandling#PRESERVE}, which it is by
 	 * default, then the value of this setting is not used.
 	 * <p>
-	 * If {@link #LARGE_LITERALS_HANDLING} is set to {@link LargeLiteralHandling#DROP} , then the value of
-	 * this setting corresponds to the maximum number of bytes for a literal before the statement it is a part
-	 * of is dropped silently by the parser.
+	 * If {@link #LARGE_LITERALS_HANDLING} is set to {@link LargeLiteralHandling#DROP} , then the value of this
+	 * setting corresponds to the maximum number of bytes for a literal before the statement it is a part of is
+	 * dropped silently by the parser.
 	 * <p>
 	 * If {@link #LARGE_LITERALS_HANDLING} is set to {@link LargeLiteralHandling#TRUNCATE} , then the value of
 	 * this setting corresponds to the maximum number of bytes for a literal before the value is truncated.
 	 * <p>
 	 * Defaults to 1048576 bytes, which is equivalent to 1 megabyte.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.large_literals_limit}.
 	 */
 	public static final RioSetting<Long> LARGE_LITERALS_LIMIT = new LongRioSetting(
 			"org.eclipse.rdf4j.rio.large_literals_limit", "Size limit for large literals", 1048576L);
@@ -297,8 +320,8 @@ public class BasicParserSettings {
 			log.warn("Found an error loading DatatypeHandler services", e);
 		}
 
-		DATATYPE_HANDLERS = new RioSettingImpl<>("org.eclipse.rdf4j.rio.datatype_handlers",
-				"Datatype Handlers", Collections.unmodifiableList(defaultDatatypeHandlers));
+		DATATYPE_HANDLERS = new RioSettingImpl<>("org.eclipse.rdf4j.rio.datatype_handlers", "Datatype Handlers",
+				Collections.unmodifiableList(defaultDatatypeHandlers));
 
 		List<LanguageHandler> defaultLanguageHandlers = new ArrayList<>(1);
 		try {
@@ -320,8 +343,8 @@ public class BasicParserSettings {
 			log.warn("Found an error loading LanguageHandler services", e);
 		}
 
-		LANGUAGE_HANDLERS = new RioSettingImpl<>("org.eclipse.rdf4j.rio.language_handlers",
-				"Language Handlers", Collections.unmodifiableList(defaultLanguageHandlers));
+		LANGUAGE_HANDLERS = new RioSettingImpl<>("org.eclipse.rdf4j.rio.language_handlers", "Language Handlers",
+				Collections.unmodifiableList(defaultLanguageHandlers));
 	}
 
 	/**

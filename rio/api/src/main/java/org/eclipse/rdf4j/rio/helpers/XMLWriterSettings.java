@@ -12,6 +12,9 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * A class encapsulating writer settings that XML writers may support.
+ * <p>
+ * Several of these settings can be overridden by means of a system property, but only if specified at JVM
+ * startup time.
  * 
  * @author Peter Ansell
  */
@@ -23,6 +26,8 @@ public class XMLWriterSettings {
 	 * {@link RDFWriter#startRDF()} for the document to be valid XML.
 	 * <p>
 	 * Defaults to true.
+	 * <p>
+	 * Can be overridden by setting system property {@codeorg.eclipse.rdf4j.rio.include_xml_pi}
 	 * 
 	 * @see <a href="http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-complete-document">RDF/XML
 	 *      specification</a>
@@ -31,10 +36,12 @@ public class XMLWriterSettings {
 			"org.eclipse.rdf4j.rio.include_xml_pi", "Include XML Processing Instruction", Boolean.TRUE);
 
 	/**
-	 * Boolean setting for RDF/XML Writer to determine whether the rdf:RDF root tag is to be written. The tag
-	 * is optional in the RDF/XML specification, but a standalone RDF/XML document typically includes it.
+	 * Boolean setting for RDF/XML Writer to determine whether the rdf:RDF root tag is to be written. The tag is
+	 * optional in the RDF/XML specification, but a standalone RDF/XML document typically includes it.
 	 * <p>
 	 * Defaults to true.
+	 * <p>
+	 * Can be overridden by setting system property {@codeorg.eclipse.rdf4j.rio.include_root_rdf_tag}
 	 * 
 	 * @see <a href="http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-complete-document">RDF/XML
 	 *      specification</a>

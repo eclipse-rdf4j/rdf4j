@@ -11,6 +11,9 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * WriterSettings for the N-Triples writer features.
+ * <p>
+ * Several of these settings can be overridden by means of a system property, but only if specified at JVM
+ * startup time.
  * 
  * @author Peter Ansell
  */
@@ -19,10 +22,12 @@ public class NTriplesWriterSettings {
 	/**
 	 * Boolean setting for writer to determine if unicode escapes are used.
 	 * <p>
-	 * Defaults to false.
+	 * Defaults to false. 
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.ntriples.escape_unicode}
 	 */
-	public static final RioSetting<Boolean> ESCAPE_UNICODE =  new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.escape_unicode", "Escape Unicode characters", Boolean.FALSE);
+	public static final RioSetting<Boolean> ESCAPE_UNICODE = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.ntriples.escape_unicode", "Escape Unicode characters", Boolean.FALSE);
 
 	/**
 	 * Private constructor

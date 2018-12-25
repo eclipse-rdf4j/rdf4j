@@ -11,16 +11,22 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * Parser Settings that are specific to {@link org.eclipse.rdf4j.rio.RDFFormat#TURTLE} parsers.
+ * <p>
+ * Several of these settings can be overridden by means of a system property, but only if specified at JVM
+ * startup time.
  * 
  * @author Peter Ansell
  */
 public class TurtleParserSettings {
 
 	/**
-	 * Allows the Turtle parser to recognise <tt>@BASE</tt> and <tt>@PREFIX</tt> in a similar way to the
-	 * SPARQL case insensitive directives.
+	 * Allows the Turtle parser to recognize <tt>@BASE</tt> and <tt>@PREFIX</tt> in a similar way to the SPARQL
+	 * case insensitive directives.
 	 * <p>
 	 * Defaults to false.
+	 * <p>
+	 * Can be overridden by setting system property
+	 * {@code org.eclipse.rdf4j.rio.turtle.case_insensitive_directives}.
 	 */
 	public static final RioSetting<Boolean> CASE_INSENSITIVE_DIRECTIVES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.turtle.case_insensitive_directives",
