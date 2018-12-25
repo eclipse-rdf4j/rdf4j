@@ -111,7 +111,7 @@ public abstract class AbstractRioSetting<T> implements RioSetting<T> {
 	 * @param stringValue
 	 *        a string representation of the default value, typically supplied by means of a system property.
 	 * @return The corresponding object of type T for the supplied string value.
-	 * @throws UnsupportedOperationException
+	 * @throws RioConfigurationException
 	 *         if the setting type does not provide conversion from a string to the expected type.
 	 */
 	protected abstract T convert(String stringValue);

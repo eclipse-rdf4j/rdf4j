@@ -10,7 +10,8 @@ package org.eclipse.rdf4j.rio.helpers;
 import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
- * Basic implementation of {@link RioSetting} interface, without support for default override via system properties.
+ * Basic implementation of {@link RioSetting} interface, without support for default override via system
+ * properties.
  * 
  * @author Peter Ansell
  * @see StringRioSetting
@@ -25,10 +26,14 @@ public final class RioSettingImpl<T> extends AbstractRioSetting<T> {
 		super(key, description, defaultValue);
 	}
 
+	/**
+	 * @throws RioConfigurationException
+	 *         to indicate this setting can no be specified through a system property.
+	 */
 	@Override
 	protected T convert(String stringValue) {
-		throw new UnsupportedOperationException(
-				String.format("setting '%s' can not be specified through an environment variable", getKey()));
+		throw new RioConfigurationException(
+				String.format("setting '%s' can not be specified through a system property", getKey()));
 	}
 
 }
