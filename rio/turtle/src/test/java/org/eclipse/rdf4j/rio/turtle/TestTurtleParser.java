@@ -7,19 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.io.StringReader;
 import java.net.URL;
 import java.util.Collection;
 import java.util.Iterator;
+import org.assertj.core.api.AbstractBooleanAssert;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -32,8 +27,16 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.SimpleParseLocationListener;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+
 import org.junit.Before;
 import org.junit.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * @author jeen
@@ -41,11 +44,9 @@ import org.junit.Test;
 public class TestTurtleParser {
 
 	private TurtleParser parser;
-
 	private ValueFactory vf = SimpleValueFactory.getInstance();
 
 	private final ParseErrorCollector errorCollector = new ParseErrorCollector();
-
 	private final StatementCollector statementCollector = new StatementCollector();
 
 	private final String prefixes = "@prefix ex: <http://example.org/ex/> . \n@prefix : <http://example.org/> . \n";
@@ -58,9 +59,7 @@ public class TestTurtleParser {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() {
 		parser = new TurtleParser();
 		parser.setParseErrorListener(errorCollector);
 		parser.setRDFHandler(statementCollector);
@@ -68,10 +67,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testParseDots()
-		throws Exception
-	{
-
+	public void testParseDots() throws IOException {
 		String data = prefixes + " ex:foo.bar ex:\\~foo.bar ex:foobar. ";
 
 		parser.parse(new StringReader(data), baseURI);
@@ -89,9 +85,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testParseIllegalURIFatal()
-		throws Exception
-	{
+	public void testParseIllegalURIFatal() throws IOException {
 		String data = " <urn:foo_bar\\r> <urn:foo> <urn:bar> ; <urn:foo2> <urn:bar2> . <urn:foobar> <urn:food> <urn:barf> . ";
 
 		try {
@@ -104,9 +98,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testParseIllegalURINonFatal()
-		throws Exception
-	{
+	public void testParseIllegalURINonFatal() throws IOException {
 		String data = " <urn:foo_bar\\r> <urn:foo> <urn:bar> ; <urn:foo2> <urn:bar2> . <urn:foobar> <urn:food> <urn:barf> . ";
 
 		parser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_URI_SYNTAX);
@@ -119,9 +111,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testParseIllegalURINoVerify()
-		throws Exception
-	{
+	public void testParseIllegalURINoVerify() throws IOException {
 		String data = " <urn:foo_bar\\r> <urn:foo> <urn:bar> ; <urn:foo2> <urn:bar2> . <urn:foobar> <urn:food> <urn:barf> . ";
 
 		parser.getParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false);
@@ -135,8 +125,7 @@ public class TestTurtleParser {
 	}
 	
 	@Test
-	public void testUnparsableIRIFatal() throws Exception
-	{
+	public void testUnparsableIRIFatal() throws IOException {
 		// subject IRI is not processable by ParsedIRI
 		String data = " <http://www:example.org/> <urn:foo> <urn:bar> . ";
 
@@ -151,8 +140,7 @@ public class TestTurtleParser {
 	}
 	
 	@Test
-	public void testUnparsableIRINonFatal() throws Exception
-	{
+	public void testUnparsableIRINonFatal() throws IOException {
 		// subject IRI is not processable by ParsedIRI
 		String data = " <http://www:example.org/> <urn:foo> <urn:bar> . <urn:foo2> <urn:foo> <urn:bar> .";
 		parser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_URI_SYNTAX);
@@ -166,8 +154,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testUnparsableIRINoVerify() throws Exception
-	{
+	public void testUnparsableIRINoVerify() throws IOException {
 		// subject IRI is not processable by ParsedIRI
 		String data = " <http://www:example.org/> <urn:foo> <urn:bar> . <urn:foo2> <urn:foo> <urn:bar> .";
 		parser.getParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false);
@@ -182,9 +169,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testParseBNodes()
-		throws Exception
-	{
+	public void testParseBNodes() throws IOException {
 		String data = prefixes + " [ :p  :o1,:2 ] . ";
 
 		parser.parse(new StringReader(data), baseURI);
@@ -202,10 +187,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testLineNumberReporting()
-		throws Exception
-	{
-
+	public void testLineNumberReporting() throws IOException {
 		InputStream in = this.getClass().getResourceAsStream("/test-newlines.ttl");
 		try {
 			parser.parse(in, baseURI);
@@ -223,9 +205,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testLineNumberReportingNoErrorsSingleLine()
-		throws Exception
-	{
+	public void testLineNumberReportingNoErrorsSingleLine() throws IOException {
 		assertEquals(0, locationListener.getLineNo());
 		assertEquals(0, locationListener.getColumnNo());
 		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.");
@@ -235,9 +215,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testLineNumberReportingNoErrorsSingleLineEndNewline()
-		throws Exception
-	{
+	public void testLineNumberReportingNoErrorsSingleLineEndNewline() throws IOException {
 		assertEquals(0, locationListener.getLineNo());
 		assertEquals(0, locationListener.getColumnNo());
 		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.\n");
@@ -247,9 +225,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testLineNumberReportingNoErrorsMultipleLinesNoEndNewline()
-		throws Exception
-	{
+	public void testLineNumberReportingNoErrorsMultipleLinesNoEndNewline() throws IOException {
 		assertEquals(0, locationListener.getLineNo());
 		assertEquals(0, locationListener.getColumnNo());
 		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.\n<urn:a> <urn:b> <urn:d>.");
@@ -259,9 +235,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testLineNumberReportingNoErrorsMultipleLinesEndNewline()
-		throws Exception
-	{
+	public void testLineNumberReportingNoErrorsMultipleLinesEndNewline() throws IOException {
 		assertEquals(0, locationListener.getLineNo());
 		assertEquals(0, locationListener.getColumnNo());
 		Reader in = new StringReader("<urn:a> <urn:b> <urn:c>.\n<urn:a> <urn:b> <urn:d>.\n");
@@ -271,9 +245,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testLineNumberReportingOnlySingleCommentNoEndline()
-		throws Exception
-	{
+	public void testLineNumberReportingOnlySingleCommentNoEndline() throws IOException {
 		assertEquals(0, locationListener.getLineNo());
 		assertEquals(0, locationListener.getColumnNo());
 		Reader in = new StringReader("# This is just a comment");
@@ -283,9 +255,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testLineNumberReportingOnlySingleCommentEndline()
-		throws Exception
-	{
+	public void testLineNumberReportingOnlySingleCommentEndline() throws IOException {
 		assertEquals(0, locationListener.getLineNo());
 		assertEquals(0, locationListener.getColumnNo());
 		Reader in = new StringReader("# This is just a comment\n");
@@ -295,9 +265,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testLineNumberReportingOnlySingleCommentCarriageReturn()
-		throws Exception
-	{
+	public void testLineNumberReportingOnlySingleCommentCarriageReturn() throws IOException {
 		assertEquals(0, locationListener.getLineNo());
 		assertEquals(0, locationListener.getColumnNo());
 		Reader in = new StringReader("# This is just a comment\r");
@@ -307,9 +275,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testLineNumberReportingOnlySingleCommentCarriageReturnNewline()
-		throws Exception
-	{
+	public void testLineNumberReportingOnlySingleCommentCarriageReturnNewline() throws IOException {
 		assertEquals(0, locationListener.getLineNo());
 		assertEquals(0, locationListener.getColumnNo());
 		Reader in = new StringReader("# This is just a comment\r\n");
@@ -319,9 +285,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testParseBooleanLiteralComma()
-		throws Exception
-	{
+	public void testParseBooleanLiteralComma() throws IOException {
 		String data = "<urn:a> <urn:b> true, false .";
 		Reader r = new StringReader(data);
 
@@ -335,9 +299,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testParseBooleanLiteralWhitespaceComma()
-		throws Exception
-	{
+	public void testParseBooleanLiteralWhitespaceComma() throws IOException {
 		String data = "<urn:a> <urn:b> true , false .";
 		Reader r = new StringReader(data);
 
@@ -351,9 +313,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testParseBooleanLiteralSemicolumn()
-		throws Exception
-	{
+	public void testParseBooleanLiteralSemicolumn() throws IOException {
 		String data = "<urn:a> <urn:b> true; <urn:c> false .";
 		Reader r = new StringReader(data);
 
@@ -367,9 +327,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void testParseBooleanLiteralWhitespaceSemicolumn()
-		throws Exception
-	{
+	public void testParseBooleanLiteralWhitespaceSemicolumn() throws IOException {
 		String data = "<urn:a> <urn:b> true ; <urn:c> false .";
 		Reader r = new StringReader(data);
 
@@ -383,9 +341,7 @@ public class TestTurtleParser {
 	}
 
 	@Test
-	public void rdfXmlLoadedFromInsideAJarResolvesRelativeUris()
-		throws Exception
-	{
+	public void rdfXmlLoadedFromInsideAJarResolvesRelativeUris() throws IOException {
 		URL zipfileUrl = TestTurtleParser.class.getResource("sample-with-turtle-data.zip");
 
 		assertNotNull("The sample-with-turtle-data.zip file must be present for this test", zipfileUrl);
@@ -397,9 +353,9 @@ public class TestTurtleParser {
 		StatementCollector sc = new StatementCollector();
 		parser.setRDFHandler(sc);
 
-		InputStream in = new URL(url).openStream();
-		parser.parse(in, url);
-		in.close();
+	    try (InputStream in = new URL(url).openStream()) {
+			parser.parse(in, url);
+	    }
 
 		Collection<Statement> stmts = sc.getStatements();
 
@@ -421,12 +377,39 @@ public class TestTurtleParser {
 		URL javaUrl = new URL(resourceUrl);
 		assertEquals("jar", javaUrl.getProtocol());
 
-		InputStream uc = javaUrl.openStream();
-		assertEquals("The resource stream should be empty", -1, uc.read());
-		uc.close();
+		try (InputStream uc = javaUrl.openStream()) {
+			assertEquals("The resource stream should be empty", -1, uc.read());
+		}
 
 		assertEquals(res, stmt2.getSubject());
 		assertEquals(DC.TITLE, stmt2.getPredicate());
 		assertEquals(vf.createLiteral("Empty File"), stmt2.getObject());
 	}
+	
+	@Test
+	public void testIllegalNewlineInQuotedObjectLiteral() throws IOException {
+		String data = "<urn:a> <urn:b> \"not\nallowed\" .";
+		Reader r = new StringReader(data);
+
+		try {
+			parser.parse(r, baseURI);
+			fail("Did not catch illegal new line");
+		} catch (RDFParseException e) {
+			assertThat(e.getMessage().startsWith("Illegal carriage return or new line in literal"));
+		}
+	}
+
+	@Test
+	public void testLegalNewlineInTripleQuotedObjectLiteral() throws IOException {
+		String data = "<urn:a> <urn:b> \"\"\"is\nallowed\"\"\" .";
+		Reader r = new StringReader(data);
+
+		try {
+			parser.parse(r, baseURI);
+			assertTrue(statementCollector.getStatements().size() == 1);
+		} catch (RDFParseException e) {
+			fail("New line is legal inside triple quoted literal");
+		}
+	}
+	
 }

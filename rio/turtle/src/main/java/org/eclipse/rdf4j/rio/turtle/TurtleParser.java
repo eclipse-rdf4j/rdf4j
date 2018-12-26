@@ -463,16 +463,27 @@ public class TurtleParser extends AbstractRDFParser {
 		}
 	}
 
+	/**
+	 * Parse an object
+	 *
+	 * @throws IOException
+	 * @throws RDFParseException
+	 * @throws RDFHandlerException 
+	 */
 	protected void parseObject() throws IOException, RDFParseException, RDFHandlerException {
 		int c = peekCodePoint();
 
-		if (c == '(') {
-			object = parseCollection();
-		} else if (c == '[') {
-			object = parseImplicitBlank();
-		} else {
-			object = parseValue();
-			reportStatement(subject, predicate, object);
+		switch (c) {
+			case '(':
+				object = parseCollection();
+				break;
+			case '[':
+				object = parseImplicitBlank();
+				break;
+			default:
+				object = parseValue();
+				reportStatement(subject, predicate, object);
+				break;
 		}
 	}
 
@@ -682,6 +693,10 @@ public class TurtleParser extends AbstractRDFParser {
 	/**
 	 * Parses a quoted string, which is either a "normal string" or a """long
 	 * string""".
+	 * 
+	 * @return string
+	 * @throws IOException
+	 * @throws RDFParseException
 	 */
 	protected String parseQuotedString() throws IOException, RDFParseException {
 		String result = null;
@@ -719,6 +734,10 @@ public class TurtleParser extends AbstractRDFParser {
 	/**
 	 * Parses a "normal string". This method requires that the opening character
 	 * has already been parsed.
+	 * 
+	 * @return parsed string
+	 * @throws IOException
+	 * @throws RDFParseException
 	 */
 	protected String parseString(int closingCharacter) throws IOException, RDFParseException {
 		StringBuilder sb = getBuilder();
@@ -730,6 +749,10 @@ public class TurtleParser extends AbstractRDFParser {
 				break;
 			} else if (c == -1) {
 				throwEOFException();
+			}
+			
+			if (c == '\r' || c == '\n') {
+				reportFatalError("Illegal carriage return or new line in literal");
 			}
 
 			appendCodepoint(sb, c);
