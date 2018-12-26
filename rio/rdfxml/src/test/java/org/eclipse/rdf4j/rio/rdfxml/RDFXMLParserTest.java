@@ -132,9 +132,7 @@ public class RDFXMLParserTest {
 		PrintStream oldOut = System.out;
 		ByteArrayOutputStream tempOut = new ByteArrayOutputStream();
 		System.setOut(new PrintStream(tempOut));
-		
-		// configure parser to allow doctype declarations
-		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
+
 		try (final InputStream in = this.getClass().getResourceAsStream(
 				"/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-general-entity.rdf");)
 		{
@@ -179,6 +177,10 @@ public class RDFXMLParserTest {
 		PrintStream oldOut = System.out;
 		ByteArrayOutputStream tempOut = new ByteArrayOutputStream();
 		System.setOut(new PrintStream(tempOut));
+		
+		// configure parser to disallow doctype declarations
+		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, true);
+
 		try (final InputStream in = this.getClass().getResourceAsStream(
 				"/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-param-entity.rdf");)
 		{
