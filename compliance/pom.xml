@@ -13,7 +13,6 @@
 
 	<modules>
 		<module>server</module>
-		<module>sparql</module>
 	</modules>
 
 	<name>RDF4J compliance tests</name>
