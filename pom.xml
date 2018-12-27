@@ -144,6 +144,14 @@
 			</build>
 		</profile>
 		<profile>
+			<id>compliance</id>
+			<activation>
+				<property>
+					<name>!skipTests</name>
+				</property>
+			</activation>
+		</profile>
+		<profile>
 			<id>assembly</id>
 			<modules>
 				<module>assembly</module>
@@ -196,17 +204,6 @@
 				<skipITs>true</skipITs>
 				<maven.test.skip>true</maven.test.skip>
 			</properties>
-		</profile>
-		<profile>
-			<id>compliance</id>
-			<activation>
-				<property>
-					<name>!skipTests</name>
-				</property>
-			</activation>
-			<modules>
-				<module>compliance</module>
-			</modules>
 		</profile>
 		<profile>
 			<id>doclint-java8-disable</id>
