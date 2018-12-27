@@ -8,15 +8,15 @@
 		<version>2.5-SNAPSHOT</version>
 	</parent>
 
-	<artifactId>rdf4j-model-compliance</artifactId>
+	<artifactId>rdf4j-sail-model-compliance</artifactId>
 
-	<name>RDF4J Model compliance test</name>
-	<description>Tests for RDF4J Model</description>
+	<name>RDF4J SAIL Model compliance test</name>
+	<description>Tests for RDF4J SaIL Model</description>
 
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-runtime</artifactId>
+			<artifactId>rdf4j-sail-model</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 
