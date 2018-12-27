@@ -25,12 +25,6 @@
 		<dependencies>		
 			<dependency>
 				<groupId>${project.groupId}</groupId>
-				<artifactId>rdf4j-http-compliance</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-
-			<dependency>
-				<groupId>${project.groupId}</groupId>
 				<artifactId>rdf4j-rio-testsuite</artifactId>
 				<version>${project.version}</version>
 			</dependency>
