@@ -22,12 +22,6 @@
 		<dependencies>		
 			<dependency>
 				<groupId>${project.groupId}</groupId>
-				<artifactId>rdf4j-http-compliance</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-
-			<dependency>
-				<groupId>${project.groupId}</groupId>
 				<artifactId>rdf4j-store-testsuite</artifactId>
 				<version>${project.version}</version>
 			</dependency>
