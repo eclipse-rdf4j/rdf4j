@@ -9,6 +9,7 @@
 	</parent>
 
 	<artifactId>rdf4j-repository-compliance</artifactId>
+        <packaging>war</packaging>
 
 	<name>RDF4J Repository compliance tests</name>
 	<description>Compliance testing for the Repository API implementations</description>
