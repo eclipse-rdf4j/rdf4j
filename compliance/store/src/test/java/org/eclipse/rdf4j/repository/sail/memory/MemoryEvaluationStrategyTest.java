@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail.memory;
 
-import org.eclipse.rdf4j.repository.EvaluationStrategyTest;
+import org.eclipse.rdf4j.repository.sail.EvaluationStrategyTest;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 

@@ -37,31 +37,4 @@ public class SpinRDFSMemoryRepositoryConnectionTest extends RepositoryConnection
 		return new SailRepository(
 				new SpinSail(new ForwardChainingRDFSInferencer(new DedupingInferencer(new MemoryStore()))));
 	}
-
-	@Ignore
-	@Test
-	@Override
-	public void testDefaultContext()
-		throws Exception
-	{
-		// ignore
-	}
-
-	@Ignore
-	@Test
-	@Override
-	public void testDefaultInsertContext()
-		throws Exception
-	{
-		// ignore
-	}
-
-	@Ignore
-	@Test
-	@Override
-	public void testExclusiveNullContext()
-		throws Exception
-	{
-		// ignore
-	}
 }
