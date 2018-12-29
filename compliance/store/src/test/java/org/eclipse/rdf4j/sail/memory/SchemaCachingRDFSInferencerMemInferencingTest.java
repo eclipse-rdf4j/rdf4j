@@ -30,8 +30,8 @@ public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTe
 	private SchemaCachingRDFSInferencer sailStack;
 
 	@Override
-	protected Repository createRepository() {
-		sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(), true);
+		SchemaCachingRDFSInferencer sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(), true);
+		sailStack.setAddInferredStatementsToDefaultContext(false);
 		return new SailRepository(sailStack);
 	}
 

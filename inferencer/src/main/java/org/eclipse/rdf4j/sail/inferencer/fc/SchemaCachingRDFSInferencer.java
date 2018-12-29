@@ -93,6 +93,13 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	// The previous transaction rolled back
 	boolean rolledBackAfterModifyingSchemaCache;
 
+	// Inferred statements can either be added to the default context
+	// or to the context that the original inserted statement has
+	// for the time being, the default behaviour will be to adde the
+	// statements to the default context.
+	// THIS BEHAVIOUR WILL BE SWITCHED ON THE NEXT MAJOR RELEASE
+	private boolean addInferredStatementsToDefaultContext = true;
+
 	/**
 	 * Instantiate a SchemaCachingRDFSInferencer.
 	 *
@@ -615,4 +622,11 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		return levels;
 	}
 
+	public boolean isAddInferredStatementsToDefaultContext() {
+		return addInferredStatementsToDefaultContext;
+	}
+
+	public void setAddInferredStatementsToDefaultContext(boolean addInferredStatementsToDefaultContext) {
+		this.addInferredStatementsToDefaultContext = addInferredStatementsToDefaultContext;
+	}
 }
