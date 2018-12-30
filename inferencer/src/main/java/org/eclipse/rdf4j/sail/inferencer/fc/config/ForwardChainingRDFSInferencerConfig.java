@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.sail.config.SailImplConfig;
 /**
  * @author Arjohn Kampman
  */
+@Deprecated
 public class ForwardChainingRDFSInferencerConfig extends AbstractDelegatingSailImplConfig {
 
 	public ForwardChainingRDFSInferencerConfig() {

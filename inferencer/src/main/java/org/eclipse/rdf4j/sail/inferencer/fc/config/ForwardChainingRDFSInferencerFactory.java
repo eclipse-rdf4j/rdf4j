@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
  * 
  * @author Arjohn Kampman
  */
+@Deprecated
 public class ForwardChainingRDFSInferencerFactory implements SailFactory {
 
 	/**
