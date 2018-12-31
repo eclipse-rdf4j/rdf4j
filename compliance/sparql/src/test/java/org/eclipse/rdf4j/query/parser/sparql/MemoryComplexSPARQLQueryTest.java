@@ -5,19 +5,23 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.memory;
+package org.eclipse.rdf4j.query.parser.sparql;
 
+import org.eclipse.rdf4j.query.parser.sparql.ComplexSPARQLQueryTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.InferencingTest;
-import org.eclipse.rdf4j.sail.Sail;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
-public class MemInferencingTest extends InferencingTest {
+/**
+ * @author jeen
+ */
+public class MemoryComplexSPARQLQueryTest extends ComplexSPARQLQueryTest {
 
 	@Override
-	protected Repository createRepository() {
-		Sail sailStack = new ForwardChainingRDFSInferencer(new MemoryStore());
-		return new SailRepository(sailStack);
+	protected Repository newRepository()
+		throws Exception
+	{
+		return new SailRepository(new MemoryStore());
 	}
+
 }

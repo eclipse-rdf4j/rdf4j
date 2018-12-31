@@ -5,19 +5,25 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.memory;
+package org.eclipse.rdf4j.query.parser.sparql;
 
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.InferencingTest;
-import org.eclipse.rdf4j.sail.Sail;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
-public class MemInferencingTest extends InferencingTest {
+/**
+ * Test SPARQL 1.1 Update functionality on an in-memory store.
+ * 
+ * @author Jeen Broekstra
+ */
+public class MemorySPARQLUpdateTest extends SPARQLUpdateTest {
 
 	@Override
-	protected Repository createRepository() {
-		Sail sailStack = new ForwardChainingRDFSInferencer(new MemoryStore());
-		return new SailRepository(sailStack);
+	protected Repository newRepository()
+		throws Exception
+	{
+		return new SailRepository(new MemoryStore());
 	}
+
 }
