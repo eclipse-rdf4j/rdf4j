@@ -65,36 +65,6 @@ public class SchemaCachingRDFSInferencerNativeRepositoryConnectionTest
 		}
 	}
 
-
-
-	@Ignore
-	@Test
-	@Override
-	public void testDefaultContext()
-		throws Exception
-	{
-		// ignore
-	}
-
-	@Ignore
-	@Test
-	@Override
-	public void testDefaultInsertContext()
-		throws Exception
-	{
-		// ignore
-	}
-
-	@Ignore
-	@Test
-	@Override
-	public void testExclusiveNullContext()
-		throws Exception
-	{
-		// ignore
-	}
-
-
 	@Override
 	@Test
 	@Ignore

@@ -7,6 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
+import static junit.framework.TestCase.assertFalse;
+import static junit.framework.TestCase.assertTrue;
+
+import java.lang.reflect.InvocationTargetException;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -16,20 +21,13 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.InferencingTest;
-import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.junit.Test;
 
-import java.lang.reflect.InvocationTargetException;
-
-import static junit.framework.TestCase.assertFalse;
-import static junit.framework.TestCase.assertTrue;
-
 public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTest {
 
-	private SchemaCachingRDFSInferencer sailStack;
-
 	@Override
+	protected Repository createRepository() {
 		SchemaCachingRDFSInferencer sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(), true);
 		sailStack.setAddInferredStatementsToDefaultContext(false);
 		return new SailRepository(sailStack);
@@ -132,7 +130,7 @@ public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTe
 		}
 
 		SailRepository sailRepository1 = new SailRepository(SchemaCachingRDFSInferencer.fastInstantiateFrom(
-				(SchemaCachingRDFSInferencer)sailStack, new MemoryStore()));
+				(SchemaCachingRDFSInferencer)((SailRepository)sailRepository).getSail(), new MemoryStore()));
 		sailRepository1.initialize();
 
 		try (RepositoryConnection connection = sailRepository1.getConnection()) {
