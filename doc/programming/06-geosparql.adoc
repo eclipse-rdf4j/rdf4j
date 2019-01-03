@@ -29,11 +29,11 @@ For example, to model the coordinates of landmarks like the Eiffel Tower in Pari
 ex:eiffelTower a ex:Landmark ;
           geo:hasGeometry ex:coordinates-et.
 ex:coordinates-et a sf:Point; 
-        geo:asWKT "POINT(48.8584 2.2945)"^^geo:wktLiteral .
+        geo:asWKT "POINT(2.2945 48.8584)"^^geo:wktLiteral .
 ex:towerBridge a ex:Landmark ;
           geo:hasGeometry ex:coordinates-tb.
 ex:coordinates-tb a sf:Point; 
-        geo:asWKT "POINT(51.5055 0.0754)"^^geo:wktLiteral .
+        geo:asWKT "POINT(-0.0754 51.5055)"^^geo:wktLiteral .
 ----
 
 After adding this data to a repository, we can use a GeoSPARQL query to get,
