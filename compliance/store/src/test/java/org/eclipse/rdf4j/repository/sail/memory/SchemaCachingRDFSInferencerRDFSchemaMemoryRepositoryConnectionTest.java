@@ -38,7 +38,6 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 	@Override
 	protected Repository createRepository() {
 		SchemaCachingRDFSInferencer sail = new SchemaCachingRDFSInferencer(new MemoryStore(), true);
-		sail.setAddInferredStatementsToDefaultContext(false);
 		return new SailRepository(sail);
 	}
 
