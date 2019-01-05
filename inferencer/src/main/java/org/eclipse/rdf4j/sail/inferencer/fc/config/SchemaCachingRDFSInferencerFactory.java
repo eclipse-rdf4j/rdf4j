@@ -38,7 +38,7 @@ public class SchemaCachingRDFSInferencerFactory implements SailFactory {
 
 	@Override
 	public SailImplConfig getConfig() {
-		return new ForwardChainingRDFSInferencerConfig();
+		return new SchemaCachingRDFSInferencerConfig();
 	}
 
 	@Override
