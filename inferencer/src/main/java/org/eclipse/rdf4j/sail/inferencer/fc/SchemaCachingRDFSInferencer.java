@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
  * </p>
  * <p>
  * This reasoner is not a rule based reasoner and will be up to 80x faster than the
- * ForwardChainingRDFSInferencer, as well as being more complete.
+ * {@link ForwardChainingRDFSInferencer}, as well as being more complete.
  * </p>
  * <p>
  * The sail puts no limitations on isolation level for read transactions, however all write/delete/update
@@ -100,6 +100,14 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	// THIS BEHAVIOUR WILL BE SWITCHED ON THE NEXT MAJOR RELEASE
 	private boolean addInferredStatementsToDefaultContext = true;
 
+	/**
+	 * Instantiate a new SchemaCachingRDFSInferencer
+	 */
+	public SchemaCachingRDFSInferencer() {
+	    super();
+	    schema = null;
+	}
+	
 	/**
 	 * Instantiate a SchemaCachingRDFSInferencer.
 	 *
