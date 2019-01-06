@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
+import org.eclipse.rdf4j.sail.UpdateContext;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnectionWrapper;
 import org.slf4j.Logger;
@@ -810,4 +811,9 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		statementsRemoved = true;
 	}
 
+	@Override
+	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		addStatement(false, subj, pred, obj, contexts);
+		super.addStatement(modify, subj, pred, obj, contexts);
+	}
 }

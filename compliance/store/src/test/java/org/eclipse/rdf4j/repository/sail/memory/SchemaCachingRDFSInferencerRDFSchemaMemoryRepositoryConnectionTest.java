@@ -15,7 +15,10 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.RDFSchemaRepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.Ignore;
@@ -23,21 +26,24 @@ import org.junit.Test;
 
 import java.util.stream.Stream;
 
+import static junit.framework.TestCase.assertTrue;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThat;
 
 public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
-		extends RDFSchemaRepositoryConnectionTest
-{
+	extends RDFSchemaRepositoryConnectionTest {
 
 	public SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest(
-			IsolationLevel level)
-	{
+		IsolationLevel level) {
 		super(level);
 	}
 
 	@Override
 	protected Repository createRepository() {
 		SchemaCachingRDFSInferencer sail = new SchemaCachingRDFSInferencer(new MemoryStore(), true);
+		sail.setAddInferredStatementsToDefaultContext(false);
+
 		return new SailRepository(sail);
 	}
 
@@ -46,8 +52,7 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 	@Test
 	@Ignore
 	public void testQueryDefaultGraph()
-		throws Exception
-	{
+		throws Exception {
 		// ignore
 	}
 
@@ -56,8 +61,7 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 	@Test
 	@Ignore
 	public void testDeleteDefaultGraph()
-		throws Exception
-	{
+		throws Exception {
 		// ignore
 	}
 
@@ -65,8 +69,7 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 	@Test
 	@Ignore
 	public void testContextStatementsNotDuplicated()
-		throws Exception
-	{
+		throws Exception {
 		// ignore
 	}
 
@@ -74,15 +77,13 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 	@Test
 	@Ignore
 	public void testContextStatementsNotDuplicated2()
-		throws Exception
-	{
+		throws Exception {
 		// ignore
 	}
 
 
 	@Test
-	public void testContextTbox()
-	{
+	public void testContextTbox() {
 
 //		Man subClassOf Human g1
 //		Human subClassOf Animal g2
@@ -110,18 +111,121 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 
 
 		System.out.println("-----------");
-		try (Stream<Statement> stream = Iterations.stream(testCon.getStatements(man, RDFS.SUBCLASSOF, null,true))) {
+		try (Stream<Statement> stream = Iterations.stream(testCon.getStatements(man, RDFS.SUBCLASSOF, null, true))) {
 			stream.forEach(System.out::println);
 		}
 		System.out.println("-----------");
-		try (Stream<Statement> stream = Iterations.stream(testCon.getStatements(bob, RDF.TYPE, null,true))) {
+		try (Stream<Statement> stream = Iterations.stream(testCon.getStatements(bob, RDF.TYPE, null, true))) {
 			stream
-				.peek(statement -> assertEquals(statement.getContext(), graph3))
+				.peek(statement -> assertEquals(graph3, statement.getContext()))
 				.forEach(System.out::println);
 		}
 
 		System.out.println("-----------");
 
+
+	}
+
+
+	@Test
+	public void testUpdateInsertData() {
+
+		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
+		sail.initialize();
+
+
+		try (SailRepositoryConnection connection = sail.getConnection()) {
+
+			IRI foo_s1 = connection.getValueFactory().createIRI("foo:s1");
+			IRI foo_C2 = connection.getValueFactory().createIRI("foo:C2");
+
+
+			connection.begin();
+			connection.prepareUpdate("insert data { <foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2> } ").execute();
+			connection.commit();
+
+			assertTrue(connection.hasStatement(foo_s1, RDF.TYPE, foo_C2, true));
+
+
+		}
+
+	}
+
+	@Test
+	public void testUpdateInsert() {
+
+		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
+		sail.initialize();
+
+
+		try (SailRepositoryConnection connection = sail.getConnection()) {
+
+			IRI foo_s1 = connection.getValueFactory().createIRI("foo:s1");
+			IRI foo_C2 = connection.getValueFactory().createIRI("foo:C2");
+
+			connection.begin();
+			connection.prepareUpdate("insert {<foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2>} where {?a ?b ?c}").execute();
+			connection.commit();
+
+			assertTrue(connection.hasStatement(foo_s1, RDF.TYPE, foo_C2, true));
+
+		}
+
+	}
+
+	@Test
+	public void testInsert() {
+
+		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
+		sail.initialize();
+
+
+		try (SailRepositoryConnection connection = sail.getConnection()) {
+
+			IRI foo_s1 = connection.getValueFactory().createIRI("foo:s1");
+			IRI foo_C2 = connection.getValueFactory().createIRI("foo:C2");
+			IRI foo_C1 = connection.getValueFactory().createIRI("foo:C1");
+
+
+			connection.begin();
+			connection.add(foo_s1, RDF.TYPE, foo_C1);
+			connection.add(foo_C1, RDFS.SUBCLASSOF, foo_C2);
+			connection.commit();
+
+			assertTrue(connection.hasStatement(foo_s1, RDF.TYPE, foo_C2, true));
+
+
+		}
+
+	}
+
+	@Test
+	public void testUpdateRemove() {
+
+		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
+		sail.initialize();
+
+
+		try (SailRepositoryConnection connection = sail.getConnection()) {
+
+			IRI foo_s1 = connection.getValueFactory().createIRI("foo:s1");
+			IRI foo_C2 = connection.getValueFactory().createIRI("foo:C2");
+
+
+			connection.begin();
+			connection.prepareUpdate("insert data { <foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2> } ").execute();
+			connection.commit();
+
+			assertTrue(connection.hasStatement(foo_s1, RDF.TYPE, foo_C2, true));
+
+			connection.begin();
+			connection.prepareUpdate("delete data { <foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2> } ").execute();
+			connection.commit();
+
+			assertFalse(connection.hasStatement(foo_s1, RDF.TYPE, foo_C2, true));
+
+
+		}
 
 	}
 
