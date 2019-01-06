@@ -1,5 +1,5 @@
 defaultContentLanguage = "en"
-title = "Eclipse Rdf4j"
+title = "Eclipse RDF4J"
 theme = "eclipsefdn-hugo-solstice-theme"
 metaDataFormat = "yaml"
 googleAnalytics = ""
@@ -11,20 +11,11 @@ disableKinds = ["taxonomy", "taxonomyTerm"]
 [Params]
   logo = "assets/images/rdf4j-logo-114.png"
   google_tag_manager = ""
-  description = "Eclipse Rdf4j: "
+  description = "Eclipse RDF4J: "
   subtitle = "Eclipse Foundation"
   seo_title_suffix = " | Scalable RDF for Java developers"
-  keywords = ["rdf", "sparql", "ontology", "linked data", "turtle"]
+  keywords = ["rdf", "sparql", "sesame", "owl", "ontology", "linked data", "turtle"]
 
 [permalinks]
   news = "/:sections/:year/:month/:day/:slug/"
 
-[[menu.main]]
-    name = "About"
-    url = "/about/"
-    weight = 1
-
-[[menu.main]]
-    name = "News"
-    url = "/news/"
-weight = 2
