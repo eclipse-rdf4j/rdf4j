@@ -22,7 +22,7 @@
          sail:sailType "openrdf:SpinSail" ;
          spin:axiomClosureNeeded false ;
          sail:delegate [
-			 sail:sailType "openrdf:ForwardChainingRDFSInferencer" ;
+			 sail:sailType "rdf4j:SchemaCachingRDFSInferencer" ;
 			 sail:delegate [
 			 	 sail:sailType "openrdf:DedupingInferencer" ;
 				 sail:delegate [

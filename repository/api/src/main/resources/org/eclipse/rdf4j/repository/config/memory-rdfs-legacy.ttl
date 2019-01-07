@@ -12,11 +12,11 @@
 
 [] a rep:Repository ;
    rep:repositoryID "{%Repository ID|memory-rdfs-new%}" ;
-   rdfs:label "{%Repository title|Memory store with Schema-caching RDFS inferencing%}" ;
+   rdfs:label "{%Repository title|Memory store with RDFS inferencing (legacy reasoner)%}" ;
    rep:repositoryImpl [
       rep:repositoryType "openrdf:SailRepository" ;
       sr:sailImpl [
-         sail:sailType "rdf4j:SchemaCachingRDFSInferencer" ;
+               sail:sailType "openrdf:ForwardChainingRDFSInferencer" ;
          sail:delegate [
             sail:sailType "openrdf:MemoryStore" ;
 	    	sail:iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
