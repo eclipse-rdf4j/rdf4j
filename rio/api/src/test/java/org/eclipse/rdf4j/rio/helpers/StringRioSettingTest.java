@@ -7,38 +7,43 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import org.eclipse.rdf4j.rio.RioSetting;
-import org.junit.After;
+import org.junit.Ignore;
 import org.junit.Test;
 
-public class StringRioSettingTest {
-	
-	private static final String TEST_KEY = "org.eclipse.rio.string_rio_setting_test";
+public class StringRioSettingTest extends RioSettingTest<String> {
 
-	private static final String TEST_DESCRIPTION = "test rio setting";
-	
-	@After
-	public void resetEnvVar() {
-		System.clearProperty(TEST_KEY);
-	}
-	
 	@Test
-	public void testDefaultValueNoSystemProp()
+	@Override
+	@Ignore
+	public void testConvertIllegal()
 		throws Exception
 	{
-		RioSetting<String> subject = new StringRioSetting(TEST_KEY, TEST_DESCRIPTION, "foo bar");
-		assertThat(subject.getDefaultValue()).isEqualTo("foo bar");
 	}
-	
-	@Test
-	public void testOverridingSystemProp()
-		throws Exception
-	{
-		System.setProperty(TEST_KEY, "something else");
-		RioSetting<String> subject = new StringRioSetting(TEST_KEY, TEST_DESCRIPTION, "foo bar");
-		assertThat(subject.getDefaultValue()).isEqualTo("something else");
+
+	@Override
+	protected String getDefaultValue() {
+		return "default value";
+	}
+
+	@Override
+	protected String getLegalStringValue() {
+		return "foo";
+	}
+
+	@Override
+	protected String getConvertedStringValue() {
+		return "foo";
+	}
+
+	@Override
+	protected String getIllegalStringValue() {
+		throw new UnsupportedOperationException("no illegal value exists for string-type conversion");
+	}
+
+	@Override
+	protected RioSetting<String> createRioSetting(String key, String description, String defaultValue) {
+		return new StringRioSetting(key, description, defaultValue);
 	}
 
 }

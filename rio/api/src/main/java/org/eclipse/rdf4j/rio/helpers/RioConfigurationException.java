@@ -23,4 +23,12 @@ public class RioConfigurationException extends RDF4JException {
 	public RioConfigurationException(String message) {
 		super(message);
 	}
+	
+	public RioConfigurationException(Throwable t) {
+		super(t);
+	}
+	
+	public RioConfigurationException(String message, Throwable t) {
+		super(message, t);
+	}
 }

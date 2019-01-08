@@ -25,15 +25,4 @@ public final class RioSettingImpl<T> extends AbstractRioSetting<T> {
 	public RioSettingImpl(String key, String description, T defaultValue) {
 		super(key, description, defaultValue);
 	}
-
-	/**
-	 * @throws RioConfigurationException
-	 *         to indicate this setting can no be specified through a system property.
-	 */
-	@Override
-	protected T convert(String stringValue) {
-		throw new RioConfigurationException(
-				String.format("setting '%s' can not be specified through a system property", getKey()));
-	}
-
 }

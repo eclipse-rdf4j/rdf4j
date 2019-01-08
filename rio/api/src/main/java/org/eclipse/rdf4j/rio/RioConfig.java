@@ -12,6 +12,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import org.eclipse.rdf4j.rio.helpers.RioConfigurationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,6 +31,12 @@ public class RioConfig implements Serializable {
 	 * A map containing mappings from settings to their values.
 	 */
 	protected final ConcurrentMap<RioSetting<Object>, Object> settings = new ConcurrentHashMap<RioSetting<Object>, Object>();
+
+	/**
+	 * A map containing mappings from settings to system properties that have been discovered since the last
+	 * call to {@link #useDefaults()}.
+	 */
+	protected final ConcurrentMap<RioSetting<Object>, Object> systemPropertyCache = new ConcurrentHashMap<RioSetting<Object>, Object>();
 
 	protected final Logger log = LoggerFactory.getLogger(this.getClass());
 
@@ -50,6 +57,24 @@ public class RioConfig implements Serializable {
 	@SuppressWarnings("unchecked")
 	public <T extends Object> T get(RioSetting<T> setting) {
 		Object result = settings.get(setting);
+
+		if (result == null) {
+			result = systemPropertyCache.get(setting);
+		}
+
+		if (result == null) {
+			String stringRepresentation = System.getProperty(setting.getKey());
+			if (stringRepresentation != null) {
+				try {
+					T typesafeSystemProperty = setting.convert(stringRepresentation);
+					systemPropertyCache.put((RioSetting<Object>)setting, typesafeSystemProperty);
+					return typesafeSystemProperty;
+				}
+				catch (RioConfigurationException e) {
+					log.trace(e.getMessage(), e);
+				}
+			}
+		}
 
 		if (result == null) {
 			return setting.getDefaultValue();
@@ -93,16 +118,13 @@ public class RioConfig implements Serializable {
 
 	/**
 	 * Checks for whether a {@link RioSetting} has been explicitly set by a user.
-	 * <p>
-	 * a RioSetting may be set using {@link RioConfig#set} or by overriding the default value through a system
-	 * property.
 	 * 
 	 * @param setting
 	 *        The setting to check for.
 	 * @return True if the parser setting has been explicitly set, or false otherwise.
 	 */
 	public <T extends Object> boolean isSet(RioSetting<T> setting) {
-		return settings.containsKey(setting) || hasSystemPropertyOverride(setting);
+		return settings.containsKey(setting);
 	}
 
 	/**
@@ -113,18 +135,7 @@ public class RioConfig implements Serializable {
 	 */
 	public RioConfig useDefaults() {
 		settings.clear();
-
+		systemPropertyCache.clear();
 		return this;
-	}
-
-	/**
-	 * Checks if the supplied {@link RioSetting}'s default value has been override by setting a system property.
-	 * 
-	 * @param setting
-	 *        the setting to check the existence of an override for
-	 * @return true if the default value is overridden by system property, false otherwise.
-	 */
-	private boolean hasSystemPropertyOverride(RioSetting<?> setting) {
-		return !Objects.isNull(System.getProperty(setting.getKey()));
 	}
 }

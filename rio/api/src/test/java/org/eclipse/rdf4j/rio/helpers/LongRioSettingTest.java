@@ -7,54 +7,33 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.fail;
-
 import org.eclipse.rdf4j.rio.RioSetting;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
 
-public class LongRioSettingTest {
+public class LongRioSettingTest extends RioSettingTest<Long> {
 
-	private static final String TEST_KEY = "org.eclipse.rio.long_rio_setting_test";
-
-	private static final String TEST_DESCRIPTION = "test rio setting";
-
-	@After
-	public void resetEnvVar() {
-		System.clearProperty(TEST_KEY);
+	@Override
+	protected Long getDefaultValue() {
+		return 1234L;
 	}
 
-	@Test
-	public void testDefaultValueNoSystemProp()
-		throws Exception
-	{
-		RioSetting<Long> subject = new LongRioSetting(TEST_KEY, TEST_DESCRIPTION, 123456L);
-		assertThat(subject.getDefaultValue()).isEqualTo(123456L);
+	@Override
+	protected String getLegalStringValue() {
+		return "5678";
 	}
 
-	@Test
-	public void testOverridingSystemProp()
-		throws Exception
-	{
-		System.setProperty(TEST_KEY, "5678");
-		RioSetting<Long> subject = new LongRioSetting(TEST_KEY, TEST_DESCRIPTION, 123456L);
-		assertThat(subject.getDefaultValue()).isEqualTo(5678);
+	@Override
+	protected Long getConvertedStringValue() {
+		return 5678L;
 	}
 
-	@Test
-	public void testOverridingSystemPropIllegal()
-		throws Exception
-	{
-		System.setProperty(TEST_KEY, "not-a-long");
-		try {
-			RioSetting<Long> subject = new LongRioSetting(TEST_KEY, TEST_DESCRIPTION, 123456L);
-			fail("expected exception for illegal sytem property value");
-		}
-		catch (NumberFormatException e) {
-			// expected
-		}
+	@Override
+	protected String getIllegalStringValue() {
+		return "not a long";
+	}
+
+	@Override
+	protected RioSetting<Long> createRioSetting(String key, String description, Long defaultValue) {
+		return new LongRioSetting(key, description, defaultValue);
 	}
 
 }

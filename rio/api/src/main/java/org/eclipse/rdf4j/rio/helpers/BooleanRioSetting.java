@@ -41,7 +41,7 @@ public class BooleanRioSetting extends AbstractRioSetting<Boolean> {
 	 *         the returned Boolean will be {@code true}, otherwise {@code false}.
 	 */
 	@Override
-	protected Boolean convert(String stringValue) {
+	public Boolean convert(String stringValue) {
 		return Boolean.valueOf(stringValue);
 	}
 

@@ -7,38 +7,57 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.rio.RioSetting;
-import org.junit.After;
+import org.junit.Ignore;
 import org.junit.Test;
 
-public class BooleanRioSettingTest {
-	
-	private static final String TEST_KEY = "org.eclipse.rio.boolean_rio_setting_test";
+public class BooleanRioSettingTest extends RioSettingTest<Boolean> {
 
-	private static final String TEST_DESCRIPTION = "test rio setting";
-	
-	@After
-	public void resetEnvVar() {
-		System.clearProperty(TEST_KEY);
-	}
-	
 	@Test
-	public void testDefaultValueNoSystemProp()
+	@Override
+	@Ignore
+	public void testConvertIllegal()
 		throws Exception
 	{
-		RioSetting<Boolean> subject = new BooleanRioSetting(TEST_KEY, TEST_DESCRIPTION, false);
-		assertThat(subject.getDefaultValue()).isFalse();
 	}
-	
+
 	@Test
-	public void testOverridingSystemProp()
+	public void testConvertLegalStringVariants()
 		throws Exception
 	{
-		System.setProperty(TEST_KEY, "true");
-		RioSetting<Boolean> subject = new BooleanRioSetting(TEST_KEY, TEST_DESCRIPTION, false);
-		assertThat(subject.getDefaultValue()).isTrue();
+		assertThat(subject.convert("True")).isTrue();
+		assertThat(subject.convert("Foo")).isFalse();
+		assertThat(subject.convert("false")).isFalse();
+		assertThat(subject.convert("1")).isFalse();
 	}
+	
+	@Override
+	protected Boolean getDefaultValue() {
+		return true;
+	}
+
+	@Override
+	protected String getLegalStringValue() {
+		return "TRUE";
+	}
+
+	@Override
+	protected Boolean getConvertedStringValue() {
+		return true;
+	}
+
+	@Override
+	protected String getIllegalStringValue() {
+		throw new UnsupportedOperationException("no illegal value exists for boolean-type conversion");
+	}
+
+	@Override
+	protected RioSetting<Boolean> createRioSetting(String key, String description, Boolean defaultValue) {
+		return new BooleanRioSetting(key, description, defaultValue);
+	}
+
 
 }

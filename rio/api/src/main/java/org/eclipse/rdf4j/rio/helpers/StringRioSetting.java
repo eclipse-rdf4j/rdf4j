@@ -24,7 +24,7 @@ public class StringRioSetting extends AbstractRioSetting<String> {
 	}
 
 	@Override
-	protected String convert(String stringValue) {
+	public String convert(String stringValue) {
 		return stringValue;
 	}
 

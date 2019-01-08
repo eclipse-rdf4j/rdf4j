@@ -56,7 +56,7 @@ public abstract class AbstractRioSetting<T> implements RioSetting<T> {
 
 		this.key = key;
 		this.description = description;
-		this.defaultValue = determineDefaultValue(defaultValue);
+		this.defaultValue = defaultValue;
 	}
 
 	@Override
@@ -88,31 +88,4 @@ public abstract class AbstractRioSetting<T> implements RioSetting<T> {
 		return getKey().hashCode();
 	}
 
-	/**
-	 * Determines the default value for this {@link RioSetting}. If a system property with the setting
-	 * {@link #getKey() key} is specified, that property value is taken as the default and converted to the
-	 * correct type. Otherwise, the argument-supplied value is used.
-	 * 
-	 * @param suppliedDefaultValue
-	 *        the argument-supplied default value.
-	 * @return the default value for this Setting.
-	 */
-	protected final T determineDefaultValue(T suppliedDefaultValue) {
-		String envVarDefault = System.getProperty(getKey());
-		if (envVarDefault != null) {
-			return convert(envVarDefault);
-		}
-		return suppliedDefaultValue;
-	}
-
-	/**
-	 * Converts a string-representation of the default value to its actual type T
-	 * 
-	 * @param stringValue
-	 *        a string representation of the default value, typically supplied by means of a system property.
-	 * @return The corresponding object of type T for the supplied string value.
-	 * @throws RioConfigurationException
-	 *         if the setting type does not provide conversion from a string to the expected type.
-	 */
-	protected abstract T convert(String stringValue);
 }
