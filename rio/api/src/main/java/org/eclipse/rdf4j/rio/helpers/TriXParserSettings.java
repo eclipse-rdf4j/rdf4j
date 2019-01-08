@@ -11,26 +11,48 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * ParserSettings for the TriX parser features.
+ * <p>
+ * Several of these settings can be overridden by means of a system property, but only if specified at JVM
+ * startup time.
  * 
  * @author Peter Ansell
  */
 public class TriXParserSettings {
 
 	/**
-	 * Boolean setting for parser to determine whether missing datatypes in TriX are ignored.
+	 * Boolean setting for parser to determine whether the TriX parser should treat missing datatypes as an
+	 * error.
 	 * <p>
 	 * Defaults to true.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.trix.fail_on_missing_datatype}.
 	 */
-	public static final RioSetting<Boolean> FAIL_ON_TRIX_MISSING_DATATYPE = new RioSettingImpl<Boolean>(
-			"org.eclipse.rdf4j.rio.ignoretrixmissingdatatype", "Ignore TriX missing datatype", Boolean.TRUE);
+	public static final RioSetting<Boolean> FAIL_ON_MISSING_DATATYPE = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.trix.fail_on_missing_datatype", "Fail on TriX missing datatype", Boolean.TRUE);
 
 	/**
-	 * Boolean setting for parser to determine whether invalid statements are ignored in TriX.
+	 * @deprecated use {@link #FAIL_ON_MISSING_DATATYPE} instead.
+	 */
+	@Deprecated
+	public static final RioSetting<Boolean> FAIL_ON_TRIX_MISSING_DATATYPE = FAIL_ON_MISSING_DATATYPE;
+
+	/**
+	 * Boolean setting for parser to determine whether the TriX parser should treat invalid statements as an
+	 * error.
 	 * <p>
 	 * Defaults to true.
+	 * <p>
+	 * Can be overridden by setting system property
+	 * {@code org.eclipse.rdf4j.rio.trix.fail_on_invalid_statement}.
 	 */
-	public static final RioSetting<Boolean> FAIL_ON_TRIX_INVALID_STATEMENT = new RioSettingImpl<Boolean>(
-			"org.eclipse.rdf4j.rio.ignoretrixmissingdatatype", "Ignore TriX missing datatype", Boolean.TRUE);
+	public static final RioSetting<Boolean> FAIL_ON_INVALID_STATEMENT = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.trix.fail_on_invalid_statement", "Fail on TriX invalid statement", Boolean.TRUE);
+
+	/**
+	 * @deprecated use {@link #FAIL_ON_INVALID_STATEMENT} instead
+	 */
+	@Deprecated
+	public static final RioSetting<Boolean> FAIL_ON_TRIX_INVALID_STATEMENT = FAIL_ON_INVALID_STATEMENT;
 
 	/**
 	 * Private constructor

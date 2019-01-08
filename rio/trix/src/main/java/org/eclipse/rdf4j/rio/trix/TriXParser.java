@@ -107,7 +107,8 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 		results.add(XMLParserSettings.CUSTOM_XML_READER);
 		results.add(XMLParserSettings.FAIL_ON_MISMATCHED_TAGS);
 		results.add(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS);
-
+		results.add(TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
+		results.add(TriXParserSettings.FAIL_ON_MISSING_DATATYPE);
 		return results;
 	}
 
@@ -350,7 +351,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 
 					if (datatype == null) {
 						reportError(DATATYPE_ATT + " attribute missing for typed literal",
-								TriXParserSettings.FAIL_ON_TRIX_MISSING_DATATYPE);
+								TriXParserSettings.FAIL_ON_MISSING_DATATYPE);
 						valueList.add(createLiteral(text, null, null));
 					}
 					else {
@@ -365,7 +366,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 							// context information
 							if (valueList.size() > 1) {
 								reportError("At most 1 resource can be specified for the context",
-										TriXParserSettings.FAIL_ON_TRIX_INVALID_STATEMENT);
+										TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 							}
 							else if (valueList.size() == 1) {
 								try {
@@ -373,7 +374,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 								}
 								catch (ClassCastException e) {
 									reportError("Context identifier should be a URI or blank node",
-											TriXParserSettings.FAIL_ON_TRIX_INVALID_STATEMENT);
+											TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 								}
 							}
 						}
@@ -418,7 +419,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 			try {
 				if (valueList.size() != 3) {
 					reportError("exactly 3 values are required for a triple",
-							TriXParserSettings.FAIL_ON_TRIX_INVALID_STATEMENT);
+							TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 					return;
 				}
 
@@ -431,7 +432,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 				}
 				catch (ClassCastException e) {
 					reportError("First value for a triple should be a URI or blank node",
-							TriXParserSettings.FAIL_ON_TRIX_INVALID_STATEMENT);
+							TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 					return;
 				}
 
@@ -440,7 +441,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 				}
 				catch (ClassCastException e) {
 					reportError("Second value for a triple should be a URI",
-							TriXParserSettings.FAIL_ON_TRIX_INVALID_STATEMENT);
+							TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 					return;
 				}
 

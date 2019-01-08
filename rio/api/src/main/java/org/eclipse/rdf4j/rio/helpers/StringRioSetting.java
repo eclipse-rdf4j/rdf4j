@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -10,19 +10,22 @@ package org.eclipse.rdf4j.rio.helpers;
 import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
- * Basic implementation of {@link RioSetting} interface, without support for default override via system
- * properties.
+ * A {@link RioSetting} with a {@link String} value. The given default for the setting can be overridden by
+ * means of a system property with a name equal to the setting key.
  * 
- * @author Peter Ansell
- * @see StringRioSetting
- * @see BooleanRioSetting
- * @see LongRioSetting
+ * @author Jeen Broekstra
  */
-public final class RioSettingImpl<T> extends AbstractRioSetting<T> {
+public class StringRioSetting extends AbstractRioSetting<String> {
 
-	private static final long serialVersionUID = 5522964700661094393L;
+	private static final long serialVersionUID = -3723273606390299263L;
 
-	public RioSettingImpl(String key, String description, T defaultValue) {
+	public StringRioSetting(String key, String description, String defaultValue) {
 		super(key, description, defaultValue);
 	}
+
+	@Override
+	public String convert(String stringValue) {
+		return stringValue;
+	}
+
 }
