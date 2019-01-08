@@ -22,11 +22,11 @@ import org.slf4j.LoggerFactory;
  * A RioConfig is a container for several {@link RioSetting} objects, each of which has a default value. You
  * can override the default value for a {@link RioSetting} in one of two ways:
  * <ol>
- * <li>You can programmatically override its value using {@link RioConfig#set(RioSetting, Object)}</li>
- * <li>You can set a Java system property (e.g. by means of a <code>-D</code> jvm command line switch). The property name
- * should corresponds to the {@link RioSetting#getKey() key} of the setting. Note that this method is not
- * supported by every type of {@link RioSetting}: boolean values, strings, and numeric (long) values are
- * supported, but more complex types are not</li>
+ * <li>You can programmatically set its value using {@link RioConfig#set(RioSetting, Object)}</li>
+ * <li>You can set a Java system property (e.g. by means of a <code>-D</code> jvm command line switch). The
+ * property name should corresponds to the {@link RioSetting#getKey() key} of the setting. Note that this
+ * method is not supported by every type of {@link RioSetting}: boolean values, strings, and numeric (long)
+ * values are supported, but more complex types are not</li>
  * </ol>
  * 
  * @author Peter Ansell
@@ -129,13 +129,20 @@ public class RioConfig implements Serializable {
 
 	/**
 	 * Checks for whether a {@link RioSetting} has been explicitly set by a user.
+	 * <p>
+	 * A setting can be set via {@link RioConfig#set(RioSetting, Object)}, or via use of a system property.
 	 * 
 	 * @param setting
 	 *        The setting to check for.
-	 * @return True if the parser setting has been explicitly set, or false otherwise.
+	 * @return True if the setting has been explicitly set, or false otherwise.
 	 */
 	public <T extends Object> boolean isSet(RioSetting<T> setting) {
-		return settings.containsKey(setting);
+		return settings.containsKey(setting) || systemPropertyCache.containsKey(setting)
+				|| hasSystemPropertyOverride(setting);
+	}
+
+	private boolean hasSystemPropertyOverride(RioSetting<?> setting) {
+		return Objects.nonNull(System.getProperty(setting.getKey()));
 	}
 
 	/**

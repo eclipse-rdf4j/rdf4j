@@ -47,7 +47,7 @@ public class RioConfigTest {
 		throws Exception
 	{
 		System.setProperty(key, "false");
-		assertThat(config.isSet(testSetting)).isFalse();
+		assertThat(config.isSet(testSetting)).isTrue();
 	}
 
 	@Test
@@ -73,7 +73,7 @@ public class RioConfigTest {
 	{
 		System.setProperty(key, "false");
 		config.useDefaults();
-		assertThat(config.isSet(testSetting)).isFalse();
+		assertThat(config.isSet(testSetting)).isTrue();
 	}
 
 	@Test

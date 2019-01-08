@@ -29,7 +29,7 @@ public class LongRioSetting extends AbstractRioSetting<Long> {
 			return Long.parseLong(stringValue);
 		}
 		catch (NumberFormatException e) {
-			throw new RioConfigurationException(e);
+			throw new RioConfigurationException("Conversion error for setting: " + getKey(), e);
 		}
 	}
 
