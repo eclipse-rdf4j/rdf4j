@@ -11,9 +11,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * Parser Settings that are specific to {@link org.eclipse.rdf4j.rio.RDFFormat#TURTLE} parsers.
- * <p>
- * Several of these settings can be overridden by means of a system property, but only if specified at JVM
- * startup time.
  * 
  * @author Peter Ansell
  */

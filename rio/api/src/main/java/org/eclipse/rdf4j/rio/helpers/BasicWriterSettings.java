@@ -11,9 +11,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * A class encapsulating the basic writer settings that most writers may support.
- * <p>
- * Several of these settings can be overridden by means of a system property, but only if specified at JVM
- * startup time.
  * 
  * @author Peter Ansell
  */

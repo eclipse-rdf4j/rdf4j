@@ -12,9 +12,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * A class encapsulating writer settings that XML writers may support.
- * <p>
- * Several of these settings can be overridden by means of a system property, but only if specified at JVM
- * startup time.
  * 
  * @author Peter Ansell
  */

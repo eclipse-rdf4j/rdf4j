@@ -18,8 +18,19 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Superclass for {@link ParserConfig} and {@link WriterConfig}.
+ * <p>
+ * A RioConfig is a container for several {@link RioSetting} objects, each of which has a default value. You
+ * can override the default value for a {@link RioSetting} in one of two ways:
+ * <ol>
+ * <li>You can programmatically override its value using {@link RioConfig#set(RioSetting, Object)}</li>
+ * <li>You can set a Java system property (e.g. by means of a <code>-D</code> jvm command line switch). The property name
+ * should corresponds to the {@link RioSetting#getKey() key} of the setting. Note that this method is not
+ * supported by every type of {@link RioSetting}: boolean values, strings, and numeric (long) values are
+ * supported, but more complex types are not</li>
+ * </ol>
  * 
  * @author Peter Ansell
+ * @see RioSetting
  */
 public class RioConfig implements Serializable {
 

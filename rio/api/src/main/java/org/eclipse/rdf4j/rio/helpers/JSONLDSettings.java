@@ -11,9 +11,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * Settings that can be passed to JSONLD Parsers and Writers.
- * <p>
- * Several of these settings can be overridden by means of a system property, but only if specified at JVM
- * startup time.
  * 
  * @author Peter Ansell
  * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
