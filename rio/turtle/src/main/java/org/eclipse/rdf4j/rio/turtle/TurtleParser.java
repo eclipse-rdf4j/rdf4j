@@ -21,6 +21,7 @@ import java.util.Set;
 
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -237,7 +238,9 @@ public class TurtleParser extends AbstractRDFParser {
 		}
 	}
 
-	protected void parseDirective(String directive) throws IOException, RDFParseException, RDFHandlerException {
+	protected void parseDirective(String directive)
+		throws IOException, RDFParseException, RDFHandlerException
+	{
 		if (directive.length() >= 7 && directive.substring(0, 7).equals("@prefix")) {
 			if (directive.length() > 7) {
 				unread(directive.substring(7));
@@ -267,7 +270,8 @@ public class TurtleParser extends AbstractRDFParser {
 		}
 		else if (directive.length() >= 7 && directive.substring(0, 7).equalsIgnoreCase("@prefix")) {
 			if (!this.getParserConfig().get(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES)) {
-				reportFatalError("Cannot strictly support case-insensitive @prefix directive in compliance mode.");
+				reportFatalError(
+						"Cannot strictly support case-insensitive @prefix directive in compliance mode.");
 			}
 			if (directive.length() > 7) {
 				unread(directive.substring(7));
@@ -276,7 +280,8 @@ public class TurtleParser extends AbstractRDFParser {
 		}
 		else if (directive.length() >= 5 && directive.substring(0, 5).equalsIgnoreCase("@base")) {
 			if (!this.getParserConfig().get(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES)) {
-				reportFatalError("Cannot strictly support case-insensitive @base directive in compliance mode.");
+				reportFatalError(
+						"Cannot strictly support case-insensitive @base directive in compliance mode.");
 			}
 			if (directive.length() > 5) {
 				unread(directive.substring(5));
@@ -558,8 +563,8 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Parses an implicit blank node. This method parses the token <tt>[]</tt> and predicateObjectLists that are
-	 * surrounded by square brackets.
+	 * Parses an implicit blank node. This method parses the token <tt>[]</tt> and predicateObjectLists that
+	 * are surrounded by square brackets.
 	 */
 	protected Resource parseImplicitBlank() throws IOException, RDFParseException, RDFHandlerException {
 		verifyCharacterOrFail(readCodePoint(), "[");
@@ -697,26 +702,17 @@ public class TurtleParser extends AbstractRDFParser {
 
 			// Read datatype
 			Value datatype = parseValue();
-			if (datatype instanceof IRI) {
-				return createLiteral(label, null, (IRI)datatype, getLineNumber(), -1);
-			}
-			else if (datatype != null) {
+			if (datatype instanceof Literal || datatype instanceof BNode) {
 				reportFatalError("Illegal datatype value: " + datatype);
+			}
+			else if (datatype == null) {
+				// the datatype IRI could not be parsed. report as error only if VERIFY_URI_SYNTAX is enabled, silently skip otherwise.
+				reportError("Invalid datatype IRI for literal '" + label + "'", BasicParserSettings.VERIFY_URI_SYNTAX);
 				return null;
 			}
-			else {
-				if (getParserConfig().get(BasicParserSettings.VERIFY_URI_SYNTAX)
-						&& !getParserConfig().isNonFatalError(BasicParserSettings.VERIFY_URI_SYNTAX))
-				{
-					// only report a missing/illegal datatype when IRI verification is a fatal error.
-					reportFatalError("Illegal datatype value: " + datatype);
-				}
-				return null;
-			}
+			return createLiteral(label, null, (IRI)datatype, getLineNumber(), -1);
 		}
-		else
-
-		{
+		else {
 			return createLiteral(label, null, null, getLineNumber(), -1);
 		}
 	}
@@ -957,7 +953,8 @@ public class TurtleParser extends AbstractRDFParser {
 			}
 
 			if (c == ' ') {
-				reportError("IRI included an unencoded space: '" + c + "'", BasicParserSettings.VERIFY_URI_SYNTAX);
+				reportError("IRI included an unencoded space: '" + c + "'",
+						BasicParserSettings.VERIFY_URI_SYNTAX);
 				uriIsIllegal = true;
 			}
 
@@ -970,7 +967,8 @@ public class TurtleParser extends AbstractRDFParser {
 					throwEOFException();
 				}
 				if (c != 'u' && c != 'U') {
-					reportError("IRI includes string escapes: '\\" + c + "'", BasicParserSettings.VERIFY_URI_SYNTAX);
+					reportError("IRI includes string escapes: '\\" + c + "'",
+							BasicParserSettings.VERIFY_URI_SYNTAX);
 					uriIsIllegal = true;
 				}
 				appendCodepoint(uriBuf, c);
@@ -1195,7 +1193,8 @@ public class TurtleParser extends AbstractRDFParser {
 
 	/**
 	 * Verifies that the supplied character code point <tt>codePoint</tt> is one of the expected characters
-	 * specified in <tt>expected</tt>. This method will throw a <tt>ParseException</tt> if this is not the case.
+	 * specified in <tt>expected</tt>. This method will throw a <tt>ParseException</tt> if this is not the
+	 * case.
 	 */
 	protected void verifyCharacterOrFail(int codePoint, String expected) throws RDFParseException {
 		if (codePoint == -1) {
@@ -1405,8 +1404,8 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Appends the characters from codepoint into the string builder. This is the same as Character#toChars but
-	 * prevents the additional char array garbage for BMP codepoints.
+	 * Appends the characters from codepoint into the string builder. This is the same as Character#toChars
+	 * but prevents the additional char array garbage for BMP codepoints.
 	 * 
 	 * @param dst
 	 *        the destination in which to append the characters

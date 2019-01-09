@@ -158,7 +158,7 @@ public class TurtleParserTest {
 
 		parser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_URI_SYNTAX);
 		parser.parse(new StringReader(data), baseURI);
-		assertThat(errorCollector.getErrors()).hasSize(1);
+		assertThat(errorCollector.getErrors()).hasSize(2);
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
 		assertThat(statementCollector.getStatements()).hasSize(2).overridingErrorMessage(
