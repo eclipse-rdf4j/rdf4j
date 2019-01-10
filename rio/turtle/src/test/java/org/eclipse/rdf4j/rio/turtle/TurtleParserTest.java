@@ -41,12 +41,14 @@ import static org.junit.Assert.fail;
 /**
  * @author jeen
  */
-public class TestTurtleParser {
+public class TurtleParserTest {
 
 	private TurtleParser parser;
+
 	private ValueFactory vf = SimpleValueFactory.getInstance();
 
 	private final ParseErrorCollector errorCollector = new ParseErrorCollector();
+
 	private final StatementCollector statementCollector = new StatementCollector();
 
 	private final String prefixes = "@prefix ex: <http://example.org/ex/> . \n@prefix : <http://example.org/> . \n";
@@ -106,8 +108,8 @@ public class TestTurtleParser {
 		assertThat(errorCollector.getErrors()).hasSize(1);
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
-		assertThat(statementCollector.getStatements()).hasSize(1)
-		        .overridingErrorMessage("only syntactically legal triples should have been reported");
+		assertThat(statementCollector.getStatements()).hasSize(1).overridingErrorMessage(
+				"only syntactically legal triples should have been reported");
 	}
 
 	@Test
@@ -120,10 +122,91 @@ public class TestTurtleParser {
 		assertThat(errorCollector.getErrors()).isEmpty();
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
-		assertThat(statementCollector.getStatements()).hasSize(3)
-		        .overridingErrorMessage("all triples should have been reported");
+		assertThat(statementCollector.getStatements()).hasSize(3).overridingErrorMessage(
+				"all triples should have been reported");
 	}
-	
+
+	@Test
+	public void testParseIllegalDatatypeURIFatal() throws IOException {
+		String data = " <urn:foo_bar> <urn:foo> \"a\"^^<urn:foo bar> ; <urn:foo2> <urn:bar2> . <urn:foobar> <urn:food> <urn:barf> . ";
+
+		try {
+			parser.parse(new StringReader(data), baseURI);
+			fail("default config should result in fatal error / parse exception");
+		}
+		catch (RDFParseException e) {
+			// expected
+		}
+	}
+
+	@Test
+	public void testParseIllegalDatatypeValueFatalIRI() throws IOException {
+		String data = " <urn:foo_bar> <urn:foo> \"a\"^^\"b\" ; <urn:foo2> <urn:bar2> . <urn:foobar> <urn:food> <urn:barf> . ";
+
+		try {
+			parser.parse(new StringReader(data), baseURI);
+			fail("default config should result in fatal error / parse exception");
+		}
+		catch (RDFParseException e) {
+			// expected
+		}
+	}
+
+	@Test
+	public void testParseIllegalDatatypeURINonFatal() throws IOException {
+		String data = " <urn:foo_bar> <urn:foo> \"a\"^^<urn:foo bar> ; <urn:foo2> <urn:bar2> . <urn:foobar> <urn:food> <urn:barf> . ";
+
+		parser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_URI_SYNTAX);
+		parser.parse(new StringReader(data), baseURI);
+		assertThat(errorCollector.getErrors()).hasSize(2);
+		assertThat(errorCollector.getFatalErrors()).isEmpty();
+		assertThat(statementCollector.getStatements()).isNotEmpty();
+		assertThat(statementCollector.getStatements()).hasSize(2).overridingErrorMessage(
+				"only syntactically legal triples should have been reported");
+	}
+
+	@Test
+	public void testParseIllegalDatatypValueINonFatalIRI() throws IOException {
+		String data = " <urn:foo_bar> <urn:foo> \"a\"^^\"b\" ; <urn:foo2> <urn:bar2> . <urn:foobar> <urn:food> <urn:barf> . ";
+
+		try {
+			parser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_URI_SYNTAX);
+			parser.parse(new StringReader(data), baseURI);
+			fail("literal as datatype should result in fatal error / parse exception");
+		}
+		catch (RDFParseException e) {
+			// expected
+		}
+	}
+
+	@Test
+	public void testParseIllegalDatatypeURINoVerify() throws IOException {
+		String data = " <urn:foo_bar> <urn:foo> \"a\"^^<urn:foo bar> ; <urn:foo2> <urn:bar2> . <urn:foobar> <urn:food> <urn:barf> . ";
+
+		parser.getParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false);
+
+		parser.parse(new StringReader(data), baseURI);
+		assertThat(errorCollector.getErrors()).isEmpty();
+		assertThat(errorCollector.getFatalErrors()).isEmpty();
+		assertThat(statementCollector.getStatements()).isNotEmpty();
+		assertThat(statementCollector.getStatements()).hasSize(3).overridingErrorMessage(
+				"all triples should have been reported");
+	}
+
+	@Test
+	public void testParseIllegalDatatypValueINoVerify() throws IOException {
+		String data = " <urn:foo_bar> <urn:foo> \"a\"^^\"b\" ; <urn:foo2> <urn:bar2> . <urn:foobar> <urn:food> <urn:barf> . ";
+
+		try {
+			parser.getParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false);
+			parser.parse(new StringReader(data), baseURI);
+			fail("literal as datatype should result in fatal error / parse exception");
+		}
+		catch (RDFParseException e) {
+			// expected
+		}
+	}
+
 	@Test
 	public void testUnparsableIRIFatal() throws IOException {
 		// subject IRI is not processable by ParsedIRI
@@ -138,7 +221,7 @@ public class TestTurtleParser {
 		}
 
 	}
-	
+
 	@Test
 	public void testUnparsableIRINonFatal() throws IOException {
 		// subject IRI is not processable by ParsedIRI
@@ -148,8 +231,8 @@ public class TestTurtleParser {
 		assertThat(errorCollector.getErrors()).hasSize(1);
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
-		assertThat(statementCollector.getStatements()).hasSize(1)
-		        .overridingErrorMessage("only syntactically legal triples should have been reported");
+		assertThat(statementCollector.getStatements()).hasSize(1).overridingErrorMessage(
+				"only syntactically legal triples should have been reported");
 
 	}
 
@@ -163,8 +246,8 @@ public class TestTurtleParser {
 		assertThat(errorCollector.getErrors()).isEmpty();
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
-		assertThat(statementCollector.getStatements()).hasSize(2)
-		        .overridingErrorMessage("all triples should have been reported");
+		assertThat(statementCollector.getStatements()).hasSize(2).overridingErrorMessage(
+				"all triples should have been reported");
 
 	}
 
@@ -342,7 +425,7 @@ public class TestTurtleParser {
 
 	@Test
 	public void rdfXmlLoadedFromInsideAJarResolvesRelativeUris() throws IOException {
-		URL zipfileUrl = TestTurtleParser.class.getResource("sample-with-turtle-data.zip");
+		URL zipfileUrl = TurtleParserTest.class.getResource("sample-with-turtle-data.zip");
 
 		assertNotNull("The sample-with-turtle-data.zip file must be present for this test", zipfileUrl);
 
@@ -353,9 +436,9 @@ public class TestTurtleParser {
 		StatementCollector sc = new StatementCollector();
 		parser.setRDFHandler(sc);
 
-	    try (InputStream in = new URL(url).openStream()) {
+		try (InputStream in = new URL(url).openStream()) {
 			parser.parse(in, url);
-	    }
+		}
 
 		Collection<Statement> stmts = sc.getStatements();
 
@@ -385,7 +468,7 @@ public class TestTurtleParser {
 		assertEquals(DC.TITLE, stmt2.getPredicate());
 		assertEquals(vf.createLiteral("Empty File"), stmt2.getObject());
 	}
-	
+
 	@Test
 	public void testIllegalNewlineInQuotedObjectLiteral() throws IOException {
 		String data = "<urn:a> <urn:b> \"not\nallowed\" .";
@@ -394,7 +477,8 @@ public class TestTurtleParser {
 		try {
 			parser.parse(r, baseURI);
 			fail("Did not catch illegal new line");
-		} catch (RDFParseException e) {
+		}
+		catch (RDFParseException e) {
 			assertThat(e.getMessage().startsWith("Illegal carriage return or new line in literal"));
 		}
 	}
@@ -407,9 +491,10 @@ public class TestTurtleParser {
 		try {
 			parser.parse(r, baseURI);
 			assertTrue(statementCollector.getStatements().size() == 1);
-		} catch (RDFParseException e) {
+		}
+		catch (RDFParseException e) {
 			fail("New line is legal inside triple quoted literal");
 		}
 	}
-	
+
 }
