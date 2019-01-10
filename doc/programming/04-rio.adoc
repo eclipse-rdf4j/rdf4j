@@ -261,7 +261,11 @@ The Javadoc documentation shows which settings are available, and what their sys
 
 === Programmatic configuration
 
-The Rio parser/writer configuration can be retrieved and modified via {javadoc}rio/RDFParser.html[RDFParser.getParserConfig()] / {javadoc}rio/RDFWriter.html[RDFWriter.getWriterConfig()]. This returns a {javadoc}rio/ParserConfig.html[ParserConfig] object, which is a collection for the various supported parser settings. Each configuration option can be be added to this object with a value of choice. The `ParserConfig` also allows you to mark certain types of error as "non-fatal", meaning that Rio will still report these errors (and skip the line in which the error occurs), but will try to continue processing the rest of the data.
+The Rio parser/writer configuration can be retrieved and modified via {javadoc}rio/RDFParser.html[RDFParser.getParserConfig()] / {javadoc}rio/RDFWriter.html[RDFWriter.getWriterConfig()]. This returns a {javadoc}rio/RioConfig.html[RioConfig] object, which is a collection for the various supported parser/writer settings. Each configuration option can be added to this object with a value of choice. 
+
+Each Rio parser/writer can be queried about which settings it supports, using {javadoc}/rio/RDFParser.html[RDFParser.getSupportedSettings()] / {javadoc}/rio/RDFWriter.html[RDFWriter.getSupportedSettings()].
+
+Lastly, the `RioConfig` also allows you to mark certain types of error as "non-fatal". Non-fatal errors are still reported by Rio, but will not abort file processing.
 
 Some examples follow:
 
