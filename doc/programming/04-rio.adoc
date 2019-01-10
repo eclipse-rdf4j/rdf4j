@@ -244,11 +244,48 @@ finally {
 }
 ----
 
-== Configuring the parser
+== Configuring the parser / writer
 
-The Rio parsers have several configuration options, allowing you to tweak their behavior. The configuration of a Rio parser can be retrieved and modified via {javadoc}rio/RDFParser.html[RDFParser.getParserConfig()]. This returns a {javadoc}rio/ParserConfig.html[ParserConfig] object, which is a collection for the various supported parser settings.
+The Rio parsers and writers have several configuration options, allowing you to tweak their behavior. The configuration of a Rio parser/writer can be modified in two ways: programmatically, or by specifying Java system properties (typically done by passing `-D` command line flag).
 
-For example, if we want to preserve blank node identifiers as found in the source file (by default the parser creates new identifiers to ensure uniqueness across multiple files), you can reconfigure the parser as follows:
+The available configuration options are available via several helper classes, listed in the Javadoc documentation:
+
+* {javadoc}rio/helpers/BasicParserSettings.html[BasicParserSettings] and {javadoc}rio/helpers/BasicParserSettings.html[BasicWriterSettings] contains various parser/writers settings that can be used with most Rio parsers/writers. This includes things such a IRI syntax validation, datatype verification/normalisation, and various other general options;   
+* {javadoc}rio/helpers/JSONSettings.html[JSONSettings] has configuration options related to JSON-based formats such as JSON-LD and RDF/JSON;
+* {javadoc}rio/helpers/JSONLDSettings.html[JSONLDSettings] has configuration options specific to JSON-LD writing;
+* {javadoc}rio/helpers/NTriplesParserSettings.html[NTriplesParserSettings] and {javadoc}rio/helpers/NTriplesWriterSettings.html[NTriplesWriterSettings] have additional settings specific to the N-Triples and N-Quads formats;
+* {javadoc}rio/helpers/TurtleParserSettings.html[TurtleParserSettings] and {javadoc}rio/helpers/TurtleWriterSettings.html[TurtleWriterSettings] have additional settings specific for the Turtle and TriG formats;
+* {javadoc}rio/helpers/XMLParserSettings.html[XMLParserSettings] and {javadoc}rio/helpers/XMLWriterSettings.html[XMLWriterSettings] have configuration options specific to XML-based parsing and writing. 
+
+The Javadoc documentation shows which settings are available, and what their system property keys and their default values are.
+
+=== Programmatic configuration
+
+The Rio parser/writer configuration can be retrieved and modified via {javadoc}rio/RDFParser.html[RDFParser.getParserConfig()] / {javadoc}rio/RDFWriter.html[RDFWriter.getWriterConfig()]. This returns a {javadoc}rio/ParserConfig.html[ParserConfig] object, which is a collection for the various supported parser settings. Each configuration option can be be added to this object with a value of choice. The `ParserConfig` also allows you to mark certain types of error as "non-fatal", meaning that Rio will still report these errors (and skip the line in which the error occurs), but will try to continue processing the rest of the data.
+
+Some examples follow:
+
+==== Example: IRI syntax validation
+
+By default the Rio parsers validate IRI syntax and produce a fatal error if an IRI can not be parsed. You can disable this as follows:
+
+[source,java,linenum]
+----
+RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
+rdfParser.getParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false);
+----
+
+If you want to make Rio still report syntax errors, but continue processing the file, you can do so as follows:
+
+[source,java,linenum]
+----
+RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
+rdfParser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_URI_SYNTAX);
+----
+
+==== Example: blank node preservation 
+
+If you want to preserve blank node identifiers as found in the source file (by default the parser creates new identifiers to ensure uniqueness across multiple files), you can reconfigure the parser as follows:
 
 [source,java,linenum]
 ----
@@ -256,9 +293,18 @@ RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
 rdfParser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 ----
 
-The {javadoc}rio/helpers/BasicParserSettings.html[BasicParserSettings] holds a collection of various parser settings that can be reconfigured this way. These are settings that can be used with most Rio parsers. {javadoc}rio/helpers/TurtleParserSettings.html[TurtleParserSettings] has additional settings specific for the Turtle and TriG parsers, and {javadoc}rio/helpers/NTriplesParserSettings.html[NTriplesParserSettings] has additional settings specific to N-Triples and N-Quads parsing.
+=== Configuration via command line switches
 
-=== Note on parsing RDF/XML and JAXP limits
+To allow reconfiguring a Rio parser/writer in a runtime deployment (for example in an RDF4J Server), it is also possible to set certain configuration options through Java system properties. You can specify these by passing `-D` commandline switches to the JRE in which the application runs.
+
+The Javadoc for each parser/writer setting documents the system property name by which it can be reconfigured. For example, {javadoc}rio/helpers/BasicParserSettings.html[BasicParserSettings.VERIFY_LANGAGUAGE_TAGS] (which determines if Rio verifies that language tags are standards-compliant) can be disabled by using the following command line switch:
+
+[source]
+----
+-Dorg.eclipse.rdf4j.rio.verify_language_tags=false
+----
+
+=== A note on parsing RDF/XML and JAXP limits
 
 Check the documentation on https://docs.oracle.com/javase/tutorial/jaxp/limits/limits.html[limits]
 and using the https://docs.oracle.com/javase/tutorial/jaxp/limits/using.html[jaxp.properties file] if you get one of the following errors:
