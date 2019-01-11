@@ -1,5 +1,5 @@
 #
-# Sesame configuration template for a main-memory repository with
+# Configuration template for a main-memory repository with
 # RDF Schema inferencing
 #
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
@@ -11,15 +11,15 @@
 
 
 [] a rep:Repository ;
-   rep:repositoryID "{%Repository ID|memory-rdfs%}" ;
-   rdfs:label "{%Repository title|Memory store with RDFS inferencing%}" ;
+   rep:repositoryID "{%Repository ID|memory-rdfs-new%}" ;
+   rdfs:label "{%Repository title|Memory store with RDFS inferencing (legacy reasoner)%}" ;
    rep:repositoryImpl [
       rep:repositoryType "openrdf:SailRepository" ;
       sr:sailImpl [
-         sail:sailType "rdf4j:SchemaCachingRDFSInferencer" ;
+               sail:sailType "openrdf:ForwardChainingRDFSInferencer" ;
          sail:delegate [
             sail:sailType "openrdf:MemoryStore" ;
-	        sail:iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
+	    	sail:iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
             ms:persist {%Persist|true|false%} ;
             ms:syncDelay {%Sync delay|0%};
             sb:evaluationStrategyFactory "{%EvaluationStrategyFactory|org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory%}"
