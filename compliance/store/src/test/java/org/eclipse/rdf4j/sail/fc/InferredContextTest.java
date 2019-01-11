@@ -32,7 +32,6 @@ public class InferredContextTest {
 		sail.initialize();
 		sail.setAddInferredStatementsToDefaultContext(true);
 
-
 		try (SchemaCachingRDFSInferencerConnection connection = sail.getConnection()) {
 			connection.begin();
 			connection.addStatement(bNode, RDF.TYPE, type, context);
