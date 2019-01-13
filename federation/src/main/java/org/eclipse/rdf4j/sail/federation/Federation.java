@@ -268,7 +268,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	{
 		for (Repository member : members) {
 			try {
-				member.init();
+				member.initialize();
 			}
 			catch (RepositoryException e) {
 				throw new SailException(e);
