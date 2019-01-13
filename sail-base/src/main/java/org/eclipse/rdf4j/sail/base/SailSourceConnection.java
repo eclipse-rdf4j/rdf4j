@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.IterativeEvaluationOptimi
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.RegexAsStringFunctionOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
@@ -240,6 +241,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 			new BindingAssigner().optimize(tupleExpr, dataset, bindings);
 			new ConstantOptimizer(strategy).optimize(tupleExpr, dataset, bindings);
+			//The regex as string function optimizer works better if the constants are resolved
+			new RegexAsStringFunctionOptimizer(vf).optimize(tupleExpr, dataset, bindings);
 			new CompareOptimizer().optimize(tupleExpr, dataset, bindings);
 			new ConjunctiveConstraintSplitter().optimize(tupleExpr, dataset, bindings);
 			new DisjunctiveConstraintOptimizer().optimize(tupleExpr, dataset, bindings);
