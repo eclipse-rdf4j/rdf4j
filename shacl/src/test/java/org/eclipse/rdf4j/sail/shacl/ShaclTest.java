@@ -35,23 +35,18 @@ import static org.junit.Assert.assertFalse;
 @RunWith(Parameterized.class)
 public class ShaclTest {
 
-	static final List<String> testCasePaths = Arrays.asList(
-		"test-cases/datatype/simple",
-		"test-cases/minCount/simple",
-		"test-cases/maxCount/simple",
-		"test-cases/or/inheritance",
-		"test-cases/or/inheritance-deep",
-		"test-cases/or/inheritance-deep-minCountMaxCount",
-		"test-cases/or/inheritanceNodeShape",
-		"test-cases/or/datatype",
-		"test-cases/or/minCountMaxCount",
-		"test-cases/or/maxCount",
-		"test-cases/or/minCount"
+	static final List<String> testCasePaths = Arrays.asList("test-cases/datatype/simple",
+			"test-cases/minCount/simple", "test-cases/maxCount/simple", "test-cases/or/inheritance",
+			"test-cases/or/inheritance-deep", "test-cases/or/inheritance-deep-minCountMaxCount",
+			"test-cases/or/inheritanceNodeShape", "test-cases/or/datatype", "test-cases/or/minCountMaxCount",
+			"test-cases/or/maxCount", "test-cases/or/minCount"
 
 	);
 
 	private final String testCasePath;
+
 	private final String path;
+
 	private final ExpectedResult expectedResult;
 
 	public ShaclTest(String testCasePath, String path, ExpectedResult expectedResult) {
@@ -64,8 +59,6 @@ public class ShaclTest {
 		LoggingNode.loggingEnabled = true;
 	}
 
-
-
 	@Parameterized.Parameters(name = "{2} - {1}")
 	public static Collection<Object[]> data() {
 
@@ -73,17 +66,13 @@ public class ShaclTest {
 	}
 
 	@Test
-	public void test() {
-
+	public void test() throws Exception {
 		runTestCase(testCasePath, path, expectedResult);
-
 	}
 
 	@Test
-	public void testSingleTransaction() {
-
+	public void testSingleTransaction() throws Exception {
 		runTestCaseSingleTransaction(testCasePath, path, expectedResult);
-
 	}
 
 	static List<String> findTestCases(String testCase, String baseCase) {
@@ -97,7 +86,8 @@ public class ShaclTest {
 				ret.add(path);
 				try {
 					resourceAsStream.close();
-				} catch (IOException e) {
+				}
+				catch (IOException e) {
 					throw new RuntimeException(e);
 				}
 			}
@@ -107,30 +97,23 @@ public class ShaclTest {
 
 	}
 
-
 	static Collection<Object[]> getTestsToRun() {
 		List<Object[]> ret = new ArrayList<>();
-
 
 		for (String testCasePath : testCasePaths) {
 			for (ExpectedResult baseCase : ExpectedResult.values()) {
 				findTestCases(testCasePath, baseCase.name()).forEach(path -> {
-					Object[] temp = {testCasePath, path, baseCase};
+					Object[] temp = { testCasePath, path, baseCase };
 					ret.add(temp);
 
 				});
 			}
 		}
 
-
 		return ret;
 	}
 
-
-
-
-
-	void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult) {
+	void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult) throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -140,13 +123,13 @@ public class ShaclTest {
 			shaclPath = shaclPath + "/";
 		}
 
-
 		String shaclFile = shaclPath + "shacl.ttl";
 		System.out.println(shaclFile);
-		ShaclSail innerShaclSail = new ShaclSail(new MemoryStore(), Utils.getSailRepository(shaclFile));
-		innerShaclSail.setDebugPrintPlans(true);
-		SailRepository shaclSail = new SailRepository(innerShaclSail);
-		shaclSail.initialize();
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		shaclSail.setDebugPrintPlans(true);
+		SailRepository shaclRepository = new SailRepository(shaclSail);
+		shaclRepository.initialize();
+		Utils.loadShapeData(shaclRepository, shaclFile);
 
 		boolean exception = false;
 		boolean ran = false;
@@ -162,16 +145,18 @@ public class ShaclTest {
 			ran = true;
 			System.out.println(name);
 
-			try (SailRepositoryConnection connection = shaclSail.getConnection()) {
+			try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 				connection.begin();
 				String query = IOUtil.readString(resourceAsStream);
 				connection.prepareUpdate(query).execute();
 				connection.commit();
-			} catch (RepositoryException sailException) {
+			}
+			catch (RepositoryException sailException) {
 				exception = true;
 				System.out.println(sailException.getMessage());
 
-			} catch (IOException e) {
+			}
+			catch (IOException e) {
 				e.printStackTrace();
 			}
 
@@ -179,14 +164,17 @@ public class ShaclTest {
 		if (ran) {
 			if (expectedResult == ExpectedResult.valid) {
 				assertFalse("Expected transaction to succeed", exception);
-			} else {
+			}
+			else {
 				assertTrue("Expected transaction to fail", exception);
 			}
 		}
 
 	}
 
-	void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult) {
+	void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult)
+		throws Exception
+	{
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -196,13 +184,15 @@ public class ShaclTest {
 			shaclPath = shaclPath + "/";
 		}
 
-		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository(shaclPath + "shacl.ttl")));
-		shaclSail.initialize();
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		SailRepository shaclRepository = new SailRepository(shaclSail);
+		shaclRepository.initialize();
+		Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
 
 		boolean exception = false;
 		boolean ran = false;
 
-		try (SailRepositoryConnection shaclSailConnection = shaclSail.getConnection()) {
+		try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
 			shaclSailConnection.begin(IsolationLevels.SNAPSHOT);
 
 			for (int j = 0; j < 100; j++) {
@@ -220,7 +210,8 @@ public class ShaclTest {
 					String query = IOUtil.readString(resourceAsStream);
 					shaclSailConnection.prepareUpdate(query).execute();
 
-				} catch (IOException e) {
+				}
+				catch (IOException e) {
 					e.printStackTrace();
 				}
 			}
@@ -228,7 +219,8 @@ public class ShaclTest {
 			try {
 				shaclSailConnection.commit();
 
-			} catch (RepositoryException sailException) {
+			}
+			catch (RepositoryException sailException) {
 				exception = true;
 				System.out.println(sailException.getMessage());
 			}
@@ -236,7 +228,8 @@ public class ShaclTest {
 		if (ran) {
 			if (expectedResult == ExpectedResult.valid) {
 				assertFalse(exception);
-			} else {
+			}
+			else {
 				assertTrue(exception);
 			}
 		}
@@ -244,8 +237,8 @@ public class ShaclTest {
 	}
 
 	enum ExpectedResult {
-		valid, invalid
+		valid,
+		invalid
 	}
-
 
 }

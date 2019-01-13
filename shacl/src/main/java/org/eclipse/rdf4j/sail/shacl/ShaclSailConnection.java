@@ -11,7 +11,10 @@ package org.eclipse.rdf4j.sail.shacl;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -39,7 +42,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
 	private NotifyingSailConnection previousStateConnection;
+
 	private Repository addedStatements;
+
 	private Repository removedStatements;
 
 	public final ShaclSail sail;
@@ -47,9 +52,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	public Stats stats;
 
 	private HashSet<Statement> addedStatementsSet = new HashSet<>();
+
 	private HashSet<Statement> removedStatementsSet = new HashSet<>();
 
-	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, NotifyingSailConnection previousStateConnection) {
+	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
+			NotifyingSailConnection previousStateConnection)
+	{
 		super(connection);
 		this.previousStateConnection = previousStateConnection;
 		this.sail = sail;
@@ -58,23 +66,23 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 			addConnectionListener(new SailConnectionListener() {
 
-									  @Override
-									  public void statementAdded(Statement statement) {
-										  boolean add = addedStatementsSet.add(statement);
-										  if (!add) {
-											  removedStatementsSet.remove(statement);
-										  }
+				@Override
+				public void statementAdded(Statement statement) {
+					boolean add = addedStatementsSet.add(statement);
+					if (!add) {
+						removedStatementsSet.remove(statement);
+					}
 
-									  }
+				}
 
-									  @Override
-									  public void statementRemoved(Statement statement) {
-										  boolean add = removedStatementsSet.add(statement);
-										  if (!add) {
-											  addedStatementsSet.remove(statement);
-										  }
-									  }
-								  }
+				@Override
+				public void statementRemoved(Statement statement) {
+					boolean add = removedStatementsSet.add(statement);
+					if (!add) {
+						addedStatementsSet.remove(statement);
+					}
+				}
+			}
 
 			);
 		}
@@ -98,8 +106,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
-	public void begin(IsolationLevel level)
-		throws SailException {
+	public void begin(IsolationLevel level) throws SailException {
 
 		assert addedStatements == null;
 		assert removedStatements == null;
@@ -107,7 +114,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		stats = new Stats();
 
 		// start two transactions, synchronize on underlying sail so that we get two transactions immediatly successivley
-		synchronized (sail){
+		synchronized (sail) {
 			super.begin(level);
 			previousStateConnection.begin(IsolationLevels.SNAPSHOT);
 		}
@@ -123,8 +130,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	@Override
-	public void commit()
-		throws SailException {
+	public void commit() throws SailException {
 		synchronized (sail) {
 			try {
 				boolean valid = validate();
@@ -133,12 +139,36 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 				if (!valid) {
 					rollback();
 					throw new SailException("Failed SHACL validation");
-				} else {
+				}
+				else {
 					super.commit();
 				}
-			} finally {
+			}
+			finally {
 				cleanup();
 			}
+		}
+	}
+
+	@Override
+	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		if (contexts.length == 1 && contexts[0].equals(ShaclSail.SHAPE_GRAPH)) {
+			sail.addShapesStatement(subj, pred, obj);
+		}
+		else {
+			super.addStatement(subj, pred, obj, contexts);
+		}
+	}
+
+	@Override
+	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
+		throws SailException
+	{
+		if (contexts.length == 1 && contexts[0].equals(ShaclSail.SHAPE_GRAPH)) {
+			sail.removeShapesStatements(subj, pred, obj);
+		}
+		else {
+			super.removeStatements(subj, pred, obj, contexts);
 		}
 	}
 
@@ -166,7 +196,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		stats = null;
 	}
 
-
 	private boolean validate() {
 
 		if (!sail.config.validationEnabled) {
@@ -185,7 +214,13 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 					boolean valid = collect.size() == 0;
 					if (!valid) {
-						logger.warn("SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {} \n\t\t{}", nodeShape.toString(), String.join("\n\t\t", collect.stream().map(a -> a.toString()+" -cause-> "+a.getCause()).collect(Collectors.toList())));
+						logger.warn(
+								"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {} \n\t\t{}",
+								nodeShape.toString(),
+								String.join("\n\t\t",
+										collect.stream().map(
+												a -> a.toString() + " -cause-> " + a.getCause()).collect(
+														Collectors.toList())));
 					}
 					allValid = allValid && valid;
 				}
@@ -200,20 +235,20 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		addedStatements = getNewMemorySail();
 		removedStatements = getNewMemorySail();
 
-
 		addedStatementsSet.forEach(stats::added);
 		removedStatementsSet.forEach(stats::removed);
 
-
 		try (RepositoryConnection connection = addedStatements.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			addedStatementsSet.stream().filter(statement -> !removedStatementsSet.contains(statement)).forEach(connection::add);
+			addedStatementsSet.stream().filter(
+					statement -> !removedStatementsSet.contains(statement)).forEach(connection::add);
 			connection.commit();
 		}
 
 		try (RepositoryConnection connection = removedStatements.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			removedStatementsSet.stream().filter(statement -> !addedStatementsSet.contains(statement)).forEach(connection::add);
+			removedStatementsSet.stream().filter(
+					statement -> !addedStatementsSet.contains(statement)).forEach(connection::add);
 			connection.commit();
 		}
 	}
@@ -226,10 +261,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		super.close();
 	}
 
-
 	public class Stats {
 
 		boolean hasAdded;
+
 		boolean hasRemoved;
 
 		public void added(Statement statement) {
@@ -250,4 +285,3 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		}
 	}
 }
-

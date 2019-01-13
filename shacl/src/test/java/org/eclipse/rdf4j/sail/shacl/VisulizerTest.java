@@ -13,12 +13,10 @@ import org.junit.Test;
 public class VisulizerTest {
 
 	@Test
-	public void datatype() {
+	public void datatype() throws Exception {
 
 
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shaclDatatype.ttl"));
-		shaclSail.initialize();
-
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclDatatype.ttl");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -43,12 +41,10 @@ public class VisulizerTest {
 	}
 
 	@Test
-	public void maxCount() {
+	public void maxCount() throws Exception {
 
 
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shaclMax.ttl"));
-		shaclSail.initialize();
-
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclMax.ttl");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -72,12 +68,10 @@ public class VisulizerTest {
 	}
 
 	@Test(expected = SailException.class)
-	public void minCount() {
+	public void minCount() throws Exception {
 
 
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
-		shaclSail.initialize();
-
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			SimpleValueFactory vf = SimpleValueFactory.getInstance();

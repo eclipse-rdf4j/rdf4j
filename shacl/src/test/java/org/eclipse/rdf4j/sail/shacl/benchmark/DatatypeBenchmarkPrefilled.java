@@ -58,7 +58,7 @@ public class DatatypeBenchmarkPrefilled {
 
 
 	@Setup(Level.Invocation)
-	public void setUp() {
+	public void setUp() throws Exception {
 		allStatements = new ArrayList<>(10);
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -88,7 +88,7 @@ public class DatatypeBenchmarkPrefilled {
 		}
 
 
-		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shaclDatatype.ttl"));
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shaclDatatype.ttl");
 		this.shaclRepo = new SailRepository(shaclRepo);
 		this.shaclRepo.initialize();
 

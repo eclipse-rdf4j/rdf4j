@@ -84,9 +84,9 @@ public class MinCountBenchmarkEmpty {
 
 
 	@Benchmark
-	public void shacl() {
+	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl")));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shacl.ttl"));
 
 		repository.initialize();
 
