@@ -124,21 +124,21 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * @throws RepositoryException
 	 *         If the manager failed to initialize the SYSTEM repository.
 	 */
-	public void initialize()
-		throws RepositoryException
-	{
+	public void initialize() throws RepositoryException {
 		initialized = true;
 	}
 
 	@Deprecated
-	protected Repository createSystemRepository()
-		throws RepositoryException
-	{
+	protected Repository createSystemRepository() throws RepositoryException {
 		return null;
 	}
 
 	/**
 	 * Gets the SYSTEM repository.
+	 * 
+	 * @deprecated Repository configuration is no longer stored in a centralized system repository,
+	 *             instead using a file <code>config.ttl</code> per repository, stored in that repository's
+	 *             datadir.
 	 */
 	@Deprecated
 	public Repository getSystemRepository() {
@@ -170,9 +170,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * @throws RepositoryException
 	 * @throws RepositoryConfigException
 	 */
-	public String getNewRepositoryID(String baseName)
-		throws RepositoryException, RepositoryConfigException
-	{
+	public String getNewRepositoryID(String baseName) throws RepositoryException, RepositoryConfigException {
 		if (baseName != null) {
 			// Filter exotic characters from the base name
 			baseName = baseName.trim();
@@ -216,9 +214,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 		return baseName + index;
 	}
 
-	public Set<String> getRepositoryIDs()
-		throws RepositoryException
-	{
+	public Set<String> getRepositoryIDs() throws RepositoryException {
 		Set<String> idSet = new LinkedHashSet<String>();
 		getAllRepositoryInfos(false).forEach(info -> {
 			idSet.add(info.getId());
@@ -328,9 +324,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * @return true if there is no existing proxy reference to the given id, false otherwise
 	 * @throws RepositoryException
 	 */
-	public boolean isSafeToRemove(String repositoryID)
-		throws RepositoryException
-	{
+	public boolean isSafeToRemove(String repositoryID) throws RepositoryException {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		for (String id : getRepositoryIDs()) {
 			RepositoryConfig config = getRepositoryConfig(id);
@@ -403,9 +397,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 *         If no repository could be created due to invalid or incomplete configuration data.
 	 */
 	@Override
-	public Repository getRepository(String identity)
-		throws RepositoryConfigException, RepositoryException
-	{
+	public Repository getRepository(String identity) throws RepositoryConfigException, RepositoryException {
 		synchronized (initializedRepositories) {
 			updateInitializedRepositories();
 			Repository result = initializedRepositories.get(identity);
@@ -489,8 +481,9 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 					iter.remove();
 					try {
 						next.shutDown();
-					} catch(RepositoryException e) {
-						
+					}
+					catch (RepositoryException e) {
+
 					}
 				}
 			}
@@ -504,9 +497,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * @return The Set of all Repositories defined in the SystemRepository.
 	 * @see #getInitializedRepositories()
 	 */
-	public Collection<Repository> getAllRepositories()
-		throws RepositoryConfigException, RepositoryException
-	{
+	public Collection<Repository> getAllRepositories() throws RepositoryConfigException, RepositoryException {
 		Set<String> idSet = getRepositoryIDs();
 
 		ArrayList<Repository> result = new ArrayList<Repository>(idSet.size());
@@ -541,9 +532,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * @throws RepositoryException
 	 *         When not able to retrieve existing configurations
 	 */
-	public RepositoryInfo getRepositoryInfo(String id)
-		throws RepositoryException
-	{
+	public RepositoryInfo getRepositoryInfo(String id) throws RepositoryException {
 		for (RepositoryInfo repInfo : getAllRepositoryInfos()) {
 			if (repInfo.getId().equals(id)) {
 				return repInfo;
@@ -553,15 +542,11 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 		return null;
 	}
 
-	public Collection<RepositoryInfo> getAllRepositoryInfos()
-		throws RepositoryException
-	{
+	public Collection<RepositoryInfo> getAllRepositoryInfos() throws RepositoryException {
 		return getAllRepositoryInfos(false);
 	}
 
-	public Collection<RepositoryInfo> getAllUserRepositoryInfos()
-		throws RepositoryException
-	{
+	public Collection<RepositoryInfo> getAllUserRepositoryInfos() throws RepositoryException {
 		return getAllRepositoryInfos(true);
 	}
 
@@ -676,9 +661,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * @throws IOException
 	 */
 	@Deprecated
-	protected void cleanUpRepository(String repositoryID)
-		throws IOException
-	{
+	protected void cleanUpRepository(String repositoryID) throws IOException {
 	}
 
 	/**
@@ -687,6 +670,5 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * @throws MalformedURLException
 	 *         If the location cannot be represented as a URL.
 	 */
-	public abstract URL getLocation()
-		throws MalformedURLException;
+	public abstract URL getLocation() throws MalformedURLException;
 }

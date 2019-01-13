@@ -47,9 +47,21 @@ public interface Repository {
 	 * 
 	 * @throws RepositoryException
 	 *         If the initialization failed.
+	 * @deprecated Use {@link #init()} instead.
 	 */
-	public void initialize()
-		throws RepositoryException;
+	@Deprecated
+	public void initialize() throws RepositoryException;
+
+	/**
+	 * Initializes this repository. A repository needs to be initialized before it can be used.
+	 * 
+	 * @throws RepositoryException
+	 *         If the initialization failed.
+	 * @since 2.5
+	 */
+	default void init() throws RepositoryException {
+		initialize();
+	}
 
 	/**
 	 * Indicates if the Repository has been initialized. Note that the initialization status may change if the
@@ -63,16 +75,14 @@ public interface Repository {
 	 * Shuts the repository down, releasing any resources that it keeps hold of. Once shut down, the
 	 * repository can no longer be used until it is re-initialized.
 	 */
-	public void shutDown()
-		throws RepositoryException;
+	public void shutDown() throws RepositoryException;
 
 	/**
 	 * Checks whether this repository is writable, i.e. if the data contained in this repository can be
 	 * changed. The writability of the repository is determined by the writability of the Sail that this
 	 * repository operates on.
 	 */
-	public boolean isWritable()
-		throws RepositoryException;
+	public boolean isWritable() throws RepositoryException;
 
 	/**
 	 * Opens a connection to this repository that can be used for querying and updating the contents of the
@@ -97,8 +107,7 @@ public interface Repository {
 	 * @throws RepositoryException
 	 *         If something went wrong during the creation of the Connection.
 	 */
-	public RepositoryConnection getConnection()
-		throws RepositoryException;
+	public RepositoryConnection getConnection() throws RepositoryException;
 
 	/**
 	 * Gets a ValueFactory for this Repository.

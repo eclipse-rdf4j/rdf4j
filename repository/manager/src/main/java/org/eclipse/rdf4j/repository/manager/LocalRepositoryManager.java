@@ -134,7 +134,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	{
 		File systemDir = getRepositoryDir(SystemRepository.ID);
 		SystemRepository systemRepos = new SystemRepository(systemDir);
-		systemRepos.initialize();
+		systemRepos.init();
 
 		systemRepos.addRepositoryConnectionListener(new ConfigChangeListener());
 		return systemRepos;
@@ -270,7 +270,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 			repository = createRepositoryStack(repConfig.getRepositoryImplConfig());
 			repository.setDataDir(getRepositoryDir(id));
-			repository.initialize();
+			repository.init();
 		}
 
 		return repository;
