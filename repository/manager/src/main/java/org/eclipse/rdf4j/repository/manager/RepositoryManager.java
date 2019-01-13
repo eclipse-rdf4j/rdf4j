@@ -35,10 +35,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A manager for {@link Repository}s. Every <tt>RepositoryManager</tt> has one SYSTEM repository and zero or
- * more "user repositories". The SYSTEM repository contains data that describes the configuration of the other
- * repositories (their IDs, which implementations of the Repository API to use, access rights, etc.). The
- * other repositories are instantiated based on this configuration data.
+ * A manager for {@link Repository}s.
  * 
  * @author Arjohn Kampman
  * @see RepositoryProvider
@@ -110,7 +107,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	public abstract HttpClient getHttpClient();
 
 	/**
-	 * Should be called before {@link #initialize()}.
+	 * Should be called before {@link #init()}.
 	 * 
 	 * @param httpClient
 	 *        The httpClient to use for remote/service calls.
@@ -122,9 +119,22 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * Initializes the repository manager.
 	 * 
 	 * @throws RepositoryException
-	 *         If the manager failed to initialize the SYSTEM repository.
+	 *         If the manager failed to initialize
+	 * @deprecated Since 2.5. Use {@link #init()} instead.
 	 */
+	@Deprecated
 	public void initialize() throws RepositoryException {
+		init();
+	}
+
+	/**
+	 * Initializes the repository manager.
+	 * 
+	 * @throws RepositoryException
+	 *         If the manager failed to initialize.
+	 * @since 2.5
+	 */
+	public void init() throws RepositoryException {
 		initialized = true;
 	}
 
@@ -136,9 +146,8 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	/**
 	 * Gets the SYSTEM repository.
 	 * 
-	 * @deprecated Repository configuration is no longer stored in a centralized system repository,
-	 *             instead using a file <code>config.ttl</code> per repository, stored in that repository's
-	 *             datadir.
+	 * @deprecated Repository configuration is no longer stored in a centralized system repository, instead
+	 *             using a file <code>config.ttl</code> per repository, stored in that repository's datadir.
 	 */
 	@Deprecated
 	public Repository getSystemRepository() {

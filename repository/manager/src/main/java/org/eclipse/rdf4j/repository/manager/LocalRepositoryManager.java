@@ -129,9 +129,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 	@Override
 	@Deprecated
-	protected SystemRepository createSystemRepository()
-		throws RepositoryException
-	{
+	protected SystemRepository createSystemRepository() throws RepositoryException {
 		File systemDir = getRepositoryDir(SystemRepository.ID);
 		SystemRepository systemRepos = new SystemRepository(systemDir);
 		systemRepos.init();
@@ -154,9 +152,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	 *         If the path cannot be parsed as a URL
 	 */
 	@Override
-	public URL getLocation()
-		throws MalformedURLException
-	{
+	public URL getLocation() throws MalformedURLException {
 		return baseDir.toURI().toURL();
 	}
 
@@ -258,10 +254,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
-	protected Repository createRepository(String id)
-		throws RepositoryConfigException,
-		RepositoryException
-	{
+	protected Repository createRepository(String id) throws RepositoryConfigException, RepositoryException {
 		Repository repository = null;
 
 		RepositoryConfig repConfig = getRepositoryConfig(id);
@@ -288,9 +281,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	 * @throws RepositoryConfigException
 	 *         If no repository could be created due to invalid or incomplete configuration data.
 	 */
-	private Repository createRepositoryStack(RepositoryImplConfig config)
-		throws RepositoryConfigException
-	{
+	private Repository createRepositoryStack(RepositoryImplConfig config) throws RepositoryConfigException {
 		RepositoryFactory factory = RepositoryRegistry.getInstance().get(config.getType()).orElseThrow(
 				() -> new RepositoryConfigException("Unsupported repository type: " + config.getType()));
 		Repository repository = factory.getRepository(config);
@@ -413,8 +404,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 	@Override
 	public synchronized void addRepositoryConfig(RepositoryConfig config)
-		throws RepositoryException,
-		RepositoryConfigException
+		throws RepositoryException, RepositoryConfigException
 	{
 		addRepositoryConfig(config, true);
 	}
@@ -444,7 +434,8 @@ public class LocalRepositoryManager extends RepositoryManager {
 		}
 		try {
 			Files.move(part.toPath(), configFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-		} catch (IOException e) {
+		}
+		catch (IOException e) {
 			throw new RepositoryConfigException(e);
 		}
 		if (updateSystem) {
@@ -454,8 +445,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 	@Override
 	public synchronized boolean removeRepository(String repositoryID)
-		throws RepositoryException,
-		RepositoryConfigException
+		throws RepositoryException, RepositoryConfigException
 	{
 		return removeRepository(repositoryID, true);
 	}
@@ -672,7 +662,8 @@ public class LocalRepositoryManager extends RepositoryManager {
 			String result = null;
 
 			try (RepositoryResult<Statement> idStatements = con.getStatements(null, REPOSITORYID, null, true,
-			    context)) {
+					context))
+			{
 				if (idStatements.hasNext()) {
 					Statement idStatement = idStatements.next();
 					result = idStatement.getObject().stringValue();
