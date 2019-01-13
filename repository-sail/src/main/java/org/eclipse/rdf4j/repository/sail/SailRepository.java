@@ -150,7 +150,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 		throws RepositoryException
 	{
 		try {
-			sail.initialize();
+			sail.init();
 		}
 		catch (SailLockedException e) {
 			String l = e.getLockedBy();
