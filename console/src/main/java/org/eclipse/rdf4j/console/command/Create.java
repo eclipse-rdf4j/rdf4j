@@ -79,7 +79,7 @@ public class Create extends ConsoleCommand {
 			+ "    memory-spin, memory-spin-rdfs, memory-spin-rdfs-lucene\n"
 			+ "    native-rdfs, native-rdfs-dt, native-lucene, native-customrule\n"
 			+ "    native-spin, native-spin-rdfs, native-spin-rdfs-lucene\n"
-			+ "  template-dir: \n" 
+			+ "  template-dir (" + templatesDir + "):\n" 
 			+ getUserTemplates();
 	}
 
@@ -109,18 +109,18 @@ public class Create extends ConsoleCommand {
 	 * @return ordered array of names
 	 */
 	private String getUserTemplates() {
-		if (this.templatesDir == null || !this.templatesDir.isDirectory()) {
+		if (templatesDir == null || !templatesDir.exists() || !templatesDir.isDirectory()) {
 			return "";
 		}
 		try {
-			String[] files = Files.walk(this.templatesDir.toPath())
+			String[] files = Files.walk(templatesDir.toPath())
 								.filter(Files::isRegularFile)
 								.map(f -> f.getFileName().toString()).filter(s -> s.endsWith(FILE_EXT))
 								.map(s -> s.substring(0, s.length() - FILE_EXT.length()))
-								.sorted()
-								.collect(Collectors.toSet()).toArray(new String[0]);
+								.sorted().toArray(String[]::new);
 			return Util.joinFormatted(80, 4, true, files, ", ");
 		} catch (IOException ioe) {
+			LOGGER.error("Failed to read templates directory repository ", ioe);
 			return "";
 		}
 	}
@@ -134,7 +134,7 @@ public class Create extends ConsoleCommand {
 	private void createRepository(final String templateName) throws IOException {
 		try {
 			// FIXME: remove assumption of .ttl extension
-			final String templateFileName = templateName + ".ttl";
+			final String templateFileName = templateName + FILE_EXT;
 			final File templateFile = new File(templatesDir, templateFileName);
 			
 			InputStream templateStream = createTemplateStream(templateName, templateFileName, templatesDir,
