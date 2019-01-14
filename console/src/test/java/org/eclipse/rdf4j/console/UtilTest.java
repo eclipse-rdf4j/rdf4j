@@ -73,4 +73,19 @@ public class UtilTest {
 		} catch(IllegalArgumentException expected) {
 		}
 	}
+	
+	@Test
+	public final void testJoinFormatted() {
+		String[] values = { "one", "two", "three", "four", "five", "six", "seven", "eight" };
+		
+		String expect = " one, two\n" +
+						" three, \n" +
+						" four, \n" +
+						" five, six\n" +
+						" seven, \n" +
+						" eight";
+		String fmt = Util.joinFormatted(10, 1, true, values, ", ");
+		System.err.println(fmt);
+		assertTrue("Format not OK", expect.equals(fmt));
+	}
 }

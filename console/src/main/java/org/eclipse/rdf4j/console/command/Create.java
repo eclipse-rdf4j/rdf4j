@@ -14,14 +14,17 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.LockRemover;
+import org.eclipse.rdf4j.console.Util;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -52,8 +55,9 @@ import org.slf4j.LoggerFactory;
 public class Create extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Create.class);
 
-	private static final String TEMPLATES_DIR = "templates";
-
+	private static final String TEMPLATES_SUBDIR = "templates";
+	private static final String FILE_EXT = ".ttl";
+	private File templatesDir;
 
 	@Override
 	public String getName() {
@@ -68,11 +72,17 @@ public class Create extends ConsoleCommand {
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE
-			+ "create <template-name>\n"
-			+ "  <template-name>   The name of a repository configuration template\n";
+			+ "create <template>   Create a new repository using this configuration template\n"
+			+ "  built-in: \n"
+			+ "    memory, native, remote, sparql\n"
+			+ "    memory-rdfs, memory-rdfs-dt, memory-lucene, memory-customrule\n"
+			+ "    memory-spin, memory-spin-rdfs, memory-spin-rdfs-lucene\n"
+			+ "    native-rdfs, native-rdfs-dt, native-lucene, native-customrule\n"
+			+ "    native-spin, native-spin-rdfs, native-spin-rdfs-lucene\n"
+			+ "  template-dir: \n" 
+			+ getUserTemplates();
 	}
 
-	
 	/**
 	 * Constructor
 	 *
@@ -81,6 +91,7 @@ public class Create extends ConsoleCommand {
 	 */
 	public Create(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
+		this.templatesDir = new File(state.getDataDirectory(), TEMPLATES_SUBDIR);
 	}
 
 	@Override
@@ -93,6 +104,28 @@ public class Create extends ConsoleCommand {
 	}
 
 	/**
+	 * Get the names of the user-defined repository templates, located in the templates directory.
+	 * 
+	 * @return ordered array of names
+	 */
+	private String getUserTemplates() {
+		if (this.templatesDir == null || !this.templatesDir.isDirectory()) {
+			return "";
+		}
+		try {
+			String[] files = Files.walk(this.templatesDir.toPath())
+								.filter(Files::isRegularFile)
+								.map(f -> f.getFileName().toString()).filter(s -> s.endsWith(FILE_EXT))
+								.map(s -> s.substring(0, s.length() - FILE_EXT.length()))
+								.sorted()
+								.collect(Collectors.toSet()).toArray(new String[0]);
+			return Util.joinFormatted(80, 4, true, files, ", ");
+		} catch (IOException ioe) {
+			return "";
+		}
+	}
+	
+	/**
 	 * Create a new repository based on a template
 	 * 
 	 * @param templateName name of the template
@@ -102,7 +135,6 @@ public class Create extends ConsoleCommand {
 		try {
 			// FIXME: remove assumption of .ttl extension
 			final String templateFileName = templateName + ".ttl";
-			final File templatesDir = new File(state.getDataDirectory(), TEMPLATES_DIR);
 			final File templateFile = new File(templatesDir, templateFileName);
 			
 			InputStream templateStream = createTemplateStream(templateName, templateFileName, templatesDir,
