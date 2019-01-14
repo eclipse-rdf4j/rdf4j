@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
@@ -47,6 +48,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 	private Repository removedStatements;
 
+	private boolean isShapeRefreshNeeded = false;
+	
 	public final ShaclSail sail;
 
 	public Stats stats;
@@ -55,11 +58,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 	private HashSet<Statement> removedStatementsSet = new HashSet<>();
 
+	private SailRepositoryConnection shapesConnection;
+
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
-			NotifyingSailConnection previousStateConnection)
+			NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesConnection)
 	{
 		super(connection);
 		this.previousStateConnection = previousStateConnection;
+		this.shapesConnection = shapesConnection;
 		this.sail = sail;
 
 		if (sail.config.validationEnabled) {
@@ -116,6 +122,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		// start two transactions, synchronize on underlying sail so that we get two transactions immediatly successivley
 		synchronized (sail) {
 			super.begin(level);
+			shapesConnection.begin(IsolationLevels.SERIALIZABLE);
 			previousStateConnection.begin(IsolationLevels.SNAPSHOT);
 		}
 
@@ -141,6 +148,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 					throw new SailException("Failed SHACL validation");
 				}
 				else {
+					shapesConnection.commit();
+					refreshShapes();
 					super.commit();
 				}
 			}
@@ -153,7 +162,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	@Override
 	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (contexts.length == 1 && contexts[0].equals(ShaclSail.SHAPE_GRAPH)) {
-			sail.addShapesStatement(subj, pred, obj);
+			shapesConnection.add(subj, pred, obj);
+			isShapeRefreshNeeded = true;
 		}
 		else {
 			super.addStatement(subj, pred, obj, contexts);
@@ -165,7 +175,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		throws SailException
 	{
 		if (contexts.length == 1 && contexts[0].equals(ShaclSail.SHAPE_GRAPH)) {
-			sail.removeShapesStatements(subj, pred, obj);
+			shapesConnection.remove(subj, pred, obj);
+			isShapeRefreshNeeded = true;
 		}
 		else {
 			super.removeStatements(subj, pred, obj, contexts);
@@ -177,6 +188,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		synchronized (sail) {
 			previousStateConnection.commit();
 			cleanup();
+			shapesConnection.rollback();
 			super.rollback();
 		}
 	}
@@ -194,8 +206,16 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		addedStatementsSet.clear();
 		removedStatementsSet.clear();
 		stats = null;
+		isShapeRefreshNeeded = false;
 	}
 
+	private void refreshShapes() {
+		if (isShapeRefreshNeeded) {
+			this.sail.refreshShapes();
+			isShapeRefreshNeeded = false;
+		}
+	}
+	
 	private boolean validate() {
 
 		if (!sail.config.validationEnabled) {
@@ -206,7 +226,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 		boolean allValid = true;
 
-		for (NodeShape nodeShape : sail.nodeShapes) {
+		final List<NodeShape> nodeShapes = NodeShape.Factory.getShapes(shapesConnection);
+		for (NodeShape nodeShape : nodeShapes) {
 			List<PlanNode> planNodes = nodeShape.generatePlans(this, nodeShape, sail.debugPrintPlans);
 			for (PlanNode planNode : planNodes) {
 				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
@@ -258,6 +279,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		if (isActive()) {
 			rollback();
 		}
+		shapesConnection.close();
+		previousStateConnection.close();
 		super.close();
 	}
 

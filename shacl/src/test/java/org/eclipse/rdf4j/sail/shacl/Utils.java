@@ -38,7 +38,7 @@ public class Utils {
 		try (SailConnection conn = sail.getConnection()) {
 			conn.begin();
 			for (Statement st : shapes) {
-				conn.addStatement(st.getSubject(), st.getPredicate(), st.getContext(), ShaclSail.SHAPE_GRAPH);
+				conn.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), ShaclSail.SHAPE_GRAPH);
 			}
 			conn.commit();
 		}
@@ -53,7 +53,7 @@ public class Utils {
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.begin();
 			for (Statement st : shapes) {
-				conn.add(st.getSubject(), st.getPredicate(), st.getContext(), ShaclSail.SHAPE_GRAPH);
+				conn.add(st.getSubject(), st.getPredicate(), st.getObject(), ShaclSail.SHAPE_GRAPH);
 			}
 			conn.commit();
 		}

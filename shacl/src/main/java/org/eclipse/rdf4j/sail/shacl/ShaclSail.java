@@ -12,6 +12,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.model.IRI;
@@ -35,16 +36,18 @@ import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
  * A {@link Sail} implementation that adds support for the Shapes Constraint Language (SHACL)
  * 
  * @author Heshan Jayasinghe
+ * @author Håvard Ottestad
  * @see <a href="https://www.w3.org/TR/shacl/">SHACL W3C Recommendation</a>
  */
 public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
-	 * The virtual context identifier for persisting the SHACL shapes information. 
+	 * The virtual context identifier for persisting the SHACL shapes information.
 	 */
-	public final static IRI SHAPE_GRAPH = SimpleValueFactory.getInstance().createIRI("http://rdf4j.org/schema/schacl#ShapeGraph");
-	
-	public List<NodeShape> nodeShapes;
+	public final static IRI SHAPE_GRAPH = SimpleValueFactory.getInstance().createIRI(
+			"http://rdf4j.org/schema/schacl#ShapeGraph");
+
+	private List<NodeShape> nodeShapes;
 
 	boolean debugPrintPlans = false;
 
@@ -58,7 +61,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * an initialized {@link Repository} for storing/retrieving Shapes data
 	 */
 	private SailRepository shapesRepo;
-	
+
 	static {
 		try {
 			SH_OR_UPDATE_QUERY = IOUtils.toString(
@@ -83,16 +86,17 @@ public class ShaclSail extends NotifyingSailWrapper {
 		}
 		else {
 			try {
-				path =  Files.createTempDirectory("shacl-shapes").toString();
-			} catch (IOException e) {
+				path = Files.createTempDirectory("shacl-shapes").toString();
+			}
+			catch (IOException e) {
 				throw new SailConfigException(e);
 			}
 		}
 		if (path.endsWith("/")) {
-			path = path.substring(0, path.length() -1);
+			path = path.substring(0, path.length() - 1);
 		}
 		path = path + "-shapes-graph/";
-		
+
 		shapesRepo = new SailRepository(new MemoryStore(new File(path)));
 		shapesRepo.initialize();
 	}
@@ -100,12 +104,16 @@ public class ShaclSail extends NotifyingSailWrapper {
 	@Override
 	public void initialize() throws SailException {
 		super.initialize();
+		refreshShapes();
+	}
+
+	protected void refreshShapes() throws SailException {
 		try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
 			runInferencingSparqlQueries(shapesRepoConnection);
 			nodeShapes = NodeShape.Factory.getShapes(shapesRepoConnection);
 		}
 	}
-
+	
 	@Override
 	public void shutDown() throws SailException {
 		try {
@@ -116,12 +124,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 		}
 		super.shutDown();
 	}
-	
-
 
 	@Override
 	public NotifyingSailConnection getConnection() throws SailException {
-		return new ShaclSailConnection(this, super.getConnection(), super.getConnection());
+		return new ShaclSailConnection(this, super.getConnection(), super.getConnection(), shapesRepo.getConnection());
 	}
 
 	public void disableValidation() {
@@ -140,20 +146,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 		this.debugPrintPlans = debugPrintPlans;
 	}
 	
-	protected void addShapesStatement(Resource subj, IRI pred, Value obj) {
-		try (RepositoryConnection conn = shapesRepo.getConnection()) {
-			conn.add(subj,  pred, obj);
-		}
+	protected List<NodeShape> getNodeShapes() {
+		return nodeShapes;
 	}
-	
 
-	protected void removeShapesStatements(Resource subj, IRI pred, Value obj) {
-		try (RepositoryConnection conn = shapesRepo.getConnection()) {
-			conn.remove(subj,  pred, obj);
-		}
-	}
-	
- 	private void runInferencingSparqlQueries(SailRepositoryConnection shaclSailConnection) {
+	private void runInferencingSparqlQueries(SailRepositoryConnection shaclSailConnection) {
 
 		long prevSize;
 		long currentSize = shaclSailConnection.size();

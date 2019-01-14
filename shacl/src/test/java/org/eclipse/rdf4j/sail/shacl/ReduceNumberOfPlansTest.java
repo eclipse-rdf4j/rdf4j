@@ -41,7 +41,7 @@ public class ReduceNumberOfPlansTest {
 			connection.begin();
 
 			connection.fillAddedAndRemovedStatementRepositories();
-			List<PlanNode> collect = shaclSail.nodeShapes.stream().flatMap(
+			List<PlanNode> collect = shaclSail.getNodeShapes().stream().flatMap(
 					shape -> shape.generatePlans(connection, shape, false).stream()).collect(
 							Collectors.toList());
 
@@ -51,7 +51,7 @@ public class ReduceNumberOfPlansTest {
 			connection.addStatement(person1, RDF.TYPE, Utils.Ex.Person);
 			connection.fillAddedAndRemovedStatementRepositories();
 
-			List<PlanNode> collect2 = shaclSail.nodeShapes.stream().flatMap(
+			List<PlanNode> collect2 = shaclSail.getNodeShapes().stream().flatMap(
 					shape -> shape.generatePlans(connection, shape, false).stream()).collect(
 							Collectors.toList());
 
@@ -92,7 +92,7 @@ public class ReduceNumberOfPlansTest {
 
 			connection.fillAddedAndRemovedStatementRepositories();
 
-			List<PlanNode> collect1 = shaclSail.nodeShapes.stream().flatMap(
+			List<PlanNode> collect1 = shaclSail.getNodeShapes().stream().flatMap(
 					shape -> shape.generatePlans(connection, shape, false).stream()).collect(
 							Collectors.toList());
 			assertEquals(1, collect1.size());
@@ -101,7 +101,7 @@ public class ReduceNumberOfPlansTest {
 
 			connection.fillAddedAndRemovedStatementRepositories();
 
-			List<PlanNode> collect2 = shaclSail.nodeShapes.stream().flatMap(
+			List<PlanNode> collect2 = shaclSail.getNodeShapes().stream().flatMap(
 					shape -> shape.generatePlans(connection, shape, false).stream()).collect(
 							Collectors.toList());
 			assertEquals(1, collect2.size());
@@ -109,7 +109,7 @@ public class ReduceNumberOfPlansTest {
 			connection.removeStatements(person1, Utils.Ex.name, vf.createLiteral("c"));
 			connection.fillAddedAndRemovedStatementRepositories();
 
-			List<PlanNode> collect3 = shaclSail.nodeShapes.stream().flatMap(
+			List<PlanNode> collect3 = shaclSail.getNodeShapes().stream().flatMap(
 					shape -> shape.generatePlans(connection, shape, false).stream()).collect(
 							Collectors.toList());
 			assertEquals(2, collect3.size());
