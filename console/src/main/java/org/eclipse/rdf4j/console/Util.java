@@ -121,52 +121,45 @@ public class Util {
 	}
 	
 	/**
-	 * Join an array of values + separator, starting new line(s) when the joined values exceed the width. 
+	 * Format a string of values, starting new line(s) when the joined values exceed the width. 
 	 * Primarily used for displaying formatted help (e.g namespaces, config files) to the console.
 	 * 
-	 * @param width max column width
-	 * @param padLen number of leading spaces on each new line 
-	 * @param padFirst also pad the first line
-	 * @param values array of values
-	 * @param sep value separator
+	 * @param width maximum column width
+	 * @param padding left padding
+	 * @param str joined string
+	 * @param separator value separator
 	 * @return list of values as a formatted string, or empty
 	 */
-	public static String joinFormatted(int width, int padLen, boolean padFirst, String[] values, String sep) {
-		if (values.length == 0) {
+	public static String formatToWidth(int width, String padding, String str, String separator) {
+		if (str.isEmpty()) {
 			return "";
 		}
-	
-		char[] spaces = new char[padLen];
-		Arrays.fill(spaces, ' ');
-		String padding = new String(spaces);
 		
-		StringBuilder buf = new StringBuilder();
-		if (padFirst) {
-			buf.append(padding);
+		int padLen = padding.length();
+		int strLen = str.length();
+		int sepLen = separator.length();
+		
+		if (strLen + padLen <= width) {
+			return padding + str;
 		}
 		
-		int pos = buf.length();
-		int sepLen = sep.length();
+		String[] values = str.split(separator);
+		StringBuilder builder = new StringBuilder(strLen + 4 * padLen + 8 * sepLen);
+
+		int colpos = width; // force start on new line
 		
 		for(String value: values) {
-			int valLen = value.length();
-
-			// too large, start new padded line
-			if (pos + valLen > width) {
-				buf.append("\n").append(padding);
-				pos = padLen;
+			int len = value.length();
+			if (colpos + sepLen + len <= width) {
+				builder.append(separator);
+			} else {
+				builder.append("\n").append(padding);
+				colpos = padLen;
 			}
-			buf.append(value);
-			pos += valLen;
-			
-			// don't add a separator if that would exceed the width
-			if (pos + sepLen <= width) {
-				buf.append(sep);
-			}
-			pos += sepLen;
+			builder.append(value);
+			colpos += len;
 		}
-		
-		String s = buf.toString();
-		return s.endsWith(sep) ? s.substring(0, s.length() - sepLen) : s;
+		// don't return initial newline
+		return builder.substring(1);
 	}
 }

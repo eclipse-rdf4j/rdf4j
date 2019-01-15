@@ -113,12 +113,12 @@ public class Create extends ConsoleCommand {
 			return "";
 		}
 		try {
-			String[] files = Files.walk(templatesDir.toPath())
+			String files = Files.walk(templatesDir.toPath())
 								.filter(Files::isRegularFile)
 								.map(f -> f.getFileName().toString()).filter(s -> s.endsWith(FILE_EXT))
 								.map(s -> s.substring(0, s.length() - FILE_EXT.length()))
-								.sorted().toArray(String[]::new);
-			return Util.joinFormatted(80, 4, true, files, ", ");
+								.sorted().collect(Collectors.joining(", "));
+			return Util.formatToWidth(80, "    ", files, ", ");
 		} catch (IOException ioe) {
 			LOGGER.error("Failed to read templates directory repository ", ioe);
 			return "";
