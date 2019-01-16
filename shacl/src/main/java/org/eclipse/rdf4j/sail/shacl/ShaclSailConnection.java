@@ -49,7 +49,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	private Repository removedStatements;
 
 	private boolean isShapeRefreshNeeded = false;
-	
+
 	public final ShaclSail sail;
 
 	public Stats stats;
@@ -61,8 +61,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	private SailRepositoryConnection shapesConnection;
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
-			NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesConnection)
-	{
+						NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesConnection) {
 		super(connection);
 		this.previousStateConnection = previousStateConnection;
 		this.shapesConnection = shapesConnection;
@@ -72,23 +71,23 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 			addConnectionListener(new SailConnectionListener() {
 
-				@Override
-				public void statementAdded(Statement statement) {
-					boolean add = addedStatementsSet.add(statement);
-					if (!add) {
-						removedStatementsSet.remove(statement);
-					}
+									  @Override
+									  public void statementAdded(Statement statement) {
+										  boolean add = addedStatementsSet.add(statement);
+										  if (!add) {
+											  removedStatementsSet.remove(statement);
+										  }
 
-				}
+									  }
 
-				@Override
-				public void statementRemoved(Statement statement) {
-					boolean add = removedStatementsSet.add(statement);
-					if (!add) {
-						addedStatementsSet.remove(statement);
-					}
-				}
-			}
+									  @Override
+									  public void statementRemoved(Statement statement) {
+										  boolean add = removedStatementsSet.add(statement);
+										  if (!add) {
+											  addedStatementsSet.remove(statement);
+										  }
+									  }
+								  }
 
 			);
 		}
@@ -139,21 +138,26 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	@Override
 	public void commit() throws SailException {
 		synchronized (sail) {
+
+			refreshShapes(shapesConnection);
+
+			if ((!addedStatementsSet.isEmpty() || !removedStatementsSet.isEmpty()) && sail.nodeShapes.isEmpty()) {
+				throw new NoShapesLoadedException();
+			}
+
 			try {
 				boolean valid = validate();
 				previousStateConnection.commit();
 
 				if (!valid) {
 					rollback();
+					refreshShapes(shapesConnection);
 					throw new SailException("Failed SHACL validation");
-				}
-				else {
+				} else {
 					shapesConnection.commit();
-					refreshShapes();
 					super.commit();
 				}
-			}
-			finally {
+			} finally {
 				cleanup();
 			}
 		}
@@ -164,21 +168,18 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		if (contexts.length == 1 && contexts[0].equals(ShaclSail.SHAPE_GRAPH)) {
 			shapesConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
-		}
-		else {
+		} else {
 			super.addStatement(subj, pred, obj, contexts);
 		}
 	}
 
 	@Override
 	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+		throws SailException {
 		if (contexts.length == 1 && contexts[0].equals(ShaclSail.SHAPE_GRAPH)) {
 			shapesConnection.remove(subj, pred, obj);
 			isShapeRefreshNeeded = true;
-		}
-		else {
+		} else {
 			super.removeStatements(subj, pred, obj, contexts);
 		}
 	}
@@ -209,13 +210,13 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		isShapeRefreshNeeded = false;
 	}
 
-	private void refreshShapes() {
+	private void refreshShapes(SailRepositoryConnection shapesRepoConnection) {
 		if (isShapeRefreshNeeded) {
-			this.sail.refreshShapes();
+			this.sail.refreshShapes(shapesRepoConnection);
 			isShapeRefreshNeeded = false;
 		}
 	}
-	
+
 	private boolean validate() {
 
 		if (!sail.config.validationEnabled) {
@@ -236,12 +237,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 					boolean valid = collect.size() == 0;
 					if (!valid) {
 						logger.warn(
-								"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {} \n\t\t{}",
-								nodeShape.toString(),
-								String.join("\n\t\t",
-										collect.stream().map(
-												a -> a.toString() + " -cause-> " + a.getCause()).collect(
-														Collectors.toList())));
+							"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {} \n\t\t{}",
+							nodeShape.toString(),
+							String.join("\n\t\t",
+								collect.stream().map(
+									a -> a.toString() + " -cause-> " + a.getCause()).collect(
+									Collectors.toList())));
 					}
 					allValid = allValid && valid;
 				}
@@ -262,14 +263,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		try (RepositoryConnection connection = addedStatements.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			addedStatementsSet.stream().filter(
-					statement -> !removedStatementsSet.contains(statement)).forEach(connection::add);
+				statement -> !removedStatementsSet.contains(statement)).forEach(connection::add);
 			connection.commit();
 		}
 
 		try (RepositoryConnection connection = removedStatements.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			removedStatementsSet.stream().filter(
-					statement -> !addedStatementsSet.contains(statement)).forEach(connection::add);
+				statement -> !addedStatementsSet.contains(statement)).forEach(connection::add);
 			connection.commit();
 		}
 	}
