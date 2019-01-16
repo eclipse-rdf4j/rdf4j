@@ -141,7 +141,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 			refreshShapes(shapesConnection);
 
-			if ((!addedStatementsSet.isEmpty() || !removedStatementsSet.isEmpty()) && sail.nodeShapes.isEmpty()) {
+			if (!sail.isIgnoreNoShapesLoadedException() && ((!addedStatementsSet.isEmpty() || !removedStatementsSet.isEmpty()) && sail.getNodeShapes().isEmpty())) {
 				throw new NoShapesLoadedException();
 			}
 

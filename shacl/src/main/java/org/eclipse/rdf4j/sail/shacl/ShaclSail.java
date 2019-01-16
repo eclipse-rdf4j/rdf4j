@@ -45,9 +45,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 		.getInstance()
 		.createIRI("http://rdf4j.org/schema/schacl#ShapeGraph");
 
-	List<NodeShape> nodeShapes;
+	private List<NodeShape> nodeShapes;
 
 	boolean debugPrintPlans = false;
+	private boolean ignoreNoShapesLoadedException = false;
 
 	ShaclSailConfig config = new ShaclSailConfig();
 
@@ -150,6 +151,14 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	public boolean isDebugPrintPlans() {
 		return debugPrintPlans;
+	}
+
+	public boolean isIgnoreNoShapesLoadedException() {
+		return ignoreNoShapesLoadedException;
+	}
+
+	public void setIgnoreNoShapesLoadedException(boolean ignoreNoShapesLoadedException) {
+		this.ignoreNoShapesLoadedException = ignoreNoShapesLoadedException;
 	}
 
 	@SuppressWarnings("WeakerAccess")
