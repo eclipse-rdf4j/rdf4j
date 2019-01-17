@@ -126,4 +126,9 @@ public class OrPropertyShape extends PropertyShape {
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return true;
 	}
+
+	@Override
+	public Resource getSourceConstraintComponent() {
+		return SHACL.OR_CONSTRAINT_COMPONENT;
+	}
 }

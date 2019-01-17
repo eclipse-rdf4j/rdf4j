@@ -86,6 +86,14 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 		return id;
 	}
 
+	public NodeShape getNodeShape() {
+		return nodeShape;
+	}
+
+	public Resource getSourceConstraintComponent() {
+		throw new IllegalStateException("Missing implementetion in extending class!");
+	}
+
 	static class Factory {
 
 		static List<PropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection, NodeShape nodeShape) {

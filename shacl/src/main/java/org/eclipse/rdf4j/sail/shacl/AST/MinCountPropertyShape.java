@@ -163,4 +163,9 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		return super.requiresEvaluation(addedStatements, removedStatements) | requiresEvalutation;
 	}
+
+	@Override
+	public Resource getSourceConstraintComponent() {
+		return SHACL.MIN_COUNT_CONSTRAINT_COMPONENT;
+	}
 }

@@ -77,6 +77,10 @@ public class Tuple implements Comparable<Tuple> {
 		causedByPropertyShapes.addFirst(propertyShape);
 	}
 
+	public Deque<PropertyShape> getCausedByPropertyShapes() {
+		return causedByPropertyShapes;
+	}
+
 	@Override
 	public boolean equals(Object o) {
 		if (this == o) {

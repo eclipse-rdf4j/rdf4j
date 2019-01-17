@@ -11,9 +11,12 @@ package org.eclipse.rdf4j.sail.shacl;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.junit.Test;
@@ -172,6 +175,12 @@ public class ShaclTest {
 					exception = true;
 					System.out.println(sailException.getMessage());
 
+				System.out.println("\n############################################");
+				System.out.println("\tValidation Report\n");
+				ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
+				Model validationReport = cause.validationReportAsModel();
+				Rio.write(validationReport, System.out, RDFFormat.TURTLE);
+				System.out.println("\n############################################");
 				}
 			} catch (IOException e) {
 				e.printStackTrace();

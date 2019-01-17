@@ -111,4 +111,9 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return true;
 	}
+
+	@Override
+	public Resource getSourceConstraintComponent() {
+		return SHACL.MAX_COUNT_CONSTRAINT_COMPONENT;
+	}
 }

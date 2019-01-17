@@ -96,4 +96,9 @@ public class DatatypePropertyShape extends PathPropertyShape {
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return true;
 	}
+
+	@Override
+	public Resource getSourceConstraintComponent() {
+		return SHACL.DATATYPE_CONSTRAINT_COMPONENT;
+	}
 }

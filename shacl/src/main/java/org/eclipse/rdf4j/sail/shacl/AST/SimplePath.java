@@ -62,4 +62,8 @@ public class SimplePath extends Path {
 		return "?a <" + path + "> ?c. ";
 
 	}
+
+	public IRI getPath() {
+		return path;
+	}
 }
