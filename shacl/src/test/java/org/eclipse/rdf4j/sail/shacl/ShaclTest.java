@@ -41,6 +41,8 @@ public class ShaclTest {
 
 	private static final List<String> testCasePaths = Arrays.asList(
 		"test-cases/datatype/simple",
+		"test-cases/minLength/simple",
+		"test-cases/maxLength/simple",
 		"test-cases/minCount/simple",
 		"test-cases/maxCount/simple",
 		"test-cases/or/inheritance",
