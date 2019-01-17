@@ -130,7 +130,7 @@ public class ShaclTest {
 
 
 
-	void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult) {
+	private void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult) {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
