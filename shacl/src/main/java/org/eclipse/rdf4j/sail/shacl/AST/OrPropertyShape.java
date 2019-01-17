@@ -52,25 +52,7 @@ public class OrPropertyShape extends PropertyShape {
 
 	}
 
-	private static List<Value> toList(SailRepositoryConnection connection, Resource orList) {
-		List<Value> ret = new ArrayList<>();
-		while (!orList.equals(RDF.NIL)) {
-			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(orList, RDF.FIRST, null))) {
-				Value value = stream.map(Statement::getObject).findAny().get();
-				ret.add(value);
-			}
 
-			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(orList, RDF.REST, null))) {
-				orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
-			}
-
-		}
-
-
-		return ret;
-
-
-	}
 
 
 	@Override

@@ -44,6 +44,7 @@ public class ShaclTest {
 		"test-cases/minLength/simple",
 		"test-cases/maxLength/simple",
 		"test-cases/pattern/simple",
+		"test-cases/languageIn/simple",
 		"test-cases/minCount/simple",
 		"test-cases/maxCount/simple",
 		"test-cases/or/inheritance",

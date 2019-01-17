@@ -11,6 +11,8 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -83,6 +85,26 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 	}
 
+	static List<Value> toList(SailRepositoryConnection connection, Resource orList) {
+		List<Value> ret = new ArrayList<>();
+		while (!orList.equals(RDF.NIL)) {
+			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(orList, RDF.FIRST, null))) {
+				Value value = stream.map(Statement::getObject).findAny().get();
+				ret.add(value);
+			}
+
+			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(orList, RDF.REST, null))) {
+				orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
+			}
+
+		}
+
+
+		return ret;
+
+
+	}
+
 	public Resource getId() {
 		return id;
 	}
@@ -144,6 +166,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			if (hasPattern(propertyShapeId, connection)) {
 				propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape));
 			}
+
+			if (hasLanguageIn(propertyShapeId, connection)) {
+				propertyShapes.add(new LanguageInPropertyShape(propertyShapeId, connection, nodeShape));
+			}
 			return propertyShapes;
 		}
 
@@ -174,6 +200,9 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 		private static boolean hasPattern(Resource id, SailRepositoryConnection connection) {
 			return connection.hasStatement(id, SHACL.PATTERN, null, true);
+		}
+		private static boolean hasLanguageIn(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.LANGUAGE_IN, null, true);
 		}
 
 
