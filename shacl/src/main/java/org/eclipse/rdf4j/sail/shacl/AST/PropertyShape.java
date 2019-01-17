@@ -140,6 +140,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			if (hasMaxLength(propertyShapeId, connection)) {
 				propertyShapes.add(new MaxLengthPropertyShape(propertyShapeId, connection, nodeShape));
 			}
+
+			if (hasPattern(propertyShapeId, connection)) {
+				propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape));
+			}
 			return propertyShapes;
 		}
 
@@ -166,6 +170,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 		private static boolean hasMaxLength(Resource id, SailRepositoryConnection connection) {
 			return connection.hasStatement(id, SHACL.MAX_LENGTH, null, true);
+		}
+
+		private static boolean hasPattern(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.PATTERN, null, true);
 		}
 
 

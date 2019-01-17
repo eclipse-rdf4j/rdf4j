@@ -8,6 +8,6 @@ PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 INSERT DATA {
 
 ex:validPerson1 a ex:Person ;
-	ex:phoneNumber "12345678"@en, "22345678"^^xsd:xmlLiteral.
+	ex:uuid "4db83088-7bd1-4861-b12c-210002db48bf".
 
 }
