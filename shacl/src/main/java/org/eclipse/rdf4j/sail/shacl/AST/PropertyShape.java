@@ -82,6 +82,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 	}
 
+	public Resource getId() {
+		return id;
+	}
+
 	static class Factory {
 
 		static List<PropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection, NodeShape nodeShape) {

@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MaxCountFilter;
@@ -102,7 +103,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 			logger.info(planAsGraphvizDot);
 		}
 
-		return new LoggingNode(mergeNode1);
+		return new EnrichWithShape(new LoggingNode(mergeNode1), this);
 
 	}
 

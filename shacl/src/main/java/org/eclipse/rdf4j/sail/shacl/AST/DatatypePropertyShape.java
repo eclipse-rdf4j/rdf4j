@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DatatypeFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PushBasedLoggingNode;
@@ -87,7 +88,7 @@ public class DatatypePropertyShape extends PathPropertyShape {
 			logger.info(planAsGraphvizDot);
 		}
 
-		return new LoggingNode(invalidValues);
+		return new EnrichWithShape(new LoggingNode(invalidValues), this);
 
 	}
 
