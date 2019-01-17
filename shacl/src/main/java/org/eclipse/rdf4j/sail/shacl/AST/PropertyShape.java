@@ -170,6 +170,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			if (hasLanguageIn(propertyShapeId, connection)) {
 				propertyShapes.add(new LanguageInPropertyShape(propertyShapeId, connection, nodeShape));
 			}
+
+			if (hasNodeKind(propertyShapeId, connection)) {
+				propertyShapes.add(new NodeKindPropertyShape(propertyShapeId, connection, nodeShape));
+			}
 			return propertyShapes;
 		}
 
@@ -201,8 +205,13 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 		private static boolean hasPattern(Resource id, SailRepositoryConnection connection) {
 			return connection.hasStatement(id, SHACL.PATTERN, null, true);
 		}
+
 		private static boolean hasLanguageIn(Resource id, SailRepositoryConnection connection) {
 			return connection.hasStatement(id, SHACL.LANGUAGE_IN, null, true);
+		}
+
+		private static boolean hasNodeKind(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.NODE_KIND_PROP, null, true);
 		}
 
 

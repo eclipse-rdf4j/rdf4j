@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -69,11 +70,7 @@ public class PatternFilter extends FilterPlanNode {
 
 	@Override
 	boolean checkTuple(Tuple t) {
-		if (!(t.line.get(1) instanceof Literal)) {
-			return false;
-		}
-
-		Literal literal = (Literal) t.line.get(1);
+		Value literal = t.line.get(1);
 
 		return pattern.matcher(literal.stringValue()).matches();
 	}

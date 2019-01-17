@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * @author Håvard Ottestad
@@ -26,9 +27,7 @@ public class MinLengthFilter extends FilterPlanNode {
 
 	@Override
 	boolean checkTuple(Tuple t) {
-		if(! (t.line.get(1) instanceof Literal)) return false;
-
-		Literal literal = (Literal) t.line.get(1);
+		Value literal = t.line.get(1);
 
 		return literal.stringValue().length() >= minLength;
 	}

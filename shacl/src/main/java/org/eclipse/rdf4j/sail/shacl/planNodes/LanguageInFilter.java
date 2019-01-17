@@ -33,9 +33,7 @@ public class LanguageInFilter extends FilterPlanNode {
 		if(! (t.line.get(1) instanceof Literal)) return false;
 
 		Optional<String> language = ((Literal) t.line.get(1)).getLanguage();
-		if(!language.isPresent()) return false;
-
-		return languageIn.contains(language.get());
+		return language.filter(languageIn::contains).isPresent();
 
 	}
 
