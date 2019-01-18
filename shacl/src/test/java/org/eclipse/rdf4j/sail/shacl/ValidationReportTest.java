@@ -53,21 +53,23 @@ public class ValidationReportTest {
 				"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
 				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
 				"\n" +
-				"_:node1d1e5rk4ux13 a sh:ValidationResult;\n" +
+				"_:node1d1gi0h02x12 a sh:ValidationReport;\n" +
+				"  sh:conforms false;\n" +
+				"  sh:result _:node1d1gi0h02x13 .\n" +
+				"\n" +
+				"_:node1d1gi0h02x13 a sh:ValidationResult;\n" +
 				"  sh:focusNode rdf:subject;\n" +
 				"  sh:resultPath rdfs:label;\n" +
 				"  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n" +
 				"  sh:sourceShape ex:PersonShapeProperty .\n" +
 				"\n" +
-				"_:node1d1e5rk4ux14 a sh:ValidationResult;\n" +
+				"_:node1d1gi0h02x12 sh:result _:node1d1gi0h02x14 .\n" +
+				"\n" +
+				"_:node1d1gi0h02x14 a sh:ValidationResult;\n" +
 				"  sh:focusNode rdfs:Class;\n" +
 				"  sh:resultPath rdfs:label;\n" +
 				"  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n" +
-				"  sh:sourceShape ex:PersonShapeProperty .\n" +
-				"\n" +
-				"_:node1d1e5rk4ux12 a sh:ValidationReport;\n" +
-				"  sh:conforms false;\n" +
-				"  sh:result _:node1d1e5rk4ux13, _:node1d1e5rk4ux14 .\n" +
+				"  sh:sourceShape ex:PersonShapeProperty ." +
 				""), "", RDFFormat.TURTLE);
 
 
@@ -104,15 +106,30 @@ public class ValidationReportTest {
 				"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
 				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
 				"\n" +
-				"_:node1d1gbve96x12 a sh:ValidationResult;\n" +
+				"_:node1d1giv2b9x25 a sh:ValidationReport;\n" +
+				"  sh:conforms false;\n" +
+				"  sh:result _:node1d1giv2b9x26 .\n" +
+				"\n" +
+				"_:node1d1giv2b9x26 a sh:ValidationResult;\n" +
+				"  sh:detail _:node1d1giv2b9x27 .\n" +
+				"\n" +
+				"_:node1d1giv2b9x27 a sh:ValidationResult;\n" +
+				"  sh:detail _:node1d1giv2b9x28 .\n" +
+				"\n" +
+				"_:node1d1giv2b9x28 a sh:ValidationResult;\n" +
 				"  sh:focusNode ex:validPerson1;\n" +
 				"  sh:resultPath ex:age;\n" +
-				"  sh:sourceConstraintComponent sh:DatatypeConstraintComponent, sh:OrConstraintComponent;\n" +
-				"  sh:sourceShape _:node1d1gbve7vx1, _:node1d1gbve7vx3, _:node1d1gbve7vx5 .\n" +
+				"  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n" +
+				"  sh:sourceShape ex:personShapeAgeLong .\n" +
 				"\n" +
-				"_:node1d1gbve96x11 a sh:ValidationReport;\n" +
-				"  sh:conforms false;\n" +
-				"  sh:result _:node1d1gbve96x12 ." +
+				"_:node1d1giv2b9x27 sh:focusNode ex:validPerson1;\n" +
+				"  sh:resultPath ex:age;\n" +
+				"  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n" +
+				"  sh:sourceShape ex:personShapeAgeInteger .\n" +
+				"\n" +
+				"_:node1d1giv2b9x26 sh:focusNode ex:validPerson1;\n" +
+				"  sh:sourceConstraintComponent sh:OrConstraintComponent;\n" +
+				"  sh:sourceShape ex:personShapeOr ." +
 				""), "", RDFFormat.TURTLE);
 
 

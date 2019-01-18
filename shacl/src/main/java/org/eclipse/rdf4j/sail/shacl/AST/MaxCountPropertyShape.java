@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
@@ -113,7 +114,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public Resource getSourceConstraintComponent() {
-		return SHACL.MAX_COUNT_CONSTRAINT_COMPONENT;
+	public SourceConstraintComponent getSourceConstraintComponent() {
+		return SourceConstraintComponent.MaxCountConstraintComponent;
 	}
 }

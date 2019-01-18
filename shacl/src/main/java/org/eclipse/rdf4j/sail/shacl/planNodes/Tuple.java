@@ -137,6 +137,10 @@ public class Tuple implements Comparable<Tuple> {
 
 	public void addAllCausedByPropertyShape(Deque<PropertyShape> causedByPropertyShapes) {
 		if(causedByPropertyShapes != null) {
+			if(this.causedByPropertyShapes == null){
+				this.causedByPropertyShapes = new ArrayDeque<>();
+			}
+
 			this.causedByPropertyShapes.addAll(causedByPropertyShapes);
 		}
 	}

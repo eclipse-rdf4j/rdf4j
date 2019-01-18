@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 
 import java.util.ArrayList;
@@ -90,7 +91,7 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 		return nodeShape;
 	}
 
-	public Resource getSourceConstraintComponent() {
+	public SourceConstraintComponent getSourceConstraintComponent() {
 		throw new IllegalStateException("Missing implementetion in extending class!");
 	}
 

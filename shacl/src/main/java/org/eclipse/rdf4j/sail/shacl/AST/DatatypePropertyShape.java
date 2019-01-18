@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
@@ -98,7 +99,7 @@ public class DatatypePropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public Resource getSourceConstraintComponent() {
-		return SHACL.DATATYPE_CONSTRAINT_COMPONENT;
+	public SourceConstraintComponent getSourceConstraintComponent() {
+		return SourceConstraintComponent.DatatypeConstraintComponent;
 	}
 }
