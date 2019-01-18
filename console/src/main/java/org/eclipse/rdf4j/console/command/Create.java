@@ -14,7 +14,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +31,7 @@ import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.LockRemover;
 import org.eclipse.rdf4j.console.Util;
+import org.eclipse.rdf4j.console.setting.ConsoleWidth;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -74,13 +81,9 @@ public class Create extends ConsoleCommand {
 		return PrintHelp.USAGE
 			+ "create <template>   Create a new repository using this configuration template\n"
 			+ "  built-in: \n"
-			+ "    memory, native, remote, sparql\n"
-			+ "    memory-rdfs, memory-rdfs-dt, memory-lucene, memory-customrule\n"
-			+ "    memory-spin, memory-spin-rdfs, memory-spin-rdfs-lucene\n"
-			+ "    native-rdfs, native-rdfs-dt, native-lucene, native-customrule\n"
-			+ "    native-spin, native-spin-rdfs, native-spin-rdfs-lucene\n"
+			+  Util.formatToWidth(80, "    ", getBuiltinTemplates(), ", ") + "\n"
 			+ "  template-dir (" + templatesDir + "):\n" 
-			+ getUserTemplates();
+			+  Util.formatToWidth(80, "    ", getUserTemplates(), ", ");
 	}
 
 	/**
@@ -104,6 +107,21 @@ public class Create extends ConsoleCommand {
 	}
 
 	/**
+	 * Return a concatenated list of ordered configuration templates files, without file type extension.
+	 * 
+	 * @param path path with templates
+	 * @return string concatenated string
+	 * @throws IOException 
+	 */
+	private String getOrderedTemplates(Path path) throws IOException {
+		return Files.walk(path).filter(Files::isRegularFile)
+					.map(f -> f.getFileName().toString()).filter(s -> s.endsWith(FILE_EXT))
+					.map(s -> s.substring(0, s.length() - FILE_EXT.length()))
+					.sorted()
+					.collect(Collectors.joining(", "));
+	}
+
+	/**
 	 * Get the names of the user-defined repository templates, located in the templates directory.
 	 * 
 	 * @return ordered array of names
@@ -113,18 +131,36 @@ public class Create extends ConsoleCommand {
 			return "";
 		}
 		try {
-			String files = Files.walk(templatesDir.toPath())
-								.filter(Files::isRegularFile)
-								.map(f -> f.getFileName().toString()).filter(s -> s.endsWith(FILE_EXT))
-								.map(s -> s.substring(0, s.length() - FILE_EXT.length()))
-								.sorted().collect(Collectors.joining(", "));
-			return Util.formatToWidth(80, "    ", files, ", ");
+			return getOrderedTemplates(templatesDir.toPath());
 		} catch (IOException ioe) {
 			LOGGER.error("Failed to read templates directory repository ", ioe);
-			return "";
 		}
+		return "";
 	}
-	
+
+	/**
+	 * Get the names of the built-in repository templates, located in the JAR containing RepositoryConfig.
+	 * 
+	 * @return concatenated list of names
+	 */
+	private String getBuiltinTemplates() {
+		// assume the templates are all located in the same jar "directory" as the RepositoryConfig class
+		Class cl = RepositoryConfig.class;
+		
+		try {
+			URI dir = cl.getResource(cl.getSimpleName() + ".class").toURI();
+			if (dir.getScheme().equals("jar")) {
+				try(FileSystem fs = FileSystems.newFileSystem(dir, Collections.EMPTY_MAP, null)) {
+					// turn package structure into directory structure
+					String pkg = cl.getPackage().getName().replaceAll("\\.", "/");
+					return getOrderedTemplates(fs.getPath(pkg));			
+				}
+			} 
+		} catch (NullPointerException | URISyntaxException | IOException e) {
+			LOGGER.error("Could not get built-in config templates from JAR", e);
+		}
+		return "";
+	}
 	/**
 	 * Create a new repository based on a template
 	 * 
