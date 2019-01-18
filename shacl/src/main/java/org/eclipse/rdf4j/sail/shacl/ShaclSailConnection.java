@@ -218,6 +218,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		if (isActive()) {
 			rollback();
 		}
+		previousStateConnection.close();
 		super.close();
 	}
 
