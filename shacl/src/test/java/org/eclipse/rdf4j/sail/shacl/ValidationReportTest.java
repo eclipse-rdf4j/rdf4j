@@ -1,5 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl;
 
+import org.apache.commons.io.IOUtils;
+import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -66,6 +68,51 @@ public class ValidationReportTest {
 				"_:node1d1e5rk4ux12 a sh:ValidationReport;\n" +
 				"  sh:conforms false;\n" +
 				"  sh:result _:node1d1e5rk4ux13, _:node1d1e5rk4ux14 .\n" +
+				""), "", RDFFormat.TURTLE);
+
+
+			assertTrue(Models.isomorphic(expected, actual));
+
+		}
+	}
+
+
+	@Test
+	public void nestedLogicalOrSupport() throws IOException {
+		SailRepository shaclSail = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("test-cases/or/datatype/shacl.ttl")));
+		shaclSail.initialize();
+
+		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
+
+			connection.begin();
+			connection.prepareUpdate(IOUtils.toString(ValidationReportTest.class.getClassLoader().getResourceAsStream("test-cases/or/datatype/invalid/case1/query1.rq"), "utf-8")).execute();
+			connection.commit();
+
+		} catch (RepositoryException e){
+			ShaclSailValidationException cause = (ShaclSailValidationException) e.getCause();
+			Model actual = cause.validationReportAsModel();
+
+			actual.setNamespace(RDF.PREFIX, RDF.NAMESPACE);
+			actual.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
+			actual.setNamespace("ex", "http://example.com/ns#");
+
+			Rio.write(actual, System.out, RDFFormat.TURTLE);
+
+
+			Model expected = Rio.parse(new StringReader("" +
+				"@prefix ex: <http://example.com/ns#> .\n" +
+				"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+				"\n" +
+				"_:node1d1gbve96x12 a sh:ValidationResult;\n" +
+				"  sh:focusNode ex:validPerson1;\n" +
+				"  sh:resultPath ex:age;\n" +
+				"  sh:sourceConstraintComponent sh:DatatypeConstraintComponent, sh:OrConstraintComponent;\n" +
+				"  sh:sourceShape _:node1d1gbve7vx1, _:node1d1gbve7vx3, _:node1d1gbve7vx5 .\n" +
+				"\n" +
+				"_:node1d1gbve96x11 a sh:ValidationReport;\n" +
+				"  sh:conforms false;\n" +
+				"  sh:result _:node1d1gbve96x12 ." +
 				""), "", RDFFormat.TURTLE);
 
 

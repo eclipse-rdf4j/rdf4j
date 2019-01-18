@@ -39,7 +39,7 @@ import static org.junit.Assert.assertFalse;
 @RunWith(Parameterized.class)
 public class ShaclTest {
 
-	static final List<String> testCasePaths = Arrays.asList(
+	private static final List<String> testCasePaths = Arrays.asList(
 		"test-cases/datatype/simple",
 		"test-cases/minCount/simple",
 		"test-cases/maxCount/simple",
@@ -62,13 +62,8 @@ public class ShaclTest {
 		this.testCasePath = testCasePath;
 		this.path = path;
 		this.expectedResult = expectedResult;
-	}
-
-	{
 		LoggingNode.loggingEnabled = true;
 	}
-
-
 
 	@Parameterized.Parameters(name = "{2} - {1}")
 	public static Collection<Object[]> data() {
@@ -90,7 +85,7 @@ public class ShaclTest {
 
 	}
 
-	static List<String> findTestCases(String testCase, String baseCase) {
+	private static List<String> findTestCases(String testCase, String baseCase) {
 
 		List<String> ret = new ArrayList<>();
 
@@ -112,7 +107,7 @@ public class ShaclTest {
 	}
 
 
-	static Collection<Object[]> getTestsToRun() {
+	private static Collection<Object[]> getTestsToRun() {
 		List<Object[]> ret = new ArrayList<>();
 
 
@@ -134,7 +129,7 @@ public class ShaclTest {
 
 
 
-	private void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult) {
+	private static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult) {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -200,7 +195,7 @@ public class ShaclTest {
 
 	}
 
-	void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult) {
+	private static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult) {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";

@@ -84,7 +84,7 @@ public class OrPropertyShape extends PropertyShape {
 		}
 
 
-		PlanNode ret = null;
+		PlanNode ret;
 
 
 		if (iteratorDataTypes.get(0) == IteratorData.tripleBased) {
