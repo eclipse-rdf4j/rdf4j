@@ -36,7 +36,7 @@ import java.util.stream.Stream;
  */
 public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
-	private final Logger logger = LoggerFactory.getLogger(getClass());
+	private static final Logger logger = LoggerFactory.getLogger(ShaclSailConnection.class);
 
 	private NotifyingSailConnection previousStateConnection;
 	private Repository addedStatements;
