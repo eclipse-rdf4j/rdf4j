@@ -28,6 +28,7 @@ import java.util.Collection;
 import java.util.List;
 
 import static junit.framework.TestCase.assertTrue;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 /**
@@ -236,6 +237,10 @@ public class ShaclTest {
 			} catch (RepositoryException sailException) {
 				exception = true;
 				System.out.println(sailException.getMessage());
+
+				// check that rollback worked
+				assertEquals(shaclSailConnection.size(), 0);
+
 			}
 		}
 		if (ran) {

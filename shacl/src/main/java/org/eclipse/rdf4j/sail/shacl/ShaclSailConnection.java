@@ -49,6 +49,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	private HashSet<Statement> addedStatementsSet = new HashSet<>();
 	private HashSet<Statement> removedStatementsSet = new HashSet<>();
 
+	private boolean preparedHasRun = false;
+
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, NotifyingSailConnection previousStateConnection) {
 		super(connection);
 		this.previousStateConnection = previousStateConnection;
@@ -60,6 +62,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 									  @Override
 									  public void statementAdded(Statement statement) {
+										  if (preparedHasRun) {
+											  throw new IllegalStateException();
+										  }
 										  boolean add = addedStatementsSet.add(statement);
 										  if (!add) {
 											  removedStatementsSet.remove(statement);
@@ -69,6 +74,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 									  @Override
 									  public void statementRemoved(Statement statement) {
+										  if (preparedHasRun) {
+											  throw new IllegalStateException();
+										  }
+
 										  boolean add = removedStatementsSet.add(statement);
 										  if (!add) {
 											  addedStatementsSet.remove(statement);
@@ -107,7 +116,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		stats = new Stats();
 
 		// start two transactions, synchronize on underlying sail so that we get two transactions immediatly successivley
-		synchronized (sail){
+		synchronized (sail) {
 			super.begin(level);
 			previousStateConnection.begin(IsolationLevels.SNAPSHOT);
 		}
@@ -127,15 +136,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		throws SailException {
 		synchronized (sail) {
 			try {
-				boolean valid = validate();
-				previousStateConnection.commit();
-
-				if (!valid) {
-					rollback();
-					throw new SailException("Failed SHACL validation");
-				} else {
-					super.commit();
+				if(!preparedHasRun){
+					prepare();
 				}
+				previousStateConnection.commit();
+				super.commit();
 			} finally {
 				cleanup();
 			}
@@ -164,6 +169,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		addedStatementsSet.clear();
 		removedStatementsSet.clear();
 		stats = null;
+		preparedHasRun = false;
 	}
 
 
@@ -185,7 +191,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 					boolean valid = collect.size() == 0;
 					if (!valid) {
-						logger.warn("SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {} \n\t\t{}", nodeShape.toString(), String.join("\n\t\t", collect.stream().map(a -> a.toString()+" -cause-> "+a.getCause()).collect(Collectors.toList())));
+						logger.warn("SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {} \n\t\t{}", nodeShape.toString(), String.join("\n\t\t", collect.stream().map(a -> a.toString() + " -cause-> " + a.getCause()).collect(Collectors.toList())));
 					}
 					allValid = allValid && valid;
 				}
@@ -227,6 +233,28 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		super.close();
 	}
 
+	@Override
+	public void prepare() throws SailException {
+		preparedHasRun = true;
+		super.prepare();
+
+		synchronized (sail) {
+			boolean valid = true;
+			try {
+				valid = validate();
+
+				if (!valid) {
+					rollback();
+					throw new SailException("Failed SHACL validation");
+				}
+			} finally {
+				if (!valid) {
+					cleanup();
+				}
+			}
+		}
+
+	}
 
 	public class Stats {
 
