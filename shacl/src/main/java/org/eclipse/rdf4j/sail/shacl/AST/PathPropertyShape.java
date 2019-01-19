@@ -54,6 +54,8 @@ public class PathPropertyShape extends PropertyShape {
 	}
 
 
-
+	public Path getPath() {
+		return path;
+	}
 }
 

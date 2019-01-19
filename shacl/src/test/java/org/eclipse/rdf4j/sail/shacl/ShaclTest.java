@@ -11,9 +11,12 @@ package org.eclipse.rdf4j.sail.shacl;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.junit.Test;
@@ -36,7 +39,7 @@ import static org.junit.Assert.assertFalse;
 @RunWith(Parameterized.class)
 public class ShaclTest {
 
-	static final List<String> testCasePaths = Arrays.asList(
+	private static final List<String> testCasePaths = Arrays.asList(
 		"test-cases/datatype/simple",
 		"test-cases/minCount/simple",
 		"test-cases/maxCount/simple",
@@ -59,13 +62,8 @@ public class ShaclTest {
 		this.testCasePath = testCasePath;
 		this.path = path;
 		this.expectedResult = expectedResult;
-	}
-
-	{
 		LoggingNode.loggingEnabled = true;
 	}
-
-
 
 	@Parameterized.Parameters(name = "{2} - {1}")
 	public static Collection<Object[]> data() {
@@ -87,7 +85,7 @@ public class ShaclTest {
 
 	}
 
-	static List<String> findTestCases(String testCase, String baseCase) {
+	private static List<String> findTestCases(String testCase, String baseCase) {
 
 		List<String> ret = new ArrayList<>();
 
@@ -109,7 +107,7 @@ public class ShaclTest {
 	}
 
 
-	static Collection<Object[]> getTestsToRun() {
+	private static Collection<Object[]> getTestsToRun() {
 		List<Object[]> ret = new ArrayList<>();
 
 
@@ -131,7 +129,7 @@ public class ShaclTest {
 
 
 
-	private void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult) {
+	private static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult) {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -172,6 +170,12 @@ public class ShaclTest {
 					exception = true;
 					System.out.println(sailException.getMessage());
 
+				System.out.println("\n############################################");
+				System.out.println("\tValidation Report\n");
+				ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
+				Model validationReport = cause.validationReportAsModel();
+				Rio.write(validationReport, System.out, RDFFormat.TURTLE);
+				System.out.println("\n############################################");
 				}
 			} catch (IOException e) {
 				e.printStackTrace();
@@ -191,7 +195,7 @@ public class ShaclTest {
 
 	}
 
-	void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult) {
+	private static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult) {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";

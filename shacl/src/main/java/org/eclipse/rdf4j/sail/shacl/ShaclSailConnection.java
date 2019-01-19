@@ -26,6 +26,9 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -127,12 +130,13 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		throws SailException {
 		synchronized (sail) {
 			try {
-				boolean valid = validate();
+				List<Tuple> invalidTuples = validate();
+				boolean valid = invalidTuples.isEmpty();
 				previousStateConnection.commit();
 
 				if (!valid) {
 					rollback();
-					throw new SailException("Failed SHACL validation");
+					throw new ShaclSailValidationException(invalidTuples);
 				} else {
 					super.commit();
 				}
@@ -167,15 +171,15 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 
-	private boolean validate() {
+	private List<Tuple> validate() {
 
 		if (!sail.config.validationEnabled) {
-			return true;
+			return Collections.emptyList();
 		}
 
 		fillAddedAndRemovedStatementRepositories();
 
-		boolean allValid = true;
+		List<Tuple> ret = new ArrayList<>();
 
 		for (NodeShape nodeShape : sail.nodeShapes) {
 			List<PlanNode> planNodes = nodeShape.generatePlans(this, nodeShape, sail.debugPrintPlans);
@@ -183,16 +187,17 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
 					List<Tuple> collect = stream.collect(Collectors.toList());
 
+					ret.addAll(collect);
+
 					boolean valid = collect.size() == 0;
 					if (!valid) {
 						logger.warn("SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {} \n\t\t{}", nodeShape.toString(), String.join("\n\t\t", collect.stream().map(a -> a.toString()+" -cause-> "+a.getCause()).collect(Collectors.toList())));
 					}
-					allValid = allValid && valid;
 				}
 			}
 		}
 
-		return allValid;
+		return ret;
 	}
 
 	void fillAddedAndRemovedStatementRepositories() {

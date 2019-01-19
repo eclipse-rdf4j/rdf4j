@@ -1,44 +1,35 @@
 /*******************************************************************************
- * Copyright (c) 2018 Eclipse RDF4J contributors.
+ * Copyright (c) 2019 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-
 package org.eclipse.rdf4j.sail.shacl.planNodes;
-
 
 import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-
+import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 
 /**
- * @author Håvard Ottestad
+ * @author Håvard Mikkelsen Ottestad
  */
-public class TrimTuple implements PlanNode {
+public class EnrichWithShape implements PlanNode {
 
-	PlanNode parent;
-	int newLength;
+	private final PropertyShape propertyShape;
+	private final PlanNode parent;
 
-	public TrimTuple(PlanNode parent, int newLength) {
+	public EnrichWithShape(PlanNode parent, PropertyShape propertyShape) {
 		this.parent = parent;
-		this.newLength = newLength;
+		this.propertyShape = propertyShape;
 	}
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
 
-
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
-
-
-			@Override
-			public void close() throws SailException {
-				parentIterator.close();
-			}
 
 			@Override
 			public boolean hasNext() throws SailException {
@@ -47,47 +38,33 @@ public class TrimTuple implements PlanNode {
 
 			@Override
 			public Tuple next() throws SailException {
-
 				Tuple next = parentIterator.next();
-
-				Tuple tuple = new Tuple();
-
-				for (int i = 0; i < newLength && i < next.line.size(); i++) {
-					tuple.line.add(next.line.get(i));
-				}
-
-				tuple.addHistory(next);
-				tuple.addAllCausedByPropertyShape(next.getCausedByPropertyShapes());
-
-				return tuple;
+				next.addCausedByPropertyShape(propertyShape);
+				return next;
 			}
 
 			@Override
 			public void remove() throws SailException {
+				parentIterator.remove();
+			}
 
+			@Override
+			public void close() throws SailException {
+				parentIterator.close();
 			}
 		};
-
-
 	}
 
 	@Override
 	public int depth() {
-		return parent.depth() + 1;
+		return parent.depth();
 	}
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
-		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
+		stringBuilder.append(getId()).append(" [label=\"").append(StringEscapeUtils.escapeJava(this.toString())).append("\"];").append("\n");
+		stringBuilder.append(parent.getId()).append(" -> ").append(getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
-	}
-
-	@Override
-	public String toString() {
-		return "TrimTuple{" +
-			"newLength=" + newLength +
-			'}';
 	}
 
 	@Override
@@ -95,9 +72,14 @@ public class TrimTuple implements PlanNode {
 		return System.identityHashCode(this)+"";
 	}
 
+
 	@Override
 	public IteratorData getIteratorDataType() {
-		if(newLength == 1) return IteratorData.tripleBased;
 		return parent.getIteratorDataType();
+	}
+
+	@Override
+	public String toString() {
+		return "EnrichWithShape";
 	}
 }

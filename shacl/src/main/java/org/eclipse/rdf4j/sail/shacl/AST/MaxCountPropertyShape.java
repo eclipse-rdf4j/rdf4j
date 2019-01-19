@@ -18,9 +18,11 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MaxCountFilter;
@@ -102,12 +104,17 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 			logger.info(planAsGraphvizDot);
 		}
 
-		return new LoggingNode(mergeNode1);
+		return new EnrichWithShape(new LoggingNode(mergeNode1), this);
 
 	}
 
 	@Override
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return true;
+	}
+
+	@Override
+	public SourceConstraintComponent getSourceConstraintComponent() {
+		return SourceConstraintComponent.MaxCountConstraintComponent;
 	}
 }
