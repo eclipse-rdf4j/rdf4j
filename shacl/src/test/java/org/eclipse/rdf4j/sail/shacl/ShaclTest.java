@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -154,28 +155,32 @@ public class ShaclTest {
 		for (int j = 0; j < 100; j++) {
 
 			String name = dataPath + "query" + j + ".rq";
-			InputStream resourceAsStream = ShaclTest.class.getClassLoader().getResourceAsStream(name);
-			if (resourceAsStream == null) {
-				continue;
-			}
+			try (InputStream resourceAsStream = ShaclTest.class.getClassLoader().getResourceAsStream(name)) {
+				if (resourceAsStream == null) {
+					continue;
+				}
 
-			ran = true;
-			System.out.println(name);
+				ran = true;
+				System.out.println(name);
 
-			try (SailRepositoryConnection connection = shaclSail.getConnection()) {
-				connection.begin();
-				String query = IOUtil.readString(resourceAsStream);
-				connection.prepareUpdate(query).execute();
-				connection.commit();
-			} catch (RepositoryException sailException) {
-				exception = true;
-				System.out.println(sailException.getMessage());
+				try (SailRepositoryConnection connection = shaclSail.getConnection()) {
+					connection.begin(IsolationLevels.SNAPSHOT);
+					String query = IOUtil.readString(resourceAsStream);
+					connection.prepareUpdate(query).execute();
+					connection.commit();
+				} catch (RepositoryException sailException) {
+					exception = true;
+					System.out.println(sailException.getMessage());
 
+				}
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
 
 		}
+
+		shaclSail.shutDown();
+
 		if (ran) {
 			if (expectedResult == ExpectedResult.valid) {
 				assertFalse("Expected transaction to succeed", exception);
