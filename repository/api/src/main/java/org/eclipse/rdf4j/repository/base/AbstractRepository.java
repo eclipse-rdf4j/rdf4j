@@ -25,8 +25,17 @@ public abstract class AbstractRepository implements Repository {
 
 	protected final Logger logger = LoggerFactory.getLogger(getClass());
 
+
 	@Override
+	@Deprecated
 	public final void initialize()
+		throws RepositoryException
+	{
+		init();
+	}
+
+	@Override
+	public final void init()
 		throws RepositoryException
 	{
 		if (!initialized) {

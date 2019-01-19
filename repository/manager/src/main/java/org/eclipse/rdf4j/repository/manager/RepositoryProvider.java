@@ -45,7 +45,7 @@ public class RepositoryProvider {
 			if (manager == null || !manager.isInitialized()) {
 				shutDown();
 				RepositoryManager m = createRepositoryManager(url);
-				m.initialize();
+				m.init();
 				manager = m;
 			}
 			return manager;

@@ -145,13 +145,6 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
-	public void initialize()
-		throws RepositoryException
-	{
-		super.initialize();
-	}
-
-	@Override
 	public void shutDown() {
 		try {
 			super.shutDown();

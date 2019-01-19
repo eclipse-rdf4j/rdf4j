@@ -12,9 +12,8 @@
 	<packaging>pom</packaging>
 
 	<modules>
-		<module>manager</module>
 		<module>model</module>
-                <module>repository</module>
+        <module>repository</module>
 		<module>queryresultio</module>
 		<module>rio</module>
 	</modules>

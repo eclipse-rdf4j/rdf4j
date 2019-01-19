@@ -12,6 +12,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
@@ -38,7 +39,9 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * @author jeen
+ * Unit tests for {@link LocalRepositoryManager}
+ * 
+ * @author Jeen Broekstra
  */
 public class LocalRepositoryManagerTest {
 
@@ -57,9 +60,7 @@ public class LocalRepositoryManagerTest {
 	 * @throws java.lang.Exception
 	 */
 	@Before
-	public void setUp()
-		throws Exception
-	{
+	public void setUp() throws Exception {
 		datadir = tempDir.newFolder("local-repositorymanager-test");
 		manager = new LocalRepositoryManager(datadir);
 		manager.initialize();
@@ -78,9 +79,7 @@ public class LocalRepositoryManagerTest {
 	 *         if a problem occurs deleting temporary resources
 	 */
 	@After
-	public void tearDown()
-		throws IOException
-	{
+	public void tearDown() throws IOException {
 		manager.shutDown();
 	}
 
@@ -94,9 +93,7 @@ public class LocalRepositoryManagerTest {
 	 *         if a problem occurs accessing the repository
 	 */
 	@Test
-	public void testGetRepository()
-		throws RepositoryConfigException, RepositoryException
-	{
+	public void testGetRepository() throws RepositoryConfigException, RepositoryException {
 		Repository rep = manager.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep);
 		assertTrue("Expected repository to be initialized.", rep.isInitialized());
@@ -107,9 +104,7 @@ public class LocalRepositoryManagerTest {
 	}
 
 	@Test
-	public void testRestartManagerWithoutTransaction()
-		throws Exception
-	{
+	public void testRestartManagerWithoutTransaction() throws Exception {
 		Repository rep = manager.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep);
 		assertTrue("Expected repository to be initialized.", rep.isInitialized());
@@ -138,9 +133,7 @@ public class LocalRepositoryManagerTest {
 	}
 
 	@Test
-	public void testRestartManagerWithTransaction()
-		throws Exception
-	{
+	public void testRestartManagerWithTransaction() throws Exception {
 		Repository rep = manager.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep);
 		assertTrue("Expected repository to be initialized.", rep.isInitialized());
@@ -179,17 +172,18 @@ public class LocalRepositoryManagerTest {
 	 *         if a problem occurs during execution
 	 */
 	@Test
-	public void testIsSafeToRemove()
-		throws RepositoryException, RepositoryConfigException
-	{
+	public void testIsSafeToRemove() throws RepositoryException, RepositoryConfigException {
 		assertThat(manager.isSafeToRemove(PROXY_ID)).isTrue();
 		assertThat(manager.isSafeToRemove(TEST_REPO)).isFalse();
 		manager.removeRepository(PROXY_ID);
-		assertThat(manager.hasRepositoryConfig(PROXY_ID)).isFalse();;
-		assertThat(manager.isSafeToRemove(TEST_REPO)).isTrue();;
+		assertThat(manager.hasRepositoryConfig(PROXY_ID)).isFalse();
+		;
+		assertThat(manager.isSafeToRemove(TEST_REPO)).isTrue();
+		;
 	}
 
 	@Test
+	@Deprecated
 	public void testAddToSystemRepository() {
 		RepositoryConfig config = manager.getRepositoryConfig(TEST_REPO);
 		manager.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
@@ -208,6 +202,7 @@ public class LocalRepositoryManagerTest {
 	}
 
 	@Test
+	@Deprecated
 	public void testModifySystemRepository() {
 		RepositoryConfig config = manager.getRepositoryConfig(TEST_REPO);
 		manager.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
@@ -228,6 +223,7 @@ public class LocalRepositoryManagerTest {
 	}
 
 	@Test
+	@Deprecated
 	public void testRemoveFromSystemRepository() {
 		RepositoryConfig config = manager.getRepositoryConfig(TEST_REPO);
 		manager.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
@@ -252,15 +248,19 @@ public class LocalRepositoryManagerTest {
 	}
 
 	/**
-	 * Regression test for adding new repositories when legacy SYSTEM repository is still present
-	 * 
-	 * See also GitHub issue 1077
-	 */ 
+	 * Regression test for adding new repositories when legacy SYSTEM repository is still present See also
+	 * GitHub issue 1077
+	 */
 	@Test
 	public void testAddWithExistingSysRepository() {
 		new File(datadir, "repositories/SYSTEM").mkdir();
-		RepositoryImplConfig cfg = new SailRepositoryConfig(new MemoryStoreConfig());
-		manager.addRepositoryConfig(new RepositoryConfig("test-01", cfg));
-		manager.addRepositoryConfig(new RepositoryConfig("test-02", cfg));
+		try {
+			RepositoryImplConfig cfg = new SailRepositoryConfig(new MemoryStoreConfig());
+			manager.addRepositoryConfig(new RepositoryConfig("test-01", cfg));
+			manager.addRepositoryConfig(new RepositoryConfig("test-02", cfg));
+		}
+		catch (RepositoryConfigException e) {
+			fail(e.getMessage());
+		}
 	}
 }
