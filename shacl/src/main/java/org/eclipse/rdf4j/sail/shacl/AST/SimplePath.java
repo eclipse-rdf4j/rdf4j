@@ -26,7 +26,7 @@ import java.util.stream.Stream;
  */
 public class SimplePath extends Path {
 
-	private IRI path;
+	private final IRI path;
 
 	SimplePath(Resource id, SailRepositoryConnection connection) {
 		super(id);
@@ -61,5 +61,9 @@ public class SimplePath extends Path {
 
 		return "?a <" + path + "> ?c. ";
 
+	}
+
+	public IRI getPath() {
+		return path;
 	}
 }

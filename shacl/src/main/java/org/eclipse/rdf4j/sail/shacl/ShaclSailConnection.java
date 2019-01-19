@@ -30,6 +30,9 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -146,13 +149,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 			}
 
 			try {
-				boolean valid = validate();
+				List<Tuple> invalidTuples = validate();
+				boolean valid = invalidTuples.isEmpty();
 				previousStateConnection.commit();
 
 				if (!valid) {
 					rollback();
 					refreshShapes(shapesConnection);
-					throw new SailException("Failed SHACL validation");
+					throw new ShaclSailValidationException(invalidTuples);
 				} else {
 					shapesConnection.commit();
 					super.commit();
@@ -217,15 +221,15 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		}
 	}
 
-	private boolean validate() {
+	private List<Tuple> validate() {
 
 		if (!sail.config.validationEnabled) {
-			return true;
+			return Collections.emptyList();
 		}
 
 		fillAddedAndRemovedStatementRepositories();
 
-		boolean allValid = true;
+		List<Tuple> ret = new ArrayList<>();
 
 		final List<NodeShape> nodeShapes = NodeShape.Factory.getShapes(shapesConnection);
 		for (NodeShape nodeShape : nodeShapes) {
@@ -233,6 +237,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 			for (PlanNode planNode : planNodes) {
 				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
 					List<Tuple> collect = stream.collect(Collectors.toList());
+
+					ret.addAll(collect);
 
 					boolean valid = collect.size() == 0;
 					if (!valid) {
@@ -244,12 +250,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 									a -> a.toString() + " -cause-> " + a.getCause()).collect(
 									Collectors.toList())));
 					}
-					allValid = allValid && valid;
 				}
 			}
 		}
 
-		return allValid;
+		return ret;
 	}
 
 	void fillAddedAndRemovedStatementRepositories() {

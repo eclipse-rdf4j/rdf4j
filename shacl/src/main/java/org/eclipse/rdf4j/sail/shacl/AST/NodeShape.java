@@ -76,6 +76,10 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return "?a ?b ?c";
 	}
 
+	public Resource getId() {
+		return id;
+	}
+
 
 	public static class Factory {
 

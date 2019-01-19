@@ -19,8 +19,10 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
@@ -143,7 +145,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			logger.info(planAsGraphvizDot);
 		}
 
-		return new LoggingNode(filteredStatements2);
+		return new EnrichWithShape(new LoggingNode(filteredStatements2), this);
 
 	}
 
@@ -161,5 +163,10 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		}
 
 		return super.requiresEvaluation(addedStatements, removedStatements) | requiresEvalutation;
+	}
+
+	@Override
+	public SourceConstraintComponent getSourceConstraintComponent() {
+		return SourceConstraintComponent.MinCountConstraintComponent;
 	}
 }
