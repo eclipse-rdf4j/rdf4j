@@ -113,7 +113,7 @@ public class ShaclTest {
 		return ret;
 	}
 
-	void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult) throws Exception {
+	private void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult) throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -137,35 +137,36 @@ public class ShaclTest {
 		for (int j = 0; j < 100; j++) {
 
 			String name = dataPath + "query" + j + ".rq";
-			InputStream resourceAsStream = ShaclTest.class.getClassLoader().getResourceAsStream(name);
-			if (resourceAsStream == null) {
-				continue;
-			}
+			try (InputStream resourceAsStream = ShaclTest.class.getClassLoader().getResourceAsStream(name)) {
+				if (resourceAsStream == null) {
+					continue;
+				}
 
-			ran = true;
-			System.out.println(name);
+				ran = true;
+				System.out.println(name);
 
-			try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-				connection.begin();
-				String query = IOUtil.readString(resourceAsStream);
-				connection.prepareUpdate(query).execute();
-				connection.commit();
-			}
-			catch (RepositoryException sailException) {
-				exception = true;
-				System.out.println(sailException.getMessage());
+				try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
+					connection.begin(IsolationLevels.SNAPSHOT);
+					String query = IOUtil.readString(resourceAsStream);
+					connection.prepareUpdate(query).execute();
+					connection.commit();
+				} catch (RepositoryException sailException) {
+					exception = true;
+					System.out.println(sailException.getMessage());
 
-			}
-			catch (IOException e) {
+				}
+			} catch (IOException e) {
 				e.printStackTrace();
 			}
 
 		}
+
+		shaclSail.shutDown();
+
 		if (ran) {
 			if (expectedResult == ExpectedResult.valid) {
 				assertFalse("Expected transaction to succeed", exception);
-			}
-			else {
+			} else {
 				assertTrue("Expected transaction to fail", exception);
 			}
 		}
@@ -210,8 +211,7 @@ public class ShaclTest {
 					String query = IOUtil.readString(resourceAsStream);
 					shaclSailConnection.prepareUpdate(query).execute();
 
-				}
-				catch (IOException e) {
+				} catch (IOException e) {
 					e.printStackTrace();
 				}
 			}
@@ -219,8 +219,7 @@ public class ShaclTest {
 			try {
 				shaclSailConnection.commit();
 
-			}
-			catch (RepositoryException sailException) {
+			} catch (RepositoryException sailException) {
 				exception = true;
 				System.out.println(sailException.getMessage());
 			}
