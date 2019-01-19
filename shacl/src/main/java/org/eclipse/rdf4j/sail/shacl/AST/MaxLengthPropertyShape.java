@@ -16,6 +16,9 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
+import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MaxLengthFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MinLengthFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -57,7 +60,7 @@ public class MaxLengthPropertyShape extends PathPropertyShape {
 			logger.info(planAsGraphvizDot);
 		}
 
-		return invalidValues;
+		return new EnrichWithShape(new LoggingNode(invalidValues), this);
 
 	}
 
@@ -65,4 +68,11 @@ public class MaxLengthPropertyShape extends PathPropertyShape {
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return true;
 	}
+
+	@Override
+	public SourceConstraintComponent getSourceConstraintComponent() {
+
+		return SourceConstraintComponent.MaxLengthConstraintComponent;
+	}
+
 }
