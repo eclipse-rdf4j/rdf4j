@@ -26,7 +26,7 @@ public class MemoryStoreTest extends RDFNotifyingStoreTest {
 		throws SailException
 	{
 		NotifyingSail sail = new MemoryStore();
-		sail.initialize();
+		sail.init();
 		return sail;
 	}
 }

@@ -254,8 +254,16 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 		}
 	}
 
-	@Override
+	@Deprecated
 	public void initialize()
+		throws SailException
+	{
+		init();
+	}
+
+
+	@Override
+	public void init()
 		throws SailException
 	{
 		for (Repository member : members) {
@@ -267,7 +275,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 			}
 		}
 	}
-
+	
 	@Override
 	public void shutDown()
 		throws SailException
