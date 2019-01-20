@@ -87,9 +87,9 @@ public class DatatypeBenchmarkEmpty {
 
 
 	@Benchmark
-	public void shacl() {
+	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository("shaclDatatype.ttl")));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatype.ttl"));
 
 		repository.initialize();
 

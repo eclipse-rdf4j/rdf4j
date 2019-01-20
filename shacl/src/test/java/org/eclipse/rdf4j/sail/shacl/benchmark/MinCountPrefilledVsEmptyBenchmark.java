@@ -51,7 +51,7 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 
 	@Setup(Level.Invocation)
-	public void setUp() {
+	public void setUp() throws Exception {
 		allStatements = new ArrayList<>(10);
 
 
@@ -82,7 +82,7 @@ public class MinCountPrefilledVsEmptyBenchmark {
 		}
 
 
-		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		this.shaclRepo = new SailRepository(shaclRepo);
 		this.shaclRepo.initialize();
 
@@ -122,9 +122,9 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 
 	@Benchmark
-	public void shaclEmpty() {
+	public void shaclEmpty() throws Exception {
 
-		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		SailRepository repository = new SailRepository(shaclRepo);
 		repository.initialize();
 
@@ -144,9 +144,9 @@ public class MinCountPrefilledVsEmptyBenchmark {
 	}
 
 	@Benchmark
-	public void shaclEmptyJustInitialize() {
+	public void shaclEmptyJustInitialize() throws Exception {
 
-		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		SailRepository repository = new SailRepository(shaclRepo);
 		repository.initialize();
 
@@ -155,9 +155,9 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 
 	@Benchmark
-	public void shaclEmptyJustInitializeAndEmptyTransaction() {
+	public void shaclEmptyJustInitializeAndEmptyTransaction() throws Exception {
 
-		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		SailRepository repository = new SailRepository(shaclRepo);
 		repository.initialize();
 
