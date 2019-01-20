@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -29,7 +30,9 @@ import java.nio.file.Files;
 import java.util.List;
 
 /**
- * A {@link Sail} implementation that adds support for the Shapes Constraint Language (SHACL)
+ * A {@link Sail} implementation that adds support for the Shapes Constraint Language (SHACL).
+ * <p>
+ * The ShaclSail looks for SHACL shape data in a special named graph {@link RDF4J#SHACL_SHAPE_GRAPH}.
  *
  * @author Heshan Jayasinghe
  * @author Håvard Ottestad
@@ -37,17 +40,10 @@ import java.util.List;
  */
 public class ShaclSail extends NotifyingSailWrapper {
 
-	/**
-	 * The virtual context identifier for persisting the SHACL shapes information.
-	 */
-	@SuppressWarnings("WeakerAccess")
-	public final static IRI SHAPE_GRAPH = SimpleValueFactory
-		.getInstance()
-		.createIRI("http://rdf4j.org/schema/schacl#ShapeGraph");
-
 	private List<NodeShape> nodeShapes;
 
 	boolean debugPrintPlans = false;
+
 	private boolean ignoreNoShapesLoadedException = false;
 
 	ShaclSailConfig config = new ShaclSailConfig();
@@ -64,18 +60,14 @@ public class ShaclSail extends NotifyingSailWrapper {
 	static {
 		try {
 			SH_OR_UPDATE_QUERY = IOUtils.toString(
-				ShaclSail
-					.class
-					.getClassLoader()
-					.getResourceAsStream("shacl-sparql-inference/sh_or.rq"),
-				"UTF-8");
+					ShaclSail.class.getClassLoader().getResourceAsStream("shacl-sparql-inference/sh_or.rq"),
+					"UTF-8");
 			SH_OR_NODE_SHAPE_UPDATE_QUERY = IOUtils.toString(
-				ShaclSail
-					.class
-					.getClassLoader()
-					.getResourceAsStream("shacl-sparql-inference/sh_or_node_shape.rq"),
-				"UTF-8");
-		} catch (IOException e) {
+					ShaclSail.class.getClassLoader().getResourceAsStream(
+							"shacl-sparql-inference/sh_or_node_shape.rq"),
+					"UTF-8");
+		}
+		catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
 
@@ -86,10 +78,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 		String path = null;
 		if (baseSail.getDataDir() != null) {
 			path = baseSail.getDataDir().getPath();
-		} else {
+		}
+		else {
 			try {
 				path = Files.createTempDirectory("shacl-shapes").toString();
-			} catch (IOException e) {
+			}
+			catch (IOException e) {
 				throw new SailConfigException(e);
 			}
 		}
@@ -118,7 +112,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 				// Our inferencer both adds and removes statements.
 				// To support updates I recommend having two graphs, one raw one with the unmodified data.
 				// Then copy all that data into a new graph, run inferencing on that graph and use it to generate the java objects
-				throw new IllegalStateException("ShaclSail does not support modifying shapes that are already loaded or loading more shapes");
+				throw new IllegalStateException(
+						"ShaclSail does not support modifying shapes that are already loaded or loading more shapes");
 			}
 		}
 
@@ -130,7 +125,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	public void shutDown() throws SailException {
 		try {
 			shapesRepo.shutDown();
-		} finally {
+		}
+		finally {
 			shapesRepo = null;
 		}
 		super.shutDown();
@@ -138,7 +134,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	@Override
 	public NotifyingSailConnection getConnection() throws SailException {
-		return new ShaclSailConnection(this, super.getConnection(), super.getConnection(), shapesRepo.getConnection());
+		return new ShaclSailConnection(this, super.getConnection(), super.getConnection(),
+				shapesRepo.getConnection());
 	}
 
 	public void disableValidation() {

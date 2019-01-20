@@ -8,6 +8,13 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -15,6 +22,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -22,6 +30,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.UpdateContext;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
@@ -29,14 +38,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * @author Heshan Jayasinghe
@@ -64,7 +65,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	private SailRepositoryConnection shapesConnection;
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
-						NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesConnection) {
+			NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesConnection)
+	{
 		super(connection);
 		this.previousStateConnection = previousStateConnection;
 		this.shapesConnection = shapesConnection;
@@ -74,23 +76,23 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 			addConnectionListener(new SailConnectionListener() {
 
-									  @Override
-									  public void statementAdded(Statement statement) {
-										  boolean add = addedStatementsSet.add(statement);
-										  if (!add) {
-											  removedStatementsSet.remove(statement);
-										  }
+				@Override
+				public void statementAdded(Statement statement) {
+					boolean add = addedStatementsSet.add(statement);
+					if (!add) {
+						removedStatementsSet.remove(statement);
+					}
 
-									  }
+				}
 
-									  @Override
-									  public void statementRemoved(Statement statement) {
-										  boolean add = removedStatementsSet.add(statement);
-										  if (!add) {
-											  addedStatementsSet.remove(statement);
-										  }
-									  }
-								  }
+				@Override
+				public void statementRemoved(Statement statement) {
+					boolean add = removedStatementsSet.add(statement);
+					if (!add) {
+						addedStatementsSet.remove(statement);
+					}
+				}
+			}
 
 			);
 		}
@@ -144,7 +146,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 			refreshShapes(shapesConnection);
 
-			if (!sail.isIgnoreNoShapesLoadedException() && ((!addedStatementsSet.isEmpty() || !removedStatementsSet.isEmpty()) && sail.getNodeShapes().isEmpty())) {
+			if (!sail.isIgnoreNoShapesLoadedException()
+					&& ((!addedStatementsSet.isEmpty() || !removedStatementsSet.isEmpty())
+							&& sail.getNodeShapes().isEmpty()))
+			{
 				throw new NoShapesLoadedException();
 			}
 
@@ -157,33 +162,65 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 					rollback();
 					refreshShapes(shapesConnection);
 					throw new ShaclSailValidationException(invalidTuples);
-				} else {
+				}
+				else {
 					shapesConnection.commit();
 					super.commit();
 				}
-			} finally {
+			}
+			finally {
 				cleanup();
 			}
 		}
 	}
 
 	@Override
-	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		if (contexts.length == 1 && contexts[0].equals(ShaclSail.SHAPE_GRAPH)) {
+	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
+		throws SailException
+	{
+		if (contexts.length == 1 && contexts[0].equals(RDF4J.SHACL_SHAPE_GRAPH)) {
 			shapesConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
-		} else {
+		}
+		else {
+			super.addStatement(modify, subj, pred, obj, contexts);
+		}
+	}
+
+	@Override
+	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj,
+			Resource... contexts)
+		throws SailException
+	{
+		if (contexts.length == 1 && contexts[0].equals(RDF4J.SHACL_SHAPE_GRAPH)) {
+			shapesConnection.remove(subj, pred, obj);
+			isShapeRefreshNeeded = true;
+		}
+		else {
+			super.removeStatement(modify, subj, pred, obj, contexts);
+		}
+	}
+
+	@Override
+	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		if (contexts.length == 1 && contexts[0].equals(RDF4J.SHACL_SHAPE_GRAPH)) {
+			shapesConnection.add(subj, pred, obj);
+			isShapeRefreshNeeded = true;
+		}
+		else {
 			super.addStatement(subj, pred, obj, contexts);
 		}
 	}
 
 	@Override
 	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException {
-		if (contexts.length == 1 && contexts[0].equals(ShaclSail.SHAPE_GRAPH)) {
+		throws SailException
+	{
+		if (contexts.length == 1 && contexts[0].equals(RDF4J.SHACL_SHAPE_GRAPH)) {
 			shapesConnection.remove(subj, pred, obj);
 			isShapeRefreshNeeded = true;
-		} else {
+		}
+		else {
 			super.removeStatements(subj, pred, obj, contexts);
 		}
 	}
@@ -243,12 +280,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 					boolean valid = collect.size() == 0;
 					if (!valid) {
 						logger.warn(
-							"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {} \n\t\t{}",
-							nodeShape.toString(),
-							String.join("\n\t\t",
-								collect.stream().map(
-									a -> a.toString() + " -cause-> " + a.getCause()).collect(
-									Collectors.toList())));
+								"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {} \n\t\t{}",
+								nodeShape.toString(),
+								String.join("\n\t\t",
+										collect.stream().map(
+												a -> a.toString() + " -cause-> " + a.getCause()).collect(
+														Collectors.toList())));
 					}
 				}
 			}
@@ -268,14 +305,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		try (RepositoryConnection connection = addedStatements.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			addedStatementsSet.stream().filter(
-				statement -> !removedStatementsSet.contains(statement)).forEach(connection::add);
+					statement -> !removedStatementsSet.contains(statement)).forEach(connection::add);
 			connection.commit();
 		}
 
 		try (RepositoryConnection connection = removedStatements.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			removedStatementsSet.stream().filter(
-				statement -> !addedStatementsSet.contains(statement)).forEach(connection::add);
+					statement -> !addedStatementsSet.contains(statement)).forEach(connection::add);
 			connection.commit();
 		}
 	}

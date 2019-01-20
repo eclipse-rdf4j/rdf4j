@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -34,11 +35,11 @@ public class Utils {
 		throws RDF4JException, UnsupportedRDFormatException, IOException
 	{
 		InputStream shapesData = Utils.class.getResourceAsStream("/" + resourceName);
-		Model shapes = Rio.parse(shapesData, "", RDFFormat.TURTLE, ShaclSail.SHAPE_GRAPH);
+		Model shapes = Rio.parse(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		try (SailConnection conn = sail.getConnection()) {
 			conn.begin();
 			for (Statement st : shapes) {
-				conn.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), ShaclSail.SHAPE_GRAPH);
+				conn.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), RDF4J.SHACL_SHAPE_GRAPH);
 			}
 			conn.commit();
 		}
@@ -49,11 +50,11 @@ public class Utils {
 		throws RDF4JException, UnsupportedRDFormatException, IOException
 	{
 		InputStream shapesData = Utils.class.getResourceAsStream("/" + resourceName);
-		Model shapes = Rio.parse(shapesData, "", RDFFormat.TURTLE, ShaclSail.SHAPE_GRAPH);
+		Model shapes = Rio.parse(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.begin();
 			for (Statement st : shapes) {
-				conn.add(st.getSubject(), st.getPredicate(), st.getObject(), ShaclSail.SHAPE_GRAPH);
+				conn.add(st.getSubject(), st.getPredicate(), st.getObject(), RDF4J.SHACL_SHAPE_GRAPH);
 			}
 			conn.commit();
 		}
