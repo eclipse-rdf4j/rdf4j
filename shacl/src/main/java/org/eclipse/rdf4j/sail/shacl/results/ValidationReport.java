@@ -1,8 +1,15 @@
+/*******************************************************************************
+ * Copyright (c) 2019 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl.results;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -46,5 +53,21 @@ public class ValidationReport implements  ModelInterface{
 	@Override
 	public Resource getId() {
 		return id;
+	}
+
+
+	/**
+	 * @return false if the changes violated a SHACL Shape
+	 */
+	public boolean conforms() {
+		return conforms;
+	}
+
+
+	/**
+	 * @return list of ValidationResult with more information about each violation
+	 */
+	public List<ValidationResult> getValidationResult() {
+		return validationResult;
 	}
 }

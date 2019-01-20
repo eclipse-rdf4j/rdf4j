@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 
-
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.stream.Stream;

@@ -1,3 +1,11 @@
+/*******************************************************************************
+ * Copyright (c) 2019 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.Model;
@@ -21,6 +29,9 @@ public class ShaclSailValidationException extends SailException {
 		this.invalidTuples = invalidTuples;
 	}
 
+	/**
+	 * @return A Model containing the validation report as specified by the SHACL Recommendation
+	 */
 	@SuppressWarnings("WeakerAccess")
 	public Model validationReportAsModel() {
 
@@ -33,6 +44,9 @@ public class ShaclSailValidationException extends SailException {
 
 	}
 
+	/**
+	 * @return A ValidationReport Java object that describes what failed and can optionally be converted to a Model as specified by the SHACL Recommendation
+	 */
 	@SuppressWarnings("WeakerAccess")
 	public ValidationReport getValidationReport() {
 		ValidationReport validationReport = new ValidationReport(false);

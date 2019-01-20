@@ -1,3 +1,11 @@
+/*******************************************************************************
+ * Copyright (c) 2019 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl.results;
 
 import org.eclipse.rdf4j.model.Model;
@@ -39,10 +47,16 @@ public class ValidationResult implements ModelInterface {
 		this.detail = detail;
 	}
 
+	/**
+	 * @return ValidationResult with more information as to what failed. Usually for nested Shapes in eg. sh:or.
+	 */
 	public ValidationResult getDetail() {
 		return detail;
 	}
 
+	/**
+	 * @return all ValidationResult(s) with more information as to what failed. Usually for nested Shapes in eg. sh:or.
+	 */
 	public List<ValidationResult> getDetails(){
 
 		ArrayList<ValidationResult> validationResults = new ArrayList<>();
@@ -78,14 +92,24 @@ public class ValidationResult implements ModelInterface {
 		return model;
 	}
 
+	/**
+	 * @return the path, as specified in the Shape, that caused the violation
+	 */
 	private Path getPath() {
 		return path;
 	}
 
-	private Resource getSourceShapeResource() {
+	/**
+	 * @return the Resource (IRI or BNode) that identifies the source shape
+	 */
+	public Resource getSourceShapeResource() {
 		return sourceShape.getId();
 	}
 
+
+	/**
+	 * @return the focus node, aka. the subject, that caused the violation
+	 */
 	private Resource getFocusNode() {
 		return focusNode;
 	}
@@ -95,6 +119,10 @@ public class ValidationResult implements ModelInterface {
 		return id;
 	}
 
+
+	/**
+	 * @return the type of the source constraint that caused the violation
+	 */
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return sourceConstraintComponent;
 	}

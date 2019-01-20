@@ -11,6 +11,8 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -56,6 +58,11 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 	}
 
 	@Override
+	public List<Path> getPaths() {
+		throw new IllegalStateException();
+	}
+
+	@Override
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return false;
 	}
@@ -80,6 +87,26 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 
 		return stringBuilder.append("\n\n").toString();
+
+	}
+
+	static List<Value> toList(SailRepositoryConnection connection, Resource orList) {
+		List<Value> ret = new ArrayList<>();
+		while (!orList.equals(RDF.NIL)) {
+			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(orList, RDF.FIRST, null))) {
+				Value value = stream.map(Statement::getObject).findAny().get();
+				ret.add(value);
+			}
+
+			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(orList, RDF.REST, null))) {
+				orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
+			}
+
+		}
+
+
+		return ret;
+
 
 	}
 
@@ -132,6 +159,26 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			if (hasOr(propertyShapeId, connection)) {
 				propertyShapes.add(new OrPropertyShape(propertyShapeId, connection, nodeShape));
 			}
+
+			if (hasMinLength(propertyShapeId, connection)) {
+				propertyShapes.add(new MinLengthPropertyShape(propertyShapeId, connection, nodeShape));
+			}
+
+			if (hasMaxLength(propertyShapeId, connection)) {
+				propertyShapes.add(new MaxLengthPropertyShape(propertyShapeId, connection, nodeShape));
+			}
+
+			if (hasPattern(propertyShapeId, connection)) {
+				propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape));
+			}
+
+			if (hasLanguageIn(propertyShapeId, connection)) {
+				propertyShapes.add(new LanguageInPropertyShape(propertyShapeId, connection, nodeShape));
+			}
+
+			if (hasNodeKind(propertyShapeId, connection)) {
+				propertyShapes.add(new NodeKindPropertyShape(propertyShapeId, connection, nodeShape));
+			}
 			return propertyShapes;
 		}
 
@@ -150,6 +197,26 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 		private static boolean hasDatatype(Resource id, SailRepositoryConnection connection) {
 			return connection.hasStatement(id, SHACL.DATATYPE, null, true);
+		}
+
+		private static boolean hasMinLength(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.MIN_LENGTH, null, true);
+		}
+
+		private static boolean hasMaxLength(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.MAX_LENGTH, null, true);
+		}
+
+		private static boolean hasPattern(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.PATTERN, null, true);
+		}
+
+		private static boolean hasLanguageIn(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.LANGUAGE_IN, null, true);
+		}
+
+		private static boolean hasNodeKind(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.NODE_KIND_PROP, null, true);
 		}
 
 

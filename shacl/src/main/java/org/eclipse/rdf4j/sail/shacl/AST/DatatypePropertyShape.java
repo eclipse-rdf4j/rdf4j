@@ -15,20 +15,11 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
-
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedTupleFromFilter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DatatypeFilter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
-import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PushBasedLoggingNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,36 +46,14 @@ public class DatatypePropertyShape extends PathPropertyShape {
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
 
-		PlanNode addedByShape = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape));
+		PlanNode invalidValues =  StandardisedPlanHelper.getGenericSingleObjectPlan(
+			shaclSailConnection,
+			nodeShape,
+			(parent, trueNode, falseNode) -> new DatatypeFilter(parent, trueNode, falseNode, datatype),
+			this
+		);
 
-		BufferedSplitter bufferedSplitter = new BufferedSplitter(addedByShape);
-
-		PlanNode addedByPath = new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), path.getQuery()));
-
-		// this is essentially pushing the filter down below the join
-		DirectTupleFromFilter invalidValuesDirectOnPath = new DirectTupleFromFilter();
-		new DatatypeFilter(addedByPath, null, new PushBasedLoggingNode(invalidValuesDirectOnPath), datatype);
-
-		BufferedTupleFromFilter discardedRight = new BufferedTupleFromFilter();
-
-
-		PlanNode top = new LoggingNode(new InnerJoin(bufferedSplitter.getPlanNode(), invalidValuesDirectOnPath, null, discardedRight));
-
-
-		if (nodeShape instanceof TargetClass) {
-			PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection.getPreviousStateConnection(), discardedRight));
-
-			top = new LoggingNode(new UnionNode(top, typeFilterPlan));
-		}
-
-		PlanNode bulkedEcternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(bufferedSplitter.getPlanNode(), shaclSailConnection.getPreviousStateConnection(), path.getQuery()));
-
-		top = new LoggingNode(new UnionNode(top, bulkedEcternalInnerJoin));
-
-		DirectTupleFromFilter invalidValues = new DirectTupleFromFilter();
-		new DatatypeFilter(top, null, invalidValues, datatype);
-
-		if(printPlans){
+		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);
 			logger.info(planAsGraphvizDot);
 		}

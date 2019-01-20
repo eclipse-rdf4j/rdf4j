@@ -9,8 +9,6 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.apache.commons.io.IOUtils;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
