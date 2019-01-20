@@ -139,7 +139,7 @@ public class ShaclTest {
 		String shaclFile = shaclPath + "shacl.ttl";
 		System.out.println(shaclFile);
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.setDebugPrintPlans(true);
+		shaclSail.setLogValidationPlans(true);
 		SailRepository shaclRepository = new SailRepository(shaclSail);
 		shaclRepository.initialize();
 		Utils.loadShapeData(shaclRepository, shaclFile);

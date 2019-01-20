@@ -90,7 +90,7 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 					} else {
 						if (falseNode != null) {
 							if(LoggingNode.loggingEnabled){
-								logger.debug(leadingSpace() + that.getClass().getSimpleName() + ";falseNode: " + " " + temp.toString());
+								logger.info(leadingSpace() + that.getClass().getSimpleName() + ";falseNode: " + " " + temp.toString());
 							}
 							falseNode.push(temp);
 
