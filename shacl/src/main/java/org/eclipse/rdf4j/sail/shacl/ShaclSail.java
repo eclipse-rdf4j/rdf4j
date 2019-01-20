@@ -96,6 +96,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 		shapesRepo.initialize();
 	}
 
+	public ShaclSail() {
+		super();
+	}
+
 	@Override
 	public void initialize() throws SailException {
 		super.initialize();
