@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 

@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MaxLengthFilter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.MinLengthFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -15,21 +15,11 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
-
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedTupleFromFilter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DatatypeFilter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
-import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.MinLengthFilter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PushBasedLoggingNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
