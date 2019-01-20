@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.algebra.In;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
@@ -69,15 +70,27 @@ public class OrPropertyShape extends PropertyShape {
 				.flatMap(shapes -> shapes.stream().map(PlanNode::getIteratorDataType))
 				.distinct().collect(Collectors.toList());
 
+
+
 		if (iteratorDataTypes.size() > 1) {
 			throw new UnsupportedOperationException("No support for OR shape with mix between aggregate and raw triples");
 		}
 
 
-		PlanNode ret;
+		IteratorData iteratorData = iteratorDataTypes.get(0);
+
+		if (iteratorData == IteratorData.tripleBased) {
+
+			List<Path> collect = getPaths().stream().distinct().collect(Collectors.toList());
+			if(collect.size()>1){
+				iteratorData = IteratorData.aggregated;
+			}
+		}
+
+			PlanNode ret;
 
 
-		if (iteratorDataTypes.get(0) == IteratorData.tripleBased) {
+		if (iteratorData == IteratorData.tripleBased) {
 
 			EqualsJoin equalsJoin = new EqualsJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), true);
 
@@ -88,15 +101,15 @@ public class OrPropertyShape extends PropertyShape {
 			ret =  new LoggingNode(equalsJoin);
 		}
 
-		else if (iteratorDataTypes.get(0) == IteratorData.aggregated) {
+		else if (iteratorData == IteratorData.aggregated) {
 
-			PlanNode equalsJoin = new LoggingNode(new InnerJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), null, null));
+			PlanNode innerJoin = new LoggingNode(new InnerJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), null, null));
 
 			for (int i = 2; i < or.size(); i++) {
-				equalsJoin = new LoggingNode(new InnerJoin(equalsJoin, unionAll(plannodes.get(i)), null, null));
+				innerJoin = new LoggingNode(new InnerJoin(innerJoin, unionAll(plannodes.get(i)), null, null));
 			}
 
-			ret =  new LoggingNode(equalsJoin);
+			ret =  new LoggingNode(innerJoin);
 		}else{
 			throw new IllegalStateException("Should not get here!");
 
@@ -110,6 +123,11 @@ public class OrPropertyShape extends PropertyShape {
 		return new EnrichWithShape(ret, this);
 
 
+	}
+
+	@Override
+	public List<Path> getPaths() {
+		return or.stream().flatMap(a -> a.stream().flatMap(b -> b.getPaths().stream())).collect(Collectors.toList());
 	}
 
 	private PlanNode unionAll(List<PlanNode> planNodes) {

@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 
+import java.util.Objects;
 import java.util.stream.Stream;
 
 /**
@@ -65,5 +66,23 @@ public class SimplePath extends Path {
 
 	public IRI getPath() {
 		return path;
+	}
+
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		SimplePath that = (SimplePath) o;
+		return Objects.equals(path, that.path);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(path);
 	}
 }

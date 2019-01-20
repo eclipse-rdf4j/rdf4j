@@ -58,6 +58,11 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 	}
 
 	@Override
+	public List<Path> getPaths() {
+		throw new IllegalStateException();
+	}
+
+	@Override
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return false;
 	}

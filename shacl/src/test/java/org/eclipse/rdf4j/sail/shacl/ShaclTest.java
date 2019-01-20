@@ -57,7 +57,8 @@ public class ShaclTest {
 		"test-cases/or/maxCount",
 		"test-cases/or/minCount",
 		"test-cases/or/nodeKindMinLength",
-		"test-cases/or/implicitAnd"
+		"test-cases/or/implicitAnd",
+		"test-cases/or/datatypeDifferentPaths"
 
 	);
 
