@@ -9,7 +9,9 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.apache.commons.io.IOUtils;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -26,6 +28,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -190,6 +194,28 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	public ShaclSail() {
 		super();
+	}
+
+	/**
+	 * Lists the predicates that have been implemented in the ShaclSail. All of these, and all combinations, <i>should</i> work, please report any bugs.
+	 * @return List of IRIs (SHACL predicates)
+	 */
+	public static List<IRI> getSupportedShaclPredicates() {
+		return Arrays.asList(
+			SHACL.TARGET_CLASS,
+			SHACL.PATH,
+			SHACL.PROPERTY,
+			SHACL.OR,
+			SHACL.MIN_COUNT,
+			SHACL.MAX_COUNT,
+			SHACL.MIN_LENGTH,
+			SHACL.MAX_LENGTH,
+			SHACL.PATTERN,
+			SHACL.FLAGS,
+			SHACL.NODE_KIND_PROP,
+			SHACL.LANGUAGE_IN,
+			SHACL.DATATYPE
+		);
 	}
 
 	@Override
