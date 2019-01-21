@@ -179,6 +179,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			if (hasNodeKind(propertyShapeId, connection)) {
 				propertyShapes.add(new NodeKindPropertyShape(propertyShapeId, connection, nodeShape));
 			}
+
+			if (hasMinExclusive(propertyShapeId, connection)) {
+				propertyShapes.add(new MinExclusivePropertyShape(propertyShapeId, connection, nodeShape));
+			}
 			return propertyShapes;
 		}
 
@@ -219,6 +223,9 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			return connection.hasStatement(id, SHACL.NODE_KIND_PROP, null, true);
 		}
 
+		private static boolean hasMinExclusive(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.MIN_EXCLUSIVE, null, true);
+		}
 
 	}
 }

@@ -20,7 +20,8 @@ public enum SourceConstraintComponent {
 	MaxLengthConstraintComponent(SHACL.MAX_LENGTH_CONSTRAINT_COMPONENT),
 	MinLengthConstraintComponent(SHACL.MIN_LENGTH_CONSTRAINT_COMPONENT),
 	NodeKindConstraintComponent(SHACL.NODE_KIND_CONSTRAINT_COMPONENT),
-	PatternConstraintComponent(SHACL.PATTERN_CONSTRAINT_COMPONENT);
+	PatternConstraintComponent(SHACL.PATTERN_CONSTRAINT_COMPONENT),
+	MinExclusiveConstraintComponent(SHACL.MIN_EXCLUSIVE_CONSTRAINT_COMPONENT);
 
 	private final IRI iri;
 
