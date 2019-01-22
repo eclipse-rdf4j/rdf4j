@@ -249,7 +249,7 @@ public class RepositoryController extends AbstractController {
 
 				Object factory = ProtocolUtil.getAcceptableService(request, response, registry);
 
-				Map<String, Object> model = new HashMap<String, Object>();
+				Map<String, Object> model = new HashMap<>();
 				model.put(QueryResultView.FILENAME_HINT_KEY, "query-result");
 				model.put(QueryResultView.QUERY_RESULT_KEY, queryResult);
 				model.put(QueryResultView.FACTORY_KEY, factory);

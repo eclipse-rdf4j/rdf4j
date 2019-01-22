@@ -56,7 +56,7 @@ public class HttpServerUtilTest {
 	{
 		FileFormatServiceRegistry<? extends FileFormat, ?> registry = TupleQueryResultWriterRegistry.getInstance();
 
-		tupleQueryMimeTypes = new ArrayList<String>(16);
+		tupleQueryMimeTypes = new ArrayList<>(16);
 		for (FileFormat format : registry.getKeys()) {
 			tupleQueryMimeTypes.addAll(format.getMIMETypes());
 		}

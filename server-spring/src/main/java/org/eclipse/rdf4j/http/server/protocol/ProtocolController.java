@@ -36,7 +36,7 @@ public class ProtocolController extends AbstractController {
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
 		throws Exception
 	{
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 		model.put(SimpleResponseView.CONTENT_KEY, Protocol.VERSION);
 		return new ModelAndView(SimpleResponseView.getInstance(), model);
 	}

@@ -147,7 +147,7 @@ public final class QueryEvaluator {
 		builder.start();
 		builder.variables(names);
 		builder.link(Arrays.asList(INFO));
-		final List<Object> values = new ArrayList<Object>(names.length);
+		final List<Object> values = new ArrayList<>(names.length);
 		if (paged && writeCookie) {
 			// Only in this case do we have paged results, but were given the full
 			// query. Just-in-case parameter massaging below to avoid array index
@@ -191,7 +191,7 @@ public final class QueryEvaluator {
 			final String[] names = result.getBindingNames().toArray(new String[0]);
 			builder.variables(names);
 			builder.link(Arrays.asList(INFO));
-			final List<Object> values = new ArrayList<Object>();
+			final List<Object> values = new ArrayList<>();
 			while (result.hasNext()) {
 				final BindingSet set = result.next();
 				addResult(builder, names, values, set);

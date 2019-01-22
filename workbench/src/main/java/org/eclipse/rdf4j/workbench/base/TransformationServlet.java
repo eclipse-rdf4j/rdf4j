@@ -46,7 +46,7 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(TransformationServlet.class);
 
-	private final Map<String, String> defaults = new HashMap<String, String>();
+	private final Map<String, String> defaults = new HashMap<>();
 
 	protected CookieHandler cookies;
 

@@ -233,7 +233,7 @@ public class TransactionController extends AbstractController {
 	{
 		ProtocolUtil.logRequestParameters(request);
 
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 
 		String baseURI = request.getParameter(Protocol.BASEURI_PARAM_NAME);
 		if (baseURI == null) {
@@ -293,7 +293,7 @@ public class TransactionController extends AbstractController {
 	{
 		ProtocolUtil.logRequestParameters(request);
 
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 		final boolean headersOnly = METHOD_HEAD.equals(request.getMethod());
 
 		if (!headersOnly) {
@@ -338,7 +338,7 @@ public class TransactionController extends AbstractController {
 		RDFWriterFactory rdfWriterFactory = ProtocolUtil.getAcceptableService(request, response,
 				RDFWriterRegistry.getInstance());
 
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 		model.put(TransactionExportStatementsView.SUBJECT_KEY, subj);
 		model.put(TransactionExportStatementsView.PREDICATE_KEY, pred);
 		model.put(TransactionExportStatementsView.OBJECT_KEY, obj);
@@ -421,7 +421,7 @@ public class TransactionController extends AbstractController {
 		}
 		Object factory = ProtocolUtil.getAcceptableService(request, response, registry);
 
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 		model.put(QueryResultView.FILENAME_HINT_KEY, "query-result");
 		model.put(QueryResultView.QUERY_RESULT_KEY, queryResult);
 		model.put(QueryResultView.FACTORY_KEY, factory);

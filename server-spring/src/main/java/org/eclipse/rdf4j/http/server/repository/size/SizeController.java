@@ -46,7 +46,7 @@ public class SizeController extends AbstractController {
 	{
 		ProtocolUtil.logRequestParameters(request);
 
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 		final boolean headersOnly = METHOD_HEAD.equals(request.getMethod());
 
 		if (!headersOnly) {

@@ -82,7 +82,7 @@ public class HeaderElement {
 
 	public HeaderElement(String value) {
 		setValue(value);
-		parameters = new ArrayList<Parameter>();
+		parameters = new ArrayList<>();
 	}
 
 	/*---------*

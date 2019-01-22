@@ -340,7 +340,7 @@ public class StatementsController extends AbstractController {
 		RDFWriterFactory rdfWriterFactory = ProtocolUtil.getAcceptableService(request, response,
 				RDFWriterRegistry.getInstance());
 
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 		model.put(ExportStatementsView.SUBJECT_KEY, subj);
 		model.put(ExportStatementsView.PREDICATE_KEY, pred);
 		model.put(ExportStatementsView.OBJECT_KEY, obj);

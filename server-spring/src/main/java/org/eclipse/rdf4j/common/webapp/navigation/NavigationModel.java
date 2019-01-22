@@ -40,7 +40,7 @@ public class NavigationModel extends Group {
 
 	public static final String DEFAULT_I18N_SUFFIX = ".title";
 
-	private List<String> navigationModelLocations = new ArrayList<String>();
+	private List<String> navigationModelLocations = new ArrayList<>();
 
 	private String pathPrefix;
 

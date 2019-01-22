@@ -32,7 +32,7 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 
 	private static final String DEFAULT_PATH_PARAM = "default-command";
 
-	private Map<String, RepositoryServlet> servlets = new HashMap<String, RepositoryServlet>();
+	private Map<String, RepositoryServlet> servlets = new HashMap<>();
 
 	private long lastModified;
 

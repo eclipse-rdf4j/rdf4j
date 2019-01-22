@@ -26,9 +26,9 @@ import ch.qos.logback.core.util.OptionHelper;
  */
 public class LogConfigurator extends JoranConfigurator {
 
-	Map<String, String> logReaderClassNames = new HashMap<String, String>();
+	Map<String, String> logReaderClassNames = new HashMap<>();
 
-	Map<String, Appender<?>> appenders = new HashMap<String, Appender<?>>();
+	Map<String, Appender<?>> appenders = new HashMap<>();
 	String defaultAppender = null;
 
 	/**

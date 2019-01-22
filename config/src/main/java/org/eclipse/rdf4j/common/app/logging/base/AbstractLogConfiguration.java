@@ -48,7 +48,7 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 	 */
 	protected AbstractLogConfiguration() throws IOException {
 		debugLoggingEnabled = false;
-		packages = new LinkedHashSet<String>();
+		packages = new LinkedHashSet<>();
 		initBase();
 	}
 

@@ -33,9 +33,9 @@ public class Group extends AbstractNavigationNode {
 	 */
 	public Group(String id) {
 		super(id);
-		groups = new LinkedHashMap<String, Group>();
-		views = new LinkedHashMap<String, View>();
-		viewNames = new LinkedHashMap<String, View>();
+		groups = new LinkedHashMap<>();
+		views = new LinkedHashMap<>();
+		viewNames = new LinkedHashMap<>();
 	}
 
 	/**
@@ -67,7 +67,7 @@ public class Group extends AbstractNavigationNode {
 	 * @return the list of sub-groups
 	 */
 	public List<Group> getGroups() {
-		return new ArrayList<Group>(groups.values());
+		return new ArrayList<>(groups.values());
 	}
 
 	/**
@@ -119,7 +119,7 @@ public class Group extends AbstractNavigationNode {
 	 * @return the list of views
 	 */
 	public List<View> getViews() {
-		return new ArrayList<View>(views.values());
+		return new ArrayList<>(views.values());
 	}
 
 	@Override

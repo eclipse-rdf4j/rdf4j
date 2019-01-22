@@ -106,7 +106,7 @@ public class FederateTest extends AbstractCommandTest {
 	private void execute(String... args)
 		throws Exception
 	{
-		List<String> execArgs = new ArrayList<String>(args.length + 1);
+		List<String> execArgs = new ArrayList<>(args.length + 1);
 		execArgs.add("federate");
 		Collections.addAll(execArgs, args);
 		federate.execute(execArgs.toArray(new String[execArgs.size()]));

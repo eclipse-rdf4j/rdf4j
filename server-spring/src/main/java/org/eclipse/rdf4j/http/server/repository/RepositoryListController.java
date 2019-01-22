@@ -53,14 +53,14 @@ public class RepositoryListController extends AbstractController {
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
 		throws Exception
 	{
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 
 		if (METHOD_GET.equals(request.getMethod())) {
 			ValueFactory vf = SimpleValueFactory.getInstance();
 
 			try {
-				List<String> bindingNames = new ArrayList<String>();
-				List<BindingSet> bindingSets = new ArrayList<BindingSet>();
+				List<String> bindingNames = new ArrayList<>();
+				List<BindingSet> bindingSets = new ArrayList<>();
 
 				// Determine the repository's URI
 				StringBuffer requestURL = request.getRequestURL();

@@ -33,7 +33,7 @@ public class TupleResultBuilder {
 
 	private final ValueFactory vf;
 
-	private List<String> variables = new ArrayList<String>();
+	private List<String> variables = new ArrayList<>();
 
 	public TupleResultBuilder(QueryResultWriter writer, ValueFactory valueFactory) {
 		this.out = writer;
