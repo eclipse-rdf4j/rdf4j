@@ -78,7 +78,7 @@ public class TransactionStartController extends AbstractController {
 		throws IOException, ClientHTTPException, ServerHTTPException
 	{
 		ProtocolUtil.logRequestParameters(request);
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 
 		IsolationLevel isolationLevel = null;
 		final String isolationLevelString = request.getParameter(Protocol.ISOLATION_LEVEL_PARAM_NAME);
@@ -106,7 +106,7 @@ public class TransactionStartController extends AbstractController {
 			model.put(SimpleResponseView.SC_KEY, SC_CREATED);
 			final StringBuffer txnURL = request.getRequestURL();
 			txnURL.append("/" + txnId.toString());
-			Map<String, String> customHeaders = new HashMap<String, String>();
+			Map<String, String> customHeaders = new HashMap<>();
 			customHeaders.put("Location", txnURL.toString());
 			model.put(SimpleResponseView.CUSTOM_HEADERS_KEY, customHeaders);
 

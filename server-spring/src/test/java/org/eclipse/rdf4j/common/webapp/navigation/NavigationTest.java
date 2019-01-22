@@ -26,7 +26,7 @@ public class NavigationTest {
 	@Before
 	public void setUp() {
 		model = new NavigationModel();
-		List<String> navigationModelLocations = new ArrayList<String>();
+		List<String> navigationModelLocations = new ArrayList<>();
 		navigationModelLocations.add("/navigation.xml");
 		model.setNavigationModels(navigationModelLocations);
 	}

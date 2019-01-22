@@ -82,10 +82,10 @@ public class NamespacesController extends AbstractController {
 	{
 		final boolean headersOnly = METHOD_HEAD.equals(request.getMethod());
 
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 		if (!headersOnly) {
 			List<String> columnNames = Arrays.asList("prefix", "namespace");
-			List<BindingSet> namespaces = new ArrayList<BindingSet>();
+			List<BindingSet> namespaces = new ArrayList<>();
 
 			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(
 					request))

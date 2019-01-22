@@ -59,7 +59,7 @@ public class NamespaceController extends AbstractController {
 		if (METHOD_HEAD.equals(reqMethod)) {
 			logger.info("HEAD namespace for prefix {}", prefix);
 
-			Map<String, Object> model = new HashMap<String, Object>();
+			Map<String, Object> model = new HashMap<>();
 			return new ModelAndView(SimpleResponseView.getInstance(), model);
 		}
 
@@ -91,7 +91,7 @@ public class NamespaceController extends AbstractController {
 				throw new ClientHTTPException(SC_NOT_FOUND, "Undefined prefix: " + prefix);
 			}
 
-			Map<String, Object> model = new HashMap<String, Object>();
+			Map<String, Object> model = new HashMap<>();
 			model.put(SimpleResponseView.CONTENT_KEY, namespace);
 
 			return new ModelAndView(SimpleResponseView.getInstance(), model);

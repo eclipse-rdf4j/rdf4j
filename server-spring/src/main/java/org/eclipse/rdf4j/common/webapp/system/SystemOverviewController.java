@@ -44,7 +44,7 @@ public class SystemOverviewController implements Controller {
 		ModelAndView result = new ModelAndView();
 		result.setViewName(view);
 
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 		model.put("appConfig", config);
 		model.put("server", server);
 		model.put("memory", new MemoryInfo());

@@ -51,13 +51,13 @@ public class ContextsController extends AbstractController {
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
 		throws Exception
 	{
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 		TupleQueryResultWriterFactory factory = ProtocolUtil.getAcceptableService(request, response,
 				TupleQueryResultWriterRegistry.getInstance());
 
 		if (METHOD_GET.equals(request.getMethod())) {
 			List<String> columnNames = Arrays.asList("contextID");
-			List<BindingSet> contexts = new ArrayList<BindingSet>();
+			List<BindingSet> contexts = new ArrayList<>();
 			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
 			try {
 				try (CloseableIteration<? extends Resource, RepositoryException> contextIter = repositoryCon.getContextIDs()) {

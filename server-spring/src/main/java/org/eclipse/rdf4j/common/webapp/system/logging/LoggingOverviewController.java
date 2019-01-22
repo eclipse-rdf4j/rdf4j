@@ -44,7 +44,7 @@ public class LoggingOverviewController implements Controller {
 	{
 		int offset = getOffset(request);
 		int count = getCount(request);
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 		LogReader logReader = getLogReader(offset, count, request);
 		model.put("logreader", logReader);
 		model.put("offset", new Integer(offset));
@@ -63,7 +63,7 @@ public class LoggingOverviewController implements Controller {
 		if (logReader.supportsThreadFilter()) {
 			String thread = logReader.getThread();
 			model.put("thread", (thread == null) ? "ALL" : thread);
-			List<String> l = new ArrayList<String>();
+			List<String> l = new ArrayList<>();
 			l.add("All");
 			l.addAll(logReader.getThreadNames());
 			model.put("threadnames", l);

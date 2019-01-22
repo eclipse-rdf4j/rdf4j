@@ -167,7 +167,7 @@ public class ProtocolUtil {
 			// Find an acceptable MIME type based on the request headers
 			logAcceptableFormats(request);
 
-			Collection<String> mimeTypes = new LinkedHashSet<String>(16);
+			Collection<String> mimeTypes = new LinkedHashSet<>(16);
 			// Prefer the default mime types, explicitly before non-default
 			for (FileFormat format : serviceRegistry.getKeys()) {
 				mimeTypes.add(format.getDefaultMIMEType());

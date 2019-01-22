@@ -34,7 +34,7 @@ public final class ProcessLauncher {
 	private String[] commandArray;
 
 	private final File baseDir;
-	private final List<OutputListener> listeners = new ArrayList<OutputListener>(1);
+	private final List<OutputListener> listeners = new ArrayList<>(1);
 	private volatile Process subProcess;
 	private final AtomicBoolean finished = new AtomicBoolean(false);
 

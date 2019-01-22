@@ -52,7 +52,7 @@ public class ProtocolExceptionResolver implements HandlerExceptionResolver {
 			logger.error("Error while handling request", exception);
 		}
 
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 		model.put(SimpleResponseView.SC_KEY, Integer.valueOf(statusCode));
 		model.put(SimpleResponseView.CONTENT_KEY, errMsg);
 

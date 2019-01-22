@@ -149,7 +149,7 @@ public class GraphController extends AbstractController {
 		RDFWriterFactory rdfWriterFactory = ProtocolUtil.getAcceptableService(request, response,
 				RDFWriterRegistry.getInstance());
 
-		Map<String, Object> model = new HashMap<String, Object>();
+		Map<String, Object> model = new HashMap<>();
 
 		model.put(ExportStatementsView.CONTEXTS_KEY, new Resource[] { graph });
 		model.put(ExportStatementsView.FACTORY_KEY, rdfWriterFactory);

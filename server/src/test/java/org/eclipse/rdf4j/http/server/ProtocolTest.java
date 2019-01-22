@@ -225,7 +225,7 @@ public class ProtocolTest {
 		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
 		CloseableHttpClient httpclient = HttpClients.createDefault();
 		HttpPost post = new HttpPost(location);
-		List<NameValuePair> nvps = new ArrayList<NameValuePair>();
+		List<NameValuePair> nvps = new ArrayList<>();
 		nvps.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));
 		nvps.add(new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, "1"));
 		UrlEncodedFormEntity entity = new UrlEncodedFormEntity(nvps, Charsets.UTF_8);
@@ -550,7 +550,7 @@ public class ProtocolTest {
 					fail("illegal header row: " + Arrays.toString(headerRow));
 				}
 
-				Set<Namespace> namespaces = new HashSet<Namespace>();
+				Set<Namespace> namespaces = new HashSet<>();
 
 				String[] aRow;
 				while ((aRow = reader.readNext()) != null) {

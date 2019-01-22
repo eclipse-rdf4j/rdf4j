@@ -42,7 +42,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 	private Date maxDate = new Date();
 
 	private String fileNamePattern = null;
-	private Vector<File> logFiles = new Vector<File>();
+	private Vector<File> logFiles = new Vector<>();
 	private Iterator<File> logFilesIterator = null;
 
 	private LogRecord next = null;
@@ -79,7 +79,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 			throw new RuntimeException("Appender must be set before initialization!");
 		}
 		count = 0;
-		logFiles = new Vector<File>();
+		logFiles = new Vector<>();
 		Calendar startCal = null;
 		Calendar endCal = null;
 		if (startDate != null) {

@@ -52,7 +52,7 @@ public class WorkbenchServlet extends AbstractServlet {
 
 	private RepositoryManager manager;
 
-	private final ConcurrentMap<String, ProxyRepositoryServlet> repositories = new ConcurrentHashMap<String, ProxyRepositoryServlet>();
+	private final ConcurrentMap<String, ProxyRepositoryServlet> repositories = new ConcurrentHashMap<>();
 
 	@Override
 	public void init(final ServletConfig config)

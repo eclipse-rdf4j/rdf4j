@@ -41,7 +41,7 @@ public class WorkbenchGateway extends AbstractServlet {
 	/**
 	 * Thread-safe map of server paths to their WorkbenchServlet instances.
 	 */
-	private final Map<String, WorkbenchServlet> servlets = new ConcurrentHashMap<String, WorkbenchServlet>();
+	private final Map<String, WorkbenchServlet> servlets = new ConcurrentHashMap<>();
 
 	private CookieHandler cookies;
 
@@ -257,7 +257,7 @@ public class WorkbenchGateway extends AbstractServlet {
 						servlet = servlets.get(server);
 					}
 					else {
-						final Map<String, String> params = new HashMap<String, String>(3);
+						final Map<String, String> params = new HashMap<>(3);
 						params.put(SERVER_PARAM, server);
 						params.put(CookieHandler.COOKIE_AGE_PARAM, this.cookies.getMaxAge());
 						params.put(TRANSFORMATIONS, this.config.getInitParameter(TRANSFORMATIONS));

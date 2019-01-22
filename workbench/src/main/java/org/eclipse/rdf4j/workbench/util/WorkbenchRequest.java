@@ -219,7 +219,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	public Map<String, String> getSingleParameterMap() {
 		@SuppressWarnings("unchecked")
 		Map<String, String[]> map = super.getParameterMap();
-		Map<String, String> parameters = new HashMap<String, String>(map.size());
+		Map<String, String> parameters = new HashMap<>(map.size());
 		for (String name : map.keySet()) {
 			if (isParameterPresent(name)) {
 				parameters.put(name, getParameter(name));
@@ -311,7 +311,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	private Map<String, String> getMultipartParameterMap()
 		throws RepositoryException, IOException, FileUploadException
 	{
-		Map<String, String> parameters = new HashMap<String, String>();
+		Map<String, String> parameters = new HashMap<>();
 		ServletFileUpload upload = new ServletFileUpload();
 		FileItemIterator iter = upload.getItemIterator(this);
 		while (iter.hasNext()) {
@@ -333,7 +333,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 		throws UnsupportedEncodingException
 	{
 		String qry = url.substring(url.indexOf(';') + 1);
-		Map<String, String> parameters = new HashMap<String, String>();
+		Map<String, String> parameters = new HashMap<>();
 		for (String param : qry.split("&")) {
 			int idx = param.indexOf('=');
 			String name = decode(param.substring(0, idx), UTF_8);

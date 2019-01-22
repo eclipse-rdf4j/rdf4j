@@ -141,10 +141,10 @@ public class FileLogReader extends AbstractLogReader {
 
 		StringBuilder message = new StringBuilder();
 
-		List<String> stackTrace = new LinkedList<String>();
+		List<String> stackTrace = new LinkedList<>();
 
 		while (result == null && byteOffset > 0) {
-			List<Byte> bytesRead = new LinkedList<Byte>();
+			List<Byte> bytesRead = new LinkedList<>();
 			if (byteOffset < 0) {
 				System.err.println("Subzero byteOffset with: ");
 				System.err.println("\tMessage: " + message);
@@ -195,7 +195,7 @@ public class FileLogReader extends AbstractLogReader {
 						result.setStackTrace(stackTrace);
 
 						message = new StringBuilder();
-						stackTrace = new ArrayList<String>();
+						stackTrace = new ArrayList<>();
 					}
 					catch (ParseException pe) {
 						throw new IOException("Unable to parse timestamp in log record");
