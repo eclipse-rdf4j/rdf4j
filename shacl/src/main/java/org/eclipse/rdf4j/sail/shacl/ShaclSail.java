@@ -187,7 +187,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Lists the predicates that have been implemented in the ShaclSail. All of these, and all combinations, <i>should</i> work, please report any bugs.
+	 * Lists the predicates that have been implemented in the ShaclSail. All of these, and all combinations, <i>should</i> work, please report any bugs. For sh:path, only single predicate paths are supported.
 	 * @return List of IRIs (SHACL predicates)
 	 */
 	public static List<IRI> getSupportedShaclPredicates() {
@@ -204,7 +204,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 			SHACL.FLAGS,
 			SHACL.NODE_KIND_PROP,
 			SHACL.LANGUAGE_IN,
-			SHACL.DATATYPE
+			SHACL.DATATYPE,
+			SHACL.MIN_EXCLUSIVE,
+			SHACL.MIN_INCLUSIVE,
+			SHACL.MAX_EXCLUSIVE,
+			SHACL.MAX_INCLUSIVE
 		);
 	}
 
