@@ -10,7 +10,9 @@ package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -18,6 +20,8 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -27,9 +31,13 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static junit.framework.TestCase.assertTrue;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 /**
@@ -78,6 +86,16 @@ public class ShaclTest {
 		return getTestsToRun();
 	}
 
+	private static HashSet<IRI> staticShaclPredicates = new HashSet<>(ShaclSail.getSupportedShaclPredicates());
+
+
+	@AfterClass
+	public static void afterClass(){
+
+
+		assertTrue("No test uses the following predicate that the ShaclSail announces as supported: "+Arrays.toString(staticShaclPredicates.toArray()), staticShaclPredicates.isEmpty());
+	}
+
 	@Test
 	public void test() throws Exception {
 		runTestCase(testCasePath, path, expectedResult);
@@ -86,6 +104,36 @@ public class ShaclTest {
 	@Test
 	public void testSingleTransaction() throws Exception {
 		runTestCaseSingleTransaction(testCasePath, path, expectedResult);
+	}
+
+	@Test
+	public void testShaclSailSupportedPredicatesDocumentation() throws IOException {
+
+		HashSet<IRI> shaclPredicates = new HashSet<>(ShaclSail.getSupportedShaclPredicates());
+
+		Model parse = getShacl();
+
+
+		Set<IRI> predicatesInUseInTest = parse.predicates().stream().filter(p -> p.getNamespace().equals(SHACL.NAMESPACE)).collect(Collectors.toSet());
+
+		for (IRI predicate : predicatesInUseInTest) {
+			assertTrue("Predicate used in test but not listed in ShaclSail: "+predicate, shaclPredicates.contains(predicate));
+			staticShaclPredicates.remove(predicate);
+		}
+
+
+	}
+
+	private Model getShacl() throws IOException {
+		String shaclPath = testCasePath;
+
+		if (!shaclPath.endsWith("/")) {
+			shaclPath = shaclPath + "/";
+		}
+
+		String shaclFile = shaclPath + "shacl.ttl";
+
+		return Rio.parse(ShaclTest.class.getClassLoader().getResourceAsStream(shaclFile), "", RDFFormat.TURTLE);
 	}
 
 	private static List<String> findTestCases(String testCase, String baseCase) {
@@ -139,7 +187,7 @@ public class ShaclTest {
 		String shaclFile = shaclPath + "shacl.ttl";
 		System.out.println(shaclFile);
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.setDebugPrintPlans(true);
+		shaclSail.setLogValidationPlans(true);
 		SailRepository shaclRepository = new SailRepository(shaclSail);
 		shaclRepository.initialize();
 		Utils.loadShapeData(shaclRepository, shaclFile);

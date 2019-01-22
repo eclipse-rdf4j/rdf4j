@@ -203,7 +203,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 	@Override
 	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		if (contexts.length == 1 && contexts[0].equals(RDF4J.SHACL_SHAPE_GRAPH)) {
+		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		}
@@ -270,7 +270,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 		final List<NodeShape> nodeShapes = NodeShape.Factory.getShapes(shapesConnection);
 		for (NodeShape nodeShape : nodeShapes) {
-			List<PlanNode> planNodes = nodeShape.generatePlans(this, nodeShape, sail.debugPrintPlans);
+			List<PlanNode> planNodes = nodeShape.generatePlans(this, nodeShape, sail.config.logValidationPlans);
 			for (PlanNode planNode : planNodes) {
 				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
 					List<Tuple> collect = stream.collect(Collectors.toList());
@@ -278,14 +278,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 					ret.addAll(collect);
 
 					boolean valid = collect.size() == 0;
-					if (!valid) {
-						logger.warn(
-								"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {} \n\t\t{}",
-								nodeShape.toString(),
-								String.join("\n\t\t",
-										collect.stream().map(
-												a -> a.toString() + " -cause-> " + a.getCause()).collect(
-														Collectors.toList())));
+					if (!valid && sail.config.logValidationViolations) {
+						logger.info(
+							"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {} \n\t\t{}",
+							nodeShape.toString(),
+							collect
+								.stream()
+								.map(a -> a.toString() + " -cause-> " + a.getCause())
+								.collect(Collectors.joining("\n\t\t")));
 					}
 				}
 			}

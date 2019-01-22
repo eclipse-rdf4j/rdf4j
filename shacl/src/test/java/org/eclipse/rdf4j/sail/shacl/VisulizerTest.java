@@ -33,7 +33,7 @@ public class VisulizerTest {
 			connection.addStatement(bNode, FOAF.AGE, vf.createLiteral(3));
 			connection.commit();
 
-			shaclSail.setDebugPrintPlans(true);
+			shaclSail.setLogValidationPlans(true);
 
 			connection.begin();
 			BNode bNode2 = vf.createBNode();
@@ -61,7 +61,7 @@ public class VisulizerTest {
 			connection.addStatement(bNode, RDFS.LABEL, vf.createLiteral(""));
 			connection.commit();
 
-			shaclSail.setDebugPrintPlans(true);
+			shaclSail.setLogValidationPlans(true);
 
 			connection.begin();
 			BNode bNode2 = vf.createBNode();
@@ -88,7 +88,7 @@ public class VisulizerTest {
 			connection.addStatement(bNode, RDFS.LABEL, vf.createLiteral(""));
 			connection.commit();
 
-			shaclSail.setDebugPrintPlans(true);
+			shaclSail.setLogValidationPlans(true);
 
 			connection.begin();
 			BNode bNode2 = vf.createBNode();

@@ -30,7 +30,7 @@ public class LoggingNode implements PlanNode {
 
 	PlanNode parent;
 
-	boolean pullAll = true;
+	private boolean pullAll = true;
 
 	public static boolean loggingEnabled = false;
 
@@ -99,7 +99,7 @@ public class LoggingNode implements PlanNode {
 				public boolean hasNext() throws SailException {
 					boolean hasNext = parentIterator.hasNext();
 
-//					logger.debug(leadingSpace()+parent.getClass().getSimpleName()+".hasNext() : "+hasNext);
+//					logger.info(leadingSpace()+parent.getClass().getSimpleName()+".hasNext() : "+hasNext);
 					return hasNext;
 				}
 
@@ -111,7 +111,7 @@ public class LoggingNode implements PlanNode {
 
 					assert next != null;
 
-					logger.debug(leadingSpace() + parent.getClass().getSimpleName() + ".next(): " + " " + next.toString());
+					logger.info(leadingSpace() + parent.getClass().getSimpleName() + ".next(): " + " " + next.toString());
 
 					return next;
 				}
