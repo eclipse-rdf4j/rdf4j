@@ -7,10 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleParameters;
