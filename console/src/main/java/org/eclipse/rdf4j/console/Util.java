@@ -12,7 +12,6 @@ import java.net.URISyntaxException;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
 import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -123,6 +122,7 @@ public class Util {
 	/**
 	 * Format a string of values, starting new line(s) when the joined values exceed the width. 
 	 * Primarily used for displaying formatted help (e.g namespaces, config files) to the console.
+	 * To be replaced by a commons text method
 	 * 
 	 * @param width maximum column width
 	 * @param padding left padding
@@ -130,6 +130,7 @@ public class Util {
 	 * @param separator value separator
 	 * @return list of values as a formatted string, or empty
 	 */
+	@Deprecated
 	public static String formatToWidth(int width, String padding, String str, String separator) {
 		if (str.isEmpty()) {
 			return "";

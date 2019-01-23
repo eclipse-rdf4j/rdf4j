@@ -31,7 +31,6 @@ import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.LockRemover;
 import org.eclipse.rdf4j.console.Util;
-import org.eclipse.rdf4j.console.setting.ConsoleWidth;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
