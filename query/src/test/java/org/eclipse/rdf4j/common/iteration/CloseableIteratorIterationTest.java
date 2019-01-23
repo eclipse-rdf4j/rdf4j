@@ -11,7 +11,7 @@ public class CloseableIteratorIterationTest extends CloseableIterationTest {
 
 	@Override
 	protected CloseableIteration<String, Exception> createTestIteration() {
-		return new CloseableIteratorIteration<String, Exception>(stringList1.iterator());
+		return new CloseableIteratorIteration<>(stringList1.iterator());
 	}
 
 	@Override

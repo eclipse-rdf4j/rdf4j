@@ -64,7 +64,7 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 		super(handlers);
 		this.bufferSize = bufferSize;
 		this.bufferedStatements = new GraphImpl();
-		this.contexts = new HashSet<Resource>();
+		this.contexts = new HashSet<>();
 	}
 
 	@Override
@@ -91,7 +91,7 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 		for (Resource context : contexts) {
 			Set<Resource> subjects = GraphUtil.getSubjects(bufferedStatements, null, null, context);
 			for (Resource subject : subjects) {
-				Set<IRI> processedPredicates = new HashSet<IRI>();
+				Set<IRI> processedPredicates = new HashSet<>();
 
 				// give rdf:type preference over other predicates.
 				Iterator<Statement> typeStatements = bufferedStatements.match(subject, RDF.TYPE, null,

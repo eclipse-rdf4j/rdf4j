@@ -50,7 +50,7 @@ public class RDFXMLPrettyWriterTest extends RDFXMLWriterTestCase {
 	{
 		String withoutSpaces = Pattern.compile("^\\s+", Pattern.MULTILINE).matcher(s).replaceAll("");
 
-		List<String> rdfLines = new ArrayList<String>();
+		List<String> rdfLines = new ArrayList<>();
 
 		for (String l : IOUtils.readLines(new StringReader(withoutSpaces))) {
 			if (l.startsWith("<rdf:")) {

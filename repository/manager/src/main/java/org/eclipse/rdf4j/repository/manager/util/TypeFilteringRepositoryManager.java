@@ -98,7 +98,7 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 	public Set<String> getRepositoryIDs()
 		throws RepositoryException
 	{
-		Set<String> result = new LinkedHashSet<String>();
+		Set<String> result = new LinkedHashSet<>();
 
 		for (String id : delegate.getRepositoryIDs()) {
 			try {
@@ -188,7 +188,7 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 
 	@Override
 	public Set<String> getInitializedRepositoryIDs() {
-		Set<String> result = new LinkedHashSet<String>();
+		Set<String> result = new LinkedHashSet<>();
 
 		for (String id : delegate.getInitializedRepositoryIDs()) {
 			try {
@@ -209,7 +209,7 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 
 	@Override
 	public Collection<Repository> getInitializedRepositories() {
-		List<Repository> result = new ArrayList<Repository>();
+		List<Repository> result = new ArrayList<>();
 
 		for (String id : getInitializedRepositoryIDs()) {
 			try {
@@ -242,7 +242,7 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 	public Collection<RepositoryInfo> getAllRepositoryInfos(boolean skipSystemRepo)
 		throws RepositoryException
 	{
-		List<RepositoryInfo> result = new ArrayList<RepositoryInfo>();
+		List<RepositoryInfo> result = new ArrayList<>();
 
 		for (RepositoryInfo repInfo : delegate.getAllRepositoryInfos(skipSystemRepo)) {
 			try {

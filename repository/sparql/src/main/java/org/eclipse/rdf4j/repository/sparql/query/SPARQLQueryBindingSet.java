@@ -41,7 +41,7 @@ public class SPARQLQueryBindingSet extends AbstractBindingSet {
 	public SPARQLQueryBindingSet(int capacity) {
 		// Create bindings map with some extra space for new bindings and
 		// compensating for HashMap's load factor
-		bindings = new HashMap<String, Value>(capacity * 2);
+		bindings = new HashMap<>(capacity * 2);
 	}
 
 	public SPARQLQueryBindingSet(BindingSet bindingSet) {

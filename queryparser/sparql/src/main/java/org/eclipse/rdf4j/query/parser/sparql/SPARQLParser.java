@@ -66,7 +66,7 @@ public class SPARQLParser implements QueryParser {
 
 			Node node = updateSequence.jjtGetChild(0);
 
-			Set<String> globalUsedBNodeIds = new HashSet<String>();
+			Set<String> globalUsedBNodeIds = new HashSet<>();
 			for (int i = 0; i < updateOperations.size(); i++) {
 
 				ASTUpdateContainer uc = updateOperations.get(i);

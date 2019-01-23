@@ -46,7 +46,7 @@ public class BGPCollector<X extends Exception> extends QueryModelVisitorBase<X> 
 		throws X
 	{
 		if (statementPatterns == null) {
-			statementPatterns = new ArrayList<StatementPattern>();
+			statementPatterns = new ArrayList<>();
 		}
 		statementPatterns.add(sp);
 	}

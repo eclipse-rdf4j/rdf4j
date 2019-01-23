@@ -57,7 +57,7 @@ public class PrefixDeclProcessor {
 		List<ASTPrefixDecl> prefixDeclList = qc.getPrefixDeclList();
 
 		// Build a prefix --> IRI map
-		Map<String, String> prefixMap = new LinkedHashMap<String, String>();
+		Map<String, String> prefixMap = new LinkedHashMap<>();
 
 		for (ASTPrefixDecl prefixDecl : prefixDeclList) {
 			String prefix = prefixDecl.getPrefix();

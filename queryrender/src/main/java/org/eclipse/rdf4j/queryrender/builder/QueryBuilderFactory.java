@@ -33,7 +33,7 @@ public class QueryBuilderFactory {
 	 * @return a select QueryBuilder
 	 */
 	public static QueryBuilder<ParsedBooleanQuery> ask() {
-		return new AbstractQueryBuilder<ParsedBooleanQuery>(new ParsedBooleanQuery());
+		return new AbstractQueryBuilder<>(new ParsedBooleanQuery());
 	}
 
 	/**
@@ -42,7 +42,7 @@ public class QueryBuilderFactory {
 	 * @return a select QueryBuilder
 	 */
 	public static QueryBuilder<ParsedTupleQuery> select() {
-		return new AbstractQueryBuilder<ParsedTupleQuery>(new ParsedTupleQuery());
+		return new AbstractQueryBuilder<>(new ParsedTupleQuery());
 	}
 
 	/**
@@ -53,7 +53,7 @@ public class QueryBuilderFactory {
 	 * @return a select query builder
 	 */
 	public static QueryBuilder<ParsedTupleQuery> select(String... theProjectionVars) {
-		QueryBuilder<ParsedTupleQuery> aBuilder = new AbstractQueryBuilder<ParsedTupleQuery>(
+		QueryBuilder<ParsedTupleQuery> aBuilder = new AbstractQueryBuilder<>(
 				new ParsedTupleQuery());
 		aBuilder.addProjectionVar(theProjectionVars);
 
@@ -66,7 +66,7 @@ public class QueryBuilderFactory {
 	 * @return a construct QueryBuilder
 	 */
 	public static QueryBuilder<ParsedGraphQuery> construct() {
-		return new AbstractQueryBuilder<ParsedGraphQuery>(new ParsedGraphQuery());
+		return new AbstractQueryBuilder<>(new ParsedGraphQuery());
 	}
 
 	/**
@@ -90,7 +90,7 @@ public class QueryBuilderFactory {
 	 * @return a describe query builder
 	 */
 	public static QueryBuilder<ParsedGraphQuery> describe(String[] theVars, Resource... theValues) {
-		QueryBuilder<ParsedGraphQuery> aBuilder = new AbstractQueryBuilder<ParsedGraphQuery>(
+		QueryBuilder<ParsedGraphQuery> aBuilder = new AbstractQueryBuilder<>(
 				new ParsedDescribeQuery());
 
 		aBuilder.reduced();

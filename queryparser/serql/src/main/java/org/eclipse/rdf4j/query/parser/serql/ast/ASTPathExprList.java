@@ -27,6 +27,6 @@ public class ASTPathExprList extends ASTPathExpr {
 	}
 
 	public List<ASTPathExpr> getPathExprList() {
-		return new CastingList<ASTPathExpr>(children);
+		return new CastingList<>(children);
 	}
 }

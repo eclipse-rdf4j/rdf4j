@@ -13,11 +13,11 @@ public class DistinctIterationTest extends CloseableIterationTest {
 
 	@Override
 	protected CloseableIteration<String, Exception> createTestIteration() {
-		return new DistinctIteration<String, Exception>(createStringList1Iteration());
+		return new DistinctIteration<>(createStringList1Iteration());
 	}
 
 	@Override
 	protected int getTestIterationSize() {
-		return new HashSet<String>(stringList1).size();
+		return new HashSet<>(stringList1).size();
 	}
 }

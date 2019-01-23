@@ -95,7 +95,7 @@ public class XMLWriter {
 	/**
 	 * A mapping from attribute names to values for the next start tag.
 	 */
-	private HashMap<String, String> _attributes = new LinkedHashMap<String, String>();
+	private HashMap<String, String> _attributes = new LinkedHashMap<>();
 
 	/*--------------*
 	 * Constructors *

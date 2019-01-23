@@ -23,7 +23,7 @@ public class SingletonIterator<E> implements Iterator<E> {
 	 * Creates a new EmptyIterator.
 	 */
 	public SingletonIterator(E value) {
-		this.value = new AtomicReference<E>(value);
+		this.value = new AtomicReference<>(value);
 	}
 
 	@Override

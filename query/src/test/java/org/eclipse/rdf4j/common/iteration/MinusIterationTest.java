@@ -14,13 +14,13 @@ public class MinusIterationTest extends CloseableIterationTest {
 
 	@Override
 	protected CloseableIteration<String, Exception> createTestIteration() {
-		return new MinusIteration<String, Exception>(createStringList1Iteration(),
+		return new MinusIteration<>(createStringList1Iteration(),
 				createStringList2Iteration());
 	}
 
 	@Override
 	protected int getTestIterationSize() {
-		List<String> difference = new ArrayList<String>(stringList1);
+		List<String> difference = new ArrayList<>(stringList1);
 		difference.removeAll(stringList2);
 		return difference.size();
 	}

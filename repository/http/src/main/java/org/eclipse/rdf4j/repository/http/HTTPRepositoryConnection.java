@@ -94,7 +94,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	 *-----------*/
 
 	private List<TransactionOperation> txn = Collections.synchronizedList(
-			new ArrayList<TransactionOperation>());
+			new ArrayList<>());
 
 	private final RDF4JProtocolSession client;
 
@@ -238,7 +238,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		throws RepositoryException
 	{
 		try {
-			List<Resource> contextList = new ArrayList<Resource>();
+			List<Resource> contextList = new ArrayList<>();
 
 			try (TupleQueryResult contextIDs = client.getContextIDs()) {
 				while (contextIDs.hasNext()) {
@@ -808,7 +808,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		throws RepositoryException
 	{
 		try {
-			List<Namespace> namespaceList = new ArrayList<Namespace>();
+			List<Namespace> namespaceList = new ArrayList<>();
 
 			try (TupleQueryResult namespaces = client.getNamespaces()) {
 				while (namespaces.hasNext()) {
@@ -863,7 +863,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	 * Creates a RepositoryResult for the supplied element set.
 	 */
 	protected <E> RepositoryResult<E> createRepositoryResult(Iterable<? extends E> elements) {
-		return new RepositoryResult<E>(
+		return new RepositoryResult<>(
 				new CloseableIteratorIteration<E, RepositoryException>(elements.iterator()));
 	}
 

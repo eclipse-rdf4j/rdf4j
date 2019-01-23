@@ -50,7 +50,7 @@ class NamespaceDeclProcessor extends AbstractASTVisitor {
 		List<ASTNamespaceDecl> nsDeclList = qc.getNamespaceDeclList();
 
 		// Build a prefix --> URI map
-		Map<String, String> nsMap = new LinkedHashMap<String, String>();
+		Map<String, String> nsMap = new LinkedHashMap<>();
 		for (ASTNamespaceDecl nsDecl : nsDeclList) {
 			String prefix = nsDecl.getPrefix();
 			String uri = nsDecl.getURI().getValue();
@@ -88,7 +88,7 @@ class NamespaceDeclProcessor extends AbstractASTVisitor {
 		}
 
 		// For backwards compatibility:
-		Map<String, String> extendedNsMap = new HashMap<String, String>(nsMap);
+		Map<String, String> extendedNsMap = new HashMap<>(nsMap);
 		if (!extendedNsMap.containsKey("serql")) {
 			extendedNsMap.put("serql", SESAME.NAMESPACE);
 		}

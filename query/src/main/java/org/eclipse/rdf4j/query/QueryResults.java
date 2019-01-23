@@ -367,7 +367,7 @@ public class QueryResults extends Iterations {
 	private static boolean matchBindingSets(List<? extends BindingSet> queryResult1,
 			Iterable<? extends BindingSet> queryResult2)
 	{
-		return matchBindingSets(queryResult1, queryResult2, new HashMap<BNode, BNode>(), 0);
+		return matchBindingSets(queryResult1, queryResult2, new HashMap<>(), 0);
 	}
 
 	/**
@@ -389,7 +389,7 @@ public class QueryResults extends Iterations {
 
 			for (BindingSet bs2 : matchingBindingSets) {
 				// Map bNodes in bs1 to bNodes in bs2
-				Map<BNode, BNode> newBNodeMapping = new HashMap<BNode, BNode>(bNodeMapping);
+				Map<BNode, BNode> newBNodeMapping = new HashMap<>(bNodeMapping);
 
 				for (Binding binding : bs1) {
 					if (binding.getValue() instanceof BNode) {
@@ -421,7 +421,7 @@ public class QueryResults extends Iterations {
 	private static List<BindingSet> findMatchingBindingSets(BindingSet st,
 			Iterable<? extends BindingSet> model, Map<BNode, BNode> bNodeMapping)
 	{
-		List<BindingSet> result = new ArrayList<BindingSet>();
+		List<BindingSet> result = new ArrayList<>();
 
 		for (BindingSet modelSt : model) {
 			if (bindingSetsMatch(st, modelSt, bNodeMapping)) {
@@ -528,7 +528,7 @@ public class QueryResults extends Iterations {
 	 * equal values for each binding name that occurs in both binding sets.
 	 */
 	public static boolean bindingSetsCompatible(BindingSet bs1, BindingSet bs2) {
-		Set<String> sharedBindings = new HashSet<String>(bs1.getBindingNames());
+		Set<String> sharedBindings = new HashSet<>(bs1.getBindingNames());
 		sharedBindings.retainAll(bs2.getBindingNames());
 
 		for (String bindingName : sharedBindings) {
@@ -552,7 +552,7 @@ public class QueryResults extends Iterations {
 		private final GraphQueryResult unfiltered;
 
 		public GraphQueryResultFilter(GraphQueryResult wrappedResult) {
-			this.filter = new DistinctIteration<Statement, QueryEvaluationException>(wrappedResult);
+			this.filter = new DistinctIteration<>(wrappedResult);
 			this.unfiltered = wrappedResult;
 		}
 
@@ -634,7 +634,7 @@ public class QueryResults extends Iterations {
 		private final TupleQueryResult unfiltered;
 
 		public TupleQueryResultFilter(TupleQueryResult wrappedResult) {
-			this.filter = new DistinctIteration<BindingSet, QueryEvaluationException>(wrappedResult);
+			this.filter = new DistinctIteration<>(wrappedResult);
 			this.unfiltered = wrappedResult;
 		}
 

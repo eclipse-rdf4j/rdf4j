@@ -33,8 +33,8 @@ class ProjectionAliasProcessor extends AbstractASTVisitor {
 		throws VisitorException
 	{
 		// Iterate over all projection elements to retrieve the defined aliases
-		Set<String> aliases = new HashSet<String>();
-		List<Node> unaliasedNodes = new ArrayList<Node>();
+		Set<String> aliases = new HashSet<>();
+		List<Node> unaliasedNodes = new ArrayList<>();
 
 		for (int i = 0; i < node.jjtGetNumChildren(); i++) {
 			ASTProjectionElem projElem = (ASTProjectionElem)node.jjtGetChild(i);

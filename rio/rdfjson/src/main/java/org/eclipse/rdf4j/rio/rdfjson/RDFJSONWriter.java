@@ -100,7 +100,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		final Set<RioSetting<?>> results = new HashSet<RioSetting<?>>(super.getSupportedSettings());
+		final Set<RioSetting<?>> results = new HashSet<>(super.getSupportedSettings());
 
 		results.add(BasicWriterSettings.PRETTY_PRINT);
 

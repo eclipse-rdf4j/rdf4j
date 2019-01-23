@@ -556,7 +556,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		try {
 			method.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
 
-			List<NameValuePair> params = new ArrayList<NameValuePair>();
+			List<NameValuePair> params = new ArrayList<>();
 			if (isolationLevel != null) {
 				params.add(new BasicNameValuePair(Protocol.ISOLATION_LEVEL_PARAM_NAME,
 						isolationLevel.getURI().stringValue()));
@@ -1050,7 +1050,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	{
 		Objects.requireNonNull(ql, "QueryLanguage may not be null");
 
-		List<NameValuePair> queryParams = new ArrayList<NameValuePair>();
+		List<NameValuePair> queryParams = new ArrayList<>();
 		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
 		queryParams.add(new BasicNameValuePair(Protocol.QUERY_PARAM_NAME, query));
 		
@@ -1092,7 +1092,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	{
 		Objects.requireNonNull(ql, "QueryLanguage may not be null");
 
-		List<NameValuePair> queryParams = new ArrayList<NameValuePair>();
+		List<NameValuePair> queryParams = new ArrayList<>();
 
 		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
 		queryParams.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));

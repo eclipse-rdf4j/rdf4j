@@ -66,7 +66,7 @@ public class ListBindingSet extends AbstractBindingSet {
 
 	@Override
 	public Set<String> getBindingNames() {
-		return new LinkedHashSet<String>(bindingNames);
+		return new LinkedHashSet<>(bindingNames);
 	}
 
 	@Override

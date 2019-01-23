@@ -39,7 +39,7 @@ public class MapBindingSet extends AbstractBindingSet {
 	 */
 	public MapBindingSet(int capacity) {
 		// Create bindings map, compensating for HashMap's load factor
-		bindings = new LinkedHashMap<String, Binding>(capacity * 2);
+		bindings = new LinkedHashMap<>(capacity * 2);
 	}
 
 	/**

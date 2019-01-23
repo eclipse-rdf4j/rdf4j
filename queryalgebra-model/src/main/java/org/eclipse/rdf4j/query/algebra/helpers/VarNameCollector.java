@@ -24,7 +24,7 @@ public class VarNameCollector extends AbstractQueryModelVisitor<RuntimeException
 		return collector.getVarNames();
 	}
 
-	private Set<String> varNames = new LinkedHashSet<String>();
+	private Set<String> varNames = new LinkedHashSet<>();
 
 	public Set<String> getVarNames() {
 		return varNames;

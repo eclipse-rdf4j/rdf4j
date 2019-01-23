@@ -22,11 +22,11 @@ public abstract class IterationTest {
 	protected static final List<String> stringList2 = Arrays.asList("4", "5", "6", "7", "8");
 
 	protected static CloseableIteration<String, Exception> createStringList1Iteration() {
-		return new CloseableIteratorIteration<String, Exception>(stringList1.iterator());
+		return new CloseableIteratorIteration<>(stringList1.iterator());
 	}
 
 	protected static CloseableIteration<String, Exception> createStringList2Iteration() {
-		return new CloseableIteratorIteration<String, Exception>(stringList2.iterator());
+		return new CloseableIteratorIteration<>(stringList2.iterator());
 	}
 
 	protected abstract Iteration<String, Exception> createTestIteration()

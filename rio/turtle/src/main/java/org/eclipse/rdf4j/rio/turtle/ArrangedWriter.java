@@ -56,7 +56,7 @@ class ArrangedWriter implements RDFWriter {
 
 	private final Deque<SubjectInContext> stack = new LinkedList<>();
 
-	private final Map<String, String> prefixes = new TreeMap<String, String>();
+	private final Map<String, String> prefixes = new TreeMap<>();
 
 	private final Map<SubjectInContext, Set<Statement>> stmtBySubject = new LinkedHashMap<>();
 
@@ -273,7 +273,7 @@ class ArrangedWriter implements RDFWriter {
 		}
 		Set<Statement> set = stmtBySubject.get(key);
 		if (set == null) {
-			stmtBySubject.put(key, set = new TreeSet<Statement>(comparator));
+			stmtBySubject.put(key, set = new TreeSet<>(comparator));
 		}
 		set.addAll(matches);
 		if (firstMatch.isEmpty()) {
@@ -316,7 +316,7 @@ class ArrangedWriter implements RDFWriter {
 		}
 		else {
 			if (stmts == null) {
-				stmtBySubject.put(key, stmts = new TreeSet<Statement>(comparator));
+				stmtBySubject.put(key, stmts = new TreeSet<>(comparator));
 			}
 			stmts.add(st);
 		}
@@ -339,7 +339,7 @@ class ArrangedWriter implements RDFWriter {
 	private synchronized void flushNamespaces()
 		throws RDFHandlerException
 	{
-		Map<String, String> namespaces = new TreeMap<String, String>();
+		Map<String, String> namespaces = new TreeMap<>();
 		for (Map.Entry<String, String> e : prefixes.entrySet()) {
 			namespaces.put(e.getValue(), e.getKey());
 		}
@@ -351,7 +351,7 @@ class ArrangedWriter implements RDFWriter {
 
 	private synchronized void trimNamespaces() {
 		if (!prefixes.isEmpty()) {
-			Set<String> used = new HashSet<String>(prefixes.size());
+			Set<String> used = new HashSet<>(prefixes.size());
 			for (Set<Statement> stmts : stmtBySubject.values()) {
 				getUsedNamespaces(stmts, used);
 			}

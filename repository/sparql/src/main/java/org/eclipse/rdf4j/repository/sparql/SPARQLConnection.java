@@ -214,7 +214,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	public RepositoryResult<Namespace> getNamespaces()
 		throws RepositoryException
 	{
-		return new RepositoryResult<Namespace>(new EmptyIteration<Namespace, RepositoryException>());
+		return new RepositoryResult<>(new EmptyIteration<>());
 	}
 
 	@Override
@@ -326,11 +326,11 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		if (hasStatement(subj, pred, obj, includeInferred, contexts)) {
 			Statement st = getValueFactory().createStatement(subj, pred, obj);
 			CloseableIteration<Statement, RepositoryException> cursor;
-			cursor = new SingletonIteration<Statement, RepositoryException>(st);
-			return new RepositoryResult<Statement>(cursor);
+			cursor = new SingletonIteration<>(st);
+			return new RepositoryResult<>(cursor);
 		}
 		else {
-			return new RepositoryResult<Statement>(new EmptyIteration<Statement, RepositoryException>());
+			return new RepositoryResult<>(new EmptyIteration<>());
 		}
 	}
 
@@ -660,7 +660,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	{
 		boolean localTransaction = startLocalTransaction();
 
-		List<Statement> list = new ArrayList<Statement>(1);
+		List<Statement> list = new ArrayList<>(1);
 		list.add(st);
 		String sparqlCommand = createInsertDataCommand(list, contexts);
 
@@ -748,7 +748,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	{
 		boolean localTransaction = startLocalTransaction();
 
-		List<Statement> list = new ArrayList<Statement>(1);
+		List<Statement> list = new ArrayList<>(1);
 		list.add(st);
 		String sparqlCommand = createDeleteDataCommand(list, contexts);
 
@@ -971,7 +971,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 		Statement st = f.createStatement(subject, predicate, object);
 
-		List<Statement> list = new ArrayList<Statement>(1);
+		List<Statement> list = new ArrayList<>(1);
 		list.add(st);
 		String sparqlCommand = createInsertDataCommand(list, contexts);
 
@@ -989,7 +989,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 			Statement st = f.createStatement(subject, predicate, object);
 
-			List<Statement> list = new ArrayList<Statement>(1);
+			List<Statement> list = new ArrayList<>(1);
 			list.add(st);
 			sparqlCommand = createDeleteDataCommand(list, contexts);
 		}

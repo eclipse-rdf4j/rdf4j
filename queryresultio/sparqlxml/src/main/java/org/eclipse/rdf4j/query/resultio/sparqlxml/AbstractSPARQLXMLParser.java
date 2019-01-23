@@ -276,7 +276,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	 *         using {@link XMLReader#setFeature(String, boolean)}.
 	 */
 	public Collection<RioSetting<Boolean>> getCompulsoryXmlFeatureSettings() {
-		Set<RioSetting<Boolean>> results = new HashSet<RioSetting<Boolean>>();
+		Set<RioSetting<Boolean>> results = new HashSet<>();
 		results.add(XMLParserSettings.SECURE_PROCESSING);
 		results.add(XMLParserSettings.DISALLOW_DOCTYPE_DECL);
 		results.add(XMLParserSettings.EXTERNAL_GENERAL_ENTITIES);
@@ -307,7 +307,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	 *         {@link XMLReader#setFeature(String, boolean)}.
 	 */
 	public Collection<RioSetting<Boolean>> getOptionalXmlFeatureSettings() {
-		Set<RioSetting<Boolean>> results = new HashSet<RioSetting<Boolean>>();
+		Set<RioSetting<Boolean>> results = new HashSet<>();
 		results.add(XMLParserSettings.LOAD_EXTERNAL_DTD);
 		return results;
 	}
@@ -315,7 +315,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
 		// Override to add SPARQL/XML specific supported settings
-		Set<RioSetting<?>> results = new HashSet<RioSetting<?>>(super.getSupportedSettings());
+		Set<RioSetting<?>> results = new HashSet<>(super.getSupportedSettings());
 
 		results.addAll(getCompulsoryXmlPropertySettings());
 		results.addAll(getCompulsoryXmlFeatureSettings());

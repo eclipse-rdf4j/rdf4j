@@ -39,7 +39,7 @@ public class Namespaces {
 	 *         based on the prefix and names from {@link Namespace}s in the input set.
 	 */
 	public static Map<String, String> asMap(Set<Namespace> namespaces) {
-		Map<String, String> result = new HashMap<String, String>();
+		Map<String, String> result = new HashMap<>();
 
 		for (Namespace nextNamespace : namespaces) {
 			result.put(nextNamespace.getPrefix(), nextNamespace.getName());
@@ -94,9 +94,9 @@ public class Namespaces {
 			 */
 			@Override
 			public Set<java.util.Map.Entry<String, String>> entrySet() {
-				Set<java.util.Map.Entry<String, String>> result = new LinkedHashSet<Map.Entry<String, String>>();
+				Set<java.util.Map.Entry<String, String>> result = new LinkedHashSet<>();
 				for (Namespace nextNamespace : namespaces) {
-					AbstractMap.SimpleImmutableEntry<String, String> nextEntry = new SimpleImmutableEntry<String, String>(
+					AbstractMap.SimpleImmutableEntry<String, String> nextEntry = new SimpleImmutableEntry<>(
 							nextNamespace.getPrefix(), nextNamespace.getName());
 					result.add(nextEntry);
 				}
@@ -122,7 +122,7 @@ public class Namespaces {
 
 			@Override
 			public Set<String> keySet() {
-				Set<String> result = new LinkedHashSet<String>();
+				Set<String> result = new LinkedHashSet<>();
 				for (Namespace nextNamespace : namespaces) {
 					result.add(nextNamespace.getPrefix());
 				}
@@ -132,7 +132,7 @@ public class Namespaces {
 			@Override
 			public String put(String nextKey, String nextValue) {
 				String result = null;
-				for (Namespace nextNamespace : new LinkedHashSet<Namespace>(namespaces)) {
+				for (Namespace nextNamespace : new LinkedHashSet<>(namespaces)) {
 					if (nextNamespace.getPrefix().equals(nextKey)) {
 						result = nextNamespace.getName();
 						namespaces.remove(nextNamespace);
@@ -152,7 +152,7 @@ public class Namespaces {
 			@Override
 			public String remove(Object nextKey) {
 				String result = null;
-				for (Namespace nextNamespace : new LinkedHashSet<Namespace>(namespaces)) {
+				for (Namespace nextNamespace : new LinkedHashSet<>(namespaces)) {
 					if (nextNamespace.getPrefix().equals(nextKey)) {
 						result = nextNamespace.getName();
 						namespaces.remove(nextNamespace);
@@ -168,7 +168,7 @@ public class Namespaces {
 
 			@Override
 			public Collection<String> values() {
-				List<String> result = new ArrayList<String>();
+				List<String> result = new ArrayList<>();
 				for (Namespace nextNamespace : namespaces) {
 					result.add(nextNamespace.getName());
 				}

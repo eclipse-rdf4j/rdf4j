@@ -34,7 +34,7 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	}
 
 	private Set<String> findBindingNames() {
-		Set<String> result = new HashSet<String>();
+		Set<String> result = new HashSet<>();
 		if (bindingSets != null) {
 			for (BindingSet set : bindingSets) {
 				result.addAll(set.getBindingNames());

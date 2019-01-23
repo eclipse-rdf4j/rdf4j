@@ -122,13 +122,13 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	/**
 	 * A stack of node- and property elements.
 	 */
-	private Stack<Object> elementStack = new Stack<Object>();
+	private Stack<Object> elementStack = new Stack<>();
 
 	/**
 	 * A set containing URIs that have been generated as a result of rdf:ID attributes. These URIs should be
 	 * unique within a single document.
 	 */
-	private Set<IRI> usedIDs = new HashSet<IRI>();
+	private Set<IRI> usedIDs = new HashSet<>();
 
 	/*--------------*
 	 * Constructors *
@@ -314,7 +314,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
 		// Override to add RDF/XML specific supported settings
-		Set<RioSetting<?>> results = new HashSet<RioSetting<?>>(super.getSupportedSettings());
+		Set<RioSetting<?>> results = new HashSet<>(super.getSupportedSettings());
 
 		results.addAll(getCompulsoryXmlPropertySettings());
 		results.addAll(getCompulsoryXmlFeatureSettings());

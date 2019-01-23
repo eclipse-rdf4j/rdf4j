@@ -39,9 +39,9 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 
 	private boolean defaultReportDeltas = false;
 
-	private Set<RepositoryListener> listeners = new CopyOnWriteArraySet<RepositoryListener>();
+	private Set<RepositoryListener> listeners = new CopyOnWriteArraySet<>();
 
-	private Set<RepositoryConnectionListener> conListeners = new CopyOnWriteArraySet<RepositoryConnectionListener>();
+	private Set<RepositoryConnectionListener> conListeners = new CopyOnWriteArraySet<>();
 
 	/*--------------*
 	 * Constructors *

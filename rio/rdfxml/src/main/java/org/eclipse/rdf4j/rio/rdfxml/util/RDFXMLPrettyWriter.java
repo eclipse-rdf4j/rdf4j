@@ -113,12 +113,12 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	/**
 	 * Stack for remembering the nodes (subjects/objects) of statements at each level.
 	 */
-	private final Stack<Node> nodeStack = new Stack<Node>();
+	private final Stack<Node> nodeStack = new Stack<>();
 
 	/**
 	 * Stack for remembering the predicate of statements at each level.
 	 */
-	private final Stack<IRI> predicateStack = new Stack<IRI>();
+	private final Stack<IRI> predicateStack = new Stack<>();
 
 	/*--------------*
 	 * Constructors *

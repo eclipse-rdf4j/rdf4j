@@ -118,7 +118,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 			throw new RuntimeException(e);
 		}
 
-		namespaceTable = new HashMap<String, String>(16);
+		namespaceTable = new HashMap<>(16);
 		nextBNodePrefix = createUniqueBNodePrefix();
 		setValueFactory(valueFactory);
 		setParserConfig(new ParserConfig());
@@ -181,7 +181,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 */
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		Collection<RioSetting<?>> result = new HashSet<RioSetting<?>>();
+		Collection<RioSetting<?>> result = new HashSet<>();
 
 		// Supported in RDFParserHelper.createLiteral
 		result.add(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES);
@@ -247,7 +247,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 		else {
 			// TODO: Add a ParserConfig.removeNonFatalError function to avoid
 			// this
-			Set<RioSetting<?>> set = new HashSet<RioSetting<?>>(getParserConfig().getNonFatalErrors());
+			Set<RioSetting<?>> set = new HashSet<>(getParserConfig().getNonFatalErrors());
 			set.remove(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 			getParserConfig().setNonFatalErrors(set);
 		}

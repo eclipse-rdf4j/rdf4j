@@ -55,7 +55,7 @@ public class RepositoryConfigUtil {
 	public static Set<String> getRepositoryIDs(Model model)
 		throws RepositoryException
 	{
-		Set<String> idSet = new LinkedHashSet<String>();
+		Set<String> idSet = new LinkedHashSet<>();
 		model.filter(null, REPOSITORYID, null).forEach(idStatement -> {
 			if (idStatement.getObject() instanceof Literal) {
 				Literal idLiteral = (Literal)idStatement.getObject();
@@ -85,7 +85,7 @@ public class RepositoryConfigUtil {
 		throws RepositoryException
 	{
 		try (RepositoryConnection con = repository.getConnection()) {
-			Set<String> idSet = new LinkedHashSet<String>();
+			Set<String> idSet = new LinkedHashSet<>();
 
 			try (RepositoryResult<Statement> idStatementIter = con.getStatements(null, REPOSITORYID, null, true)) {
 				while (idStatementIter.hasNext()) {

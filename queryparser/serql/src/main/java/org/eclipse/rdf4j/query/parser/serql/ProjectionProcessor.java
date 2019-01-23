@@ -67,7 +67,7 @@ class ProjectionProcessor extends AbstractASTVisitor {
 		}
 		else {
 			// Verify that all projection vars are bound
-			Set<String> projVars = new LinkedHashSet<String>();
+			Set<String> projVars = new LinkedHashSet<>();
 
 			for (ASTProjectionElem projElem : selectNode.getProjectionElemList()) {
 				projVars.addAll(VariableCollector.process(projElem.getValueExpr()));
@@ -113,7 +113,7 @@ class ProjectionProcessor extends AbstractASTVisitor {
 			return visitor.getVariableNames();
 		}
 
-		private Set<String> variableNames = new LinkedHashSet<String>();
+		private Set<String> variableNames = new LinkedHashSet<>();
 
 		public Set<String> getVariableNames() {
 			return variableNames;

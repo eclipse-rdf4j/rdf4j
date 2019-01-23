@@ -82,9 +82,9 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	@Deprecated
 	protected Model prettyPrintModel;
 
-	private final Deque<Resource> stack = new LinkedList<Resource>();
+	private final Deque<Resource> stack = new LinkedList<>();
 
-	private final Deque<IRI> path = new LinkedList<IRI>();
+	private final Deque<IRI> path = new LinkedList<>();
 
 	private Boolean xsdStringToPlainLiteral;
 
@@ -135,7 +135,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	public TurtleWriter(Writer writer, ParsedIRI baseIRI) {
 		this.baseIRI = baseIRI;
 		this.writer = new IndentingWriter(writer);
-		namespaceTable = new LinkedHashMap<String, String>();
+		namespaceTable = new LinkedHashMap<>();
 		writingStarted = false;
 		statementClosed = true;
 		lastWrittenSubject = null;

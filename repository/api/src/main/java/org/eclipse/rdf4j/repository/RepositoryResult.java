@@ -116,7 +116,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 	public List<T> asList()
 		throws RepositoryException
 	{
-		return addTo(new ArrayList<T>());
+		return addTo(new ArrayList<>());
 	}
 
 	/**

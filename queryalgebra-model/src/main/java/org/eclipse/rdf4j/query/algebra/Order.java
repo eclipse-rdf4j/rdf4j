@@ -21,7 +21,7 @@ public class Order extends UnaryTupleOperator {
 	 * Variables *
 	 *-----------*/
 
-	private List<OrderElem> elements = new ArrayList<OrderElem>();
+	private List<OrderElem> elements = new ArrayList<>();
 
 	/*--------------*
 	 * Constructors *
@@ -117,7 +117,7 @@ public class Order extends UnaryTupleOperator {
 	public Order clone() {
 		Order clone = (Order)super.clone();
 
-		clone.elements = new ArrayList<OrderElem>(getElements().size());
+		clone.elements = new ArrayList<>(getElements().size());
 		for (OrderElem elem : getElements()) {
 			clone.addElement(elem.clone());
 		}

@@ -44,7 +44,7 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 
 	protected Collection<TransactionOperation> txn;
 
-	private List<Value> parsedValues = new ArrayList<Value>();
+	private List<Value> parsedValues = new ArrayList<>();
 
 	private List<Binding> bindings;
 
@@ -73,7 +73,7 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 	public void startDocument()
 		throws SAXException
 	{
-		txn = new ArrayList<TransactionOperation>();
+		txn = new ArrayList<>();
 	}
 
 	@Override
@@ -153,7 +153,7 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 				throw new SAXException("unexpected start of SPARQL Update operation bindings");
 			}
 
-			bindings = new ArrayList<Binding>();
+			bindings = new ArrayList<>();
 		}
 		else if (TransactionXMLConstants.BINDING_URI.equals(tagName)
 				|| TransactionXMLConstants.BINDING_BNODE.equals(tagName)
@@ -319,7 +319,7 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 	private Resource[] createContexts(int startIdx)
 		throws SAXException
 	{
-		List<Resource> contexts = new ArrayList<Resource>();
+		List<Resource> contexts = new ArrayList<>();
 
 		for (int i = startIdx; i < parsedValues.size(); i++) {
 			Value contextCandidate = parsedValues.get(i);

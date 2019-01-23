@@ -267,7 +267,7 @@ public class SimpleSAXParser {
 			if (attCount == 0) {
 				deferredAttributes = Collections.emptyMap();
 			} else {
-				deferredAttributes = new LinkedHashMap<String, String>(attCount * 2);
+				deferredAttributes = new LinkedHashMap<>(attCount * 2);
 
 				for (int i = 0; i < attCount; i++) {
 					deferredAttributes.put(attributes.getQName(i), attributes.getValue(i));

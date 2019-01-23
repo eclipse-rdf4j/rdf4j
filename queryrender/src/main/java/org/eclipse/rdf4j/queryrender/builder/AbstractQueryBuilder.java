@@ -59,13 +59,13 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	// query impl can access it.
 	// would be better to encapsulate building the projection element up so the
 	// subclasses just handle it.
-	protected List<StatementPattern> mProjectionPatterns = new ArrayList<StatementPattern>();
+	protected List<StatementPattern> mProjectionPatterns = new ArrayList<>();
 
-	protected List<String> mProjectionVars = new ArrayList<String>();
+	protected List<String> mProjectionVars = new ArrayList<>();
 
-	private List<Group> mQueryAtoms = new ArrayList<Group>();
+	private List<Group> mQueryAtoms = new ArrayList<>();
 
-	private List<OrderElem> mOrderByElems = new ArrayList<OrderElem>();
+	private List<OrderElem> mOrderByElems = new ArrayList<>();
 
 	/**
 	 * the current limit on the number of results
@@ -84,12 +84,12 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	/**
 	 * the from clauses in the query
 	 */
-	private Set<IRI> mFrom = new HashSet<IRI>();
+	private Set<IRI> mFrom = new HashSet<>();
 
 	/**
 	 * The from named clauses of the query
 	 */
-	private Set<IRI> mFromNamed = new HashSet<IRI>();
+	private Set<IRI> mFromNamed = new HashSet<>();
 
 	/**
 	 * The query to be built
@@ -476,7 +476,7 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	 */
 	@Override
 	public GroupBuilder<T, QueryBuilder<T>> group() {
-		return new GroupBuilder<T, QueryBuilder<T>>(this, false, null);
+		return new GroupBuilder<>(this, false, null);
 	}
 
 	/**
@@ -484,7 +484,7 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	 */
 	@Override
 	public GroupBuilder<T, QueryBuilder<T>> optional() {
-		return new GroupBuilder<T, QueryBuilder<T>>(this, true, null);
+		return new GroupBuilder<>(this, true, null);
 	}
 
 	/**

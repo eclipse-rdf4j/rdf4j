@@ -21,8 +21,8 @@ public class JJTSyntaxTreeBuilderState {
 	private boolean node_created;
 
 	public JJTSyntaxTreeBuilderState() {
-		nodes = new java.util.ArrayList<Node>();
-		marks = new java.util.ArrayList<Integer>();
+		nodes = new java.util.ArrayList<>();
+		marks = new java.util.ArrayList<>();
 		sp = 0;
 		mk = 0;
 	}

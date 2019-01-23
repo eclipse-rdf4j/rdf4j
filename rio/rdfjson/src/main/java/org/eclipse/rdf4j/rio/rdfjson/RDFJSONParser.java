@@ -242,7 +242,7 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 					String nextType = null;
 					String nextDatatype = null;
 					String nextLanguage = null;
-					final Set<String> nextContexts = new HashSet<String>(2);
+					final Set<String> nextContexts = new HashSet<>(2);
 
 					while (jp.nextToken() != JsonToken.END_OBJECT) {
 						final String fieldName = jp.getCurrentName();
@@ -407,7 +407,7 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		Collection<RioSetting<?>> result = new HashSet<RioSetting<?>>(super.getSupportedSettings());
+		Collection<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
 
 		result.add(RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_DATATYPES);
 		result.add(RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_LANGUAGES);

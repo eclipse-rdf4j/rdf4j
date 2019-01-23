@@ -124,7 +124,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	}
 
 	protected Set<E> makeSet() {
-		return new HashSet<E>();
+		return new HashSet<>();
 	}
 
 	@Override

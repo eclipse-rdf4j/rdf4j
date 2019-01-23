@@ -71,7 +71,7 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	 * Map containing the namespace IDs (Integer objects) that have been defined in the document, stored using
 	 * the concerning namespace (Strings).
 	 */
-	private Map<String, Integer> namespaceTable = new HashMap<String, Integer>(32);
+	private Map<String, Integer> namespaceTable = new HashMap<>(32);
 
 	private int nextNamespaceID;
 
@@ -130,7 +130,7 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 		}
 
 		// Copy supplied column headers list and make it unmodifiable
-		bindingNames = new ArrayList<String>(bindingNames);
+		bindingNames = new ArrayList<>(bindingNames);
 		this.bindingNames = Collections.unmodifiableList(bindingNames);
 
 		try {
