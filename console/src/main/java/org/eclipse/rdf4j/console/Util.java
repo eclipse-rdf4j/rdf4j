@@ -118,4 +118,49 @@ public class Util {
 		}
 		return NTriplesUtil.toNTriplesString(value);
 	}
+	
+	/**
+	 * Format a string of values, starting new line(s) when the joined values exceed the width. 
+	 * Primarily used for displaying formatted help (e.g namespaces, config files) to the console.
+	 * To be replaced by a commons text method
+	 * 
+	 * @param width maximum column width
+	 * @param padding left padding
+	 * @param str joined string
+	 * @param separator value separator
+	 * @return list of values as a formatted string, or empty
+	 */
+	@Deprecated
+	public static String formatToWidth(int width, String padding, String str, String separator) {
+		if (str.isEmpty()) {
+			return "";
+		}
+		
+		int padLen = padding.length();
+		int strLen = str.length();
+		int sepLen = separator.length();
+		
+		if (strLen + padLen <= width) {
+			return padding + str;
+		}
+		
+		String[] values = str.split(separator);
+		StringBuilder builder = new StringBuilder(strLen + 4 * padLen + 8 * sepLen);
+
+		int colpos = width; // force start on new line
+		
+		for(String value: values) {
+			int len = value.length();
+			if (colpos + sepLen + len <= width) {
+				builder.append(separator);
+			} else {
+				builder.append("\n").append(padding);
+				colpos = padLen;
+			}
+			builder.append(value);
+			colpos += len;
+		}
+		// don't return initial newline
+		return builder.substring(1);
+	}
 }

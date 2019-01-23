@@ -73,4 +73,19 @@ public class UtilTest {
 		} catch(IllegalArgumentException expected) {
 		}
 	}
+	
+	@Test
+	public final void testFormatToWidth() {
+		String str = "one, two, three, four, five, six, seven, eight";
+		
+		String expect = " one, two\n" +
+						" three\n" +
+						" four\n" +
+						" five, six\n" +
+						" seven\n" +
+						" eight";
+		String fmt = Util.formatToWidth(10, " ", str, ", ");
+		System.err.println(fmt);
+		assertTrue("Format not OK", expect.equals(fmt));
+	}
 }

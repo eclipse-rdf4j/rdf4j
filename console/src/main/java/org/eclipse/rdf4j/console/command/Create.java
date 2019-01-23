@@ -14,14 +14,23 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.LockRemover;
+import org.eclipse.rdf4j.console.Util;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -52,8 +61,9 @@ import org.slf4j.LoggerFactory;
 public class Create extends ConsoleCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(Create.class);
 
-	private static final String TEMPLATES_DIR = "templates";
-
+	private static final String TEMPLATES_SUBDIR = "templates";
+	private static final String FILE_EXT = ".ttl";
+	private File templatesDir;
 
 	@Override
 	public String getName() {
@@ -68,11 +78,13 @@ public class Create extends ConsoleCommand {
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE
-			+ "create <template-name>\n"
-			+ "  <template-name>   The name of a repository configuration template\n";
+			+ "create <template>   Create a new repository using this configuration template\n"
+			+ "  built-in: \n"
+			+  Util.formatToWidth(80, "    ", getBuiltinTemplates(), ", ") + "\n"
+			+ "  template-dir (" + templatesDir + "):\n" 
+			+  Util.formatToWidth(80, "    ", getUserTemplates(), ", ");
 	}
 
-	
 	/**
 	 * Constructor
 	 *
@@ -81,6 +93,7 @@ public class Create extends ConsoleCommand {
 	 */
 	public Create(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
+		this.templatesDir = new File(state.getDataDirectory(), TEMPLATES_SUBDIR);
 	}
 
 	@Override
@@ -93,6 +106,61 @@ public class Create extends ConsoleCommand {
 	}
 
 	/**
+	 * Return a concatenated list of ordered configuration templates files, without file type extension.
+	 * 
+	 * @param path path with templates
+	 * @return string concatenated string
+	 * @throws IOException 
+	 */
+	private String getOrderedTemplates(Path path) throws IOException {
+		return Files.walk(path).filter(Files::isRegularFile)
+					.map(f -> f.getFileName().toString()).filter(s -> s.endsWith(FILE_EXT))
+					.map(s -> s.substring(0, s.length() - FILE_EXT.length()))
+					.sorted()
+					.collect(Collectors.joining(", "));
+	}
+
+	/**
+	 * Get the names of the user-defined repository templates, located in the templates directory.
+	 * 
+	 * @return ordered array of names
+	 */
+	private String getUserTemplates() {
+		if (templatesDir == null || !templatesDir.exists() || !templatesDir.isDirectory()) {
+			return "";
+		}
+		try {
+			return getOrderedTemplates(templatesDir.toPath());
+		} catch (IOException ioe) {
+			LOGGER.error("Failed to read templates directory repository ", ioe);
+		}
+		return "";
+	}
+
+	/**
+	 * Get the names of the built-in repository templates, located in the JAR containing RepositoryConfig.
+	 * 
+	 * @return concatenated list of names
+	 */
+	private String getBuiltinTemplates() {
+		// assume the templates are all located in the same jar "directory" as the RepositoryConfig class
+		Class cl = RepositoryConfig.class;
+		
+		try {
+			URI dir = cl.getResource(cl.getSimpleName() + ".class").toURI();
+			if (dir.getScheme().equals("jar")) {
+				try(FileSystem fs = FileSystems.newFileSystem(dir, Collections.EMPTY_MAP, null)) {
+					// turn package structure into directory structure
+					String pkg = cl.getPackage().getName().replaceAll("\\.", "/");
+					return getOrderedTemplates(fs.getPath(pkg));			
+				}
+			} 
+		} catch (NullPointerException | URISyntaxException | IOException e) {
+			LOGGER.error("Could not get built-in config templates from JAR", e);
+		}
+		return "";
+	}
+	/**
 	 * Create a new repository based on a template
 	 * 
 	 * @param templateName name of the template
@@ -101,8 +169,7 @@ public class Create extends ConsoleCommand {
 	private void createRepository(final String templateName) throws IOException {
 		try {
 			// FIXME: remove assumption of .ttl extension
-			final String templateFileName = templateName + ".ttl";
-			final File templatesDir = new File(state.getDataDirectory(), TEMPLATES_DIR);
+			final String templateFileName = templateName + FILE_EXT;
 			final File templateFile = new File(templatesDir, templateFileName);
 			
 			InputStream templateStream = createTemplateStream(templateName, templateFileName, templatesDir,
