@@ -51,7 +51,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	 */
 	private volatile boolean closed;
 
-	private final QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>> rightQueue = new QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>>(
+	private final QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>> rightQueue = new QueueCursor<>(
 			1024);
 
 	private final List<CloseableIteration<BindingSet, QueryEvaluationException>> toCloseList = new ArrayList<>();

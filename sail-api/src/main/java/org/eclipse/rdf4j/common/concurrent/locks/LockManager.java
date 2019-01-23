@@ -65,7 +65,7 @@ public class LockManager {
 	/**
 	 * Set of active locks.
 	 */
-	private final Set<WeakLockReference> activeLocks = new HashSet<WeakLockReference>();
+	private final Set<WeakLockReference> activeLocks = new HashSet<>();
 
 	/**
 	 * Create a new set of locks.
@@ -129,7 +129,7 @@ public class LockManager {
 			synchronized (activeLocks) {
 				if (activeLocks.isEmpty())
 					return;
-				before = new HashSet<WeakLockReference>(activeLocks);
+				before = new HashSet<>(activeLocks);
 				if (now < 0) {
 					now = System.currentTimeMillis();
 				}
@@ -191,7 +191,7 @@ public class LockManager {
 				}
 			}
 		};
-		weak.reference = new WeakReference<Lock>(lock);
+		weak.reference = new WeakReference<>(lock);
 		synchronized (activeLocks) {
 			activeLocks.add(weak);
 		}

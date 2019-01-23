@@ -597,7 +597,7 @@ public class BTree implements Closeable {
 	{
 		assert key != null : "key must not be null";
 
-		List<PathSegment> path = new ArrayList<PathSegment>(height());
+		List<PathSegment> path = new ArrayList<>(height());
 
 		Node currentNode = readRootNode();
 

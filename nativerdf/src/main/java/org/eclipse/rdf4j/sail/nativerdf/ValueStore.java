@@ -140,10 +140,10 @@ public class ValueStore extends AbstractValueFactory {
 		super();
 		dataStore = new DataStore(dataDir, FILENAME_PREFIX, forceSync);
 
-		valueCache = new ConcurrentCache<Integer, NativeValue>(valueCacheSize);
-		valueIDCache = new ConcurrentCache<NativeValue, Integer>(valueIDCacheSize);
-		namespaceCache = new ConcurrentCache<Integer, String>(namespaceCacheSize);
-		namespaceIDCache = new ConcurrentCache<String, Integer>(namespaceIDCacheSize);
+		valueCache = new ConcurrentCache<>(valueCacheSize);
+		valueIDCache = new ConcurrentCache<>(valueIDCacheSize);
+		namespaceCache = new ConcurrentCache<>(namespaceCacheSize);
+		namespaceIDCache = new ConcurrentCache<>(namespaceIDCacheSize);
 
 		setNewRevision();
 	}

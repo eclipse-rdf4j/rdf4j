@@ -62,7 +62,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(Federation.class);
 
-	private final List<Repository> members = new ArrayList<Repository>();
+	private final List<Repository> members = new ArrayList<>();
 
 	private final Map<Repository, RepositoryBloomFilter> bloomFilters = new HashMap<>();
 
@@ -334,7 +334,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	public SailConnection getConnection()
 		throws SailException
 	{
-		List<RepositoryConnection> connections = new ArrayList<RepositoryConnection>(members.size());
+		List<RepositoryConnection> connections = new ArrayList<>(members.size());
 		boolean allGood = false;
 		try {
 			for (Repository member : members) {

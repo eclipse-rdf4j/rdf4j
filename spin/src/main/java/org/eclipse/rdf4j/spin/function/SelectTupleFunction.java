@@ -81,7 +81,7 @@ public class SelectTupleFunction extends AbstractSpinFunction implements TupleFu
 				BooleanQuery queryOp = qp.prepare(booleanQuery);
 				addBindings(queryOp, args);
 				Value result = BooleanLiteral.valueOf(queryOp.evaluate());
-				return new SingletonIteration<List<Value>, QueryEvaluationException>(
+				return new SingletonIteration<>(
 						Collections.singletonList(result));
 			}
 			else {
@@ -134,7 +134,7 @@ public class SelectTupleFunction extends AbstractSpinFunction implements TupleFu
 			}
 			try {
 				BindingSet bs = queryResult.next();
-				List<Value> values = new ArrayList<Value>(bindingNames.size());
+				List<Value> values = new ArrayList<>(bindingNames.size());
 				for (String bindingName : bindingNames) {
 					values.add(bs.getValue(bindingName));
 				}

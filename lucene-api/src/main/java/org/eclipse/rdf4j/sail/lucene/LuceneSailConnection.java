@@ -350,7 +350,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		// use externally bound variables
 		new BindingAssigner().optimize(tupleExpr, dataset, bindings);
 
-		List<SearchQueryEvaluator> queries = new ArrayList<SearchQueryEvaluator>();
+		List<SearchQueryEvaluator> queries = new ArrayList<>();
 
 		for (SearchQueryInterpreter interpreter : sail.getSearchQueryInterpreters()) {
 			interpreter.process(tupleExpr, bindings, queries);
@@ -464,7 +464,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		}
 
 		// find existing bindings within the given (sub-)query
-		final List<BindingSetAssignment> assignments = new ArrayList<BindingSetAssignment>();
+		final List<BindingSetAssignment> assignments = new ArrayList<>();
 		QueryModelVisitor<RuntimeException> assignmentVisitor = new AbstractQueryModelVisitor<RuntimeException>() {
 
 			@Override
@@ -480,7 +480,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		projection.visit(assignmentVisitor);
 
 		// construct a list of binding sets
-		List<BindingSetAssignment> bindingSetsList = new ArrayList<BindingSetAssignment>();
+		List<BindingSetAssignment> bindingSetsList = new ArrayList<>();
 		bindingSetsList.add(bindingSets);
 
 		// add existing bindings to the list of binding sets and remove them from
@@ -564,7 +564,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		Iterable<BindingSet> rightIter = right.getBindingSets();
 		int leftSize = size(leftIter, 16);
 		int rightSize = size(rightIter, 16);
-		List<BindingSet> output = new ArrayList<BindingSet>(leftSize * rightSize);
+		List<BindingSet> output = new ArrayList<>(leftSize * rightSize);
 
 		for (BindingSet l : leftIter) {
 			for (BindingSet r : rightIter) {
@@ -575,7 +575,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			}
 		}
 
-		Set<String> bindingNames = new HashSet<String>(left.getBindingNames());
+		Set<String> bindingNames = new HashSet<>(left.getBindingNames());
 		bindingNames.addAll(right.getBindingNames());
 
 		BindingSetAssignment bindings = new BindingSetAssignment();

@@ -91,9 +91,9 @@ public class LuceneSailBuffer {
 
 	public static class AddRemoveOperation extends Operation {
 
-		HashSet<Statement> added = new HashSet<Statement>();
+		HashSet<Statement> added = new HashSet<>();
 
-		HashSet<Statement> removed = new HashSet<Statement>();
+		HashSet<Statement> removed = new HashSet<>();
 
 		public void add(Statement s) {
 			if (!removed.remove(s))
@@ -142,7 +142,7 @@ public class LuceneSailBuffer {
 
 	}
 
-	private ArrayList<Operation> operations = new ArrayList<Operation>();
+	private ArrayList<Operation> operations = new ArrayList<>();
 
 	/**
 	 * Add this statement to the buffer

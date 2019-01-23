@@ -175,7 +175,7 @@ class SailSourceModel extends AbstractModel {
 
 	@Override
 	public Set<Namespace> getNamespaces() {
-		Set<Namespace> set = new LinkedHashSet<Namespace>();
+		Set<Namespace> set = new LinkedHashSet<>();
 		try {
 			CloseableIteration<? extends Namespace, SailException> spaces;
 			spaces = dataset().getNamespaces();
@@ -472,7 +472,7 @@ class SailSourceModel extends AbstractModel {
 				result[i] = (Resource)contexts[i];
 			}
 			else {
-				List<Resource> list = new ArrayList<Resource>();
+				List<Resource> list = new ArrayList<>();
 				for (Value v : contexts) {
 					if (v == null || v instanceof Resource) {
 						list.add((Resource)v);

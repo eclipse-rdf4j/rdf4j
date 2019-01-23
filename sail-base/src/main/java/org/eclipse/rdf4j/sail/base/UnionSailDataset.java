@@ -106,7 +106,7 @@ class UnionSailDataset implements SailDataset {
 	private <T> CloseableIteration<? extends T, SailException> union(
 			CloseableIteration<? extends T, SailException>[] items)
 	{
-		return new UnionIteration<T, SailException>(items);
+		return new UnionIteration<>(items);
 	}
 
 }

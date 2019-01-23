@@ -27,7 +27,7 @@ class MemNamespaceStore implements Iterable<SimpleNamespace> {
 	/**
 	 * Map storing namespace information by their prefix.
 	 */
-	private final Map<String, SimpleNamespace> namespacesMap = new LinkedHashMap<String, SimpleNamespace>(16);
+	private final Map<String, SimpleNamespace> namespacesMap = new LinkedHashMap<>(16);
 
 	/*---------*
 	 * Methods *

@@ -33,7 +33,7 @@ public class DataStorePerfTest {
 
 		System.out.println("Starting test...");
 
-		List<long[]> timeDataList = new ArrayList<long[]>();
+		List<long[]> timeDataList = new ArrayList<>();
 
 		for (int stringCount = 1000000; stringCount <= 3000000; stringCount += 1000000) {
 			timeDataList.add(runPerformanceTest(stringCount));

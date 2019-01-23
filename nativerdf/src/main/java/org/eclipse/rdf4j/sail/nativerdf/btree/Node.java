@@ -37,7 +37,7 @@ class Node {
 	private boolean dataChanged;
 
 	/** Registered listeners that want to be notified of changes to the node. */
-	private final ConcurrentLinkedDeque<NodeListener> listeners = new ConcurrentLinkedDeque<NodeListener>();
+	private final ConcurrentLinkedDeque<NodeListener> listeners = new ConcurrentLinkedDeque<>();
 
 	/**
 	 * Creates a new Node object with the specified ID.

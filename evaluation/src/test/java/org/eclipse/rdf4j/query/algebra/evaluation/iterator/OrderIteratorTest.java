@@ -190,7 +190,7 @@ public class OrderIteratorTest extends TestCase {
 	public void testSorting()
 		throws Exception
 	{
-		List<BindingSet> sorted = new ArrayList<BindingSet>(list);
+		List<BindingSet> sorted = new ArrayList<>(list);
 		Collections.sort(sorted, cmp);
 		for (BindingSet b : sorted) {
 			assertEquals(b, order.next());

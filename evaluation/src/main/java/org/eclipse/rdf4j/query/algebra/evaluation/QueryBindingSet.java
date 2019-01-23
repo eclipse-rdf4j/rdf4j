@@ -39,7 +39,7 @@ public class QueryBindingSet extends AbstractBindingSet {
 	public QueryBindingSet(int capacity) {
 		// Create bindings map with some extra space for new bindings and
 		// compensating for HashMap's load factor
-		bindings = new HashMap<String, Value>(capacity * 2);
+		bindings = new HashMap<>(capacity * 2);
 	}
 
 	public QueryBindingSet(BindingSet bindingSet) {

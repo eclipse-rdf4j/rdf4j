@@ -31,7 +31,7 @@ public class SpinxFunction implements TransientFunction {
 
 	private final String uri;
 
-	private final List<Argument> arguments = new ArrayList<Argument>(4);
+	private final List<Argument> arguments = new ArrayList<>(4);
 
 	private ScriptEngine scriptEngine;
 
