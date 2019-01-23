@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.setting;
 
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -67,7 +66,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	 * Default set of namespaces are well-known ones
 	 */
 	public Prefixes() {
-		super(DEFAULT);
+		super(new HashSet<>(DEFAULT));
 	}
 	
 	/**
@@ -137,7 +136,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 			return;
 		}
 		if (value.equals("<default>")) {
-			set(DEFAULT);
+			set(new HashSet<>(DEFAULT));
 			return;
 		}
 		
