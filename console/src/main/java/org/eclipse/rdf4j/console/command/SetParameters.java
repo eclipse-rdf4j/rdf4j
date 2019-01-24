@@ -103,7 +103,7 @@ public class SetParameters extends ConsoleCommand {
 	 */
 	private void showSetting(String key) {
 		String str = key.toLowerCase();
-		
+	
 		ConsoleSetting setting = settings.get(str);
 		if (setting != null) {
 			String s = setting.getAsString();
@@ -115,7 +115,7 @@ public class SetParameters extends ConsoleCommand {
 				}
 				s = builder.toString();
 			}
-			consoleIO.writeln(key + ": " + s);
+			consoleIO.writeln(key + ": " + s);			
 		} else {
 			consoleIO.writeError("Unknown parameter: " + key);
 		}

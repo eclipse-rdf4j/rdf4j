@@ -9,13 +9,15 @@ package org.eclipse.rdf4j.console.setting;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
+
 import org.junit.After;
-import static org.junit.Assert.assertEquals;
 import org.junit.Before;
 import org.junit.Test;
 
+import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
+
 import org.slf4j.LoggerFactory;
 
 /**
@@ -25,6 +27,13 @@ import org.slf4j.LoggerFactory;
  */
 public class LogLevelTest extends AbstractSettingTest {	
 	private Level originalLevel;
+
+	@Before
+	public void setUp() {
+		originalLevel = ((Logger)LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).getLevel();
+		settings.put(LogLevel.NAME, new LogLevel());
+		super.setUp();
+	}
 
 	@After
 	public void tearDown() throws Exception {

@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.console.command.SetParameters;
 import org.junit.Before;
 
 import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 
 /**
  * Abstract class for settings
@@ -35,6 +36,7 @@ public abstract class AbstractSettingTest {
 		
 	@Before
 	public void setUp() {
-		setParameters = new SetParameters(mockConsoleIO, mockConsoleState, settings);
+		MockitoAnnotations.initMocks(this);
+		setParameters = new SetParameters(mockConsoleIO, mockConsoleState, settings);;
 	}
 }
