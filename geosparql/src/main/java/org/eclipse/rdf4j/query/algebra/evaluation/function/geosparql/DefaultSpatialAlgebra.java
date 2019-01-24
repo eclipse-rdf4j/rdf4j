@@ -34,7 +34,7 @@ final class DefaultSpatialAlgebra implements SpatialAlgebra {
 	}
 
 	private Shape createEmptyGeometry() {
-		return new ShapeCollection<Shape>(Collections.<Shape> emptyList(),
+		return new ShapeCollection<>(Collections.<Shape> emptyList(),
 				SpatialSupport.getSpatialContext());
 	}
 
@@ -91,7 +91,7 @@ final class DefaultSpatialAlgebra implements SpatialAlgebra {
 				p1 = p2;
 				p2 = (Point)s1;
 			}
-			return new ShapeCollection<Point>(Arrays.asList(p1, p2), SpatialSupport.getSpatialContext());
+			return new ShapeCollection<>(Arrays.asList(p1, p2), SpatialSupport.getSpatialContext());
 		}
 		return notSupported();
 	}
@@ -133,7 +133,7 @@ final class DefaultSpatialAlgebra implements SpatialAlgebra {
 				p1 = p2;
 				p2 = (Point)s1;
 			}
-			return new ShapeCollection<Point>(Arrays.asList(p1, p2), SpatialSupport.getSpatialContext());
+			return new ShapeCollection<>(Arrays.asList(p1, p2), SpatialSupport.getSpatialContext());
 		}
 		return notSupported();
 	}

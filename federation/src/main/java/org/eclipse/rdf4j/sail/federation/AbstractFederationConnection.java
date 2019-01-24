@@ -141,7 +141,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 
 		valueFactory = SimpleValueFactory.getInstance();
 
-		this.members = new ArrayList<RepositoryConnection>(members.size());
+		this.members = new ArrayList<>(members.size());
 		for (RepositoryConnection member : members) {
 			this.members.add(member);
 		}
@@ -282,9 +282,9 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	public CloseableIteration<? extends Namespace, SailException> getNamespacesInternal()
 		throws SailException
 	{
-		Map<String, Namespace> namespaces = new HashMap<String, Namespace>();
-		Set<String> prefixes = new HashSet<String>();
-		Set<String> conflictedPrefixes = new HashSet<String>();
+		Map<String, Namespace> namespaces = new HashMap<>();
+		Set<String> prefixes = new HashSet<>();
+		Set<String> conflictedPrefixes = new HashSet<>();
 
 		try {
 			for (RepositoryConnection member : members) {
@@ -309,7 +309,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 		for (String prefix : conflictedPrefixes) {
 			namespaces.remove(prefix);
 		}
-		return new CloseableIteratorIteration<Namespace, SailException>(namespaces.values().iterator());
+		return new CloseableIteratorIteration<>(namespaces.values().iterator());
 	}
 
 	@Override
@@ -507,14 +507,14 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	private <E> CloseableIteration<? extends E, SailException> union(Function<E> function)
 		throws SailException
 	{
-		List<CloseableIteration<? extends E, RepositoryException>> cursors = new ArrayList<CloseableIteration<? extends E, RepositoryException>>(
+		List<CloseableIteration<? extends E, RepositoryException>> cursors = new ArrayList<>(
 				members.size());
 
 		try {
 			for (RepositoryConnection member : members) {
 				cursors.add(function.call(member));
 			}
-			UnionIteration<E, RepositoryException> result = new UnionIteration<E, RepositoryException>(
+			UnionIteration<E, RepositoryException> result = new UnionIteration<>(
 					cursors);
 			return new ExceptionConvertingIteration<E, SailException>(result) {
 

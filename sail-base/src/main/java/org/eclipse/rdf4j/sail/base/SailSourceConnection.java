@@ -80,12 +80,12 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	/**
 	 * The state of store for outstanding operations.
 	 */
-	private final Map<UpdateContext, SailDataset> datasets = new HashMap<UpdateContext, SailDataset>();
+	private final Map<UpdateContext, SailDataset> datasets = new HashMap<>();
 
 	/**
 	 * Outstanding changes that are underway, but not yet realized, by an active operation.
 	 */
-	private final Map<UpdateContext, SailSink> explicitSinks = new HashMap<UpdateContext, SailSink>();
+	private final Map<UpdateContext, SailSink> explicitSinks = new HashMap<>();
 
 	/**
 	 * Set of explicit statements that must not be inferred.

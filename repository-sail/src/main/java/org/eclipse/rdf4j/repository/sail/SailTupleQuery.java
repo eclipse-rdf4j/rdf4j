@@ -55,7 +55,7 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 					getIncludeInferred());
 			bindingsIter2 = enforceMaxQueryTime(bindingsIter1);
 
-			result = new IteratingTupleQueryResult(new ArrayList<String>(tupleExpr.getBindingNames()),
+			result = new IteratingTupleQueryResult(new ArrayList<>(tupleExpr.getBindingNames()),
 					bindingsIter2);
 			allGood = true;
 			return result;

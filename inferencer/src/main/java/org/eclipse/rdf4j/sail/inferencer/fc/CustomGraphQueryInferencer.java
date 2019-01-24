@@ -52,11 +52,11 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 
 	private ParsedGraphQuery customMatcher;
 
-	private final Collection<Value> watchPredicates = new HashSet<Value>();
+	private final Collection<Value> watchPredicates = new HashSet<>();
 
-	private final Collection<Value> watchSubjects = new HashSet<Value>();
+	private final Collection<Value> watchSubjects = new HashSet<>();
 
-	private final Collection<Value> watchObjects = new HashSet<Value>();
+	private final Collection<Value> watchObjects = new HashSet<>();
 
 	private boolean hasWatchValues;
 
@@ -255,8 +255,8 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 			throws SailException
 		{
 			super.flushUpdates();
-			Collection<Statement> forRemoval = new HashSet<Statement>(256);
-			Collection<Statement> forAddition = new HashSet<Statement>(256);
+			Collection<Statement> forRemoval = new HashSet<>(256);
+			Collection<Statement> forAddition = new HashSet<>(256);
 			Resource[] contexts = new Resource[] { null };
 			while (updateNeeded) {
 				try {
@@ -296,7 +296,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 			evaluateIntoStatements(customQuery, forAddition);
 			logger.debug("existing virtual properties: {}", forRemoval.size());
 			logger.debug("new virtual properties: {}", forAddition.size());
-			Collection<Statement> inCommon = new HashSet<Statement>(forRemoval);
+			Collection<Statement> inCommon = new HashSet<>(forRemoval);
 			inCommon.retainAll(forAddition);
 			forRemoval.removeAll(inCommon);
 			forAddition.removeAll(inCommon);

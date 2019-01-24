@@ -259,8 +259,8 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		throws Exception
 	{
 		// add a statement to an index
-		HashSet<Statement> added = new HashSet<Statement>();
-		HashSet<Statement> removed = new HashSet<Statement>();
+		HashSet<Statement> added = new HashSet<>();
+		HashSet<Statement> removed = new HashSet<>();
 		added.add(statement11);
 		added.add(statement12);
 		added.add(statement21);
@@ -287,7 +287,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		assertStatement(statement22, document);
 
 		// check if the text field stores all added string values
-		Set<String> texts = new HashSet<String>();
+		Set<String> texts = new HashSet<>();
 		texts.add("cats");
 		texts.add("dogs");
 		// FIXME

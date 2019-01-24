@@ -99,7 +99,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 
 	protected class ConstantVisitor extends VarNameCollector {
 
-		final List<ProjectionElemList> projElemLists = new ArrayList<ProjectionElemList>();
+		final List<ProjectionElemList> projElemLists = new ArrayList<>();
 
 		@Override
 		public void meet(ProjectionElemList projElems) {
@@ -352,7 +352,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 
 	protected class VarNameCollector extends AbstractQueryModelVisitor<RuntimeException> {
 
-		final Set<String> varNames = new HashSet<String>();
+		final Set<String> varNames = new HashSet<>();
 
 		@Override
 		public void meet(Var var) {

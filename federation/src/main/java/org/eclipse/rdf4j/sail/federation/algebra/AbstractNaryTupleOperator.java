@@ -48,7 +48,7 @@ public abstract class AbstractNaryTupleOperator extends AbstractNaryOperator<Tup
 
 	@Override
 	public Set<String> getBindingNames() {
-		Set<String> bindingNames = new LinkedHashSet<String>(16);
+		Set<String> bindingNames = new LinkedHashSet<>(16);
 
 		for (TupleExpr arg : getArgs()) {
 			bindingNames.addAll(arg.getBindingNames());
@@ -59,7 +59,7 @@ public abstract class AbstractNaryTupleOperator extends AbstractNaryOperator<Tup
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		Set<String> bindingNames = new LinkedHashSet<String>(16);
+		Set<String> bindingNames = new LinkedHashSet<>(16);
 
 		for (TupleExpr arg : getArgs()) {
 			bindingNames.addAll(arg.getAssuredBindingNames());

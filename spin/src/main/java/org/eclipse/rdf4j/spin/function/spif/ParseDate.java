@@ -99,7 +99,7 @@ public class ParseDate extends BinaryFunction {
 
 	static final class FieldAwareGregorianCalendar extends GregorianCalendar {
 
-		Set<Integer> fieldsSet = new HashSet<Integer>();
+		Set<Integer> fieldsSet = new HashSet<>();
 
 		@Override
 		public void set(int field, int value) {

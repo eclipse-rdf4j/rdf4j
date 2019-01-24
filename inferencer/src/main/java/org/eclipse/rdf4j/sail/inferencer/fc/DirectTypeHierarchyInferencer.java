@@ -215,8 +215,8 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 				try {
 					// Determine which statements should be added and which should be
 					// removed
-					Collection<Statement> oldStatements = new HashSet<Statement>(256);
-					Collection<Statement> newStatements = new HashSet<Statement>(256);
+					Collection<Statement> oldStatements = new HashSet<>(256);
+					Collection<Statement> newStatements = new HashSet<>(256);
 
 					evaluateIntoStatements(DIRECT_SUBCLASSOF_MATCHER, oldStatements);
 					evaluateIntoStatements(DIRECT_SUBPROPERTYOF_MATCHER, oldStatements);
@@ -230,7 +230,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 					logger.debug("new virtual properties: {}", newStatements.size());
 
 					// Remove the statements that should be retained from both sets
-					Collection<Statement> unchangedStatements = new HashSet<Statement>(oldStatements);
+					Collection<Statement> unchangedStatements = new HashSet<>(oldStatements);
 					unchangedStatements.retainAll(newStatements);
 
 					oldStatements.removeAll(unchangedStatements);

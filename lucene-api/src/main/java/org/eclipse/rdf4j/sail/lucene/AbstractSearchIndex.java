@@ -206,10 +206,10 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		throws IOException
 	{
 		// Buffer per resource
-		MapOfListMaps<Resource, String, Statement> rsAdded = new MapOfListMaps<Resource, String, Statement>();
-		MapOfListMaps<Resource, String, Statement> rsRemoved = new MapOfListMaps<Resource, String, Statement>();
+		MapOfListMaps<Resource, String, Statement> rsAdded = new MapOfListMaps<>();
+		MapOfListMaps<Resource, String, Statement> rsRemoved = new MapOfListMaps<>();
 
-		HashSet<Resource> resources = new HashSet<Resource>();
+		HashSet<Resource> resources = new HashSet<>();
 		for (Statement s : added) {
 			rsAdded.add(s.getSubject(), SearchFields.getContextID(s.getContext()), s);
 			resources.add(s.getSubject());
@@ -227,10 +227,10 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			Map<String, List<Statement>> stmtsToRemove = rsRemoved.get(resource);
 			Map<String, List<Statement>> stmtsToAdd = rsAdded.get(resource);
 
-			Set<String> contextsToUpdate = new HashSet<String>(stmtsToAdd.keySet());
+			Set<String> contextsToUpdate = new HashSet<>(stmtsToAdd.keySet());
 			contextsToUpdate.addAll(stmtsToRemove.keySet());
 
-			Map<String, SearchDocument> docsByContext = new HashMap<String, SearchDocument>();
+			Map<String, SearchDocument> docsByContext = new HashMap<>();
 			// is the resource in the store?
 			// fetch the Document representing this Resource
 			String resourceId = SearchFields.getResourceID(resource);
@@ -273,7 +273,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 					{
 						List<Statement> removedStatements = stmtsToRemove.get(contextId);
 						if (removedStatements != null && !removedStatements.isEmpty()) {
-							removedOfResource = new HashMap<String, Set<String>>();
+							removedOfResource = new HashMap<>();
 							for (Statement r : removedStatements) {
 								String val = SearchFields.getLiteralPropertyValueAsString(r);
 								if (val != null) {
@@ -282,7 +282,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 									String field = SearchFields.getPropertyField(r.getPredicate());
 									Set<String> removedValues = removedOfResource.get(field);
 									if (removedValues == null) {
-										removedValues = new HashSet<String>();
+										removedValues = new HashSet<>();
 										removedOfResource.put(field, removedValues);
 									}
 									removedValues.add(val);
@@ -533,9 +533,9 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		// duplicate answers in the original SPARQL query.
 		// We want to avoid this, so BindingSets added to the result must be
 		// unique.
-		LinkedHashSet<BindingSet> bindingSets = new LinkedHashSet<BindingSet>();
+		LinkedHashSet<BindingSet> bindingSets = new LinkedHashSet<>();
 
-		Set<String> bindingNames = new HashSet<String>();
+		Set<String> bindingNames = new HashSet<>();
 		final String matchVar = query.getMatchesVariableName();
 		if (matchVar != null) {
 			bindingNames.add(matchVar);
@@ -675,9 +675,9 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		// duplicate answers in the original SPARQL query.
 		// We want to avoid this, so BindingSets added to the result must be
 		// unique.
-		LinkedHashSet<BindingSet> bindingSets = new LinkedHashSet<BindingSet>();
+		LinkedHashSet<BindingSet> bindingSets = new LinkedHashSet<>();
 
-		Set<String> bindingNames = new HashSet<String>();
+		Set<String> bindingNames = new HashSet<>();
 		final String subjVar = query.getSubjectVar();
 		if (subjVar != null) {
 			bindingNames.add(subjVar);
@@ -779,9 +779,9 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		// duplicate answers in the original SPARQL query.
 		// We want to avoid this, so BindingSets added to the result must be
 		// unique.
-		LinkedHashSet<BindingSet> bindingSets = new LinkedHashSet<BindingSet>();
+		LinkedHashSet<BindingSet> bindingSets = new LinkedHashSet<>();
 
-		Set<String> bindingNames = new HashSet<String>();
+		Set<String> bindingNames = new HashSet<>();
 		final String subjVar = query.getSubjectVar();
 		if (subjVar != null) {
 			bindingNames.add(subjVar);

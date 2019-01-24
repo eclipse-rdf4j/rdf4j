@@ -19,7 +19,7 @@ public class PrefixHashSet {
 
 	private int length = Integer.MAX_VALUE; // NOPMD
 
-	private final Map<String, List<String>> index = new HashMap<String, List<String>>();
+	private final Map<String, List<String>> index = new HashMap<>();
 
 	public PrefixHashSet(Iterable<String> values) {
 		for (String value : values) {
@@ -31,7 +31,7 @@ public class PrefixHashSet {
 			String key = value.substring(0, length);
 			List<String> entry = index.get(key);
 			if (entry == null) {
-				index.put(key, entry = new ArrayList<String>()); // NOPMD
+				index.put(key, entry = new ArrayList<>()); // NOPMD
 			}
 			entry.add(value.substring(length));
 		}

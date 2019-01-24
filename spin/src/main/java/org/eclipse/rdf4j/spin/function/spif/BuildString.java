@@ -37,7 +37,7 @@ public class BuildString implements Function {
 		}
 		Literal s = (Literal)args[0];
 		String tmpl = s.getLabel();
-		Map<String, String> mappings = new HashMap<String, String>(args.length);
+		Map<String, String> mappings = new HashMap<>(args.length);
 		for (int i = 1; i < args.length; i++) {
 			mappings.put(Integer.toString(i), args[i].stringValue());
 		}
