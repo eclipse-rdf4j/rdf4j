@@ -106,7 +106,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		Set<RioSetting<?>> result = new HashSet<RioSetting<?>>(super.getSupportedSettings());
+		Set<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
 		result.add(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES);
 		return result;
 	}

@@ -20,7 +20,7 @@ class InterruptTask<E, X extends Exception> extends TimerTask {
 	private WeakReference<TimeLimitIteration<E, X>> iterationRef;
 
 	public InterruptTask(TimeLimitIteration<E, X> iteration) {
-		this.iterationRef = new WeakReference<TimeLimitIteration<E, X>>(iteration);
+		this.iterationRef = new WeakReference<>(iteration);
 	}
 
 	@Override

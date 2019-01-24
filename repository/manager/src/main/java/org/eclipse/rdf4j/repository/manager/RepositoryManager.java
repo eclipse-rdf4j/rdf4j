@@ -224,7 +224,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	}
 
 	public Set<String> getRepositoryIDs() throws RepositoryException {
-		Set<String> idSet = new LinkedHashSet<String>();
+		Set<String> idSet = new LinkedHashSet<>();
 		getAllRepositoryInfos(false).forEach(info -> {
 			idSet.add(info.getId());
 		});
@@ -445,7 +445,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	public Set<String> getInitializedRepositoryIDs() {
 		synchronized (initializedRepositories) {
 			updateInitializedRepositories();
-			return new HashSet<String>(initializedRepositories.keySet());
+			return new HashSet<>(initializedRepositories.keySet());
 		}
 	}
 
@@ -459,7 +459,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	public Collection<Repository> getInitializedRepositories() {
 		synchronized (initializedRepositories) {
 			updateInitializedRepositories();
-			return new ArrayList<Repository>(initializedRepositories.values());
+			return new ArrayList<>(initializedRepositories.values());
 		}
 	}
 
@@ -509,7 +509,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	public Collection<Repository> getAllRepositories() throws RepositoryConfigException, RepositoryException {
 		Set<String> idSet = getRepositoryIDs();
 
-		ArrayList<Repository> result = new ArrayList<Repository>(idSet.size());
+		ArrayList<Repository> result = new ArrayList<>(idSet.size());
 
 		for (String id : idSet) {
 			result.add(getRepository(id));

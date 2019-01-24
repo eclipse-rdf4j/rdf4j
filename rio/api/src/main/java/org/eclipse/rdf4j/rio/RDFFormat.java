@@ -243,7 +243,7 @@ public class RDFFormat extends FileFormat {
 	public static List<String> getAcceptParams(Iterable<RDFFormat> rdfFormats, boolean requireContext,
 			RDFFormat preferredFormat)
 	{
-		List<String> acceptParams = new ArrayList<String>();
+		List<String> acceptParams = new ArrayList<>();
 
 		for (RDFFormat format : rdfFormats) {
 			// Determine a q-value that reflects the necessity of context

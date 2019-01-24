@@ -45,7 +45,7 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 
 	private boolean activated;
 
-	private Set<RepositoryConnectionInterceptor> interceptors = new CopyOnWriteArraySet<RepositoryConnectionInterceptor>();
+	private Set<RepositoryConnectionInterceptor> interceptors = new CopyOnWriteArraySet<>();
 
 	/*--------------*
 	 * Construcotrs *

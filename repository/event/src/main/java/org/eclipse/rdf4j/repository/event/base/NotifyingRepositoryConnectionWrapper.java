@@ -50,7 +50,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 
 	private boolean reportDeltas = false;
 
-	private Set<RepositoryConnectionListener> listeners = new CopyOnWriteArraySet<RepositoryConnectionListener>();
+	private Set<RepositoryConnectionListener> listeners = new CopyOnWriteArraySet<>();
 
 	/*--------------*
 	 * Constructors *
@@ -179,7 +179,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 		if (activated && reportDeltas()) {
 			RepositoryResult<Statement> stmts;
 			stmts = getDelegate().getStatements(subj, pred, obj, false, ctx);
-			List<Statement> list = new ArrayList<Statement>();
+			List<Statement> list = new ArrayList<>();
 			try {
 				while (stmts.hasNext()) {
 					list.add(stmts.next());
@@ -230,7 +230,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 		if (activated && reportDeltas()) {
 			RepositoryResult<Namespace> namespaces;
 			namespaces = getDelegate().getNamespaces();
-			List<String> prefix = new ArrayList<String>();
+			List<String> prefix = new ArrayList<>();
 			try {
 				while (namespaces.hasNext()) {
 					Namespace ns = namespaces.next();

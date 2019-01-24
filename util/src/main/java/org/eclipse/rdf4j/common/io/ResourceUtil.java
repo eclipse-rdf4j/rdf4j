@@ -67,7 +67,7 @@ public class ResourceUtil {
 	public static Set<URL> getURLs(String resourceName)
 		throws IOException
 	{
-		Set<URL> result = new HashSet<URL>();
+		Set<URL> result = new HashSet<>();
 
 		// most likely to succeed
 		addAll(result, Thread.currentThread().getContextClassLoader().getResources(resourceName));

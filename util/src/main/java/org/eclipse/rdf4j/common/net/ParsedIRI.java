@@ -1336,7 +1336,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 		// Split the path into its segments
 
-		LinkedList<String> segments = new LinkedList<String>(Arrays.asList(_path.split("/")));
+		LinkedList<String> segments = new LinkedList<>(Arrays.asList(_path.split("/")));
 		if (_path.startsWith("/")) {
 			segments.remove(0);
 		}

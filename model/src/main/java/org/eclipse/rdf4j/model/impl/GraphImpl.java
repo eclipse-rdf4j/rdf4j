@@ -42,7 +42,7 @@ public class GraphImpl extends AbstractCollection<Statement> implements Graph {
 
 	public GraphImpl(ValueFactory valueFactory) {
 		super();
-		statements = new LinkedList<Statement>();
+		statements = new LinkedList<>();
 		setValueFactory(valueFactory);
 	}
 

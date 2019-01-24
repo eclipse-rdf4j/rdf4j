@@ -26,7 +26,7 @@ public class SimpleNode implements Node {
 
 	public SimpleNode(int id) {
 		this.id = id;
-		children = new ArrayList<Node>();
+		children = new ArrayList<>();
 	}
 
 	public SimpleNode(SyntaxTreeBuilder parser, int id) {
@@ -124,7 +124,7 @@ public class SimpleNode implements Node {
 	}
 
 	public <T extends Node> List<T> jjtGetChildren(Class<T> type) {
-		List<T> result = new ArrayList<T>(children.size());
+		List<T> result = new ArrayList<>(children.size());
 
 		for (Node n : children) {
 			if (type.isInstance(n)) {

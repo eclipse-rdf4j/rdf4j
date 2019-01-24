@@ -25,13 +25,13 @@ public class SimpleDataset implements Dataset, Serializable {
 
 	private static final long serialVersionUID = 7841576172053060417L;
 
-	private Set<IRI> defaultRemoveGraphs = new LinkedHashSet<IRI>();
+	private Set<IRI> defaultRemoveGraphs = new LinkedHashSet<>();
 
 	private IRI defaultInsertGraph;
 
-	private Set<IRI> defaultGraphs = new LinkedHashSet<IRI>();
+	private Set<IRI> defaultGraphs = new LinkedHashSet<>();
 
-	private Set<IRI> namedGraphs = new LinkedHashSet<IRI>();
+	private Set<IRI> namedGraphs = new LinkedHashSet<>();
 
 	public SimpleDataset() {
 	}

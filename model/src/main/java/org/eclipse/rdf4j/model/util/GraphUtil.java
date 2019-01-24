@@ -74,7 +74,7 @@ public class GraphUtil {
 	@Deprecated
 	public static Set<Resource> getSubjects(Graph graph, IRI pred, Value obj, Resource... contexts) {
 		Iterator<Resource> iter = getSubjectIterator(graph, pred, obj, contexts);
-		return Iterators.addAll(iter, new LinkedHashSet<Resource>());
+		return Iterators.addAll(iter, new LinkedHashSet<>());
 	}
 
 	/**
@@ -230,7 +230,7 @@ public class GraphUtil {
 	@Deprecated
 	public static Set<Value> getObjects(Graph graph, Resource subj, IRI pred, Resource... contexts) {
 		Iterator<Value> iter = getObjectIterator(graph, subj, pred, contexts);
-		return Iterators.addAll(iter, new LinkedHashSet<Value>());
+		return Iterators.addAll(iter, new LinkedHashSet<>());
 	}
 
 	/**

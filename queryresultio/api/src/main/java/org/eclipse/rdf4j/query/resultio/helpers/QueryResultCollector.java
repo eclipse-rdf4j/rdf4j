@@ -40,7 +40,7 @@ public class QueryResultCollector
 
 	private List<BindingSet> bindingSets = Collections.emptyList();
 
-	private List<String> links = new ArrayList<String>();
+	private List<String> links = new ArrayList<>();
 
 	public QueryResultCollector() {
 	}
@@ -58,8 +58,8 @@ public class QueryResultCollector
 		throws TupleQueryResultHandlerException
 	{
 		endQueryResultFound = false;
-		this.bindingNames = Collections.unmodifiableList(new ArrayList<String>(bindingNames));
-		bindingSets = new ArrayList<BindingSet>();
+		this.bindingNames = Collections.unmodifiableList(new ArrayList<>(bindingNames));
+		bindingSets = new ArrayList<>();
 	}
 
 	@Override

@@ -26,7 +26,7 @@ public class StatementPatternCollector extends AbstractQueryModelVisitor<Runtime
 		return collector.getStatementPatterns();
 	}
 
-	private List<StatementPattern> stPatterns = new ArrayList<StatementPattern>();
+	private List<StatementPattern> stPatterns = new ArrayList<>();
 
 	public List<StatementPattern> getStatementPatterns() {
 		return stPatterns;

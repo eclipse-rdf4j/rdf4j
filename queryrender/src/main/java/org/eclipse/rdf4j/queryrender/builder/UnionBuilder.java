@@ -49,7 +49,7 @@ public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
 	 * @return builder for left operand
 	 */
 	public GroupBuilder<T, UnionBuilder<T, E>> left() {
-		return new GroupBuilder<T, UnionBuilder<T, E>>(this);
+		return new GroupBuilder<>(this);
 	}
 
 	/**
@@ -58,7 +58,7 @@ public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
 	 * @return builder for right operand
 	 */
 	public GroupBuilder<T, UnionBuilder<T, E>> right() {
-		return new GroupBuilder<T, UnionBuilder<T, E>>(this);
+		return new GroupBuilder<>(this);
 	}
 
 	/**

@@ -60,9 +60,9 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 
 	private final LexicalValueComparator vc = new LexicalValueComparator();
 
-	final Set<Namespace> namespaces = new TreeSet<Namespace>();
+	final Set<Namespace> namespaces = new TreeSet<>();
 
-	final List<StatementTree> trees = new ArrayList<StatementTree>();
+	final List<StatementTree> trees = new ArrayList<>();
 
 	public TreeModel() {
 		trees.add(new StatementTree("spog".toCharArray()));
@@ -335,7 +335,7 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 
 				@Override
 				public Iterator<Statement> iterator() {
-					return new PatternIterator<Statement>(matchPattern(subj, pred, obj, null), subj, pred,
+					return new PatternIterator<>(matchPattern(subj, pred, obj, null), subj, pred,
 							obj, contexts);
 				}
 
@@ -358,7 +358,7 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 			StatementTree chosen = choose(subj, pred, obj, null);
 			Iterator<Statement> iter = chosen.subIterator(before(subj, pred, obj, null), true,
 					after(subj, pred, obj, null), true);
-			iter = new PatternIterator<Statement>(iter, subj, pred, obj, contexts);
+			iter = new PatternIterator<>(iter, subj, pred, obj, contexts);
 			removeAll(owner, chosen, iter);
 		}
 		else if (contexts.length == 0) {
@@ -582,7 +582,7 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 						throw new AssertionError();
 				}
 			}
-			tree = new TreeSet<Statement>(new StatementComparator(comparators));
+			tree = new TreeSet<>(new StatementComparator(comparators));
 		}
 
 		public boolean owns(TreeSet<Statement> set) {
@@ -625,7 +625,7 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 		}
 
 		public void reindex() {
-			TreeSet<Statement> treeSet = new TreeSet<Statement>(tree.comparator());
+			TreeSet<Statement> treeSet = new TreeSet<>(tree.comparator());
 			treeSet.addAll(tree);
 			tree = treeSet;
 		}

@@ -47,7 +47,7 @@ public class Join extends BinaryTupleOperator {
 
 	@Override
 	public Set<String> getBindingNames() {
-		Set<String> bindingNames = new LinkedHashSet<String>(16);
+		Set<String> bindingNames = new LinkedHashSet<>(16);
 		bindingNames.addAll(getLeftArg().getBindingNames());
 		bindingNames.addAll(getRightArg().getBindingNames());
 		return bindingNames;
@@ -55,7 +55,7 @@ public class Join extends BinaryTupleOperator {
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		Set<String> bindingNames = new LinkedHashSet<String>(16);
+		Set<String> bindingNames = new LinkedHashSet<>(16);
 		bindingNames.addAll(getLeftArg().getAssuredBindingNames());
 		bindingNames.addAll(getRightArg().getAssuredBindingNames());
 		return bindingNames;

@@ -392,7 +392,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 		if (dirs == null) {
 			return Collections.emptyList();
 		}
-		List<RepositoryInfo> result = new ArrayList<RepositoryInfo>();
+		List<RepositoryInfo> result = new ArrayList<>();
 		for (String name : dirs) {
 			RepositoryInfo repInfo = getRepositoryInfo(name);
 			if (!skipSystemRepo || !repInfo.getId().equals(SystemRepository.ID)) {
@@ -485,7 +485,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 			return; // no legacy SYSTEM
 		}
 		Set<String> ids = RepositoryConfigUtil.getRepositoryIDs(systemRepository);
-		List<RepositoryConfig> configs = new ArrayList<RepositoryConfig>();
+		List<RepositoryConfig> configs = new ArrayList<>();
 		for (String id : ids) {
 			configs.add(getRepositoryConfig(id));
 		}
@@ -496,16 +496,16 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 	class ConfigChangeListener extends RepositoryConnectionListenerAdapter {
 
-		private final Map<RepositoryConnection, Set<Resource>> modifiedContextsByConnection = new HashMap<RepositoryConnection, Set<Resource>>();
+		private final Map<RepositoryConnection, Set<Resource>> modifiedContextsByConnection = new HashMap<>();
 
-		private final Map<RepositoryConnection, Boolean> modifiedAllContextsByConnection = new HashMap<RepositoryConnection, Boolean>();
+		private final Map<RepositoryConnection, Boolean> modifiedAllContextsByConnection = new HashMap<>();
 
-		private final Map<RepositoryConnection, Set<Resource>> removedContextsByConnection = new HashMap<RepositoryConnection, Set<Resource>>();
+		private final Map<RepositoryConnection, Set<Resource>> removedContextsByConnection = new HashMap<>();
 
 		private Set<Resource> getModifiedContexts(RepositoryConnection conn) {
 			Set<Resource> result = modifiedContextsByConnection.get(conn);
 			if (result == null) {
-				result = new HashSet<Resource>();
+				result = new HashSet<>();
 				modifiedContextsByConnection.put(conn, result);
 			}
 			return result;
@@ -514,7 +514,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 		private Set<Resource> getRemovedContexts(RepositoryConnection conn) {
 			Set<Resource> result = removedContextsByConnection.get(conn);
 			if (result == null) {
-				result = new HashSet<Resource>();
+				result = new HashSet<>();
 				removedContextsByConnection.put(conn, result);
 			}
 			return result;

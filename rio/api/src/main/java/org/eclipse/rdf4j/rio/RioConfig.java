@@ -41,13 +41,13 @@ public class RioConfig implements Serializable {
 	/**
 	 * A map containing mappings from settings to their values.
 	 */
-	protected final ConcurrentMap<RioSetting<Object>, Object> settings = new ConcurrentHashMap<RioSetting<Object>, Object>();
+	protected final ConcurrentMap<RioSetting<Object>, Object> settings = new ConcurrentHashMap<>();
 
 	/**
 	 * A map containing mappings from settings to system properties that have been discovered since the last
 	 * call to {@link #useDefaults()}.
 	 */
-	protected final ConcurrentMap<RioSetting<Object>, Object> systemPropertyCache = new ConcurrentHashMap<RioSetting<Object>, Object>();
+	protected final ConcurrentMap<RioSetting<Object>, Object> systemPropertyCache = new ConcurrentHashMap<>();
 
 	protected final Logger log = LoggerFactory.getLogger(this.getClass());
 

@@ -117,7 +117,7 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 	private List<String> getBindingNames(Resource resultSetNode)
 		throws RDFHandlerException
 	{
-		List<String> bindingNames = new ArrayList<String>(16);
+		List<String> bindingNames = new ArrayList<>(16);
 
 		Iterator<Value> varIter = GraphUtil.getObjectIterator(graph, resultSetNode, RESULTVARIABLE);
 

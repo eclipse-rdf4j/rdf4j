@@ -57,7 +57,7 @@ public class LinkedHashModel extends AbstractModel {
 
 	static final Resource[] NULL_CTX = new Resource[] { null };
 
-	Set<Namespace> namespaces = new LinkedHashSet<Namespace>();
+	Set<Namespace> namespaces = new LinkedHashSet<>();
 
 	transient Map<Value, ModelNode> values;
 
@@ -79,8 +79,8 @@ public class LinkedHashModel extends AbstractModel {
 
 	public LinkedHashModel(int size) {
 		super();
-		values = new HashMap<Value, ModelNode>(size * 2);
-		statements = new LinkedHashSet<ModelStatement>(size);
+		values = new HashMap<>(size * 2);
+		statements = new LinkedHashSet<>(size);
 	}
 
 	public LinkedHashModel(Set<Namespace> namespaces, Collection<? extends Statement> c) {
@@ -242,35 +242,35 @@ public class LinkedHashModel extends AbstractModel {
 		while (iter.hasNext()) {
 			ModelStatement last = iter.next();
 			if (statements == owner) {
-				statements = new LinkedHashSet<ModelStatement>(statements);
+				statements = new LinkedHashSet<>(statements);
 				statements.remove(last);
 			}
 			else if (statements != chosen) {
 				statements.remove(last);
 			}
 			if (last.subj.subjects == owner) {
-				last.subj.subjects = new LinkedHashSet<ModelStatement>(last.subj.subjects);
+				last.subj.subjects = new LinkedHashSet<>(last.subj.subjects);
 				last.subj.subjects.remove(last);
 			}
 			else if (last.subj.subjects != chosen) {
 				last.subj.subjects.remove(last);
 			}
 			if (last.pred.predicates == owner) {
-				last.pred.predicates = new LinkedHashSet<ModelStatement>(statements);
+				last.pred.predicates = new LinkedHashSet<>(statements);
 				last.pred.predicates.remove(last);
 			}
 			else if (last.pred.predicates != chosen) {
 				last.pred.predicates.remove(last);
 			}
 			if (last.obj.objects == owner) {
-				last.obj.objects = new LinkedHashSet<ModelStatement>(statements);
+				last.obj.objects = new LinkedHashSet<>(statements);
 				last.obj.objects.remove(last);
 			}
 			else if (last.obj.objects != chosen) {
 				last.obj.objects.remove(last);
 			}
 			if (last.ctx.contexts == owner) {
-				last.ctx.contexts = new LinkedHashSet<ModelStatement>(statements);
+				last.ctx.contexts = new LinkedHashSet<>(statements);
 				last.ctx.contexts.remove(last);
 			}
 			else if (last.ctx.contexts != chosen) {
@@ -333,13 +333,13 @@ public class LinkedHashModel extends AbstractModel {
 
 		private static final long serialVersionUID = -1205676084606998540L;
 
-		Set<ModelStatement> subjects = new LinkedHashSet<ModelStatement>();
+		Set<ModelStatement> subjects = new LinkedHashSet<>();
 
-		Set<ModelStatement> predicates = new LinkedHashSet<ModelStatement>();
+		Set<ModelStatement> predicates = new LinkedHashSet<>();
 
-		Set<ModelStatement> objects = new LinkedHashSet<ModelStatement>();
+		Set<ModelStatement> objects = new LinkedHashSet<>();
 
-		Set<ModelStatement> contexts = new LinkedHashSet<ModelStatement>();
+		Set<ModelStatement> contexts = new LinkedHashSet<>();
 
 		private V value;
 
@@ -434,8 +434,8 @@ public class LinkedHashModel extends AbstractModel {
 		s.defaultReadObject();
 		// Read in size
 		int size = s.readInt();
-		values = new HashMap<Value, ModelNode>(size * 2);
-		statements = new LinkedHashSet<ModelStatement>(size);
+		values = new HashMap<>(size * 2);
+		statements = new LinkedHashSet<>(size);
 		// Read in all elements
 		for (int i = 0; i < size; i++) {
 			Statement st = (Statement)s.readObject();
@@ -529,7 +529,7 @@ public class LinkedHashModel extends AbstractModel {
 		ModelNode node = values.get(value);
 		if (node != null)
 			return node;
-		node = new ModelNode<V>(value);
+		node = new ModelNode<>(value);
 		values.put(value, node);
 		return node;
 	}

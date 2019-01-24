@@ -97,7 +97,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
 		// Override to add TriX/XML specific supported settings
-		Set<RioSetting<?>> results = new HashSet<RioSetting<?>>(super.getSupportedSettings());
+		Set<RioSetting<?>> results = new HashSet<>(super.getSupportedSettings());
 
 		results.addAll(getCompulsoryXmlPropertySettings());
 		results.addAll(getCompulsoryXmlFeatureSettings());
@@ -328,7 +328,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 
 		public TriXSAXHandler() {
 			currentContext = null;
-			valueList = new ArrayList<Value>(3);
+			valueList = new ArrayList<>(3);
 		}
 
 		@Override

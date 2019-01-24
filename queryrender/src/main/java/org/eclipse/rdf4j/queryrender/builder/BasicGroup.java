@@ -37,11 +37,11 @@ public class BasicGroup implements Group {
 
 	private boolean mIsOptional = false;
 
-	private Collection<TupleExpr> mExpressions = new LinkedHashSet<TupleExpr>();
+	private Collection<TupleExpr> mExpressions = new LinkedHashSet<>();
 
-	private List<Group> mChildren = new ArrayList<Group>();
+	private List<Group> mChildren = new ArrayList<>();
 
-	private Collection<ValueExpr> mFilters = new LinkedHashSet<ValueExpr>();
+	private Collection<ValueExpr> mFilters = new LinkedHashSet<>();
 
 	/**
 	 * Create a new BasicGroup
@@ -244,7 +244,7 @@ public class BasicGroup implements Group {
 	}
 
 	public Collection<StatementPattern> getPatterns() {
-		Set<StatementPattern> aPatternSet = new HashSet<StatementPattern>();
+		Set<StatementPattern> aPatternSet = new HashSet<>();
 		for (TupleExpr aExpr : mExpressions) {
 			if (aExpr instanceof StatementPattern) {
 				aPatternSet.add((StatementPattern)aExpr);

@@ -27,6 +27,6 @@ public class ASTNode extends SimpleNode {
 	}
 
 	public List<ASTNodeElem> getNodeElemList() {
-		return new CastingList<ASTNodeElem>(children);
+		return new CastingList<>(children);
 	}
 }

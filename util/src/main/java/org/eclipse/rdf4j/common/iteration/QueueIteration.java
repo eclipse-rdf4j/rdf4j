@@ -29,7 +29,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 
 	private final E afterLast = createAfterLast();
 
-	private final Queue<Exception> exceptions = new ConcurrentLinkedQueue<Exception>();
+	private final Queue<Exception> exceptions = new ConcurrentLinkedQueue<>();
 
 	/**
 	 * Creates an <tt>QueueIteration</tt> with the given (fixed) capacity and default access policy.
@@ -52,7 +52,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	 */
 	public QueueIteration(int capacity, boolean fair) {
 		super();
-		this.queue = new ArrayBlockingQueue<E>(capacity, fair);
+		this.queue = new ArrayBlockingQueue<>(capacity, fair);
 	}
 
 	/**

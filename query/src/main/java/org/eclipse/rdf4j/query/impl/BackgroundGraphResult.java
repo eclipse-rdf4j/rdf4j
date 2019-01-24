@@ -45,7 +45,7 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 
 	private final CountDownLatch finishedParsing = new CountDownLatch(1);
 
-	private final Map<String, String> namespaces = new ConcurrentHashMap<String, String>();
+	private final Map<String, String> namespaces = new ConcurrentHashMap<>();
 
 	private final QueueCursor<Statement> queue;
 

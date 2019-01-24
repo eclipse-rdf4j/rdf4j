@@ -63,7 +63,7 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 			this.namespaces = Namespaces.wrap(((NamespaceAware)statements).getNamespaces());
 		}
 		else {
-			this.namespaces = new LinkedHashMap<String, String>();
+			this.namespaces = new LinkedHashMap<>();
 		}
 		this.statements = statements;
 		this.vf = vf;

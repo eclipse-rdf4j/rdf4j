@@ -780,7 +780,7 @@ public class NTriplesParser extends AbstractRDFParser {
 	 */
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		Collection<RioSetting<?>> result = new HashSet<RioSetting<?>>(super.getSupportedSettings());
+		Collection<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
 
 		result.add(NTriplesParserSettings.FAIL_ON_INVALID_LINES);
 

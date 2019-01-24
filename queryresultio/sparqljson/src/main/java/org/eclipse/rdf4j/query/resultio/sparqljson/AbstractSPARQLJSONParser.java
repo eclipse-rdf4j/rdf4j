@@ -129,9 +129,9 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 						jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 			}
 
-			List<String> varsList = new ArrayList<String>();
+			List<String> varsList = new ArrayList<>();
 			boolean varsFound = false;
-			Set<BindingSet> bindings = new HashSet<BindingSet>();
+			Set<BindingSet> bindings = new HashSet<>();
 
 			while (jp.nextToken() != JsonToken.END_OBJECT) {
 
@@ -182,7 +182,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 						}
 						else if (headStr.equals(LINK)) {
-							List<String> linksList = new ArrayList<String>();
+							List<String> linksList = new ArrayList<>();
 							if (jp.nextToken() != JsonToken.START_ARRAY) {
 								throw new QueryResultParseException("Expected links to be an array",
 										jp.getCurrentLocation().getLineNr(),
@@ -435,7 +435,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		Collection<RioSetting<?>> result = new HashSet<RioSetting<?>>(super.getSupportedSettings());
+		Collection<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
 
 		result.add(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER);
 		result.add(JSONSettings.ALLOW_COMMENTS);

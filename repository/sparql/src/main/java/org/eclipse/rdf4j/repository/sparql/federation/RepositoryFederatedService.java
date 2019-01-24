@@ -79,13 +79,13 @@ public class RepositoryFederatedService implements FederatedService {
 		{
 			while (!isClosed() && leftIter.hasNext()) {
 
-				ArrayList<BindingSet> blockBindings = new ArrayList<BindingSet>(blockSize);
+				ArrayList<BindingSet> blockBindings = new ArrayList<>(blockSize);
 				for (int i = 0; i < blockSize; i++) {
 					if (!leftIter.hasNext())
 						break;
 					blockBindings.add(leftIter.next());
 				}
-				CloseableIteration<BindingSet, QueryEvaluationException> materializedIter = new CollectionIteration<BindingSet, QueryEvaluationException>(
+				CloseableIteration<BindingSet, QueryEvaluationException> materializedIter = new CollectionIteration<>(
 						blockBindings);
 				addResult(evaluateInternal(service, materializedIter, service.getBaseURI()));
 			}
@@ -227,17 +227,17 @@ public class RepositoryFederatedService implements FederatedService {
 
 		// materialize all bindings (to allow for fallback in case of errors)
 		// note that this may be blocking depending on the underlying iterator
-		List<BindingSet> allBindings = new LinkedList<BindingSet>();
+		List<BindingSet> allBindings = new LinkedList<>();
 		while (bindings.hasNext()) {
 			allBindings.add(bindings.next());
 		}
 
 		if (allBindings.size() == 0) {
-			return new EmptyIteration<BindingSet, QueryEvaluationException>();
+			return new EmptyIteration<>();
 		}
 
 		// projection vars
-		Set<String> projectionVars = new HashSet<String>(service.getServiceVars());
+		Set<String> projectionVars = new HashSet<>(service.getServiceVars());
 		projectionVars.removeAll(allBindings.get(0).getBindingNames());
 
 		// below we need to take care for SILENT services
@@ -288,7 +288,7 @@ public class RepositoryFederatedService implements FederatedService {
 		catch (RepositoryException e) {
 			Iterations.closeCloseable(result);
 			if (service.isSilent())
-				return new CollectionIteration<BindingSet, QueryEvaluationException>(allBindings);
+				return new CollectionIteration<>(allBindings);
 			throw new QueryEvaluationException(
 					"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
 		}
@@ -299,7 +299,7 @@ public class RepositoryFederatedService implements FederatedService {
 		catch (QueryEvaluationException e) {
 			Iterations.closeCloseable(result);
 			if (service.isSilent())
-				return new CollectionIteration<BindingSet, QueryEvaluationException>(allBindings);
+				return new CollectionIteration<>(allBindings);
 			throw e;
 		}
 		catch (RuntimeException e) {
@@ -307,7 +307,7 @@ public class RepositoryFederatedService implements FederatedService {
 			// suppress special exceptions (e.g. UndeclaredThrowable with wrapped
 			// QueryEval) if silent
 			if (service.isSilent())
-				return new CollectionIteration<BindingSet, QueryEvaluationException>(allBindings);
+				return new CollectionIteration<>(allBindings);
 			throw e;
 		}
 	}
@@ -397,7 +397,7 @@ public class RepositoryFederatedService implements FederatedService {
 		// get the bindings variables
 		// TODO CHECK: does the first bindingset give all relevant names
 
-		List<String> relevantBindingNames = new ArrayList<String>(5);
+		List<String> relevantBindingNames = new ArrayList<>(5);
 		for (String bName : bindings.get(0).getBindingNames()) {
 			if (serviceVars.contains(bName))
 				relevantBindingNames.add(bName);

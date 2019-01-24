@@ -61,7 +61,7 @@ public class LeftJoin extends BinaryTupleOperator {
 
 	@Override
 	public Set<String> getBindingNames() {
-		Set<String> bindingNames = new LinkedHashSet<String>(16);
+		Set<String> bindingNames = new LinkedHashSet<>(16);
 		bindingNames.addAll(getLeftArg().getBindingNames());
 		bindingNames.addAll(getRightArg().getBindingNames());
 		return bindingNames;

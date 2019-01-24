@@ -50,7 +50,7 @@ class SAXFilter implements ContentHandler {
 	/**
 	 * Stack of ElementInfo objects.
 	 */
-	private Stack<ElementInfo> elInfoStack = new Stack<ElementInfo>();
+	private Stack<ElementInfo> elInfoStack = new Stack<>();
 
 	/**
 	 * StringBuilder used to collect text during parsing.
@@ -78,7 +78,7 @@ class SAXFilter implements ContentHandler {
 	 * New namespace mappings that have been reported for the next start tag by the SAX parser, but that are
 	 * not yet assigned to an ElementInfo object.
 	 */
-	private Map<String, String> newNamespaceMappings = new LinkedHashMap<String, String>();
+	private Map<String, String> newNamespaceMappings = new LinkedHashMap<>();
 
 	/**
 	 * Flag indicating whether we're currently parsing RDF elements.
@@ -104,13 +104,13 @@ class SAXFilter implements ContentHandler {
 	 * The prefixes that are defined in the XML literal itself (this in contrast to the namespaces from the
 	 * XML literal's context).
 	 */
-	private List<String> xmlLiteralPrefixes = new ArrayList<String>();
+	private List<String> xmlLiteralPrefixes = new ArrayList<>();
 
 	/**
 	 * The prefixes that were used in an XML literal, but that were not defined in it (but rather in the XML
 	 * literal's context).
 	 */
-	private List<String> unknownPrefixesInXMLLiteral = new ArrayList<String>();
+	private List<String> unknownPrefixesInXMLLiteral = new ArrayList<>();
 
 	/*--------------*
 	 * Constructors *
@@ -708,7 +708,7 @@ class SAXFilter implements ContentHandler {
 				namespaceMap = null;
 			}
 			else {
-				namespaceMap = new HashMap<String, String>(namespaceMappings);
+				namespaceMap = new HashMap<>(namespaceMappings);
 			}
 		}
 

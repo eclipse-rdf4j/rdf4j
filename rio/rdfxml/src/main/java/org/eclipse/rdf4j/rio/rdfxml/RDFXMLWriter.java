@@ -98,7 +98,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	public RDFXMLWriter(Writer writer, ParsedIRI baseIRI) {
 		this.baseIRI = baseIRI;
 		this.writer = writer;
-		namespaceTable = new LinkedHashMap<String, String>();
+		namespaceTable = new LinkedHashMap<>();
 		writingStarted = false;
 		headerWritten = false;
 		lastWrittenSubject = null;

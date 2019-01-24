@@ -132,7 +132,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 			throw new QueryResultParseException("Illegal column count specified: " + columnCount);
 		}
 
-		List<String> columnHeaders = new ArrayList<String>(columnCount);
+		List<String> columnHeaders = new ArrayList<>(columnCount);
 		for (int i = 0; i < columnCount; i++) {
 			columnHeaders.add(readString());
 		}
@@ -143,7 +143,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 		}
 
 		// Read value tuples
-		List<Value> currentTuple = new ArrayList<Value>(columnCount);
+		List<Value> currentTuple = new ArrayList<>(columnCount);
 		List<Value> previousTuple = Collections.nCopies(columnCount, (Value)null);
 
 		int recordTypeMarker = this.in.readByte();
@@ -190,7 +190,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 
 				if (currentTuple.size() == columnCount) {
 					previousTuple = Collections.unmodifiableList(currentTuple);
-					currentTuple = new ArrayList<Value>(columnCount);
+					currentTuple = new ArrayList<>(columnCount);
 
 					if (handler != null) {
 						handler.handleSolution(new ListBindingSet(columnHeaders, previousTuple));

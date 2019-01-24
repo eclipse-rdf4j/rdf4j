@@ -95,8 +95,8 @@ public class RepositoryUtil {
 	public static Collection<? extends Statement> difference(Repository rep1, Repository rep2)
 		throws RepositoryException
 	{
-		Collection<Statement> model1 = new HashSet<Statement>();
-		Collection<Statement> model2 = new HashSet<Statement>();
+		Collection<Statement> model1 = new HashSet<>();
+		Collection<Statement> model2 = new HashSet<>();
 
 		try (RepositoryConnection con1 = rep1.getConnection()) {
 			Iterations.addAll(con1.getStatements(null, null, null, false), model1);
@@ -124,10 +124,10 @@ public class RepositoryUtil {
 			Collection<? extends Statement> model2)
 	{
 		// Create working copies
-		LinkedList<Statement> copy1 = new LinkedList<Statement>(model1);
-		LinkedList<Statement> copy2 = new LinkedList<Statement>(model2);
+		LinkedList<Statement> copy1 = new LinkedList<>(model1);
+		LinkedList<Statement> copy2 = new LinkedList<>(model2);
 
-		Collection<Statement> result = new ArrayList<Statement>();
+		Collection<Statement> result = new ArrayList<>();
 
 		// Compare statements that don't contain bNodes
 		Iterator<Statement> iter1 = copy1.iterator();
@@ -152,7 +152,7 @@ public class RepositoryUtil {
 		// FIXME: this algorithm is broken: bNodeMapping is assumed to contain a
 		// bnode mapping while in reallity it is an empty map
 
-		HashMap<BNode, BNode> bNodeMapping = new HashMap<BNode, BNode>();
+		HashMap<BNode, BNode> bNodeMapping = new HashMap<>();
 		// mapBlankNodes(copy1, copy2, bNodeMapping, 0);
 
 		for (Statement st1 : copy1) {

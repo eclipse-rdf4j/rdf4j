@@ -27,7 +27,7 @@ public class NotifyingLocalRepositoryManager extends LocalRepositoryManager {
 
 	public NotifyingLocalRepositoryManager(File baseDir) {
 		super(baseDir);
-		listeners = new ArrayList<RepositoryManagerListener>();
+		listeners = new ArrayList<>();
 	}
 
 	public void addRepositoryManagerListener(RepositoryManagerListener listener) {

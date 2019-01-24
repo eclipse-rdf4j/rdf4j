@@ -17,7 +17,7 @@ import org.junit.Test;
 public class OffsetIterationTest extends CloseableIterationTest {
 
 	protected static OffsetIteration<String, Exception> createOffsetIteration(int offset) {
-		return new OffsetIteration<String, Exception>(createStringList1Iteration(), offset);
+		return new OffsetIteration<>(createStringList1Iteration(), offset);
 	}
 
 	@Override

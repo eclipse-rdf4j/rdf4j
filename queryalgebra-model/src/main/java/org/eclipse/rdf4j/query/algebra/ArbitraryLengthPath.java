@@ -161,7 +161,7 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		Set<String> bindingNames = new HashSet<String>(8);
+		Set<String> bindingNames = new HashSet<>(8);
 
 		if (subjectVar != null) {
 			bindingNames.add(subjectVar.getName());

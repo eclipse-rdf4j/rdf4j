@@ -26,7 +26,7 @@ public class TupleQueryResultBuilder extends AbstractTupleQueryResultHandler {
 
 	private List<String> bindingNames;
 
-	private List<BindingSet> bindingSetList = new ArrayList<BindingSet>();
+	private List<BindingSet> bindingSetList = new ArrayList<>();
 
 	/*---------*
 	 * Methods *
@@ -37,7 +37,7 @@ public class TupleQueryResultBuilder extends AbstractTupleQueryResultHandler {
 		throws TupleQueryResultHandlerException
 	{
 		this.bindingNames = bindingNames;
-		bindingSetList = new ArrayList<BindingSet>();
+		bindingSetList = new ArrayList<>();
 	}
 
 	@Override

@@ -29,7 +29,7 @@ public class ParserConfig extends RioConfig implements Serializable {
 	 */
 	private static final long serialVersionUID = 270L;
 
-	private Set<RioSetting<?>> nonFatalErrors = new HashSet<RioSetting<?>>();
+	private Set<RioSetting<?>> nonFatalErrors = new HashSet<>();
 
 	/**
 	 * Creates a ParserConfig object starting with default settings.
@@ -63,7 +63,7 @@ public class ParserConfig extends RioConfig implements Serializable {
 		// We only attempt to map the parameters for cases where they wanted the
 		// parser to attempt to recover.
 		if (!stopAtFirstError) {
-			Set<RioSetting<?>> nonFatalErrors = new HashSet<RioSetting<?>>();
+			Set<RioSetting<?>> nonFatalErrors = new HashSet<>();
 			nonFatalErrors.add(TriXParserSettings.FAIL_ON_TRIX_INVALID_STATEMENT);
 			nonFatalErrors.add(TriXParserSettings.FAIL_ON_TRIX_MISSING_DATATYPE);
 			nonFatalErrors.add(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
@@ -102,7 +102,7 @@ public class ParserConfig extends RioConfig implements Serializable {
 	 *         calls.
 	 */
 	public ParserConfig setNonFatalErrors(Set<RioSetting<?>> nonFatalErrors) {
-		this.nonFatalErrors = new HashSet<RioSetting<?>>(nonFatalErrors);
+		this.nonFatalErrors = new HashSet<>(nonFatalErrors);
 		return this;
 	}
 

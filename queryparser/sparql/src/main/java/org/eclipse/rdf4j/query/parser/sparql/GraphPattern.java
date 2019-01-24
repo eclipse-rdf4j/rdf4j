@@ -45,18 +45,18 @@ public class GraphPattern {
 	/**
 	 * The required tuple expressions in this graph pattern.
 	 */
-	private List<TupleExpr> requiredTEs = new ArrayList<TupleExpr>();
+	private List<TupleExpr> requiredTEs = new ArrayList<>();
 
 	/**
 	 * The optional tuple expressions in this graph pattern, as a list of Key-Value pairs with the tuple
 	 * expression as the key and a list of constraints applicable to the tuple expression as the value.
 	 */
-	private List<Map.Entry<TupleExpr, List<ValueExpr>>> optionalTEs = new ArrayList<Map.Entry<TupleExpr, List<ValueExpr>>>();
+	private List<Map.Entry<TupleExpr, List<ValueExpr>>> optionalTEs = new ArrayList<>();
 
 	/**
 	 * The boolean constraints in this graph pattern.
 	 */
-	private List<ValueExpr> constraints = new ArrayList<ValueExpr>();
+	private List<ValueExpr> constraints = new ArrayList<>();
 
 	/**
 	 * Creates a new graph pattern.
@@ -111,7 +111,7 @@ public class GraphPattern {
 	 */
 	public void addOptionalTE(TupleExpr te, List<ValueExpr> constraints) {
 
-		Map.Entry<TupleExpr, List<ValueExpr>> entry = new AbstractMap.SimpleImmutableEntry<TupleExpr, List<ValueExpr>>(
+		Map.Entry<TupleExpr, List<ValueExpr>> entry = new AbstractMap.SimpleImmutableEntry<>(
 				te, constraints);
 		optionalTEs.add(entry);
 	}
@@ -140,7 +140,7 @@ public class GraphPattern {
 
 	public List<ValueExpr> removeAllConstraints() {
 		List<ValueExpr> constraints = this.constraints;
-		this.constraints = new ArrayList<ValueExpr>();
+		this.constraints = new ArrayList<>();
 		return constraints;
 	}
 

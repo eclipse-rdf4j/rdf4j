@@ -28,7 +28,7 @@ public class ASTQueryBody extends SimpleNode {
 	}
 
 	public List<ASTFrom> getFromClauseList() {
-		List<ASTFrom> fromClauseList = new ArrayList<ASTFrom>(children.size());
+		List<ASTFrom> fromClauseList = new ArrayList<>(children.size());
 
 		for (Node n : children) {
 			if (n instanceof ASTFrom) {

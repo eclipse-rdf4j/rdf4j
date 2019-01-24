@@ -86,7 +86,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	/**
 	 * Map with keys as namespace URI strings and the values as the shortened prefixes.
 	 */
-	private Map<String, String> namespaceTable = new HashMap<String, String>();
+	private Map<String, String> namespaceTable = new HashMap<>();
 
 	private final Logger log = LoggerFactory.getLogger(this.getClass());
 
@@ -409,7 +409,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 
 	@Override
 	public final Collection<RioSetting<?>> getSupportedSettings() {
-		Set<RioSetting<?>> result = new HashSet<RioSetting<?>>(super.getSupportedSettings());
+		Set<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
 
 		result.add(BasicWriterSettings.PRETTY_PRINT);
 		result.add(BasicQueryWriterSettings.ADD_SESAME_QNAME);

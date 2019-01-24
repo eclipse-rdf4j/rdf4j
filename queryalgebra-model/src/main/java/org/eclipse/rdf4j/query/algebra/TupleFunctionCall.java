@@ -19,9 +19,9 @@ public class TupleFunctionCall extends QueryModelNodeBase implements TupleExpr {
 
 	private String uri;
 
-	private List<ValueExpr> args = new ArrayList<ValueExpr>();
+	private List<ValueExpr> args = new ArrayList<>();
 
-	private List<Var> resultVars = new ArrayList<Var>();
+	private List<Var> resultVars = new ArrayList<>();
 
 	public String getURI() {
 		return uri;
@@ -93,7 +93,7 @@ public class TupleFunctionCall extends QueryModelNodeBase implements TupleExpr {
 	@Override
 	public Set<String> getAssuredBindingNames() {
 		// NB: preserve resultBindings order
-		Set<String> bindingNames = new LinkedHashSet<String>(2 * resultVars.size());
+		Set<String> bindingNames = new LinkedHashSet<>(2 * resultVars.size());
 		for (Var var : resultVars) {
 			bindingNames.add(var.getName());
 		}
@@ -162,12 +162,12 @@ public class TupleFunctionCall extends QueryModelNodeBase implements TupleExpr {
 	public TupleFunctionCall clone() {
 		TupleFunctionCall clone = (TupleFunctionCall)super.clone();
 
-		clone.args = new ArrayList<ValueExpr>(getArgs().size());
+		clone.args = new ArrayList<>(getArgs().size());
 		for (ValueExpr arg : getArgs()) {
 			clone.addArg(arg.clone());
 		}
 
-		clone.resultVars = new ArrayList<Var>(getResultVars().size());
+		clone.resultVars = new ArrayList<>(getResultVars().size());
 		for (Var var : getResultVars()) {
 			clone.addResultVar(var.clone());
 		}

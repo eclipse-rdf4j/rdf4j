@@ -61,7 +61,7 @@ public class ContextStatementTest {
 		assertEquals(st2, st4);
 		assertNotEquals(st2, st5);
 
-		Set<Statement> set = new HashSet<Statement>();
+		Set<Statement> set = new HashSet<>();
 		set.add(st1);
 		set.add(st2);
 		set.add(st3);

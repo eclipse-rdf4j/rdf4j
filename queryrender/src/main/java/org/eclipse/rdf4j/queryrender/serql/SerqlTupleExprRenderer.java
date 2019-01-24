@@ -210,11 +210,11 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	{
 		SerqlTupleExprRenderer aRenderer = new SerqlTupleExprRenderer();
 
-		aRenderer.mProjection = new ArrayList<ProjectionElemList>(mProjection);
+		aRenderer.mProjection = new ArrayList<>(mProjection);
 		aRenderer.mDistinct = mDistinct;
 		aRenderer.mReduced = mReduced;
-		aRenderer.mExtensions = new HashMap<String, ValueExpr>(mExtensions);
-		aRenderer.mOrdering = new ArrayList<OrderElem>(mOrdering);
+		aRenderer.mExtensions = new HashMap<>(mExtensions);
+		aRenderer.mOrdering = new ArrayList<>(mOrdering);
 		aRenderer.mLimit = mLimit;
 		aRenderer.mOffset = mOffset;
 
