@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 
@@ -30,6 +31,8 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 	private final boolean calendarDatatype;
 	private final boolean durationDatatype;
 	private final boolean booleanDatatype;
+	private final boolean timeDatatype;
+	private final boolean dateDatatype;
 
 	public LiteralComparatorFilter(PlanNode parent, PushBasedPlanNode trueNode, PushBasedPlanNode falseNode, Literal compareTo, Function<Integer, Boolean> function) {
 		super(parent, trueNode, falseNode);
@@ -40,6 +43,8 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 		 calendarDatatype = XMLDatatypeUtil.isCalendarDatatype(datatype);
 		 durationDatatype = XMLDatatypeUtil.isDurationDatatype(datatype);
 		 booleanDatatype = XMLSchema.BOOLEAN.equals(datatype);
+		 timeDatatype = XMLSchema.TIME.equals(datatype);
+		dateDatatype = XMLSchema.DATE.equals(datatype);
 
 
 	}
@@ -53,6 +58,10 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 			IRI datatype = ((Literal) literal).getDatatype();
 
 			if(datatypesMatch(datatype)){
+
+				if(dateDatatype && XMLSchema.DATETIME.equals(datatype)){
+					literal = SimpleValueFactory.getInstance().createLiteral(literal.stringValue().split("T")[0], XMLSchema.DATE);
+				}
 
 				int compare = new ValueComparator().compare(compareTo, literal);
 
@@ -69,7 +78,7 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 	private boolean datatypesMatch(IRI datatype) {
 		return
 			(numericDatatype && XMLDatatypeUtil.isNumericDatatype(datatype)) ||
-				(calendarDatatype && XMLDatatypeUtil.isCalendarDatatype(datatype)) ||
+				(calendarDatatype && XMLDatatypeUtil.isCalendarDatatype(datatype) && (timeDatatype || !XMLSchema.TIME.equals(datatype)) ) ||
 				(durationDatatype && XMLDatatypeUtil.isDurationDatatype(datatype)) ||
 				(booleanDatatype && XMLSchema.BOOLEAN.equals(datatype));
 

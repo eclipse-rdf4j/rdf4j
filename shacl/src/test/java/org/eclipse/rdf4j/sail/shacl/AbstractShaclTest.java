@@ -59,6 +59,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/or/implicitAnd",
 		"test-cases/or/datatypeDifferentPaths",
 		"test-cases/minExclusive/simple",
+		"test-cases/minExclusive/dateVsTime",
 		"test-cases/maxExclusive/simple",
 		"test-cases/minInclusive/simple",
 		"test-cases/maxInclusive/simple",
