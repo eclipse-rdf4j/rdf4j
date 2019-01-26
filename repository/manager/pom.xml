@@ -67,16 +67,22 @@
 			<artifactId>slf4j-api</artifactId>
 		</dependency>
 
+		<!-- testing dependencies -->
+
 		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-sail-memory</artifactId>
-			<version>${project.version}</version>
+			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-repository-sail</artifactId>
+			<!-- we use a fixed version for testing purposes -->
+			<!-- FIXME this dependency should be stubbed/mocked: https://github.com/eclipse/rdf4j/issues/1263 -->
+			<version>2.4.3</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-repository-sail</artifactId>
-			<version>${project.version}</version>
+			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-sail-memory</artifactId>
+			<!-- we use a fixed version for testing purposes -->
+			<!-- FIXME this dependency should be stubbed/mocked: https://github.com/eclipse/rdf4j/issues/1263 -->
+			<version>2.4.3</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
