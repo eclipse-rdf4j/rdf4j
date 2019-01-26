@@ -22,4 +22,5 @@ public class ExistsFilter extends FilterPlanNode {
 	boolean checkTuple(Tuple t) {
 		return false;
 	}
+
 }

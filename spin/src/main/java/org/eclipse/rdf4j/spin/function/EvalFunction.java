@@ -127,7 +127,7 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 		throws RDF4JException
 	{
 		CloseableIteration<? extends URI, ? extends RDF4JException> typeIter = TripleSources.getObjectURIs(r,
-				RDF.TYPE, store);
+			RDF.TYPE, store);
 		try {
 			while (typeIter.hasNext()) {
 				URI type = typeIter.next();
@@ -137,8 +137,7 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 					return true;
 				}
 			}
-		}
-		finally {
+		} finally {
 			typeIter.close();
 		}
 

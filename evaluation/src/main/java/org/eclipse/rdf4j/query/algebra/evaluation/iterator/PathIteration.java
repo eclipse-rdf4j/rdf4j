@@ -263,7 +263,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 		if (isUnbound(startVar, bindings) || isUnbound(endVar, bindings)) {
 			// the variable must remain unbound for this solution see https://www.w3.org/TR/sparql11-query/#assignment
-			currentIter = new EmptyIteration<BindingSet, QueryEvaluationException>();
+			currentIter = new EmptyIteration<>();
 		}
 		else if (currentLength == 0L) {
 			ZeroLengthPath zlp = new ZeroLengthPath(scope, startVar, endVar, contextVar);
@@ -331,7 +331,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 				currentIter = this.evaluationStrategyImpl.evaluate(pathExprClone, bindings);
 			}
 			else {
-				currentIter = new EmptyIteration<BindingSet, QueryEvaluationException>();
+				currentIter = new EmptyIteration<>();
 			}
 			currentLength++;
 
@@ -348,11 +348,11 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	}
 
 	protected Set<ValuePair> makeSet() {
-		return new HashSet<ValuePair>(64, 0.9f);
+		return new HashSet<>(64, 0.9f);
 	}
 
 	protected Queue<ValuePair> makeQueue() {
-		return new ArrayDeque<ValuePair>();
+		return new ArrayDeque<>();
 	}
 
 	protected static class ValuePair {

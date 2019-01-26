@@ -32,7 +32,7 @@ public class ConcurrentCache<K, V> {
 
 	public ConcurrentCache(int capacity) {
 		this.capacity = capacity;
-		this.cache = new ConcurrentHashMap<K, V>((int)(capacity / LOAD_FACTOR), LOAD_FACTOR);
+		this.cache = new ConcurrentHashMap<>((int)(capacity / LOAD_FACTOR), LOAD_FACTOR);
 	}
 
 	public V get(Object key) {

@@ -50,13 +50,14 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 	 * 
 	 * @throws StoreException
 	 */
+	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(new JoinVisitor());
 	}
 
 	protected class JoinVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
-		private Set<String> boundVars = new HashSet<String>();
+		private Set<String> boundVars = new HashSet<>();
 
 		@Override
 		public void meet(LeftJoin leftJoin) {
@@ -64,7 +65,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 
 			Set<String> origBoundVars = boundVars;
 			try {
-				boundVars = new HashSet<String>(boundVars);
+				boundVars = new HashSet<>(boundVars);
 				boundVars.addAll(leftJoin.getLeftArg().getBindingNames());
 
 				leftJoin.getRightArg().visit(this);
@@ -96,14 +97,14 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 		public void meetJoin(TupleExpr node) {
 			Set<String> origBoundVars = boundVars;
 			try {
-				boundVars = new HashSet<String>(boundVars);
+				boundVars = new HashSet<>(boundVars);
 
 				// Recursively get the join arguments
-				List<TupleExpr> joinArgs = getJoinArgs(node, new ArrayList<TupleExpr>());
+				List<TupleExpr> joinArgs = getJoinArgs(node, new ArrayList<>());
 
 				// Build maps of cardinalities and vars per tuple expression
-				Map<TupleExpr, Double> cardinalityMap = new HashMap<TupleExpr, Double>();
-				Map<TupleExpr, List<Var>> varsMap = new HashMap<TupleExpr, List<Var>>();
+				Map<TupleExpr, Double> cardinalityMap = new HashMap<>();
+				Map<TupleExpr, List<Var>> varsMap = new HashMap<>();
 
 				for (TupleExpr tupleExpr : joinArgs) {
 					cardinalityMap.put(tupleExpr, statistics.getCardinality(tupleExpr));
@@ -111,13 +112,13 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 				}
 
 				// Build map of var frequences
-				Map<Var, Integer> varFreqMap = new HashMap<Var, Integer>();
+				Map<Var, Integer> varFreqMap = new HashMap<>();
 				for (List<Var> varList : varsMap.values()) {
 					getVarFreqMap(varList, varFreqMap);
 				}
 
 				// Reorder the (recursive) join arguments to a more optimal sequence
-				List<TupleExpr> orderedJoinArgs = new ArrayList<TupleExpr>(joinArgs.size());
+				List<TupleExpr> orderedJoinArgs = new ArrayList<>(joinArgs.size());
 				while (!joinArgs.isEmpty()) {
 					TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap,
 							boundVars);
@@ -163,7 +164,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 
 		protected List<Var> getStatementPatternVars(TupleExpr tupleExpr) {
 			List<StatementPattern> stPatterns = StatementPatternCollector.process(tupleExpr);
-			List<Var> varList = new ArrayList<Var>(stPatterns.size() * 4);
+			List<Var> varList = new ArrayList<>(stPatterns.size() * 4);
 			for (StatementPattern sp : stPatterns) {
 				sp.getVars(varList);
 			}
@@ -247,7 +248,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 		}
 
 		protected List<Var> getConstantVars(Iterable<Var> vars) {
-			List<Var> constantVars = new ArrayList<Var>();
+			List<Var> constantVars = new ArrayList<>();
 
 			for (Var var : vars) {
 				if (var.hasValue()) {
@@ -259,7 +260,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 		}
 
 		protected List<Var> getUnboundVars(Iterable<Var> vars) {
-			List<Var> unboundVars = new ArrayList<Var>();
+			List<Var> unboundVars = new ArrayList<>();
 
 			for (Var var : vars) {
 				if (!var.hasValue() && !this.boundVars.contains(var.getName())) {
@@ -273,7 +274,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 		protected int getForeignVarFreq(List<Var> ownUnboundVars, Map<Var, Integer> varFreqMap) {
 			int result = 0;
 
-			Map<Var, Integer> ownFreqMap = getVarFreqMap(ownUnboundVars, new HashMap<Var, Integer>());
+			Map<Var, Integer> ownFreqMap = getVarFreqMap(ownUnboundVars, new HashMap<>());
 
 			for (Map.Entry<Var, Integer> entry : ownFreqMap.entrySet()) {
 				Var var = entry.getKey();

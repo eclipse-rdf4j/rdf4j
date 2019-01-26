@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -87,5 +89,33 @@ public class ExternalTypeFilterNode implements PlanNode {
 	@Override
 	public int depth() {
 		return parent.depth() + 1;
+	}
+
+	@Override
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
+
+		if(shaclSailConnection != null){
+			stringBuilder.append( System.identityHashCode(shaclSailConnection)+" -> "+getId()+" [label=\"filter source\"]").append("\n");
+		}
+		parent.getPlanAsGraphvizDot(stringBuilder);
+	}
+
+	@Override
+	public String toString() {
+		return "ExternalTypeFilterNode{" +
+			"filterOnType=" + filterOnType +
+			'}';
+	}
+
+	@Override
+	public String getId() {
+		return System.identityHashCode(this)+"";
+	}
+
+	@Override
+	public IteratorData getIteratorDataType() {
+		return parent.getIteratorDataType();
 	}
 }

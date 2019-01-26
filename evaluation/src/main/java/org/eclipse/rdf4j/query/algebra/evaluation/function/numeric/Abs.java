@@ -26,10 +26,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
  */
 public class Abs implements Function {
 
+	@Override
 	public String getURI() {
 		return FN.NUMERIC_ABS.toString();
 	}
 
+	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args)
 		throws ValueExprEvaluationException
 	{

@@ -53,7 +53,7 @@ public abstract class AbstractSail implements Sail {
 	 * and {@link IsolationLevels#SERIALIZABLE}. Specific store implementations are expected to alter this
 	 * list according to their specific capabilities.
 	 */
-	private List<IsolationLevel> supportedIsolationLevels = new ArrayList<IsolationLevel>();
+	private List<IsolationLevel> supportedIsolationLevels = new ArrayList<>();
 
 	/**
 	 * default value for the Iteration item sync threshold
@@ -114,7 +114,7 @@ public abstract class AbstractSail implements Sail {
 	 * Map used to track active connections and where these were acquired. The Throwable value may be null in
 	 * case debugging was disable at the time the connection was acquired.
 	 */
-	private final Map<SailConnection, Throwable> activeConnections = new IdentityHashMap<SailConnection, Throwable>();
+	private final Map<SailConnection, Throwable> activeConnections = new IdentityHashMap<>();
 
 	/*
 	 * constructors
@@ -173,8 +173,15 @@ public abstract class AbstractSail implements Sail {
 		return initialized;
 	}
 
+	
 	@Override
-	public void initialize()
+	public void initialize() throws SailException 
+	{
+		init();
+	}
+	
+	@Override
+	public void init()
 		throws SailException
 	{
 		initializationLock.writeLock().lock();
@@ -231,7 +238,7 @@ public abstract class AbstractSail implements Sail {
 				// Copy the current contents of the map so that we don't have to
 				// synchronize on activeConnections. This prevents a potential
 				// deadlock with concurrent calls to connectionClosed()
-				activeConnectionsCopy = new IdentityHashMap<SailConnection, Throwable>(activeConnections);
+				activeConnectionsCopy = new IdentityHashMap<>(activeConnections);
 			}
 
 			// Forcefully close any connections that are still open

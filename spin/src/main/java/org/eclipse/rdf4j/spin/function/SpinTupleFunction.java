@@ -36,7 +36,7 @@ public class SpinTupleFunction extends AbstractSpinFunction implements Transient
 
 	private ParsedQuery parsedQuery;
 
-	private final List<Argument> arguments = new ArrayList<Argument>(4);
+	private final List<Argument> arguments = new ArrayList<>(4);
 
 	public SpinTupleFunction(String uri) {
 		super(uri);
@@ -75,7 +75,7 @@ public class SpinTupleFunction extends AbstractSpinFunction implements Transient
 			BooleanQuery queryOp = qp.prepare(askQuery);
 			addBindings(queryOp, arguments, args);
 			Value result = BooleanLiteral.valueOf(queryOp.evaluate());
-			iter = new SingletonIteration<List<Value>, QueryEvaluationException>(
+			iter = new SingletonIteration<>(
 					Collections.singletonList(result));
 		}
 		else if (parsedQuery instanceof ParsedTupleQuery) {

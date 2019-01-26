@@ -95,7 +95,7 @@ class SailDatasetImpl implements SailDataset {
 	{
 		final CloseableIteration<? extends Namespace, SailException> namespaces;
 		if (changes.isNamespaceCleared()) {
-			namespaces = new EmptyIteration<Namespace, SailException>();
+			namespaces = new EmptyIteration<>();
 		}
 		else {
 			namespaces = derivedFrom.getNamespaces();
@@ -289,7 +289,7 @@ class SailDatasetImpl implements SailDataset {
 			iter = null;
 		}
 		else if (contexts.length > 0 && deprecatedContexts != null) {
-			List<Resource> remaining = new ArrayList<Resource>(Arrays.asList(contexts));
+			List<Resource> remaining = new ArrayList<>(Arrays.asList(contexts));
 			remaining.removeAll(deprecatedContexts);
 			iter = derivedFrom.getStatements(subj, pred, obj, contexts);
 		}
@@ -306,13 +306,13 @@ class SailDatasetImpl implements SailDataset {
 		}
 		else if (approved != null) {
 			Iterator<Statement> i = approved.filter(subj, pred, obj, contexts).iterator();
-			return new CloseableIteratorIteration<Statement, SailException>(i);
+			return new CloseableIteratorIteration<>(i);
 		}
 		else if (iter != null) {
 			return iter;
 		}
 		else {
-			return new EmptyIteration<Statement, SailException>();
+			return new EmptyIteration<>();
 		}
 	}
 
@@ -324,6 +324,7 @@ class SailDatasetImpl implements SailDataset {
 		}
 		return new FilterIteration<Statement, SailException>(result) {
 
+			@Override
 			protected boolean accept(Statement stmt) {
 				return !excluded.contains(stmt);
 			}
@@ -338,8 +339,8 @@ class SailDatasetImpl implements SailDataset {
 		}
 		final Iterator<Statement> iter = included.iterator();
 		CloseableIteration<Statement, SailException> incl;
-		incl = new CloseableIteratorIteration<Statement, SailException>(iter);
-		return new UnionIteration<Statement, SailException>(incl, result);
+		incl = new CloseableIteratorIteration<>(iter);
+		return new UnionIteration<>(incl, result);
 	}
 
 }

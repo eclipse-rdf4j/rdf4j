@@ -28,10 +28,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
  */
 public class Day implements Function {
 
+	@Override
 	public String getURI() {
 		return FN.DAY_FROM_DATETIME.toString();
 	}
 
+	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args)
 		throws ValueExprEvaluationException
 	{

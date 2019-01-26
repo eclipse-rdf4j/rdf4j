@@ -29,7 +29,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	/**
 	 * The hash map that is used to store the objects.
 	 */
-	private final Map<E, WeakReference<E>> objectMap = new WeakHashMap<E, WeakReference<E>>();
+	private final Map<E, WeakReference<E>> objectMap = new WeakHashMap<>();
 
 	/*--------------*
 	 * Constructors *
@@ -94,7 +94,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 
 	@Override
 	public boolean add(E object) {
-		WeakReference<E> ref = new WeakReference<E>(object);
+		WeakReference<E> ref = new WeakReference<>(object);
 
 		ref = objectMap.put(object, ref);
 

@@ -106,6 +106,7 @@ final class SequentialRecordCache extends RecordCache {
 
 		private long position = HEADER_LENGTH;
 
+		@Override
 		public byte[] next()
 			throws IOException
 		{
@@ -127,6 +128,7 @@ final class SequentialRecordCache extends RecordCache {
 			return null;
 		}
 
+		@Override
 		public void set(byte[] value)
 			throws IOException
 		{
@@ -135,6 +137,7 @@ final class SequentialRecordCache extends RecordCache {
 			}
 		}
 
+		@Override
 		public void close()
 			throws IOException
 		{

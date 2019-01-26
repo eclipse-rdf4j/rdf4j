@@ -105,9 +105,8 @@ public class SpifSailTest {
 						+ "select ?testCase ?expected ?actual where {?testCase a spl:TestCase. ?testCase spl:testResult ?expected. ?testCase spl:testExpression ?expr. "
 						+ "BIND(spin:eval(?expr) as ?actual) " + "FILTER(?expected != ?actual) "
 						+ "FILTER(strstarts(str(?testCase), 'http://spinrdf.org/spif#'))}");
-		// returns failed tests
-		TupleQueryResult tqr = tq.evaluate();
-		try {
+		try ( // returns failed tests
+			TupleQueryResult tqr = tq.evaluate()) {
 			while (tqr.hasNext()) {
 				BindingSet bs = tqr.next();
 				Value testCase = bs.getValue("testCase");
@@ -116,21 +115,14 @@ public class SpifSailTest {
 				assertEquals(testCase.stringValue(), expected, actual);
 			}
 		}
-		finally {
-			tqr.close();
-		}
 	}
 
 	private void loadRDF(String path)
 		throws IOException, OpenRDFException
 	{
 		URL url = getClass().getResource(path);
-		InputStream in = url.openStream();
-		try {
+		try (InputStream in = url.openStream()) {
 			conn.add(in, url.toString(), RDFFormat.TURTLE);
-		}
-		finally {
-			in.close();
 		}
 	}
 

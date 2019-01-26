@@ -376,16 +376,16 @@ public class LuceneSail extends NotifyingSailWrapper {
 			String indexedfieldsString = parameters.getProperty(INDEXEDFIELDS);
 			Properties prop = new Properties();
 			try {
-				Reader reader = new StringReader(indexedfieldsString);
-				prop.load(reader);
-				reader.close();
+				try (Reader reader = new StringReader(indexedfieldsString)) {
+					prop.load(reader);
+				}
 			}
 			catch (IOException e) {
 				throw new SailException("Could read " + INDEXEDFIELDS + ": " + indexedfieldsString, e);
 			}
 			ValueFactory vf = getValueFactory();
-			indexedFields = new HashSet<IRI>();
-			indexedFieldsMapping = new HashMap<IRI, IRI>();
+			indexedFields = new HashSet<>();
+			indexedFieldsMapping = new HashMap<>();
 			for (Object key : prop.keySet()) {
 				String keyStr = key.toString();
 				if (keyStr.startsWith("index.")) {
@@ -549,15 +549,14 @@ public class LuceneSail extends NotifyingSailWrapper {
 					// when we shutdown the repo.
 				}
 			});
-			// repo.initialize(); we don't need to initialize, that should be done
+			try ( // repo.initialize(); we don't need to initialize, that should be done
 			// already by others
-			SailRepositoryConnection connection = repo.getConnection();
-			try {
+				SailRepositoryConnection connection = repo.getConnection()) {
 				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, reindexQuery);
 				TupleQueryResult res = query.evaluate();
 				Resource current = null;
 				ValueFactory vf = getValueFactory();
-				List<Statement> statements = new ArrayList<Statement>();
+				List<Statement> statements = new ArrayList<>();
 				while (res.hasNext()) {
 					BindingSet set = res.next();
 					Resource r = (Resource)set.getValue("s");
@@ -581,7 +580,6 @@ public class LuceneSail extends NotifyingSailWrapper {
 				}
 			}
 			finally {
-				connection.close();
 				repo.shutDown();
 			}
 			// commit the changes

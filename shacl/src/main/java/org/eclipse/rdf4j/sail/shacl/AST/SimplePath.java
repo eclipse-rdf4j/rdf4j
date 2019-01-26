@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 
+import java.util.Objects;
 import java.util.stream.Stream;
 
 /**
@@ -26,7 +27,7 @@ import java.util.stream.Stream;
  */
 public class SimplePath extends Path {
 
-	private IRI path;
+	private final IRI path;
 
 	SimplePath(Resource id, SailRepositoryConnection connection) {
 		super(id);
@@ -61,5 +62,27 @@ public class SimplePath extends Path {
 
 		return "?a <" + path + "> ?c. ";
 
+	}
+
+	public IRI getPath() {
+		return path;
+	}
+
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		SimplePath that = (SimplePath) o;
+		return Objects.equals(path, that.path);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(path);
 	}
 }

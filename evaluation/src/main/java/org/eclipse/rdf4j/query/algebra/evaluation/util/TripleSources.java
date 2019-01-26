@@ -148,9 +148,8 @@ public class TripleSources {
 		throws QueryEvaluationException
 	{
 		Statement stmt;
-		CloseableIteration<? extends Statement, QueryEvaluationException> stmts = store.getStatements(subj,
-				pred, obj);
-		try {
+		try (CloseableIteration<? extends Statement, QueryEvaluationException> stmts = store.getStatements(subj,
+			pred, obj)) {
 			if (stmts.hasNext()) {
 				stmt = stmts.next();
 				while (stmts.hasNext()) {
@@ -164,9 +163,6 @@ public class TripleSources {
 			else {
 				stmt = null;
 			}
-		}
-		finally {
-			stmts.close();
 		}
 		return stmt;
 	}

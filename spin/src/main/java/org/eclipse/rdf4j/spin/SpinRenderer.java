@@ -448,9 +448,9 @@ public class SpinRenderer {
 
 		final Dataset dataset;
 
-		final Map<String, BNode> varBNodes = new HashMap<String, BNode>();
+		final Map<String, BNode> varBNodes = new HashMap<>();
 
-		final Map<String, ListContext> namedGraphLists = new HashMap<String, ListContext>();
+		final Map<String, ListContext> namedGraphLists = new HashMap<>();
 
 		ExtensionContext inlineBindings;
 
@@ -1333,7 +1333,7 @@ public class SpinRenderer {
 			Resource bindingList = valueFactory.createBNode();
 			handler.handleStatement(valueFactory.createStatement(subject, SP.BINDINGS_PROPERTY, bindingList));
 			ListContext bindingCtx = newList(bindingList);
-			List<String> bindingVars = new ArrayList<String>(node.getBindingNames());
+			List<String> bindingVars = new ArrayList<>(node.getBindingNames());
 			for (BindingSet bs : node.getBindingSets()) {
 				listEntry();
 				ListContext setCtx = newList(subject);
@@ -1426,7 +1426,7 @@ public class SpinRenderer {
 			parser.setAllowBlankNodes(false); // no blank nodes allowed
 			parser.setRDFHandler(new RDFHandlerBase() {
 
-				final Map<Resource, ListContext> namedGraphLists = new HashMap<Resource, ListContext>();
+				final Map<Resource, ListContext> namedGraphLists = new HashMap<>();
 
 				ListContext namedGraphContext;
 
@@ -1791,7 +1791,7 @@ public class SpinRenderer {
 			extension = node;
 			List<ExtensionElem> elements = node.getElements();
 			// NB: preserve ExtensionElem order
-			extensionExprs = new LinkedHashMap<String, ValueExpr>(elements.size());
+			extensionExprs = new LinkedHashMap<>(elements.size());
 			for (ExtensionElem elem : elements) {
 				extensionExprs.put(elem.getName(), elem.getExpr());
 			}

@@ -7,11 +7,11 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 ex:PersonShape
-	a sh:Shape ;
+	a sh:NodeShape  ;
 	sh:targetClass rdfs:Resource ;
-	sh:property [
-		sh:path rdfs:label ;
-		sh:minCount 1 ;
+	sh:property ex:PersonShapeProperty  .
 
-	] .
 
+ex:PersonShapeProperty
+        sh:path rdfs:label ;
+        sh:minCount 1 .

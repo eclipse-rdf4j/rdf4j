@@ -12,7 +12,6 @@ import java.io.IOException;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.RDFNotifyingStoreTest;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 
@@ -38,7 +37,7 @@ public class NativeStoreContextTest extends RDFNotifyingStoreTest {
 	{
 		try {
 			NotifyingSail sail = new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
-			sail.initialize();
+			sail.init();
 			return sail;
 		}
 		catch (IOException e) {

@@ -85,14 +85,17 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public Object getCreator() {
 		return creator;
 	}
 
+	@Override
 	public boolean hasStatements() {
 		return objectStatements != null;
 	}
 
+	@Override
 	public MemStatementList getObjectStatementList() {
 		if (objectStatements == null) {
 			return EMPTY_LIST;
@@ -102,6 +105,7 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 		}
 	}
 
+	@Override
 	public int getObjectStatementCount() {
 		if (objectStatements == null) {
 			return 0;
@@ -111,6 +115,7 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 		}
 	}
 
+	@Override
 	public void addObjectStatement(MemStatement st) {
 		if (objectStatements == null) {
 			objectStatements = new MemStatementList(1);
@@ -119,6 +124,7 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 		objectStatements.add(st);
 	}
 
+	@Override
 	public void removeObjectStatement(MemStatement st) {
 		objectStatements.remove(st);
 
@@ -127,6 +133,7 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 		}
 	}
 
+	@Override
 	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) {
 		if (objectStatements != null) {
 			objectStatements.cleanSnapshots(currentSnapshot);

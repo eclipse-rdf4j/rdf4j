@@ -7,6 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
+import static junit.framework.TestCase.assertFalse;
+import static junit.framework.TestCase.assertTrue;
+
+import java.io.File;
+import java.lang.reflect.InvocationTargetException;
+
+import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -16,26 +23,53 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.InferencingTest;
-import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.junit.Test;
-
-import java.lang.reflect.InvocationTargetException;
-
-import static junit.framework.TestCase.assertFalse;
-import static junit.framework.TestCase.assertTrue;
 
 public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTest {
 
 	@Override
-	protected Sail createSail() {
-		Sail sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(), true);
-		return sailStack;
+	protected Repository createRepository() {
+		SchemaCachingRDFSInferencer sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(), true);
+		//sailStack.setAddInferredStatementsToDefaultContext(false);
+		return new SailRepository(sailStack);
+	}
+
+	@Test
+	public void testPersistence() {
+		File datadir = Files.newTemporaryFolder();
+		
+		SchemaCachingRDFSInferencer sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(datadir), true);
+		SailRepository repo = new SailRepository(sailStack);
+		repo.initialize();
+		ValueFactory vf = repo.getValueFactory();
+		
+		IRI s1= vf.createIRI("foo:s1");
+		IRI c2 = vf.createIRI("foo:c2");
+		IRI c1 = vf.createIRI("foo:c1");
+		
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.begin();
+			conn.add(s1, RDF.TYPE, c1);
+			conn.add(c1, RDFS.SUBCLASSOF, c2);
+			conn.commit();
+			assertTrue(conn.hasStatement(s1, RDF.TYPE, c2, true));
+		}
+		repo.shutDown();
+		
+		// re-init
+//		sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(datadir), true);
+//		repo = new SailRepository(sailStack);
+		repo.initialize();
+		
+		try (RepositoryConnection conn = repo.getConnection()) {
+			assertTrue(conn.hasStatement(s1, RDF.TYPE, c2, true));
+		}
 	}
 
 	@Test
 	public void testBlankNodePredicateInference() {
-		Repository sailRepository = new SailRepository(createSail());
+		Repository sailRepository = createRepository();
 		sailRepository.initialize();
 		ValueFactory vf = sailRepository.getValueFactory();
 
@@ -43,8 +77,8 @@ public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTe
 			BNode bNode = vf.createBNode();
 			connection.add(vf.createStatement(vf.createIRI("http://a"), RDFS.SUBPROPERTYOF, bNode)); // 1
 			connection.add(vf.createStatement(bNode, RDFS.DOMAIN, vf.createIRI("http://c"))); // 2
-			connection.add(vf.createStatement(vf.createIRI("http://d"), vf.createIRI("http://a"),
-					vf.createIRI("http://e"))); // 3
+			connection.add(
+					vf.createStatement(vf.createIRI("http://d"), vf.createIRI("http://a"), vf.createIRI("http://e"))); // 3
 		}
 
 		try (RepositoryConnection connection = sailRepository.getConnection()) {
@@ -58,9 +92,11 @@ public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTe
 
 	@Test
 	public void testRollback()
-		throws NoSuchMethodException, InvocationTargetException, IllegalAccessException
+		throws NoSuchMethodException,
+		InvocationTargetException,
+		IllegalAccessException
 	{
-		Repository sailRepository = new SailRepository(createSail());
+		Repository sailRepository = createRepository();
 		sailRepository.initialize();
 		ValueFactory vf = sailRepository.getValueFactory();
 
@@ -109,10 +145,11 @@ public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTe
 
 	@Test
 	public void testFastInstantiate()
-		throws NoSuchMethodException, InvocationTargetException, IllegalAccessException
+		throws NoSuchMethodException,
+		InvocationTargetException,
+		IllegalAccessException
 	{
-		Sail sail = createSail();
-		Repository sailRepository = new SailRepository(sail);
+		Repository sailRepository = createRepository();
 		sailRepository.initialize();
 		ValueFactory vf = sailRepository.getValueFactory();
 
@@ -126,9 +163,8 @@ public class SchemaCachingRDFSInferencerMemInferencingTest extends InferencingTe
 			connection.add(vf.createStatement(A, RDFS.SUBCLASSOF, C));
 		}
 
-		SailRepository sailRepository1 = new SailRepository(
-				SchemaCachingRDFSInferencer.fastInstantiateFrom(
-						(SchemaCachingRDFSInferencer)sail, new MemoryStore()));
+		SailRepository sailRepository1 = new SailRepository(SchemaCachingRDFSInferencer.fastInstantiateFrom(
+				(SchemaCachingRDFSInferencer)((SailRepository)sailRepository).getSail(), new MemoryStore()));
 		sailRepository1.initialize();
 
 		try (RepositoryConnection connection = sailRepository1.getConnection()) {

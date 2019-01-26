@@ -8,9 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+import org.apache.commons.lang.StringUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.sail.SailException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Iterator;
 import java.util.List;
@@ -22,9 +25,12 @@ import java.util.stream.Stream;
  */
 public class LoggingNode implements PlanNode {
 
+	static private final Logger logger = LoggerFactory.getLogger(LoggingNode.class);
+
+
 	PlanNode parent;
 
-	boolean pullAll = true;
+	private boolean pullAll = true;
 
 	public static boolean loggingEnabled = false;
 
@@ -93,7 +99,7 @@ public class LoggingNode implements PlanNode {
 				public boolean hasNext() throws SailException {
 					boolean hasNext = parentIterator.hasNext();
 
-					//System.out.println(leadingSpace()+parent.getClass().getSimpleName()+".hasNext() : "+hasNext);
+//					logger.info(leadingSpace()+parent.getClass().getSimpleName()+".hasNext() : "+hasNext);
 					return hasNext;
 				}
 
@@ -105,7 +111,7 @@ public class LoggingNode implements PlanNode {
 
 					assert next != null;
 
-					System.out.println(leadingSpace() + parent.getClass().getSimpleName() + ".next(): " + " " + next.toString());
+					logger.info(leadingSpace() + parent.getClass().getSimpleName() + ".next(): " + " " + next.toString());
 
 					return next;
 				}
@@ -124,12 +130,23 @@ public class LoggingNode implements PlanNode {
 		return parent.depth() + 1;
 	}
 
-	private String leadingSpace() {
-		StringBuilder ret = new StringBuilder();
-		int depth = depth();
-		while (--depth > 0) {
-			ret.append("    ");
-		}
-		return ret.toString();
+	@Override
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
+
+	@Override
+	public String getId() {
+		return parent.getId();
+	}
+
+	@Override
+	public IteratorData getIteratorDataType() {
+		return parent.getIteratorDataType();
+	}
+
+	private String leadingSpace() {
+		return StringUtils.leftPad("", depth(), "    ");
+	}
+
 }

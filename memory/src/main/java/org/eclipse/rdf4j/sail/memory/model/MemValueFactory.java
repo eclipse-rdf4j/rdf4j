@@ -41,25 +41,25 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * Registry containing the set of MemURI objects as used by a MemoryStore. This registry enables the reuse
 	 * of objects, minimizing the number of objects in main memory.
 	 */
-	private final WeakObjectRegistry<MemIRI> uriRegistry = new WeakObjectRegistry<MemIRI>();
+	private final WeakObjectRegistry<MemIRI> uriRegistry = new WeakObjectRegistry<>();
 
 	/**
 	 * Registry containing the set of MemBNode objects as used by a MemoryStore. This registry enables the
 	 * reuse of objects, minimizing the number of objects in main memory.
 	 */
-	private final WeakObjectRegistry<MemBNode> bnodeRegistry = new WeakObjectRegistry<MemBNode>();
+	private final WeakObjectRegistry<MemBNode> bnodeRegistry = new WeakObjectRegistry<>();
 
 	/**
 	 * Registry containing the set of MemLiteral objects as used by a MemoryStore. This registry enables the
 	 * reuse of objects, minimizing the number of objects in main memory.
 	 */
-	private final WeakObjectRegistry<MemLiteral> literalRegistry = new WeakObjectRegistry<MemLiteral>();
+	private final WeakObjectRegistry<MemLiteral> literalRegistry = new WeakObjectRegistry<>();
 
 	/**
 	 * Registry containing the set of namespce strings as used by MemURI objects in a MemoryStore. This
 	 * registry enables the reuse of objects, minimizing the number of objects in main memory.
 	 */
-	private final WeakObjectRegistry<String> namespaceRegistry = new WeakObjectRegistry<String>();
+	private final WeakObjectRegistry<String> namespaceRegistry = new WeakObjectRegistry<>();
 
 	/*---------*
 	 * Methods *

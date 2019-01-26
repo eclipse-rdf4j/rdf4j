@@ -22,9 +22,9 @@ public class SolrBulkUpdater implements BulkUpdater {
 
 	private final SolrClient client;
 
-	private final List<SolrInputDocument> addOrUpdateList = new ArrayList<SolrInputDocument>();
+	private final List<SolrInputDocument> addOrUpdateList = new ArrayList<>();
 
-	private final List<String> deleteList = new ArrayList<String>();
+	private final List<String> deleteList = new ArrayList<>();
 
 	public SolrBulkUpdater(SolrClient client) {
 		this.client = client;

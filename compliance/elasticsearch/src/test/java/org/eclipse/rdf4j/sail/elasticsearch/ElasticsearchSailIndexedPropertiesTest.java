@@ -34,6 +34,7 @@ public class ElasticsearchSailIndexedPropertiesTest extends ESIntegTestCase {
 	AbstractLuceneSailIndexedPropertiesTest delegateTest;
 
 	@Before
+	@Override
 	public void setUp()
 		throws Exception
 	{
@@ -68,6 +69,7 @@ public class ElasticsearchSailIndexedPropertiesTest extends ESIntegTestCase {
 	}
 
 	@After
+	@Override
 	public void tearDown()
 		throws Exception
 	{

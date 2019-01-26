@@ -8,13 +8,25 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
+import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.lang.StringUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Arrays;
+import java.util.List;
+
 
 /**
  * @author Håvard Ottestad
  */
-public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsDepthProvider> implements DepthProvider {
+public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParentProvider> implements ParentProvider {
+
+	static private final Logger logger = LoggerFactory.getLogger(FilterPlanNode.class);
+
 
 	PlanNode parent;
 
@@ -38,16 +50,17 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsDepth
 
 		if (trueNode != null) {
 			trueNode.parentIterator(iterator);
-			trueNode.receiveDepthProvider(this);
+			trueNode.receiveParentProvider(this);
 		}
 
 		if (falseNode != null) {
 			falseNode.parentIterator(iterator);
-			falseNode.receiveDepthProvider(this);
+			falseNode.receiveParentProvider(this);
 		}
 	}
 
 	private CloseableIteration<Tuple, SailException> iterator() {
+		FilterPlanNode<T> that = this;
 		return new CloseableIteration<Tuple, SailException>() {
 
 			CloseableIteration<Tuple, SailException> parentIterator;
@@ -68,11 +81,19 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsDepth
 
 					if (checkTuple(temp)) {
 						if (trueNode != null) {
+							if(LoggingNode.loggingEnabled){
+								System.out.println(leadingSpace() + that.getClass().getSimpleName() + ";trueNode: " + " " + temp.toString());
+							}
 							trueNode.push(temp);
+
 						}
 					} else {
 						if (falseNode != null) {
+							if(LoggingNode.loggingEnabled){
+								logger.info(leadingSpace() + that.getClass().getSimpleName() + ";falseNode: " + " " + temp.toString());
+							}
 							falseNode.push(temp);
+
 						}
 					}
 
@@ -117,9 +138,51 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsDepth
 		};
 	}
 
-	public int depth() {
-		return parent.depth() + 1;
+	@Override
+	public List<PlanNode> parent() {
+		return Arrays.asList(parent);
 	}
 
 
+	boolean printed = false;
+
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
+		if(trueNode != null){
+			String id = getId(trueNode);
+			stringBuilder.append(getId()+" -> "+id+ " [label=\"true values\"]").append("\n");
+
+		}
+		if(falseNode != null){
+			String id = getId(falseNode);
+			stringBuilder.append(getId()+" -> "+id+ " [label=\"false values\"]").append("\n");
+
+		}
+
+		parent.getPlanAsGraphvizDot(stringBuilder);
+
+
+
+	}
+
+	private String getId(T trueNode) {
+		return System.identityHashCode(trueNode)+"";
+	}
+
+	@Override
+	public String toString() {
+		return this.getClass().getSimpleName();
+	}
+
+	public String getId() {
+		return System.identityHashCode(this)+"";
+	}
+
+
+	private String leadingSpace() {
+		return StringUtils.leftPad("", parent.depth(), "    ");
+	}
 }

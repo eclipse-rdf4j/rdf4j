@@ -31,7 +31,7 @@ import java.util.stream.Stream;
  *
  * @author Heshan Jayasinghe
  */
-public class TargetClass extends Shape {
+public class TargetClass extends NodeShape {
 
 	Resource targetClass;
 
@@ -45,18 +45,18 @@ public class TargetClass extends Shape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
 		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection, getQuery())), 1);
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), getQuery())), 1);
 
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 		return new Select(shaclSailConnection.getRemovedStatements(), getQuery());
 	}
 

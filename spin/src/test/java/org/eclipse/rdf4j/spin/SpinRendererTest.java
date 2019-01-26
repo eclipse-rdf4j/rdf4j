@@ -36,7 +36,6 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.eclipse.rdf4j.spin.SpinRenderer;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -47,7 +46,7 @@ public class SpinRendererTest {
 
 	@Parameters(name = "{0}")
 	public static Collection<Object[]> testData() {
-		List<Object[]> params = new ArrayList<Object[]>();
+		List<Object[]> params = new ArrayList<>();
 		for (int i = 0;; i++) {
 			String suffix = String.valueOf(i + 1);
 			String testFile = "/testcases/test" + suffix + ".ttl";
@@ -75,9 +74,9 @@ public class SpinRendererTest {
 		StatementCollector expected = new StatementCollector();
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 		parser.setRDFHandler(expected);
-		InputStream rdfStream = testURL.openStream();
-		parser.parse(rdfStream, testURL.toString());
-		rdfStream.close();
+		try (InputStream rdfStream = testURL.openStream()) {
+			parser.parse(rdfStream, testURL.toString());
+		}
 
 		// get query from sp:text
 		String query = null;

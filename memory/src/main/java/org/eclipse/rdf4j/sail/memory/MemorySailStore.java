@@ -164,19 +164,19 @@ class MemorySailStore implements SailStore {
 		MemResource memSubj = valueFactory.getMemResource(subj);
 		if (subj != null && memSubj == null) {
 			// non-existent subject
-			return new EmptyIteration<MemStatement, SailException>();
+			return new EmptyIteration<>();
 		}
 
 		MemIRI memPred = valueFactory.getMemURI(pred);
 		if (pred != null && memPred == null) {
 			// non-existent predicate
-			return new EmptyIteration<MemStatement, SailException>();
+			return new EmptyIteration<>();
 		}
 
 		MemValue memObj = valueFactory.getMemValue(obj);
 		if (obj != null && memObj == null) {
 			// non-existent object
-			return new EmptyIteration<MemStatement, SailException>();
+			return new EmptyIteration<>();
 		}
 
 		MemResource[] memContexts;
@@ -190,14 +190,14 @@ class MemorySailStore implements SailStore {
 			MemResource memContext = valueFactory.getMemResource(contexts[0]);
 			if (memContext == null) {
 				// non-existent context
-				return new EmptyIteration<MemStatement, SailException>();
+				return new EmptyIteration<>();
 			}
 
 			memContexts = new MemResource[] { memContext };
 			smallestList = memContext.getContextStatementList();
 		}
 		else {
-			Set<MemResource> contextSet = new LinkedHashSet<MemResource>(2 * contexts.length);
+			Set<MemResource> contextSet = new LinkedHashSet<>(2 * contexts.length);
 
 			for (Resource context : contexts) {
 				MemResource memContext = valueFactory.getMemResource(context);
@@ -208,7 +208,7 @@ class MemorySailStore implements SailStore {
 
 			if (contextSet.isEmpty()) {
 				// no known contexts specified
-				return new EmptyIteration<MemStatement, SailException>();
+				return new EmptyIteration<>();
 			}
 
 			memContexts = contextSet.toArray(new MemResource[contextSet.size()]);
@@ -236,7 +236,7 @@ class MemorySailStore implements SailStore {
 			}
 		}
 
-		return new MemStatementIterator<SailException>(smallestList, memSubj, memPred, memObj, explicit,
+		return new MemStatementIterator<>(smallestList, memSubj, memPred, memObj, explicit,
 				snapshot, memContexts);
 	}
 
@@ -253,10 +253,10 @@ class MemorySailStore implements SailStore {
 		// long startTime = System.currentTimeMillis();
 
 		// Sets used to keep track of which lists have already been processed
-		HashSet<MemValue> processedSubjects = new HashSet<MemValue>();
-		HashSet<MemValue> processedPredicates = new HashSet<MemValue>();
-		HashSet<MemValue> processedObjects = new HashSet<MemValue>();
-		HashSet<MemValue> processedContexts = new HashSet<MemValue>();
+		HashSet<MemValue> processedSubjects = new HashSet<>();
+		HashSet<MemValue> processedPredicates = new HashSet<>();
+		HashSet<MemValue> processedObjects = new HashSet<>();
+		HashSet<MemValue> processedContexts = new HashSet<>();
 
 		int lastStmtPos;
 		Lock stReadLock = statementListLockManager.getReadLock();
@@ -326,6 +326,7 @@ class MemorySailStore implements SailStore {
 			if (toCheckSnapshotCleanupThread == null || !toCheckSnapshotCleanupThread.isAlive()) {
 				Runnable runnable = new Runnable() {
 
+					@Override
 					public void run() {
 						try {
 							cleanSnapshots();
@@ -402,6 +403,7 @@ class MemorySailStore implements SailStore {
 			txnStLock = openStatementsReadLock();
 		}
 
+		@Override
 		public String toString() {
 			StringBuilder sb = new StringBuilder();
 			if (explicit) {
@@ -512,7 +514,7 @@ class MemorySailStore implements SailStore {
 			throws SailException
 		{
 			if (observations == null) {
-				observations = new HashSet<StatementPattern>();
+				observations = new HashSet<>();
 			}
 			if (contexts == null) {
 				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred),
@@ -654,6 +656,7 @@ class MemorySailStore implements SailStore {
 			this.lock = openStatementsReadLock();
 		}
 
+		@Override
 		public String toString() {
 			StringBuilder sb = new StringBuilder();
 			if (explicit) {
@@ -702,7 +705,7 @@ class MemorySailStore implements SailStore {
 			// ConcurrentModificationException's (issue SES-544).
 
 			// Create a list of all resources that are used as contexts
-			ArrayList<MemResource> contextIDs = new ArrayList<MemResource>(32);
+			ArrayList<MemResource> contextIDs = new ArrayList<>(32);
 
 			Lock stLock = openStatementsReadLock();
 			try {
@@ -725,7 +728,7 @@ class MemorySailStore implements SailStore {
 				stLock.release();
 			}
 
-			return new CloseableIteratorIteration<MemResource, SailException>(contextIDs.iterator());
+			return new CloseableIteratorIteration<>(contextIDs.iterator());
 		}
 
 		@Override
@@ -785,7 +788,7 @@ class MemorySailStore implements SailStore {
 
 			// Filter more thoroughly by considering snapshot and read-mode
 			// parameters
-			try (MemStatementIterator<SailException> iter = new MemStatementIterator<SailException>(
+			try (MemStatementIterator<SailException> iter = new MemStatementIterator<>(
 					contextStatements, null, null, null, null, snapshot);)
 			{
 				return iter.hasNext();

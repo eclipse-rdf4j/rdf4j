@@ -23,6 +23,7 @@ class DatasetTupleQuery extends DatasetQuery implements TupleQuery {
 		super(con, sailQuery);
 	}
 
+	@Override
 	public TupleQueryResult evaluate()
 		throws QueryEvaluationException
 	{
@@ -30,6 +31,7 @@ class DatasetTupleQuery extends DatasetQuery implements TupleQuery {
 		return ((TupleQuery)sailQuery).evaluate();
 	}
 
+	@Override
 	public void evaluate(TupleQueryResultHandler handler)
 		throws QueryEvaluationException, TupleQueryResultHandlerException
 	{

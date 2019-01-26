@@ -265,6 +265,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		return new SailUpdate(parsedUpdate, this);
 	}
 
+	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts)
 		throws RepositoryException
@@ -315,16 +316,12 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	{
 		handler.startRDF();
 
-		// Export namespace information
-		CloseableIteration<? extends Namespace, RepositoryException> nsIter = getNamespaces();
-		try {
+		try ( // Export namespace information
+			CloseableIteration<? extends Namespace, RepositoryException> nsIter = getNamespaces()) {
 			while (nsIter.hasNext()) {
 				Namespace ns = nsIter.next();
 				handler.handleNamespace(ns.getPrefix(), ns.getName());
 			}
-		}
-		finally {
-			nsIter.close();
 		}
 
 		// Export statements
@@ -491,7 +488,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	protected <E> RepositoryResult<E> createRepositoryResult(
 			CloseableIteration<? extends E, SailException> sailIter)
 	{
-		return new RepositoryResult<E>(new SailCloseableIteration<E>(sailIter));
+		return new RepositoryResult<>(new SailCloseableIteration<E>(sailIter));
 	}
 
 	@Override

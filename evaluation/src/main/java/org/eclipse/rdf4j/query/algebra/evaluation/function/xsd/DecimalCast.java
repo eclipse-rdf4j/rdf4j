@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
  */
 public class DecimalCast extends CastFunction {
 
+	@Override
 	protected Literal convert(ValueFactory valueFactory, Value value)
 		throws ValueExprEvaluationException
 	{

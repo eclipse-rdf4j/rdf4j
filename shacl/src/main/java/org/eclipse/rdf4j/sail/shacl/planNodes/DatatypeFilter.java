@@ -32,4 +32,11 @@ public class DatatypeFilter extends FilterPlanNode {
 		return literal.getDatatype() == datatype || literal.getDatatype().equals(datatype);
 	}
 
+
+	@Override
+	public String toString() {
+		return "DatatypeFilter{" +
+			"datatype=" + datatype +
+			'}';
+	}
 }

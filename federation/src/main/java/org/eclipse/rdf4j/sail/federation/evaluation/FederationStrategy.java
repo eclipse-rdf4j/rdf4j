@@ -119,7 +119,7 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 		Set<String> leftVars = leftJoin.getLeftArg().getBindingNames();
 		Set<String> optionalVars = leftJoin.getRightArg().getBindingNames();
 
-		final Set<String> problemVars = new HashSet<String>(boundVars);
+		final Set<String> problemVars = new HashSet<>(boundVars);
 		problemVars.retainAll(optionalVars);
 		problemVars.removeAll(leftVars);
 
@@ -143,7 +143,7 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 		CloseableIteration<BindingSet, QueryEvaluationException>[] iters = new CloseableIteration[2];
 		iters[0] = evaluate(union.getLeftArg(), bindings);
 		iters[1] = evaluate(union.getRightArg(), bindings);
-		return new UnionIteration<BindingSet, QueryEvaluationException>(iters);
+		return new UnionIteration<>(iters);
 	}
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> evaluate(OwnedTupleExpr expr,

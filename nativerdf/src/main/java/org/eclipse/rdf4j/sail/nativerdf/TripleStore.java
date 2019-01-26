@@ -137,7 +137,7 @@ class TripleStore implements Closeable {
 	/**
 	 * The list of triple indexes that are used to store and retrieve triples.
 	 */
-	private final List<TripleIndex> indexes = new ArrayList<TripleIndex>();
+	private final List<TripleIndex> indexes = new ArrayList<>();
 
 	private final boolean forceSync;
 
@@ -276,7 +276,7 @@ class TripleStore implements Closeable {
 	private Set<String> parseIndexSpecList(String indexSpecStr)
 		throws SailException
 	{
-		Set<String> indexes = new HashSet<String>();
+		Set<String> indexes = new HashSet<>();
 
 		if (indexSpecStr != null) {
 			StringTokenizer tok = new StringTokenizer(indexSpecStr, ", \t");
@@ -362,14 +362,14 @@ class TripleStore implements Closeable {
 	private void reindex(Set<String> currentIndexSpecs, Set<String> newIndexSpecs)
 		throws IOException, SailException
 	{
-		Map<String, TripleIndex> currentIndexes = new HashMap<String, TripleIndex>();
+		Map<String, TripleIndex> currentIndexes = new HashMap<>();
 		for (TripleIndex index : indexes) {
 			currentIndexes.put(new String(index.getFieldSeq()), index);
 		}
 
 		// Determine the set of newly added indexes and initialize these using an
 		// existing index as source
-		Set<String> addedIndexSpecs = new HashSet<String>(newIndexSpecs);
+		Set<String> addedIndexSpecs = new HashSet<>(newIndexSpecs);
 		addedIndexSpecs.removeAll(currentIndexSpecs);
 
 		if (!addedIndexSpecs.isEmpty()) {
@@ -409,7 +409,7 @@ class TripleStore implements Closeable {
 		}
 
 		// Determine the set of removed indexes
-		Set<String> removedIndexSpecs = new HashSet<String>(currentIndexSpecs);
+		Set<String> removedIndexSpecs = new HashSet<>(currentIndexSpecs);
 		removedIndexSpecs.removeAll(newIndexSpecs);
 
 		List<Throwable> removedIndexExceptions = new ArrayList<>();
@@ -567,6 +567,7 @@ class TripleStore implements Closeable {
 			this.wrappedIter = wrappedIter;
 		}
 
+		@Override
 		public byte[] next()
 			throws IOException
 		{
@@ -587,12 +588,14 @@ class TripleStore implements Closeable {
 			return result;
 		}
 
+		@Override
 		public void set(byte[] value)
 			throws IOException
 		{
 			wrappedIter.set(value);
 		}
 
+		@Override
 		public void close()
 			throws IOException
 		{
@@ -608,6 +611,7 @@ class TripleStore implements Closeable {
 			this.wrappedIter = wrappedIter;
 		}
 
+		@Override
 		public byte[] next()
 			throws IOException
 		{
@@ -626,12 +630,14 @@ class TripleStore implements Closeable {
 			return result;
 		}
 
+		@Override
 		public void set(byte[] value)
 			throws IOException
 		{
 			wrappedIter.set(value);
 		}
 
+		@Override
 		public void close()
 			throws IOException
 		{
@@ -865,14 +871,10 @@ class TripleStore implements Closeable {
 			for (TripleIndex index : indexes) {
 				BTree btree = index.getBTree();
 
-				RecordIterator recIter = removedTriplesCache.getRecords();
-				try {
+				try (RecordIterator recIter = removedTriplesCache.getRecords()) {
 					while ((data = recIter.next()) != null) {
 						btree.insert(data);
 					}
-				}
-				finally {
-					recIter.close();
 				}
 			}
 		}
@@ -973,8 +975,7 @@ class TripleStore implements Closeable {
 		for (TripleIndex index : indexes) {
 			System.out.println("Checking " + index + " index");
 			BTree btree = index.getBTree();
-			RecordIterator iter = btree.iterateAll();
-			try {
+			try (RecordIterator iter = btree.iterateAll()) {
 				for (byte[] data = iter.next(); data != null; data = iter.next()) {
 					byte flags = data[FLAG_IDX];
 					boolean wasAdded = (flags & ADDED_FLAG) != 0;
@@ -984,9 +985,6 @@ class TripleStore implements Closeable {
 						System.out.println("unexpected triple: " + ByteArrayUtil.toHexString(data));
 					}
 				}
-			}
-			finally {
-				iter.close();
 			}
 		}
 	}
@@ -1135,26 +1133,18 @@ class TripleStore implements Closeable {
 	private Properties loadProperties(File propFile)
 		throws IOException
 	{
-		InputStream in = new FileInputStream(propFile);
-		try {
+		try (InputStream in = new FileInputStream(propFile)) {
 			Properties properties = new Properties();
 			properties.load(in);
 			return properties;
-		}
-		finally {
-			in.close();
 		}
 	}
 
 	private void storeProperties(File propFile)
 		throws IOException
 	{
-		OutputStream out = new FileOutputStream(propFile);
-		try {
+		try (OutputStream out = new FileOutputStream(propFile)) {
 			properties.store(out, "triple indexes meta-data, DO NOT EDIT!");
-		}
-		finally {
-			out.close();
 		}
 	}
 
@@ -1265,6 +1255,7 @@ class TripleStore implements Closeable {
 			return fieldSeq;
 		}
 
+		@Override
 		public final int compareBTreeValues(byte[] key, byte[] data, int offset, int length) {
 			for (char field : fieldSeq) {
 				int fieldIdx = 0;

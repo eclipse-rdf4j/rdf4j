@@ -54,6 +54,7 @@ class SailSourceModel extends AbstractModel {
 			this.stmts = closeableIteration;
 		}
 
+		@Override
 		public boolean hasNext() {
 			try {
 				if (stmts.hasNext())
@@ -66,6 +67,7 @@ class SailSourceModel extends AbstractModel {
 			}
 		}
 
+		@Override
 		public Statement next() {
 			try {
 				last = stmts.next();
@@ -79,6 +81,7 @@ class SailSourceModel extends AbstractModel {
 			}
 		}
 
+		@Override
 		public void remove() {
 			if (last == null)
 				throw new IllegalStateException("next() not yet called");
@@ -142,6 +145,7 @@ class SailSourceModel extends AbstractModel {
 		}
 	}
 
+	@Override
 	public synchronized int size() {
 		if (size < 0) {
 			try {
@@ -169,8 +173,9 @@ class SailSourceModel extends AbstractModel {
 		}
 	}
 
+	@Override
 	public Set<Namespace> getNamespaces() {
-		Set<Namespace> set = new LinkedHashSet<Namespace>();
+		Set<Namespace> set = new LinkedHashSet<>();
 		try {
 			CloseableIteration<? extends Namespace, SailException> spaces;
 			spaces = dataset().getNamespaces();
@@ -189,6 +194,7 @@ class SailSourceModel extends AbstractModel {
 		return set;
 	}
 
+	@Override
 	public Optional<Namespace> getNamespace(String prefix) {
 		try {
 			String name = dataset().getNamespace(prefix);
@@ -199,6 +205,7 @@ class SailSourceModel extends AbstractModel {
 		}
 	}
 
+	@Override
 	public Namespace setNamespace(String prefix, String name) {
 		try {
 			sink().setNamespace(prefix, name);
@@ -209,10 +216,12 @@ class SailSourceModel extends AbstractModel {
 		return new SimpleNamespace(prefix, name);
 	}
 
+	@Override
 	public void setNamespace(Namespace namespace) {
 		setNamespace(namespace.getPrefix(), namespace.getName());
 	}
 
+	@Override
 	public Optional<Namespace> removeNamespace(String prefix) {
 		Optional<Namespace> ret = getNamespace(prefix);
 		try {
@@ -224,6 +233,7 @@ class SailSourceModel extends AbstractModel {
 		return ret;
 	}
 
+	@Override
 	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		try {
 			if (!isEmptyOrResourcePresent(contexts))
@@ -235,6 +245,7 @@ class SailSourceModel extends AbstractModel {
 		}
 	}
 
+	@Override
 	public synchronized boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		if (subj == null || pred == null || obj == null)
 			throw new UnsupportedOperationException("Incomplete statement");
@@ -261,6 +272,7 @@ class SailSourceModel extends AbstractModel {
 		}
 	}
 
+	@Override
 	public synchronized boolean clear(Resource... contexts) {
 		try {
 			if (contains(null, null, null, contexts)) {
@@ -275,6 +287,7 @@ class SailSourceModel extends AbstractModel {
 		return false;
 	}
 
+	@Override
 	public synchronized boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		try {
 			if (contains(subj, pred, obj, contexts)) {
@@ -309,6 +322,7 @@ class SailSourceModel extends AbstractModel {
 		}
 	}
 
+	@Override
 	public Model filter(final Resource subj, final IRI pred, final Value obj, final Resource... contexts) {
 		if (!isEmptyOrResourcePresent(contexts))
 			return new EmptyModel(this);
@@ -458,7 +472,7 @@ class SailSourceModel extends AbstractModel {
 				result[i] = (Resource)contexts[i];
 			}
 			else {
-				List<Resource> list = new ArrayList<Resource>();
+				List<Resource> list = new ArrayList<>();
 				for (Value v : contexts) {
 					if (v == null || v instanceof Resource) {
 						list.add((Resource)v);

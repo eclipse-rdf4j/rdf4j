@@ -5,15 +5,16 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-storage-parent</artifactId>
-		<version>2.4-SNAPSHOT</version>
+		<version>2.5-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>rdf4j-storage-compliance</artifactId>
 	<packaging>pom</packaging>
 
 	<modules>
-		<module>model</module>
-                <module>lucene</module>
+		<module>sail-model</module>
+		<module>sparql</module>
+        <module>lucene</module>
 		<module>elasticsearch</module>
 		<module>solr</module>
 		<module>store</module>
@@ -27,12 +28,6 @@
 	
 	<dependencyManagement>
 		<dependencies>		
-			<dependency>
-				<groupId>${project.groupId}</groupId>
-				<artifactId>rdf4j-http-compliance</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-
 			<dependency>
 				<groupId>${project.groupId}</groupId>
 				<artifactId>rdf4j-rio-testsuite</artifactId>

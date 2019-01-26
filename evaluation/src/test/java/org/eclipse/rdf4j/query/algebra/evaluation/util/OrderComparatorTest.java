@@ -36,6 +36,7 @@ public class OrderComparatorTest {
 
 	class EvaluationStrategyStub implements EvaluationStrategy {
 
+		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr,
 				String serviceUri, CloseableIteration<BindingSet, QueryEvaluationException> bindings)
 			throws QueryEvaluationException
@@ -43,6 +44,7 @@ public class OrderComparatorTest {
 			throw new UnsupportedOperationException();
 		}
 
+		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr,
 				BindingSet bindings)
 			throws QueryEvaluationException
@@ -50,18 +52,21 @@ public class OrderComparatorTest {
 			throw new UnsupportedOperationException();
 		}
 
+		@Override
 		public Value evaluate(ValueExpr expr, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException
 		{
 			return null;
 		}
 
+		@Override
 		public boolean isTrue(ValueExpr expr, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException
 		{
 			throw new UnsupportedOperationException();
 		}
 
+		@Override
 		public FederatedService getService(String serviceUrl)
 			throws QueryEvaluationException
 		{

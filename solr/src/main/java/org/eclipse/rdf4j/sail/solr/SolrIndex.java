@@ -259,7 +259,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	 * Filters the given list of fields, retaining all property fields.
 	 */
 	public static Set<String> getPropertyFields(Set<String> fields) {
-		Set<String> result = new HashSet<String>(fields.size());
+		Set<String> result = new HashSet<>(fields.size());
 		for (String field : fields) {
 			if (SearchFields.isPropertyField(field))
 				result.add(field);
@@ -540,7 +540,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	{
 		Shape s = super.parseQueryShape(property, value);
 		// workaround to preserve WKT string
-		return (s instanceof Point) ? new WktPoint((Point)s, value) : new WktShape<Shape>(s, value);
+		return (s instanceof Point) ? new WktPoint((Point)s, value) : new WktShape<>(s, value);
 	}
 
 	protected String toWkt(Shape s) {

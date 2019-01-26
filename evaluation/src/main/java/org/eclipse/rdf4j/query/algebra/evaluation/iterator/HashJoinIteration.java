@@ -141,7 +141,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 					Collection<List<BindingSet>> values = nextHashTable.values();
 					boolean empty = values.isEmpty() || values.size() == 1 && values.contains(null);
 					nextHashTableValues = hashTableValues = empty ? new EmptyIterator<>()
-							: new UnionIterator<BindingSet>(values);
+							: new UnionIterator<>(values);
 					if (!nextHashTableValues.hasNext()) {
 						currentScanElem = null;
 						closeHashValue(nextHashTableValues);
@@ -321,7 +321,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	protected Collection<BindingSet> makeIterationCache(
 			CloseableIteration<BindingSet, QueryEvaluationException> iter)
 	{
-		return new ArrayList<BindingSet>();
+		return new ArrayList<>();
 	}
 
 	/**
@@ -335,10 +335,10 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			// we should probably adjust for the load factor
 			// but we are only one rehash away and this might save a bit of memory
 			// when we have more than one value per entry
-			nextHashTable = new HashMap<BindingSetHashKey, List<BindingSet>>(initialSize);
+			nextHashTable = new HashMap<>(initialSize);
 		}
 		else {
-			List<BindingSet> l = (initialSize > 0) ? new ArrayList<BindingSet>(initialSize) : null;
+			List<BindingSet> l = (initialSize > 0) ? new ArrayList<>(initialSize) : null;
 			nextHashTable = Collections.<BindingSetHashKey, List<BindingSet>> singletonMap(
 					BindingSetHashKey.EMPTY, l);
 		}
@@ -353,7 +353,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	protected List<BindingSet> makeHashValue(int currentMaxListSize) {
 		// we pick an initial size that means we may only have to resize once
 		// while saving memory in the case that the list doesn't reach max size
-		return new ArrayList<BindingSet>(currentMaxListSize / 2 + 1);
+		return new ArrayList<>(currentMaxListSize / 2 + 1);
 	}
 
 	/**

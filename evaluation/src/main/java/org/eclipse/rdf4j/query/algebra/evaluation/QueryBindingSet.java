@@ -39,7 +39,7 @@ public class QueryBindingSet extends AbstractBindingSet {
 	public QueryBindingSet(int capacity) {
 		// Create bindings map with some extra space for new bindings and
 		// compensating for HashMap's load factor
-		bindings = new HashMap<String, Value>(capacity * 2);
+		bindings = new HashMap<>(capacity * 2);
 	}
 
 	public QueryBindingSet(BindingSet bindingSet) {
@@ -101,14 +101,17 @@ public class QueryBindingSet extends AbstractBindingSet {
 		bindings.keySet().retainAll(bindingNames);
 	}
 
+	@Override
 	public Set<String> getBindingNames() {
 		return bindings.keySet();
 	}
 
+	@Override
 	public Value getValue(String bindingName) {
 		return bindings.get(bindingName);
 	}
 
+	@Override
 	public Binding getBinding(String bindingName) {
 		Value value = getValue(bindingName);
 
@@ -119,10 +122,12 @@ public class QueryBindingSet extends AbstractBindingSet {
 		return null;
 	}
 
+	@Override
 	public boolean hasBinding(String bindingName) {
 		return bindings.containsKey(bindingName);
 	}
 
+	@Override
 	public Iterator<Binding> iterator() {
 		Iterator<Map.Entry<String, Value>> entries = bindings.entrySet().stream().filter(
 				entry -> entry.getValue() != null).iterator();
@@ -136,6 +141,7 @@ public class QueryBindingSet extends AbstractBindingSet {
 		};
 	}
 
+	@Override
 	public int size() {
 		return bindings.size();
 	}

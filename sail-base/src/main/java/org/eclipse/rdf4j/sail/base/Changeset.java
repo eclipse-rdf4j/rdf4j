@@ -129,7 +129,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	public synchronized void addRefback(SailDatasetImpl dataset) {
 		if (refbacks == null) {
-			refbacks = new HashSet<SailDatasetImpl>();
+			refbacks = new HashSet<>();
 		}
 		refbacks.add(dataset);
 	}
@@ -146,7 +146,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	public synchronized void prepend(Changeset changeset) {
 		if (prepend == null) {
-			prepend = new HashSet<Changeset>();
+			prepend = new HashSet<>();
 		}
 		prepend.add(changeset);
 	}
@@ -154,11 +154,11 @@ abstract class Changeset implements SailSink, ModelFactory {
 	@Override
 	public synchronized void setNamespace(String prefix, String name) {
 		if (removedPrefixes == null) {
-			removedPrefixes = new HashSet<String>();
+			removedPrefixes = new HashSet<>();
 		}
 		removedPrefixes.add(prefix);
 		if (addedNamespaces == null) {
-			addedNamespaces = new HashMap<String, String>();
+			addedNamespaces = new HashMap<>();
 		}
 		addedNamespaces.put(prefix, name);
 	}
@@ -169,7 +169,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 			addedNamespaces.remove(prefix);
 		}
 		if (removedPrefixes == null) {
-			removedPrefixes = new HashSet<String>();
+			removedPrefixes = new HashSet<>();
 		}
 		removedPrefixes.add(prefix);
 	}
@@ -190,7 +190,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 		throws SailConflictException
 	{
 		if (observations == null) {
-			observations = new HashSet<StatementPattern>();
+			observations = new HashSet<>();
 		}
 		if (contexts == null) {
 			observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
@@ -226,7 +226,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 				approvedContexts.removeAll(Arrays.asList(contexts));
 			}
 			if (deprecatedContexts == null) {
-				deprecatedContexts = new HashSet<Resource>();
+				deprecatedContexts = new HashSet<>();
 			}
 			deprecatedContexts.addAll(Arrays.asList(contexts));
 		}
@@ -243,7 +243,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 		approved.add(subj, pred, obj, ctx);
 		if (ctx != null) {
 			if (approvedContexts == null) {
-				approvedContexts = new HashSet<Resource>();
+				approvedContexts = new HashSet<>();
 			}
 			approvedContexts.add(ctx);
 		}

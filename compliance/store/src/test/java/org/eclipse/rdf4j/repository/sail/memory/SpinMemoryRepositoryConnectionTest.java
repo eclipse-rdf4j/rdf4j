@@ -35,30 +35,4 @@ public class SpinMemoryRepositoryConnectionTest extends RepositoryConnectionTest
 		return new SailRepository(new SpinSail(new MemoryStore()));
 	}
 
-	@Ignore
-	@Test
-	@Override
-	public void testDefaultContext()
-		throws Exception
-	{
-		// ignore
-	}
-
-	@Ignore
-	@Test
-	@Override
-	public void testDefaultInsertContext()
-		throws Exception
-	{
-		// ignore
-	}
-
-	@Ignore
-	@Test
-	@Override
-	public void testExclusiveNullContext()
-		throws Exception
-	{
-		// ignore
-	}
 }

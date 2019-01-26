@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.RDFNotifyingStoreTest;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -42,7 +41,7 @@ public class NativeStoreTest extends RDFNotifyingStoreTest {
 	{
 		try {
 			NotifyingSail sail = new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
-			sail.initialize();
+			sail.init();
 			return sail;
 		}
 		catch (IOException e) {
@@ -62,7 +61,7 @@ public class NativeStoreTest extends RDFNotifyingStoreTest {
 
 		con.close();
 		sail.shutDown();
-		sail.initialize();
+		sail.init();
 		con = sail.getConnection();
 
 		assertEquals(RDF.NAMESPACE, con.getNamespace("rdf"));

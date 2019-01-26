@@ -22,6 +22,7 @@ public interface SailClosable extends AutoCloseable {
 	 * @throws SailException
 	 *         if this resource cannot be closed
 	 */
+	@Override
 	void close()
 		throws SailException;
 }

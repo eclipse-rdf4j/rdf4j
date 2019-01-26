@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.IterativeEvaluationOptimi
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.RegexAsStringFunctionOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
@@ -79,12 +80,12 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	/**
 	 * The state of store for outstanding operations.
 	 */
-	private final Map<UpdateContext, SailDataset> datasets = new HashMap<UpdateContext, SailDataset>();
+	private final Map<UpdateContext, SailDataset> datasets = new HashMap<>();
 
 	/**
 	 * Outstanding changes that are underway, but not yet realized, by an active operation.
 	 */
-	private final Map<UpdateContext, SailSink> explicitSinks = new HashMap<UpdateContext, SailSink>();
+	private final Map<UpdateContext, SailSink> explicitSinks = new HashMap<>();
 
 	/**
 	 * Set of explicit statements that must not be inferred.
@@ -240,6 +241,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 			new BindingAssigner().optimize(tupleExpr, dataset, bindings);
 			new ConstantOptimizer(strategy).optimize(tupleExpr, dataset, bindings);
+			//The regex as string function optimizer works better if the constants are resolved
+			new RegexAsStringFunctionOptimizer(vf).optimize(tupleExpr, dataset, bindings);
 			new CompareOptimizer().optimize(tupleExpr, dataset, bindings);
 			new ConjunctiveConstraintSplitter().optimize(tupleExpr, dataset, bindings);
 			new DisjunctiveConstraintOptimizer().optimize(tupleExpr, dataset, bindings);
@@ -724,19 +727,12 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		throws SailException
 	{
 		boolean statementsRemoved = false;
-		CloseableIteration<? extends Statement, SailException> iter = null;
-		try {
-			iter = dataset.getStatements(subj, pred, obj, contexts);
+		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj, contexts)) {
 			while (iter.hasNext()) {
 				Statement st = iter.next();
 				sink.deprecate(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
 				statementsRemoved = true;
 				notifyStatementRemoved(st);
-			}
-		}
-		finally {
-			if (iter != null) {
-				iter.close();
 			}
 		}
 		return statementsRemoved;
@@ -937,15 +933,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	private boolean hasStatement(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException
 	{
-		CloseableIteration<? extends Statement, SailException> iter = null;
-		try {
-			iter = dataset.getStatements(subj, pred, obj, contexts);
+		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj, contexts)) {
 			return iter.hasNext();
-		}
-		finally {
-			if (iter != null) {
-				iter.close();
-			}
 		}
 	}
 

@@ -25,26 +25,32 @@ class BindingSetSize implements BindingSet {
 		this.size = size;
 	}
 
+	@Override
 	public Binding getBinding(String bindingName) {
 		throw new UnsupportedOperationException();
 	}
 
+	@Override
 	public Set<String> getBindingNames() {
 		throw new UnsupportedOperationException();
 	}
 
+	@Override
 	public Value getValue(String bindingName) {
 		throw new UnsupportedOperationException();
 	}
 
+	@Override
 	public boolean hasBinding(String bindingName) {
 		throw new UnsupportedOperationException();
 	}
 
+	@Override
 	public Iterator<Binding> iterator() {
 		throw new UnsupportedOperationException();
 	}
 
+	@Override
 	public int size() {
 		return size;
 	}

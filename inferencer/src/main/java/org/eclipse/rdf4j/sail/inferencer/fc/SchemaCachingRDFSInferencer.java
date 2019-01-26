@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
  * </p>
  * <p>
  * This reasoner is not a rule based reasoner and will be up to 80x faster than the
- * ForwardChainingRDFSInferencer, as well as being more complete.
+ * {@link ForwardChainingRDFSInferencer}, as well as being more complete.
  * </p>
  * <p>
  * The sail puts no limitations on isolation level for read transactions, however all write/delete/update
@@ -93,6 +93,21 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	// The previous transaction rolled back
 	boolean rolledBackAfterModifyingSchemaCache;
 
+	// Inferred statements can either be added to the default context
+	// or to the context that the original inserted statement has
+	// for the time being, the default behaviour will be to adde the
+	// statements to the default context.
+	// THIS BEHAVIOUR WILL BE SWITCHED ON THE NEXT MAJOR RELEASE
+	private boolean addInferredStatementsToDefaultContext = true;
+
+	/**
+	 * Instantiate a new SchemaCachingRDFSInferencer
+	 */
+	public SchemaCachingRDFSInferencer() {
+	    super();
+	    schema = null;
+	}
+	
 	/**
 	 * Instantiate a SchemaCachingRDFSInferencer.
 	 *
@@ -204,6 +219,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		}
 	}
 
+	@Override
 	public void initialize()
 		throws SailException
 	{
@@ -243,6 +259,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 	}
 
+	@Override
 	public SchemaCachingRDFSInferencerConnection getConnection()
 		throws SailException
 	{
@@ -250,6 +267,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		return new SchemaCachingRDFSInferencerConnection(this, e);
 	}
 
+	@Override
 	public ValueFactory getValueFactory() {
 		return getBaseSail().getValueFactory();
 	}
@@ -603,7 +621,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	@Override
 	public List<IsolationLevel> getSupportedIsolationLevels() {
 		List<IsolationLevel> supported = super.getSupportedIsolationLevels();
-		List<IsolationLevel> levels = new ArrayList<IsolationLevel>(supported.size());
+		List<IsolationLevel> levels = new ArrayList<>(supported.size());
 		for (IsolationLevel level : supported) {
 			if (level.isCompatibleWith(IsolationLevels.READ_COMMITTED)) {
 				levels.add(level);
@@ -612,4 +630,11 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		return levels;
 	}
 
+	public boolean isAddInferredStatementsToDefaultContext() {
+		return addInferredStatementsToDefaultContext;
+	}
+
+	public void setAddInferredStatementsToDefaultContext(boolean addInferredStatementsToDefaultContext) {
+		this.addInferredStatementsToDefaultContext = addInferredStatementsToDefaultContext;
+	}
 }

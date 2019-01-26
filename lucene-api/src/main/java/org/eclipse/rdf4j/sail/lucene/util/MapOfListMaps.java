@@ -24,7 +24,7 @@ public class MapOfListMaps<Index1Type, Index2Type, DataType> {
 	 * 
 	 */
 	public MapOfListMaps() {
-		data = new HashMap<Index1Type, Map<Index2Type, List<DataType>>>();
+		data = new HashMap<>();
 	}
 
 	public List<DataType> get(Index1Type key1, Index2Type key2) {
@@ -52,14 +52,14 @@ public class MapOfListMaps<Index1Type, Index2Type, DataType> {
 		List<DataType> tmpList;
 
 		if (intermediateMap == null) {
-			intermediateMap = new HashMap<Index2Type, List<DataType>>();
+			intermediateMap = new HashMap<>();
 			data.put(key1, intermediateMap);
 		}
 
 		tmpList = intermediateMap.get(key2);
 
 		if (tmpList == null) {
-			tmpList = new ArrayList<DataType>();
+			tmpList = new ArrayList<>();
 			intermediateMap.put(key2, tmpList);
 		}
 

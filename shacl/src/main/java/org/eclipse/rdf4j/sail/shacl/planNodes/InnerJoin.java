@@ -7,8 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+
+import java.util.Arrays;
+import java.util.List;
+
 
 /**
  * @author Håvard Ottestad
@@ -30,19 +36,19 @@ public class InnerJoin implements PlanNode {
 		this.right = right;
 		this.discardedLeft = discardedLeft;
 		this.discardedRight = discardedRight;
-		if(discardedLeft instanceof SupportsDepthProvider){
-			((SupportsDepthProvider) discardedLeft).receiveDepthProvider(new DepthProvider() {
+		if(discardedLeft instanceof SupportsParentProvider){
+			((SupportsParentProvider) discardedLeft).receiveParentProvider(new ParentProvider() {
 				@Override
-				public int depth() {
-					return Math.max(left.depth(), right.depth())+1;
+				public List<PlanNode> parent() {
+					return Arrays.asList(left, right);
 				}
 			});
 		}
-		if(discardedRight instanceof SupportsDepthProvider){
-			((SupportsDepthProvider) discardedRight).receiveDepthProvider(new DepthProvider() {
+		if(discardedRight instanceof SupportsParentProvider){
+			((SupportsParentProvider) discardedRight).receiveParentProvider(new ParentProvider() {
 				@Override
-				public int depth() {
-					return Math.max(left.depth(), right.depth())+1;
+				public List<PlanNode> parent() {
+					return Arrays.asList(left, right);
 				}
 			});
 		}
@@ -163,4 +169,45 @@ public class InnerJoin implements PlanNode {
 		return Math.max(left.depth(), right.depth());
 	}
 
+	@Override
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		left.getPlanAsGraphvizDot(stringBuilder);
+
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(left.getId()+" -> "+getId()+ " [label=\"left\"];").append("\n");
+		stringBuilder.append(right.getId()+" -> "+getId()+ " [label=\"right\"];").append("\n");
+		right.getPlanAsGraphvizDot(stringBuilder);
+
+		if(discardedRight != null){
+			if(discardedRight instanceof PlanNode){
+				stringBuilder.append(getId()+" -> "+((PlanNode) discardedRight).getId()+ " [label=\"discardedRight\"];").append("\n");
+			}
+
+		}
+		if(discardedLeft != null){
+			if(discardedLeft instanceof PlanNode){
+				stringBuilder.append(getId()+" -> "+((PlanNode) discardedLeft).getId()+ " [label=\"discardedLeft\"];").append("\n");
+			}
+
+
+		}
+	}
+
+	@Override
+	public String getId() {
+		return System.identityHashCode(this)+"";
+	}
+
+	@Override
+	public IteratorData getIteratorDataType() {
+		if(left.getIteratorDataType() == right.getIteratorDataType()) return left.getIteratorDataType();
+
+		throw new IllegalStateException("Not implemented support for when left and right have different types of data");
+
+	}
+
+	@Override
+	public String toString() {
+		return "InnerJoin";
+	}
 }

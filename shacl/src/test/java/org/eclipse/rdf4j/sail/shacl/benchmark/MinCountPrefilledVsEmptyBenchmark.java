@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.Utils;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -51,7 +50,7 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 
 	@Setup(Level.Invocation)
-	public void setUp() {
+	public void setUp() throws Exception {
 		allStatements = new ArrayList<>(10);
 
 
@@ -82,7 +81,7 @@ public class MinCountPrefilledVsEmptyBenchmark {
 		}
 
 
-		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		this.shaclRepo = new SailRepository(shaclRepo);
 		this.shaclRepo.initialize();
 
@@ -122,9 +121,9 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 
 	@Benchmark
-	public void shaclEmpty() {
+	public void shaclEmpty() throws Exception {
 
-		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		SailRepository repository = new SailRepository(shaclRepo);
 		repository.initialize();
 
@@ -144,9 +143,9 @@ public class MinCountPrefilledVsEmptyBenchmark {
 	}
 
 	@Benchmark
-	public void shaclEmptyJustInitialize() {
+	public void shaclEmptyJustInitialize() throws Exception {
 
-		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		SailRepository repository = new SailRepository(shaclRepo);
 		repository.initialize();
 
@@ -155,9 +154,9 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 
 	@Benchmark
-	public void shaclEmptyJustInitializeAndEmptyTransaction() {
+	public void shaclEmptyJustInitializeAndEmptyTransaction() throws Exception {
 
-		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		SailRepository repository = new SailRepository(shaclRepo);
 		repository.initialize();
 

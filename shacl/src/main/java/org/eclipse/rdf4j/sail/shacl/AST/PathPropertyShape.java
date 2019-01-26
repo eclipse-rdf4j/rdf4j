@@ -15,8 +15,11 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 
+import java.util.Collections;
+import java.util.List;
+
 /**
- * The AST (Abstract Syntax Tree) node that represents the sh:path on a property shape.
+ * The AST (Abstract Syntax Tree) node that represents the sh:path on a property nodeShape.
  *
  * @author Heshan Jayasinghe
  */
@@ -24,8 +27,8 @@ public class PathPropertyShape extends PropertyShape {
 
 	Path path;
 
-	PathPropertyShape(Resource id, SailRepositoryConnection connection, Shape shape) {
-		super(id, shape);
+	PathPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+		super(id, nodeShape);
 
 		// only simple path is supported. There are also no checks. Any use of paths that are not single predicates is undefined.
 		path = new SimplePath(id, connection);
@@ -33,24 +36,34 @@ public class PathPropertyShape extends PropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, Shape shape) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
 		return new Select(shaclSailConnection, path.getQuery());
 	}
 
 	@Override
-	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
+	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 		return new Select(shaclSailConnection.getAddedStatements(), path.getQuery());
 	}
 
 	@Override
-	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, Shape shape) {
+	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 		return new Select(shaclSailConnection.getRemovedStatements(), path.getQuery());
+	}
+
+	@Override
+	public List<Path> getPaths() {
+		return Collections.singletonList(path);
 	}
 
 
 	@Override
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return super.requiresEvaluation(addedStatements, removedStatements) || path.requiresEvaluation(addedStatements, removedStatements);
+	}
+
+
+	public Path getPath() {
+		return path;
 	}
 }
 

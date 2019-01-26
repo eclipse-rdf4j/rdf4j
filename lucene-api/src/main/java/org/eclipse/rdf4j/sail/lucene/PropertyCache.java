@@ -37,7 +37,7 @@ class PropertyCache {
 			found = false;
 			List<String> docValues = doc.getProperty(name);
 			if (docValues != null) {
-				cachedValues = new HashSet<String>(docValues.size());
+				cachedValues = new HashSet<>(docValues.size());
 				for (String docValue : docValues) {
 					cachedValues.add(docValue);
 					if (docValue.equals(value)) {
@@ -60,7 +60,7 @@ class PropertyCache {
 
 	private void setCachedValues(String name, Set<String> values) {
 		if (cachedProperties == null) {
-			cachedProperties = new HashMap<String, Set<String>>();
+			cachedProperties = new HashMap<>();
 		}
 		cachedProperties.put(name, values);
 	}

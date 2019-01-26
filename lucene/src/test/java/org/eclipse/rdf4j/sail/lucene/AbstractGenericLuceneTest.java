@@ -365,7 +365,7 @@ public abstract class AbstractGenericLuceneTest {
 
 			// the first result is subject 1 and has a score
 			int results = 0;
-			Set<IRI> expectedSubject = new HashSet<IRI>();
+			Set<IRI> expectedSubject = new HashSet<>();
 			expectedSubject.add(SUBJECT_1);
 			expectedSubject.add(SUBJECT_2);
 			while (result.hasNext()) {
@@ -432,7 +432,7 @@ public abstract class AbstractGenericLuceneTest {
 
 			// the first result is subject 1 and has a score
 			int results = 0;
-			Set<String> expectedSnippetPart = new HashSet<String>();
+			Set<String> expectedSnippetPart = new HashSet<>();
 			expectedSnippetPart.add("come");
 			expectedSnippetPart.add("unicorn");
 			String notexpected = "poor";
@@ -511,7 +511,7 @@ public abstract class AbstractGenericLuceneTest {
 
 			// the first result is subject 1 and has a score
 			int results = 0;
-			Set<String> expectedSnippetPart = new HashSet<String>();
+			Set<String> expectedSnippetPart = new HashSet<>();
 			expectedSnippetPart.add("come");
 			expectedSnippetPart.add("unicorn");
 			expectedSnippetPart.add("poor");
@@ -741,7 +741,7 @@ public abstract class AbstractGenericLuceneTest {
 
 			// the first result is subject 1 and has a score
 			int results = 0;
-			Set<IRI> expectedSubject = new HashSet<IRI>();
+			Set<IRI> expectedSubject = new HashSet<>();
 			expectedSubject.add(SUBJECT_1);
 			expectedSubject.add(SUBJECT_2);
 			expectedSubject.add(SUBJECT_3);
@@ -792,7 +792,7 @@ public abstract class AbstractGenericLuceneTest {
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
 		try (TupleQueryResult result = query.evaluate()) {
 			int results = 0;
-			Map<IRI, IRI> expectedSubject = new HashMap<IRI, IRI>();
+			Map<IRI, IRI> expectedSubject = new HashMap<>();
 			expectedSubject.put(SUBJECT_1, PREDICATE_1);
 			expectedSubject.put(SUBJECT_2, PREDICATE_1);
 			expectedSubject.put(SUBJECT_3, PREDICATE_2);

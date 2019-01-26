@@ -289,6 +289,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	 * Methods *
 	 *---------*/
 
+	@Override
 	protected Iteration<BindingSet, QueryEvaluationException> createIteration()
 		throws QueryEvaluationException
 	{
@@ -335,7 +336,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 		List<Iterator<BindingSet>> iterators = new ArrayList<>(serialized.size() + 1);
 		serialized.forEach(queue -> iterators.add(queue.iterator()));
 		iterators.add(sort(list).iterator());
-		iterator = new SortedIterators<BindingSet>(comparator, distinct, iterators);
+		iterator = new SortedIterators<>(comparator, distinct, iterators);
 		return new LimitIteration<>(new CloseableIteratorIteration<>(iterator), limit);
 	}
 
