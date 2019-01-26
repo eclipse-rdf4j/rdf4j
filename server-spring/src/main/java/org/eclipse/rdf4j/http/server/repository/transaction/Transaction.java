@@ -9,9 +9,6 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -20,6 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
@@ -89,11 +87,9 @@ class Transaction implements AutoCloseable {
 			new ThreadFactoryBuilder().setNameFormat("rdf4j-transaction-%d").build());
 
 	/**
-	 * A {@link List} that tracks the state of the futures involved in this Transaction. The front of the list
-	 * is cleaned of done operations during {@link #hasActiveOperations()} to release references to results.
+	 * Counter of the active operations submitted to the executor
 	 */
-	private final List<Future<?>> futures = new ArrayList<>();
-
+	private AtomicInteger activeOperations = new AtomicInteger();
 	/**
 	 * Create a new Transaction for the given {@link Repository}.
 	 * 
@@ -138,7 +134,7 @@ class Transaction implements AutoCloseable {
 			txnConnection.begin(level);
 			return true;
 		});
-		result.get();
+		getFromFuture(result);
 	}
 
 	/**
@@ -154,7 +150,7 @@ class Transaction implements AutoCloseable {
 			txnConnection.rollback();
 			return true;
 		});
-		result.get();
+		getFromFuture(result);
 	}
 
 	/**
@@ -168,7 +164,7 @@ class Transaction implements AutoCloseable {
 			txnConnection.commit();
 			return true;
 		});
-		result.get();
+		getFromFuture(result);
 	}
 
 	/**
@@ -191,7 +187,7 @@ class Transaction implements AutoCloseable {
 		throws InterruptedException, ExecutionException
 	{
 		Future<Query> result = submit(() -> txnConnection.prepareQuery(queryLn, queryStr, baseURI));
-		return result.get();
+		return getFromFuture(result);
 	}
 
 	/**
@@ -209,7 +205,7 @@ class Transaction implements AutoCloseable {
 		throws InterruptedException, ExecutionException
 	{
 		Future<TupleQueryResult> result = submit(() -> tQuery.evaluate());
-		return result.get();
+		return getFromFuture(result);
 	}
 
 	/**
@@ -227,7 +223,7 @@ class Transaction implements AutoCloseable {
 		throws InterruptedException, ExecutionException
 	{
 		Future<GraphQueryResult> result = submit(() -> gQuery.evaluate());
-		return result.get();
+		return getFromFuture(result);
 	}
 
 	/**
@@ -245,7 +241,7 @@ class Transaction implements AutoCloseable {
 		throws InterruptedException, ExecutionException
 	{
 		Future<Boolean> result = submit(() -> bQuery.evaluate());
-		return result.get();
+		return getFromFuture(result);
 	}
 
 	/**
@@ -266,7 +262,7 @@ class Transaction implements AutoCloseable {
 			txnConnection.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
 			return true;
 		});
-		result.get();
+		getFromFuture(result);
 	}
 
 	/**
@@ -281,7 +277,7 @@ class Transaction implements AutoCloseable {
 		throws InterruptedException, ExecutionException
 	{
 		Future<Long> result = submit(() -> txnConnection.size(contexts));
-		return result.get();
+		return getFromFuture(result);
 	}
 
 	/**
@@ -324,7 +320,7 @@ class Transaction implements AutoCloseable {
 				throw new RuntimeException(e);
 			}
 		});
-		result.get();
+		getFromFuture(result);
 	}
 
 	/**
@@ -352,7 +348,7 @@ class Transaction implements AutoCloseable {
 				throw new RuntimeException(e);
 			}
 		});
-		result.get();
+		getFromFuture(result);
 	}
 
 	/**
@@ -382,7 +378,7 @@ class Transaction implements AutoCloseable {
 			update.execute();
 			return true;
 		});
-		result.get();
+		getFromFuture(result);
 	}
 
 	/**
@@ -392,22 +388,7 @@ class Transaction implements AutoCloseable {
 	 *         otherwise.
 	 */
 	boolean hasActiveOperations() {
-		// Synchronize on the futures set to ensure that new executions are blocked from submitting once we get this monitor
-		synchronized (futures) {
-			Iterator<Future<?>> iterator = futures.iterator();
-			while (iterator.hasNext()) {
-				Future<?> future = iterator.next();
-				if (!future.isDone()) {
-					// Execution is in serial, so everything after this item is assumed not to be able to be cleaned up
-					return true;
-				}
-				else {
-					// Clean up this item to remove the reference to the item, while we have a lock on futures
-					iterator.remove();
-				}
-			}
-			return false;
-		}
+		return activeOperations.get() > 0;
 	}
 
 	/**
@@ -446,7 +427,7 @@ class Transaction implements AutoCloseable {
 					return true;
 				});
 				// Shutdown is atomic with the close operation above, so just need to block for it to complete before returning
-				result.get();
+				getFromFuture(result);
 			}
 			finally {
 				try {
@@ -474,7 +455,7 @@ class Transaction implements AutoCloseable {
 		throws InterruptedException, ExecutionException
 	{
 		// create a new RepositoryConnection with correct parser settings
-		Future<RepositoryConnection> future = submit(() -> {
+		Future<RepositoryConnection> result = submit(() -> {
 			RepositoryConnection conn = rep.getConnection();
 			ParserConfig config = conn.getParserConfig();
 			config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
@@ -483,7 +464,7 @@ class Transaction implements AutoCloseable {
 
 			return conn;
 		});
-		return future.get();
+		return getFromFuture(result);
 	}
 
 	/**
@@ -496,12 +477,11 @@ class Transaction implements AutoCloseable {
 	 *         result.
 	 */
 	private <T> Future<T> submit(final Callable<T> callable) {
-		// Synchronize around futures before submitting task so hasActiveOperations gets an instantaneous snapshot of the executor from futures
-		synchronized (futures) {
-			final Future<T> result = executor.submit(callable);
-			futures.add(result);
-			return result;
-		}
+		final Future<T> result = executor.submit(callable);
+		// increment the counter of the active operations
+		// note that it need to be decremented once the Future completes
+		activeOperations.incrementAndGet();
+		return result;
 	}
 
 	/**
@@ -515,12 +495,19 @@ class Transaction implements AutoCloseable {
 	 *         result.
 	 */
 	private <T> Future<T> submitAndShutdown(final Callable<T> callable) {
-		// Synchronize around futures before submitting task so hasActiveOperations gets an instantaneous snapshot of the executor from futures
-		synchronized (futures) {
-			final Future<T> result = executor.submit(callable);
-			executor.shutdown();
-			futures.add(result);
-			return result;
+		final Future<T> result = executor.submit(callable);
+		// increment the counter of the active operations
+		// note that it need to be decremented once the Future completes
+		activeOperations.incrementAndGet();
+		executor.shutdown();
+		return result;
+	}
+	
+	private <T> T getFromFuture(Future<T> result) throws InterruptedException, ExecutionException {
+		try {
+			return result.get();
+		} finally {
+			activeOperations.decrementAndGet();
 		}
 	}
 
