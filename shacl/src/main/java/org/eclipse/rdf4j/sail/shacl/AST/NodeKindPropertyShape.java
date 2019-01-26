@@ -12,8 +12,10 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
@@ -90,8 +92,17 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 
 	@Override
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		return true;
-	}
+		boolean requiresEvalutation = false;
+		if (nodeShape instanceof TargetClass) {
+			Resource targetClass = ((TargetClass) nodeShape).targetClass;
+			try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
+				requiresEvalutation = addedStatementsConnection.hasStatement(null, RDF.TYPE, targetClass, false);
+			}
+		} else {
+			requiresEvalutation = true;
+		}
+
+		return super.requiresEvaluation(addedStatements, removedStatements) | requiresEvalutation;	}
 
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
