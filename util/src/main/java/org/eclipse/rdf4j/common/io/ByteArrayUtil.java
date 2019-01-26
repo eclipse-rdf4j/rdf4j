@@ -17,6 +17,10 @@ public class ByteArrayUtil {
 
 	/**
 	 * Puts the entire <tt>source</tt> array in the <tt>target</tt> array at offset <tt>offset</tt>.
+	 * 
+	 * @param source source array
+	 * @param target target array
+	 * @param offset non-negative offset
 	 */
 	public static void put(byte[] source, byte[] target, int offset) {
 		System.arraycopy(source, 0, target, offset, source.length);
@@ -24,6 +28,10 @@ public class ByteArrayUtil {
 
 	/**
 	 * Gets the subarray from <tt>array</tt> that starts at <tt>offset</tt>.
+	 * 
+	 * @param array source array
+	 * @param offset non-negative offset
+	 * @return byte array
 	 */
 	public static byte[] get(byte[] array, int offset) {
 		return get(array, offset, array.length - offset);
@@ -31,6 +39,11 @@ public class ByteArrayUtil {
 
 	/**
 	 * Gets the subarray of length <tt>length</tt> from <tt>array</tt> that starts at <tt>offset</tt>.
+	 * 
+	 * @param array byte array
+	 * @param offset non-negative offset
+	 * @param length length
+	 * @return byte array
 	 */
 	public static byte[] get(byte[] array, int offset, int length) {
 		byte[] result = new byte[length];
@@ -38,6 +51,13 @@ public class ByteArrayUtil {
 		return result;
 	}
 
+	/**
+	 * Put an integer value (padded) in a byte array at a specific offset.
+	 * 
+	 * @param value integer value
+	 * @param array byte array
+	 * @param offset non-negative offset
+	 */
 	public static void putInt(int value, byte[] array, int offset) {
 		array[offset] = (byte)(0xff & (value >>> 24));
 		array[offset + 1] = (byte)(0xff & (value >>> 16));
@@ -45,11 +65,25 @@ public class ByteArrayUtil {
 		array[offset + 3] = (byte)(0xff & value);
 	}
 
+	/**
+	 * Get an integer value from a byte array at a specific offset.
+	 * 
+	 * @param array byte array
+	 * @param offset non-negative offset
+	 * @return integer value
+	 */
 	public static int getInt(byte[] array, int offset) {
 		return ((array[offset] & 0xff) << 24) | ((array[offset + 1] & 0xff) << 16)
 				| ((array[offset + 2] & 0xff) << 8) | (array[offset + 3] & 0xff);
 	}
 
+	/**
+	 * Put a long value (padded) in a byte array at a specific offset. 
+	 * 
+	 * @param value long value
+	 * @param array byte array
+	 * @param offset non-negative offset
+	 */
 	public static void putLong(long value, byte[] array, int offset) {
 		array[offset] = (byte)(0xff & (value >>> 56));
 		array[offset + 1] = (byte)(0xff & (value >>> 48));
@@ -61,6 +95,13 @@ public class ByteArrayUtil {
 		array[offset + 7] = (byte)(0xff & value);
 	}
 
+	/**
+	 * Get a long value from a byte array at a specific offset.
+	 * 
+	 * @param array byte array
+	 * @param offset offset
+	 * @return long value
+	 */
 	public static long getLong(byte[] array, int offset) {
 		return ((long)(array[offset] & 0xff) << 56) | ((long)(array[offset + 1] & 0xff) << 48)
 				| ((long)(array[offset + 2] & 0xff) << 40) | ((long)(array[offset + 3] & 0xff) << 32)
@@ -147,6 +188,11 @@ public class ByteArrayUtil {
 	 * Checks whether <tt>value</tt> matches <tt>pattern</tt> with respect to the bits specified by
 	 * <tt>mask</tt>. In other words: this method returns true if
 	 * <tt>(value[i] ^ pattern[i]) &amp; mask[i] == 0</tt> for all i.
+	 * 
+	 * @param value byte array
+	 * @param mask 
+	 * @param pattern pattern
+	 * @return  true if pattern was found
 	 */
 	public static boolean matchesPattern(byte[] value, byte[] mask, byte[] pattern) {
 		for (int i = 0; i < value.length; i++) {
@@ -161,6 +207,11 @@ public class ByteArrayUtil {
 	/**
 	 * Checks whether <tt>subValue</tt> matches the region in <tt>superValue</tt> starting at offset
 	 * <tt>offset</tt>.
+	 * 
+	 * @param subValue value to search for
+	 * @param superValue byte array
+	 * @param offset non-negative offset
+	 * @return true upon exact match, false otherwise
 	 */
 	public static boolean regionMatches(byte[] subValue, byte[] superValue, int offset) {
 		for (int i = 0; i < subValue.length; i++) {
@@ -196,6 +247,12 @@ public class ByteArrayUtil {
 		return result;
 	}
 
+	/**
+	 * Convert a byte array to a vector of bits.
+	 * 
+	 * @param array byte array
+	 * @return bitset
+	 */
 	public static BitSet toBitSet(byte[] array) {
 		BitSet bitSet = new BitSet(8 * array.length);
 
@@ -212,6 +269,12 @@ public class ByteArrayUtil {
 		return bitSet;
 	}
 
+	/**
+	 * Convert a bitset to a byte array.
+	 * 
+	 * @param bitSet bitset (should not be null)
+	 * @return byte array
+	 */
 	public static byte[] toByteArray(BitSet bitSet) {
 		byte[] array = new byte[bitSet.size() / 8 + 1];
 
@@ -222,6 +285,12 @@ public class ByteArrayUtil {
 		return array;
 	}
 
+	/**
+	 * Create a byte mask, setting bit bitNo to 1 and other bits to 0.
+	 * 
+	 * @param bitNo bit
+	 * @return byte mask
+	 */
 	private static byte byteMask(int bitNo) {
 		return (byte)(0x80 >>> (bitNo % 8));
 	}
@@ -230,6 +299,9 @@ public class ByteArrayUtil {
 	 * Returns the hexadecimal value of the supplied byte array. The resulting string always uses two
 	 * hexadecimals per byte. As a result, the length of the resulting string is guaranteed to be twice the
 	 * length of the supplied byte array.
+	 * 
+	 * @param array byte array
+	 * @return hexadecimal string
 	 */
 	public static String toHexString(byte[] array) {
 		StringBuilder sb = new StringBuilder(2 * array.length);

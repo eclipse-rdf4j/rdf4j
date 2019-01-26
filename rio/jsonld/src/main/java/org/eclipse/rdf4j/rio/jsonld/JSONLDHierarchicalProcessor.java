@@ -78,7 +78,7 @@ public class JSONLDHierarchicalProcessor {
 	private static Object expandContextInDepth(Object input) {
 
 		final Map<String, Object> graph = new LinkedHashMap<>();
-		final List<Object> expanded = new ArrayList<Object>();
+		final List<Object> expanded = new ArrayList<>();
 		for (Map<String, Object> jsonNode : (ArrayList<Map<String, Object>>) input) {
 			if (jsonNode.containsKey(GRAPH)) {
 				// Add graph nodes to the return result without further processing

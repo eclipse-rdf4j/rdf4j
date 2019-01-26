@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.query.QueryResultHandler;
 import org.eclipse.rdf4j.rio.ParseErrorListener;
 import org.eclipse.rdf4j.rio.ParseLocationListener;
 import org.eclipse.rdf4j.rio.ParserConfig;
-import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RioSetting;
 
 /**

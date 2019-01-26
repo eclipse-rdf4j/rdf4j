@@ -154,6 +154,7 @@ public class Service extends UnaryTupleOperator {
 		return serviceVars;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{
@@ -206,7 +207,7 @@ public class Service extends UnaryTupleOperator {
 	 * @return the set of variable names in the given service expression
 	 */
 	private Set<String> computeServiceVars(TupleExpr serviceExpression) {
-		final Set<String> res = new HashSet<String>();
+		final Set<String> res = new HashSet<>();
 		serviceExpression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 
 			@Override

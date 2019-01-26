@@ -26,6 +26,7 @@ public class TriGWriterFactory implements RDFWriterFactory {
 	/**
 	 * Returns {@link RDFFormat#TRIG}.
 	 */
+	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.TRIG;
 	}
@@ -33,6 +34,7 @@ public class TriGWriterFactory implements RDFWriterFactory {
 	/**
 	 * Returns a new instance of {@link TriGWriter}.
 	 */
+	@Override
 	public RDFWriter getWriter(OutputStream out) {
 		return new TriGWriter(out);
 	}
@@ -42,6 +44,7 @@ public class TriGWriterFactory implements RDFWriterFactory {
 	 *
 	 * @throws URISyntaxException
 	 */
+	@Override
 	public RDFWriter getWriter(OutputStream out, String baseURI)
 		throws URISyntaxException
 	{
@@ -51,6 +54,7 @@ public class TriGWriterFactory implements RDFWriterFactory {
 	/**
 	 * Returns a new instance of {@link TriGWriter}.
 	 */
+	@Override
 	public RDFWriter getWriter(Writer writer) {
 		return new TriGWriter(writer);
 	}
@@ -60,6 +64,7 @@ public class TriGWriterFactory implements RDFWriterFactory {
 	 *
 	 * @throws URISyntaxException
 	 */
+	@Override
 	public RDFWriter getWriter(Writer writer, String baseURI)
 		throws URISyntaxException
 	{

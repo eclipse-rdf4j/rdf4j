@@ -133,6 +133,9 @@ public class FileUtil {
 
 	/**
 	 * Checks whether the specified file name is a legal (DOS/Windows-) file name.
+	 * 
+	 * @param fileName name of the file
+	 * @return true if all characters of the name are legal to use
 	 */
 	public static boolean isLegalFileName(String fileName) {
 		for (int i = 0; i < fileName.length(); i++) {
@@ -147,6 +150,9 @@ public class FileUtil {
 
 	/**
 	 * Checks whether the specified character is a legal (DOS/Windows-) file name character.
+	 * 
+	 * @param c character to check
+	 * @return true if character is legal to use
 	 */
 	public static boolean isLegalFileNameChar(char c) {
 		return ILLEGAL_FILE_NAME_CHARS.indexOf(c) == -1;
@@ -154,18 +160,16 @@ public class FileUtil {
 
 	/**
 	 * Copies the contents of file <tt>source</tt> to file <tt>destination</tt>.
+	 * 
+	 * @param source source file
+	 * @param destination destination file
+	 * @throws IOException
 	 */
 	public static void copyFile(File source, File destination)
 		throws IOException
 	{
-		FileInputStream in = null;
-		try {
-			in = new FileInputStream(source);
+		try (FileInputStream in = new FileInputStream(source)) {
 			IOUtil.writeStream(in, destination);
-		}
-		finally {
-			if (in != null)
-				in.close();
 		}
 	}
 
@@ -174,8 +178,8 @@ public class FileUtil {
 	 * 
 	 * @param dir
 	 *        The directory to create.
-	 * @exception IOException
-	 *            If the creation of the directory failed.
+	 * @throws IOException
+	 *        If the creation of the directory failed.
 	 */
 	public static void createDirIfNotExists(File dir)
 		throws IOException
@@ -186,9 +190,10 @@ public class FileUtil {
 	}
 
 	/**
-	 * Deletes the given file and everything under it.
+	 * Deletes a directory, recursively deleting all the files and subdirectories in it, or just a file.
 	 * 
-	 * @return Whether all files were deleted succesfully.
+	 * @param directory file or directory to delete
+	 * @return true if all files were deleted successfully.
 	 */
 	public static boolean deltree(File directory) {
 		if (directory == null || !directory.exists()) {
@@ -214,9 +219,10 @@ public class FileUtil {
 	}
 
 	/**
-	 * Deletes all files and directories in the specified directory. Nothing happens when the specified File
-	 * is not a directory.
+	 * Deletes all files in the specified directory. 
+	 * Nothing happens when the specified File is not a directory.
 	 * 
+	 * @param directory
 	 * @return true when all files in the specified directory were successfully deleted, when there where no
 	 *         files or when the specified file was not a directory.
 	 */
@@ -237,9 +243,10 @@ public class FileUtil {
 	}
 
 	/**
-	 * Deletes all files and directories in the specified directory. Nothing happens when the specified File
-	 * is not a directory.
+	 * Deletes all files and subdirectories in the specified directory.
+	 * Nothing happens when the specified File is not a directory.
 	 * 
+	 * @param directory
 	 * @return true when all children were successfully deleted, when there were no children or when the file
 	 *         was not a directory.
 	 */
@@ -267,7 +274,7 @@ public class FileUtil {
 	 * @param excludes
 	 *        The File objects to be excluded; if a directory is excluded, all files under it are excluded as
 	 *        well!
-	 * @return Whether moving was succesfull
+	 * @return Whether moving was successful
 	 */
 	public static boolean moveRecursive(File from, File to, Collection<File> excludes) {
 		if (from == null || !from.exists()) {
@@ -311,7 +318,7 @@ public class FileUtil {
 	 * Creates a new and empty directory in the default temp directory using the given prefix.
 	 * 
 	 * @param prefix
-	 *        The prefix string to be used in generating the diretory's name; must be at least three
+	 *        The prefix string to be used in generating the directory's name; must be at least three
 	 *        characters long.
 	 * @return A newly-created empty directory.
 	 * @throws IOException

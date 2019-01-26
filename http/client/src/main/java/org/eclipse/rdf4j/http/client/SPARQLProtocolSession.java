@@ -214,10 +214,12 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Get/set methods *
 	 *-----------------*/
 
+	@Override
 	public final HttpClient getHttpClient() {
 		return httpClient;
 	}
 
+	@Override
 	public void setHttpClient(HttpClient httpClient) {
 		this.httpClient = httpClient;
 	}
@@ -596,7 +598,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	protected List<NameValuePair> getQueryMethodParameters(QueryLanguage ql, String query, String baseURI,
 			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings)
 	{
-		List<NameValuePair> queryParams = new ArrayList<NameValuePair>();
+		List<NameValuePair> queryParams = new ArrayList<>();
 
 		/*
 		 * Only query, default-graph-uri, and named-graph-uri are standard parameters in SPARQL Protocol 1.1.
@@ -634,7 +636,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings)
 	{
 
-		List<NameValuePair> queryParams = new ArrayList<NameValuePair>();
+		List<NameValuePair> queryParams = new ArrayList<>();
 
 		if (update != null) {
 			if (baseURI != null && !baseURI.equals("")) {
@@ -796,7 +798,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		throws RepositoryException, IOException, QueryInterruptedException, MalformedQueryException
 	{
 
-		final List<String> acceptValues = new ArrayList<String>(tqrFormats.size());
+		final List<String> acceptValues = new ArrayList<>(tqrFormats.size());
 		for (QueryResultFormat format : tqrFormats) {
 
 			// Determine a q-value that reflects the user specified preference

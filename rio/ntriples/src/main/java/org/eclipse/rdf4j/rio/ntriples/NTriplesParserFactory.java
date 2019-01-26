@@ -21,6 +21,7 @@ public class NTriplesParserFactory implements RDFParserFactory {
 	/**
 	 * Returns {@link RDFFormat#NTRIPLES}.
 	 */
+	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.NTRIPLES;
 	}
@@ -28,6 +29,7 @@ public class NTriplesParserFactory implements RDFParserFactory {
 	/**
 	 * Returns a new instance of NTriplesParser.
 	 */
+	@Override
 	public RDFParser getParser() {
 		return new NTriplesParser();
 	}

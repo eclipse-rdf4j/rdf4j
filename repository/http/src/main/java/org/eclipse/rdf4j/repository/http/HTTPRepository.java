@@ -222,8 +222,7 @@ public class HTTPRepository extends AbstractRepository
 
 		try (RDF4JProtocolSession client = createHTTPClient()) {
 			final String repositoryURL = client.getRepositoryURL();
-			final TupleQueryResult repositoryList = client.getRepositoryList();
-			try {
+			try (TupleQueryResult repositoryList = client.getRepositoryList()) {
 				while (repositoryList.hasNext()) {
 					final BindingSet bindingSet = repositoryList.next();
 					final Value uri = bindingSet.getValue("uri");
@@ -233,9 +232,6 @@ public class HTTPRepository extends AbstractRepository
 						break;
 					}
 				}
-			}
-			finally {
-				repositoryList.close();
 			}
 		}
 		catch (QueryEvaluationException e) {

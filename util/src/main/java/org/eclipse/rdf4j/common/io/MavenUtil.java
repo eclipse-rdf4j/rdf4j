@@ -27,6 +27,7 @@ public class MavenUtil {
 	 * @param artifactId
 	 *        The artifact's ID.
 	 * @return The parsed pom properties, or <tt>null</tt> if the resource could not be found.
+	 * @throws IOException
 	 */
 	public static Properties loadPomProperties(String groupId, String artifactId)
 		throws IOException
@@ -44,6 +45,7 @@ public class MavenUtil {
 	 *        The artifact's ID.
 	 * @param defaultVersion
 	 *        The version number to return in case no version number was found.
+	 * @return version as a string
 	 */
 	public static String loadVersion(String groupId, String artifactId, String defaultVersion) {
 		String version = null;

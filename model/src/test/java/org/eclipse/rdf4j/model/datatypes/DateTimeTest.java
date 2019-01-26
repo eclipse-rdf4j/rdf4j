@@ -177,6 +177,7 @@ public class DateTimeTest extends TestCase {
 			this.dateString = dateString;
 		}
 
+		@Override
 		protected void runTest() {
 			if (!XMLDatatypeUtil.isValidDateTime(dateString)) {
 				String errMsg = "string should be valid but is not: " + dateString;
@@ -195,6 +196,7 @@ public class DateTimeTest extends TestCase {
 			this.dateString = dateString;
 		}
 
+		@Override
 		protected void runTest() {
 			if (XMLDatatypeUtil.isValidDateTime(dateString)) {
 				String errMsg = "string should be invalid but is not: " + dateString;
@@ -216,6 +218,7 @@ public class DateTimeTest extends TestCase {
 			this.expected = expected;
 		}
 
+		@Override
 		protected void runTest() {
 			String normalized = XMLDatatypeUtil.normalizeDateTime(input);
 			if (!expected.equals(normalized)) {
@@ -239,6 +242,7 @@ public class DateTimeTest extends TestCase {
 			this.dateString2 = dateString2;
 		}
 
+		@Override
 		protected void runTest() {
 			int result = XMLDatatypeUtil.compareDateTime(dateString1, dateString2);
 			if (result != 0) {
@@ -262,6 +266,7 @@ public class DateTimeTest extends TestCase {
 			this.dateString2 = dateString2;
 		}
 
+		@Override
 		protected void runTest() {
 			int result = XMLDatatypeUtil.compareDateTime(dateString1, dateString2);
 			if (result >= 0) {

@@ -18,7 +18,7 @@
       sr:sailImpl [
          sail:sailType "openrdf:DirectTypeHierarchyInferencer" ;
          sail:delegate [
-            sail:sailType "openrdf:ForwardChainingRDFSInferencer" ;
+            sail:sailType "rdf4j:SchemaCachingRDFSInferencer" ;
             sail:delegate [
                sail:sailType "openrdf:NativeStore" ;
 	       sail:iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";

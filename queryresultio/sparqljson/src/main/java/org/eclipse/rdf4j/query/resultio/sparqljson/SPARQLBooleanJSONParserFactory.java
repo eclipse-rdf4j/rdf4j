@@ -22,6 +22,7 @@ public class SPARQLBooleanJSONParserFactory implements BooleanQueryResultParserF
 	/**
 	 * Returns {@link BooleanQueryResultFormat#JSON}.
 	 */
+	@Override
 	public BooleanQueryResultFormat getBooleanQueryResultFormat() {
 		return BooleanQueryResultFormat.JSON;
 	}
@@ -29,6 +30,7 @@ public class SPARQLBooleanJSONParserFactory implements BooleanQueryResultParserF
 	/**
 	 * Returns a new instance of SPARQLBooleanJSONParser.
 	 */
+	@Override
 	public BooleanQueryResultParser getParser() {
 		return new SPARQLBooleanJSONParser();
 	}

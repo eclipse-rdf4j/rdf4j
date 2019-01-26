@@ -23,13 +23,15 @@ public class SingletonIterator<E> implements Iterator<E> {
 	 * Creates a new EmptyIterator.
 	 */
 	public SingletonIterator(E value) {
-		this.value = new AtomicReference<E>(value);
+		this.value = new AtomicReference<>(value);
 	}
 
+	@Override
 	public boolean hasNext() {
 		return value.get() != null;
 	}
 
+	@Override
 	public E next() {
 		E result = value.getAndSet(null);
 		if (result == null) {
@@ -38,6 +40,7 @@ public class SingletonIterator<E> implements Iterator<E> {
 		return result;
 	}
 
+	@Override
 	public void remove() {
 		throw new UnsupportedOperationException();
 	}

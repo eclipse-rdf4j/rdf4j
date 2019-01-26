@@ -23,6 +23,7 @@ public class ASTGroupClause extends SimpleNode {
 	}
 
 	/** Accept the visitor. **/
+	@Override
 	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
 		throws VisitorException
 	{
@@ -31,7 +32,7 @@ public class ASTGroupClause extends SimpleNode {
 
 	public List<String> getBindingNames() {
 
-		List<String> bindingNames = new ArrayList<String>();
+		List<String> bindingNames = new ArrayList<>();
 
 		for (ASTGroupCondition condition : getGroupConditions()) {
 			bindingNames.add(condition.getName());

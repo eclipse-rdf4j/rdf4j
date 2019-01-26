@@ -54,6 +54,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 * 
 	 * @return <tt>true</tt> if the wrapped Iteration contains more elements, <tt>false</tt> otherwise.
 	 */
+	@Override
 	public boolean hasNext()
 		throws X
 	{
@@ -77,6 +78,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 * @throws java.util.NoSuchElementException
 	 *         If all elements have been returned or it has been closed.
 	 */
+	@Override
 	public E next()
 		throws X
 	{
@@ -105,6 +107,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 *         if the Iteration has been closed, or if {@link #next} has not yet been called, or
 	 *         {@link #remove} has already been called after the last call to {@link #next}.
 	 */
+	@Override
 	public void remove()
 		throws X
 	{

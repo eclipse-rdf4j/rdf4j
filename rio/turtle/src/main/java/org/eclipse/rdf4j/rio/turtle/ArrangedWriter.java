@@ -56,7 +56,7 @@ class ArrangedWriter implements RDFWriter {
 
 	private final Deque<SubjectInContext> stack = new LinkedList<>();
 
-	private final Map<String, String> prefixes = new TreeMap<String, String>();
+	private final Map<String, String> prefixes = new TreeMap<>();
 
 	private final Map<SubjectInContext, Set<Statement>> stmtBySubject = new LinkedHashMap<>();
 
@@ -66,6 +66,7 @@ class ArrangedWriter implements RDFWriter {
 
 	private final Comparator<Statement> comparator = new Comparator<Statement>() {
 
+		@Override
 		public int compare(Statement s1, Statement s2) {
 			IRI p1 = s1.getPredicate();
 			IRI p2 = s2.getPredicate();
@@ -123,26 +124,32 @@ class ArrangedWriter implements RDFWriter {
 		this.repeatBlankNodes = repeatBlankNodes;
 	}
 
+	@Override
 	public RDFFormat getRDFFormat() {
 		return delegate.getRDFFormat();
 	}
 
+	@Override
 	public RDFWriter setWriterConfig(WriterConfig config) {
 		return delegate.setWriterConfig(config);
 	}
 
+	@Override
 	public WriterConfig getWriterConfig() {
 		return delegate.getWriterConfig();
 	}
 
+	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
 		return delegate.getSupportedSettings();
 	}
 
+	@Override
 	public <T> RDFWriter set(RioSetting<T> setting, T value) {
 		return delegate.set(setting, value);
 	}
 
+	@Override
 	public void startRDF()
 		throws RDFHandlerException
 	{
@@ -156,6 +163,7 @@ class ArrangedWriter implements RDFWriter {
 		delegate.startRDF();
 	}
 
+	@Override
 	public void endRDF()
 		throws RDFHandlerException
 	{
@@ -164,6 +172,7 @@ class ArrangedWriter implements RDFWriter {
 		delegate.endRDF();
 	}
 
+	@Override
 	public void handleNamespace(String prefix, String uri)
 		throws RDFHandlerException
 	{
@@ -176,6 +185,7 @@ class ArrangedWriter implements RDFWriter {
 		}
 	}
 
+	@Override
 	public void handleComment(String comment)
 		throws RDFHandlerException
 	{
@@ -183,6 +193,7 @@ class ArrangedWriter implements RDFWriter {
 		delegate.handleComment(comment);
 	}
 
+	@Override
 	public synchronized void handleStatement(Statement st)
 		throws RDFHandlerException
 	{
@@ -262,7 +273,7 @@ class ArrangedWriter implements RDFWriter {
 		}
 		Set<Statement> set = stmtBySubject.get(key);
 		if (set == null) {
-			stmtBySubject.put(key, set = new TreeSet<Statement>(comparator));
+			stmtBySubject.put(key, set = new TreeSet<>(comparator));
 		}
 		set.addAll(matches);
 		if (firstMatch.isEmpty()) {
@@ -305,7 +316,7 @@ class ArrangedWriter implements RDFWriter {
 		}
 		else {
 			if (stmts == null) {
-				stmtBySubject.put(key, stmts = new TreeSet<Statement>(comparator));
+				stmtBySubject.put(key, stmts = new TreeSet<>(comparator));
 			}
 			stmts.add(st);
 		}
@@ -328,7 +339,7 @@ class ArrangedWriter implements RDFWriter {
 	private synchronized void flushNamespaces()
 		throws RDFHandlerException
 	{
-		Map<String, String> namespaces = new TreeMap<String, String>();
+		Map<String, String> namespaces = new TreeMap<>();
 		for (Map.Entry<String, String> e : prefixes.entrySet()) {
 			namespaces.put(e.getValue(), e.getKey());
 		}
@@ -340,7 +351,7 @@ class ArrangedWriter implements RDFWriter {
 
 	private synchronized void trimNamespaces() {
 		if (!prefixes.isEmpty()) {
-			Set<String> used = new HashSet<String>(prefixes.size());
+			Set<String> used = new HashSet<>(prefixes.size());
 			for (Set<Statement> stmts : stmtBySubject.values()) {
 				getUsedNamespaces(stmts, used);
 			}

@@ -127,6 +127,7 @@ public class SimpleLiteral implements Literal {
 		setDatatype(RDF.LANGSTRING);
 	}
 
+	@Override
 	public Optional<String> getLanguage() {
 		return Optional.ofNullable(language);
 	}
@@ -135,6 +136,7 @@ public class SimpleLiteral implements Literal {
 		this.datatype = datatype;
 	}
 
+	@Override
 	public IRI getDatatype() {
 		return datatype;
 	}
@@ -206,46 +208,57 @@ public class SimpleLiteral implements Literal {
 		}
 	}
 
+	@Override
 	public String stringValue() {
 		return label;
 	}
 
+	@Override
 	public boolean booleanValue() {
 		return XMLDatatypeUtil.parseBoolean(getLabel());
 	}
 
+	@Override
 	public byte byteValue() {
 		return XMLDatatypeUtil.parseByte(getLabel());
 	}
 
+	@Override
 	public short shortValue() {
 		return XMLDatatypeUtil.parseShort(getLabel());
 	}
 
+	@Override
 	public int intValue() {
 		return XMLDatatypeUtil.parseInt(getLabel());
 	}
 
+	@Override
 	public long longValue() {
 		return XMLDatatypeUtil.parseLong(getLabel());
 	}
 
+	@Override
 	public float floatValue() {
 		return XMLDatatypeUtil.parseFloat(getLabel());
 	}
 
+	@Override
 	public double doubleValue() {
 		return XMLDatatypeUtil.parseDouble(getLabel());
 	}
 
+	@Override
 	public BigInteger integerValue() {
 		return XMLDatatypeUtil.parseInteger(getLabel());
 	}
 
+	@Override
 	public BigDecimal decimalValue() {
 		return XMLDatatypeUtil.parseDecimal(getLabel());
 	}
 
+	@Override
 	public XMLGregorianCalendar calendarValue() {
 		return XMLDatatypeUtil.parseCalendar(getLabel());
 	}

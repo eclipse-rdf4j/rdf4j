@@ -38,6 +38,7 @@ public class BNodeGenerator extends AbstractQueryModelNode implements ValueExpr 
 		this.nodeIdExpr = nodeIdExpr;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

@@ -32,7 +32,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 
 		assert timeLimit > 0 : "time limit must be a positive number, is: " + timeLimit;
 
-		interruptTask = new InterruptTask<E, X>(this);
+		interruptTask = new InterruptTask<>(this);
 
 		timer.schedule(interruptTask, timeLimit);
 	}

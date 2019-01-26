@@ -27,6 +27,6 @@ public class ASTOrderBy extends SimpleNode {
 	}
 
 	public List<ASTOrderExpr> getOrderExprList() {
-		return new CastingList<ASTOrderExpr>(children);
+		return new CastingList<>(children);
 	}
 }

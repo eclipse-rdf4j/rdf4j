@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository;
 
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 
 /**

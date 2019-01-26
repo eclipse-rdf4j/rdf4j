@@ -31,6 +31,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 
 	private static final long serialVersionUID = 4254119331281455614L;
 
+	@Override
 	public Model unmodifiable() {
 		return new UnmodifiableModel(this);
 	}
@@ -94,7 +95,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		// Estimate size of array; be prepared to see more or fewer elements
 		Iterator<Statement> it = iterator();
 		try {
-			List<Object> r = new ArrayList<Object>(size());
+			List<Object> r = new ArrayList<>(size());
 			while (it.hasNext()) {
 				r.add(it.next());
 			}
@@ -110,7 +111,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		// Estimate size of array; be prepared to see more or fewer elements
 		Iterator<Statement> it = iterator();
 		try {
-			List<Object> r = new ArrayList<Object>(size());
+			List<Object> r = new ArrayList<>(size());
 			while (it.hasNext()) {
 				r.add(it.next());
 			}
@@ -354,7 +355,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 
 			private final Iterator<Statement> iter;
 
-			private final Set<V> set = new LinkedHashSet<V>();
+			private final Set<V> set = new LinkedHashSet<>();
 
 			private Statement current;
 
@@ -430,7 +431,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		public int size() {
 			Iterator<Statement> iter = AbstractModel.this.iterator();
 			try {
-				Set<V> set = new LinkedHashSet<V>();
+				Set<V> set = new LinkedHashSet<>();
 				while (iter.hasNext()) {
 					set.add(term(iter.next()));
 				}
@@ -459,7 +460,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		public Object[] toArray() {
 			Iterator<Statement> iter = AbstractModel.this.iterator();
 			try {
-				Set<V> set = new LinkedHashSet<V>();
+				Set<V> set = new LinkedHashSet<>();
 				while (iter.hasNext()) {
 					set.add(term(iter.next()));
 				}
@@ -474,7 +475,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		public <T> T[] toArray(T[] a) {
 			Iterator<Statement> iter = AbstractModel.this.iterator();
 			try {
-				Set<V> set = new LinkedHashSet<V>();
+				Set<V> set = new LinkedHashSet<>();
 				while (iter.hasNext()) {
 					set.add(term(iter.next()));
 				}

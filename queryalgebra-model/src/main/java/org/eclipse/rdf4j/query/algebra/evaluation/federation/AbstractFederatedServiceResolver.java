@@ -25,7 +25,7 @@ public abstract class AbstractFederatedServiceResolver implements FederatedServi
 	/**
 	 * Map service URL to the corresponding initialized {@link FederatedService}
 	 */
-	protected Map<String, FederatedService> endpointToService = new HashMap<String, FederatedService>();
+	protected Map<String, FederatedService> endpointToService = new HashMap<>();
 
 	/**
 	 * Register the specified service to evaluate SERVICE expressions for the given url.

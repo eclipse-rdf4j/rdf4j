@@ -11,7 +11,7 @@ public class SingletonIterationTest extends CloseableIterationTest {
 
 	@Override
 	protected CloseableIteration<String, Exception> createTestIteration() {
-		return new SingletonIteration<String, Exception>("3");
+		return new SingletonIteration<>("3");
 	}
 
 	@Override

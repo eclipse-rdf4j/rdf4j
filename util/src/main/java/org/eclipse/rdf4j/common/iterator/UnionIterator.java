@@ -46,7 +46,7 @@ public class UnionIterator<E> extends LookAheadIterator<E> {
 		argIter = args.iterator();
 
 		// Initialize with empty iteration so that var is never null
-		currentIter = new EmptyIterator<E>();
+		currentIter = new EmptyIterator<>();
 	}
 
 	/*--------------*

@@ -45,17 +45,17 @@ class GraphPattern {
 	/**
 	 * The required tuple expressions in this graph pattern.
 	 */
-	private List<TupleExpr> requiredTEs = new ArrayList<TupleExpr>();
+	private List<TupleExpr> requiredTEs = new ArrayList<>();
 
 	/**
 	 * The optional tuple expressions and their constraints in this graph pattern.
 	 */
-	private List<OptionalTupleExpr> optionalTEs = new ArrayList<OptionalTupleExpr>();
+	private List<OptionalTupleExpr> optionalTEs = new ArrayList<>();
 
 	/**
 	 * The boolean constraints in this graph pattern.
 	 */
-	private List<ValueExpr> constraints = new ArrayList<ValueExpr>();
+	private List<ValueExpr> constraints = new ArrayList<>();
 
 	/**
 	 * Creates a new graph pattern.
@@ -141,7 +141,7 @@ class GraphPattern {
 
 	public List<ValueExpr> removeAllConstraints() {
 		List<ValueExpr> constraints = this.constraints;
-		this.constraints = new ArrayList<ValueExpr>();
+		this.constraints = new ArrayList<>();
 		return constraints;
 	}
 

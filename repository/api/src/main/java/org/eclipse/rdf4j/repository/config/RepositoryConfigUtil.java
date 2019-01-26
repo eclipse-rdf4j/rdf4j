@@ -55,7 +55,7 @@ public class RepositoryConfigUtil {
 	public static Set<String> getRepositoryIDs(Model model)
 		throws RepositoryException
 	{
-		Set<String> idSet = new LinkedHashSet<String>();
+		Set<String> idSet = new LinkedHashSet<>();
 		model.filter(null, REPOSITORYID, null).forEach(idStatement -> {
 			if (idStatement.getObject() instanceof Literal) {
 				Literal idLiteral = (Literal)idStatement.getObject();
@@ -84,12 +84,10 @@ public class RepositoryConfigUtil {
 	public static Set<String> getRepositoryIDs(Repository repository)
 		throws RepositoryException
 	{
-		RepositoryConnection con = repository.getConnection();
-		try {
-			Set<String> idSet = new LinkedHashSet<String>();
+		try (RepositoryConnection con = repository.getConnection()) {
+			Set<String> idSet = new LinkedHashSet<>();
 
-			RepositoryResult<Statement> idStatementIter = con.getStatements(null, REPOSITORYID, null, true);
-			try {
+			try (RepositoryResult<Statement> idStatementIter = con.getStatements(null, REPOSITORYID, null, true)) {
 				while (idStatementIter.hasNext()) {
 					Statement idStatement = idStatementIter.next();
 
@@ -99,14 +97,8 @@ public class RepositoryConfigUtil {
 					}
 				}
 			}
-			finally {
-				idStatementIter.close();
-			}
 
 			return idSet;
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -126,12 +118,8 @@ public class RepositoryConfigUtil {
 	public static boolean hasRepositoryConfig(Repository repository, String repositoryID)
 		throws RepositoryException, RepositoryConfigException
 	{
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			return getIDStatement(con, repositoryID) != null;
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -139,8 +127,7 @@ public class RepositoryConfigUtil {
 	public static RepositoryConfig getRepositoryConfig(Repository repository, String repositoryID)
 		throws RepositoryConfigException, RepositoryException
 	{
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			Statement idStatement = getIDStatement(con, repositoryID);
 			if (idStatement == null) {
 				// No such config
@@ -157,9 +144,6 @@ public class RepositoryConfigUtil {
 			Model contextGraph = QueryResults.asModel(con.getStatements(null, null, null, true, context));
 
 			return RepositoryConfig.create(contextGraph, repositoryNode);
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -182,13 +166,8 @@ public class RepositoryConfigUtil {
 	public static void updateRepositoryConfigs(Repository repository, RepositoryConfig... configs)
 		throws RepositoryException, RepositoryConfigException
 	{
-		RepositoryConnection con = repository.getConnection();
-
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			updateRepositoryConfigs(con, configs);
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -252,8 +231,7 @@ public class RepositoryConfigUtil {
 	{
 		boolean changed = false;
 
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			con.begin();
 
 			for (String id : repositoryIDs) {
@@ -266,9 +244,6 @@ public class RepositoryConfigUtil {
 			}
 
 			con.commit();
-		}
-		finally {
-			con.close();
 		}
 
 		return changed;

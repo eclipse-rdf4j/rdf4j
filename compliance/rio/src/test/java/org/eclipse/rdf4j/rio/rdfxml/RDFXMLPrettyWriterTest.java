@@ -26,8 +26,6 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.eclipse.rdf4j.rio.rdfxml.RDFXMLParserFactory;
-import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriterTestCase;
 import org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLPrettyWriterFactory;
 import org.junit.Test;
 
@@ -52,7 +50,7 @@ public class RDFXMLPrettyWriterTest extends RDFXMLWriterTestCase {
 	{
 		String withoutSpaces = Pattern.compile("^\\s+", Pattern.MULTILINE).matcher(s).replaceAll("");
 
-		List<String> rdfLines = new ArrayList<String>();
+		List<String> rdfLines = new ArrayList<>();
 
 		for (String l : IOUtils.readLines(new StringReader(withoutSpaces))) {
 			if (l.startsWith("<rdf:")) {

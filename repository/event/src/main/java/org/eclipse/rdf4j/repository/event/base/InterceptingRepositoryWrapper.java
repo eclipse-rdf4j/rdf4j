@@ -37,9 +37,9 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 
 	private boolean activated;
 
-	private Set<RepositoryInterceptor> interceptors = new CopyOnWriteArraySet<RepositoryInterceptor>();
+	private Set<RepositoryInterceptor> interceptors = new CopyOnWriteArraySet<>();
 
-	private Set<RepositoryConnectionInterceptor> conInterceptors = new CopyOnWriteArraySet<RepositoryConnectionInterceptor>();
+	private Set<RepositoryConnectionInterceptor> conInterceptors = new CopyOnWriteArraySet<>();
 
 	/*--------------*
 	 * Constructors *
@@ -61,6 +61,7 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 	 * Registers a <tt>RepositoryInterceptor</tt> that will receive notifications of operations that are
 	 * performed on this repository.
 	 */
+	@Override
 	public void addRepositoryInterceptor(RepositoryInterceptor interceptor) {
 		interceptors.add(interceptor);
 		activated = true;
@@ -69,6 +70,7 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 	/**
 	 * Removes a registered <tt>RepositoryInterceptor</tt> from this repository.
 	 */
+	@Override
 	public void removeRepositoryInterceptor(RepositoryInterceptor interceptor) {
 		interceptors.remove(interceptor);
 		activated = !interceptors.isEmpty();
@@ -78,6 +80,7 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 	 * Registers a <tt>RepositoryConnectionInterceptor</tt> that will receive notifications of operations that
 	 * are performed on any connections that are created by this repository.
 	 */
+	@Override
 	public void addRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor) {
 		conInterceptors.add(interceptor);
 	}
@@ -85,6 +88,7 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 	/**
 	 * Removes a registered <tt>RepositoryConnectionInterceptor</tt> from this repository.
 	 */
+	@Override
 	public void removeRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor) {
 		conInterceptors.remove(interceptor);
 	}

@@ -16,7 +16,7 @@ import org.junit.Test;
 public class LimitIterationTest extends CloseableIterationTest {
 
 	protected static LimitIteration<String, Exception> createLimitIteration(int limit) {
-		return new LimitIteration<String, Exception>(createStringList1Iteration(), limit);
+		return new LimitIteration<>(createStringList1Iteration(), limit);
 	}
 
 	@Override

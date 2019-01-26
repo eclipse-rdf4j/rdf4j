@@ -38,7 +38,7 @@ public class FileFormat {
 	 * The file format's MIME types. The first item in the list is interpreted as the default MIME type for
 	 * the format.
 	 */
-	private final List<String> mimeTypes = new ArrayList<String>(1);
+	private final List<String> mimeTypes = new ArrayList<>(1);
 
 	/**
 	 * The file format's (default) charset.
@@ -49,7 +49,7 @@ public class FileFormat {
 	 * The file format's file extensions. The first item in the list is interpreted as the default file
 	 * extension for the format.
 	 */
-	private final List<String> fileExtensions = new ArrayList<String>(1);
+	private final List<String> fileExtensions = new ArrayList<>(1);
 
 	/*--------------*
 	 * Constructors *

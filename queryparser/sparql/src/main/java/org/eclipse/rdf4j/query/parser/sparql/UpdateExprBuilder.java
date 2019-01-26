@@ -401,7 +401,7 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	}
 
 	private Set<Var> getProjectionVars(Collection<StatementPattern> statementPatterns) {
-		Set<Var> vars = new LinkedHashSet<Var>(statementPatterns.size() * 2);
+		Set<Var> vars = new LinkedHashSet<>(statementPatterns.size() * 2);
 
 		for (StatementPattern sp : statementPatterns) {
 			vars.add(sp.getSubjectVar());

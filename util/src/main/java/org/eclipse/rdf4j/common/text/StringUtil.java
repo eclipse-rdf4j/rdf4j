@@ -140,7 +140,7 @@ public class StringUtil {
 	 */
 	public static String[] decodeArray(String encodedArray) {
 		String[] items = encodedArray.split("_\\.");
-		ArrayList<String> list = new ArrayList<String>();
+		ArrayList<String> list = new ArrayList<>();
 
 		for (int i = 0; i < items.length; i++) {
 			String item = items[i];

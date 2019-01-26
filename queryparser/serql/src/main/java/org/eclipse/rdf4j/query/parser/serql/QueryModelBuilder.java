@@ -481,7 +481,7 @@ class QueryModelBuilder extends AbstractASTVisitor {
 	{
 		List<ASTOrderExpr> orderExprList = node.getOrderExprList();
 
-		List<OrderElem> elements = new ArrayList<OrderElem>(orderExprList.size());
+		List<OrderElem> elements = new ArrayList<>(orderExprList.size());
 
 		for (ASTOrderExpr orderExpr : orderExprList) {
 			elements.add((OrderElem)orderExpr.jjtAccept(this, null));
@@ -639,7 +639,7 @@ class QueryModelBuilder extends AbstractASTVisitor {
 	public List<Var> visit(ASTNode node, Object data)
 		throws VisitorException
 	{
-		List<Var> nodeVars = new ArrayList<Var>();
+		List<Var> nodeVars = new ArrayList<>();
 
 		for (ASTNodeElem nodeElem : node.getNodeElemList()) {
 			Var nodeVar = (Var)nodeElem.jjtAccept(this, null);

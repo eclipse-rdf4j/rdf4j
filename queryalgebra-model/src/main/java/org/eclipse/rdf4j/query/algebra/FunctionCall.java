@@ -26,7 +26,7 @@ public class FunctionCall extends AbstractQueryModelNode implements ValueExpr {
 	/**
 	 * The operator's argument.
 	 */
-	protected List<ValueExpr> args = new ArrayList<ValueExpr>();
+	protected List<ValueExpr> args = new ArrayList<>();
 
 	/*--------------*
 	 * Constructors *
@@ -147,7 +147,7 @@ public class FunctionCall extends AbstractQueryModelNode implements ValueExpr {
 	public FunctionCall clone() {
 		FunctionCall clone = (FunctionCall)super.clone();
 
-		clone.args = new ArrayList<ValueExpr>(getArgs().size());
+		clone.args = new ArrayList<>(getArgs().size());
 		for (ValueExpr arg : getArgs()) {
 			clone.addArg(arg.clone());
 		}

@@ -30,10 +30,12 @@ public abstract class AbstractAggregateOperator extends UnaryValueOperator imple
 		setDistinct(distinct);
 	}
 
+	@Override
 	public void setDistinct(boolean distinct) {
 		this.distinct = distinct;
 	}
 
+	@Override
 	public boolean isDistinct() {
 		return this.distinct;
 	}

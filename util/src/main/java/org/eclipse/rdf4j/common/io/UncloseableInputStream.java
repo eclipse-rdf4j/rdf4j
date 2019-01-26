@@ -19,20 +19,26 @@ import java.io.InputStream;
  */
 public class UncloseableInputStream extends FilterInputStream {
 
+	/**
+	 * Constructor
+	 * 
+	 * @param parent input stream
+	 */
 	public UncloseableInputStream(InputStream parent) {
 		super(parent);
 	}
 
 	@Override
-	public void close()
-		throws IOException
-	{
+	public void close() throws IOException {
 		// do nothing
 	}
 
-	public void doClose()
-		throws IOException
-	{
+	/**
+	 * Invoke close on FilterInputStream parent class.
+	 * 
+	 * @throws IOException 
+	 */
+	public void doClose() throws IOException {
 		super.close();
 	}
 }

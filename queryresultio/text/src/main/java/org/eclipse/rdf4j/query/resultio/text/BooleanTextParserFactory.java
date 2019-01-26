@@ -21,6 +21,7 @@ public class BooleanTextParserFactory implements BooleanQueryResultParserFactory
 	/**
 	 * Returns {@link BooleanQueryResultFormat#TEXT}.
 	 */
+	@Override
 	public BooleanQueryResultFormat getBooleanQueryResultFormat() {
 		return BooleanQueryResultFormat.TEXT;
 	}
@@ -28,6 +29,7 @@ public class BooleanTextParserFactory implements BooleanQueryResultParserFactory
 	/**
 	 * Returns a new instance of BooleanTextParser.
 	 */
+	@Override
 	public BooleanQueryResultParser getParser() {
 		return new BooleanTextParser();
 	}

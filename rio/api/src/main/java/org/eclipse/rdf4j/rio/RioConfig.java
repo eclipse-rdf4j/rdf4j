@@ -8,16 +8,29 @@
 package org.eclipse.rdf4j.rio;
 
 import java.io.Serializable;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import org.eclipse.rdf4j.rio.helpers.RioConfigurationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Superclass for {@link ParserConfig} and {@link WriterConfig}.
+ * <p>
+ * A RioConfig is a container for several {@link RioSetting} objects, each of which has a default value. You
+ * can override the default value for a {@link RioSetting} in one of two ways:
+ * <ol>
+ * <li>You can programmatically set its value using {@link RioConfig#set(RioSetting, Object)}</li>
+ * <li>You can set a Java system property (e.g. by means of a <code>-D</code> jvm command line switch). The
+ * property name should corresponds to the {@link RioSetting#getKey() key} of the setting. Note that this
+ * method is not supported by every type of {@link RioSetting}: boolean values, strings, and numeric (long)
+ * values are supported, but more complex types are not</li>
+ * </ol>
  * 
  * @author Peter Ansell
+ * @see RioSetting
  */
 public class RioConfig implements Serializable {
 
@@ -28,7 +41,13 @@ public class RioConfig implements Serializable {
 	/**
 	 * A map containing mappings from settings to their values.
 	 */
-	protected final ConcurrentMap<RioSetting<Object>, Object> settings = new ConcurrentHashMap<RioSetting<Object>, Object>();
+	protected final ConcurrentMap<RioSetting<Object>, Object> settings = new ConcurrentHashMap<>();
+
+	/**
+	 * A map containing mappings from settings to system properties that have been discovered since the last
+	 * call to {@link #useDefaults()}.
+	 */
+	protected final ConcurrentMap<RioSetting<Object>, Object> systemPropertyCache = new ConcurrentHashMap<>();
 
 	protected final Logger log = LoggerFactory.getLogger(this.getClass());
 
@@ -49,6 +68,24 @@ public class RioConfig implements Serializable {
 	@SuppressWarnings("unchecked")
 	public <T extends Object> T get(RioSetting<T> setting) {
 		Object result = settings.get(setting);
+
+		if (result == null) {
+			result = systemPropertyCache.get(setting);
+		}
+
+		if (result == null) {
+			String stringRepresentation = System.getProperty(setting.getKey());
+			if (stringRepresentation != null) {
+				try {
+					T typesafeSystemProperty = setting.convert(stringRepresentation);
+					systemPropertyCache.put((RioSetting<Object>)setting, typesafeSystemProperty);
+					return typesafeSystemProperty;
+				}
+				catch (RioConfigurationException e) {
+					log.trace(e.getMessage(), e);
+				}
+			}
+		}
 
 		if (result == null) {
 			return setting.getDefaultValue();
@@ -92,13 +129,20 @@ public class RioConfig implements Serializable {
 
 	/**
 	 * Checks for whether a {@link RioSetting} has been explicitly set by a user.
+	 * <p>
+	 * A setting can be set via {@link RioConfig#set(RioSetting, Object)}, or via use of a system property.
 	 * 
 	 * @param setting
 	 *        The setting to check for.
-	 * @return True if the parser setting has been explicitly set, or false otherwise.
+	 * @return True if the setting has been explicitly set, or false otherwise.
 	 */
 	public <T extends Object> boolean isSet(RioSetting<T> setting) {
-		return settings.containsKey(setting);
+		return settings.containsKey(setting) || systemPropertyCache.containsKey(setting)
+				|| hasSystemPropertyOverride(setting);
+	}
+
+	private boolean hasSystemPropertyOverride(RioSetting<?> setting) {
+		return Objects.nonNull(System.getProperty(setting.getKey()));
 	}
 
 	/**
@@ -109,7 +153,7 @@ public class RioConfig implements Serializable {
 	 */
 	public RioConfig useDefaults() {
 		settings.clear();
-
+		systemPropertyCache.clear();
 		return this;
 	}
 }

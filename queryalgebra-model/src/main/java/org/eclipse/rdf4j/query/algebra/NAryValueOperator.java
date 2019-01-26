@@ -57,7 +57,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 
 	public void addArgument(ValueExpr arg) {
 		if (args == null) {
-			args = new ArrayList<ValueExpr>();
+			args = new ArrayList<>();
 		}
 		args.add(arg);
 		arg.setParentNode(this);
@@ -111,7 +111,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 	public NAryValueOperator clone() {
 		NAryValueOperator clone = (NAryValueOperator)super.clone();
 
-		clone.setArguments(new ArrayList<ValueExpr>());
+		clone.setArguments(new ArrayList<>());
 
 		for (ValueExpr arg : getArguments()) {
 			clone.addArgument(arg.clone());

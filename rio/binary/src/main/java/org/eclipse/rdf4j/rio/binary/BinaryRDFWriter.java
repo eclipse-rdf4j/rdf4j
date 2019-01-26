@@ -67,15 +67,17 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 
 	public BinaryRDFWriter(OutputStream out, int bufferSize) {
 		this.out = new DataOutputStream(new BufferedOutputStream(out));
-		this.statementQueue = new ArrayBlockingQueue<Statement>(bufferSize);
-		this.valueFreq = new HashMap<Value, AtomicInteger>(3 * bufferSize);
-		this.valueIdentifiers = new LinkedHashMap<Value, Integer>(bufferSize);
+		this.statementQueue = new ArrayBlockingQueue<>(bufferSize);
+		this.valueFreq = new HashMap<>(3 * bufferSize);
+		this.valueIdentifiers = new LinkedHashMap<>(bufferSize);
 	}
 
+	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.BINARY;
 	}
 
+	@Override
 	public void startRDF()
 		throws RDFHandlerException
 	{
@@ -91,6 +93,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	@Override
 	public void endRDF()
 		throws RDFHandlerException
 	{
@@ -108,6 +111,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	@Override
 	public void handleNamespace(String prefix, String uri)
 		throws RDFHandlerException
 	{
@@ -122,6 +126,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	@Override
 	public void handleComment(String comment)
 		throws RDFHandlerException
 	{
@@ -135,6 +140,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	@Override
 	public void handleStatement(Statement st)
 		throws RDFHandlerException
 	{

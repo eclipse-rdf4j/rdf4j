@@ -76,7 +76,7 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 	public void startDocument()
 		throws SAXException
 	{
-		bindingNames = new ArrayList<String>();
+		bindingNames = new ArrayList<>();
 		currentValue = null;
 	}
 

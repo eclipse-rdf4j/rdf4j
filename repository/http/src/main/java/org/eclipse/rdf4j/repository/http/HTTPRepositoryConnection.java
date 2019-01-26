@@ -94,7 +94,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	 *-----------*/
 
 	private List<TransactionOperation> txn = Collections.synchronizedList(
-			new ArrayList<TransactionOperation>());
+			new ArrayList<>());
 
 	private final RDF4JProtocolSession client;
 
@@ -126,10 +126,12 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public HttpClient getHttpClient() {
 		return client.getHttpClient();
 	}
 
+	@Override
 	public void setHttpClient(HttpClient httpClient) {
 		client.setHttpClient(httpClient);
 	}
@@ -144,6 +146,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		return (HTTPRepository)super.getRepository();
 	}
 
+	@Override
 	public void begin()
 		throws RepositoryException
 	{
@@ -182,6 +185,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	 * @throws UnsupportedOperationException
 	 *         if the method is not supported for the supplied query language.
 	 */
+	@Override
 	public Query prepareQuery(QueryLanguage ql, String queryString, String baseURI) {
 		if (QueryLanguage.SPARQL.equals(ql)) {
 			String strippedQuery = QueryParserUtil.removeSPARQLQueryProlog(queryString).toUpperCase();
@@ -214,26 +218,29 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+	@Override
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String queryString, String baseURI) {
 		return new HTTPTupleQuery(this, ql, queryString, baseURI);
 	}
 
+	@Override
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String queryString, String baseURI) {
 		return new HTTPGraphQuery(this, ql, queryString, baseURI);
 	}
 
+	@Override
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String queryString, String baseURI) {
 		return new HTTPBooleanQuery(this, ql, queryString, baseURI);
 	}
 
+	@Override
 	public RepositoryResult<Resource> getContextIDs()
 		throws RepositoryException
 	{
 		try {
-			List<Resource> contextList = new ArrayList<Resource>();
+			List<Resource> contextList = new ArrayList<>();
 
-			TupleQueryResult contextIDs = client.getContextIDs();
-			try {
+			try (TupleQueryResult contextIDs = client.getContextIDs()) {
 				while (contextIDs.hasNext()) {
 					BindingSet bindingSet = contextIDs.next();
 					Value context = bindingSet.getValue("contextID");
@@ -242,9 +249,6 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 						contextList.add((Resource)context);
 					}
 				}
-			}
-			finally {
-				contextIDs.close();
 			}
 
 			return createRepositoryResult(contextList);
@@ -257,6 +261,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+	@Override
 	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts)
 		throws RepositoryException
@@ -272,6 +277,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+	@Override
 	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			RDFHandler handler, Resource... contexts)
 		throws RDFHandlerException, RepositoryException
@@ -288,6 +294,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+	@Override
 	public long size(Resource... contexts)
 		throws RepositoryException
 	{
@@ -300,6 +307,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+	@Override
 	public void commit()
 		throws RepositoryException
 	{
@@ -336,6 +344,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+	@Override
 	public void rollback()
 		throws RepositoryException
 	{
@@ -377,6 +386,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+	@Override
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
 		throws IOException, RDFParseException, RepositoryException
 	{
@@ -389,15 +399,12 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 					Rio.unsupportedFormat(file.getName()));
 		}
 
-		InputStream in = new FileInputStream(file);
-		try {
+		try (InputStream in = new FileInputStream(file)) {
 			add(in, baseURI, dataFormat, contexts);
-		}
-		finally {
-			in.close();
 		}
 	}
 
+	@Override
 	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
 		throws IOException, RDFParseException, RepositoryException
 	{
@@ -443,6 +450,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+	@Override
 	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
 		throws IOException, RDFParseException, RepositoryException
 	{
@@ -483,6 +491,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		return format;
 	}
 
+	@Override
 	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
 		throws IOException, RDFParseException, RepositoryException
 	{
@@ -720,6 +729,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		conditionalCommit(localTransaction);
 	}
 
+	@Override
 	public void removeNamespace(String prefix)
 		throws RepositoryException
 	{
@@ -748,6 +758,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	}
 
+	@Override
 	public void clearNamespaces()
 		throws RepositoryException
 	{
@@ -766,6 +777,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+	@Override
 	public void setNamespace(String prefix, String name)
 		throws RepositoryException
 	{
@@ -791,14 +803,14 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+	@Override
 	public RepositoryResult<Namespace> getNamespaces()
 		throws RepositoryException
 	{
 		try {
-			List<Namespace> namespaceList = new ArrayList<Namespace>();
+			List<Namespace> namespaceList = new ArrayList<>();
 
-			TupleQueryResult namespaces = client.getNamespaces();
-			try {
+			try (TupleQueryResult namespaces = client.getNamespaces()) {
 				while (namespaces.hasNext()) {
 					BindingSet bindingSet = namespaces.next();
 					Value prefix = bindingSet.getValue("prefix");
@@ -811,9 +823,6 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 					}
 				}
 			}
-			finally {
-				namespaces.close();
-			}
 
 			return createRepositoryResult(namespaceList);
 		}
@@ -825,6 +834,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+	@Override
 	public String getNamespace(String prefix)
 		throws RepositoryException
 	{
@@ -853,10 +863,11 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	 * Creates a RepositoryResult for the supplied element set.
 	 */
 	protected <E> RepositoryResult<E> createRepositoryResult(Iterable<? extends E> elements) {
-		return new RepositoryResult<E>(
+		return new RepositoryResult<>(
 				new CloseableIteratorIteration<E, RepositoryException>(elements.iterator()));
 	}
 
+	@Override
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
 		throws RepositoryException, MalformedQueryException
 	{
@@ -897,6 +908,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+	@Override
 	public boolean isActive()
 		throws UnknownTransactionStateException, RepositoryException
 	{

@@ -97,13 +97,14 @@ public class TurtleParser extends AbstractRDFParser {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.TURTLE;
 	}
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		Set<RioSetting<?>> result = new HashSet<RioSetting<?>>(super.getSupportedSettings());
+		Set<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
 		result.add(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES);
 		return result;
 	}
@@ -125,6 +126,7 @@ public class TurtleParser extends AbstractRDFParser {
 	 * @throws IllegalArgumentException
 	 *         If the supplied input stream or base URI is <tt>null</tt>.
 	 */
+	@Override
 	public synchronized void parse(InputStream in, String baseURI)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
@@ -158,6 +160,7 @@ public class TurtleParser extends AbstractRDFParser {
 	 * @throws IllegalArgumentException
 	 *         If the supplied reader or base URI is <tt>null</tt>.
 	 */
+	@Override
 	public synchronized void parse(Reader reader, String baseURI)
 		throws IOException, RDFParseException, RDFHandlerException
 	{
@@ -777,6 +780,10 @@ public class TurtleParser extends AbstractRDFParser {
 			}
 			else if (c == -1) {
 				throwEOFException();
+			}
+			
+			if (c == '\r' || c == '\n') {
+				reportFatalError("Illegal carriage return or new line in literal");
 			}
 
 			if (c == '\r' || c == '\n') {

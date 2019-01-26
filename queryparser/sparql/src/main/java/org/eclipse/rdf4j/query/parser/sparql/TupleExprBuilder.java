@@ -406,7 +406,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		Group group = groupFinder.getGroup();
 		boolean existingGroup = group != null;
 
-		List<String> aliasesInProjection = new ArrayList<String>();
+		List<String> aliasesInProjection = new ArrayList<>();
 		for (ASTProjectionElem projElemNode : node.getProjectionElemList()) {
 
 			Node child = projElemNode.jjtGetChild(0);
@@ -702,7 +702,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		// Create BNodeGenerators for all anonymous variables
 		// NB: preserve order for a deterministic output
-		Map<Var, ExtensionElem> extElemMap = new LinkedHashMap<Var, ExtensionElem>();
+		Map<Var, ExtensionElem> extElemMap = new LinkedHashMap<>();
 
 		for (Var var : constructVars) {
 			if (var.isAnonymous() && !extElemMap.containsKey(var)) {
@@ -733,7 +733,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		// Create a Projection for each StatementPattern in the constructor
-		List<ProjectionElemList> projList = new ArrayList<ProjectionElemList>();
+		List<ProjectionElemList> projList = new ArrayList<>();
 
 		for (StatementPattern sp : statementPatterns) {
 			ProjectionElemList projElemList = new ProjectionElemList();
@@ -767,7 +767,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 * predicate and object variables from the supplied statement patterns, but ignores any context variables.
 	 */
 	private Set<Var> getConstructVars(Collection<StatementPattern> statementPatterns) {
-		Set<Var> vars = new LinkedHashSet<Var>(statementPatterns.size() * 2);
+		Set<Var> vars = new LinkedHashSet<>(statementPatterns.size() * 2);
 
 		for (StatementPattern sp : statementPatterns) {
 			vars.add(sp.getSubjectVar());
@@ -962,7 +962,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		Group g = new Group(tupleExpr);
 		int childCount = node.jjtGetNumChildren();
 
-		List<String> groupBindingNames = new ArrayList<String>();
+		List<String> groupBindingNames = new ArrayList<>();
 		for (int i = 0; i < childCount; i++) {
 			String name = (String)node.jjtGetChild(i).jjtAccept(this, g);
 			groupBindingNames.add(name);
@@ -1026,7 +1026,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		throws VisitorException
 	{
 		int childCount = node.jjtGetNumChildren();
-		List<OrderElem> elements = new ArrayList<OrderElem>(childCount);
+		List<OrderElem> elements = new ArrayList<>(childCount);
 
 		for (int i = 0; i < childCount; i++) {
 			elements.add((OrderElem)node.jjtGetChild(i).jjtAccept(this, null));
@@ -1381,7 +1381,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					// not last element in path.
 					Var nextVar = createAnonVar();
 
-					List<ValueExpr> nextVarList = new ArrayList<ValueExpr>();
+					List<ValueExpr> nextVarList = new ArrayList<>();
 					nextVarList.add(nextVar);
 					nps.setObjectList(nextVarList);
 
@@ -1785,7 +1785,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	protected class VarCollector extends AbstractQueryModelVisitor<VisitorException> {
 
-		private final Set<Var> collectedVars = new HashSet<Var>();
+		private final Set<Var> collectedVars = new HashSet<>();
 
 		@Override
 		public void meet(Var var) {
@@ -1803,7 +1803,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	protected class SameTermCollector extends AbstractQueryModelVisitor<VisitorException> {
 
-		private final Set<SameTerm> collectedSameTerms = new HashSet<SameTerm>();
+		private final Set<SameTerm> collectedSameTerms = new HashSet<>();
 
 		@Override
 		public void meet(SameTerm st) {
@@ -1878,7 +1878,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		throws VisitorException
 	{
 		int childCount = node.jjtGetNumChildren();
-		List<ValueExpr> result = new ArrayList<ValueExpr>(childCount);
+		List<ValueExpr> result = new ArrayList<>(childCount);
 
 		for (int i = 0; i < childCount; i++) {
 			result.add((ValueExpr)node.jjtGetChild(i).jjtAccept(this, null));
@@ -2328,10 +2328,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		BindingSetAssignment bsa = new BindingSetAssignment();
 
 		List<ASTVar> varNodes = node.jjtGetChildren(ASTVar.class);
-		List<Var> vars = new ArrayList<Var>(varNodes.size());
+		List<Var> vars = new ArrayList<>(varNodes.size());
 
 		// preserve order in query
-		Set<String> bindingNames = new LinkedHashSet<String>(varNodes.size());
+		Set<String> bindingNames = new LinkedHashSet<>(varNodes.size());
 		for (ASTVar varNode : varNodes) {
 			Var var = (Var)varNode.jjtAccept(this, data);
 			vars.add(var);
@@ -2341,7 +2341,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		bsa.setBindingNames(bindingNames);
 
 		List<ASTBindingSet> bindingNodes = node.jjtGetChildren(ASTBindingSet.class);
-		List<BindingSet> bindingSets = new ArrayList<BindingSet>(bindingNodes.size());
+		List<BindingSet> bindingSets = new ArrayList<>(bindingNodes.size());
 
 		for (ASTBindingSet bindingNode : bindingNodes) {
 			BindingSet bindingSet = (BindingSet)bindingNode.jjtAccept(this, vars);
@@ -2361,10 +2361,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		BindingSetAssignment bsa = new BindingSetAssignment();
 
 		List<ASTVar> varNodes = node.jjtGetChildren(ASTVar.class);
-		List<Var> vars = new ArrayList<Var>(varNodes.size());
+		List<Var> vars = new ArrayList<>(varNodes.size());
 
 		// preserve order in query
-		Set<String> bindingNames = new LinkedHashSet<String>(varNodes.size());
+		Set<String> bindingNames = new LinkedHashSet<>(varNodes.size());
 		for (ASTVar varNode : varNodes) {
 			Var var = (Var)varNode.jjtAccept(this, data);
 			vars.add(var);
@@ -2374,7 +2374,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		bsa.setBindingNames(bindingNames);
 
 		List<ASTBindingSet> bindingNodes = node.jjtGetChildren(ASTBindingSet.class);
-		List<BindingSet> bindingSets = new ArrayList<BindingSet>(bindingNodes.size());
+		List<BindingSet> bindingSets = new ArrayList<>(bindingNodes.size());
 
 		for (ASTBindingSet bindingNode : bindingNodes) {
 			BindingSet bindingSet = (BindingSet)bindingNode.jjtAccept(this, vars);
@@ -2393,7 +2393,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		@SuppressWarnings("unchecked")
 		List<Var> vars = (List<Var>)data;
 
-		List<String> names = new ArrayList<String>(vars.size());
+		List<String> names = new ArrayList<>(vars.size());
 
 		for (Var var : vars) {
 			names.add(var.getName());
@@ -2871,7 +2871,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	static class AggregateCollector extends AbstractQueryModelVisitor<VisitorException> {
 
-		private Collection<AggregateOperator> operators = new ArrayList<AggregateOperator>();
+		private Collection<AggregateOperator> operators = new ArrayList<>();
 
 		public Collection<AggregateOperator> getOperators() {
 			return operators;

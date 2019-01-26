@@ -142,9 +142,9 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 				output = JsonLdProcessor.flatten(output, inframe, opts);
 			}
 			if (mode == JSONLDMode.COMPACT) {
-				final Map<String, Object> ctx = new LinkedHashMap<String, Object>();
+				final Map<String, Object> ctx = new LinkedHashMap<>();
 				addPrefixes(ctx, model.getNamespaces());
-				final Map<String, Object> localCtx = new HashMap<String, Object>();
+				final Map<String, Object> localCtx = new HashMap<>();
 				localCtx.put("@context", ctx);
 
 				output = JsonLdProcessor.compact(output, localCtx, opts);

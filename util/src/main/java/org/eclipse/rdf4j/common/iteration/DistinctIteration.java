@@ -81,7 +81,7 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 	}
 
 	protected Set<E> makeSet() {
-		return new HashSet<E>();
+		return new HashSet<>();
 	}
 
 }

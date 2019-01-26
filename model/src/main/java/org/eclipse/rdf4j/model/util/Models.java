@@ -641,7 +641,7 @@ public class Models {
 
 	private static boolean matchModels(Model model1, Model model2) {
 		// Compare statements without blank nodes first, save the rest for later
-		List<Statement> model1BNodes = new ArrayList<Statement>(model1.size());
+		List<Statement> model1BNodes = new ArrayList<>(model1.size());
 
 		for (Statement st : model1) {
 			if (isBlank(st.getSubject()) || isBlank(st.getObject()) || isBlank(st.getContext())) {
@@ -654,7 +654,7 @@ public class Models {
 			}
 		}
 
-		return matchModels(model1BNodes, model2, new HashMap<Resource, Resource>(), 0);
+		return matchModels(model1BNodes, model2, new HashMap<>(), 0);
 	}
 
 	/**
@@ -680,7 +680,7 @@ public class Models {
 
 			for (Statement st2 : matchingStats) {
 				// Map bNodes in st1 to bNodes in st2
-				Map<Resource, Resource> newBNodeMapping = new HashMap<Resource, Resource>(bNodeMapping);
+				Map<Resource, Resource> newBNodeMapping = new HashMap<>(bNodeMapping);
 
 				if (isBlank(st1.getSubject()) && isBlank(st2.getSubject())) {
 					newBNodeMapping.put(st1.getSubject(), st2.getSubject());
@@ -722,7 +722,7 @@ public class Models {
 		Value o = isBlank(st.getObject()) ? null : st.getObject();
 		Resource[] g = isBlank(st.getContext()) ? new Resource[0]
 				: new Resource[] { st.getContext() };
-		List<Statement> result = new ArrayList<Statement>();
+		List<Statement> result = new ArrayList<>();
 
 		for (Statement modelSt : model.filter(s, p, o, g)) {
 			if (statementsMatch(st, modelSt, bNodeMapping)) {

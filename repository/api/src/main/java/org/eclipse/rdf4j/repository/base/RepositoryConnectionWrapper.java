@@ -521,16 +521,12 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	{
 		try {
 			handler.startRDF();
-			// Export namespace information
-			RepositoryResult<Namespace> nsIter = getNamespaces();
-			try {
+			try ( // Export namespace information
+			    RepositoryResult<Namespace> nsIter = getNamespaces()) {
 				while (nsIter.hasNext()) {
 					Namespace ns = nsIter.next();
 					handler.handleNamespace(ns.getPrefix(), ns.getName());
 				}
-			}
-			finally {
-				nsIter.close();
 			}
 			// Export statemnts
 			while (stIter.hasNext()) {

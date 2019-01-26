@@ -158,7 +158,7 @@ public class QueryResultsTest {
 
 		GraphQueryResult filtered = QueryResults.distinctResults(gqr);
 
-		List<Statement> processed = new ArrayList<Statement>();
+		List<Statement> processed = new ArrayList<>();
 		while (filtered.hasNext()) {
 			Statement result = filtered.next();
 			assertFalse(processed.contains(result));
@@ -181,7 +181,7 @@ public class QueryResultsTest {
 
 		TupleQueryResult filtered = QueryResults.distinctResults(tqr1);
 
-		List<BindingSet> processed = new ArrayList<BindingSet>();
+		List<BindingSet> processed = new ArrayList<>();
 		while (filtered.hasNext()) {
 			BindingSet result = filtered.next();
 			assertFalse(processed.contains(result));
@@ -193,7 +193,7 @@ public class QueryResultsTest {
 			implements GraphQueryResult
 	{
 
-		private List<Statement> statements = new ArrayList<Statement>();
+		private List<Statement> statements = new ArrayList<>();
 
 		public StubGraphQueryResult() {
 			statements.add(VF.createStatement(a, p, b));

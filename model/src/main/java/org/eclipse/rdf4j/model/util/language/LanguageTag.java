@@ -45,7 +45,7 @@ public class LanguageTag implements LanguageTagCodes {
 		throws LanguageTagSyntaxException
 	{
 		String lc = tag.toLowerCase();
-		List<String> subtagList = new ArrayList<String>();
+		List<String> subtagList = new ArrayList<>();
 		int subT;
 		while (true) {
 			subT = lc.indexOf('-');
@@ -298,6 +298,7 @@ public class LanguageTag implements LanguageTagCodes {
 		return result;
 	}
 
+	@Override
 	public String toString() {
 		StringBuilder result = new StringBuilder();
 		for (String subtag : subtags) {

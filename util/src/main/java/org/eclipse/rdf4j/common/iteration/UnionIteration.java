@@ -52,13 +52,14 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 		argIter = args.iterator();
 
 		// Initialize with empty iteration
-		currentIter = new EmptyIteration<E, X>();
+		currentIter = new EmptyIteration<>();
 	}
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
+	@Override
 	protected E getNextElement()
 		throws X
 	{

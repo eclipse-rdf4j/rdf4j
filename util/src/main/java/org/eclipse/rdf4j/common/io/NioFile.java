@@ -37,12 +37,27 @@ public final class NioFile implements Closeable {
 
 	private volatile boolean explictlyClosed;
 
+	/**
+	 * Constructor
+	 * Opens a file in read/write mode, creating a new one if the file doesn't exist.
+	 * 
+	 * @param file
+	 * @throws IOException 
+	 */
 	public NioFile(File file)
 		throws IOException
 	{
 		this(file, "rw");
 	}
 
+	/**
+	 * Constructor
+	 * Opens a file in a specific mode, creating a new one if the file doesn't exist.
+	 * 
+	 * @param file file
+	 * @param mode file mode
+	 * @throws IOException 
+	 */
 	public NioFile(File file, String mode)
 		throws IOException
 	{
@@ -60,6 +75,11 @@ public final class NioFile implements Closeable {
 		open();
 	}
 
+	/**
+	 * Open a file channel for random access.
+	 * 
+	 * @throws IOException 
+	 */
 	private void open()
 		throws IOException
 	{
@@ -67,6 +87,12 @@ public final class NioFile implements Closeable {
 		fc = raf.getChannel();
 	}
 
+	/**
+	 * Reopen a channel closed by an exception, unless it was closed explicitly.
+	 * 
+	 * @param e exception that closed the channel
+	 * @throws IOException 
+	 */
 	private synchronized void reopen(ClosedChannelException e)
 		throws IOException
 	{
@@ -88,6 +114,11 @@ public final class NioFile implements Closeable {
 		raf.close();
 	}
 
+	/**
+	 * Check if a file was closed explicitly.
+	 * 
+	 * @return true if it was closed explicitly
+	 */
 	public boolean isClosed() {
 		return explictlyClosed;
 	}
@@ -97,7 +128,7 @@ public final class NioFile implements Closeable {
 	}
 
 	/**
-	 * Closed any open channels and then deletes the file.
+	 * Close any open channels and then deletes the file.
 	 * 
 	 * @return <tt>true</tt> if the file has been deleted successfully, <tt>false</tt> otherwise.
 	 * @throws IOException
@@ -116,6 +147,9 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Performs a protected {@link FileChannel#force(boolean)} call.
+	 * 
+	 * @param metaData
+	 * @throws IOException
 	 */
 	public void force(boolean metaData)
 		throws IOException
@@ -136,6 +170,9 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Performs a protected {@link FileChannel#truncate(long)} call.
+	 * 
+	 * @param size
+	 * @throws IOException
 	 */
 	public void truncate(long size)
 		throws IOException
@@ -156,6 +193,9 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Performs a protected {@link FileChannel#size()} call.
+	 * 
+	 * @return size of the file
+	 * @throws IOException 
 	 */
 	public long size()
 		throws IOException
@@ -175,6 +215,12 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Performs a protected {@link FileChannel#transferTo(long, long, WritableByteChannel)} call.
+	 * 
+	 * @param position position within the file
+	 * @param count number of bytes to transfer
+	 * @param target target channel
+	 * @return number of bytes transferred
+	 * @throws IOException
 	 */
 	public long transferTo(long position, long count, WritableByteChannel target)
 		throws IOException
@@ -194,6 +240,11 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Performs a protected {@link FileChannel#write(ByteBuffer, long)} call.
+	 * 
+	 * @param buf buffer
+	 * @param offset non-negative offset
+	 * @return number of bytes written
+	 * @throws IOException 
 	 */
 	public int write(ByteBuffer buf, long offset)
 		throws IOException
@@ -213,6 +264,11 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Performs a protected {@link FileChannel#read(ByteBuffer, long)} call.
+	 * 
+	 * @param buf buffer to read
+	 * @param offset non-negative offset
+	 * @return number of bytes read
+	 * @throws IOException 
 	 */
 	public int read(ByteBuffer buf, long offset)
 		throws IOException
@@ -230,12 +286,27 @@ public final class NioFile implements Closeable {
 		}
 	}
 
+	/**
+	 * Write byte array to channel starting at offset.
+	 * 
+	 * @param value byte array to write
+	 * @param offset non-negative offset
+	 * @throws IOException 
+	 */
 	public void writeBytes(byte[] value, long offset)
 		throws IOException
 	{
 		write(ByteBuffer.wrap(value), offset);
 	}
 
+	/**
+	 * Read a byte array of a specifi length from channel starting at offset.
+	 * 
+	 * @param offset
+	 * @param length
+	 * @return
+	 * @throws IOException 
+	 */
 	public byte[] readBytes(long offset, int length)
 		throws IOException
 	{
@@ -244,18 +315,39 @@ public final class NioFile implements Closeable {
 		return buf.array();
 	}
 
+	/**
+	 * Write single byte to channel starting at offset.
+	 * 
+	 * @param value value to write
+	 * @param offset non-negative offset
+	 * @throws IOException 
+	 */
 	public void writeByte(byte value, long offset)
 		throws IOException
 	{
 		writeBytes(new byte[] { value }, offset);
 	}
 
+	/**
+	 * Read single byte from channel starting at offset.
+	 * 
+	 * @param offset non-negative offset
+	 * @return byte
+	 * @throws IOException 
+	 */
 	public byte readByte(long offset)
 		throws IOException
 	{
 		return readBytes(offset, 1)[0];
 	}
 
+	/**
+	 * Write long value to channel starting at offset.
+	 * 
+	 * @param value value to write
+	 * @param offset non-negative offset
+	 * @throws IOException 
+	 */
 	public void writeLong(long value, long offset)
 		throws IOException
 	{
@@ -264,6 +356,13 @@ public final class NioFile implements Closeable {
 		write(buf, offset);
 	}
 
+	/**
+	 * Read long value from channel starting at offset.
+	 * 
+	 * @param offset non-negative offset
+	 * @return long
+	 * @throws IOException 
+	 */
 	public long readLong(long offset)
 		throws IOException
 	{
@@ -272,6 +371,13 @@ public final class NioFile implements Closeable {
 		return buf.getLong(0);
 	}
 
+	/**
+	 * Write integer value to channel starting at offset.
+	 * 
+	 * @param value value to write
+	 * @param offset non-negative offset
+	 * @throws IOException 
+	 */
 	public void writeInt(int value, long offset)
 		throws IOException
 	{
@@ -280,6 +386,13 @@ public final class NioFile implements Closeable {
 		write(buf, offset);
 	}
 
+	/**
+	 * Read integer value from channel starting at offset.
+	 * 
+	 * @param offset non-negative offset
+	 * @return integer
+	 * @throws IOException 
+	 */
 	public int readInt(long offset)
 		throws IOException
 	{

@@ -15,10 +15,11 @@ public class ConvertingIterationTest extends CloseableIterationTest {
 	private static final List<Integer> intList = Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
 
 	protected static CloseableIteration<String, Exception> createConvertingIteration() {
-		Iteration<Integer, Exception> intIteration = new CloseableIteratorIteration<Integer, Exception>(
+		Iteration<Integer, Exception> intIteration = new CloseableIteratorIteration<>(
 				intList.iterator());
 		return new ConvertingIteration<Integer, String, Exception>(intIteration) {
 
+			@Override
 			protected String convert(Integer integer) {
 				return integer.toString();
 			}

@@ -43,7 +43,7 @@ class Atts {
 	 *        The initial size of the array for storing attributes.
 	 */
 	public Atts(int size) {
-		attributes = new ArrayList<Att>(size);
+		attributes = new ArrayList<>(size);
 	}
 
 	/*---------*

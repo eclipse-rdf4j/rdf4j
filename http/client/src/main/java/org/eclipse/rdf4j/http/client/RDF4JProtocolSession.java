@@ -556,7 +556,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		try {
 			method.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
 
-			List<NameValuePair> params = new ArrayList<NameValuePair>();
+			List<NameValuePair> params = new ArrayList<>();
 			if (isolationLevel != null) {
 				params.add(new BasicNameValuePair(Protocol.ISOLATION_LEVEL_PARAM_NAME,
 						isolationLevel.getURI().stringValue()));
@@ -741,22 +741,27 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			// Create a RequestEntity for the transaction data
 			method.setEntity(new AbstractHttpEntity() {
 
+				@Override
 				public long getContentLength() {
 					return -1; // don't know
 				}
 
+				@Override
 				public Header getContentType() {
 					return new BasicHeader("Content-Type", Protocol.TXN_MIME_TYPE);
 				}
 
+				@Override
 				public boolean isRepeatable() {
 					return true;
 				}
 
+				@Override
 				public boolean isStreaming() {
 					return true;
 				}
 
+				@Override
 				public InputStream getContent()
 					throws IOException, IllegalStateException
 				{
@@ -765,6 +770,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 					return new ByteArrayInputStream(buf.toByteArray());
 				}
 
+				@Override
 				public void writeTo(OutputStream out)
 					throws IOException
 				{
@@ -905,23 +911,28 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 			private InputStream content;
 
+			@Override
 			public long getContentLength() {
 				return -1; // don't know
 			}
 
+			@Override
 			public Header getContentType() {
 				return new BasicHeader("Content-Type",
 						dataFormat.getDefaultMIMEType() + "; charset=" + charset.name());
 			}
 
+			@Override
 			public boolean isRepeatable() {
 				return false;
 			}
 
+			@Override
 			public boolean isStreaming() {
 				return true;
 			}
 
+			@Override
 			public synchronized InputStream getContent()
 				throws IOException, IllegalStateException
 			{
@@ -933,6 +944,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				return content;
 			}
 
+			@Override
 			public void writeTo(OutputStream out)
 				throws IOException
 			{
@@ -1038,7 +1050,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	{
 		Objects.requireNonNull(ql, "QueryLanguage may not be null");
 
-		List<NameValuePair> queryParams = new ArrayList<NameValuePair>();
+		List<NameValuePair> queryParams = new ArrayList<>();
 		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
 		queryParams.add(new BasicNameValuePair(Protocol.QUERY_PARAM_NAME, query));
 		
@@ -1080,7 +1092,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	{
 		Objects.requireNonNull(ql, "QueryLanguage may not be null");
 
-		List<NameValuePair> queryParams = new ArrayList<NameValuePair>();
+		List<NameValuePair> queryParams = new ArrayList<>();
 
 		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
 		queryParams.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));

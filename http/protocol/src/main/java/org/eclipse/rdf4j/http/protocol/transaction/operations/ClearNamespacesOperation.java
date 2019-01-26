@@ -28,6 +28,7 @@ public class ClearNamespacesOperation implements TransactionOperation, Serializa
 	public ClearNamespacesOperation() {
 	}
 
+	@Override
 	public void execute(RepositoryConnection con)
 		throws RepositoryException
 	{

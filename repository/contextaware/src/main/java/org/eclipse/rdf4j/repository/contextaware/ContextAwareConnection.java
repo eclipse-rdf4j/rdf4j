@@ -353,6 +353,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 		if (isNilContext(contexts)) {
 			super.add(new ConvertingIteration<Statement, Statement, E>(statementIter) {
 
+				@Override
 				protected Statement convert(Statement st) {
 					if (st.getContext() == null)
 						return getValueFactory().createStatement(st.getSubject(), st.getPredicate(),
@@ -523,6 +524,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	 * @see #getReadContexts()
 	 * @see #isIncludeInferred()
 	 */
+	@Override
 	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws RepositoryException
 	{
@@ -617,24 +619,28 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 		}
 	}
 
+	@Override
 	public GraphQuery prepareGraphQuery(String query)
 		throws MalformedQueryException, RepositoryException
 	{
 		return prepareGraphQuery(getQueryLanguage(), query);
 	}
 
+	@Override
 	public Query prepareQuery(String query)
 		throws MalformedQueryException, RepositoryException
 	{
 		return prepareQuery(getQueryLanguage(), query);
 	}
 
+	@Override
 	public TupleQuery prepareTupleQuery(String query)
 		throws MalformedQueryException, RepositoryException
 	{
 		return prepareTupleQuery(getQueryLanguage(), query);
 	}
 
+	@Override
 	public Update prepareUpdate(String query)
 		throws MalformedQueryException, RepositoryException
 	{
@@ -759,6 +765,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 		if (isAllContext(contexts) && removeContexts.length == 1) {
 			super.remove(new ConvertingIteration<Statement, Statement, E>(statementIter) {
 
+				@Override
 				protected Statement convert(Statement st) {
 					if (st.getContext() == null)
 						return getValueFactory().createStatement(st.getSubject(), st.getPredicate(),

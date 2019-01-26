@@ -14,9 +14,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.rio.nquads.AbstractNQuadsWriterTest;
-import org.eclipse.rdf4j.rio.nquads.NQuadsParserFactory;
-import org.eclipse.rdf4j.rio.nquads.NQuadsWriterFactory;
 
 public class NQuadsWriterBackgroundTest extends AbstractNQuadsWriterTest {
 

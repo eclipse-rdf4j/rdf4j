@@ -26,6 +26,7 @@ public class TurtleWriterFactory implements RDFWriterFactory {
 	/**
 	 * Returns {@link RDFFormat#TURTLE}.
 	 */
+	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.TURTLE;
 	}
@@ -33,10 +34,12 @@ public class TurtleWriterFactory implements RDFWriterFactory {
 	/**
 	 * Returns a new instance of {@link TurtleWriter}.
 	 */
+	@Override
 	public RDFWriter getWriter(OutputStream out) {
 		return new ArrangedWriter(new TurtleWriter(out));
 	}
 
+	@Override
 	public RDFWriter getWriter(OutputStream out, String baseURI)
 		throws URISyntaxException
 	{
@@ -46,10 +49,12 @@ public class TurtleWriterFactory implements RDFWriterFactory {
 	/**
 	 * Returns a new instance of {@link TurtleWriter}.
 	 */
+	@Override
 	public RDFWriter getWriter(Writer writer) {
 		return new ArrangedWriter(new TurtleWriter(writer));
 	}
 
+	@Override
 	public RDFWriter getWriter(Writer writer, String baseURI)
 		throws URISyntaxException
 	{
