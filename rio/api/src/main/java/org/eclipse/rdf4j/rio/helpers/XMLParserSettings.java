@@ -44,9 +44,9 @@ public final class XMLParserSettings {
 	/**
 	 * Parser setting specifying whether DOCTYPE declaration should be disallowed.
 	 * <p>
-	 * Defaults to true.
-	 * <p>
+	 * Defaults to false.
 	 * Can be overridden by setting system property {@code http://apache.org/xml/features/disallow-doctype-decl}
+	 * <p>
 	 * 
 	 * @see <a href="http://xerces.apache.org/xerces2-j/features.html">Apache XML Project - Features</a>
 	 * @see <a href="https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet">XXE
@@ -54,7 +54,7 @@ public final class XMLParserSettings {
 	 */
 	public static final RioSetting<Boolean> DISALLOW_DOCTYPE_DECL = new BooleanRioSetting(
 			"http://apache.org/xml/features/disallow-doctype-decl", "Disallow DOCTYPE declaration in document",
-			true);
+			false);
 
 	/**
 	 * Parser setting specifying whether external DTDs should be loaded.
