@@ -101,6 +101,24 @@ public class QueryResultParseException extends RDF4JException {
 		this.columnNo = columnNo;
 	}
 
+	/**
+	 * Creates a new QueryResultParseException wrapping another exception.
+	 * 
+	 * @param msg
+	 *        An error message.
+	 * @param t
+	 *        The source exception.
+	 * @param lineNo
+	 *        A line number associated with the message.
+	 * @param columnNo
+	 *        A column number associated with the message.
+	 */
+	public QueryResultParseException(String msg, Throwable t, long lineNo, long columnNo) {
+		super(msg, t);
+		this.lineNo = lineNo;
+		this.columnNo = columnNo;
+	}
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/

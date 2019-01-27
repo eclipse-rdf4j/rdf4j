@@ -27,6 +27,6 @@ public class ASTOr extends ASTBooleanExpr {
 	}
 
 	public List<ASTBooleanExpr> getOperandList() {
-		return new CastingList<ASTBooleanExpr>(children);
+		return new CastingList<>(children);
 	}
 }

@@ -8,8 +8,6 @@
 package org.eclipse.rdf4j.rio.nquads;
 
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.nquads.AbstractNQuadsParserUnitTest;
-import org.eclipse.rdf4j.rio.nquads.NQuadsParser;
 
 /**
  * JUnit test for the N-Quads parser.

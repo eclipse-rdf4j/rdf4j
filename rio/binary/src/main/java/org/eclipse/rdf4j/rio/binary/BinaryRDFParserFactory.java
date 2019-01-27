@@ -21,6 +21,7 @@ public class BinaryRDFParserFactory implements RDFParserFactory {
 	/**
 	 * Returns {@link RDFFormat#BINARY}.
 	 */
+	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.BINARY;
 	}
@@ -28,6 +29,7 @@ public class BinaryRDFParserFactory implements RDFParserFactory {
 	/**
 	 * Returns a new instance of {@link BinaryRDFParser}.
 	 */
+	@Override
 	public RDFParser getParser() {
 		return new BinaryRDFParser();
 	}

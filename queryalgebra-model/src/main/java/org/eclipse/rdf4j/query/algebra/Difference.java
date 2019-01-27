@@ -38,14 +38,17 @@ public class Difference extends BinaryTupleOperator {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public Set<String> getBindingNames() {
 		return getLeftArg().getBindingNames();
 	}
 
+	@Override
 	public Set<String> getAssuredBindingNames() {
 		return getLeftArg().getAssuredBindingNames();
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

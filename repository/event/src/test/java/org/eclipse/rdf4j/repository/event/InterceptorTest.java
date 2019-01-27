@@ -41,6 +41,7 @@ public class InterceptorTest {
 
 	static class InvocationHandlerStub implements InvocationHandler {
 
+		@Override
 		public Object invoke(Object proxy, Method method, Object[] args)
 			throws Throwable
 		{
@@ -96,6 +97,7 @@ public class InterceptorTest {
 
 	static class UpdateStub extends AbstractUpdate implements Update {
 
+		@Override
 		public void execute()
 			throws UpdateExecutionException
 		{
@@ -108,6 +110,7 @@ public class InterceptorTest {
 	{
 		final Update updateStub = new UpdateStub() {
 
+			@Override
 			public void execute()
 				throws UpdateExecutionException
 			{
@@ -116,6 +119,7 @@ public class InterceptorTest {
 		};
 		final RepositoryConnection stub = new RepositoryConnectionStub() {
 
+			@Override
 			public Update prepareUpdate(QueryLanguage ql, String query, String baseURI)
 				throws MalformedQueryException, RepositoryException
 			{
@@ -126,6 +130,7 @@ public class InterceptorTest {
 		InterceptingRepositoryConnection con = new InterceptingRepositoryConnectionWrapper(repo, stub);
 		con.addRepositoryConnectionInterceptor(new RepositoryConnectionInterceptorAdapter() {
 
+			@Override
 			public boolean execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
 					Update operation)
 			{
@@ -149,6 +154,7 @@ public class InterceptorTest {
 		final IRI uri = vf.createIRI("http://example.com/");
 		final RepositoryConnection stub = new RepositoryConnectionStub() {
 
+			@Override
 			protected void removeWithoutCommit(Resource subject, IRI predicate, Value object,
 					Resource... contexts)
 				throws RepositoryException
@@ -160,6 +166,7 @@ public class InterceptorTest {
 		InterceptingRepositoryConnection con = new InterceptingRepositoryConnectionWrapper(repo, stub);
 		con.addRepositoryConnectionInterceptor(new RepositoryConnectionInterceptorAdapter() {
 
+			@Override
 			public boolean remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
 					Resource... contexts)
 			{

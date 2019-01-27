@@ -13,7 +13,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.eclipse.rdf4j.OpenRDFUtil;
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.NamespaceAware;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -64,7 +63,7 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 			this.namespaces = Namespaces.wrap(((NamespaceAware)statements).getNamespaces());
 		}
 		else {
-			this.namespaces = new LinkedHashMap<String, String>();
+			this.namespaces = new LinkedHashMap<>();
 		}
 		this.statements = statements;
 		this.vf = vf;

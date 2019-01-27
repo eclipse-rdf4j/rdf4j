@@ -56,6 +56,7 @@ public class SimpleNamespace implements Namespace {
 	 * 
 	 * @return prefix of the namespace
 	 */
+	@Override
 	public String getPrefix() {
 		return prefix;
 	}
@@ -75,6 +76,7 @@ public class SimpleNamespace implements Namespace {
 	 * 
 	 * @return name of the namespace
 	 */
+	@Override
 	public String getName() {
 		return name;
 	}

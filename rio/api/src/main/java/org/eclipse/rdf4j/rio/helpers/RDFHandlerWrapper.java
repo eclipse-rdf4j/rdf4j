@@ -50,6 +50,7 @@ public class RDFHandlerWrapper implements RDFHandler {
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public void startRDF()
 		throws RDFHandlerException
 	{
@@ -58,6 +59,7 @@ public class RDFHandlerWrapper implements RDFHandler {
 		}
 	}
 
+	@Override
 	public void endRDF()
 		throws RDFHandlerException
 	{
@@ -66,6 +68,7 @@ public class RDFHandlerWrapper implements RDFHandler {
 		}
 	}
 
+	@Override
 	public void handleNamespace(String prefix, String uri)
 		throws RDFHandlerException
 	{
@@ -74,6 +77,7 @@ public class RDFHandlerWrapper implements RDFHandler {
 		}
 	}
 
+	@Override
 	public void handleStatement(Statement st)
 		throws RDFHandlerException
 	{
@@ -82,6 +86,7 @@ public class RDFHandlerWrapper implements RDFHandler {
 		}
 	}
 
+	@Override
 	public void handleComment(String comment)
 		throws RDFHandlerException
 	{

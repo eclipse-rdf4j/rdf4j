@@ -12,8 +12,8 @@
 	<packaging>pom</packaging>
 
 	<modules>
-		<module>manager</module>
 		<module>model</module>
+        <module>repository</module>
 		<module>queryresultio</module>
 		<module>rio</module>
 	</modules>
@@ -23,12 +23,6 @@
 	
 	<dependencyManagement>
 		<dependencies>		
-			<dependency>
-				<groupId>${project.groupId}</groupId>
-				<artifactId>rdf4j-http-compliance</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-
 			<dependency>
 				<groupId>${project.groupId}</groupId>
 				<artifactId>rdf4j-rio-testsuite</artifactId>

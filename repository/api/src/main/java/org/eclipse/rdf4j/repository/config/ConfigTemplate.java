@@ -32,9 +32,9 @@ public class ConfigTemplate {
 
 	private String template;
 
-	private final Map<String, List<String>> variableMap = new LinkedHashMap<String, List<String>>();
+	private final Map<String, List<String>> variableMap = new LinkedHashMap<>();
 
-	private final Map<String, String> multilineMap = new LinkedHashMap<String, String>();
+	private final Map<String, String> multilineMap = new LinkedHashMap<>();
 
 	/*--------------*
 	 * Constructors *

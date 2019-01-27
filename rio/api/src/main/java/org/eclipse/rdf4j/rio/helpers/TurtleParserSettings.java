@@ -17,13 +17,16 @@ import org.eclipse.rdf4j.rio.RioSetting;
 public class TurtleParserSettings {
 
 	/**
-	 * Allows the Turtle parser to recognise <tt>@BASE</tt> and <tt>@PREFIX</tt> in a similar way to the
-	 * SPARQL case insensitive directives.
+	 * Allows the Turtle parser to recognize <tt>@BASE</tt> and <tt>@PREFIX</tt> in a similar way to the SPARQL
+	 * case insensitive directives.
 	 * <p>
 	 * Defaults to false.
+	 * <p>
+	 * Can be overridden by setting system property
+	 * {@code org.eclipse.rdf4j.rio.turtle.case_insensitive_directives}.
 	 */
-	public static final RioSetting<Boolean> CASE_INSENSITIVE_DIRECTIVES = new RioSettingImpl<Boolean>(
-			"org.eclipse.rdf4j.rio.turtle.caseinsensitivedirectives",
+	public static final RioSetting<Boolean> CASE_INSENSITIVE_DIRECTIVES = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.turtle.case_insensitive_directives",
 			"Allows case-insensitive directives to be recognised", Boolean.FALSE);
 
 }

@@ -20,21 +20,25 @@ public interface HttpClientSessionManager extends SesameClient {
 	/**
 	 * @return Returns the httpClient.
 	 */
+	@Override
 	HttpClient getHttpClient();
 
 	/**
 	 * Creates a new SPARQL Protocol session to the remote SPARQL endpoint.
 	 */
+	@Override
 	SPARQLProtocolSession createSPARQLProtocolSession(String queryEndpointUrl, String updateEndpointUrl);
 
 	/**
 	 * Creates a new session to the remote RDF4J REST API.
 	 */
+	@Override
 	RDF4JProtocolSession createRDF4JProtocolSession(String serverURL);
 	
 	/**
 	 * Closes any remaining connections and threads used by the sessions created by this object.
 	 */
+	@Override
 	void shutDown();
 
 }

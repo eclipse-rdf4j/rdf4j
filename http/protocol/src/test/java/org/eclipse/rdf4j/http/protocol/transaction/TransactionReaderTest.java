@@ -54,7 +54,7 @@ public class TransactionReaderTest {
 
 		AddStatementOperation operation = new AddStatementOperation(bob, knows, alice, context1, context2);
 
-		List<TransactionOperation> txn = new ArrayList<TransactionOperation>();
+		List<TransactionOperation> txn = new ArrayList<>();
 		txn.add(operation);
 
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
@@ -86,7 +86,7 @@ public class TransactionReaderTest {
 	{
 		AddStatementOperation operation = new AddStatementOperation(bob, knows, controlCharText);
 
-		List<TransactionOperation> txn = new ArrayList<TransactionOperation>();
+		List<TransactionOperation> txn = new ArrayList<>();
 		txn.add(operation);
 
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);

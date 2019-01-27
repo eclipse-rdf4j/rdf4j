@@ -22,7 +22,7 @@ public class Extension extends UnaryTupleOperator {
 	 * Variables *
 	 *-----------*/
 
-	private List<ExtensionElem> elements = new ArrayList<ExtensionElem>();
+	private List<ExtensionElem> elements = new ArrayList<>();
 
 	/*--------------*
 	 * Constructors *
@@ -77,7 +77,7 @@ public class Extension extends UnaryTupleOperator {
 
 	@Override
 	public Set<String> getBindingNames() {
-		Set<String> bindingNames = new LinkedHashSet<String>(arg.getBindingNames());
+		Set<String> bindingNames = new LinkedHashSet<>(arg.getBindingNames());
 
 		for (ExtensionElem pe : elements) {
 			bindingNames.add(pe.getName());
@@ -86,6 +86,7 @@ public class Extension extends UnaryTupleOperator {
 		return bindingNames;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{
@@ -129,7 +130,7 @@ public class Extension extends UnaryTupleOperator {
 	public Extension clone() {
 		Extension clone = (Extension)super.clone();
 
-		clone.elements = new ArrayList<ExtensionElem>(getElements().size());
+		clone.elements = new ArrayList<>(getElements().size());
 		for (ExtensionElem elem : getElements()) {
 			clone.addElement(elem.clone());
 		}

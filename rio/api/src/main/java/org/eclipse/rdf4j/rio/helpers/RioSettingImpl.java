@@ -10,70 +10,19 @@ package org.eclipse.rdf4j.rio.helpers;
 import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
- * Basic implementation of {@link RioSetting} interface.
+ * Basic implementation of {@link RioSetting} interface, without support for default override via system
+ * properties.
  * 
  * @author Peter Ansell
+ * @see StringRioSetting
+ * @see BooleanRioSetting
+ * @see LongRioSetting
  */
-public final class RioSettingImpl<T> implements RioSetting<T> {
+public final class RioSettingImpl<T> extends AbstractRioSetting<T> {
 
-	/**
-	 */
-	private static final long serialVersionUID = 270L;
+	private static final long serialVersionUID = 5522964700661094393L;
 
-	/**
-	 * A unique key for this setting.
-	 */
-	private final String key;
-
-	/**
-	 * A human-readable description for this setting
-	 */
-	private final String description;
-
-	/**
-	 * The default value for this setting. <br>
-	 * NOTE: This value must be immutable.
-	 */
-	private final T defaultValue;
-
-	/**
-	 * Create a new setting object that will be used to reference the given setting.
-	 * 
-	 * @param key
-	 *        A unique key to use for this setting.
-	 * @param description
-	 *        A short human-readable description for this setting.
-	 * @param defaultValue
-	 *        An immutable value specifying the default for this setting.
-	 */
 	public RioSettingImpl(String key, String description, T defaultValue) {
-
-		if (key == null) {
-			throw new NullPointerException("Setting key cannot be null");
-		}
-
-		if (description == null) {
-			throw new NullPointerException("Setting description cannot be null");
-		}
-
-		this.key = key;
-		this.description = description;
-		this.defaultValue = defaultValue;
+		super(key, description, defaultValue);
 	}
-
-	@Override
-	public String getKey() {
-		return key;
-	}
-
-	@Override
-	public String getDescription() {
-		return description;
-	}
-
-	@Override
-	public T getDefaultValue() {
-		return defaultValue;
-	}
-
 }

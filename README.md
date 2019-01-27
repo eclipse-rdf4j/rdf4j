@@ -1,10 +1,10 @@
 # Welcome to the RDF4J client repository
 
-[![Build Status](https://travis-ci.org/eclipse/rdf4j.svg?branch=master)](https://travis-ci.org/eclipse/rdf4j)
+This is the client code repository for the Eclipse RDF4J project. It contains the main client-facing APIs and the various Rio parser and writer modules. 
 
-This is the client code repository for the Eclipse RDF4J project. More code can be found in
-* [rdf4j-storage](https://github.com/eclipse/rdf4j-storage) containing storage and indexers
-* [rdf4j-tools](https://github.com/eclipse/rdf4j-tools) containing server and console
+Other parts of the RDF4J project can be found in
+* [rdf4j-storage](https://github.com/eclipse/rdf4j-storage) containing database implementations, indexers, and reasoners.
+* [rdf4j-tools](https://github.com/eclipse/rdf4j-tools) containing RDF4J Server, Workbench and Console
 * [rdf4j-testsuite](https://github.com/eclipse/rdf4j-testsuite) containing common tests and benchmarks
 
 Please see [RDF4J.org](http://rdf4j.org) for detailed information about RDF4J, including

@@ -39,9 +39,9 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 
 	private boolean defaultReportDeltas = false;
 
-	private Set<RepositoryListener> listeners = new CopyOnWriteArraySet<RepositoryListener>();
+	private Set<RepositoryListener> listeners = new CopyOnWriteArraySet<>();
 
-	private Set<RepositoryConnectionListener> conListeners = new CopyOnWriteArraySet<RepositoryConnectionListener>();
+	private Set<RepositoryConnectionListener> conListeners = new CopyOnWriteArraySet<>();
 
 	/*--------------*
 	 * Constructors *
@@ -76,6 +76,7 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	 * Registers a <tt>RepositoryListener</tt> that will receive notifications of operations that are
 	 * performed on this repository.
 	 */
+	@Override
 	public void addRepositoryListener(RepositoryListener listener) {
 		listeners.add(listener);
 		activated = true;
@@ -84,6 +85,7 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	/**
 	 * Removes a registered <tt>RepositoryListener</tt> from this repository.
 	 */
+	@Override
 	public void removeRepositoryListener(RepositoryListener listener) {
 		listeners.remove(listener);
 		activated = !listeners.isEmpty();
@@ -93,6 +95,7 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive notifications of operations that
 	 * are performed on any< connections that are created by this repository.
 	 */
+	@Override
 	public void addRepositoryConnectionListener(RepositoryConnectionListener listener) {
 		conListeners.add(listener);
 	}
@@ -100,6 +103,7 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	/**
 	 * Removes a registered <tt>RepositoryConnectionListener</tt> from this repository.
 	 */
+	@Override
 	public void removeRepositoryConnectionListener(RepositoryConnectionListener listener) {
 		conListeners.remove(listener);
 	}

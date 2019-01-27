@@ -61,6 +61,7 @@ public interface NotifyingRepository extends Repository {
 	 * @throws RepositoryException
 	 *         If something went wrong during the creation of the Connection.
 	 */
+	@Override
 	public NotifyingRepositoryConnection getConnection()
 		throws RepositoryException;
 

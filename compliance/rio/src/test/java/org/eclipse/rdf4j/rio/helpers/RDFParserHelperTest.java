@@ -23,9 +23,6 @@ import org.eclipse.rdf4j.rio.ParseErrorListener;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
-import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
-import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
-import org.eclipse.rdf4j.rio.helpers.RDFParserHelper;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;
@@ -67,7 +64,7 @@ public class RDFParserHelperTest {
 		parserConfig.set(BasicParserSettings.DATATYPE_HANDLERS, Collections.<DatatypeHandler> emptyList());
 		parserConfig.set(BasicParserSettings.LANGUAGE_HANDLERS, Collections.<LanguageHandler> emptyList());
 		// Ensure that the set of non-fatal errors is empty by default
-		parserConfig.setNonFatalErrors(new HashSet<RioSetting<?>>());
+		parserConfig.setNonFatalErrors(new HashSet<>());
 		errListener = new ParseErrorCollector();
 		valueFactory = SimpleValueFactory.getInstance();
 	}

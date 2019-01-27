@@ -11,6 +11,9 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * A selection of parser settings specific to RDF/JSON parsers.
+ * <p>
+ * Several of these settings can be overridden by means of a system property, but only if specified at JVM
+ * startup time.
  * 
  * @author Peter Ansell
  */
@@ -21,28 +24,38 @@ public class RDFJSONParserSettings {
 	 * values for a single object in a single statement.
 	 * <p>
 	 * Defaults to true.
+	 * <p>
+	 * Can be overridden by setting system property
+	 * {@code org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_values}.
 	 */
-	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_VALUES = new RioSettingImpl<Boolean>(
-			"org.eclipse.rdf4j.rio.failonmultipleobjectvalues", "Fail on multiple object values",
+	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_VALUES = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_values", "Fail on multiple object values",
 			Boolean.TRUE);
 
 	/**
-	 * Boolean setting for parser to determine whether an RDF/JSON parser should fail if it finds multiple
-	 * types for a single object in a single statement.
+	 * Boolean setting for parser to determine whether an RDF/JSON parser should fail if it finds multiple types
+	 * for a single object in a single statement.
 	 * <p>
 	 * Defaults to true.
+	 * <p>
+	 * Can be overridden by setting system property
+	 * {@code org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_types}.
 	 */
-	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_TYPES = new RioSettingImpl<Boolean>(
-			"org.eclipse.rdf4j.rio.failonmultipleobjecttypes", "Fail on multiple object types", Boolean.TRUE);
+	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_TYPES = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_types", "Fail on multiple object types",
+			Boolean.TRUE);
 
 	/**
 	 * Boolean setting for parser to determine whether an RDF/JSON parser should fail if it finds multiple
 	 * languages for a single object in a single statement.
 	 * <p>
 	 * Defaults to true.
+	 * <p>
+	 * Can be overridden by setting system property
+	 * {@code org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_languages}.
 	 */
-	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_LANGUAGES = new RioSettingImpl<Boolean>(
-			"org.eclipse.rdf4j.rio.failonmultipleobjectlanguages", "Fail on multiple object languages",
+	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_LANGUAGES = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_languages", "Fail on multiple object languages",
 			Boolean.TRUE);
 
 	/**
@@ -50,28 +63,37 @@ public class RDFJSONParserSettings {
 	 * datatypes for a single object in a single statement.
 	 * <p>
 	 * Defaults to true.
+	 * <p>
+	 * Can be overridden by setting system property
+	 * {@code org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_datatypes}.
 	 */
-	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_DATATYPES = new RioSettingImpl<Boolean>(
-			"org.eclipse.rdf4j.rio.failonmultipleobjectdatatypes", "Fail on multiple object datatypes",
+	public static final RioSetting<Boolean> FAIL_ON_MULTIPLE_OBJECT_DATATYPES = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_datatypes", "Fail on multiple object datatypes",
 			Boolean.TRUE);
 
 	/**
 	 * Boolean setting for parser to determine whether an RDF/JSON parser should fail if it finds multiple
-	 * properties that it does not recognise in the JSON document.
+	 * properties that it does not recognize in the JSON document.
 	 * <p>
 	 * Defaults to true.
+	 * <p>
+	 * Can be overridden by setting system property
+	 * {@code org.eclipse.rdf4j.rio.rdfjson.fail_on_unknown_property}.
 	 */
-	public static final RioSetting<Boolean> FAIL_ON_UNKNOWN_PROPERTY = new RioSettingImpl<Boolean>(
-			"org.eclipse.rdf4j.rio.failonunknownproperty", "Fail on unknown property", Boolean.TRUE);
+	public static final RioSetting<Boolean> FAIL_ON_UNKNOWN_PROPERTY = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.rdfjson.fail_on_unknown_property", "Fail on unknown property", Boolean.TRUE);
 
 	/**
-	 * Boolean setting for parser to determine whether an RDF/JSON parser should support the graphs extension
-	 * to make it a quads format.
+	 * Boolean setting for parser to determine whether an RDF/JSON parser should support the graphs extension to
+	 * make it a quads format.
 	 * <p>
 	 * Defaults to true.
+	 * <p>
+	 * Can be overridden by setting system property
+	 * {@code org.eclipse.rdf4j.rio.rdfjson.support_graphs_extension}.
 	 */
-	public static final RioSetting<Boolean> SUPPORT_GRAPHS_EXTENSION = new RioSettingImpl<Boolean>(
-			"org.eclipse.rdf4j.rio.supportgraphsextension", "SUPPORT_GRAPHS_EXTENSION", Boolean.TRUE);
+	public static final RioSetting<Boolean> SUPPORT_GRAPHS_EXTENSION = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.rdfjson.support_graphs_extension", "SUPPORT_GRAPHS_EXTENSION", Boolean.TRUE);
 
 	/**
 	 * Private default constructor.

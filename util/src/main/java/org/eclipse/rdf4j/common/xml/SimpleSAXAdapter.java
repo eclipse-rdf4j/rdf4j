@@ -18,24 +18,28 @@ import org.xml.sax.SAXException;
 public class SimpleSAXAdapter implements SimpleSAXListener {
 
 	// implements SimpleSAXListener.startDocument()
+	@Override
 	public void startDocument()
 		throws SAXException
 	{
 	}
 
 	// implements SimpleSAXListener.endDocument()
+	@Override
 	public void endDocument()
 		throws SAXException
 	{
 	}
 
 	// implements SimpleSAXListener.startTag()
+	@Override
 	public void startTag(String tagName, Map<String, String> atts, String text)
 		throws SAXException
 	{
 	}
 
 	// implements SimpleSAXListener.endTag()
+	@Override
 	public void endTag(String tagName)
 		throws SAXException
 	{

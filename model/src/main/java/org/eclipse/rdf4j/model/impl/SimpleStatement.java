@@ -74,21 +74,25 @@ public class SimpleStatement implements Statement {
 	 *---------*/
 
 	// Implements Statement.getSubject()
+	@Override
 	public Resource getSubject() {
 		return subject;
 	}
 
 	// Implements Statement.getPredicate()
+	@Override
 	public IRI getPredicate() {
 		return predicate;
 	}
 
 	// Implements Statement.getObject()
+	@Override
 	public Value getObject() {
 		return object;
 	}
 
 	// Implements Statement.getContext()
+	@Override
 	public Resource getContext() {
 		return null;
 	}

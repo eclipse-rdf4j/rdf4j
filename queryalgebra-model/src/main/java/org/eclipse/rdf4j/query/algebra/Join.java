@@ -45,20 +45,23 @@ public class Join extends BinaryTupleOperator {
 		return TupleExprs.containsSubquery(rightArg);
 	}
 
+	@Override
 	public Set<String> getBindingNames() {
-		Set<String> bindingNames = new LinkedHashSet<String>(16);
+		Set<String> bindingNames = new LinkedHashSet<>(16);
 		bindingNames.addAll(getLeftArg().getBindingNames());
 		bindingNames.addAll(getRightArg().getBindingNames());
 		return bindingNames;
 	}
 
+	@Override
 	public Set<String> getAssuredBindingNames() {
-		Set<String> bindingNames = new LinkedHashSet<String>(16);
+		Set<String> bindingNames = new LinkedHashSet<>(16);
 		bindingNames.addAll(getLeftArg().getAssuredBindingNames());
 		bindingNames.addAll(getRightArg().getAssuredBindingNames());
 		return bindingNames;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

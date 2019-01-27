@@ -58,35 +58,43 @@ public abstract class SPARQLOperation implements Operation {
 		return url;
 	}
 
+	@Override
 	public BindingSet getBindings() {
 		return bindings;
 	}
 
+	@Override
 	public Dataset getDataset() {
 		return dataset;
 	}
 
+	@Override
 	public boolean getIncludeInferred() {
 		return true;
 	}
 
+	@Override
 	public void removeBinding(String name) {
 		bindings.removeBinding(name);
 	}
 
+	@Override
 	public void setBinding(String name, Value value) {
 		assert value instanceof Literal || value instanceof IRI;
 		bindings.addBinding(name, value);
 	}
 
+	@Override
 	public void clearBindings() {
 		bindings.clear();
 	}
 
+	@Override
 	public void setDataset(Dataset dataset) {
 		this.dataset = dataset;
 	}
 
+	@Override
 	public void setIncludeInferred(boolean inf) {
 		if (!inf) {
 			throw new UnsupportedOperationException();
@@ -100,7 +108,7 @@ public abstract class SPARQLOperation implements Operation {
 	protected Set<String> getBindingNames() {
 		if (bindings.size() == 0)
 			return Collections.EMPTY_SET;
-		Set<String> names = new HashSet<String>();
+		Set<String> names = new HashSet<>();
 		String qry = operation;
 		int b = qry.indexOf('{');
 		String select = qry.substring(0, b);

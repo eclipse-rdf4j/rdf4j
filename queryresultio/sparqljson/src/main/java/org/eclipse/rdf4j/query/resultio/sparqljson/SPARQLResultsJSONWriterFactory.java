@@ -23,6 +23,7 @@ public class SPARQLResultsJSONWriterFactory implements TupleQueryResultWriterFac
 	/**
 	 * Returns {@link TupleQueryResultFormat#JSON}.
 	 */
+	@Override
 	public TupleQueryResultFormat getTupleQueryResultFormat() {
 		return TupleQueryResultFormat.JSON;
 	}
@@ -30,6 +31,7 @@ public class SPARQLResultsJSONWriterFactory implements TupleQueryResultWriterFac
 	/**
 	 * Returns a new instance of SPARQLResultsJSONWriter.
 	 */
+	@Override
 	public TupleQueryResultWriter getWriter(OutputStream out) {
 		return new SPARQLResultsJSONWriter(out);
 	}

@@ -21,14 +21,17 @@ public class SPARQLRepositoryFactory implements RepositoryFactory {
 
 	public static final String REPOSITORY_TYPE = "openrdf:SPARQLRepository";
 
+	@Override
 	public String getRepositoryType() {
 		return REPOSITORY_TYPE;
 	}
 
+	@Override
 	public RepositoryImplConfig getConfig() {
 		return new SPARQLRepositoryConfig();
 	}
 
+	@Override
 	public SPARQLRepository getRepository(RepositoryImplConfig config)
 		throws RepositoryConfigException
 	{

@@ -44,7 +44,7 @@ public class IsolationLevelsTest {
 	@Test
 	public void testGetCompatibleIsolationLevel() {
 
-		List<IsolationLevels> supportedLevels = new ArrayList<IsolationLevels>();
+		List<IsolationLevels> supportedLevels = new ArrayList<>();
 		supportedLevels.add(IsolationLevels.NONE);
 		supportedLevels.add(IsolationLevels.SERIALIZABLE);
 
@@ -57,7 +57,7 @@ public class IsolationLevelsTest {
 	@Test
 	public void testGetCompatibleIsolationLevelNoneFound() {
 
-		List<IsolationLevels> supportedLevels = new ArrayList<IsolationLevels>();
+		List<IsolationLevels> supportedLevels = new ArrayList<>();
 		supportedLevels.add(IsolationLevels.NONE);
 		supportedLevels.add(IsolationLevels.READ_UNCOMMITTED);
 		supportedLevels.add(IsolationLevels.READ_COMMITTED);
@@ -79,7 +79,7 @@ public class IsolationLevelsTest {
 			// do nothing, expected.
 		}
 
-		List<IsolationLevels> supportedLevels = new ArrayList<IsolationLevels>();
+		List<IsolationLevels> supportedLevels = new ArrayList<>();
 		supportedLevels.add(IsolationLevels.NONE);
 		supportedLevels.add(IsolationLevels.SNAPSHOT);
 		supportedLevels.add(IsolationLevels.SERIALIZABLE);

@@ -213,6 +213,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	 * @deprecated since 2.7.0. Use {@link #begin()} instead.
 	 */
 	@Deprecated
+	@Override
 	public void setAutoCommit(boolean autoCommit)
 		throws RepositoryException
 	{

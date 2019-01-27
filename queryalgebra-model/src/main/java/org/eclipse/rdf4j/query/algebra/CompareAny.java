@@ -44,6 +44,7 @@ public class CompareAny extends CompareSubQueryValueOperator {
 		this.operator = operator;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

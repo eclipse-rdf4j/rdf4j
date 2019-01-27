@@ -39,54 +39,65 @@ public class RepositoryWrapper implements DelegatingRepository {
 		setDelegate(delegate);
 	}
 
+	@Override
 	public void setDelegate(Repository delegate) {
 		this.delegate = delegate;
 	}
 
+	@Override
 	public Repository getDelegate() {
 		return delegate;
 	}
 
+	@Override
 	public void setDataDir(File dataDir) {
 		getDelegate().setDataDir(dataDir);
 	}
 
+	@Override
 	public File getDataDir() {
 		return getDelegate().getDataDir();
 	}
 
+	@Override
 	public void initialize()
 		throws RepositoryException
 	{
 		getDelegate().initialize();
 	}
 
+	@Override
 	public void shutDown()
 		throws RepositoryException
 	{
 		getDelegate().shutDown();
 	}
 
+	@Override
 	public boolean isWritable()
 		throws RepositoryException
 	{
 		return getDelegate().isWritable();
 	}
 
+	@Override
 	public RepositoryConnection getConnection()
 		throws RepositoryException
 	{
 		return getDelegate().getConnection();
 	}
 
+	@Override
 	public ValueFactory getValueFactory() {
 		return getDelegate().getValueFactory();
 	}
 
+	@Override
 	public String toString() {
 		return getDelegate().toString();
 	}
 
+	@Override
 	public boolean isInitialized() {
 		return getDelegate().isInitialized();
 	}

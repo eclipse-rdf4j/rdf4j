@@ -154,12 +154,14 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 		contextVar = context;
 	}
 
+	@Override
 	public Set<String> getBindingNames() {
 		return getAssuredBindingNames();
 	}
 
+	@Override
 	public Set<String> getAssuredBindingNames() {
-		Set<String> bindingNames = new HashSet<String>(8);
+		Set<String> bindingNames = new HashSet<>(8);
 
 		if (subjectVar != null) {
 			bindingNames.add(subjectVar.getName());
@@ -177,6 +179,7 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 		return bindingNames;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

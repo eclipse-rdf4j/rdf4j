@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.rio.RDFParser.DatatypeHandling;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
@@ -223,6 +222,6 @@ public class RDFXMLParserCustomTest {
 	public void testSupportedSettings()
 		throws Exception
 	{
-		assertEquals(22, Rio.createParser(RDFFormat.RDFXML).getSupportedSettings().size());
+		assertEquals(25, Rio.createParser(RDFFormat.RDFXML).getSupportedSettings().size());
 	}
 }

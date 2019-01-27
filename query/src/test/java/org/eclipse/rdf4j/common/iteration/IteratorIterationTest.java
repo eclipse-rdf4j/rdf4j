@@ -11,7 +11,7 @@ public class IteratorIterationTest extends IterationTest {
 
 	@Override
 	protected Iteration<String, Exception> createTestIteration() {
-		return new IteratorIteration<String, Exception>(stringList1.iterator());
+		return new IteratorIteration<>(stringList1.iterator());
 	}
 
 	@Override

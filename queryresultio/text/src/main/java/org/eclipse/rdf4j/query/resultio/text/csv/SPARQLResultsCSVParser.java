@@ -7,32 +7,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.text.csv;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import com.opencsv.bean.CsvToBeanBuilder;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
-import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.resultio.AbstractTupleQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
+import org.eclipse.rdf4j.query.resultio.text.SPARQLResultsXSVMappingStrategy;
 
-import com.opencsv.CSVReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 /**
  * SPARQL Results CSV format parser.
  * 
  * @author Jeen Broekstra
+ * @author Andrew Rucker Jones
  */
 public class SPARQLResultsCSVParser extends AbstractTupleQueryResultParser implements TupleQueryResultParser {
 
@@ -43,84 +36,21 @@ public class SPARQLResultsCSVParser extends AbstractTupleQueryResultParser imple
 
 	@Override
 	public void parse(InputStream in)
-		throws IOException, QueryResultParseException, TupleQueryResultHandlerException
+			throws QueryResultParseException, TupleQueryResultHandlerException
 	{
-		CSVReader reader = new CSVReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+		if(handler != null) {
+			SPARQLResultsCSVMappingStrategy strategy = new SPARQLResultsCSVMappingStrategy(valueFactory);
 
-		List<String> bindingNames = null;
-
-		String[] nextLine;
-
-		try {
-			while ((nextLine = reader.readNext()) != null) {
-				if (bindingNames == null) {
-					// header is mandatory in SPARQL CSV
-					bindingNames = Arrays.asList(nextLine);
-					if (handler != null) {
-						handler.startQueryResult(bindingNames);
-					}
-				}
-				else {
-					// process solution
-					List<Value> values = new ArrayList<Value>();
-					for (String valueString : nextLine) {
-						Value v = null;
-						if (valueString.startsWith("_:")) {
-							v = valueFactory.createBNode(valueString.substring(2));
-						}
-						else if (!"".equals(valueString)) {
-							if (valueString.matches("^[\\+\\-]?[\\d\\.].*")) {
-
-								IRI datatype = null;
-
-								if (XMLDatatypeUtil.isValidInteger(valueString)) {
-									if (XMLDatatypeUtil.isValidNegativeInteger(valueString)) {
-										datatype = XMLSchema.NEGATIVE_INTEGER;
-									}
-									else {
-										datatype = XMLSchema.INTEGER;
-									}
-								}
-								else if (XMLDatatypeUtil.isValidDecimal(valueString)) {
-									datatype = XMLSchema.DECIMAL;
-								}
-								else if (XMLDatatypeUtil.isValidDouble(valueString)) {
-									datatype = XMLSchema.DOUBLE;
-								}
-
-								if (datatype != null) {
-									v = valueFactory.createLiteral(valueString, datatype);
-								}
-								else {
-									v = valueFactory.createLiteral(valueString);
-								}
-							}
-							else {
-								try {
-									v = valueFactory.createIRI(valueString);
-								}
-								catch (IllegalArgumentException e) {
-									v = valueFactory.createLiteral(valueString);
-								}
-							}
-						}
-						values.add(v);
-					}
-
-					BindingSet bindingSet = new ListBindingSet(bindingNames,
-							values.toArray(new Value[values.size()]));
-					if (handler != null) {
-						handler.handleSolution(bindingSet);
-					}
-				}
+			List<BindingSet> bindingSets = new CsvToBeanBuilder<BindingSet>(new InputStreamReader(in, StandardCharsets.UTF_8))
+					.withType(BindingSet.class)
+					.withMappingStrategy(strategy)
+					.build().parse();
+			List<String> bindingNames = strategy.getBindingNames();
+			handler.startQueryResult(bindingNames);
+			for(BindingSet bs : bindingSets) {
+				handler.handleSolution(bs);
 			}
-
-			if (bindingNames != null && handler != null) {
-				handler.endQueryResult();
-			}
-		}
-		finally {
-			reader.close();
+			handler.endQueryResult();
 		}
 	}
 }

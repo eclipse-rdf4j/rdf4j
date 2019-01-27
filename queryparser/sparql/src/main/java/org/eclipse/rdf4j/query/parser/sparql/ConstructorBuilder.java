@@ -101,6 +101,7 @@ public class ConstructorBuilder {
 			basicPattern = false;
 		}
 
+		@Override
 		public void meet(StatementPattern node) {
 			if (!Scope.DEFAULT_CONTEXTS.equals(node.getScope())) {
 				basicPattern = false;
@@ -154,7 +155,7 @@ public class ConstructorBuilder {
 		}
 
 		// Create BNodeGenerator's for all anonymous variables
-		Map<Var, ExtensionElem> extElemMap = new HashMap<Var, ExtensionElem>();
+		Map<Var, ExtensionElem> extElemMap = new HashMap<>();
 
 		for (Var var : constructVars) {
 			if (var.isAnonymous() && !extElemMap.containsKey(var)) {
@@ -179,7 +180,7 @@ public class ConstructorBuilder {
 		}
 
 		// Create a Projection for each StatementPattern in the constructor
-		List<ProjectionElemList> projections = new ArrayList<ProjectionElemList>();
+		List<ProjectionElemList> projections = new ArrayList<>();
 
 		for (StatementPattern sp : statementPatterns) {
 			ProjectionElemList projElemList = new ProjectionElemList();
@@ -221,7 +222,7 @@ public class ConstructorBuilder {
 	 * predicate and object variables from the supplied statement patterns, but ignores any context variables.
 	 */
 	private Set<Var> getConstructVars(Collection<StatementPattern> statementPatterns) {
-		Set<Var> vars = new LinkedHashSet<Var>(statementPatterns.size() * 2);
+		Set<Var> vars = new LinkedHashSet<>(statementPatterns.size() * 2);
 
 		for (StatementPattern sp : statementPatterns) {
 			vars.add(sp.getSubjectVar());

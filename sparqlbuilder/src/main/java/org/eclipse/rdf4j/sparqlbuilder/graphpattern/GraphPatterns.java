@@ -82,8 +82,10 @@ public class GraphPatterns {
 	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#GroupPatterns">SPARQL
 	 *      Group Graph Pattern</a>
 	 */
-	public static GraphPatternNotTriple and(GraphPattern... patterns) {
-		return new GraphPatternNotTriple().and(patterns);
+	public static GraphPatternNotTriples and(GraphPattern... patterns) {
+	    GroupGraphPattern and = new GroupGraphPattern();
+
+	    return new GraphPatternNotTriples(and.and(patterns));
 	}
 
 	/**
@@ -102,8 +104,10 @@ public class GraphPatterns {
 	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#alternatives">
 	 *      SPARQL Alternative Graph Patterns</a>
 	 */
-	public static GraphPatternNotTriple union(GraphPattern... patterns) {
-		return new GraphPatternNotTriple().union(patterns);
+	public static GraphPatternNotTriples union(GraphPattern... patterns) {
+	    AlternativeGraphPattern union = new AlternativeGraphPattern();
+
+	    return new GraphPatternNotTriples(union.union(patterns));
 	}
 
 	/**
@@ -115,7 +119,7 @@ public class GraphPatterns {
 	 *   OPTIONAL {
 	 *     pattern1 .
 	 *     pattern2 .
-	 *     ... .
+	 *     ...
 	 *     patternN
 	 *   }
 	 * }
@@ -129,9 +133,31 @@ public class GraphPatterns {
 	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#optionals">
 	 *      SPARQL Optional Graph Patterns</a>
 	 */
-	public static GraphPatternNotTriple optional(GraphPattern... patterns) {
+	public static GraphPatternNotTriples optional(GraphPattern... patterns) {
 		return and(patterns).optional();
 	}
+
+	public static GraphPatternNotTriples filterExists(GraphPattern... patterns) {
+        return filterExists(true, patterns);
+	}
+
+	public static GraphPatternNotTriples filterNotExists(GraphPattern... patterns) {
+	    return filterExists(false, patterns);
+    }
+
+    public static GraphPatternNotTriples minus(GraphPattern... patterns) {
+	    MinusGraphPattern minus = new MinusGraphPattern();
+	    minus.and(patterns);
+
+	    return new GraphPatternNotTriples(minus);
+    }
+
+    public static GraphPatternNotTriples filterExists(boolean exists, GraphPattern... patterns) {
+        FilterExistsGraphPattern filterExists = new FilterExistsGraphPattern().exists(exists);
+        filterExists.and(patterns);
+
+        return new GraphPatternNotTriples(filterExists);
+    }
 
 	/**
 	 * Create a SPARQL subquery, including the given elements in its projection.
@@ -147,4 +173,19 @@ public class GraphPatterns {
 	public static SubSelect select(Projectable... projectables) {
 		return new SubSelect().select(projectables);
 	}
+
+	static GroupGraphPattern extractOrConvertToGGP(GraphPattern pattern) {
+        if(pattern instanceof GroupGraphPattern) {
+            return (GroupGraphPattern) pattern;
+        }
+
+        if(pattern instanceof GraphPatternNotTriples) {
+            GraphPatternNotTriples gp = (GraphPatternNotTriples) pattern;
+            if(gp.gp instanceof GroupGraphPattern) {
+                return (GroupGraphPattern) gp.gp;
+            }
+        }
+
+        return new GroupGraphPattern(pattern);
+    }
 }

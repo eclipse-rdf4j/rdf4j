@@ -21,6 +21,7 @@ public class SPARQLResultsXMLParserFactory implements TupleQueryResultParserFact
 	/**
 	 * Returns {@link TupleQueryResultFormat#SPARQL}.
 	 */
+	@Override
 	public TupleQueryResultFormat getTupleQueryResultFormat() {
 		return TupleQueryResultFormat.SPARQL;
 	}
@@ -28,6 +29,7 @@ public class SPARQLResultsXMLParserFactory implements TupleQueryResultParserFact
 	/**
 	 * Returns a new instance of {@link SPARQLResultsXMLParser}.
 	 */
+	@Override
 	public TupleQueryResultParser getParser() {
 		return new SPARQLResultsXMLParser();
 	}

@@ -70,8 +70,8 @@ public abstract class AbstractRDFInserter extends AbstractRDFHandler {
 	 */
 	protected AbstractRDFInserter(ValueFactory vf) {
 		preserveBNodeIDs = true;
-		namespaceMap = new HashMap<String, String>();
-		bNodesMap = new HashMap<String, BNode>();
+		namespaceMap = new HashMap<>();
+		bNodesMap = new HashMap<>();
 		valueFactory = vf;
 	}
 

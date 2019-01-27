@@ -70,7 +70,7 @@ public class StatementCollectorTest {
 	public final void testStatementCollectorList()
 		throws Exception
 	{
-		List<Statement> testList = new ArrayList<Statement>();
+		List<Statement> testList = new ArrayList<>();
 		StatementCollector collector = new StatementCollector(testList);
 
 		// Actual variable is exactly the same, although it could be theoretically
@@ -87,7 +87,7 @@ public class StatementCollectorTest {
 	public final void testStatementCollectorSet()
 		throws Exception
 	{
-		Set<Statement> testList = new LinkedHashSet<Statement>();
+		Set<Statement> testList = new LinkedHashSet<>();
 		StatementCollector collector = new StatementCollector(testList);
 
 		// Actual variable is exactly the same, although it could be theoretically
@@ -135,7 +135,7 @@ public class StatementCollectorTest {
 		throws Exception
 	{
 		Model testList = new LinkedHashModel();
-		Map<String, String> testNamespaces = new LinkedHashMap<String, String>();
+		Map<String, String> testNamespaces = new LinkedHashMap<>();
 		StatementCollector collector = new StatementCollector(testList, testNamespaces);
 
 		// Actual variable is exactly the same, although it could be theoretically
@@ -155,7 +155,7 @@ public class StatementCollectorTest {
 		throws Exception
 	{
 		Collection<Statement> testList = new LinkedHashModel();
-		Map<String, String> testNamespaces = new LinkedHashMap<String, String>();
+		Map<String, String> testNamespaces = new LinkedHashMap<>();
 		StatementCollector collector = new StatementCollector(testList, testNamespaces);
 
 		// Actual variable is exactly the same, although it could be theoretically

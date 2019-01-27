@@ -23,6 +23,7 @@ public class SPARQLResultsCSVWriterFactory implements TupleQueryResultWriterFact
 	/**
 	 * Returns {@link TupleQueryResultFormat#CSV}.
 	 */
+	@Override
 	public TupleQueryResultFormat getTupleQueryResultFormat() {
 		return TupleQueryResultFormat.CSV;
 	}
@@ -30,6 +31,7 @@ public class SPARQLResultsCSVWriterFactory implements TupleQueryResultWriterFact
 	/**
 	 * Returns a new instance of {@link SPARQLResultsCSVWriter}.
 	 */
+	@Override
 	public TupleQueryResultWriter getWriter(OutputStream out) {
 		return new SPARQLResultsCSVWriter(out);
 	}

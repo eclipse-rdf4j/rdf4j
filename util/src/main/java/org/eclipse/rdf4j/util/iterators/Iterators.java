@@ -30,7 +30,7 @@ public class Iterators {
 	 * @return a List containing all elements obtained from the specified iterator.
 	 */
 	public static <E> List<E> asList(Iterator<? extends E> iter) {
-		List<E> result = new ArrayList<E>();
+		List<E> result = new ArrayList<>();
 		addAll(iter, result);
 		return result;
 	}

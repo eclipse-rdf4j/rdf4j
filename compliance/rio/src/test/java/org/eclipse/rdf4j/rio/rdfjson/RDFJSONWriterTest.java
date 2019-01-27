@@ -15,8 +15,6 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
-import org.eclipse.rdf4j.rio.rdfjson.RDFJSONParserFactory;
-import org.eclipse.rdf4j.rio.rdfjson.RDFJSONWriterFactory;
 
 /**
  * JUnit test for the RDF/JSON parser.

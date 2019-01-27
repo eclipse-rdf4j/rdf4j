@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sparqlbuilder.examples;
 
 import java.util.Arrays;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -73,19 +74,7 @@ public class BaseExamples {
 		String name = testName.getMethodName();
 		String[] tokens = name.split("_");
 
-		StringBuilder sb = new StringBuilder("\n");
-		sb.append(tokens[0].toUpperCase()).append(" ");
-
-		boolean first = true;
-		for (int i = 1; i < tokens.length; i++) {
-			if (!first) {
-				sb.append('.');
-			}
-			sb.append(tokens[i]);
-			first = false;
-		}
-
-		sb.append(":");
-		p(sb.toString());
+		p(Stream.of(Arrays.copyOfRange(tokens, 1, tokens.length))
+				.collect(Collectors.joining(".", tokens[0].toUpperCase() + " ", ":")));
 	}
 }

@@ -78,7 +78,7 @@ public class SimpleLiteral implements Literal {
 	 * @param label
 	 *        The label for the literal, must not be <tt>null</tt>.
 	 * @param language
-	 *        The language tag for the literal, must not be <tt>null</tt>.
+	 *        The language tag for the literal, must not be <tt>null</tt> and not be empty.
 	 */
 	protected SimpleLiteral(String label, String language) {
 		setLabel(label);
@@ -113,16 +113,21 @@ public class SimpleLiteral implements Literal {
 		this.label = label;
 	}
 
+	@Override
 	public String getLabel() {
 		return label;
 	}
 
 	protected void setLanguage(String language) {
 		Objects.requireNonNull(language);
+		if (language.isEmpty()) {
+			throw new IllegalArgumentException("Language tag cannot be empty");
+		}
 		this.language = language;
 		setDatatype(RDF.LANGSTRING);
 	}
 
+	@Override
 	public Optional<String> getLanguage() {
 		return Optional.ofNullable(language);
 	}
@@ -131,6 +136,7 @@ public class SimpleLiteral implements Literal {
 		this.datatype = datatype;
 	}
 
+	@Override
 	public IRI getDatatype() {
 		return datatype;
 	}
@@ -202,46 +208,57 @@ public class SimpleLiteral implements Literal {
 		}
 	}
 
+	@Override
 	public String stringValue() {
 		return label;
 	}
 
+	@Override
 	public boolean booleanValue() {
 		return XMLDatatypeUtil.parseBoolean(getLabel());
 	}
 
+	@Override
 	public byte byteValue() {
 		return XMLDatatypeUtil.parseByte(getLabel());
 	}
 
+	@Override
 	public short shortValue() {
 		return XMLDatatypeUtil.parseShort(getLabel());
 	}
 
+	@Override
 	public int intValue() {
 		return XMLDatatypeUtil.parseInt(getLabel());
 	}
 
+	@Override
 	public long longValue() {
 		return XMLDatatypeUtil.parseLong(getLabel());
 	}
 
+	@Override
 	public float floatValue() {
 		return XMLDatatypeUtil.parseFloat(getLabel());
 	}
 
+	@Override
 	public double doubleValue() {
 		return XMLDatatypeUtil.parseDouble(getLabel());
 	}
 
+	@Override
 	public BigInteger integerValue() {
 		return XMLDatatypeUtil.parseInteger(getLabel());
 	}
 
+	@Override
 	public BigDecimal decimalValue() {
 		return XMLDatatypeUtil.parseDecimal(getLabel());
 	}
 
+	@Override
 	public XMLGregorianCalendar calendarValue() {
 		return XMLDatatypeUtil.parseCalendar(getLabel());
 	}

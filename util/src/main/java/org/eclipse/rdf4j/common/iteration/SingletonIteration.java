@@ -30,7 +30,7 @@ public class SingletonIteration<E, X extends Exception> extends AbstractCloseabl
 	 * Creates a new EmptyIteration.
 	 */
 	public SingletonIteration(E value) {
-		this.value = new AtomicReference<E>(value);
+		this.value = new AtomicReference<>(value);
 	}
 
 	/*---------*

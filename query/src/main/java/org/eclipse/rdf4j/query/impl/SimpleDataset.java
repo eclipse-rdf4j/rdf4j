@@ -25,17 +25,18 @@ public class SimpleDataset implements Dataset, Serializable {
 
 	private static final long serialVersionUID = 7841576172053060417L;
 
-	private Set<IRI> defaultRemoveGraphs = new LinkedHashSet<IRI>();
+	private Set<IRI> defaultRemoveGraphs = new LinkedHashSet<>();
 
 	private IRI defaultInsertGraph;
 
-	private Set<IRI> defaultGraphs = new LinkedHashSet<IRI>();
+	private Set<IRI> defaultGraphs = new LinkedHashSet<>();
 
-	private Set<IRI> namedGraphs = new LinkedHashSet<IRI>();
+	private Set<IRI> namedGraphs = new LinkedHashSet<>();
 
 	public SimpleDataset() {
 	}
 
+	@Override
 	public Set<IRI> getDefaultRemoveGraphs() {
 		return Collections.unmodifiableSet(defaultRemoveGraphs);
 	}
@@ -60,6 +61,7 @@ public class SimpleDataset implements Dataset, Serializable {
 	/**
 	 * @return Returns the default insert graph.
 	 */
+	@Override
 	public IRI getDefaultInsertGraph() {
 		return defaultInsertGraph;
 	}
@@ -72,6 +74,7 @@ public class SimpleDataset implements Dataset, Serializable {
 		this.defaultInsertGraph = defaultInsertGraph;
 	}
 
+	@Override
 	public Set<IRI> getDefaultGraphs() {
 		return Collections.unmodifiableSet(defaultGraphs);
 	}
@@ -96,6 +99,7 @@ public class SimpleDataset implements Dataset, Serializable {
 	/**
 	 * Gets the (unmodifiable) set of named graph URIs.
 	 */
+	@Override
 	public Set<IRI> getNamedGraphs() {
 		return Collections.unmodifiableSet(namedGraphs);
 	}

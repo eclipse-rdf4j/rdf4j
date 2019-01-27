@@ -20,8 +20,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.common.xml.SimpleSAXAdapter;
@@ -39,14 +42,13 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
+import org.eclipse.rdf4j.rio.helpers.XMLReaderBasedParser;
 import org.eclipse.rdf4j.rio.helpers.TriXParserSettings;
 import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
-import org.xml.sax.SAXNotRecognizedException;
-import org.xml.sax.SAXNotSupportedException;
 import org.xml.sax.SAXParseException;
 import org.xml.sax.XMLReader;
 
@@ -56,7 +58,7 @@ import org.xml.sax.XMLReader;
  * 
  * @author Arjohn Kampman
  */
-public class TriXParser extends AbstractRDFParser implements ErrorHandler {
+public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 
 	/*--------------*
 	 * Constructors *
@@ -91,6 +93,25 @@ public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 	public final RDFFormat getRDFFormat() {
 		return RDFFormat.TRIX;
 	}
+	
+	@Override
+	public Collection<RioSetting<?>> getSupportedSettings() {
+		// Override to add TriX/XML specific supported settings
+		Set<RioSetting<?>> results = new HashSet<>(super.getSupportedSettings());
+
+		results.addAll(getCompulsoryXmlPropertySettings());
+		results.addAll(getCompulsoryXmlFeatureSettings());
+		results.addAll(getOptionalXmlPropertySettings());
+		results.addAll(getOptionalXmlFeatureSettings());
+
+		results.add(XMLParserSettings.CUSTOM_XML_READER);
+		results.add(XMLParserSettings.FAIL_ON_MISMATCHED_TAGS);
+		results.add(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS);
+		results.add(TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
+		results.add(TriXParserSettings.FAIL_ON_MISSING_DATATYPE);
+		return results;
+	}
+
 
 	/**
 	 * Parses the data from the supplied InputStream, using the supplied baseURI to resolve any relative URI
@@ -170,15 +191,7 @@ public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 				rdfHandler.startRDF();
 			}
 
-			XMLReader xmlReader;
-
-			if (getParserConfig().isSet(XMLParserSettings.CUSTOM_XML_READER)) {
-				xmlReader = getParserConfig().get(XMLParserSettings.CUSTOM_XML_READER);
-			}
-			else {
-				xmlReader = XMLReaderFactory.createXMLReader();
-			}
-
+			XMLReader xmlReader = getXMLReader();
 			xmlReader.setErrorHandler(this);
 
 			saxParser = new SimpleSAXParser(xmlReader);
@@ -315,7 +328,7 @@ public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 
 		public TriXSAXHandler() {
 			currentContext = null;
-			valueList = new ArrayList<Value>(3);
+			valueList = new ArrayList<>(3);
 		}
 
 		@Override
@@ -338,7 +351,7 @@ public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 
 					if (datatype == null) {
 						reportError(DATATYPE_ATT + " attribute missing for typed literal",
-								TriXParserSettings.FAIL_ON_TRIX_MISSING_DATATYPE);
+								TriXParserSettings.FAIL_ON_MISSING_DATATYPE);
 						valueList.add(createLiteral(text, null, null));
 					}
 					else {
@@ -353,7 +366,7 @@ public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 							// context information
 							if (valueList.size() > 1) {
 								reportError("At most 1 resource can be specified for the context",
-										TriXParserSettings.FAIL_ON_TRIX_INVALID_STATEMENT);
+										TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 							}
 							else if (valueList.size() == 1) {
 								try {
@@ -361,7 +374,7 @@ public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 								}
 								catch (ClassCastException e) {
 									reportError("Context identifier should be a URI or blank node",
-											TriXParserSettings.FAIL_ON_TRIX_INVALID_STATEMENT);
+											TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 								}
 							}
 						}
@@ -406,7 +419,7 @@ public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 			try {
 				if (valueList.size() != 3) {
 					reportError("exactly 3 values are required for a triple",
-							TriXParserSettings.FAIL_ON_TRIX_INVALID_STATEMENT);
+							TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 					return;
 				}
 
@@ -419,7 +432,7 @@ public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 				}
 				catch (ClassCastException e) {
 					reportError("First value for a triple should be a URI or blank node",
-							TriXParserSettings.FAIL_ON_TRIX_INVALID_STATEMENT);
+							TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 					return;
 				}
 
@@ -428,7 +441,7 @@ public class TriXParser extends AbstractRDFParser implements ErrorHandler {
 				}
 				catch (ClassCastException e) {
 					reportError("Second value for a triple should be a URI",
-							TriXParserSettings.FAIL_ON_TRIX_INVALID_STATEMENT);
+							TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 					return;
 				}
 

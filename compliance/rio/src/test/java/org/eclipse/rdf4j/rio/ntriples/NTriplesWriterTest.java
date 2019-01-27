@@ -8,8 +8,6 @@
 package org.eclipse.rdf4j.rio.ntriples;
 
 import org.eclipse.rdf4j.rio.RDFWriterTest;
-import org.eclipse.rdf4j.rio.ntriples.NTriplesParserFactory;
-import org.eclipse.rdf4j.rio.ntriples.NTriplesWriterFactory;
 
 /**
  * JUnit test for the RDF/JSON parser.

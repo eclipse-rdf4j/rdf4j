@@ -33,7 +33,7 @@ public class Iterations {
 	public static <E, X extends Exception> List<E> asList(Iteration<? extends E, X> iter)
 		throws X
 	{
-		List<E> result = new ArrayList<E>();
+		List<E> result = new ArrayList<>();
 		addAll(iter, result);
 		return result;
 	}
@@ -48,7 +48,7 @@ public class Iterations {
 	public static <E, X extends Exception> Set<E> asSet(Iteration<? extends E, X> iter)
 		throws X
 	{
-		Set<E> result = new HashSet<E>();
+		Set<E> result = new HashSet<>();
 		addAll(iter, result);
 		return result;
 	}
@@ -92,7 +92,7 @@ public class Iterations {
 	 *         iteration.
 	 */
 	public static <T> Stream<T> stream(Iteration<T, ? extends Exception> iteration) {
-		Spliterator<T> spliterator = new IterationSpliterator<T>(iteration);
+		Spliterator<T> spliterator = new IterationSpliterator<>(iteration);
 
 		return StreamSupport.stream(spliterator, false).onClose(() -> {
 			try {

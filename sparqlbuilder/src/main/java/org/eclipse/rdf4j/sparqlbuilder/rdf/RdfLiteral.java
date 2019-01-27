@@ -79,14 +79,26 @@ public abstract class RdfLiteral<T> implements RdfValue {
 		
 		StringLiteral(String stringValue, Iri dataType) {
 			super(stringValue);
-			this.dataType = Optional.ofNullable(dataType);
+			ofType(dataType);
 		}
 		
 		StringLiteral(String stringValue, String languageTag) {
 			super(stringValue);
-			this.languageTag = Optional.ofNullable(languageTag);
+			ofLanguage(languageTag);
 		}
-				
+
+		public StringLiteral ofType(Iri dataType) {
+			this.dataType = Optional.ofNullable(dataType);
+
+			return this;
+		}
+
+		public StringLiteral ofLanguage(String languageTag) {
+		    this.languageTag = Optional.ofNullable(languageTag);
+
+		    return this;
+        }
+
 		@Override
 		public String getQueryString() {
 			StringBuilder literal = new StringBuilder();

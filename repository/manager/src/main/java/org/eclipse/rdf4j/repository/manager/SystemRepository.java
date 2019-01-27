@@ -112,8 +112,7 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 	{
 		super.initialize();
 
-		RepositoryConnection con = getConnection();
-		try {
+		try (RepositoryConnection con = getConnection()) {
 			if (con.isEmpty()) {
 				logger.debug("Initializing empty {} repository", ID);
 
@@ -129,9 +128,6 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 		}
 		catch (RepositoryConfigException e) {
 			throw new RepositoryException(e.getMessage(), e);
-		}
-		finally {
-			con.close();
 		}
 	}
 

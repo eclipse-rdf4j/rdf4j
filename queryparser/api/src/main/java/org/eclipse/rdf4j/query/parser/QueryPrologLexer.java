@@ -93,7 +93,7 @@ public class QueryPrologLexer {
 	 *         are made.
 	 */
 	public static List<Token> lex(String input) {
-		final List<Token> result = new ArrayList<QueryPrologLexer.Token>();
+		final List<Token> result = new ArrayList<>();
 		for (int i = 0; i < input.length();) {
 			char c = input.charAt(i);
 			switch (c) {

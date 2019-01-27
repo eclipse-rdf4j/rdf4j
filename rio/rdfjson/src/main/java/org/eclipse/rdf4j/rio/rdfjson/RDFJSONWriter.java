@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
+import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerationException;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.util.DefaultIndenter;
@@ -68,7 +69,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	{
 		try {
 			if (this.writer != null) {
-				try (final JsonGenerator jg = RDFJSONUtility.JSON_FACTORY.createGenerator(this.writer);) {
+				try (final JsonGenerator jg = configureNewJsonFactory().createGenerator(this.writer);) {
 					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
 				}
 				finally {
@@ -76,9 +77,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 				}
 			}
 			else if (this.outputStream != null) {
-				try (final JsonGenerator jg = RDFJSONUtility.JSON_FACTORY.createGenerator(
-						this.outputStream);)
-				{
+				try (final JsonGenerator jg = configureNewJsonFactory().createGenerator(this.outputStream);) {
 					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
 				}
 				finally {
@@ -101,7 +100,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		final Set<RioSetting<?>> results = new HashSet<RioSetting<?>>(super.getSupportedSettings());
+		final Set<RioSetting<?>> results = new HashSet<>(super.getSupportedSettings());
 
 		results.add(BasicWriterSettings.PRETTY_PRINT);
 
@@ -151,7 +150,8 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @throws JSONException
 	 */
 	public static void writeObject(final Value object, final Set<Resource> contexts, final JsonGenerator jg)
-		throws JsonGenerationException, IOException
+		throws JsonGenerationException,
+		IOException
 	{
 		jg.writeStartObject();
 		if (object instanceof Literal) {
@@ -214,7 +214,8 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	public static void modelToRdfJsonInternal(final Model graph, final WriterConfig writerConfig,
 			final JsonGenerator jg)
-		throws IOException, JsonGenerationException
+		throws IOException,
+		JsonGenerationException
 	{
 		if (writerConfig.get(BasicWriterSettings.PRETTY_PRINT)) {
 			// SES-2011: Always use \n for consistency
@@ -246,4 +247,21 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 		jg.writeEndObject();
 	}
 
+	/**
+	 * Get an instance of JsonFactory configured using the settings from {@link #getParserConfig()}.
+	 * 
+	 * @return A newly configured JsonFactory based on the currently enabled settings
+	 */
+	private JsonFactory configureNewJsonFactory() {
+		final JsonFactory nextJsonFactory = new JsonFactory();
+		// Disable features that may work for most JSON where the field names are
+		// in limited supply,
+		// but does not work for RDF/JSON where a wide range of URIs are used for
+		// subjects and predicates
+		nextJsonFactory.disable(JsonFactory.Feature.INTERN_FIELD_NAMES);
+		nextJsonFactory.disable(JsonFactory.Feature.CANONICALIZE_FIELD_NAMES);
+		nextJsonFactory.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
+
+		return nextJsonFactory;
+	}
 }

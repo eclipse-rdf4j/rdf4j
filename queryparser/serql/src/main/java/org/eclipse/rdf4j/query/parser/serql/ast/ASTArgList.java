@@ -27,6 +27,6 @@ public class ASTArgList extends SimpleNode {
 	}
 
 	public List<ASTValueExpr> getElements() {
-		return new CastingList<ASTValueExpr>(children);
+		return new CastingList<>(children);
 	}
 }

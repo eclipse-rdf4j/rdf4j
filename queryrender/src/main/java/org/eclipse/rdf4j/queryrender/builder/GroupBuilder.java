@@ -71,11 +71,11 @@ public class GroupBuilder<T extends ParsedQuery, E extends SupportsGroups> {
 	}
 
 	public GroupBuilder<T, E> group() {
-		return new GroupBuilder<T, E>(mBuilder, false, mGroup);
+		return new GroupBuilder<>(mBuilder, false, mGroup);
 	}
 
 	public GroupBuilder<T, E> optional() {
-		return new GroupBuilder<T, E>(mBuilder, true, mGroup);
+		return new GroupBuilder<>(mBuilder, true, mGroup);
 	}
 
 	public E closeGroup() {
@@ -91,7 +91,7 @@ public class GroupBuilder<T extends ParsedQuery, E extends SupportsGroups> {
 	}
 
 	public UnionBuilder<T, E> union() {
-		UnionBuilder<T, E> aBuilder = new UnionBuilder<T, E>(this);
+		UnionBuilder<T, E> aBuilder = new UnionBuilder<>(this);
 
 		mGroup.addChild(aBuilder);
 
@@ -124,7 +124,7 @@ public class GroupBuilder<T extends ParsedQuery, E extends SupportsGroups> {
 	}
 
 	public FilterBuilder<T, E> filter() {
-		return new FilterBuilder<T, E>(this);
+		return new FilterBuilder<>(this);
 	}
 
 	public GroupBuilder<T, E> filter(ValueExpr theExpr) {
@@ -145,7 +145,7 @@ public class GroupBuilder<T extends ParsedQuery, E extends SupportsGroups> {
 	}
 
 	public GroupBuilder<T, E> atom(StatementPattern... thePatterns) {
-		return atoms(new HashSet<StatementPattern>(Arrays.asList(thePatterns)));
+		return atoms(new HashSet<>(Arrays.asList(thePatterns)));
 	}
 
 	public GroupBuilder<T, E> atoms(Set<StatementPattern> thePatterns) {

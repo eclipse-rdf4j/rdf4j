@@ -29,9 +29,9 @@ public class Group extends UnaryTupleOperator {
 	 * Variables *
 	 *-----------*/
 
-	private Set<String> groupBindings = new LinkedHashSet<String>();
+	private Set<String> groupBindings = new LinkedHashSet<>();
 
-	private List<GroupElem> groupElements = new ArrayList<GroupElem>();
+	private List<GroupElem> groupElements = new ArrayList<>();
 
 	/*--------------*
 	 * Constructors *
@@ -85,7 +85,7 @@ public class Group extends UnaryTupleOperator {
 	}
 
 	public Set<String> getAggregateBindingNames() {
-		Set<String> bindings = new HashSet<String>();
+		Set<String> bindings = new HashSet<>();
 
 		for (GroupElem binding : groupElements) {
 			bindings.add(binding.getName());
@@ -96,7 +96,7 @@ public class Group extends UnaryTupleOperator {
 
 	@Override
 	public Set<String> getBindingNames() {
-		Set<String> bindingNames = new LinkedHashSet<String>();
+		Set<String> bindingNames = new LinkedHashSet<>();
 
 		bindingNames.addAll(getGroupBindingNames());
 		bindingNames.addAll(getAggregateBindingNames());
@@ -106,7 +106,7 @@ public class Group extends UnaryTupleOperator {
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		Set<String> bindingNames = new LinkedHashSet<String>();
+		Set<String> bindingNames = new LinkedHashSet<>();
 
 		bindingNames.addAll(getGroupBindingNames());
 		bindingNames.retainAll(getArg().getAssuredBindingNames());
@@ -160,9 +160,9 @@ public class Group extends UnaryTupleOperator {
 	public Group clone() {
 		Group clone = (Group)super.clone();
 
-		clone.groupBindings = new LinkedHashSet<String>(getGroupBindingNames());
+		clone.groupBindings = new LinkedHashSet<>(getGroupBindingNames());
 
-		clone.groupElements = new ArrayList<GroupElem>(getGroupElements().size());
+		clone.groupElements = new ArrayList<>(getGroupElements().size());
 		for (GroupElem ge : getGroupElements()) {
 			clone.addGroupElement(ge.clone());
 		}

@@ -35,7 +35,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 
 	private StringBuffer mJoinBuffer = new StringBuffer();
 
-	private Map<TupleExpr, Var> mContexts = new HashMap<TupleExpr, Var>();
+	private Map<TupleExpr, Var> mContexts = new HashMap<>();
 
 	private int mIndent = 2;
 
@@ -53,6 +53,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	/**
 	 * @inheritDoc
 	 */
+	@Override
 	public String render(final TupleExpr theExpr)
 		throws Exception
 	{
@@ -74,6 +75,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	/**
 	 * @inheritDoc
 	 */
+	@Override
 	protected String renderValueExpr(final ValueExpr theExpr)
 		throws Exception
 	{
@@ -185,7 +187,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		// aRenderer.mOffset = mOffset;
 
 		aRenderer.mIndent = mIndent;
-		aRenderer.mContexts = new HashMap<TupleExpr, Var>(mContexts);
+		aRenderer.mContexts = new HashMap<>(mContexts);
 
 		return aRenderer.render(theExpr);
 	}

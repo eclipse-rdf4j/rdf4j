@@ -133,6 +133,7 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 		}
 	}
 
+	@Override
 	protected void assertQueryResultsEqual(TupleQueryResult tqr1, TupleQueryResult tqr2)
 		throws QueryEvaluationException
 	{
@@ -144,7 +145,7 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 			fail();
 		}
 
-		assertTrue(matchBindingSets(list1, list2, new HashMap<BNode, BNode>(), 0));
+		assertTrue(matchBindingSets(list1, list2, new HashMap<>(), 0));
 	}
 
 	private boolean matchBindingSets(List<? extends BindingSet> queryResult1,
@@ -159,7 +160,7 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 
 			for (BindingSet bs2 : matchingBindingSets) {
 				// Map bNodes in bs1 to bNodes in bs2
-				Map<BNode, BNode> newBNodeMapping = new HashMap<BNode, BNode>(bNodeMapping);
+				Map<BNode, BNode> newBNodeMapping = new HashMap<>(bNodeMapping);
 
 				for (Binding binding : bs1) {
 					if (binding.getValue() instanceof BNode) {
@@ -191,7 +192,7 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 	private static List<BindingSet> findMatchingBindingSets(BindingSet st,
 			Iterable<? extends BindingSet> model, Map<BNode, BNode> bNodeMapping)
 	{
-		List<BindingSet> result = new ArrayList<BindingSet>();
+		List<BindingSet> result = new ArrayList<>();
 
 		for (BindingSet modelSt : model) {
 			if (bindingSetsMatch(st, modelSt, bNodeMapping)) {

@@ -145,13 +145,6 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
-	public void initialize()
-		throws RepositoryException
-	{
-		super.initialize();
-	}
-
-	@Override
 	public void shutDown() {
 		try {
 			super.shutDown();
@@ -196,6 +189,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	 * @throws MalformedURLException
 	 *         If serverURL cannot be parsed
 	 */
+	@Override
 	public URL getLocation()
 		throws MalformedURLException
 	{
@@ -254,7 +248,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	public Collection<RepositoryInfo> getAllRepositoryInfos(boolean skipSystemRepo)
 		throws RepositoryException
 	{
-		List<RepositoryInfo> result = new ArrayList<RepositoryInfo>();
+		List<RepositoryInfo> result = new ArrayList<>();
 
 		try (RDF4JProtocolSession httpClient = getSesameClient().createRDF4JProtocolSession(serverURL)) {
 			httpClient.setUsernameAndPassword(username, password);

@@ -23,6 +23,7 @@ public class BinaryQueryResultWriterFactory implements TupleQueryResultWriterFac
 	/**
 	 * Returns {@link TupleQueryResultFormat#BINARY}.
 	 */
+	@Override
 	public TupleQueryResultFormat getTupleQueryResultFormat() {
 		return TupleQueryResultFormat.BINARY;
 	}
@@ -30,6 +31,7 @@ public class BinaryQueryResultWriterFactory implements TupleQueryResultWriterFac
 	/**
 	 * Returns a new instance of BinaryQueryResultWriter.
 	 */
+	@Override
 	public TupleQueryResultWriter getWriter(OutputStream out) {
 		return new BinaryQueryResultWriter(out);
 	}

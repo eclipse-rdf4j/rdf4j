@@ -45,7 +45,7 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 
 	private boolean activated;
 
-	private Set<RepositoryConnectionInterceptor> interceptors = new CopyOnWriteArraySet<RepositoryConnectionInterceptor>();
+	private Set<RepositoryConnectionInterceptor> interceptors = new CopyOnWriteArraySet<>();
 
 	/*--------------*
 	 * Construcotrs *
@@ -63,6 +63,7 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 	 * Registers a <tt>RepositoryConnectionInterceptor</tt> that will receive notifications of operations that
 	 * are performed on this connection.
 	 */
+	@Override
 	public void addRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor) {
 		interceptors.add(interceptor);
 		activated = true;
@@ -71,6 +72,7 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 	/**
 	 * Removes a registered <tt>RepositoryConnectionInterceptor</tt> from this connection.
 	 */
+	@Override
 	public void removeRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor) {
 		interceptors.remove(interceptor);
 		activated = !interceptors.isEmpty();
@@ -299,6 +301,7 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 
 				private final Update delegate = conn.prepareUpdate(ql, update, baseURI);
 
+				@Override
 				public void execute()
 					throws UpdateExecutionException
 				{
@@ -316,34 +319,42 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 					}
 				}
 
+				@Override
 				public void setBinding(String name, Value value) {
 					delegate.setBinding(name, value);
 				}
 
+				@Override
 				public void removeBinding(String name) {
 					delegate.removeBinding(name);
 				}
 
+				@Override
 				public void clearBindings() {
 					delegate.clearBindings();
 				}
 
+				@Override
 				public BindingSet getBindings() {
 					return delegate.getBindings();
 				}
 
+				@Override
 				public void setDataset(Dataset dataset) {
 					delegate.setDataset(dataset);
 				}
 
+				@Override
 				public Dataset getDataset() {
 					return delegate.getDataset();
 				}
 
+				@Override
 				public void setIncludeInferred(boolean includeInferred) {
 					delegate.setIncludeInferred(includeInferred);
 				}
 
+				@Override
 				public boolean getIncludeInferred() {
 					return delegate.getIncludeInferred();
 				}

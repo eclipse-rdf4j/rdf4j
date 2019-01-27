@@ -32,7 +32,7 @@ import org.xml.sax.helpers.DefaultHandler;
  * <h3>Example:</h3>
  * <p>
  * Parsing the following XML:
- * 
+ *
  * <pre>
  * &lt;?xml version='1.0' encoding='UTF-8'?&gt;
  * &lt;xml-doc&gt;
@@ -42,7 +42,7 @@ import org.xml.sax.helpers.DefaultHandler;
  * </pre>
  * <p>
  * will result in the following method calls to the <tt>SimpleSAXListener</tt>:
- * 
+ *
  * <pre>
  * startDocument()
  * startTag("xml-doc", emptyMap, "")
@@ -62,7 +62,6 @@ public class SimpleSAXParser {
 	/*-----------*
 	 * Variables *
 	 *-----------*/
-
 	/**
 	 * The XMLReader to use for parsing the XML.
 	 */
@@ -86,14 +85,12 @@ public class SimpleSAXParser {
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
-
 	/**
 	 * Creates a new SimpleSAXParser that will use the supplied <tt>XMLReader</tt> for parsing the XML. One
-	 * must set a <tt>SimpleSAXListener</tt> on this object before calling one of the <tt>parse()</tt>
-	 * methods.
-	 * 
-	 * @param xmlReader
-	 *        The XMLReader to use for parsing.
+	 * must set a
+	 * <tt>SimpleSAXListener</tt> on this object before calling one of the <tt>parse()</tt> methods.
+	 *
+	 * @param xmlReader The XMLReader to use for parsing.
 	 * @see #setListener
 	 */
 	public SimpleSAXParser(XMLReader xmlReader) {
@@ -105,29 +102,24 @@ public class SimpleSAXParser {
 	 * Creates a new SimpleSAXParser that will try to create a new <tt>XMLReader</tt> using
 	 * <tt>info.aduna.xml.XMLReaderFactory</tt> for parsing the XML. One must set a <tt>SimpleSAXListener</tt>
 	 * on this object before calling one of the <tt>parse()</tt> methods.
-	 * 
-	 * @throws SAXException
-	 *         If the SimpleSAXParser was unable to create an XMLReader.
+	 *
+	 * @throws SAXException If the SimpleSAXParser was unable to create an XMLReader.
 	 * @see #setListener
 	 * @see org.xml.sax.XMLReader
 	 * @see org.eclipse.rdf4j.common.xml.XMLReaderFactory
 	 */
-	public SimpleSAXParser()
-		throws SAXException
-	{
+	public SimpleSAXParser() throws SAXException {
 		this(XMLReaderFactory.createXMLReader());
 	}
 
 	/*---------*
 	 * Methods *
 	 *---------*/
-
 	/**
 	 * Sets the (new) listener that should receive any events from this parser. This listener will replace any
 	 * previously set listener.
-	 * 
-	 * @param listener
-	 *        The (new) listener for events from this parser.
+	 *
+	 * @param listener The (new) listener for events from this parser.
 	 */
 	public void setListener(SimpleSAXListener listener) {
 		this.listener = listener;
@@ -135,7 +127,7 @@ public class SimpleSAXParser {
 
 	/**
 	 * Gets the listener that currently will receive any events from this parser.
-	 * 
+	 *
 	 * @return The listener for events from this parser.
 	 */
 	public SimpleSAXListener getListener() {
@@ -164,59 +156,45 @@ public class SimpleSAXParser {
 
 	/**
 	 * Parses the content of the supplied <tt>File</tt> as XML.
-	 * 
-	 * @param file
-	 *        The file containing the XML to parse.
+	 *
+	 * @param file The file containing the XML to parse.
 	 */
-	public void parse(File file)
-		throws SAXException, IOException
-	{
+	public void parse(File file) throws SAXException, IOException {
 		InputStream in = new FileInputStream(file);
 		try {
 			parse(in);
-		}
-		finally {
+		} finally {
 			try {
 				in.close();
-			}
-			catch (IOException ignore) {
+			} catch (IOException ignore) {
 			}
 		}
 	}
 
 	/**
 	 * Parses the content of the supplied <tt>InputStream</tt> as XML.
-	 * 
-	 * @param in
-	 *        An <tt>InputStream</tt> containing XML data.
+	 *
+	 * @param in An <tt>InputStream</tt> containing XML data.
 	 */
-	public void parse(InputStream in)
-		throws SAXException, IOException
-	{
+	public void parse(InputStream in) throws SAXException, IOException {
 		parse(new InputSource(in));
 	}
 
 	/**
 	 * Parses the content of the supplied <tt>Reader</tt> as XML.
-	 * 
-	 * @param reader
-	 *        A <tt>Reader</tt> containing XML data.
+	 *
+	 * @param reader A <tt>Reader</tt> containing XML data.
 	 */
-	public void parse(Reader reader)
-		throws SAXException, IOException
-	{
+	public void parse(Reader reader) throws SAXException, IOException {
 		parse(new InputSource(reader));
 	}
 
 	/**
 	 * Parses the content of the supplied <tt>InputSource</tt> as XML.
-	 * 
-	 * @param inputSource
-	 *        An <tt>InputSource</tt> containing XML data.
+	 *
+	 * @param inputSource An <tt>InputSource</tt> containing XML data.
 	 */
-	public synchronized void parse(InputSource inputSource)
-		throws SAXException, IOException
-	{
+	public synchronized void parse(InputSource inputSource) throws SAXException, IOException {
 		xmlReader.setContentHandler(new SimpleSAXDefaultHandler());
 		xmlReader.parse(inputSource);
 	}
@@ -224,13 +202,11 @@ public class SimpleSAXParser {
 	/*-------------------------------------*
 	 * Inner class SimpleSAXDefaultHandler *
 	 *-------------------------------------*/
-
 	class SimpleSAXDefaultHandler extends DefaultHandler {
 
 		/*-----------*
-		 * Variables *
-		 *-----------*/
-
+		* Variables *
+		*-----------*/
 		/**
 		 * StringBuilder used to collect text during parsing.
 		 */
@@ -247,9 +223,8 @@ public class SimpleSAXParser {
 		private Map<String, String> deferredAttributes = null;
 
 		/*--------------*
-		 * Constructors *
-		 *--------------*/
-
+		* Constructors *
+		*--------------*/
 		public SimpleSAXDefaultHandler() {
 			super();
 		}
@@ -257,32 +232,28 @@ public class SimpleSAXParser {
 		/*---------*
 		 * Methods *
 		 *---------*/
-
 		// overrides DefaultHandler.startDocument()
-		public void startDocument()
-			throws SAXException
-		{
+		@Override
+		public void startDocument() throws SAXException {
 			listener.startDocument();
 		}
 
 		// overrides DefaultHandler.endDocument()
-		public void endDocument()
-			throws SAXException
-		{
+		@Override
+		public void endDocument() throws SAXException {
 			listener.endDocument();
 		}
 
 		// overrides DefaultHandler.characters()
-		public void characters(char[] ch, int start, int length)
-			throws SAXException
-		{
+		@Override
+		public void characters(char[] ch, int start, int length) throws SAXException {
 			charBuf.append(ch, start, length);
 		}
 
 		// overrides DefaultHandler.startElement()
+		@Override
 		public void startElement(String namespaceURI, String localName, String qName, Attributes attributes)
-			throws SAXException
-		{
+			throws SAXException {
 			// Report any deferred start tag
 			if (deferredStartTag != null) {
 				reportDeferredStartElement();
@@ -295,9 +266,8 @@ public class SimpleSAXParser {
 			int attCount = attributes.getLength();
 			if (attCount == 0) {
 				deferredAttributes = Collections.emptyMap();
-			}
-			else {
-				deferredAttributes = new LinkedHashMap<String, String>(attCount * 2);
+			} else {
+				deferredAttributes = new LinkedHashMap<>(attCount * 2);
 
 				for (int i = 0; i < attCount; i++) {
 					deferredAttributes.put(attributes.getQName(i), attributes.getValue(i));
@@ -308,18 +278,15 @@ public class SimpleSAXParser {
 			charBuf.setLength(0);
 		}
 
-		private void reportDeferredStartElement()
-			throws SAXException
-		{
+		private void reportDeferredStartElement() throws SAXException {
 			listener.startTag(deferredStartTag, deferredAttributes, "");
 			deferredStartTag = null;
 			deferredAttributes = null;
 		}
 
 		// overrides DefaultHandler.endElement()
-		public void endElement(String namespaceURI, String localName, String qName)
-			throws SAXException
-		{
+		@Override
+		public void endElement(String namespaceURI, String localName, String qName) throws SAXException {
 			if (deferredStartTag != null) {
 				// Check if any character data has been collected in the charBuf
 				String text = charBuf.toString();

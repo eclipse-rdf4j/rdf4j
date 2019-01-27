@@ -7,10 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 /**
- * The FILTER operator, as defined in <a href="http://www.w3.org/TR/rdf-sparql-query/#defn_algFilter">SPARQL
- * Query Language for RDF</a>. The FILTER operator filters specific results from the underlying tuple
- * expression based on a configurable condition.
+ * The FILTER operator, as defined in
+ * <a href="http://www.w3.org/TR/rdf-sparql-query/#defn_algFilter">SPARQL Query
+ * Language for RDF</a>. The FILTER operator filters specific results from the
+ * underlying tuple expression based on a configurable condition.
  * 
  * @author Arjohn Kampman
  */
@@ -48,16 +53,25 @@ public class Filter extends UnaryTupleOperator {
 		this.condition = condition;
 	}
 
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	@Override
+	public Set<String> getBindingNames() {
+		Set<String> result = getArg().getBindingNames();
+		if (condition instanceof SubQueryValueOperator) {
+			result = Stream
+					.concat(result.stream(),
+							((SubQueryValueOperator) condition).getSubQuery().getBindingNames().stream())
+					.collect(Collectors.toSet());
+		}
+		return result;
+	}
+
+	@Override
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		condition.visit(visitor);
 		super.visitChildren(visitor);
 	}
@@ -65,9 +79,8 @@ public class Filter extends UnaryTupleOperator {
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (condition == current) {
-			setCondition((ValueExpr)replacement);
-		}
-		else {
+			setCondition((ValueExpr) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -75,7 +88,7 @@ public class Filter extends UnaryTupleOperator {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof Filter && super.equals(other)) {
-			Filter o = (Filter)other;
+			Filter o = (Filter) other;
 			return condition.equals(o.getCondition());
 		}
 		return false;
@@ -88,7 +101,7 @@ public class Filter extends UnaryTupleOperator {
 
 	@Override
 	public Filter clone() {
-		Filter clone = (Filter)super.clone();
+		Filter clone = (Filter) super.clone();
 		clone.setCondition(getCondition().clone());
 		return clone;
 	}

@@ -42,6 +42,7 @@ public class FallbackDataset implements Dataset, Serializable {
 		this.fallback = secondary;
 	}
 
+	@Override
 	public Set<IRI> getDefaultGraphs() {
 		Set<IRI> set = primary.getDefaultGraphs();
 		if (set == null || set.isEmpty())
@@ -49,6 +50,7 @@ public class FallbackDataset implements Dataset, Serializable {
 		return set;
 	}
 
+	@Override
 	public Set<IRI> getNamedGraphs() {
 		Set<IRI> set = primary.getNamedGraphs();
 		if (set == null || set.isEmpty())
@@ -56,6 +58,7 @@ public class FallbackDataset implements Dataset, Serializable {
 		return set;
 	}
 
+	@Override
 	public IRI getDefaultInsertGraph() {
 		IRI graph = primary.getDefaultInsertGraph();
 		if (graph == null)
@@ -63,6 +66,7 @@ public class FallbackDataset implements Dataset, Serializable {
 		return graph;
 	}
 
+	@Override
 	public Set<IRI> getDefaultRemoveGraphs() {
 		Set<IRI> set = primary.getDefaultRemoveGraphs();
 		if (set == null || set.isEmpty())

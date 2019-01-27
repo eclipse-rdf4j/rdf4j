@@ -48,14 +48,16 @@ public class ParsedIRITest {
 
 	@Test
 	public void hostWithLeadingDigit() {
-		String[] hosts = {"1example.com", "1.example.com"};
+		String[] hosts = { "1example.com", "1.example.com" };
 		for (String host : hosts) {
 			assertEquals(host, ParsedIRI.create("http://" + host).getHost());
 		}
 	}
 
 	@Test(expected = URISyntaxException.class)
-	public void testIncorrectIPv4() throws URISyntaxException {
+	public void testIncorrectIPv4()
+		throws URISyntaxException
+	{
 		ParsedIRI iri = new ParsedIRI("http://127.0.0.256/");
 	}
 
@@ -70,16 +72,41 @@ public class ParsedIRITest {
 	}
 
 	@Test
-	public void absoluteIpAddrDescribedCorrectly() throws URISyntaxException {
+	public void absoluteHttpUriWithHashIsDescribedCorrectly()
+		throws URISyntaxException
+	{
+		ParsedIRI uri = new ParsedIRI("http://example.test#");
+		assertTrue(uri.isAbsolute());
+		assertEquals("http", uri.getScheme());
+		assertFalse(uri.isOpaque());
+	}
+
+	@Test
+	public void absoluteIpAddrDescribedCorrectly()
+		throws URISyntaxException
+	{
 		ParsedIRI uri = new ParsedIRI("http://127.0.0.1/path");
 		assertTrue(uri.isAbsolute());
 		assertEquals(uri.getHost(), "127.0.0.1");
 		assertEquals(uri.getPort(), -1);
 		assertEquals(uri.getPath(), "/path");
 	}
-	
+
 	@Test
-	public void absoluteIpAddrWithPortDescribedCorrectly() throws URISyntaxException {
+	public void absoluteIpAddrNoPath()
+		throws URISyntaxException
+	{
+		ParsedIRI uri = new ParsedIRI("http://178.62.246.130");
+		assertTrue(uri.isAbsolute());
+		assertEquals(uri.getHost(), "178.62.246.130");
+		assertEquals(uri.getPort(), -1);
+		assertEquals(uri.getPath(), "");
+	}
+
+	@Test
+    public void absoluteIpAddrWithPortDescribedCorrectly() 
+        throws URISyntaxException 
+    {
 		ParsedIRI uri = new ParsedIRI("http://127.0.0.1:3333/path");
 		assertTrue(uri.isAbsolute());
 		assertEquals(uri.getHost(), "127.0.0.1");
@@ -88,7 +115,7 @@ public class ParsedIRITest {
 	}
 
 	@Test
-        public void uriReferenceIsDescribedCorrectly()
+	public void uriReferenceIsDescribedCorrectly()
 		throws URISyntaxException
 	{
 		ParsedIRI uri = new ParsedIRI("/path");
@@ -110,13 +137,13 @@ public class ParsedIRITest {
 
 	@Test
 	public void osgiBundleUri()
-	throws URISyntaxException
+		throws URISyntaxException
 	{
 		ParsedIRI uri = new ParsedIRI("bundle://159.0:1/org/eclipse/rdf4j/repository/config/system.ttl");
 		assertTrue(uri.isAbsolute());
 		assertEquals("bundle", uri.getScheme());
 	}
-	
+
 	@Test
 	public void jarUriWithHttpStringifiesToOriginalForm()
 		throws URISyntaxException
@@ -247,6 +274,13 @@ public class ParsedIRITest {
 	{
 		assertResolves("#frag2", "http://example.com/dir/dir/file?qs#frag",
 				"http://example.com/dir/dir/file?qs#frag2");
+	}
+
+	@Test
+	public void testFragment2()
+		throws URISyntaxException
+	{
+		assertResolves("#example", "http://example.com#", "http://example.com#example");
 	}
 
 	@Test

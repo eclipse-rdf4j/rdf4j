@@ -126,6 +126,10 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 			opts.setUseNativeTypes(getWriterConfig().get(JSONLDSettings.USE_NATIVE_TYPES));
 			// opts.optimize = getWriterConfig().get(JSONLDSettings.OPTIMIZE);
 
+			if (getWriterConfig().get(JSONLDSettings.HIERARCHICAL_VIEW)) {
+				output = JSONLDHierarchicalProcessor.fromJsonLdObject(output);
+			}
+
 			if (baseURI != null && getWriterConfig().get(BasicWriterSettings.BASE_DIRECTIVE)) {
 				opts.setBase(baseURI);
 			}
@@ -138,9 +142,9 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 				output = JsonLdProcessor.flatten(output, inframe, opts);
 			}
 			if (mode == JSONLDMode.COMPACT) {
-				final Map<String, Object> ctx = new LinkedHashMap<String, Object>();
+				final Map<String, Object> ctx = new LinkedHashMap<>();
 				addPrefixes(ctx, model.getNamespaces());
-				final Map<String, Object> localCtx = new HashMap<String, Object>();
+				final Map<String, Object> localCtx = new HashMap<>();
 				localCtx.put("@context", ctx);
 
 				output = JsonLdProcessor.compact(output, localCtx, opts);

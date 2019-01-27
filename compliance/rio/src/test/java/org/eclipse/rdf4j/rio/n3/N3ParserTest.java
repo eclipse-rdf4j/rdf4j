@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.rio.n3;
 
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.n3.N3ParserTestCase;
 import org.eclipse.rdf4j.rio.turtle.TurtleParser;
 import org.junit.Ignore;
 

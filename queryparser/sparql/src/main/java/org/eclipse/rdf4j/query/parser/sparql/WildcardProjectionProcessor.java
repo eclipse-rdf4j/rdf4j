@@ -124,7 +124,7 @@ public class WildcardProjectionProcessor extends AbstractASTVisitor {
 
 	private static class QueryVariableCollector extends AbstractASTVisitor {
 
-		private Set<String> variableNames = new LinkedHashSet<String>();
+		private Set<String> variableNames = new LinkedHashSet<>();
 
 		public Set<String> getVariableNames() {
 			return variableNames;
@@ -173,7 +173,7 @@ public class WildcardProjectionProcessor extends AbstractASTVisitor {
 
 	private static class SelectClauseCollector extends AbstractASTVisitor {
 
-		private Set<ASTSelect> selectClauses = new LinkedHashSet<ASTSelect>();
+		private Set<ASTSelect> selectClauses = new LinkedHashSet<>();
 
 		public Set<ASTSelect> getSelectClauses() {
 			return selectClauses;

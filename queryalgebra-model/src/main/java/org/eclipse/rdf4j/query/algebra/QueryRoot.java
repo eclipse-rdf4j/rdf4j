@@ -41,6 +41,7 @@ public class QueryRoot extends UnaryTupleOperator {
 		return this.parent;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

@@ -101,6 +101,7 @@ public class TupleExprs {
 		final List<TupleExpr> children = new ArrayList<>(4);
 		t.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
 
+			@Override
 			public void meetNode(QueryModelNode node) {
 				if (node instanceof TupleExpr) {
 					children.add((TupleExpr)node);

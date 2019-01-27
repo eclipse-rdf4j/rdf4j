@@ -34,9 +34,9 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 	 * Variables *
 	 *-----------*/
 
-	private final Set<String> bindingNames = new LinkedHashSet<String>();
+	private final Set<String> bindingNames = new LinkedHashSet<>();
 
-	private final List<BindingSet> bindingSets = new ArrayList<BindingSet>();
+	private final List<BindingSet> bindingSets = new ArrayList<>();
 
 	/**
 	 * The index of the next element that will be returned by a call to {@link #next()}.
@@ -94,7 +94,7 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 
 	@Override
 	public List<String> getBindingNames() {
-		return new ArrayList<String>(bindingNames);
+		return new ArrayList<>(bindingNames);
 	}
 
 	public int size() {
@@ -206,6 +206,7 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 		return bindingSets.set(index, bindingSet);
 	}
 
+	@Override
 	public void remove() {
 		if (lastReturned == -1) {
 			throw new IllegalStateException();

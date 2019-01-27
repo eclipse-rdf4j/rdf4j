@@ -86,6 +86,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	private static final Comparator<int[]> CMP = new Comparator<int[]>() {
 
+		@Override
 		public int compare(int[] o1, int[] o2) {
 			return o1[0] - o2[0];
 		}
@@ -382,6 +383,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	 *
 	 * @return The string form of this IRI
 	 */
+	@Override
 	public String toString() {
 		return iri;
 	}
@@ -450,7 +452,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	 * @return {@code true} if, and only if, this IRI is absolute and its path does not start with a slash
 	 */
 	public boolean isOpaque() {
-		return scheme != null && !path.startsWith("/");
+		return scheme != null && !path.isEmpty() && !path.startsWith("/");
 	}
 
 	/**
@@ -871,7 +873,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 				path = parsePath();
 			}
 			else {
-				error("absolute or empty path expected");
+				throw error("absolute or empty path expected");
 			}
 		}
 		else if ('/' == peek || '?' == peek || '#' == peek || EOF == peek) {
@@ -991,8 +993,8 @@ public class ParsedIRI implements Cloneable, Serializable {
 					advance(1);
 				}
 				else {
-					if (i == 3 && (':' == peek() || '/' == peek())) {
-						// next is a port
+					if (i == 3 && (EOF == peek() || ':' == peek() || '/' == peek())) {
+						// next is end of IRI, a port, or a path
 					} else {
 						parsingException = error("Invalid IPv4 address");
 						break;
@@ -1136,8 +1138,11 @@ public class ParsedIRI implements Cloneable, Serializable {
 	}
 
 	private URISyntaxException error(String reason) {
-		int cp = iri.codePointAt(pos);
-		return new URISyntaxException(iri, reason + " U+" + Integer.toHexString(cp).toUpperCase(), pos);
+		if (pos > -1 && pos < iri.length()) {
+			int cp = iri.codePointAt(pos);
+			reason = reason + " U+" + Integer.toHexString(cp).toUpperCase();
+		}
+		return new URISyntaxException(iri, reason, pos);
 	}
 
 	private void appendAscii(StringBuilder sb, String input) {
@@ -1331,7 +1336,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 		// Split the path into its segments
 
-		LinkedList<String> segments = new LinkedList<String>(Arrays.asList(_path.split("/")));
+		LinkedList<String> segments = new LinkedList<>(Arrays.asList(_path.split("/")));
 		if (_path.startsWith("/")) {
 			segments.remove(0);
 		}

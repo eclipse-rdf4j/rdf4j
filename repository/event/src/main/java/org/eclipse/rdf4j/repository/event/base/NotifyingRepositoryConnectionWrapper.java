@@ -50,7 +50,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 
 	private boolean reportDeltas = false;
 
-	private Set<RepositoryConnectionListener> listeners = new CopyOnWriteArraySet<RepositoryConnectionListener>();
+	private Set<RepositoryConnectionListener> listeners = new CopyOnWriteArraySet<>();
 
 	/*--------------*
 	 * Constructors *
@@ -83,6 +83,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive notifications of operations that
 	 * are performed on this connection.
 	 */
+	@Override
 	public void addRepositoryConnectionListener(RepositoryConnectionListener listener) {
 		listeners.add(listener);
 		activated = true;
@@ -91,6 +92,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 	/**
 	 * Removes a registered <tt>RepositoryConnectionListener</tt> from this connection.
 	 */
+	@Override
 	public void removeRepositoryConnectionListener(RepositoryConnectionListener listener) {
 		listeners.remove(listener);
 		activated = !listeners.isEmpty();
@@ -177,7 +179,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 		if (activated && reportDeltas()) {
 			RepositoryResult<Statement> stmts;
 			stmts = getDelegate().getStatements(subj, pred, obj, false, ctx);
-			List<Statement> list = new ArrayList<Statement>();
+			List<Statement> list = new ArrayList<>();
 			try {
 				while (stmts.hasNext()) {
 					list.add(stmts.next());
@@ -228,7 +230,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 		if (activated && reportDeltas()) {
 			RepositoryResult<Namespace> namespaces;
 			namespaces = getDelegate().getNamespaces();
-			List<String> prefix = new ArrayList<String>();
+			List<String> prefix = new ArrayList<>();
 			try {
 				while (namespaces.hasNext()) {
 					Namespace ns = namespaces.next();
@@ -324,6 +326,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 
 				private final Update delegate = conn.prepareUpdate(ql, update, baseURI);
 
+				@Override
 				public void execute()
 					throws UpdateExecutionException
 				{
@@ -335,34 +338,42 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 					}
 				}
 
+				@Override
 				public void setBinding(String name, Value value) {
 					delegate.setBinding(name, value);
 				}
 
+				@Override
 				public void removeBinding(String name) {
 					delegate.removeBinding(name);
 				}
 
+				@Override
 				public void clearBindings() {
 					delegate.clearBindings();
 				}
 
+				@Override
 				public BindingSet getBindings() {
 					return delegate.getBindings();
 				}
 
+				@Override
 				public void setDataset(Dataset dataset) {
 					delegate.setDataset(dataset);
 				}
 
+				@Override
 				public Dataset getDataset() {
 					return delegate.getDataset();
 				}
 
+				@Override
 				public void setIncludeInferred(boolean includeInferred) {
 					delegate.setIncludeInferred(includeInferred);
 				}
 
+				@Override
 				public boolean getIncludeInferred() {
 					return delegate.getIncludeInferred();
 				}
