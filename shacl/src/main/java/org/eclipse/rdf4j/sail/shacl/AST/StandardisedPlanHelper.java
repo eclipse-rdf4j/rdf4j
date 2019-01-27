@@ -35,7 +35,7 @@ public class StandardisedPlanHelper {
 		BufferedTupleFromFilter discardedRight = new BufferedTupleFromFilter();
 
 
-		PlanNode top = new LoggingNode(new InnerJoin(bufferedSplitter.getPlanNode(), invalidValuesDirectOnPath, null, discardedRight));
+		PlanNode top = new LoggingNode(new InnerJoin(bufferedSplitter.getPlanNode(), invalidValuesDirectOnPath, null, new PushBasedLoggingNode(discardedRight)));
 
 
 		if (nodeShape instanceof TargetClass) {
@@ -49,10 +49,10 @@ public class StandardisedPlanHelper {
 		top = new LoggingNode(new UnionNode(top, bulkedEcternalInnerJoin));
 
 		DirectTupleFromFilter invalidValues = new DirectTupleFromFilter();
-		filterAttacher.attachFilter(top, null, invalidValues);
+		filterAttacher.attachFilter(top, null, new PushBasedLoggingNode(invalidValues));
 
 
-		return new LoggingNode(invalidValues);
+		return invalidValues;
 	}
 
 

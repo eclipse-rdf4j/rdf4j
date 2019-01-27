@@ -83,4 +83,8 @@ public class EnrichWithShape implements PlanNode {
 	public String toString() {
 		return "EnrichWithShape";
 	}
+
+	public PropertyShape getPropertyShape() {
+		return propertyShape;
+	}
 }

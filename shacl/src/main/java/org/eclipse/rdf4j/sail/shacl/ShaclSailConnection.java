@@ -27,6 +27,9 @@ import org.eclipse.rdf4j.sail.UpdateContext;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
+import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
+import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.slf4j.Logger;
@@ -273,9 +276,19 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 			List<PlanNode> planNodes = nodeShape.generatePlans(this, nodeShape, sail.config.logValidationPlans);
 			for (PlanNode planNode : planNodes) {
 				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
+					if(LoggingNode.loggingEnabled){
+						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+						logger.info("Start execution of plan "+nodeShape.toString()+" : "+propertyShape.getId());
+					}
 					List<Tuple> collect = stream.collect(Collectors.toList());
 
+					if(LoggingNode.loggingEnabled){
+						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+						logger.info("Finished execution of plan "+nodeShape.toString()+" : "+propertyShape.getId());
+					}
 					ret.addAll(collect);
+
+
 
 					boolean valid = collect.size() == 0;
 					if (!valid && sail.config.logValidationViolations) {

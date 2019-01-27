@@ -62,7 +62,7 @@ public class LanguageInPropertyShape extends PathPropertyShape {
 			logger.info(planAsGraphvizDot);
 		}
 
-		return new EnrichWithShape(new LoggingNode(invalidValues), this);
+		return new EnrichWithShape(invalidValues, this);
 
 	}
 
