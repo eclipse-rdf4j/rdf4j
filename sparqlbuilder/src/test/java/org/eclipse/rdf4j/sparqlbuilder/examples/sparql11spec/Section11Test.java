@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
 import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 
 public class Section11Test extends BaseExamples {
@@ -45,8 +46,9 @@ public class Section11Test extends BaseExamples {
 		IRI affiliates = VF.createIRI(ex, "affiliates");
 		IRI writesBook = VF.createIRI(ex, "writesBook");
 		IRI price = VF.createIRI(ex, "price");
+		IRI baseIri = VF.createIRI("http://books.example/");
 		
-		Prefix base = SparqlBuilder.prefix(iri("http://books.example/"));
+		Prefix base = SparqlBuilder.prefix(baseIri);
 		Variable lprice = SparqlBuilder.var("lprice"), totalPrice = SparqlBuilder.var("totalPrice");
 
 		Expression<?> sum = Expressions.sum(lprice);
@@ -62,7 +64,7 @@ public class Section11Test extends BaseExamples {
 
 	@Test
 	public void example_11_2() {
-		Prefix base = SparqlBuilder.prefix(null);
+		Prefix base = SparqlBuilder.prefix((Iri)null);
 		Variable y = query.var(), avg = query.var(), a = query.var(), x = query.var();
 
 		query.select(SparqlBuilder.as(Expressions.avg(y), avg)).where(a.has(base.iri("x"), x).andHas(base.iri("y"), y))

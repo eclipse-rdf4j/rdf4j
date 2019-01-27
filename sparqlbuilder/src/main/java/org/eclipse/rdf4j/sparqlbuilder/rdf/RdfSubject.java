@@ -39,8 +39,22 @@ public interface RdfSubject extends QueryElement {
 		return GraphPatterns.tp(this, predicate, objects);
 	}
 	
+	/**
+	 * Create a triple pattern from this subject and the given predicate and
+	 * object
+	 * 
+	 * @param predicate
+	 *            the predicate {@link IRI} of the triple pattern
+	 * @param objects
+	 *            the object(s) of the triple pattern
+	 * @return a new {@link TriplePattern} with this subject, and the given predicate and object(s)
+	 * 
+	 * @see <a
+	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynTriples">
+	 *      Triple pattern syntax</a>
+	 */
 	default TriplePattern has(IRI predicate, RdfObject... objects) {
-		return has(predicate, objects);
+		return has(Rdf.iri(predicate), objects);
 	}
 	
 	/**
