@@ -116,6 +116,35 @@ Multiple lines can be entered. To terminate the input, enter a new line containi
   where { ?s ?p ?o }
   .
 
+==== reading queries from and exporting results to a file
+
+NOTE: new in RDF4J 2.5 
+
+Queries can be read from an existing file:
+
+  sparql infile="file.qr"
+
+Results can be saved to an output file. The file type extension is used to determine the output format, but the exact list of available file formats depends on the type of the query.
+Graph queries (`construct`) can be saved as JSON-LD, RDF/XML, N-Triples or Turtle, by using the respective extensions `.jsonld`, `.xml`, `.nt` or `.ttl`.
+Tuple queries (`select`) can be saved as SPARQL Results CSV, TSV, JSON or XML, by using the respective extensions `.csv`, `.tsv`, `.srj` or `.srx`.
+
+For example:
+
+  sparql outfile="result.srj" select ?s where { ?s ?p ?o }
+
+Or:
+
+  sparql outfile="result.nt" construct { ?s ?p ?o } where { ?s ?p ?o }
+
+Combining input file for reading a query and an output for writing the result is also possible:
+
+  sparql infile="query.txt" outfile="result.tsv"
+
+When relative paths are used, files are read from or saved to the working directory, which can be changed using the following command:
+
+ set workdir=/path/to/working/dir
+
+
 === Setting namespace prefixes
 
 NOTE: new in RDF4J 2.5
