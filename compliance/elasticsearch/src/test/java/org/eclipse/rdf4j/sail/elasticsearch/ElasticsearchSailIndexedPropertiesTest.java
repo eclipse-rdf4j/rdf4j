@@ -23,10 +23,12 @@ import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
 import org.elasticsearch.test.ESIntegTestCase.SuppressLocalMode;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 @ClusterScope(numDataNodes = 1)
 @SuppressLocalMode
+@Ignore("timeouts on JIPP due to ES cluster being spun up - see https://github.com/eclipse/rdf4j/issues/1196")
 public class ElasticsearchSailIndexedPropertiesTest extends ESIntegTestCase {
 
 	AbstractLuceneSailIndexedPropertiesTest delegateTest;

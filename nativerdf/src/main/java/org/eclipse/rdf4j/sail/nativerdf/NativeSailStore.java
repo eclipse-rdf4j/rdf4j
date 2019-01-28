@@ -160,11 +160,11 @@ class NativeSailStore implements SailStore {
 		assert contexts.length > 0 : "contexts must not be empty";
 
 		// Filter duplicates
-		LinkedHashSet<Resource> contextSet = new LinkedHashSet<Resource>();
+		LinkedHashSet<Resource> contextSet = new LinkedHashSet<>();
 		Collections.addAll(contextSet, contexts);
 
 		// Fetch IDs, filtering unknown resources from the result
-		List<Integer> contextIDs = new ArrayList<Integer>(contextSet.size());
+		List<Integer> contextIDs = new ArrayList<>(contextSet.size());
 		for (Resource context : contextSet) {
 			if (context == null) {
 				contextIDs.add(0);
@@ -203,7 +203,7 @@ class NativeSailStore implements SailStore {
 		if (subj != null) {
 			subjID = valueStore.getID(subj);
 			if (subjID == NativeValue.UNKNOWN_ID) {
-				return new EmptyIteration<Statement, SailException>();
+				return new EmptyIteration<>();
 			}
 		}
 
@@ -211,7 +211,7 @@ class NativeSailStore implements SailStore {
 		if (pred != null) {
 			predID = valueStore.getID(pred);
 			if (predID == NativeValue.UNKNOWN_ID) {
-				return new EmptyIteration<Statement, SailException>();
+				return new EmptyIteration<>();
 			}
 		}
 
@@ -219,11 +219,11 @@ class NativeSailStore implements SailStore {
 		if (obj != null) {
 			objID = valueStore.getID(obj);
 			if (objID == NativeValue.UNKNOWN_ID) {
-				return new EmptyIteration<Statement, SailException>();
+				return new EmptyIteration<>();
 			}
 		}
 
-		List<Integer> contextIDList = new ArrayList<Integer>(contexts.length);
+		List<Integer> contextIDList = new ArrayList<>(contexts.length);
 		if (contexts.length == 0) {
 			contextIDList.add(NativeValue.UNKNOWN_ID);
 		}
@@ -242,7 +242,7 @@ class NativeSailStore implements SailStore {
 			}
 		}
 
-		ArrayList<NativeStatementIterator> perContextIterList = new ArrayList<NativeStatementIterator>(
+		ArrayList<NativeStatementIterator> perContextIterList = new ArrayList<>(
 				contextIDList.size());
 
 		for (int contextID : contextIDList) {
@@ -256,7 +256,7 @@ class NativeSailStore implements SailStore {
 			return perContextIterList.get(0);
 		}
 		else {
-			return new UnionIteration<Statement, SailException>(perContextIterList);
+			return new UnionIteration<>(perContextIterList);
 		}
 	}
 
@@ -547,7 +547,7 @@ class NativeSailStore implements SailStore {
 					}
 				}
 
-				List<Integer> contextIDList = new ArrayList<Integer>(contexts.length);
+				List<Integer> contextIDList = new ArrayList<>(contexts.length);
 				if (contexts.length == 0) {
 					contextIDList.add(NativeValue.UNKNOWN_ID);
 				}
@@ -658,11 +658,11 @@ class NativeSailStore implements SailStore {
 				};
 				if (btreeIter == null) {
 					// Filtering any duplicates
-					ctxIter2 = new DistinctIteration<Resource, SailException>(ctxIter1);
+					ctxIter2 = new DistinctIteration<>(ctxIter1);
 				}
 				else {
 					// Filtering sorted duplicates
-					ctxIter2 = new ReducedIteration<Resource, SailException>(ctxIter1);
+					ctxIter2 = new ReducedIteration<>(ctxIter1);
 				}
 
 				result = new ExceptionConvertingIteration<Resource, SailException>(ctxIter2) {

@@ -57,6 +57,11 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getRemovedStatements(), getQuery())), 1);
 	}
 
+	@Override
+	public List<Path> getPaths() {
+		throw new IllegalStateException();
+	}
+
 	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans) {
 		return propertyShapes.stream()
 			.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
@@ -74,6 +79,10 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	@Override
 	public String getQuery() {
 		return "?a ?b ?c";
+	}
+
+	public Resource getId() {
+		return id;
 	}
 
 

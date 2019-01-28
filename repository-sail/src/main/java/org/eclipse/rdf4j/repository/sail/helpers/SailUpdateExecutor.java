@@ -587,7 +587,7 @@ public class SailUpdateExecutor {
 						// check if any supplied bindings do not occur in the
 						// bindingset
 						// produced by the WHERE clause. If so, merge.
-						Set<String> uniqueBindings = new HashSet<String>(
+						Set<String> uniqueBindings = new HashSet<>(
 								uc.getBindingSet().getBindingNames());
 						uniqueBindings.removeAll(sourceBinding.getBindingNames());
 						if (uniqueBindings.size() > 0) {

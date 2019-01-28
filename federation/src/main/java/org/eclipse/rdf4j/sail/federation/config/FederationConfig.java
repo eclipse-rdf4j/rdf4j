@@ -61,9 +61,9 @@ public class FederationConfig extends AbstractSailImplConfig {
 	 */
 	public static final IRI READ_ONLY = vf.createIRI(NAMESPACE + "readOnly");
 
-	private List<RepositoryImplConfig> members = new ArrayList<RepositoryImplConfig>();
+	private List<RepositoryImplConfig> members = new ArrayList<>();
 
-	private final Set<String> localPropertySpace = new HashSet<String>(); // NOPMD
+	private final Set<String> localPropertySpace = new HashSet<>(); // NOPMD
 
 	private boolean distinct;
 

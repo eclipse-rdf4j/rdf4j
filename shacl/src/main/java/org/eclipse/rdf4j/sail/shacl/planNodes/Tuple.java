@@ -10,17 +10,22 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * @author Heshan Jayasinghe
+ * @author Heshan Jayasinghe, Håvard Mikkelsen Ottestad
  */
 public class Tuple implements Comparable<Tuple> {
+
+	Deque<PropertyShape> causedByPropertyShapes;
 
 	private List<Tuple> history = new ArrayList<>();
 
@@ -54,7 +59,26 @@ public class Tuple implements Comparable<Tuple> {
 
 	@Override
 	public String toString() {
-		return "Tuple{" + "line=" + Arrays.toString(line.toArray()) +"}";
+		String propertyShapeDescrption = "";
+		if(causedByPropertyShapes != null){
+
+			String join = String.join(" , ", causedByPropertyShapes.stream().map(p -> p.getClass().getSimpleName() + " <" + p.getId() + ">").collect(Collectors.toList()));
+
+			propertyShapeDescrption = ", propertyShapes= "+ join;
+		}
+
+		return "Tuple{" + "line=" + Arrays.toString(line.toArray()) +propertyShapeDescrption+"}";
+	}
+
+	public void addCausedByPropertyShape(PropertyShape propertyShape) {
+		if(causedByPropertyShapes == null){
+			causedByPropertyShapes = new ArrayDeque<>();
+		}
+		causedByPropertyShapes.addFirst(propertyShape);
+	}
+
+	public Deque<PropertyShape> getCausedByPropertyShapes() {
+		return causedByPropertyShapes;
 	}
 
 	@Override
@@ -103,11 +127,21 @@ public class Tuple implements Comparable<Tuple> {
 
 
 	public String getCause(){
-		return "[ "+ String.join(" , ", history.stream().distinct().map(Object::toString).collect(Collectors.toList()))+" ]";
+		return " [ "+ String.join(" , ", history.stream().distinct().map(Object::toString).collect(Collectors.toList()))+" ]";
 	}
 
 	public void addHistory(Tuple tuple) {
 		history.addAll(tuple.history);
 		history.add(tuple);
+	}
+
+	public void addAllCausedByPropertyShape(Deque<PropertyShape> causedByPropertyShapes) {
+		if(causedByPropertyShapes != null) {
+			if(this.causedByPropertyShapes == null){
+				this.causedByPropertyShapes = new ArrayDeque<>();
+			}
+
+			this.causedByPropertyShapes.addAll(causedByPropertyShapes);
+		}
 	}
 }

@@ -1,0 +1,21 @@
+PREFIX ex: <http://example.com/ns#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+DELETE{
+
+ex:validPerson1 ex:iriOrMinLength5String "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis id elementum turpis. Suspendisse metus.".
+
+
+}
+
+INSERT {
+ex:validPerson1 ex:iriOrMinLength5String [].
+
+}
+WHERE{?a ?b ?c.}
+
+

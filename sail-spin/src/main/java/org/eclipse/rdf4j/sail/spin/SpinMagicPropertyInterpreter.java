@@ -106,8 +106,8 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 		private void processGraphPattern(List<StatementPattern> sps)
 			throws RDF4JException
 		{
-			Map<StatementPattern, TupleFunction> magicProperties = new LinkedHashMap<StatementPattern, TupleFunction>();
-			Map<String, Map<IRI, List<StatementPattern>>> spIndex = new HashMap<String, Map<IRI, List<StatementPattern>>>();
+			Map<StatementPattern, TupleFunction> magicProperties = new LinkedHashMap<>();
+			Map<String, Map<IRI, List<StatementPattern>>> spIndex = new HashMap<>();
 
 			for (StatementPattern sp : sps) {
 				IRI pred = (IRI)sp.getPredicateVar().getValue();
@@ -129,12 +129,12 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 							String subj = sp.getSubjectVar().getName();
 							Map<IRI, List<StatementPattern>> predMap = spIndex.get(subj);
 							if (predMap == null) {
-								predMap = new HashMap<IRI, List<StatementPattern>>(8);
+								predMap = new HashMap<>(8);
 								spIndex.put(subj, predMap);
 							}
 							List<StatementPattern> v = predMap.get(pred);
 							if (v == null) {
-								v = new ArrayList<StatementPattern>(1);
+								v = new ArrayList<>(1);
 								predMap.put(pred, v);
 							}
 							v.add(sp);
@@ -199,7 +199,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 						catch (Exception e) {
 							throw new MalformedQueryException(e);
 						}
-						Map<String, String> prefixDecls = new HashMap<String, String>(8);
+						Map<String, String> prefixDecls = new HashMap<>(8);
 						prefixDecls.put(SP.PREFIX, SP.NAMESPACE);
 						prefixDecls.put(SPIN.PREFIX, SPIN.NAMESPACE);
 						prefixDecls.put(SPL.PREFIX, SPL.NAMESPACE);
@@ -278,7 +278,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 		public void meet(Join node)
 			throws RDF4JException
 		{
-			BGPCollector<RDF4JException> collector = new BGPCollector<RDF4JException>(this);
+			BGPCollector<RDF4JException> collector = new BGPCollector<>(this);
 			node.visit(collector);
 			processGraphPattern(collector.getStatementPatterns());
 		}

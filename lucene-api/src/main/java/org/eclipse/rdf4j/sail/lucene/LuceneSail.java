@@ -384,8 +384,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 				throw new SailException("Could read " + INDEXEDFIELDS + ": " + indexedfieldsString, e);
 			}
 			ValueFactory vf = getValueFactory();
-			indexedFields = new HashSet<IRI>();
-			indexedFieldsMapping = new HashMap<IRI, IRI>();
+			indexedFields = new HashSet<>();
+			indexedFieldsMapping = new HashMap<>();
 			for (Object key : prop.keySet()) {
 				String keyStr = key.toString();
 				if (keyStr.startsWith("index.")) {
@@ -556,7 +556,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 				TupleQueryResult res = query.evaluate();
 				Resource current = null;
 				ValueFactory vf = getValueFactory();
-				List<Statement> statements = new ArrayList<Statement>();
+				List<Statement> statements = new ArrayList<>();
 				while (res.hasNext()) {
 					BindingSet set = res.next();
 					Resource r = (Resource)set.getValue("s");

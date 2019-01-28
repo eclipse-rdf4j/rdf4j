@@ -36,7 +36,7 @@ public abstract class NotifyingSailConnectionBase extends AbstractSailConnection
 
 	public NotifyingSailConnectionBase(AbstractSail sailBase) {
 		super(sailBase);
-		listeners = new ArrayList<SailConnectionListener>(0);
+		listeners = new ArrayList<>(0);
 	}
 
 	/*---------*

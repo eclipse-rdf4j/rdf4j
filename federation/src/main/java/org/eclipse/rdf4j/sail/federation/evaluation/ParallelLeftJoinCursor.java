@@ -60,7 +60,7 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 	 */
 	private volatile boolean closed;
 
-	private final QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>> rightQueue = new QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>>(
+	private final QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>> rightQueue = new QueueCursor<>(
 			1024);
 
 	/*--------------*
@@ -111,9 +111,9 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 		if (condition != null) {
 			result = new FilterCursor(result, condition, scopeBindingNames, strategy);
 		}
-		CloseableIteration<BindingSet, QueryEvaluationException> alt = new SingletonIteration<BindingSet, QueryEvaluationException>(
+		CloseableIteration<BindingSet, QueryEvaluationException> alt = new SingletonIteration<>(
 				leftBindings);
-		rightQueue.put(new AlternativeCursor<BindingSet>(result, alt));
+		rightQueue.put(new AlternativeCursor<>(result, alt));
 	}
 
 	@Override

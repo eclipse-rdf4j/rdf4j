@@ -203,7 +203,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 
 	protected static class BindingSetAssignmentCollector extends AbstractQueryModelVisitor<RuntimeException> {
 
-		private List<BindingSetAssignment> assignments = new ArrayList<BindingSetAssignment>();
+		private List<BindingSetAssignment> assignments = new ArrayList<>();
 
 		@Override
 		public void meet(BindingSetAssignment bsa) {

@@ -125,8 +125,7 @@ public class W3cComplianceTest {
 	private void runTest(URL resourceName) {
 		W3C_shaclTestValidate expected = new W3C_shaclTestValidate(resourceName);
 
-		SailRepository sailRepository = new SailRepository(new ShaclSail(new MemoryStore(), Utils.getSailRepository(resourceName)));
-		sailRepository.initialize();
+		SailRepository sailRepository = Utils.getInitializedShaclRepository(resourceName);
 
 		boolean failedShacl = false;
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {

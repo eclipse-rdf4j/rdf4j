@@ -88,7 +88,7 @@ public class LuceneDocument implements SearchDocument {
 	@Override
 	public Set<String> getPropertyNames() {
 		List<IndexableField> fields = doc.getFields();
-		Set<String> names = new HashSet<String>();
+		Set<String> names = new HashSet<>();
 		for (IndexableField field : fields) {
 			String name = field.name();
 			if (SearchFields.isPropertyField(name))

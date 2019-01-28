@@ -30,7 +30,7 @@ public class ForEach implements InverseMagicProperty {
 			ValueFactory valueFactory, Value... args)
 		throws QueryEvaluationException
 	{
-		return new CloseableIteratorIteration<List<? extends Value>, QueryEvaluationException>(
+		return new CloseableIteratorIteration<>(
 				SingleValueToListTransformer.transform(Arrays.<Value> asList(args).iterator()));
 	}
 }

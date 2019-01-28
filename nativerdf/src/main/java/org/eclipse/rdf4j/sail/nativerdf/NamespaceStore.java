@@ -83,7 +83,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 	{
 		file = new File(dataDir, FILE_NAME);
 
-		namespacesMap = new LinkedHashMap<String, SimpleNamespace>(16);
+		namespacesMap = new LinkedHashMap<>(16);
 
 		if (file.exists()) {
 			readNamespacesFromFile();

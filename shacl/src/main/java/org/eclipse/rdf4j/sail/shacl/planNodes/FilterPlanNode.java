@@ -10,8 +10,11 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 
 import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.lang.StringUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
 import java.util.List;
@@ -21,6 +24,9 @@ import java.util.List;
  * @author Håvard Ottestad
  */
 public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParentProvider> implements ParentProvider {
+
+	static private final Logger logger = LoggerFactory.getLogger(FilterPlanNode.class);
+
 
 	PlanNode parent;
 
@@ -84,7 +90,7 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 					} else {
 						if (falseNode != null) {
 							if(LoggingNode.loggingEnabled){
-								System.out.println(leadingSpace() + that.getClass().getSimpleName() + ";falseNode: " + " " + temp.toString());
+								logger.info(leadingSpace() + that.getClass().getSimpleName() + ";falseNode: " + " " + temp.toString());
 							}
 							falseNode.push(temp);
 
@@ -177,11 +183,6 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 
 
 	private String leadingSpace() {
-		StringBuilder ret = new StringBuilder();
-		int depth = parent.depth()+1;
-		while (--depth > 0) {
-			ret.append("    ");
-		}
-		return ret.toString();
+		return StringUtils.leftPad("", parent.depth(), "    ");
 	}
 }

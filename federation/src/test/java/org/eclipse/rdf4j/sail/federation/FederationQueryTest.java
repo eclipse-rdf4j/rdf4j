@@ -167,9 +167,9 @@ public class FederationQueryTest {
 			List<BindingSet> queryBindings = Iterations.asList(queryResultTable);
 			List<BindingSet> expectedBindings = Iterations.asList(expectedTable);
 
-			List<BindingSet> missingBindings = new ArrayList<BindingSet>(expectedBindings);
+			List<BindingSet> missingBindings = new ArrayList<>(expectedBindings);
 			missingBindings.removeAll(queryBindings);
-			List<BindingSet> unexpected = new ArrayList<BindingSet>(queryBindings);
+			List<BindingSet> unexpected = new ArrayList<>(queryBindings);
 			unexpected.removeAll(expectedBindings);
 			StringBuilder message = new StringBuilder(128);
 			message.append("\n============ ");

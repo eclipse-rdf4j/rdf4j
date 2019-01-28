@@ -32,7 +32,7 @@ public class ModelTripleSource implements TripleSource {
 			IRI pred, Value obj, Resource... contexts)
 		throws QueryEvaluationException
 	{
-		return new CloseableIteratorIteration<Statement, QueryEvaluationException>(
+		return new CloseableIteratorIteration<>(
 				model.filter(subj, pred, obj, contexts).iterator());
 	}
 

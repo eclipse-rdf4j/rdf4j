@@ -32,3 +32,4 @@ dependency-reduced-pom.xml
 # NetBean files
 **/nb-configuration.xml
 **/nbactions*.xml
+compliance/sparql/overlays

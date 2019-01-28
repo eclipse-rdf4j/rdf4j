@@ -1,11 +1,17 @@
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+import org.apache.commons.lang.StringUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
 public class PushBasedLoggingNode implements SupportsParentProvider, PushBasedPlanNode, PlanNode {
+
+	static private final Logger logger = LoggerFactory.getLogger(PushBasedLoggingNode.class);
+
 
 	private final PushBasedPlanNode parent;
 	private List<PlanNode> parents;
@@ -43,7 +49,7 @@ public class PushBasedLoggingNode implements SupportsParentProvider, PushBasedPl
 	@Override
 	public void push(Tuple t) {
 		if(LoggingNode.loggingEnabled){
-			System.out.println(leadingSpace() + parent.getClass().getSimpleName() + ".next(): " + " " + t.toString());
+			logger.info(leadingSpace() + parent.getClass().getSimpleName() + ".next(): " + " " + t.toString());
 		}
 		parent.push(t);
 	}
@@ -61,11 +67,6 @@ public class PushBasedLoggingNode implements SupportsParentProvider, PushBasedPl
 	}
 
 	private String leadingSpace() {
-		StringBuilder ret = new StringBuilder();
-		int depth = depth();
-		while (--depth > 0) {
-			ret.append("    ");
-		}
-		return ret.toString();
+		return StringUtils.leftPad("", depth(), "    ");
 	}
 }
