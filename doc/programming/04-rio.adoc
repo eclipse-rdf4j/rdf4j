@@ -261,8 +261,6 @@ The Javadoc documentation shows which settings are available, and what their sys
 
 === Programmatic configuration
 
-NOTE: since RDF4J 2.5
-
 The Rio parser/writer configuration can be retrieved and modified via {javadoc}rio/RDFParser.html[RDFParser.getParserConfig()] / {javadoc}rio/RDFWriter.html[RDFWriter.getWriterConfig()]. This returns a {javadoc}rio/RioConfig.html[RioConfig] object, which is a collection for the various supported parser/writer settings. Each configuration option can be added to this object with a value of choice. 
 
 Each Rio parser/writer can be queried about which settings it supports, using {javadoc}/rio/RDFParser.html[RDFParser.getSupportedSettings()] / {javadoc}/rio/RDFWriter.html[RDFWriter.getSupportedSettings()].
@@ -300,6 +298,8 @@ rdfParser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 ----
 
 === Configuration via command line switches
+
+NOTE: new in RDF4J 2.5
 
 To allow reconfiguring a Rio parser/writer in a runtime deployment (for example in an RDF4J Server), it is also possible to set certain configuration options through Java system properties. You can specify these by passing `-D` commandline switches to the JRE in which the application runs.
 
