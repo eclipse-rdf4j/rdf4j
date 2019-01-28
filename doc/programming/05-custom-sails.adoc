@@ -229,6 +229,8 @@ Here are some useful links to learn more about SPIN:
 
 == Validation with SHACL
 
+NOTE: new in RDF4J 2.5
+
 The SHapes Constraint Language (SHACL) is a language for validating RDF graphs.
 
 This documentation is for RDF4J 2.5 and onwards, as the SHACL engine was experimental
