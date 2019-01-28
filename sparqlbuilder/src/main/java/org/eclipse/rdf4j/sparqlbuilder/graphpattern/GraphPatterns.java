@@ -66,7 +66,7 @@ public class GraphPatterns {
 	 *      Triple pattern syntax</a>
 	 */
 	public static TriplePattern tp(RdfSubject subject, IRI predicate, RdfObject... objects) {
-		return new TriplesSameSubject(subject, Rdf.iri(predicate), objects);
+		return tp(subject, Rdf.iri(predicate), objects);
 	}
 	
 	public static TriplePattern tp(RdfSubject subject, IRI predicate, Value... objects) {

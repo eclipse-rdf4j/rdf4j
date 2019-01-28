@@ -134,6 +134,7 @@ public class Section2Test extends BaseExamples {
 
 		query.select(v).where(v_hasP_abc_dt);
 		p();
+		
 	}
 	
 	@Test
