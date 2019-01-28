@@ -8,13 +8,27 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+import org.junit.Ignore;
 import org.junit.Test;
+import org.junit.experimental.categories.Categories;
+
+import java.io.IOException;
+import java.io.StringReader;
+import java.util.List;
 
 /**
  * @author Håvard Ottestad
@@ -283,6 +297,83 @@ public class TempTest {
 		}
 
 
+	}
+
+	@Test
+	@Ignore // this method is used to produce the log examples in the documentation
+	public void doc() throws IOException {
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+
+		//Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
+		//root.setLevel(Level.INFO);
+
+
+		shaclSail.setLogValidationPlans(false);
+		shaclSail.setGlobalLogValidationExecution(false);
+		shaclSail.setLogValidationViolations(false);
+
+
+		SailRepository sailRepository = new SailRepository(shaclSail);
+		sailRepository.init();
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+
+			connection.begin();
+
+			StringReader shaclRules = new StringReader(
+				String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+
+					"ex:PersonShape\n" +
+						"        a sh:NodeShape  ;\n" +
+						"        sh:targetClass ex:Person ;\n" +
+						"        sh:property [\n" +
+						"                sh:path ex:age ;\n" +
+						"                sh:datatype xsd:integer ;\n" +
+						"        ] ."
+				));
+
+			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.commit();
+
+			add(connection, String.join("\n", "",
+				"@prefix ex: <http://example.com/ns#> .",
+				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+
+				"ex:pete a ex:Person ."
+
+			));
+
+
+			shaclSail.setLogValidationPlans(true);
+			shaclSail.setGlobalLogValidationExecution(true);
+			shaclSail.setLogValidationViolations(true);
+
+
+			add(connection, String.join("\n", "",
+				"@prefix ex: <http://example.com/ns#> .",
+				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+
+				"ex:pete ex:age \"eighteen\" ."
+
+			));
+
+		}
+	}
+
+	private void add(SailRepositoryConnection connection, String data) throws IOException {
+		connection.begin();
+
+
+		StringReader invalidSampleData = new StringReader(data);
+
+		connection.add(invalidSampleData, "", RDFFormat.TURTLE);
+		connection.commit();
 	}
 
 }

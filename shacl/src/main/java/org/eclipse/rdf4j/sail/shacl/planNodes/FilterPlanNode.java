@@ -82,7 +82,7 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 					if (checkTuple(temp)) {
 						if (trueNode != null) {
 							if(LoggingNode.loggingEnabled){
-								System.out.println(leadingSpace() + that.getClass().getSimpleName() + ";trueNode: " + " " + temp.toString());
+								logger.info(leadingSpace() + that.getClass().getSimpleName() + ";trueNode: " + " " + temp.toString());
 							}
 							trueNode.push(temp);
 
@@ -168,8 +168,12 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 
 	}
 
-	private String getId(T trueNode) {
-		return System.identityHashCode(trueNode)+"";
+	private String getId(T node) {
+		if(node instanceof PlanNode){
+			return ((PlanNode) node).getId();
+		}
+
+		return System.identityHashCode(node)+"";
 	}
 
 	@Override
@@ -183,6 +187,6 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 
 
 	private String leadingSpace() {
-		return StringUtils.leftPad("", parent.depth(), "    ");
+		return StringUtils.leftPad("", parent.depth()+1, "    ");
 	}
 }
