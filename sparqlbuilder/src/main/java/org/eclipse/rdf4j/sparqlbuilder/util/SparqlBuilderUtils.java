@@ -12,9 +12,7 @@ import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
-import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 /**
  * Utility functions for the SparqlBuilder 
