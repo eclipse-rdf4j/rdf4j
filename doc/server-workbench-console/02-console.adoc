@@ -118,6 +118,8 @@ Multiple lines can be entered. To terminate the input, enter a new line containi
 
 === Setting namespace prefixes
 
+NOTE: new in RDF4J 2.5
+
 Using prefixes for namespaces (e.g. `dcterms:` instead of `http://purl.org/dc/terms/`) makes queries and results easier to read, and queries less error-prone to write.
 By default a few well-known prefixes are available, including `dcterms`, `foaf`, `rdfs` and `skos`.
 
