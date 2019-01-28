@@ -138,8 +138,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		// start two transactions, synchronize on underlying sail so that we get two transactions immediatly successivley
 		synchronized (sail) {
 			super.begin(level);
-			shapesConnection.begin(IsolationLevels.SERIALIZABLE);
-			previousStateConnection.begin(IsolationLevels.SNAPSHOT);
+			shapesConnection.begin(IsolationLevels.SNAPSHOT);
+			previousStateConnection.begin(level);
 		}
 
 	}
@@ -308,15 +308,19 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 		try (RepositoryConnection connection = addedStatements.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			addedStatementsSet.stream().filter(
-					statement -> !removedStatementsSet.contains(statement)).forEach(connection::add);
+			addedStatementsSet
+				.stream()
+				.filter(statement -> !removedStatementsSet.contains(statement))
+				.forEach(connection::add);
 			connection.commit();
 		}
 
 		try (RepositoryConnection connection = removedStatements.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			removedStatementsSet.stream().filter(
-					statement -> !addedStatementsSet.contains(statement)).forEach(connection::add);
+			removedStatementsSet
+				.stream()
+				.filter(statement -> !addedStatementsSet.contains(statement))
+				.forEach(connection::add);
 			connection.commit();
 		}
 	}

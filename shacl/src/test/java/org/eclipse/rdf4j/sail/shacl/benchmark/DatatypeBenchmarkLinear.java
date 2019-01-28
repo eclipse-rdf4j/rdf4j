@@ -27,6 +27,7 @@ import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
+import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
@@ -44,14 +45,16 @@ import java.util.stream.Stream;
 @State(Scope.Benchmark)
 @Warmup(iterations = 10)
 @BenchmarkMode({Mode.AverageTime})
-//@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-Xmn2G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=60s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-Xmn2G", "-XX:+UseSerialGC"})
-@Measurement(iterations = 2)
+@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-Xmn2G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=60s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+//@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G"})
+@Measurement(iterations = 30)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class DatatypeBenchmarkEmpty {
+public class DatatypeBenchmarkLinear {
 
+//	@Param({"1", "10", "100"})
+	@Param({"100"})
+	public int NUMBER_OF_TRANSACTIONS = 10;
 
-	private static final int NUMBER_OF_TRANSACTIONS = 10;
 	private static final int STATEMENTS_PER_TRANSACTION = 100;
 
 	private List<List<Statement>> allStatements;
@@ -107,51 +110,29 @@ public class DatatypeBenchmarkEmpty {
 	}
 
 
-	@Benchmark
-	public void noShacl() {
+//	@Benchmark
+//	public void noShacl() {
+//
+//		SailRepository repository = new SailRepository(new MemoryStore());
+//
+//		repository.initialize();
+//
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			connection.begin(IsolationLevels.SNAPSHOT);
+//			connection.commit();
+//		}
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			for (List<Statement> statements : allStatements) {
+//				connection.begin(IsolationLevels.SNAPSHOT);
+//				connection.add(statements);
+//				connection.commit();
+//			}
+//		}
+//
+//	}
 
-		SailRepository repository = new SailRepository(new MemoryStore());
-
-		repository.initialize();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.commit();
-		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin(IsolationLevels.SNAPSHOT);
-				connection.add(statements);
-				connection.commit();
-			}
-		}
-
-	}
 
 
-	@Benchmark
-	public void sparqlInsteadOfShacl() {
-
-		SailRepository repository = new SailRepository(new MemoryStore());
-
-		repository.initialize();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.commit();
-		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin(IsolationLevels.SNAPSHOT);
-				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">; <" + FOAF.AGE + "> ?age. FILTER(datatype(?age) != <http://www.w3.org/2001/XMLSchema#int>)}").evaluate())) {
-					stream.forEach(System.out::println);
-				}
-				connection.commit();
-			}
-		}
-
-	}
 
 
 }
