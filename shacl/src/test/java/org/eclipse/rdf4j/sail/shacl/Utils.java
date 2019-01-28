@@ -63,18 +63,22 @@ public class Utils {
 
 	}
 
+	public static void loadShapeData(SailRepository repo, URL resourceName)
+		throws RDF4JException, UnsupportedRDFormatException, IOException
+	{
 
-	public static SailRepository getSailRepository(URL resourceName) {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
-		sailRepository.initialize();
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			connection.add(resourceName, resourceName.toString(), RDFFormat.TURTLE);
-		} catch (IOException | NullPointerException e) {
-			System.out.println("Error reading: " + resourceName);
-			throw new RuntimeException(e);
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.begin();
+			conn.add(resourceName, resourceName.toString(), RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+
+			conn.commit();
 		}
-		return sailRepository;
+
 	}
+
+
+
+
 
 	public static SailRepository getInitializedShaclRepository(String shapeData) throws IOException {
 		SailRepository repo = new SailRepository(new ShaclSail(new MemoryStore()));
@@ -91,8 +95,28 @@ public class Utils {
 	}
 
 	public static SailRepository getInitializedShaclRepository(URL resourceName) {
-
+		SailRepository repo = new SailRepository(new ShaclSail(new MemoryStore()));
+		repo.initialize();
+		try {
+			Utils.loadShapeData(repo, resourceName);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+		return repo;
 	}
+
+	public static SailRepository getSailRepository(URL resourceName) {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		sailRepository.initialize();
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			connection.add(resourceName, resourceName.toString(), RDFFormat.TURTLE);
+		} catch (IOException | NullPointerException e) {
+			System.out.println("Error reading: " + resourceName);
+			throw new RuntimeException(e);
+		}
+		return sailRepository;
+	}
+
 
 	static class Ex {
 
