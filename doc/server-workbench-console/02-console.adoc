@@ -116,6 +116,10 @@ Multiple lines can be entered. To terminate the input, enter a new line containi
   where { ?s ?p ?o }
   .
 
+==== reading queries from and exporting results to a file
+
+NOTE: new in RDF4J 2.5 
+
 Queries can be read from an existing file:
 
   sparql infile="file.qr"
