@@ -29,7 +29,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -240,7 +239,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 		}
 
 		runInferencingSparqlQueries(shapesRepoConnection);
-		nodeShapes = NodeShape.Factory.getShapes(shapesRepoConnection);
+		nodeShapes = NodeShape.Factory.getShapes(shapesRepoConnection, this.config);
 	}
 
 	@Override
@@ -342,13 +341,17 @@ public class ShaclSail extends NotifyingSailWrapper {
 		config.logValidationViolations = logValidationViolations;
 	}
 
+
+	/**
+	 * If no target is defined for a NodeShape, that NodeShape will be ignored. Calling this method with "true" will
+	 * make such NodeShapes wildcard shapes and validate all subjects. Equivalent to setting sh:targetClass to
+	 * owl:Thing or rdfs:Resource in an environment with a reasoner.
+	 * @param undefinedTargetValidatesAllSubjects default false
+	 */
+	public void setUndefinedTargetValidatesAllSubjects(boolean undefinedTargetValidatesAllSubjects){
+		config.undefinedTargetValidatesAllSubjects = undefinedTargetValidatesAllSubjects;
+	}
+
+
 }
 
-class ShaclSailConfig {
-
-	boolean logValidationPlans = false;
-	boolean logValidationViolations = false;
-	boolean ignoreNoShapesLoadedException = false;
-	boolean validationEnabled = true;
-
-}
