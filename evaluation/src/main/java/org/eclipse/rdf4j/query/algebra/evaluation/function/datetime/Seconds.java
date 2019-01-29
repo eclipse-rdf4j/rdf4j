@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.datetime;
 
+import java.math.BigDecimal;
 import javax.xml.datatype.DatatypeConstants;
 import javax.xml.datatype.XMLGregorianCalendar;
 
@@ -51,7 +52,11 @@ public class Seconds implements Function {
 
 					int seconds = calValue.getSecond();
 					if (DatatypeConstants.FIELD_UNDEFINED != seconds) {
-						return valueFactory.createLiteral(String.valueOf(seconds), XMLSchema.DECIMAL);
+						BigDecimal fraction = calValue.getFractionalSecond();
+						String str = (fraction == null) ? String.valueOf(seconds) 
+														: String.valueOf(fraction.doubleValue() + seconds);
+
+						return valueFactory.createLiteral(str, XMLSchema.DECIMAL);
 					}
 					else {
 						throw new ValueExprEvaluationException(
