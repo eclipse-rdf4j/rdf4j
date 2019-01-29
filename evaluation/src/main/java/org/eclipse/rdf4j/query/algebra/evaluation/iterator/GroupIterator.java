@@ -172,7 +172,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			return db.getHashSet(setName);
 		}
 		else {
-			return new HashSet<T>();
+			return new HashSet<>();
 		}
 	}
 
@@ -211,7 +211,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		iter = strategy.evaluate(group.getArg(), parentBindings);
 
 		try {
-			Map<Key, Entry> entries = new LinkedHashMap<Key, Entry>();
+			Map<Key, Entry> entries = new LinkedHashMap<>();
 
 			if (!iter.hasNext()) {
 				// no solutions, but if aggregates are present we still need to process them to produce a
@@ -325,7 +325,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 				synchronized (this) {
 					result = aggregates;
 					if (result == null) {
-						result = aggregates = new LinkedHashMap<String, Aggregate>();
+						result = aggregates = new LinkedHashMap<>();
 						for (GroupElem ge : group.getGroupElements()) {
 							Aggregate create = create(ge.getOperator());
 							if (create != null) {

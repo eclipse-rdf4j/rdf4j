@@ -488,7 +488,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	protected <E> RepositoryResult<E> createRepositoryResult(
 			CloseableIteration<? extends E, SailException> sailIter)
 	{
-		return new RepositoryResult<E>(new SailCloseableIteration<E>(sailIter));
+		return new RepositoryResult<>(new SailCloseableIteration<E>(sailIter));
 	}
 
 	@Override

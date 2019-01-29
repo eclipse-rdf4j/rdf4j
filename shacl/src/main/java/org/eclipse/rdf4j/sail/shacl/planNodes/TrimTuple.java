@@ -57,6 +57,7 @@ public class TrimTuple implements PlanNode {
 				}
 
 				tuple.addHistory(next);
+				tuple.addAllCausedByPropertyShape(next.getCausedByPropertyShapes());
 
 				return tuple;
 			}

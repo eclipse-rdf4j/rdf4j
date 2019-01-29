@@ -621,7 +621,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	@Override
 	public List<IsolationLevel> getSupportedIsolationLevels() {
 		List<IsolationLevel> supported = super.getSupportedIsolationLevels();
-		List<IsolationLevel> levels = new ArrayList<IsolationLevel>(supported.size());
+		List<IsolationLevel> levels = new ArrayList<>(supported.size());
 		for (IsolationLevel level : supported) {
 			if (level.isCompatibleWith(IsolationLevels.READ_COMMITTED)) {
 				levels.add(level);

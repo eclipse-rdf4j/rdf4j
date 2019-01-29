@@ -46,7 +46,7 @@ public class SpinRendererTest {
 
 	@Parameters(name = "{0}")
 	public static Collection<Object[]> testData() {
-		List<Object[]> params = new ArrayList<Object[]>();
+		List<Object[]> params = new ArrayList<>();
 		for (int i = 0;; i++) {
 			String suffix = String.valueOf(i + 1);
 			String testFile = "/testcases/test" + suffix + ".ttl";

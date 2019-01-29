@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2018 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -8,11 +8,6 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.impl.LinkedHashModel;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -49,7 +44,7 @@ public class SHACLComplianceTest extends AbstractSHACLTest {
 				return SHACLComplianceTest.class.getName();
 			}
 
-		}, true, true, false, "sparql", "complex", "misc", "node", "path", "validation-reports", "property");
+		}, true, true, false, "targets", "sparql", "complex", "misc", "node", "path", "validation-reports", "property");
 	}
 
 	public SHACLComplianceTest(String testURI, String label, Model shapesGraph, Model dataGraph,
@@ -62,39 +57,9 @@ public class SHACLComplianceTest extends AbstractSHACLTest {
 		return new MemoryStore();
 	}
 
-	protected SailRepository createShapesRepository() {
-		SailRepository repo = new SailRepository(new MemoryStore());
-		repo.initialize();
-		return repo;
-	}
-
 	@Override
-	protected Sail newSail(Model shapesGraph) {
-		SailRepository shapesRep = createShapesRepository();
-		if (shapesGraph != null) {
-			try {
-				upload(shapesRep, shapesGraph);
-			}
-			catch (Exception exc) {
-				try {
-					shapesRep.shutDown();
-					shapesRep = null;
-				}
-				catch (Exception e2) {
-					logger.error(e2.toString(), e2);
-				}
-				throw exc;
-			}
-		}
-		Model infer = new LinkedHashModel();
-		for (Resource subj : shapesGraph.filter(null, RDF.TYPE, SHACL.NODE_SHAPE).subjects()) {
-			infer.add(subj, RDF.TYPE, SHACL.SHAPE);
-		}
-		for (Resource subj : shapesGraph.filter(null, RDF.TYPE, SHACL.PROPERTY_SHAPE).subjects()) {
-			infer.add(subj, RDF.TYPE, SHACL.SHAPE);
-		}
-		upload(shapesRep, infer);
-		return new ShaclSail(newDataSail(), shapesRep);
+	protected Sail newSail() {
+		return new ShaclSail(newDataSail());
 	}
-
+	
 }

@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConfig;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -57,6 +58,11 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getRemovedStatements(), getQuery())), 1);
 	}
 
+	@Override
+	public List<Path> getPaths() {
+		throw new IllegalStateException();
+	}
+
 	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans) {
 		return propertyShapes.stream()
 			.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
@@ -73,20 +79,29 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	@Override
 	public String getQuery() {
+
+
 		return "?a ?b ?c";
+	}
+
+	public Resource getId() {
+		return id;
 	}
 
 
 	public static class Factory {
 
-		public static List<NodeShape> getShapes(SailRepositoryConnection connection) {
+		public static List<NodeShape> getShapes(SailRepositoryConnection connection, ShaclSailConfig config) {
 			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, RDF.TYPE, SHACL.NODE_SHAPE))) {
 				return stream.map(Statement::getSubject).map(shapeId -> {
 					if (hasTargetClass(shapeId, connection)) {
 						return new TargetClass(shapeId, connection);
 					} else {
-						return new NodeShape(shapeId, connection); // target class nodeShapes are the only supported nodeShapes
+						if(config.isUndefinedTargetValidatesAllSubjects()) {
+							return new NodeShape(shapeId, connection); // target class nodeShapes are the only supported nodeShapes
+						}
 					}
+					return null;
 				})
 					.filter(Objects::nonNull)
 					.collect(Collectors.toList());

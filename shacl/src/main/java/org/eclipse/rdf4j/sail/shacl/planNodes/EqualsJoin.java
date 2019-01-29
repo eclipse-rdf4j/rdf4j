@@ -61,6 +61,8 @@ public class EqualsJoin implements PlanNode{
 						if (nextLeft.line == nextRight.line || nextLeft.line.equals(nextRight.line)) {
 							if(useAsFilter){
 								next = nextLeft;
+								next.addAllCausedByPropertyShape(nextRight.getCausedByPropertyShapes());
+								next.addHistory(nextRight);
 							}else{
 								next = TupleHelper.join(nextLeft, nextRight);
 							}

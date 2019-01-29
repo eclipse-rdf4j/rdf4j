@@ -137,7 +137,7 @@ class TripleStore implements Closeable {
 	/**
 	 * The list of triple indexes that are used to store and retrieve triples.
 	 */
-	private final List<TripleIndex> indexes = new ArrayList<TripleIndex>();
+	private final List<TripleIndex> indexes = new ArrayList<>();
 
 	private final boolean forceSync;
 
@@ -276,7 +276,7 @@ class TripleStore implements Closeable {
 	private Set<String> parseIndexSpecList(String indexSpecStr)
 		throws SailException
 	{
-		Set<String> indexes = new HashSet<String>();
+		Set<String> indexes = new HashSet<>();
 
 		if (indexSpecStr != null) {
 			StringTokenizer tok = new StringTokenizer(indexSpecStr, ", \t");
@@ -362,14 +362,14 @@ class TripleStore implements Closeable {
 	private void reindex(Set<String> currentIndexSpecs, Set<String> newIndexSpecs)
 		throws IOException, SailException
 	{
-		Map<String, TripleIndex> currentIndexes = new HashMap<String, TripleIndex>();
+		Map<String, TripleIndex> currentIndexes = new HashMap<>();
 		for (TripleIndex index : indexes) {
 			currentIndexes.put(new String(index.getFieldSeq()), index);
 		}
 
 		// Determine the set of newly added indexes and initialize these using an
 		// existing index as source
-		Set<String> addedIndexSpecs = new HashSet<String>(newIndexSpecs);
+		Set<String> addedIndexSpecs = new HashSet<>(newIndexSpecs);
 		addedIndexSpecs.removeAll(currentIndexSpecs);
 
 		if (!addedIndexSpecs.isEmpty()) {
@@ -409,7 +409,7 @@ class TripleStore implements Closeable {
 		}
 
 		// Determine the set of removed indexes
-		Set<String> removedIndexSpecs = new HashSet<String>(currentIndexSpecs);
+		Set<String> removedIndexSpecs = new HashSet<>(currentIndexSpecs);
 		removedIndexSpecs.removeAll(newIndexSpecs);
 
 		List<Throwable> removedIndexExceptions = new ArrayList<>();

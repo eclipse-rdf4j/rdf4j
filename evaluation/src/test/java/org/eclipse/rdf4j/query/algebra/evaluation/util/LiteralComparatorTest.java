@@ -147,7 +147,7 @@ public class LiteralComparatorTest {
 	{
 		Literal en4 = vf.createLiteral("4", "en");
 		Literal nine = vf.createLiteral(9);
-		List<Literal> list = new ArrayList<Literal>();
+		List<Literal> list = new ArrayList<>();
 		list.add(ten);
 		list.add(en4);
 		list.add(nine);

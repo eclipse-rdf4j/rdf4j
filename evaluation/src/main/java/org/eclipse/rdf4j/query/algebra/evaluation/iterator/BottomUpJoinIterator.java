@@ -252,7 +252,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	 * @return map
 	 */
 	protected Map<BindingSet, List<BindingSet>> makeMap() {
-		return new HashMap<BindingSet, List<BindingSet>>();
+		return new HashMap<>();
 	}
 
 	/**
@@ -261,7 +261,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	 * @return list
 	 */
 	protected List<BindingSet> makeList() {
-		return new ArrayList<BindingSet>();
+		return new ArrayList<>();
 	}
 
 	/**
@@ -270,7 +270,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	 * @return list
 	 */
 	protected List<BindingSet> makeList(List<BindingSet> key) {
-		return new ArrayList<BindingSet>(key);
+		return new ArrayList<>(key);
 	}
 
 	/**

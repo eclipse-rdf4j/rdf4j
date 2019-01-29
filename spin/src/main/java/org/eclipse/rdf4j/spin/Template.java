@@ -31,7 +31,7 @@ public class Template {
 
 	private ParsedOperation parsedOp;
 
-	private final List<Argument> arguments = new ArrayList<Argument>(4);
+	private final List<Argument> arguments = new ArrayList<>(4);
 
 	public Template(IRI IRI) {
 		this.IRI = IRI;

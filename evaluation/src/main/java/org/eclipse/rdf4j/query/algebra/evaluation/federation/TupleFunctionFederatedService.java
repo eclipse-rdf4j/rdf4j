@@ -72,7 +72,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 		throws QueryEvaluationException
 	{
 		try (final CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(service,
-				new SingletonIteration<BindingSet, QueryEvaluationException>(bindings), baseUri);)
+				new SingletonIteration<>(bindings), baseUri);)
 		{
 			while (iter.hasNext()) {
 				BindingSet bs = iter.next();
@@ -89,7 +89,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 		throws QueryEvaluationException
 	{
 		final CloseableIteration<BindingSet, QueryEvaluationException> iter, eval;
-		eval = evaluate(service, new SingletonIteration<BindingSet, QueryEvaluationException>(bindings),
+		eval = evaluate(service, new SingletonIteration<>(bindings),
 				baseUri);
 		iter = service.isSilent() ? new SilentIteration(eval) : eval;
 		if (service.getBindingNames().equals(projectionVars)) {
@@ -170,12 +170,12 @@ public class TupleFunctionFederatedService implements FederatedService {
 		throws QueryEvaluationException
 	{
 		if (!bindings.hasNext()) {
-			return new EmptyIteration<BindingSet, QueryEvaluationException>();
+			return new EmptyIteration<>();
 		}
 
 		TupleExpr expr = service.getArg();
 		if (!(expr instanceof TupleFunctionCall)) {
-			return new EmptyIteration<BindingSet, QueryEvaluationException>();
+			return new EmptyIteration<>();
 		}
 
 		TupleFunctionCall funcCall = (TupleFunctionCall)expr;
@@ -184,7 +184,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 
 		List<ValueExpr> argExprs = funcCall.getArgs();
 
-		List<CloseableIteration<BindingSet, QueryEvaluationException>> resultIters = new ArrayList<CloseableIteration<BindingSet, QueryEvaluationException>>();
+		List<CloseableIteration<BindingSet, QueryEvaluationException>> resultIters = new ArrayList<>();
 		while (bindings.hasNext()) {
 			BindingSet bs = bindings.next();
 			Value[] argValues = new Value[argExprs.size()];
@@ -207,8 +207,8 @@ public class TupleFunctionFederatedService implements FederatedService {
 					argValues));
 		}
 		return (resultIters.size() > 1)
-				? new DistinctIteration<BindingSet, QueryEvaluationException>(
-						new UnionIteration<BindingSet, QueryEvaluationException>(resultIters))
+				? new DistinctIteration<>(
+						new UnionIteration<>(resultIters))
 				: resultIters.get(0);
 	}
 

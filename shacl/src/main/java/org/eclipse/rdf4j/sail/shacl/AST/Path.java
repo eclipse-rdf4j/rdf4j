@@ -25,4 +25,8 @@ abstract public class Path implements RequiresEvalutation, QueryGenerator {
 
 	}
 
+
+	public Resource getId() {
+		return id;
+	}
 }

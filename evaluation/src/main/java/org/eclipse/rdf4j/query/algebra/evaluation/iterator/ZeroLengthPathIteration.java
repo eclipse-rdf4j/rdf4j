@@ -173,7 +173,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 	}
 
 	private Set<Value> makeSet() {
-		return new HashSet<Value>(INITIAL_CAPACITY);
+		return new HashSet<>(INITIAL_CAPACITY);
 	}
 
 	public Var createAnonVar(String varName) {

@@ -53,7 +53,7 @@ public class ZeroLengthPathIterationTest {
 					Resource subj, IRI pred, Value obj, Resource... contexts)
 				throws QueryEvaluationException
 			{
-				return new CloseableIteratorIteration<Statement, QueryEvaluationException>(
+				return new CloseableIteratorIteration<>(
 						m.filter(subj, pred, obj, contexts).iterator());
 			}
 

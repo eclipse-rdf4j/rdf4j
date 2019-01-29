@@ -30,7 +30,7 @@ public abstract class AbstractNaryOperator<Expr extends QueryModelNode> extends 
 	/**
 	 * The operator's arguments.
 	 */
-	private List<Expr> args = new ArrayList<Expr>();
+	private List<Expr> args = new ArrayList<>();
 
 	/*--------------*
 	 * Constructors *
@@ -65,7 +65,7 @@ public abstract class AbstractNaryOperator<Expr extends QueryModelNode> extends 
 	 * @return A copy of the current argument list.
 	 */
 	public List<? extends Expr> getArgs() {
-		return new CopyOnWriteArrayList<Expr>(args);
+		return new CopyOnWriteArrayList<>(args);
 	}
 
 	/**
@@ -159,7 +159,7 @@ public abstract class AbstractNaryOperator<Expr extends QueryModelNode> extends 
 	@SuppressWarnings("unchecked")
 	public AbstractNaryOperator<Expr> clone() { // NOPMD
 		final AbstractNaryOperator<Expr> clone = (AbstractNaryOperator<Expr>)super.clone();
-		clone.args = new ArrayList<Expr>(args.size());
+		clone.args = new ArrayList<>(args.size());
 		for (Expr arg : args) {
 			final Expr argClone = (arg == null) ? null : (Expr)arg.clone(); // NOPMD
 			clone.addArg(argClone);

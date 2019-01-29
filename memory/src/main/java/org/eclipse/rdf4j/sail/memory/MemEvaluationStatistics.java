@@ -84,7 +84,7 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 			}
 
 			// Search for the smallest list that can be used by the iterator
-			List<Integer> listSizes = new ArrayList<Integer>(4);
+			List<Integer> listSizes = new ArrayList<>(4);
 			if (memSubj != null) {
 				listSizes.add(memSubj.getSubjectStatementCount());
 			}

@@ -54,7 +54,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 
 		// Initialize with empty iteration so that var is never null
-		rightIter = new EmptyIteration<BindingSet, QueryEvaluationException>();
+		rightIter = new EmptyIteration<>();
 	}
 
 	/*---------*

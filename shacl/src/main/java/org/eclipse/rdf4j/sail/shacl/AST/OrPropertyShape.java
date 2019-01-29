@@ -11,21 +11,22 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EqualsJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -35,7 +36,7 @@ import java.util.stream.Stream;
  */
 public class OrPropertyShape extends PropertyShape {
 
-	private final List<PropertyShape> or;
+	private final List<List<PropertyShape>> or;
 
 	private static final Logger logger = LoggerFactory.getLogger(OrPropertyShape.class);
 
@@ -45,67 +46,69 @@ public class OrPropertyShape extends PropertyShape {
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.OR, null, true))) {
 			Resource orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:or on " + id));
-			or = toList(connection, orList).stream().map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v).get(0)).collect(Collectors.toList());
+			or = toList(connection, orList).stream().map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v)).collect(Collectors.toList());
 		}
-
+		System.out.println();
 	}
 
-	private static List<Value> toList(SailRepositoryConnection connection, Resource orList) {
-		List<Value> ret = new ArrayList<>();
-		while (!orList.equals(RDF.NIL)) {
-			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(orList, RDF.FIRST, null))) {
-				Value value = stream.map(Statement::getObject).findAny().get();
-				ret.add(value);
-			}
 
-			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(orList, RDF.REST, null))) {
-				orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
-			}
-
-		}
-
-
-		return ret;
-
-
-	}
 
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
 
-		List<PlanNode> plannodes = or.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, false)).collect(Collectors.toList());
+		List<List<PlanNode>> plannodes =
+			or
+				.stream()
+				.map(shapes -> shapes.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, false)).collect(Collectors.toList()))
+				.collect(Collectors.toList());
 
-		List<IteratorData> iteratorDataTypes = plannodes.stream().map(PlanNode::getIteratorDataType).distinct().collect(Collectors.toList());
+		List<IteratorData> iteratorDataTypes =
+			plannodes
+				.stream()
+				.flatMap(shapes -> shapes.stream().map(PlanNode::getIteratorDataType))
+				.distinct().collect(Collectors.toList());
+
+
 
 		if (iteratorDataTypes.size() > 1) {
 			throw new UnsupportedOperationException("No support for OR shape with mix between aggregate and raw triples");
 		}
 
 
-		PlanNode ret = null;
+		IteratorData iteratorData = iteratorDataTypes.get(0);
+
+		if (iteratorData == IteratorData.tripleBased) {
+
+			List<Path> collect = getPaths().stream().distinct().collect(Collectors.toList());
+			if(collect.size()>1){
+				iteratorData = IteratorData.aggregated;
+			}
+		}
+
+			PlanNode ret;
 
 
-		if (iteratorDataTypes.get(0) == IteratorData.tripleBased) {
+		if (iteratorData == IteratorData.tripleBased) {
 
-			EqualsJoin equalsJoin = new EqualsJoin(plannodes.get(0), plannodes.get(1), true);
+			EqualsJoin equalsJoin = new EqualsJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), true);
 
 			for (int i = 2; i < or.size(); i++) {
-				equalsJoin = new EqualsJoin(equalsJoin, plannodes.get(i), true);
+				equalsJoin = new EqualsJoin(equalsJoin, unionAll(plannodes.get(i)), true);
 			}
 
 			ret =  new LoggingNode(equalsJoin);
 		}
 
-		else if (iteratorDataTypes.get(0) == IteratorData.aggregated) {
+		else if (iteratorData == IteratorData.aggregated) {
 
-			PlanNode equalsJoin = new LoggingNode(new InnerJoin(plannodes.get(0), plannodes.get(1), null, null));
+			PlanNode innerJoin = new LoggingNode(new InnerJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), null, null));
 
 			for (int i = 2; i < or.size(); i++) {
-				equalsJoin = new LoggingNode(new InnerJoin(equalsJoin, plannodes.get(i), null, null));
+				innerJoin = new LoggingNode(new InnerJoin(innerJoin, unionAll(plannodes.get(i)), null, null));
 			}
 
-			ret =  new LoggingNode(equalsJoin);
+			ret =  new LoggingNode(innerJoin);
 		}else{
 			throw new IllegalStateException("Should not get here!");
 
@@ -116,13 +119,27 @@ public class OrPropertyShape extends PropertyShape {
 			logger.info(planAsGraphiz);
 		}
 
-		return ret;
+		return new EnrichWithShape(ret, this);
 
 
 	}
 
 	@Override
+	public List<Path> getPaths() {
+		return or.stream().flatMap(a -> a.stream().flatMap(b -> b.getPaths().stream())).collect(Collectors.toList());
+	}
+
+	private PlanNode unionAll(List<PlanNode> planNodes) {
+		return new Unique(new UnionNode(planNodes.toArray(new PlanNode[0])));
+	}
+
+	@Override
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return true;
+	}
+
+	@Override
+	public SourceConstraintComponent getSourceConstraintComponent() {
+		return SourceConstraintComponent.OrConstraintComponent;
 	}
 }

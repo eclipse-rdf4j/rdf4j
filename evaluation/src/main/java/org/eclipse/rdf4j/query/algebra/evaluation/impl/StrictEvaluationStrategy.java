@@ -305,7 +305,7 @@ public class StrictEvaluationStrategy
 
 		if (subj != null && obj != null) {
 			if (!subj.equals(obj)) {
-				return new EmptyIteration<BindingSet, QueryEvaluationException>();
+				return new EmptyIteration<>();
 			}
 		}
 
@@ -362,7 +362,7 @@ public class StrictEvaluationStrategy
 
 			// create a copy of the free variables, and remove those for which
 			// bindings are available (we can set them as constraints!)
-			Set<String> freeVars = new HashSet<String>(service.getServiceVars());
+			Set<String> freeVars = new HashSet<>(service.getServiceVars());
 			freeVars.removeAll(bindings.getBindingNames());
 
 			// Get bindings from values pre-bound into variables.
@@ -386,9 +386,9 @@ public class StrictEvaluationStrategy
 
 				// check if triples are available (with inserted bindings)
 				if (exists)
-					return new SingletonIteration<BindingSet, QueryEvaluationException>(bindings);
+					return new SingletonIteration<>(bindings);
 				else
-					return new EmptyIteration<BindingSet, QueryEvaluationException>();
+					return new EmptyIteration<>();
 
 			}
 
@@ -402,7 +402,7 @@ public class StrictEvaluationStrategy
 		catch (QueryEvaluationException e) {
 			// suppress exceptions if silent
 			if (service.isSilent()) {
-				return new SingletonIteration<BindingSet, QueryEvaluationException>(bindings);
+				return new SingletonIteration<>(bindings);
 			}
 			else {
 				throw e;
@@ -413,7 +413,7 @@ public class StrictEvaluationStrategy
 			// wrapped
 			// QueryEval) if silent
 			if (service.isSilent()) {
-				return new SingletonIteration<BindingSet, QueryEvaluationException>(bindings);
+				return new SingletonIteration<>(bindings);
 			}
 			else {
 				throw e;
@@ -429,7 +429,7 @@ public class StrictEvaluationStrategy
 
 	private static class BoundVarVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
-		private final Set<Var> boundVars = new HashSet<Var>();
+		private final Set<Var> boundVars = new HashSet<>();
 
 		@Override
 		public void meet(Var var) {
@@ -470,7 +470,7 @@ public class StrictEvaluationStrategy
 				|| isUnbound(conVar, bindings))
 		{
 			// the variable must remain unbound for this solution see https://www.w3.org/TR/sparql11-query/#assignment
-			return new EmptyIteration<BindingSet, QueryEvaluationException>();
+			return new EmptyIteration<>();
 		}
 
 		boolean allGood = false;
@@ -494,7 +494,7 @@ public class StrictEvaluationStrategy
 
 				if (emptyGraph) {
 					// Search zero contexts
-					return new EmptyIteration<BindingSet, QueryEvaluationException>();
+					return new EmptyIteration<>();
 				}
 				else if (graphs == null || graphs.isEmpty()) {
 					// store default behaivour
@@ -517,7 +517,7 @@ public class StrictEvaluationStrategy
 					else {
 						// Statement pattern specifies a context that is not part of
 						// the dataset
-						return new EmptyIteration<BindingSet, QueryEvaluationException>();
+						return new EmptyIteration<>();
 					}
 				}
 				else {
@@ -553,7 +553,7 @@ public class StrictEvaluationStrategy
 			}
 			catch (ClassCastException e) {
 				// Invalid value type for subject, predicate and/or context
-				return new EmptyIteration<BindingSet, QueryEvaluationException>();
+				return new EmptyIteration<>();
 			}
 
 			// The same variable might have been used multiple times in this
@@ -735,7 +735,7 @@ public class StrictEvaluationStrategy
 	{
 		final Iterator<BindingSet> iter = bsa.getBindingSets().iterator();
 		if (bindings.size() == 0) { // empty binding set
-			return new CloseableIteratorIteration<BindingSet, QueryEvaluationException>(iter);
+			return new CloseableIteratorIteration<>(iter);
 		}
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result;
@@ -824,11 +824,11 @@ public class StrictEvaluationStrategy
 		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluate(slice.getArg(), bindings);
 
 		if (slice.hasOffset()) {
-			result = new OffsetIteration<BindingSet, QueryEvaluationException>(result, slice.getOffset());
+			result = new OffsetIteration<>(result, slice.getOffset());
 		}
 
 		if (slice.hasLimit()) {
-			result = new LimitIteration<BindingSet, QueryEvaluationException>(result, slice.getLimit());
+			result = new LimitIteration<>(result, slice.getLimit());
 		}
 
 		return result;
@@ -846,7 +846,7 @@ public class StrictEvaluationStrategy
 			// a type error in an extension argument should be silently ignored
 			// and
 			// result in zero bindings.
-			result = new EmptyIteration<BindingSet, QueryEvaluationException>();
+			result = new EmptyIteration<>();
 		}
 
 		result = new ExtensionIterator(extension, result, this);
@@ -857,7 +857,7 @@ public class StrictEvaluationStrategy
 			BindingSet bindings)
 		throws QueryEvaluationException
 	{
-		return new DistinctIteration<BindingSet, QueryEvaluationException>(
+		return new DistinctIteration<>(
 				evaluate(distinct.getArg(), bindings));
 	}
 
@@ -865,7 +865,7 @@ public class StrictEvaluationStrategy
 			BindingSet bindings)
 		throws QueryEvaluationException
 	{
-		return new ReducedIteration<BindingSet, QueryEvaluationException>(
+		return new ReducedIteration<>(
 				evaluate(reduced.getArg(), bindings));
 	}
 
@@ -988,7 +988,7 @@ public class StrictEvaluationStrategy
 			}
 		};
 
-		return new UnionIteration<BindingSet, QueryEvaluationException>(leftArg, rightArg);
+		return new UnionIteration<>(leftArg, rightArg);
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Intersection intersection,
@@ -1017,7 +1017,7 @@ public class StrictEvaluationStrategy
 			}
 		};
 
-		return new IntersectIteration<BindingSet, QueryEvaluationException>(leftArg, rightArg);
+		return new IntersectIteration<>(leftArg, rightArg);
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Difference difference,
@@ -1046,21 +1046,21 @@ public class StrictEvaluationStrategy
 			}
 		};
 
-		return new SPARQLMinusIteration<QueryEvaluationException>(leftArg, rightArg);
+		return new SPARQLMinusIteration<>(leftArg, rightArg);
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(SingletonSet singletonSet,
 			BindingSet bindings)
 		throws QueryEvaluationException
 	{
-		return new SingletonIteration<BindingSet, QueryEvaluationException>(bindings);
+		return new SingletonIteration<>(bindings);
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(EmptySet emptySet,
 			BindingSet bindings)
 		throws QueryEvaluationException
 	{
-		return new EmptyIteration<BindingSet, QueryEvaluationException>();
+		return new EmptyIteration<>();
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ExternalSet external,

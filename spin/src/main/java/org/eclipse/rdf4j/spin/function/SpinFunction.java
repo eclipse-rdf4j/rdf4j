@@ -32,7 +32,7 @@ public class SpinFunction extends AbstractSpinFunction implements TransientFunct
 
 	private ParsedQuery parsedQuery;
 
-	private final List<Argument> arguments = new ArrayList<Argument>(4);
+	private final List<Argument> arguments = new ArrayList<>(4);
 
 	public SpinFunction(String uri) {
 		super(uri);

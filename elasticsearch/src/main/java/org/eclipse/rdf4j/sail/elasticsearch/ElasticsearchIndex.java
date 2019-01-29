@@ -409,7 +409,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	protected SearchDocument copyDocument(SearchDocument doc) {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument)doc;
 		Map<String, Object> source = esDoc.getSource();
-		Map<String, Object> newDocument = new HashMap<String, Object>(source);
+		Map<String, Object> newDocument = new HashMap<>(source);
 		return new ElasticsearchDocument(esDoc.getId(), esDoc.getType(), esDoc.getIndex(), esDoc.getVersion(),
 				newDocument, geoContextMapper);
 	}
@@ -486,7 +486,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 * Filters the given list of fields, retaining all property fields.
 	 */
 	public static Set<String> getPropertyFields(Set<String> fields) {
-		Set<String> result = new HashSet<String>(fields.size());
+		Set<String> result = new HashSet<>(fields.size());
 		for (String field : fields) {
 			if (SearchFields.isPropertyField(field))
 				result.add(field);

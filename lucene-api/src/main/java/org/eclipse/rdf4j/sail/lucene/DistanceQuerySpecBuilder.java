@@ -48,7 +48,7 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 
 		tupleExpr.visit(new AbstractQueryModelVisitor<SailException>() {
 
-			final Map<String, DistanceQuerySpec> specs = new HashMap<String, DistanceQuerySpec>();
+			final Map<String, DistanceQuerySpec> specs = new HashMap<>();
 
 			@Override
 			public void meet(FunctionCall f)

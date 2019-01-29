@@ -15,6 +15,9 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 
+import java.util.Collections;
+import java.util.List;
+
 /**
  * The AST (Abstract Syntax Tree) node that represents the sh:path on a property nodeShape.
  *
@@ -47,6 +50,11 @@ public class PathPropertyShape extends PropertyShape {
 		return new Select(shaclSailConnection.getRemovedStatements(), path.getQuery());
 	}
 
+	@Override
+	public List<Path> getPaths() {
+		return Collections.singletonList(path);
+	}
+
 
 	@Override
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
@@ -54,6 +62,8 @@ public class PathPropertyShape extends PropertyShape {
 	}
 
 
-
+	public Path getPath() {
+		return path;
+	}
 }
 

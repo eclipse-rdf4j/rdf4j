@@ -37,7 +37,7 @@ public class NativeStoreContextTest extends RDFNotifyingStoreTest {
 	{
 		try {
 			NotifyingSail sail = new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
-			sail.initialize();
+			sail.init();
 			return sail;
 		}
 		catch (IOException e) {

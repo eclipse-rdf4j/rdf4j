@@ -57,7 +57,7 @@ public class MinCountBenchmarkPrefilled {
 
 
 	@Setup(Level.Invocation)
-	public void setUp() {
+	public void setUp() throws Exception {
 		allStatements = new ArrayList<>(10);
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -87,7 +87,7 @@ public class MinCountBenchmarkPrefilled {
 		}
 
 
-		ShaclSail shaclRepo = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		this.shaclRepo = new SailRepository(shaclRepo);
 		this.shaclRepo.initialize();
 

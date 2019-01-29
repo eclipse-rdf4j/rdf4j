@@ -49,7 +49,7 @@ public class PushBasedLoggingNode implements SupportsParentProvider, PushBasedPl
 	@Override
 	public void push(Tuple t) {
 		if(LoggingNode.loggingEnabled){
-			logger.debug(leadingSpace() + parent.getClass().getSimpleName() + ".next(): " + " " + t.toString());
+			logger.info(leadingSpace() + parent.getClass().getSimpleName() + ".next(): " + " " + t.toString());
 		}
 		parent.push(t);
 	}

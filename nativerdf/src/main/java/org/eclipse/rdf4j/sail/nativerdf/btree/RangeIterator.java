@@ -37,12 +37,12 @@ class RangeIterator implements RecordIterator, NodeListener {
 	/**
 	 * Tracks the parent nodes of {@link #currentNode}.
 	 */
-	private final LinkedList<Node> parentNodeStack = new LinkedList<Node>();
+	private final LinkedList<Node> parentNodeStack = new LinkedList<>();
 
 	/**
 	 * Tracks the index of child nodes in parent nodes.
 	 */
-	private final LinkedList<Integer> parentIndexStack = new LinkedList<Integer>();
+	private final LinkedList<Integer> parentIndexStack = new LinkedList<>();
 
 	private volatile int currentIdx;
 

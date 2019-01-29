@@ -40,6 +40,6 @@ public class EmptyTripleSource implements TripleSource {
 			IRI pred, Value obj, Resource... contexts)
 		throws QueryEvaluationException
 	{
-		return new EmptyIteration<Statement, QueryEvaluationException>();
+		return new EmptyIteration<>();
 	}
 }

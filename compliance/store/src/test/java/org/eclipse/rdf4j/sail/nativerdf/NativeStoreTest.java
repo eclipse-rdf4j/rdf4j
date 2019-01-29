@@ -41,7 +41,7 @@ public class NativeStoreTest extends RDFNotifyingStoreTest {
 	{
 		try {
 			NotifyingSail sail = new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
-			sail.initialize();
+			sail.init();
 			return sail;
 		}
 		catch (IOException e) {
@@ -61,7 +61,7 @@ public class NativeStoreTest extends RDFNotifyingStoreTest {
 
 		con.close();
 		sail.shutDown();
-		sail.initialize();
+		sail.init();
 		con = sail.getConnection();
 
 		assertEquals(RDF.NAMESPACE, con.getNamespace("rdf"));

@@ -1,3 +1,11 @@
+/*******************************************************************************
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -7,18 +15,15 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.Test;
 
 public class VisulizerTest {
 
 	@Test
-	public void datatype() {
+	public void datatype() throws Exception {
 
 
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shaclDatatype.ttl"));
-		shaclSail.initialize();
-
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclDatatype.ttl");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -28,7 +33,7 @@ public class VisulizerTest {
 			connection.addStatement(bNode, FOAF.AGE, vf.createLiteral(3));
 			connection.commit();
 
-			shaclSail.setDebugPrintPlans(true);
+			shaclSail.setLogValidationPlans(true);
 
 			connection.begin();
 			BNode bNode2 = vf.createBNode();
@@ -43,12 +48,10 @@ public class VisulizerTest {
 	}
 
 	@Test
-	public void maxCount() {
+	public void maxCount() throws Exception {
 
 
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shaclMax.ttl"));
-		shaclSail.initialize();
-
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclMax.ttl");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -58,7 +61,7 @@ public class VisulizerTest {
 			connection.addStatement(bNode, RDFS.LABEL, vf.createLiteral(""));
 			connection.commit();
 
-			shaclSail.setDebugPrintPlans(true);
+			shaclSail.setLogValidationPlans(true);
 
 			connection.begin();
 			BNode bNode2 = vf.createBNode();
@@ -72,12 +75,10 @@ public class VisulizerTest {
 	}
 
 	@Test(expected = SailException.class)
-	public void minCount() {
+	public void minCount() throws Exception {
 
 
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore(), Utils.getSailRepository("shacl.ttl"));
-		shaclSail.initialize();
-
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -87,7 +88,7 @@ public class VisulizerTest {
 			connection.addStatement(bNode, RDFS.LABEL, vf.createLiteral(""));
 			connection.commit();
 
-			shaclSail.setDebugPrintPlans(true);
+			shaclSail.setLogValidationPlans(true);
 
 			connection.begin();
 			BNode bNode2 = vf.createBNode();

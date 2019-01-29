@@ -70,7 +70,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 	public Set<QuerySpec> process(TupleExpr tupleExpr, BindingSet bindings)
 		throws SailException
 	{
-		HashSet<QuerySpec> result = new HashSet<QuerySpec>();
+		HashSet<QuerySpec> result = new HashSet<>();
 		process(tupleExpr, bindings, (Collection<SearchQueryEvaluator>)(Collection<?>)result);
 		return result;
 	}
@@ -277,17 +277,17 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 
 	private static class PatternFilter extends AbstractQueryModelVisitor<RuntimeException> {
 
-		public ArrayList<StatementPattern> typePatterns = new ArrayList<StatementPattern>();
+		public ArrayList<StatementPattern> typePatterns = new ArrayList<>();
 
-		public ArrayList<StatementPattern> matchesPatterns = new ArrayList<StatementPattern>();
+		public ArrayList<StatementPattern> matchesPatterns = new ArrayList<>();
 
-		public ArrayList<StatementPattern> queryPatterns = new ArrayList<StatementPattern>();
+		public ArrayList<StatementPattern> queryPatterns = new ArrayList<>();
 
-		public ArrayList<StatementPattern> propertyPatterns = new ArrayList<StatementPattern>();
+		public ArrayList<StatementPattern> propertyPatterns = new ArrayList<>();
 
-		public ArrayList<StatementPattern> scorePatterns = new ArrayList<StatementPattern>();
+		public ArrayList<StatementPattern> scorePatterns = new ArrayList<>();
 
-		public ArrayList<StatementPattern> snippetPatterns = new ArrayList<StatementPattern>();
+		public ArrayList<StatementPattern> snippetPatterns = new ArrayList<>();
 
 		/**
 		 * Method implementing the visitor pattern that gathers all statements using a predicate from the

@@ -71,7 +71,7 @@ public class BufferedTupleFromFilter implements PlanNode, PushBasedPlanNode, Sup
 
 	@Override
 	public int depth() {
-		return parentProvider.parent().stream().mapToInt(PlanNode::depth).sum()+1;
+		return parentProvider.parent().stream().mapToInt(PlanNode::depth).max().orElse(0)+1;
 	}
 
 

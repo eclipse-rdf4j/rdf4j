@@ -213,7 +213,7 @@ public class QuerySpecBuilderTest {
 	private Collection<SearchQueryEvaluator> process(SearchQueryInterpreter interpreter, TupleExpr tupleExpr)
 		throws SailException
 	{
-		List<SearchQueryEvaluator> queries = new ArrayList<SearchQueryEvaluator>();
+		List<SearchQueryEvaluator> queries = new ArrayList<>();
 		interpreter.process(tupleExpr, new QueryBindingSet(), queries);
 		return queries;
 	}
