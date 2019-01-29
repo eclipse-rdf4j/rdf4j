@@ -335,6 +335,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	public void prepare() throws SailException {
 		preparedHasRun = true;
 		super.prepare();
+		previousStateConnection.prepare();
 
 		synchronized (sail) {
 
