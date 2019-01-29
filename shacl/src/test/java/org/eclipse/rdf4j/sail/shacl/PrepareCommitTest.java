@@ -17,7 +17,7 @@ import static org.junit.Assert.assertFalse;
 
 public class PrepareCommitTest {
 
-	@Test(expected = Throwable.class)
+	@Test(expected = IllegalStateException.class)
 	public void testFailureWhenChangesAfterPrepare() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
 

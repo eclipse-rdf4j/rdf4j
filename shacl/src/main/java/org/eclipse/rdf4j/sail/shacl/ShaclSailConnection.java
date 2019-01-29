@@ -81,22 +81,22 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 			addConnectionListener(new SailConnectionListener() {
 
-				@Override
-				public void statementAdded(Statement statement) {
-					if (preparedHasRun) {
-											  throw new IllegalStateException();
+									  @Override
+									  public void statementAdded(Statement statement) {
+										  if (preparedHasRun) {
+											  throw new IllegalStateException("Detected changes after prepare() has been called.");
 										  }
 										  boolean add = addedStatementsSet.add(statement);
 										  if (!add) {
 											  removedStatementsSet.remove(statement);
 										  }
 
-				}
+									  }
 
-				@Override
-				public void statementRemoved(Statement statement) {
-					if (preparedHasRun) {
-											  throw new IllegalStateException();
+									  @Override
+									  public void statementRemoved(Statement statement) {
+										  if (preparedHasRun) {
+											  throw new IllegalStateException("Detected changes after prepare() has been called.");
 										  }
 
 										  boolean add = removedStatementsSet.add(statement);
@@ -156,7 +156,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	public void commit() throws SailException {
 
 		synchronized (sail) {
-			prepare();
+			if(!preparedHasRun) {
+				prepare();
+			}
 			super.commit();
 			previousStateConnection.commit();
 			shapesConnection.commit();
