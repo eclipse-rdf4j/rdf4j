@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
-import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
@@ -30,6 +29,7 @@ import java.util.Collection;
 import java.util.List;
 
 import static junit.framework.TestCase.assertTrue;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 /**
@@ -158,12 +158,12 @@ abstract public class AbstractShaclTest {
 					exception = true;
 					System.out.println(sailException.getMessage());
 
-				System.out.println("\n############################################");
-				System.out.println("\tValidation Report\n");
-				ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
-				Model validationReport = cause.validationReportAsModel();
-				Rio.write(validationReport, System.out, RDFFormat.TURTLE);
-				System.out.println("\n############################################");
+					System.out.println("\n############################################");
+					System.out.println("\tValidation Report\n");
+					ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
+					Model validationReport = cause.validationReportAsModel();
+					Rio.write(validationReport, System.out, RDFFormat.TURTLE);
+					System.out.println("\n############################################");
 				}
 			} catch (IOException e) {
 				e.printStackTrace();
