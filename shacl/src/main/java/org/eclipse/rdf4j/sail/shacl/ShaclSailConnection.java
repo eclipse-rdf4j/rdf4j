@@ -271,7 +271,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 
 		List<Tuple> ret = new ArrayList<>();
 
-		final List<NodeShape> nodeShapes = NodeShape.Factory.getShapes(shapesConnection);
+		final List<NodeShape> nodeShapes = NodeShape.Factory.getShapes(shapesConnection, sail.config);
 		for (NodeShape nodeShape : nodeShapes) {
 			List<PlanNode> planNodes = nodeShape.generatePlans(this, nodeShape, sail.config.logValidationPlans);
 			for (PlanNode planNode : planNodes) {

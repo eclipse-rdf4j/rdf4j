@@ -61,8 +61,10 @@ public class Utils {
 
 	}
 
-	public static SailRepository getInitializedShaclRepository(String shapeData) throws IOException {
-		SailRepository repo = new SailRepository(new ShaclSail(new MemoryStore()));
+	public static SailRepository getInitializedShaclRepository(String shapeData, boolean undefinedTargetClassValidatesAllSubjects) throws IOException {
+		ShaclSail sail = new ShaclSail(new MemoryStore());
+		sail.setUndefinedTargetValidatesAllSubjects(undefinedTargetClassValidatesAllSubjects);
+		SailRepository repo = new SailRepository(sail);
 		repo.initialize();
 		Utils.loadShapeData(repo, shapeData);
 		return repo;

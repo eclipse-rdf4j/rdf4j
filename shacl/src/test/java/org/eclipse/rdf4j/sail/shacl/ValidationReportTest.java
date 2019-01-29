@@ -28,7 +28,7 @@ public class ValidationReportTest {
 
 	@Test
 	public void simpleFirstTest() throws IOException {
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("shacl.ttl");
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("shacl.ttl", false);
 
 		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
 
@@ -86,7 +86,7 @@ public class ValidationReportTest {
 	@Test
 	public void nestedLogicalOrSupport() throws IOException {
 
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/or/datatype/shacl.ttl");
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/or/datatype/shacl.ttl", false);
 
 		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
 
