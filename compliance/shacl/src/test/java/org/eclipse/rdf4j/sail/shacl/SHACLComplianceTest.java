@@ -44,7 +44,7 @@ public class SHACLComplianceTest extends AbstractSHACLTest {
 				return SHACLComplianceTest.class.getName();
 			}
 
-		}, true, true, false, "sparql", "complex", "misc", "node", "path", "validation-reports", "property");
+		}, true, true, false, "targets", "sparql", "complex", "misc", "node", "path", "validation-reports", "property");
 	}
 
 	public SHACLComplianceTest(String testURI, String label, Model shapesGraph, Model dataGraph,
