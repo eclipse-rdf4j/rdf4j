@@ -57,7 +57,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/or/minCount",
 		"test-cases/or/nodeKindMinLength",
 		"test-cases/or/implicitAnd",
-		"test-cases/or/datatypeDifferentPaths"
+		"test-cases/or/datatypeDifferentPaths",
+		"test-cases/implicitTargetClass/simple"
 
 	);
 
