@@ -61,7 +61,9 @@ public class SHACLComplianceTest extends AbstractSHACLTest {
 
 	@Override
 	protected Sail newSail() {
-		return new ShaclSail(newDataSail());
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		shaclSail.setIgnoreNoShapesLoadedException(true);
+		return shaclSail;
 	}
 	
 }

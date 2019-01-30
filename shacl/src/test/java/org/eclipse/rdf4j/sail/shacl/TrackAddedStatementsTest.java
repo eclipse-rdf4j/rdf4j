@@ -106,7 +106,7 @@ public class TrackAddedStatementsTest {
 	}
 
 	@Test
-	public void testValidationFailedCleanup() throws Exception {
+	public void testTrandactionRollbackCleanup() throws Exception {
 
 		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl", false);
 		((ShaclSail) shaclRepository.getSail()).setIgnoreNoShapesLoadedException(true);
@@ -123,6 +123,8 @@ public class TrackAddedStatementsTest {
 			} catch (Throwable e) {
 				System.out.println(e.getMessage());
 			}
+
+			connection.rollback();
 
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
 
@@ -152,6 +154,9 @@ public class TrackAddedStatementsTest {
 				System.out.println(e.getMessage());
 			}
 
+
+		}
+		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			assertEquals(0, size(connection));
 
 		}

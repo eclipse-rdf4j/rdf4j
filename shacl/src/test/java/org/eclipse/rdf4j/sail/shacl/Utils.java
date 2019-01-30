@@ -32,7 +32,7 @@ import java.util.UUID;
 public class Utils {
 
 	public static void loadShapeData(ShaclSail sail, String resourceName)
-		throws RDF4JException, UnsupportedRDFormatException, IOException
+		throws IOException
 	{
 		InputStream shapesData = Utils.class.getResourceAsStream("/" + resourceName);
 		Model shapes = Rio.parse(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -47,7 +47,7 @@ public class Utils {
 	}
 
 	public static void loadShapeData(SailRepository repo, String resourceName)
-		throws RDF4JException, UnsupportedRDFormatException, IOException
+		throws IOException
 	{
 		InputStream shapesData = Utils.class.getResourceAsStream("/" + resourceName);
 		Model shapes = Rio.parse(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -70,7 +70,7 @@ public class Utils {
 		return repo;
 	}
 	
-	public static ShaclSail getInitializedShaclSail(String shapeData) throws Exception {
+	public static ShaclSail getInitializedShaclSail(String shapeData) throws IOException {
 		ShaclSail sail = new ShaclSail(new MemoryStore());
 		sail.initialize();
 		Utils.loadShapeData(sail, shapeData);
