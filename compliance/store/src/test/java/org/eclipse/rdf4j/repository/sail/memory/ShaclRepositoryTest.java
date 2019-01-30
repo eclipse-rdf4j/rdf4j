@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
- 
+
 package org.eclipse.rdf4j.repository.sail.memory;
 
 import org.eclipse.rdf4j.repository.Repository;
@@ -18,8 +18,6 @@ public class ShaclRepositoryTest extends RepositoryTest {
 
 	@Override
 	protected Repository createRepository() {
-		SailRepository shaclShapes = new SailRepository(new MemoryStore());
-		shaclShapes.initialize();
-		return new SailRepository(new ShaclSail(new MemoryStore(), shaclShapes));
+		return new SailRepository(new ShaclSail(new MemoryStore()));
 	}
 }

@@ -23,9 +23,7 @@ public class ShaclRepositoryConnectionTest extends RepositoryConnectionTest {
 
 	@Override
 	protected Repository createRepository() {
-		SailRepository shaclShapes = new SailRepository(new MemoryStore());
-		shaclShapes.initialize();
-		return new SailRepository(new ShaclSail(new MemoryStore(), shaclShapes));
+		return new SailRepository(new ShaclSail(new MemoryStore()));
 	}
 
 }
