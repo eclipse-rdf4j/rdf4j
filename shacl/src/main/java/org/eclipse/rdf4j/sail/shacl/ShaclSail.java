@@ -170,25 +170,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	public ShaclSail(NotifyingSail baseSail) {
 		super(baseSail);
-		String path = null;
-		if (baseSail.getDataDir() != null) {
-			path = baseSail.getDataDir().getPath();
-		}
-		else {
-			try {
-				path = Files.createTempDirectory("shacl-shapes").toString();
-			}
-			catch (IOException e) {
-				throw new SailConfigException(e);
-			}
-		}
-		if (path.endsWith("/")) {
-			path = path.substring(0, path.length() - 1);
-		}
-		path = path + "-shapes-graph/";
 
-		shapesRepo = new SailRepository(new MemoryStore(new File(path)));
-		shapesRepo.initialize();
 	}
 
 	public ShaclSail() {
@@ -220,6 +202,33 @@ public class ShaclSail extends NotifyingSailWrapper {
 	@Override
 	public void initialize() throws SailException {
 		super.initialize();
+
+		if (shapesRepo != null) {
+			shapesRepo.shutDown();
+			shapesRepo = null;
+		}
+
+
+		String path;
+
+		if (super.getBaseSail().getDataDir() != null) {
+			path = super.getBaseSail().getDataDir().getPath();
+		}
+		else {
+			try {
+				path = Files.createTempDirectory("shacl-shapes").toString();
+			}
+			catch (IOException e) {
+				throw new SailConfigException(e);
+			}
+		}
+		if (path.endsWith("/")) {
+			path = path.substring(0, path.length() - 1);
+		}
+		path = path + "-shapes-graph/";
+
+		shapesRepo = new SailRepository(new MemoryStore(new File(path)));
+		shapesRepo.initialize();
 		try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
 			refreshShapes(shapesRepoConnection);
 		}
@@ -244,10 +253,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	@Override
 	public void shutDown() throws SailException {
-		try {
+		if (shapesRepo != null) {
 			shapesRepo.shutDown();
-		}
-		finally {
 			shapesRepo = null;
 		}
 		super.shutDown();

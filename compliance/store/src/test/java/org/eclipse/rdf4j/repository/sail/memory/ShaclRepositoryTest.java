@@ -18,6 +18,9 @@ public class ShaclRepositoryTest extends RepositoryTest {
 
 	@Override
 	protected Repository createRepository() {
-		return new SailRepository(new ShaclSail(new MemoryStore()));
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		shaclSail.setIgnoreNoShapesLoadedException(true);
+
+		return new SailRepository(shaclSail);
 	}
 }
