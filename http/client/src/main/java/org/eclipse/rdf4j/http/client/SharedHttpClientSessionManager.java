@@ -56,7 +56,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	public SharedHttpClientSessionManager() {
 		final ThreadFactory backingThreadFactory = Executors.defaultThreadFactory();
-		this.executor = Executors.newScheduledThreadPool(0, new ThreadFactory() {
+		this.executor = Executors.newScheduledThreadPool(1, new ThreadFactory() {
 
 			@Override
 			public Thread newThread(Runnable runnable) {
