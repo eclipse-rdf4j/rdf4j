@@ -232,31 +232,31 @@ public class Rdf {
 	 * @return an array of {@link RdfObject}
 	 */
 	public static RdfObject[] objects(Value... values) {
-		final RdfObject[] result = new RdfObject[values.length];
-		for (int i = 0; i < values.length; i++) {
+		return Arrays.stream(values).map(Rdf::object).toArray(RdfObject[]::new);
+	}
 
-			RdfObject converted = null;
-			if (values[i] instanceof IRI) {
-				converted = iri((IRI)values[i]);
-			}
-			else if (values[i] instanceof BNode) {
-				converted = bNode(((BNode)values[i]).getID());
-			}
-			else {
-				// literal
-				Literal lit = (Literal)values[i];
-
-				if (lit.getLanguage().isPresent()) {
-					converted = literalOfLanguage(lit.getLabel(), lit.getLanguage().orElse(null));
-				}
-				else {
-					converted = literalOfType(lit.getLabel(), lit.getDatatype());
-				}
-
-			}
-			result[i] = converted;
+	/**
+	 * Converts an object {@link Value}s to an {@link RdfObject}s.
+	 * 
+	 * @param value
+	 *        an RDF {@link Value}.
+	 * @return an {@link RdfObject}
+	 */
+	public static RdfObject object(Value value) {
+		if (value instanceof IRI) {
+			return iri((IRI)value);
 		}
-		return result;
+
+		if (value instanceof BNode) {
+			return bNode(((BNode)value).getID());
+		}
+
+		Literal lit = (Literal)value;
+
+		if (lit.getLanguage().isPresent()) {
+			return literalOfLanguage(lit.getLabel(), lit.getLanguage().orElse(null));
+		}
+		return literalOfType(lit.getLabel(), lit.getDatatype());
 	}
 
 	/**
