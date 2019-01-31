@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.apache.commons.io.IOUtils;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -19,7 +20,6 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
@@ -27,8 +27,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -139,7 +139,7 @@ import java.util.List;
  */
 public class ShaclSail extends NotifyingSailWrapper {
 
-	private List<NodeShape> nodeShapes;
+	private List<NodeShape> nodeShapes = Collections.emptyList();
 
 
 	final ShaclSailConfig config = new ShaclSailConfig();
@@ -221,42 +221,37 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shapesRepo = null;
 		}
 
-
-		String path;
-
 		if (super.getBaseSail().getDataDir() != null) {
-			path = super.getBaseSail().getDataDir().getPath();
+			String path = super.getBaseSail().getDataDir().getPath();
+			if (path.endsWith("/")) {
+				path = path.substring(0, path.length() - 1);
+			}
+			path = path + "-shapes-graph/";
+
+			shapesRepo = new SailRepository(new MemoryStore(new File(path)));
 		}
 		else {
-			try {
-				path = Files.createTempDirectory("shacl-shapes").toString();
-			}
-			catch (IOException e) {
-				throw new SailConfigException(e);
-			}
+			shapesRepo = new SailRepository(new MemoryStore());
 		}
-		if (path.endsWith("/")) {
-			path = path.substring(0, path.length() - 1);
-		}
-		path = path + "-shapes-graph/";
 
-		shapesRepo = new SailRepository(new MemoryStore(new File(path)));
 		shapesRepo.initialize();
+
 		try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
+			shapesRepoConnection.begin(IsolationLevels.NONE);
 			refreshShapes(shapesRepoConnection);
+			shapesRepoConnection.commit();
 		}
 
 	}
 
-	void refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
+	synchronized void refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
 		try (SailRepositoryConnection beforeCommitConnection = shapesRepo.getConnection()) {
 			long size = beforeCommitConnection.size();
 			if (size > 0) {
 				// Our inferencer both adds and removes statements.
 				// To support updates I recommend having two graphs, one raw one with the unmodified data.
 				// Then copy all that data into a new graph, run inferencing on that graph and use it to generate the java objects
-				throw new IllegalStateException(
-						"ShaclSail does not support modifying shapes that are already loaded or loading more shapes");
+				throw new IllegalStateException("ShaclSail does not support modifying shapes that are already loaded or loading more shapes");
 			}
 		}
 
@@ -336,6 +331,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 			currentSize = shaclSailConnection.size();
 		}
 		while (prevSize != currentSize);
+
 	}
 
 	/**

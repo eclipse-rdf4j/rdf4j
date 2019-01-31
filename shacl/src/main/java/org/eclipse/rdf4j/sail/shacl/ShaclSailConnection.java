@@ -45,7 +45,7 @@ import java.util.stream.Stream;
 /**
  * @author Heshan Jayasinghe
  */
-public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
+public class ShaclSailConnection extends NotifyingSailConnectionWrapper implements SailConnectionListener{
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclSailConnection.class);
 
@@ -78,35 +78,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		this.sail = sail;
 
 		if (sail.config.validationEnabled) {
-
-			addConnectionListener(new SailConnectionListener() {
-
-									  @Override
-									  public void statementAdded(Statement statement) {
-										  if (preparedHasRun) {
-											  throw new IllegalStateException("Detected changes after prepare() has been called.");
-										  }
-										  boolean add = addedStatementsSet.add(statement);
-										  if (!add) {
-											  removedStatementsSet.remove(statement);
-										  }
-
-									  }
-
-									  @Override
-									  public void statementRemoved(Statement statement) {
-										  if (preparedHasRun) {
-											  throw new IllegalStateException("Detected changes after prepare() has been called.");
-										  }
-
-										  boolean add = removedStatementsSet.add(statement);
-										  if (!add) {
-											  addedStatementsSet.remove(statement);
-										  }
-									  }
-								  }
-
-			);
+			addConnectionListener(this);
 		}
 	}
 
@@ -138,7 +110,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		// start two transactions, synchronize on underlying sail so that we get two transactions immediatly successivley
 		synchronized (sail) {
 			super.begin(level);
-			shapesConnection.begin(IsolationLevels.SNAPSHOT);
+			shapesConnection.begin(level);
 			previousStateConnection.begin(level);
 		}
 
@@ -155,7 +127,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	@Override
 	public void commit() throws SailException {
 
-		synchronized (sail) {
 			if(!preparedHasRun) {
 				prepare();
 			}
@@ -163,7 +134,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 			previousStateConnection.commit();
 			shapesConnection.commit();
 			cleanup();
-		}
+
 
 	}
 
@@ -171,7 +142,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException
 	{
-		if (contexts.length == 1 && contexts[0].equals(RDF4J.SHACL_SHAPE_GRAPH)) {
+		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		}
@@ -185,7 +156,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 			Resource... contexts)
 		throws SailException
 	{
-		if (contexts.length == 1 && contexts[0].equals(RDF4J.SHACL_SHAPE_GRAPH)) {
+		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesConnection.remove(subj, pred, obj);
 			isShapeRefreshNeeded = true;
 		}
@@ -341,25 +312,47 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper {
 		super.prepare();
 		previousStateConnection.prepare();
 
-		synchronized (sail) {
 
-			refreshShapes(shapesConnection);
+		refreshShapes(shapesConnection);
 
-			if (!sail.isIgnoreNoShapesLoadedException()
-				&& ((!addedStatementsSet.isEmpty() || !removedStatementsSet.isEmpty())
-				&& sail.getNodeShapes().isEmpty())) {
-				throw new NoShapesLoadedException();
-			}
-
-			List<Tuple> invalidTuples = validate();
-			boolean valid = invalidTuples.isEmpty();
-
-			if (!valid) {
-				throw new ShaclSailValidationException(invalidTuples);
-			}
-
+		if (!sail.isIgnoreNoShapesLoadedException()
+			&& ((!addedStatementsSet.isEmpty() || !removedStatementsSet.isEmpty())
+			&& sail.getNodeShapes().isEmpty())) {
+			throw new NoShapesLoadedException();
 		}
 
+		List<Tuple> invalidTuples = validate();
+		boolean valid = invalidTuples.isEmpty();
+
+		if (!valid) {
+			throw new ShaclSailValidationException(invalidTuples);
+		}
+
+
+	}
+
+	@Override
+	public void statementAdded(Statement statement) {
+		if (preparedHasRun) {
+			throw new IllegalStateException("Detected changes after prepare() has been called.");
+		}
+		boolean add = addedStatementsSet.add(statement);
+		if (!add) {
+			removedStatementsSet.remove(statement);
+		}
+
+	}
+
+	@Override
+	public void statementRemoved(Statement statement) {
+		if (preparedHasRun) {
+			throw new IllegalStateException("Detected changes after prepare() has been called.");
+		}
+
+		boolean add = removedStatementsSet.add(statement);
+		if (!add) {
+			addedStatementsSet.remove(statement);
+		}
 	}
 
 	public class Stats {

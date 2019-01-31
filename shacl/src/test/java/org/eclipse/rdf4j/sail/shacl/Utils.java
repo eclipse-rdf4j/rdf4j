@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -34,30 +35,36 @@ public class Utils {
 	public static void loadShapeData(ShaclSail sail, String resourceName)
 		throws IOException
 	{
+		sail.disableValidation();
 		InputStream shapesData = Utils.class.getResourceAsStream("/" + resourceName);
 		Model shapes = Rio.parse(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		try (SailConnection conn = sail.getConnection()) {
-			conn.begin();
+			conn.begin(IsolationLevels.NONE);
 			for (Statement st : shapes) {
 				conn.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), RDF4J.SHACL_SHAPE_GRAPH);
 			}
 			conn.commit();
 		}
+		sail.enableValidation();
 
 	}
 
 	public static void loadShapeData(SailRepository repo, String resourceName)
 		throws IOException
 	{
+		((ShaclSail) repo.getSail()).disableValidation();
+
 		InputStream shapesData = Utils.class.getResourceAsStream("/" + resourceName);
 		Model shapes = Rio.parse(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		try (RepositoryConnection conn = repo.getConnection()) {
-			conn.begin();
+			conn.begin(IsolationLevels.NONE);
 			for (Statement st : shapes) {
 				conn.add(st.getSubject(), st.getPredicate(), st.getObject(), RDF4J.SHACL_SHAPE_GRAPH);
 			}
 			conn.commit();
 		}
+		((ShaclSail) repo.getSail()).enableValidation();
+
 
 	}
 

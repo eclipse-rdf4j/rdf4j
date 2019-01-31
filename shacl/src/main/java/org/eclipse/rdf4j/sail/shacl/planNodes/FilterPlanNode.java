@@ -112,7 +112,9 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 				}
 
 				closed = true;
-				parentIterator.close();
+				if (parentIterator != null) {
+					parentIterator.close();
+				}
 			}
 
 			@Override
