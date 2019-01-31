@@ -37,8 +37,10 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	 * 
 	 * @see <a href="https://bugs.openjdk.java.net/browse/JDK-8129861">JDK-8129861</a>
 	 */
-	private static final int cores = (System.getProperty("org.rdf4j.client.executors.jdkbug") != null) ? 1 : 0;
-		
+	private static final int cores = 
+			(System.getProperty("org.eclipse.rdf4j.client.executors.jdkbug") != null) ? 1 : 0;
+	/**/
+
 	private static final AtomicLong threadCount = new AtomicLong();
 
 	private final Logger logger = LoggerFactory.getLogger(SharedHttpClientSessionManager.class);
