@@ -56,7 +56,8 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	public SharedHttpClientSessionManager() {
 		final ThreadFactory backingThreadFactory = Executors.defaultThreadFactory();
-		this.executor = Executors.newScheduledThreadPool(1, new ThreadFactory() {
+		int cores = (System.getProperty("org.rdf4j.client.executors.jdkbug") != null) ? 1 : 0;
+		this.executor = Executors.newScheduledThreadPool(cores, new ThreadFactory() {
 
 			@Override
 			public Thread newThread(Runnable runnable) {
