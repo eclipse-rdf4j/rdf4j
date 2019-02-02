@@ -242,8 +242,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		fillAddedAndRemovedStatementRepositories();
 
-		selectNodeCache = new HashMap<>();
-
 		Stream<PlanNode> planNodeStream = sail
 			.getNodeShapes()
 			.stream()
@@ -314,6 +312,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				.forEach(connection::add);
 			connection.commit();
 		}
+
+		selectNodeCache = new HashMap<>();
+
 	}
 
 	@Override
