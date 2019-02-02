@@ -48,7 +48,6 @@ public class OrPropertyShape extends PropertyShape {
 			Resource orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:or on " + id));
 			or = toList(connection, orList).stream().map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v)).collect(Collectors.toList());
 		}
-		System.out.println();
 	}
 
 

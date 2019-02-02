@@ -235,41 +235,50 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		fillAddedAndRemovedStatementRepositories();
 
-		List<Tuple> ret = new ArrayList<>();
 
-		for (NodeShape nodeShape : sail.getNodeShapes()) {
-			List<PlanNode> planNodes = nodeShape.generatePlans(this, nodeShape, sail.config.logValidationPlans);
-			for (PlanNode planNode : planNodes) {
+		Stream<PlanNode> planNodeStream = sail
+			.getNodeShapes()
+			.stream()
+			.flatMap(nodeShape -> nodeShape.generatePlans(this, nodeShape, sail.config.logValidationPlans).stream());
+		if(sail.config.isParallelValidation()){
+			planNodeStream = planNodeStream.parallel();
+		}
+
+		return planNodeStream
+			.flatMap(planNode -> {
 				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
 					if(LoggingNode.loggingEnabled){
 						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-						logger.info("Start execution of plan "+nodeShape.toString()+" : "+propertyShape.getId());
+						logger.info("Start execution of plan "+propertyShape.getNodeShape().toString()+" : "+propertyShape.getId());
 					}
+
 					List<Tuple> collect = stream.collect(Collectors.toList());
 
 					if(LoggingNode.loggingEnabled){
 						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-						logger.info("Finished execution of plan "+nodeShape.toString()+" : "+propertyShape.getId());
+						logger.info("Finished execution of plan "+propertyShape.getNodeShape().toString()+" : "+propertyShape.getId());
 					}
-					ret.addAll(collect);
-
-
 
 					boolean valid = collect.size() == 0;
+
 					if (!valid && sail.config.logValidationViolations) {
+						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+
 						logger.info(
-							"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {} \n\t\t{}",
-							nodeShape.toString(),
+							"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
+							propertyShape.getNodeShape().getId() ,
+							propertyShape.getId() ,
 							collect
 								.stream()
 								.map(a -> a.toString() + " -cause-> " + a.getCause())
 								.collect(Collectors.joining("\n\t\t")));
 					}
-				}
-			}
-		}
 
-		return ret;
+					return collect.stream();
+				}
+			})
+			.collect(Collectors.toList());
+
 	}
 
 	void fillAddedAndRemovedStatementRepositories() {

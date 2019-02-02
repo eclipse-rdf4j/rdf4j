@@ -2,6 +2,7 @@ package org.eclipse.rdf4j.sail.shacl;
 
 public class ShaclSailConfig {
 
+	boolean parallelValidation = true;
 	boolean undefinedTargetValidatesAllSubjects = false;
 	boolean logValidationPlans = false;
 	boolean logValidationViolations = false;
@@ -26,5 +27,9 @@ public class ShaclSailConfig {
 
 	public boolean isValidationEnabled() {
 		return validationEnabled;
+	}
+
+	public boolean isParallelValidation() {
+		return parallelValidation;
 	}
 }

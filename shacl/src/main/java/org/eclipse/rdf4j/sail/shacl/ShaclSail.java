@@ -308,6 +308,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Log (INFO) the executed validation plans as GraphViz DOT
+	 * Recommended to disable parallel validation with setParallelValidation(false)
 	 * @param logValidationPlans
 	 */
 	@SuppressWarnings("WeakerAccess")
@@ -338,6 +339,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * 	Log (INFO) every execution step of the SHACL validation
 	 * 	This is fairly costly and should not be used in production.
+	 * Recommended to disable parallel validation with setParallelValidation(false)
 	 * @param loggingEnabled
 	 */
 	public void setGlobalLogValidationExecution(boolean loggingEnabled) {
@@ -354,6 +356,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Log (INFO) a list og violations and the triples that caused the violations (BETA)
+	 * Recommended to disable parallel validation with setParallelValidation(false)
 	 * @param logValidationViolations
 	 */
 	public void setLogValidationViolations(boolean logValidationViolations) {
@@ -372,5 +375,17 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 
+	public boolean isParallelValidation() {
+		return config.parallelValidation;
+	}
+
+	/**
+	 * Run SHACL validation in parallel.
+	 * Default: true
+	 * @param parallelValidation default true
+	 */
+	public void setParallelValidation(boolean parallelValidation) {
+		config.parallelValidation = parallelValidation;
+	}
 }
 

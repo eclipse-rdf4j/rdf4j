@@ -36,8 +36,10 @@ public class Utils {
 		throws IOException
 	{
 		sail.disableValidation();
-		InputStream shapesData = Utils.class.getResourceAsStream("/" + resourceName);
-		Model shapes = Rio.parse(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		Model shapes;
+		try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream(resourceName)) {
+			shapes = Rio.parse(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		}
 		try (SailConnection conn = sail.getConnection()) {
 			conn.begin(IsolationLevels.NONE);
 			for (Statement st : shapes) {
@@ -54,8 +56,10 @@ public class Utils {
 	{
 		((ShaclSail) repo.getSail()).disableValidation();
 
-		InputStream shapesData = Utils.class.getResourceAsStream("/" + resourceName);
-		Model shapes = Rio.parse(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		Model shapes;
+		try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream(resourceName)) {
+			shapes = Rio.parse(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		}
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.begin(IsolationLevels.NONE);
 			for (Statement st : shapes) {
