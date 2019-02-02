@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.Utils;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -44,15 +45,15 @@ import java.util.stream.Stream;
 @State(Scope.Benchmark)
 @Warmup(iterations = 10)
 @BenchmarkMode({Mode.AverageTime})
-//@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-Xmn2G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=60s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-Xmn2G", "-XX:+UseSerialGC"})
-@Measurement(iterations = 2)
+@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
+//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+@Measurement(iterations = 20)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DatatypeBenchmarkEmpty {
 
 
 	private static final int NUMBER_OF_TRANSACTIONS = 10;
-	private static final int STATEMENTS_PER_TRANSACTION = 100;
+	private static final int STATEMENTS_PER_TRANSACTION = 1000;
 
 	private List<List<Statement>> allStatements;
 
@@ -91,6 +92,9 @@ public class DatatypeBenchmarkEmpty {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatype.ttl"));
 
+//		((ShaclSail) repository.getSail()).setIgnoreNoShapesLoadedException(true);
+//		((ShaclSail) repository.getSail()).disableValidation();
+
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.SNAPSHOT);
 			connection.commit();
@@ -103,6 +107,8 @@ public class DatatypeBenchmarkEmpty {
 				connection.commit();
 			}
 		}
+
+		repository.shutDown();
 
 	}
 
@@ -126,32 +132,34 @@ public class DatatypeBenchmarkEmpty {
 			}
 		}
 
-	}
-
-
-	@Benchmark
-	public void sparqlInsteadOfShacl() {
-
-		SailRepository repository = new SailRepository(new MemoryStore());
-
-		repository.initialize();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.commit();
-		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin(IsolationLevels.SNAPSHOT);
-				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">; <" + FOAF.AGE + "> ?age. FILTER(datatype(?age) != <http://www.w3.org/2001/XMLSchema#int>)}").evaluate())) {
-					stream.forEach(System.out::println);
-				}
-				connection.commit();
-			}
-		}
+		repository.shutDown();
 
 	}
+//
+//
+//	@Benchmark
+//	public void sparqlInsteadOfShacl() {
+//
+//		SailRepository repository = new SailRepository(new MemoryStore());
+//
+//		repository.initialize();
+//
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			connection.begin(IsolationLevels.SNAPSHOT);
+//			connection.commit();
+//		}
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			for (List<Statement> statements : allStatements) {
+//				connection.begin(IsolationLevels.SNAPSHOT);
+//				connection.add(statements);
+//				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">; <" + FOAF.AGE + "> ?age. FILTER(datatype(?age) != <http://www.w3.org/2001/XMLSchema#int>)}").evaluate())) {
+//					stream.forEach(System.out::println);
+//				}
+//				connection.commit();
+//			}
+//		}
+//
+//	}
 
 
 }
