@@ -44,8 +44,9 @@ import java.util.stream.Stream;
 @State(Scope.Benchmark)
 @Warmup(iterations = 10)
 @BenchmarkMode({Mode.AverageTime})
-@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-Xmn2G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=60s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 50)
+//@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-Xmn2G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=60s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-Xmn2G", "-XX:+UseSerialGC"})
+@Measurement(iterations = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DatatypeBenchmarkEmpty {
 
@@ -89,8 +90,6 @@ public class DatatypeBenchmarkEmpty {
 	public void shacl() throws Exception {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatype.ttl"));
-
-		repository.initialize();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.SNAPSHOT);

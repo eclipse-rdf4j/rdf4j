@@ -179,6 +179,22 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			if (hasNodeKind(propertyShapeId, connection)) {
 				propertyShapes.add(new NodeKindPropertyShape(propertyShapeId, connection, nodeShape));
 			}
+
+			if (hasMinExclusive(propertyShapeId, connection)) {
+				propertyShapes.add(new MinExclusivePropertyShape(propertyShapeId, connection, nodeShape));
+			}
+
+			if (hasMaxExclusive(propertyShapeId, connection)) {
+				propertyShapes.add(new MaxExclusivePropertyShape(propertyShapeId, connection, nodeShape));
+			}
+
+			if (hasMaxInclusive(propertyShapeId, connection)) {
+				propertyShapes.add(new MaxInclusivePropertyShape(propertyShapeId, connection, nodeShape));
+			}
+
+			if (hasMinInclusive(propertyShapeId, connection)) {
+				propertyShapes.add(new MinInclusivePropertyShape(propertyShapeId, connection, nodeShape));
+			}
 			return propertyShapes;
 		}
 
@@ -219,6 +235,21 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			return connection.hasStatement(id, SHACL.NODE_KIND_PROP, null, true);
 		}
 
+		private static boolean hasMinExclusive(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.MIN_EXCLUSIVE, null, true);
+		}
+
+		private static boolean hasMaxExclusive(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.MAX_EXCLUSIVE, null, true);
+		}
+
+		private static boolean hasMaxInclusive(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.MAX_INCLUSIVE, null, true);
+		}
+
+		private static boolean hasMinInclusive(Resource id, SailRepositoryConnection connection) {
+			return connection.hasStatement(id, SHACL.MIN_INCLUSIVE, null, true);
+		}
 
 	}
 }

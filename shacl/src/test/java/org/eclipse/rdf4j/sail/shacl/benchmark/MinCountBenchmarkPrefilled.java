@@ -89,7 +89,6 @@ public class MinCountBenchmarkPrefilled {
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		this.shaclRepo = new SailRepository(shaclRepo);
-		this.shaclRepo.initialize();
 
 		memoryStoreRepo = new SailRepository(new MemoryStore());
 		memoryStoreRepo.initialize();
