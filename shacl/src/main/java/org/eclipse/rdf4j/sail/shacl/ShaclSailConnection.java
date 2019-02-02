@@ -28,17 +28,21 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -215,6 +219,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		stats = null;
 		preparedHasRun = false;
 		isShapeRefreshNeeded = false;
+		selectNodeCache = null;
 	}
 
 	private List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) {
@@ -235,6 +240,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		fillAddedAndRemovedStatementRepositories();
 
+		selectNodeCache = new HashMap<>();
 
 		Stream<PlanNode> planNodeStream = sail
 			.getNodeShapes()
@@ -365,6 +371,15 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		if (!add) {
 			addedStatementsSet.remove(statement);
 		}
+	}
+
+	Map<Select, BufferedSplitter> selectNodeCache;
+
+	synchronized public PlanNode getCachedNodeFor(Select select) {
+
+		BufferedSplitter bufferedSplitter = selectNodeCache.computeIfAbsent(select, BufferedSplitter::new);
+
+		return bufferedSplitter.getPlanNode();
 	}
 
 	public class Stats {
