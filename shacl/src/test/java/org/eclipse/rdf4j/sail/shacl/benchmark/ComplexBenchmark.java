@@ -66,21 +66,14 @@ public class ComplexBenchmark {
 
 	@Setup(Level.Iteration)
 	public void setUp() {
-
-
-
-
 		System.gc();
-
 	}
 
 
-
 	@Benchmark
-	public void shacl() throws Exception {
+	public void shaclParallelCache() throws Exception {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
-
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.SNAPSHOT);
@@ -103,13 +96,13 @@ public class ComplexBenchmark {
 
 	}
 
-
 	@Benchmark
-	public void shaclNotParallel() throws Exception {
+	public void shaclParallel() throws Exception {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
 
-		((ShaclSail) repository.getSail()).setParallelValidation(false);
+		((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
+
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.SNAPSHOT);
 			connection.commit();
@@ -132,5 +125,63 @@ public class ComplexBenchmark {
 	}
 
 
+	@Benchmark
+	public void shaclCache() throws Exception {
+
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+
+		((ShaclSail) repository.getSail()).setParallelValidation(false);
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.SNAPSHOT);
+			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(IsolationLevels.SNAPSHOT);
+			connection.prepareUpdate(transaction1).execute();
+			connection.commit();
+
+			connection.begin(IsolationLevels.SNAPSHOT);
+			connection.prepareUpdate(transaction2).execute();
+			connection.commit();
+
+		}
+
+		repository.shutDown();
+
+	}
+
+
+
+	@Benchmark
+	public void shacl() throws Exception {
+
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+
+		((ShaclSail) repository.getSail()).setParallelValidation(false);
+		((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.SNAPSHOT);
+			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(IsolationLevels.SNAPSHOT);
+			connection.prepareUpdate(transaction1).execute();
+			connection.commit();
+
+			connection.begin(IsolationLevels.SNAPSHOT);
+			connection.prepareUpdate(transaction2).execute();
+			connection.commit();
+
+		}
+
+		repository.shutDown();
+
+	}
 
 }

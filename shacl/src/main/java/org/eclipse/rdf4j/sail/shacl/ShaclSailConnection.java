@@ -37,7 +37,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -72,6 +71,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private boolean preparedHasRun = false;
 
 	private SailRepositoryConnection shapesConnection;
+
+	// used to cache Select plan nodes so that we don't query a store for the same data during the same validation step.
+	private Map<Select, BufferedSplitter> selectNodeCache;
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
 						NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesConnection)
@@ -373,9 +375,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 	}
 
-	Map<Select, BufferedSplitter> selectNodeCache;
 
 	synchronized public PlanNode getCachedNodeFor(Select select) {
+
+		if(!sail.config.isCacheSelectNodes()){
+			return select;
+		}
 
 		BufferedSplitter bufferedSplitter = selectNodeCache.computeIfAbsent(select, BufferedSplitter::new);
 

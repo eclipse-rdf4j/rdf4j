@@ -8,6 +8,7 @@ public class ShaclSailConfig {
 	boolean logValidationViolations = false;
 	boolean ignoreNoShapesLoadedException = false;
 	boolean validationEnabled = true;
+	boolean cacheSelectNodes = true;
 
 	public boolean isUndefinedTargetValidatesAllSubjects() {
 		return undefinedTargetValidatesAllSubjects;
@@ -31,5 +32,9 @@ public class ShaclSailConfig {
 
 	public boolean isParallelValidation() {
 		return parallelValidation;
+	}
+
+	public boolean isCacheSelectNodes() {
+		return cacheSelectNodes;
 	}
 }

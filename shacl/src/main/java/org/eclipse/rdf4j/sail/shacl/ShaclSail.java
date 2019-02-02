@@ -381,11 +381,32 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Run SHACL validation in parallel.
+	 *
 	 * Default: true
 	 * @param parallelValidation default true
 	 */
 	public void setParallelValidation(boolean parallelValidation) {
 		config.parallelValidation = parallelValidation;
+	}
+
+
+
+	public boolean isCacheSelectNodes() {
+		return config.cacheSelectNodes;
+	}
+
+
+	/**
+	 * The ShaclSail retries a lot of its relevant data through running SPARQL Select
+	 * queries against the underlying sail and against the changes in the transaction.
+	 * This is usually good for performance, but while validating large amounts of data
+	 * disabling this cache will use less memory.
+	 *
+	 * Default: true
+	 * @param cacheSelectNodes default true
+	 */
+	public void setCacheSelectNodes(boolean cacheSelectNodes) {
+		config.cacheSelectNodes = cacheSelectNodes;
 	}
 }
 
