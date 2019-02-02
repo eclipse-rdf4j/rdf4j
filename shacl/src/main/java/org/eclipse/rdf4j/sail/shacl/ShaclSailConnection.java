@@ -217,11 +217,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		isShapeRefreshNeeded = false;
 	}
 
-	private void refreshShapes(SailRepositoryConnection shapesRepoConnection) {
+	private List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) {
+		List<NodeShape> nodeShapes = sail.getNodeShapes();
 		if (isShapeRefreshNeeded) {
-			this.sail.refreshShapes(shapesRepoConnection);
+			 nodeShapes = sail.refreshShapes(shapesRepoConnection);
 			isShapeRefreshNeeded = false;
 		}
+
+		return nodeShapes;
 	}
 
 	private List<Tuple> validate() {
@@ -313,11 +316,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		previousStateConnection.prepare();
 
 
-		refreshShapes(shapesConnection);
+		List<NodeShape> nodeShapes = refreshShapes(shapesConnection);
 
 		if (!sail.isIgnoreNoShapesLoadedException()
 			&& ((!addedStatementsSet.isEmpty() || !removedStatementsSet.isEmpty())
-			&& sail.getNodeShapes().isEmpty())) {
+			&& nodeShapes.isEmpty())) {
 			throw new NoShapesLoadedException();
 		}
 

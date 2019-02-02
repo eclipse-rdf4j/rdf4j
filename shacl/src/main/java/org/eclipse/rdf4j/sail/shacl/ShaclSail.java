@@ -244,7 +244,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
-	synchronized void refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
+	synchronized List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
 		try (SailRepositoryConnection beforeCommitConnection = shapesRepo.getConnection()) {
 			long size = beforeCommitConnection.size();
 			if (size > 0) {
@@ -257,6 +257,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		runInferencingSparqlQueries(shapesRepoConnection);
 		nodeShapes = NodeShape.Factory.getShapes(shapesRepoConnection, this.config);
+		return nodeShapes;
 	}
 
 	@Override
