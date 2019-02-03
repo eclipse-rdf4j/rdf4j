@@ -31,11 +31,11 @@ public class InnerJoin implements PlanNode, ParentProvider {
 	static private final Logger logger = LoggerFactory.getLogger(InnerJoin.class);
 
 
-	PlanNode left;
-	PlanNode right;
+	private PlanNode left;
+	private PlanNode right;
 
-	PushBasedPlanNode discardedLeft;
-	PushBasedPlanNode discardedRight;
+	private PushBasedPlanNode discardedLeft;
+	private PushBasedPlanNode discardedRight;
 
 	public InnerJoin(PlanNode left, PlanNode right, PushBasedPlanNode discardedLeft, PushBasedPlanNode discardedRight) {
 		this.left = left;

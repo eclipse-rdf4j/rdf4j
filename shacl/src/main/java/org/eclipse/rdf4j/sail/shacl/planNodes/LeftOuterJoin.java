@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public class LeftOuterJoin implements PlanNode {
 
-	PlanNode left;
-	PlanNode right;
+	private PlanNode left;
+	private PlanNode right;
 
 	public LeftOuterJoin(PlanNode left, PlanNode right) {
 		this.left = left;

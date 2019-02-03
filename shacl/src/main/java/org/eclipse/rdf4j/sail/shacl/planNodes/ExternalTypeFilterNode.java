@@ -23,8 +23,8 @@ import java.util.Arrays;
  */
 public class ExternalTypeFilterNode implements PlanNode {
 
-	NotifyingSailConnection shaclSailConnection;
-	Resource filterOnType;
+	private NotifyingSailConnection shaclSailConnection;
+	private Resource filterOnType;
 	PlanNode parent;
 
 	public ExternalTypeFilterNode(NotifyingSailConnection shaclSailConnection, Resource filterOnType, PlanNode parent) {

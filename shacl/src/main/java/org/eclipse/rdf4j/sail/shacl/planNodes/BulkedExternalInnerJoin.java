@@ -54,11 +54,11 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 
 	private IRI predicate;
-	NotifyingSailConnection baseSailConnection;
-	PlanNode leftNode;
-	Repository repository;
-	String query;
-	ParsedQuery parsedQuery;
+	private NotifyingSailConnection baseSailConnection;
+	private PlanNode leftNode;
+	private Repository repository;
+	private String query;
+	private ParsedQuery parsedQuery;
 
 
 	public BulkedExternalInnerJoin(PlanNode leftNode, Repository repository, String query) {

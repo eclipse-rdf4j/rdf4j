@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
  */
 public class UnionNode implements PlanNode {
 
-	PlanNode[] nodes;
+	private PlanNode[] nodes;
 
 
 	public UnionNode(PlanNode... nodes) {

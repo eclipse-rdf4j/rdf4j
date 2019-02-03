@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.sail.SailException;
 public class TrimTuple implements PlanNode {
 
 	PlanNode parent;
-	int newLength;
+	private int newLength;
 
 	public TrimTuple(PlanNode parent, int newLength) {
 		this.parent = parent;
