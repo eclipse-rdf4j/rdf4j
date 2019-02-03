@@ -43,7 +43,7 @@ public class SparqlBuilderUtils {
 			sufOpt.ifPresent(builder::append);
 		});
 	}
-	
+
 	public static String getBracedString(String contents) {
 		return getEnclosedString("{", "}", contents);
 	}

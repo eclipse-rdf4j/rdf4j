@@ -9,6 +9,10 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
 import org.junit.Test;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.vocabulary.DC;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Assignment;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
@@ -34,6 +38,19 @@ public class Section2Test extends BaseExamples {
 
 		p();
 	}
+	
+	@Test
+	public void example_2_1_model() {
+		Variable title = SparqlBuilder.var("title");
+		String ex = EXAMPLE_ORG_BOOK_NS;
+		IRI book1 = VF.createIRI(ex, "book1");
+		
+		TriplePattern book1_has_title = GraphPatterns.tp(book1, DC.TITLE, title);
+
+		query.select(title).where(book1_has_title);
+
+		p();
+	}
 
 	@Test
 	public void example_2_2() {
@@ -53,6 +70,24 @@ public class Section2Test extends BaseExamples {
 		p();
 	}
 
+	@Test
+	public void example_2_2_model() {
+		Prefix foaf = SparqlBuilder.prefix(FOAF.NS);
+
+		/**
+		 * As a shortcut, Query objects can create variables that will be unique to the
+		 * query instance.
+		 */
+		Variable name = query.var(), mbox = query.var(), x = query.var();
+
+		TriplePattern x_hasFoafName_name = GraphPatterns.tp(x, FOAF.NAME, name);
+		TriplePattern x_hasFoafMbox_mbox = GraphPatterns.tp(x, FOAF.MBOX, mbox);
+
+		query.prefix(foaf).select(name, mbox).where(x_hasFoafName_name, x_hasFoafMbox_mbox);
+
+		p();
+	}
+	
 	@Test
 	public void example_2_3_1() {
 		Variable v = query.var(), p = query.var();
@@ -86,6 +121,20 @@ public class Section2Test extends BaseExamples {
 
 		query.select(v).where(v_hasP_abc_dt);
 		p();
+	}
+	
+	@Test
+	public void example_2_3_3_model() {
+		String datatype = "specialDatatype";
+		Variable v = query.var(), p = query.var();
+		
+		Literal lit = VF.createLiteral("abc", VF.createIRI(EXAMPLE_DATATYPE_NS, datatype));
+		
+		TriplePattern v_hasP_abc_dt = GraphPatterns.tp(v, p, lit);
+
+		query.select(v).where(v_hasP_abc_dt);
+		p();
+		
 	}
 	
 	@Test
