@@ -136,8 +136,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			if(!preparedHasRun) {
 				prepare();
 			}
-			super.commit();
 			previousStateConnection.commit();
+			super.commit();
 			shapesConnection.commit();
 			cleanup();
 
@@ -198,7 +198,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	@Override
 	public void rollback() throws SailException {
 		synchronized (sail) {
-			previousStateConnection.commit();
+			previousStateConnection.rollback();
 			shapesConnection.rollback();
 			super.rollback();
 			cleanup();

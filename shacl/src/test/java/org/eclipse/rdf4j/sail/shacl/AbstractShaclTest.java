@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.Model;
@@ -73,15 +74,17 @@ abstract public class AbstractShaclTest {
 	final String testCasePath;
 	final String path;
 	final ExpectedResult expectedResult;
+	final IsolationLevel isolationLevel;
 
-	public AbstractShaclTest(String testCasePath, String path, ExpectedResult expectedResult) {
+	public AbstractShaclTest(String testCasePath, String path, ExpectedResult expectedResult, IsolationLevel isolationLevel) {
 		this.testCasePath = testCasePath;
 		this.path = path;
 		this.expectedResult = expectedResult;
 		LoggingNode.loggingEnabled = true;
+		this.isolationLevel = isolationLevel;
 	}
 
-	@Parameterized.Parameters(name = "{2} - {1}")
+	@Parameterized.Parameters(name = "{2} - {1} - {3}")
 	public static Collection<Object[]> data() {
 
 		return getTestsToRun();
@@ -116,8 +119,10 @@ abstract public class AbstractShaclTest {
 		for (String testCasePath : testCasePaths) {
 			for (ExpectedResult baseCase : ExpectedResult.values()) {
 				findTestCases(testCasePath, baseCase.name()).forEach(path -> {
-					Object[] temp = { testCasePath, path, baseCase };
-					ret.add(temp);
+					for(IsolationLevel isolationLevel : Arrays.asList(IsolationLevels.NONE, IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE)){
+						Object[] temp = { testCasePath, path, baseCase, isolationLevel };
+						ret.add(temp);
+					}
 
 				});
 			}
@@ -126,7 +131,7 @@ abstract public class AbstractShaclTest {
 		return ret;
 	}
 
-	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult) throws Exception {
+	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult, IsolationLevel isolationLevel) throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -159,11 +164,14 @@ abstract public class AbstractShaclTest {
 				System.out.println(name);
 
 				try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-					connection.begin(IsolationLevels.SNAPSHOT);
+					connection.begin(isolationLevel);
 					String query = IOUtil.readString(resourceAsStream);
 					connection.prepareUpdate(query).execute();
 					connection.commit();
 				} catch (RepositoryException sailException) {
+					if(!(sailException.getCause() instanceof ShaclSailValidationException)){
+						throw sailException;
+					}
 					exception = true;
 					System.out.println(sailException.getMessage());
 
@@ -192,7 +200,7 @@ abstract public class AbstractShaclTest {
 
 	}
 
-	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult)
+	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult, IsolationLevel isolationLevel)
 		throws Exception
 	{
 
@@ -213,7 +221,7 @@ abstract public class AbstractShaclTest {
 		boolean ran = false;
 
 		try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
-			shaclSailConnection.begin(IsolationLevels.SNAPSHOT);
+			shaclSailConnection.begin(isolationLevel);
 
 			for (int j = 0; j < 100; j++) {
 
