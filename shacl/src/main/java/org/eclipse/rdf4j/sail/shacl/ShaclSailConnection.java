@@ -28,17 +28,20 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -68,6 +71,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private boolean preparedHasRun = false;
 
 	private SailRepositoryConnection shapesConnection;
+
+	// used to cache Select plan nodes so that we don't query a store for the same data during the same validation step.
+	private Map<Select, BufferedSplitter> selectNodeCache;
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
 						NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesConnection)
@@ -215,6 +221,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		stats = null;
 		preparedHasRun = false;
 		isShapeRefreshNeeded = false;
+		selectNodeCache = null;
 	}
 
 	private List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) {
@@ -235,41 +242,49 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		fillAddedAndRemovedStatementRepositories();
 
-		List<Tuple> ret = new ArrayList<>();
+		Stream<PlanNode> planNodeStream = sail
+			.getNodeShapes()
+			.stream()
+			.flatMap(nodeShape -> nodeShape.generatePlans(this, nodeShape, sail.config.logValidationPlans).stream());
+		if(sail.config.isParallelValidation()){
+			planNodeStream = planNodeStream.parallel();
+		}
 
-		for (NodeShape nodeShape : sail.getNodeShapes()) {
-			List<PlanNode> planNodes = nodeShape.generatePlans(this, nodeShape, sail.config.logValidationPlans);
-			for (PlanNode planNode : planNodes) {
+		return planNodeStream
+			.flatMap(planNode -> {
 				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
 					if(LoggingNode.loggingEnabled){
 						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-						logger.info("Start execution of plan "+nodeShape.toString()+" : "+propertyShape.getId());
+						logger.info("Start execution of plan "+propertyShape.getNodeShape().toString()+" : "+propertyShape.getId());
 					}
+
 					List<Tuple> collect = stream.collect(Collectors.toList());
 
 					if(LoggingNode.loggingEnabled){
 						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-						logger.info("Finished execution of plan "+nodeShape.toString()+" : "+propertyShape.getId());
+						logger.info("Finished execution of plan "+propertyShape.getNodeShape().toString()+" : "+propertyShape.getId());
 					}
-					ret.addAll(collect);
-
-
 
 					boolean valid = collect.size() == 0;
+
 					if (!valid && sail.config.logValidationViolations) {
+						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+
 						logger.info(
-							"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {} \n\t\t{}",
-							nodeShape.toString(),
+							"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
+							propertyShape.getNodeShape().getId() ,
+							propertyShape.getId() ,
 							collect
 								.stream()
 								.map(a -> a.toString() + " -cause-> " + a.getCause())
 								.collect(Collectors.joining("\n\t\t")));
 					}
-				}
-			}
-		}
 
-		return ret;
+					return collect.stream();
+				}
+			})
+			.collect(Collectors.toList());
+
 	}
 
 	void fillAddedAndRemovedStatementRepositories() {
@@ -297,6 +312,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				.forEach(connection::add);
 			connection.commit();
 		}
+
+		selectNodeCache = new HashMap<>();
+
 	}
 
 	@Override
@@ -356,6 +374,18 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		if (!add) {
 			addedStatementsSet.remove(statement);
 		}
+	}
+
+
+	synchronized public PlanNode getCachedNodeFor(Select select) {
+
+		if(!sail.config.isCacheSelectNodes()){
+			return select;
+		}
+
+		BufferedSplitter bufferedSplitter = selectNodeCache.computeIfAbsent(select, BufferedSplitter::new);
+
+		return bufferedSplitter.getPlanNode();
 	}
 
 	public class Stats {

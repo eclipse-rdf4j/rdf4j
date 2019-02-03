@@ -30,13 +30,13 @@ public class BufferedSplitter {
 	PlanNode parent;
 	private List<Tuple> tuplesBuffer;
 	private BufferedSplitter that = this;
-	boolean printed = false;
+	private boolean printed = false;
 
 	public BufferedSplitter(PlanNode planNode) {
 		parent = planNode;
 	}
 
-	private void initialize() {
+	synchronized private void initialize() {
 		if (tuplesBuffer == null) {
 			tuplesBuffer = new ArrayList<>();
 			try (CloseableIteration<Tuple, SailException> iterator = parent.iterator()) {
@@ -75,7 +75,7 @@ public class BufferedSplitter {
 
 					@Override
 					public Tuple next() throws SailException {
-						return iterator.next();
+						return new Tuple(iterator.next());
 					}
 
 					@Override

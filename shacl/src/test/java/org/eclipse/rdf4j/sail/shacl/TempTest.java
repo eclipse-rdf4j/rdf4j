@@ -335,6 +335,7 @@ public class TempTest {
 		shaclSail.setLogValidationPlans(false);
 		shaclSail.setGlobalLogValidationExecution(false);
 		shaclSail.setLogValidationViolations(false);
+		shaclSail.setParallelValidation(false);
 
 
 		SailRepository sailRepository = new SailRepository(shaclSail);
