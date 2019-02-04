@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -41,10 +40,10 @@ import java.util.stream.Stream;
 
 /**
  * @author Håvard Ottestad
- *
+ * <p>
  * This inner join algorithm assumes the left iterator is unique for tuple[0], eg. no two tuples have the same value at index 0.
  * The right iterator is allowed to contain duplicates.
- *
+ * <p>
  * External means that this plan node can join the iterator from a plan node with an external
  * source (Repository or NotifyingSailConnection) based on a query or a predicate.
  */
@@ -54,11 +53,11 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 
 	private IRI predicate;
-	NotifyingSailConnection baseSailConnection;
-	PlanNode leftNode;
-	Repository repository;
-	String query;
-	ParsedQuery parsedQuery;
+	private NotifyingSailConnection baseSailConnection;
+	private PlanNode leftNode;
+	private Repository repository;
+	private String query;
+	private ParsedQuery parsedQuery;
 
 
 	public BulkedExternalInnerJoin(PlanNode leftNode, Repository repository, String query) {
@@ -113,7 +112,6 @@ public class BulkedExternalInnerJoin implements PlanNode {
 				}
 
 
-
 				if (!left.isEmpty()) {
 					return;
 				}
@@ -129,7 +127,6 @@ public class BulkedExternalInnerJoin implements PlanNode {
 				}
 
 				if (query != null) {
-
 
 
 					if (repository != null) {
@@ -154,7 +151,7 @@ public class BulkedExternalInnerJoin implements PlanNode {
 //						parsedQuery = queryParserFactory.getParser().parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
 
 						try {
-							parsedQuery.getTupleExpr().visitChildren(new AbstractQueryModelVisitor<Exception>(){
+							parsedQuery.getTupleExpr().visitChildren(new AbstractQueryModelVisitor<Exception>() {
 								@Override
 								public void meet(BindingSetAssignment node) throws Exception {
 
@@ -213,11 +210,13 @@ public class BulkedExternalInnerJoin implements PlanNode {
 			public Tuple next() throws SailException {
 				calculateNext();
 
-				if (!left.isEmpty()) {
+
+				Tuple joined = null;
+
+				while (joined == null) {
 
 					Tuple leftPeek = left.peekLast();
 
-					Tuple joined = null;
 
 					if (!right.isEmpty()) {
 						Tuple rightPeek = right.peekLast();
@@ -234,22 +233,33 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 								left.removeLast();
 							}
+						} else {
+							int compare = rightPeek.line.get(0).stringValue().compareTo(leftPeek.line.get(0).stringValue());
 
+							if (compare < 0) {
+								if (right.isEmpty()) {
+									throw new IllegalStateException();
+								}
 
+								right.removeLast();
+								System.out.println();
+
+							} else {
+								if (left.isEmpty()) {
+									throw new IllegalStateException();
+								}
+								left.removeLast();
+								System.out.println();
+
+							}
 						}
 
 					}
-
-
-					if (joined != null) {
-						return joined;
-					}
-
-
 				}
 
+				return joined;
 
-				return null;
+
 			}
 
 			@Override
@@ -267,12 +277,12 @@ public class BulkedExternalInnerJoin implements PlanNode {
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
-		stringBuilder.append(leftNode.getId()+" -> "+getId()+ " [label=\"left\"]").append("\n");
-		if(repository != null){
-			stringBuilder.append( System.identityHashCode(repository)+" -> "+getId()+ " [label=\"right\"]").append("\n");
+		stringBuilder.append(leftNode.getId() + " -> " + getId() + " [label=\"left\"]").append("\n");
+		if (repository != null) {
+			stringBuilder.append(System.identityHashCode(repository) + " -> " + getId() + " [label=\"right\"]").append("\n");
 		}
-		if(baseSailConnection != null){
-			stringBuilder.append( System.identityHashCode(baseSailConnection)+" -> "+getId()+ " [label=\"right\"]").append("\n");
+		if (baseSailConnection != null) {
+			stringBuilder.append(System.identityHashCode(baseSailConnection) + " -> " + getId() + " [label=\"right\"]").append("\n");
 		}
 
 		leftNode.getPlanAsGraphvizDot(stringBuilder);
@@ -288,7 +298,7 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 	@Override
 	public String getId() {
-		return System.identityHashCode(this)+"";
+		return System.identityHashCode(this) + "";
 	}
 
 	@Override

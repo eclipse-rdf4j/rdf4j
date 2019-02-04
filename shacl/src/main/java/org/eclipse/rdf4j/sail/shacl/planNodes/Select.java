@@ -30,10 +30,10 @@ import java.util.Objects;
  */
 public class Select implements PlanNode {
 
-	final Repository repository;
-	ShaclSailConnection connection;
+	private final Repository repository;
+	private ShaclSailConnection connection;
 
-	String query;
+	private String query;
 
 	public Select(Repository repository, String query) {
 		this.repository = repository;

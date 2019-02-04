@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.IRI;
@@ -47,19 +48,18 @@ import static org.junit.Assert.assertFalse;
 public class ShaclTest extends AbstractShaclTest{
 
 
-	public ShaclTest(String testCasePath, String path, AbstractShaclTest.ExpectedResult expectedResult) {
-		super(testCasePath, path, expectedResult);
+	public ShaclTest(String testCasePath, String path, ExpectedResult expectedResult, IsolationLevel isolationLevel) {
+		super(testCasePath, path, expectedResult, isolationLevel);
 	}
-
 
 	@Test
 	public void test() throws Exception {
-		runTestCase(testCasePath, path, expectedResult);
+		runTestCase(testCasePath, path, expectedResult, isolationLevel);
 	}
 
 	@Test
 	public void testSingleTransaction() throws Exception {
-		runTestCaseSingleTransaction(testCasePath, path, expectedResult);
+		runTestCaseSingleTransaction(testCasePath, path, expectedResult, isolationLevel);
 	}
 
 }

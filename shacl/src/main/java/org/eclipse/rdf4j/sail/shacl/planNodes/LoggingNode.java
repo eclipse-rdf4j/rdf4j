@@ -27,7 +27,6 @@ public class LoggingNode implements PlanNode {
 
 	static private final Logger logger = LoggerFactory.getLogger(LoggingNode.class);
 
-
 	PlanNode parent;
 
 	private boolean pullAll = true;
