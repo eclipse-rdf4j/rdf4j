@@ -36,91 +36,99 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
  * <p>
  * The ShaclSail looks for SHACL shape data in a special named graph {@link RDF4J#SHACL_SHAPE_GRAPH}.
  * <h4>Working example</h4>
- *
+ * <p>
  * <pre>
- * import ch.qos.logback.classic.Level;
- * import ch.qos.logback.classic.Logger;
- * import org.eclipse.rdf4j.model.Model;
- * import org.eclipse.rdf4j.model.vocabulary.RDF4J;
- * import org.eclipse.rdf4j.repository.RepositoryException;
- * import org.eclipse.rdf4j.repository.sail.SailRepository;
- * import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
- * import org.eclipse.rdf4j.rio.RDFFormat;
- * import org.eclipse.rdf4j.rio.Rio;
- * import org.eclipse.rdf4j.sail.memory.MemoryStore;
- * import org.eclipse.rdf4j.sail.shacl.ShaclSail;
- * import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
- * import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
- * import org.slf4j.LoggerFactory;
+ *import ch.qos.logback.classic.Level;
+ *import ch.qos.logback.classic.Logger;
+ *import org.eclipse.rdf4j.model.Model;
+ *import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+ *import org.eclipse.rdf4j.repository.RepositoryException;
+ *import org.eclipse.rdf4j.repository.sail.SailRepository;
+ *import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+ *import org.eclipse.rdf4j.rio.RDFFormat;
+ *import org.eclipse.rdf4j.rio.Rio;
+ *import org.eclipse.rdf4j.sail.memory.MemoryStore;
+ *import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+ *import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
+ *import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+ *import org.slf4j.LoggerFactory;
  *
- * import java.io.IOException;
- * import java.io.StringReader;
+ *import java.io.IOException;
+ *import java.io.StringReader;
  *
- * public class ShaclSampleCode {
+ *public class ShaclSampleCode {
  *
- * 	public static void main(String[] args) throws IOException {
+ *	public static void main(String[] args) throws IOException {
  *
- * 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+ *		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
  *
- * 		//Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
- * 		//root.setLevel(Level.INFO);
+ *		//Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
+ *		//root.setLevel(Level.INFO);
  *
- * 		//shaclSail.setLogValidationPlans(true);
- * 		//shaclSail.setGlobalLogValidationExecution(true);
- * 		//shaclSail.setLogValidationViolations(true);
+ *		//shaclSail.setLogValidationPlans(true);
+ *		//shaclSail.setGlobalLogValidationExecution(true);
+ *		//shaclSail.setLogValidationViolations(true);
  *
- * 		SailRepository sailRepository = new SailRepository(shaclSail);
- * 		sailRepository.init();
+ *		SailRepository sailRepository = new SailRepository(shaclSail);
+ *		sailRepository.init();
  *
- * 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+ *		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
  *
- * 			connection.begin();
+ *			connection.begin();
  *
- * 			StringReader shaclRules = new StringReader(
- * 					String.join(&quot;\n&quot;, &quot;&quot;, &quot;@prefix ex: &lt;http://example.com/ns#&gt; .&quot;,
- * 							&quot;@prefix sh: &lt;http://www.w3.org/ns/shacl#&gt; .&quot;,
- * 							&quot;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&quot;,
- * 							&quot;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&quot;,
+ *			StringReader shaclRules = new StringReader(
+ *				String.join(&quot;\n&quot;, &quot;&quot;,
+ *					&quot;@prefix ex: &lt;http://example.com/ns#&gt; .&quot;,
+ *					&quot;@prefix sh: &lt;http://www.w3.org/ns/shacl#&gt; .&quot;,
+ *					&quot;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&quot;,
+ *					&quot;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&quot;,
  *
- * 							&quot;ex:PersonShape&quot;, &quot;	a sh:NodeShape  ;&quot;, &quot;	sh:targetClass foaf:Person ;&quot;,
- * 							&quot;	sh:property ex:PersonShapeProperty .&quot;,
+ *					&quot;ex:PersonShape&quot;,
+ *					&quot;	a sh:NodeShape  ;&quot;,
+ *					&quot;	sh:targetClass foaf:Person ;&quot;,
+ *					&quot;	sh:property ex:PersonShapeProperty .&quot;,
  *
- * 							&quot;ex:PersonShapeProperty &quot;, &quot;	sh:path foaf:age ;&quot;, &quot;	sh:datatype xsd:int ;&quot;,
- * 							&quot;	sh:maxCount 1 ;&quot;, &quot;	sh:minCount 1 .&quot;));
+ *					&quot;ex:PersonShapeProperty &quot;,
+ *					&quot;	sh:path foaf:age ;&quot;,
+ *					&quot;	sh:datatype xsd:int ;&quot;,
+ *					&quot;	sh:maxCount 1 ;&quot;,
+ *					&quot;	sh:minCount 1 .&quot;
+ *				));
  *
- * 			connection.add(shaclRules, &quot;&quot;, RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
- * 			connection.commit();
+ *			connection.add(shaclRules, &quot;&quot;, RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+ *			connection.commit();
  *
- * 			connection.begin();
+ *			connection.begin();
  *
- * 			StringReader invalidSampleData = new StringReader(
- * 					String.join(&quot;\n&quot;, &quot;&quot;, &quot;@prefix ex: &lt;http://example.com/ns#&gt; .&quot;,
- * 							&quot;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&quot;,
- * 							&quot;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&quot;,
+ *			StringReader invalidSampleData = new StringReader(
+ *				String.join(&quot;\n&quot;, &quot;&quot;,
+ *					&quot;@prefix ex: &lt;http://example.com/ns#&gt; .&quot;,
+ *					&quot;@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt;.&quot;,
+ *					&quot;@prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt; .&quot;,
  *
- * 							&quot;ex:peter a foaf:Person ;&quot;, &quot;	foaf:age 20, \&quot;30\&quot;^^xsd:int  .&quot;
+ *					&quot;ex:peter a foaf:Person ;&quot;,
+ *					&quot;	foaf:age 20, \&quot;30\&quot;^^xsd:int  .&quot;
  *
- * 					));
+ *				));
  *
- * 			connection.add(invalidSampleData, &quot;&quot;, RDFFormat.TURTLE);
- * 			try {
- * 				connection.commit();
- * 			}
- * 			catch (RepositoryException exception) {
- * 				Throwable cause = exception.getCause();
- * 				if (cause instanceof ShaclSailValidationException) {
- * 					ValidationReport validationReport = ((ShaclSailValidationException)cause).getValidationReport();
- * 					Model validationReportModel = ((ShaclSailValidationException)cause).validationReportAsModel();
- * 					// use validationReport or validationReportModel to understand validation violations
+ *			connection.add(invalidSampleData, &quot;&quot;, RDFFormat.TURTLE);
+ *			try {
+ *				connection.commit();
+ *			} catch (RepositoryException exception) {
+ *				Throwable cause = exception.getCause();
+ *				if (cause instanceof ShaclSailValidationException) {
+ *					ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
+ *					Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
+ *					// use validationReport or validationReportModel to understand validation violations
  *
- * 					Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
- * 				}
- * 				throw exception;
- * 			}
- * 		}
- * 	}
- * }
- * </pre>
+ *					Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
+ *				}
+ *				throw exception;
+ *			}
+ *		}
+ *	}
+ *}
+ *</pre>
  *
  * @author Heshan Jayasinghe
  * @author Håvard Ottestad
@@ -346,8 +354,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Log (INFO) every execution step of the SHACL validation This is fairly costly and should not be used in
-	 * production. Recommended to disable parallel validation with setParallelValidation(false)
+	 * Log (INFO) every execution step of the SHACL validation. This is fairly costly and should not be used
+	 * in production. Recommended to disable parallel validation with setParallelValidation(false)
 	 * 
 	 * @param loggingEnabled
 	 */
@@ -377,7 +385,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Log (INFO) a list of violations and the triples that caused the violations (BETA) Recommended to
+	 * Log (INFO) a list of violations and the triples that caused the violations (BETA). Recommended to
 	 * disable parallel validation with setParallelValidation(false)
 	 * 
 	 * @param logValidationViolations
@@ -399,7 +407,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Check if {@link NodeShape}s without a defined target are considered wildcards. 
+	 * Check if {@link NodeShape}s without a defined target are considered wildcards.
+	 * 
 	 * @return <code>true</code> if enabled, <code>false</code> otherwise
 	 * @see #setUndefinedTargetValidatesAllSubjects(boolean)
 	 */
@@ -408,8 +417,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Check if SHACL validation is run in parellel. 
-	 * @return <code>true</code> if enabled, <code>false</code> otherwise. 
+	 * Check if SHACL validation is run in parellel.
+	 * 
+	 * @return <code>true</code> if enabled, <code>false</code> otherwise.
 	 */
 	public boolean isParallelValidation() {
 		return this.parallelValidation;
@@ -427,6 +437,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Check if selected nodes caches is enabled.
+	 * 
 	 * @return <code>true</code> if enabled, <code>false</code> otherwise.
 	 * @see #setCacheSelectNodes(boolean)
 	 */
