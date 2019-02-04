@@ -30,6 +30,16 @@ import org.slf4j.LoggerFactory;
  * @author James Leigh
  */
 public class SharedHttpClientSessionManager implements HttpClientSessionManager, HttpClientDependent {
+	/**
+	 * FIXME: issue #1271, workaround for OpenJDK 8 bug.
+	 * ScheduledThreadPoolExecutor with 0 core threads may cause 100% CPU usage.
+	 * Using 1 core thread instead of 0 (default) fixes the problem but wastes some resources.
+	 * 
+	 * @see <a href="https://bugs.openjdk.java.net/browse/JDK-8129861">JDK-8129861</a>
+	 */
+	private static final int cores = 
+			(System.getProperty("org.eclipse.rdf4j.client.executors.jdkbug") != null) ? 1 : 0;
+	/**/
 
 	private static final AtomicLong threadCount = new AtomicLong();
 
@@ -56,7 +66,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	public SharedHttpClientSessionManager() {
 		final ThreadFactory backingThreadFactory = Executors.defaultThreadFactory();
-		this.executor = Executors.newScheduledThreadPool(0, new ThreadFactory() {
+		this.executor = Executors.newScheduledThreadPool(cores, new ThreadFactory() {
 
 			public Thread newThread(Runnable runnable) {
 				Thread thread = backingThreadFactory.newThread(runnable);
