@@ -33,21 +33,37 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail;
  */
 public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 
-	private boolean parallelValidation = true;
+	public static final boolean PARALLEL_VALIDATION_DEFAULT = true;
 
-	private boolean undefinedTargetValidatesAllSubjects = false;
+	public static final boolean UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT = false;
 
-	private boolean logValidationPlans = false;
+	public static final boolean LOG_VALIDATION_PLANS_DEFAULT = false;
 
-	private boolean logValidationViolations = false;
+	public static final boolean LOG_VALIDATION_VIOLATIONS_DEFAULT = false;
 
-	private boolean ignoreNoShapesLoadedException = false;
+	public static final boolean IGNORE_NO_SHAPES_LOADED_EXCEPTION_DEFAULT = false;
 
-	private boolean validationEnabled = true;
+	public static final boolean VALIDATION_ENABLED_DEFAULT = true;
 
-	private boolean cacheSelectNodes = true;
+	public static final boolean CACHE_SELECT_NODES_DEFAULT = true;
 
-	private boolean globalLogValidationExecution = false;
+	public static final boolean GLOBAL_LOG_VALIDATION_EXECUTION_DEFAULT = false;
+
+	private boolean parallelValidation = PARALLEL_VALIDATION_DEFAULT;
+
+	private boolean undefinedTargetValidatesAllSubjects = UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
+
+	private boolean logValidationPlans = LOG_VALIDATION_PLANS_DEFAULT;
+
+	private boolean logValidationViolations = LOG_VALIDATION_VIOLATIONS_DEFAULT;
+
+	private boolean ignoreNoShapesLoadedException = IGNORE_NO_SHAPES_LOADED_EXCEPTION_DEFAULT;
+
+	private boolean validationEnabled = VALIDATION_ENABLED_DEFAULT;
+
+	private boolean cacheSelectNodes = CACHE_SELECT_NODES_DEFAULT;
+
+	private boolean globalLogValidationExecution = GLOBAL_LOG_VALIDATION_EXECUTION_DEFAULT;
 
 	public ShaclSailConfig() {
 		super(ShaclSailFactory.SAIL_TYPE);

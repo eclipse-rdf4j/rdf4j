@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
+import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 
 /**
@@ -151,19 +152,19 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 */
 	private SailRepository shapesRepo;
 
-	private boolean cacheSelectNodes;
+	private boolean parallelValidation = ShaclSailConfig.PARALLEL_VALIDATION_DEFAULT;
 
-	private boolean parallelValidation;
+	private boolean undefinedTargetValidatesAllSubjects = ShaclSailConfig.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
 
-	private boolean undefinedTargetValidatesAllSubjects;
+	private boolean logValidationPlans = ShaclSailConfig.LOG_VALIDATION_PLANS_DEFAULT;
 
-	private boolean logValidationViolations;
+	private boolean logValidationViolations = ShaclSailConfig.LOG_VALIDATION_VIOLATIONS_DEFAULT;
 
-	private boolean logValidationPlans;
+	private boolean ignoreNoShapesLoadedException = ShaclSailConfig.IGNORE_NO_SHAPES_LOADED_EXCEPTION_DEFAULT;
 
-	private boolean validationEnabled;
+	private boolean validationEnabled = ShaclSailConfig.VALIDATION_ENABLED_DEFAULT;
 
-	private boolean ignoreNoShapesLoadedException;
+	private boolean cacheSelectNodes = ShaclSailConfig.CACHE_SELECT_NODES_DEFAULT;
 
 	static {
 		try {
