@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-client-parent</artifactId>
-		<version>2.3.2</version>
+		<version>2.3.3-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>rdf4j-repository</artifactId>
