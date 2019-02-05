@@ -242,14 +242,12 @@ public class BulkedExternalInnerJoin implements PlanNode {
 								}
 
 								right.removeLast();
-								System.out.println();
 
 							} else {
 								if (left.isEmpty()) {
 									throw new IllegalStateException();
 								}
 								left.removeLast();
-								System.out.println();
 
 							}
 						}
