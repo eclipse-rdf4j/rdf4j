@@ -43,7 +43,29 @@ public class ShaclSailFactory implements SailFactory {
 			throw new SailConfigException("Invalid Sail type: " + config.getType());
 		}
 
-		return new ShaclSail();
+		ShaclSail sail = new ShaclSail();
+
+		if (config instanceof ShaclSailConfig) {
+			ShaclSailConfig shaclSailConfig = (ShaclSailConfig)config;
+
+			if (shaclSailConfig.isValidationEnabled()) {
+				sail.enableValidation();
+			}
+			else {
+				sail.disableValidation();
+			}
+			
+			sail.setCacheSelectNodes(shaclSailConfig.isCacheSelectNodes());
+			sail.setUndefinedTargetValidatesAllSubjects(shaclSailConfig.isUndefinedTargetValidatesAllSubjects());
+			sail.setIgnoreNoShapesLoadedException(shaclSailConfig.isIgnoreNoShapesLoadedException());
+			sail.setLogValidationPlans(shaclSailConfig.isLogValidationPlans());
+			sail.setLogValidationViolations(shaclSailConfig.isLogValidationViolations());
+			sail.setParallelValidation(shaclSailConfig.isParallelValidation());
+			sail.setGlobalLogValidationExecution(shaclSailConfig.isGlobalLogValidationExecution());
+		}
+
+		return sail;
+
 	}
 
 }

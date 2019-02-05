@@ -83,7 +83,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		this.shapesConnection = shapesConnection;
 		this.sail = sail;
 
-		if (sail.config.validationEnabled) {
+		if (sail.isValidationEnabled()) {
 			addConnectionListener(this);
 		}
 	}
@@ -236,7 +236,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private List<Tuple> validate() {
 
-		if (!sail.config.validationEnabled) {
+		if (!sail.isValidationEnabled()) {
 			return Collections.emptyList();
 		}
 
@@ -245,8 +245,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		Stream<PlanNode> planNodeStream = sail
 			.getNodeShapes()
 			.stream()
-			.flatMap(nodeShape -> nodeShape.generatePlans(this, nodeShape, sail.config.logValidationPlans).stream());
-		if(sail.config.isParallelValidation()){
+			.flatMap(nodeShape -> nodeShape.generatePlans(this, nodeShape, sail.isLogValidationPlans()).stream());
+		if(sail.isParallelValidation()){
 			planNodeStream = planNodeStream.parallel();
 		}
 
@@ -267,7 +267,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 					boolean valid = collect.size() == 0;
 
-					if (!valid && sail.config.logValidationViolations) {
+					if (!valid && sail.isLogValidationViolations()) {
 						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 
 						logger.info(
@@ -379,7 +379,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	synchronized public PlanNode getCachedNodeFor(Select select) {
 
-		if(!sail.config.isCacheSelectNodes()){
+		if(!sail.isCacheSelectNodes()){
 			return select;
 		}
 
