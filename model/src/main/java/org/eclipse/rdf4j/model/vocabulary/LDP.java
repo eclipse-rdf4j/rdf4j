@@ -121,13 +121,13 @@ public class LDP {
 	public static final IRI PREFER_CONTAINMENT;
 
 	/** ldp:PreferEmptyContainer */
+	@Deprecated
 	public static final IRI PREFER_EMPTY_CONTAINER;
 
 	/** ldp:PreferMembership */
 	public static final IRI PREFER_MEMBERSHIP;
 
 	/** ldp:PreferMinimalContainer */
-	@Deprecated
 	public static final IRI PREFER_MINIMAL_CONTAINER;
 
 
