@@ -42,10 +42,10 @@ import java.util.stream.Stream;
 public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 	private IRI predicate;
-	NotifyingSailConnection baseSailConnection;
-	PlanNode leftNode;
-	Repository repository;
-	String query;
+	private NotifyingSailConnection baseSailConnection;
+	private PlanNode leftNode;
+	private Repository repository;
+	private String query;
 
 	public BulkedExternalLeftOuterJoin(PlanNode leftNode, Repository repository, String query) {
 		this.leftNode = leftNode;

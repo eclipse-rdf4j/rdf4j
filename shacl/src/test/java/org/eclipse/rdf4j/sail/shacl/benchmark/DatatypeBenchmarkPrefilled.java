@@ -90,7 +90,6 @@ public class DatatypeBenchmarkPrefilled {
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shaclDatatype.ttl");
 		this.shaclRepo = new SailRepository(shaclRepo);
-		this.shaclRepo.initialize();
 
 		memoryStoreRepo = new SailRepository(new MemoryStore());
 		memoryStoreRepo.initialize();

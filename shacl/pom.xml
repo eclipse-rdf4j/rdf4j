@@ -14,7 +14,7 @@
     <artifactId>rdf4j-shacl</artifactId>
 
     <name>RDF4J: SHACL</name>
-    <description></description>
+    <description>Stacked Sail with SHACL validation capabilities</description>
 
     <dependencies>
         <dependency>
@@ -41,6 +41,12 @@
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <scope>test</scope>
+        </dependency>
+        
+        <dependency>
+        	<groupId>org.assertj</groupId>
+        	<artifactId>assertj-core</artifactId>
+        	<scope>test</scope>
         </dependency>
 
         <dependency>

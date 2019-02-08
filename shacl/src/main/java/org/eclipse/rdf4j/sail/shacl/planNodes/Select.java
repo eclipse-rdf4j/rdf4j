@@ -23,15 +23,17 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
+import java.util.Objects;
+
 /**
  * @author Håvard Ottestad
  */
 public class Select implements PlanNode {
 
-	final Repository repository;
-	ShaclSailConnection connection;
+	private final Repository repository;
+	private ShaclSailConnection connection;
 
-	String query;
+	private String query;
 
 	public Select(Repository repository, String query) {
 		this.repository = repository;
@@ -129,5 +131,25 @@ public class Select implements PlanNode {
 		return "Select{" +
 			"query='" + query + '\'' +
 			'}';
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		Select select = (Select) o;
+		return Objects.equals(repository, select.repository) &&
+			Objects.equals(connection, select.connection) &&
+			query.equals(select.query);
+	}
+
+	@Override
+	public int hashCode() {
+
+		return Objects.hash(System.identityHashCode(repository), System.identityHashCode(connection), query);
 	}
 }

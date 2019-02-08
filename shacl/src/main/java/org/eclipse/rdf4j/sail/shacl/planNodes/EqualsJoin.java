@@ -5,9 +5,9 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
 public class EqualsJoin implements PlanNode{
-	PlanNode left;
-	PlanNode right;
-	boolean useAsFilter;
+	private PlanNode left;
+	private PlanNode right;
+	private boolean useAsFilter;
 
 	public EqualsJoin(PlanNode left, PlanNode right, boolean useAsFilter) {
 		this.left = left;

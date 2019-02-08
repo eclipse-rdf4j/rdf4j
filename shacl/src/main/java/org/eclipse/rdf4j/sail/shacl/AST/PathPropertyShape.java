@@ -37,17 +37,19 @@ public class PathPropertyShape extends PropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
-		return new Select(shaclSailConnection, path.getQuery());
+		return shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection, path.getQuery()));
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return new Select(shaclSailConnection.getAddedStatements(), path.getQuery());
+		return shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), path.getQuery()));
+
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return new Select(shaclSailConnection.getRemovedStatements(), path.getQuery());
+		return shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), path.getQuery()));
+
 	}
 
 	@Override
