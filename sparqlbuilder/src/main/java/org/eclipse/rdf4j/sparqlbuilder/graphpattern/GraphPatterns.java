@@ -8,12 +8,17 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 
 package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
 
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sparqlbuilder.core.Projectable;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.PropertiesBlankNode;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfObject;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicateObjectList;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfSubject;
-import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.PropertiesBlankNode;
 
 /**
  * A class with static methods to create graph patterns.
@@ -41,6 +46,76 @@ public class GraphPatterns {
 	 */
 	public static TriplePattern tp(RdfSubject subject, RdfPredicate predicate, RdfObject... objects) {
 		return new TriplesSameSubject(subject, predicate, objects);
+	}
+	
+	public static TriplePattern tp(RdfSubject subject, RdfPredicate predicate, Value... objects) {
+		return tp(subject, predicate, Rdf.objects(objects));
+	}
+	
+	/**
+	 * Create a triple pattern with the given subject, predicate, and object(s)
+	 * 
+	 * @param subject the triple pattern subject
+	 * @param predicate the triple pattern predicate as a {@link IRI}
+	 * @param objects the triples pattern object(s)
+	 * 
+	 * @return a new {@link TriplePattern}
+	 * 
+	 * @see <a
+	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynTriples">
+	 *      Triple pattern syntax</a>
+	 */
+	public static TriplePattern tp(RdfSubject subject, IRI predicate, RdfObject... objects) {
+		return tp(subject, Rdf.iri(predicate), objects);
+	}
+	
+	public static TriplePattern tp(RdfSubject subject, IRI predicate, Value... objects) {
+		return tp(subject, Rdf.iri(predicate), Rdf.objects(objects));
+	}
+
+	/**
+	 * Create a triple pattern with the given subject, predicate, and object(s)
+	 * 
+	 * @param subject the triple pattern subject
+	 * @param predicate the triple pattern predicate as a {@link IRI}
+	 * @param objects the triples pattern object(s)
+	 * 
+	 * @return a new {@link TriplePattern}
+	 * 
+	 * @see <a
+	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynTriples">
+	 *      Triple pattern syntax</a>
+	 */
+	public static TriplePattern tp(Resource subject, RdfPredicate predicate, RdfObject... objects) {
+		if (subject instanceof IRI) {
+			return tp(Rdf.iri((IRI)subject), predicate, objects);
+		}
+		return tp(Rdf.bNode(((BNode)subject).getID()), predicate, objects);
+	}
+
+	public static TriplePattern tp(Resource subject, RdfPredicate predicate, Value... objects) {
+		return tp(subject, predicate, Rdf.objects(objects));
+	}
+	
+	/**
+	 * Create a triple pattern with the given subject, predicate, and object(s)
+	 * 
+	 * @param subject the triple pattern subject as a {@link Resource}
+	 * @param predicate the triple pattern predicate as a {@link IRI}
+	 * @param objects the triples pattern object(s)
+	 * 
+	 * @return a new {@link TriplePattern}
+	 * 
+	 * @see <a
+	 *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynTriples">
+	 *      Triple pattern syntax</a>
+	 */
+	public static TriplePattern tp(Resource subject, IRI predicate, RdfObject... objects) {
+		return tp(subject, Rdf.iri(predicate), objects);
+	}
+	
+	public static TriplePattern tp(Resource subject, IRI predicate, Value... objects) {
+		return tp(subject, Rdf.iri(predicate), Rdf.objects(objects));
 	}
 	
 	/**
