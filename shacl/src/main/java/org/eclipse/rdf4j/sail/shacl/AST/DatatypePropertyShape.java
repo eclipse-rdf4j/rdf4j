@@ -35,12 +35,10 @@ public class DatatypePropertyShape extends PathPropertyShape {
 	private final Resource datatype;
 	private static final Logger logger = LoggerFactory.getLogger(DatatypePropertyShape.class);
 
-	DatatypePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+	DatatypePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Resource datatype) {
 		super(id, connection, nodeShape);
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.DATATYPE, null, true))) {
-			datatype = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:datatype on " + id));
-		}
+		this.datatype = datatype;
 
 	}
 

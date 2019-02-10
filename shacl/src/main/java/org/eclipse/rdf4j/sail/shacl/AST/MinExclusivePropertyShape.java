@@ -36,12 +36,10 @@ public class MinExclusivePropertyShape extends PathPropertyShape {
 	private final Literal minExclusive;
 	private static final Logger logger = LoggerFactory.getLogger(MinExclusivePropertyShape.class);
 
-	MinExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+	MinExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Literal minExclusive) {
 		super(id, connection, nodeShape);
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.MIN_EXCLUSIVE, null, true))) {
-			minExclusive = stream.map(Statement::getObject).map(v -> ((Literal) v)).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:minExclusive on " + id));
-		}
+		this.minExclusive = minExclusive;
 
 	}
 

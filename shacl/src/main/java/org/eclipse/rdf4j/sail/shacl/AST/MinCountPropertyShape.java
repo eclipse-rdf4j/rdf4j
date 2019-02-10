@@ -51,12 +51,10 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	private boolean optimizeWhenNoStatementsRemoved = true;
 
 
-	MinCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+	MinCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Long minCount) {
 		super(id, connection, nodeShape);
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.MIN_COUNT, null, true))) {
-			minCount = stream.map(Statement::getObject).map(v -> (Literal) v).map(Literal::longValue).findAny().orElseThrow(() -> new RuntimeException("Expect to find sh:minCount on " + id));
-		}
+		this.minCount = minCount;
 
 	}
 

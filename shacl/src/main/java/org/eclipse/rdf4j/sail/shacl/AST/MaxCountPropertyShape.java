@@ -13,8 +13,10 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
@@ -45,12 +47,10 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 	private long maxCount;
 
-	MaxCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+	MaxCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Long maxCount) {
 		super(id, connection, nodeShape);
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.MAX_COUNT, null, true))) {
-			maxCount = stream.map(Statement::getObject).map(v -> (Literal) v).map(Literal::longValue).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:maxCount on " + id));
-		}
+		this.maxCount = maxCount;
 
 	}
 

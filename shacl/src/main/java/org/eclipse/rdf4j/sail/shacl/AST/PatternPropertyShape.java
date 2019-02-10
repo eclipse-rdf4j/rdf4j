@@ -38,12 +38,10 @@ public class PatternPropertyShape extends PathPropertyShape {
 	private final Optional<String> flags;
 	private static final Logger logger = LoggerFactory.getLogger(PatternPropertyShape.class);
 
-	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, String pattern) {
 		super(id, connection, nodeShape);
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.PATTERN, null, true))) {
-			pattern = stream.map(Statement::getObject).map(Value::stringValue).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:pattern on " + id));
-		}
+		this.pattern = pattern;
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.FLAGS, null, true))) {
 			flags = stream.map(Statement::getObject).map(Value::stringValue).findAny();

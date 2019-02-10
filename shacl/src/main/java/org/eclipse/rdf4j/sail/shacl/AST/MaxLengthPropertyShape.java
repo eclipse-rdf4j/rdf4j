@@ -36,12 +36,10 @@ public class MaxLengthPropertyShape extends PathPropertyShape {
 	private final long maxLength;
 	private static final Logger logger = LoggerFactory.getLogger(MaxLengthPropertyShape.class);
 
-	MaxLengthPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+	MaxLengthPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Long maxLength) {
 		super(id, connection, nodeShape);
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.MAX_LENGTH, null, true))) {
-			maxLength = stream.map(Statement::getObject).map(v -> ((SimpleLiteral) v).integerValue().longValue()).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:minLength on " + id));
-		}
+		this.maxLength = maxLength;
 
 	}
 

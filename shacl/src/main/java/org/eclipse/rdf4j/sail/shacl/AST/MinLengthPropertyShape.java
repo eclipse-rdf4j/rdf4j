@@ -36,12 +36,10 @@ public class MinLengthPropertyShape extends PathPropertyShape {
 	private final long minLength;
 	private static final Logger logger = LoggerFactory.getLogger(MinLengthPropertyShape.class);
 
-	MinLengthPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+	MinLengthPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Long minLength) {
 		super(id, connection, nodeShape);
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.MIN_LENGTH, null, true))) {
-			minLength = stream.map(Statement::getObject).map(v -> ((SimpleLiteral) v).integerValue().longValue()).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:minLength on " + id));
-		}
+		this.minLength = minLength;
 
 	}
 

@@ -36,12 +36,10 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 	private final NodeKind nodeKind;
 	private static final Logger logger = LoggerFactory.getLogger(NodeKindPropertyShape.class);
 
-	NodeKindPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+	NodeKindPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Resource nodeKind) {
 		super(id, connection, nodeShape);
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.NODE_KIND_PROP, null, true))) {
-			nodeKind = stream.map(Statement::getObject).map(v -> (Resource) v).map(NodeKind::from).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:nodeKind on " + id));
-		}
+		this.nodeKind = NodeKind.from(nodeKind);
 
 	}
 
