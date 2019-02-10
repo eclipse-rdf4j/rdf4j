@@ -76,9 +76,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 		Select removedTypeStatements = new Select(shaclSailConnection.getRemovedStatements(), "?a a <" + classResource + ">");
 
-		String query =
-			path.getQuery("?c", "?a")+
-			" ?c a <" + ((TargetClass) nodeShape).targetClass + "> . \n";
+		String query = path.getQuery("?c", "?a")+ nodeShape.getQuery("?c", "?q");
 
 		PlanNode bulkedExternalLeftOuterJoin = new BulkedExternalInnerJoin(removedTypeStatements, shaclSailConnection, query);
 

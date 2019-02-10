@@ -72,7 +72,7 @@ public class TargetClass extends NodeShape {
 
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable) {
-		return "BIND(rdf:type as ?b) \n BIND(<" + targetClass + "> as ?c) \n ?a ?b ?c.";
+		return "BIND(rdf:type as ?b1) \n BIND(<" + targetClass + "> as "+objectVariable+") \n "+subjectVariable+" ?b1 "+objectVariable+". \n";
 	}
 
 	public PlanNode getTypeFilterPlan(NotifyingSailConnection shaclSailConnection, PlanNode parent) {

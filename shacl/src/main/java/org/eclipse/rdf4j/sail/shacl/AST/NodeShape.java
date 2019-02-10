@@ -79,9 +79,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable) {
-
-
-		return "?a ?b ?c";
+		return subjectVariable+" ?b "+objectVariable;
 	}
 
 	public Resource getId() {
