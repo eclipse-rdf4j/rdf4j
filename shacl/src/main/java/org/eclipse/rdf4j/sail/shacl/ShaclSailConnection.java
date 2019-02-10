@@ -331,7 +331,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		// we don't support revalidation of all data when changing the shacl shapes,
 		// so no need to check if the shapes have changed
 		if (addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty()) {
-			logger.debug("Nothing has changed, nothing to debug.");
+			logger.debug("Nothing has changed, nothing to validate.");
 			return;
 		}
 

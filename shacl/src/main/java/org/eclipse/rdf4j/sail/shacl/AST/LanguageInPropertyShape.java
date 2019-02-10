@@ -10,9 +10,6 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
@@ -57,21 +54,6 @@ public class LanguageInPropertyShape extends PathPropertyShape {
 
 		return new EnrichWithShape(invalidValues, this);
 
-	}
-
-	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		boolean requiresEvalutation = false;
-		if (nodeShape instanceof TargetClass) {
-			Resource targetClass = ((TargetClass) nodeShape).targetClass;
-			try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
-				requiresEvalutation = addedStatementsConnection.hasStatement(null, RDF.TYPE, targetClass, false);
-			}
-		} else {
-			requiresEvalutation = true;
-		}
-
-		return super.requiresEvaluation(addedStatements, removedStatements) | requiresEvalutation;
 	}
 
 	@Override

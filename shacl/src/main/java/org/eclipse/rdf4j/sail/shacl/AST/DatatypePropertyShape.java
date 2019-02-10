@@ -63,20 +63,6 @@ public class DatatypePropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		boolean requiresEvalutation = false;
-		if (nodeShape instanceof TargetClass) {
-			Resource targetClass = ((TargetClass) nodeShape).targetClass;
-			try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
-				requiresEvalutation = addedStatementsConnection.hasStatement(null, RDF.TYPE, targetClass, false);
-			}
-		} else {
-			requiresEvalutation = true;
-		}
-
-		return super.requiresEvaluation(addedStatements, removedStatements) | requiresEvalutation;	}
-
-	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.DatatypeConstraintComponent;
 	}
