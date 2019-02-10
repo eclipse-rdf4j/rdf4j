@@ -48,7 +48,7 @@ import java.util.stream.Stream;
 /**
  * @author Heshan Jayasinghe
  */
-public class ShaclSailConnection extends NotifyingSailConnectionWrapper implements SailConnectionListener{
+public class ShaclSailConnection extends NotifyingSailConnectionWrapper implements SailConnectionListener {
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclSailConnection.class);
 
@@ -76,8 +76,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private Map<Select, BufferedSplitter> selectNodeCache;
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
-						NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesConnection)
-	{
+						NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesConnection) {
 		super(connection);
 		this.previousStateConnection = previousStateConnection;
 		this.shapesConnection = shapesConnection;
@@ -133,40 +132,36 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	@Override
 	public void commit() throws SailException {
 
-			if(!preparedHasRun) {
-				prepare();
-			}
-			previousStateConnection.commit();
-			super.commit();
-			shapesConnection.commit();
-			cleanup();
+		if (!preparedHasRun) {
+			prepare();
+		}
+		previousStateConnection.commit();
+		super.commit();
+		shapesConnection.commit();
+		cleanup();
 
 
 	}
 
 	@Override
 	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+		throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
-		}
-		else {
+		} else {
 			super.addStatement(modify, subj, pred, obj, contexts);
 		}
 	}
 
 	@Override
 	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj,
-			Resource... contexts)
-		throws SailException
-	{
+								Resource... contexts)
+		throws SailException {
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesConnection.remove(subj, pred, obj);
 			isShapeRefreshNeeded = true;
-		}
-		else {
+		} else {
 			super.removeStatement(modify, subj, pred, obj, contexts);
 		}
 	}
@@ -176,21 +171,18 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		if (contexts.length == 1 && RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {
 			shapesConnection.add(subj, pred, obj);
 			isShapeRefreshNeeded = true;
-		}
-		else {
+		} else {
 			super.addStatement(subj, pred, obj, contexts);
 		}
 	}
 
 	@Override
 	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException
-	{
+		throws SailException {
 		if (contexts.length == 1 && contexts[0].equals(RDF4J.SHACL_SHAPE_GRAPH)) {
 			shapesConnection.remove(subj, pred, obj);
 			isShapeRefreshNeeded = true;
-		}
-		else {
+		} else {
 			super.removeStatements(subj, pred, obj, contexts);
 		}
 	}
@@ -227,7 +219,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) {
 		List<NodeShape> nodeShapes = sail.getNodeShapes();
 		if (isShapeRefreshNeeded) {
-			 nodeShapes = sail.refreshShapes(shapesRepoConnection);
+			nodeShapes = sail.refreshShapes(shapesRepoConnection);
 			isShapeRefreshNeeded = false;
 		}
 
@@ -246,24 +238,25 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			.getNodeShapes()
 			.stream()
 			.flatMap(nodeShape -> nodeShape.generatePlans(this, nodeShape, sail.isLogValidationPlans()).stream());
-		if(sail.isParallelValidation()){
+		if (sail.isParallelValidation()) {
 			planNodeStream = planNodeStream.parallel();
 		}
 
 		return planNodeStream
 			.flatMap(planNode -> {
 				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
-					if(LoggingNode.loggingEnabled){
+					if (LoggingNode.loggingEnabled) {
 						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-						logger.info("Start execution of plan "+propertyShape.getNodeShape().toString()+" : "+propertyShape.getId());
+						logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : " + propertyShape.getId());
 					}
 
 					List<Tuple> collect = stream.collect(Collectors.toList());
 
-					if(LoggingNode.loggingEnabled){
+					if (LoggingNode.loggingEnabled) {
 						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-						logger.info("Finished execution of plan "+propertyShape.getNodeShape().toString()+" : "+propertyShape.getId());
+						logger.info("Finished execution of plan {} : {}", propertyShape.getNodeShape().toString(), propertyShape.getId());
 					}
+
 
 					boolean valid = collect.size() == 0;
 
@@ -272,8 +265,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 						logger.info(
 							"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
-							propertyShape.getNodeShape().getId() ,
-							propertyShape.getId() ,
+							propertyShape.getNodeShape().getId(),
+							propertyShape.getId(),
 							collect
 								.stream()
 								.map(a -> a.toString() + " -cause-> " + a.getCause())
@@ -333,8 +326,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		super.prepare();
 		previousStateConnection.prepare();
 
-
 		List<NodeShape> nodeShapes = refreshShapes(shapesConnection);
+
+		// we don't support revalidation of all data when changing the shacl shapes,
+		// so no need to check if the shapes have changed
+		if (addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty()) {
+			logger.debug("Nothing has changed, nothing to debug.");
+			return;
+		}
 
 		if (!sail.isIgnoreNoShapesLoadedException()
 			&& ((!addedStatementsSet.isEmpty() || !removedStatementsSet.isEmpty())
@@ -379,7 +378,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	synchronized public PlanNode getCachedNodeFor(Select select) {
 
-		if(!sail.isCacheSelectNodes()){
+		if (!sail.isCacheSelectNodes()) {
 			return select;
 		}
 
