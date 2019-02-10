@@ -79,7 +79,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		PlanNode unique = new LoggingNode(new Unique(trimmed));
 
-		PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(unique, shaclSailConnection, path.getQuery()));
+		PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(unique, shaclSailConnection, path.getQuery("?a", "?c")));
 
 		PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin));
 

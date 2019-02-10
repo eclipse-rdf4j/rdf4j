@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
@@ -25,6 +26,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TupleLengthFilter;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,13 +54,13 @@ public class ClassPropertyShape extends PathPropertyShape {
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
 
 		PlanNode addedByShape = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape));
-		PlanNode addedByPath = new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), path.getQuery()));
+		PlanNode addedByPath = new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), path.getQuery("?a", "?c")));
 
 		// join all added by type and path
 		PlanNode leftOuterJoin = new LoggingNode(new LeftOuterJoin(addedByShape, addedByPath));
 
 		// also add anything that matches the path from the previousConnection, eg. if you add ":peter a foaf:Person", and ":peter foaf:knows :steve" is already added
-		PlanNode bulkedEternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(leftOuterJoin, shaclSailConnection.getPreviousStateConnection(), path.getQuery()));
+		PlanNode bulkedEternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(leftOuterJoin, shaclSailConnection.getPreviousStateConnection(), path.getQuery("?a", "?c")));
 
 		// only get tuples that came from the first or the leftOuterJoin or bulkedEternalLeftOuter,
 		// we don't care if you added ":peter a foaf:Person" and nothing else and there is nothing else in the underlying sail
@@ -72,7 +74,17 @@ public class ClassPropertyShape extends PathPropertyShape {
 		PlanNode externalTypeFilterNode = new ExternalTypeFilterNode(shaclSailConnection, classResource, addedStatementsTypeFilter, 1, false);
 
 
-		return new EnrichWithShape(externalTypeFilterNode, this);
+		Select removedTypeStatements = new Select(shaclSailConnection.getRemovedStatements(), "?a a <" + classResource + ">");
+
+		String query =
+			path.getQuery("?c", "?a")+
+			" ?c a <" + ((TargetClass) nodeShape).targetClass + "> . \n";
+
+		PlanNode bulkedExternalLeftOuterJoin = new BulkedExternalInnerJoin(removedTypeStatements, shaclSailConnection, query);
+
+		UnionNode unionNode = new UnionNode(externalTypeFilterNode, bulkedExternalLeftOuterJoin);
+
+		return new EnrichWithShape(unionNode, this);
 
 	}
 

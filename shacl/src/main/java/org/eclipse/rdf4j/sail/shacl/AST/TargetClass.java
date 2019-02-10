@@ -46,18 +46,18 @@ public class TargetClass extends NodeShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
-		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection, getQuery())), 1);
+		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection, getQuery("?a", "?c"))), 1);
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), getQuery())), 1);
+		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c"))), 1);
 
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return new Select(shaclSailConnection.getRemovedStatements(), getQuery());
+		return new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c"));
 	}
 
 	@Override
@@ -71,7 +71,7 @@ public class TargetClass extends NodeShape {
 	}
 
 	@Override
-	public String getQuery() {
+	public String getQuery(String subjectVariable, String objectVariable) {
 		return "BIND(rdf:type as ?b) \n BIND(<" + targetClass + "> as ?c) \n ?a ?b ?c.";
 	}
 

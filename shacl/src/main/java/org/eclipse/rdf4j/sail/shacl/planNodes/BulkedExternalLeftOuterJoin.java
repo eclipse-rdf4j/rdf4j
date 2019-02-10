@@ -103,6 +103,8 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 						.append(query)
 						.append("} order by ?a");
 
+					System.out.println(newQuery.toString());
+
 					if (repository != null) {
 						try (RepositoryConnection connection = repository.getConnection()) {
 							connection.begin(IsolationLevels.NONE);

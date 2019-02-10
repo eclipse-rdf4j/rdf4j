@@ -58,9 +58,9 @@ public class SimplePath extends Path {
 	}
 
 	@Override
-	public String getQuery() {
+	public String getQuery(String subjectVariable, String objectVariable) {
 
-		return "?a <" + path + "> ?c. ";
+		return subjectVariable+" <" + path + "> "+objectVariable+" . \n";
 
 	}
 
