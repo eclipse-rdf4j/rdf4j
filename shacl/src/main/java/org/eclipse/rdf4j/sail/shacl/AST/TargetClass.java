@@ -67,7 +67,7 @@ public class TargetClass extends NodeShape {
 			requiresEvalutation = addedStatementsConnection.hasStatement(null, RDF.TYPE, targetClass, false);
 		}
 
-		return super.requiresEvaluation(addedStatements, removedStatements) || requiresEvalutation;
+		return requiresEvalutation;
 	}
 
 	@Override

@@ -8,14 +8,8 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
@@ -26,8 +20,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.stream.Stream;
-
 /**
  * @author Håvard Ottestad
  */
@@ -36,20 +28,17 @@ public class MinInclusivePropertyShape extends PathPropertyShape {
 	private final Literal minInclusive;
 	private static final Logger logger = LoggerFactory.getLogger(MinInclusivePropertyShape.class);
 
-	MinInclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+	MinInclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Literal minInclusive) {
 		super(id, connection, nodeShape);
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.MIN_INCLUSIVE, null, true))) {
-			minInclusive = stream.map(Statement::getObject).map(v -> ((Literal) v)).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:minInclusive on " + id));
-		}
-
+		this.minInclusive = minInclusive;
 	}
 
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
 
-		PlanNode invalidValues =  StandardisedPlanHelper.getGenericSingleObjectPlan(
+		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,
 			nodeShape,
 			(parent, trueNode, falseNode) -> new LiteralComparatorFilter(parent, trueNode, falseNode, minInclusive, value -> value <= 0),
@@ -64,20 +53,6 @@ public class MinInclusivePropertyShape extends PathPropertyShape {
 		return new EnrichWithShape(new LoggingNode(invalidValues), this);
 
 	}
-
-	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		boolean requiresEvalutation = false;
-		if (nodeShape instanceof TargetClass) {
-			Resource targetClass = ((TargetClass) nodeShape).targetClass;
-			try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
-				requiresEvalutation = addedStatementsConnection.hasStatement(null, RDF.TYPE, targetClass, false);
-			}
-		} else {
-			requiresEvalutation = true;
-		}
-
-		return super.requiresEvaluation(addedStatements, removedStatements) | requiresEvalutation;	}
 
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {

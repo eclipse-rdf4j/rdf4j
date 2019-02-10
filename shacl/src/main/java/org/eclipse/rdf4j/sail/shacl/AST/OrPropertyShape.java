@@ -8,10 +8,7 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
@@ -27,9 +24,9 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * @author Håvard Ottestad
@@ -41,16 +38,11 @@ public class OrPropertyShape extends PropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(OrPropertyShape.class);
 
 
-	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Resource or) {
 		super(id, nodeShape);
+		this.or = toList(connection, or).stream().map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v)).collect(Collectors.toList());
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.OR, null, true))) {
-			Resource orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:or on " + id));
-			or = toList(connection, orList).stream().map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v)).collect(Collectors.toList());
-		}
 	}
-
-
 
 
 	@Override
@@ -69,7 +61,6 @@ public class OrPropertyShape extends PropertyShape {
 				.distinct().collect(Collectors.toList());
 
 
-
 		if (iteratorDataTypes.size() > 1) {
 			throw new UnsupportedOperationException("No support for OR shape with mix between aggregate and raw triples");
 		}
@@ -80,12 +71,12 @@ public class OrPropertyShape extends PropertyShape {
 		if (iteratorData == IteratorData.tripleBased) {
 
 			List<Path> collect = getPaths().stream().distinct().collect(Collectors.toList());
-			if(collect.size()>1){
+			if (collect.size() > 1) {
 				iteratorData = IteratorData.aggregated;
 			}
 		}
 
-			PlanNode ret;
+		PlanNode ret;
 
 
 		if (iteratorData == IteratorData.tripleBased) {
@@ -96,10 +87,8 @@ public class OrPropertyShape extends PropertyShape {
 				equalsJoin = new EqualsJoin(equalsJoin, unionAll(plannodes.get(i)), true);
 			}
 
-			ret =  new LoggingNode(equalsJoin);
-		}
-
-		else if (iteratorData == IteratorData.aggregated) {
+			ret = new LoggingNode(equalsJoin);
+		} else if (iteratorData == IteratorData.aggregated) {
 
 			PlanNode innerJoin = new LoggingNode(new InnerJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), null, null));
 
@@ -107,13 +96,13 @@ public class OrPropertyShape extends PropertyShape {
 				innerJoin = new LoggingNode(new InnerJoin(innerJoin, unionAll(plannodes.get(i)), null, null));
 			}
 
-			ret =  new LoggingNode(innerJoin);
-		}else{
+			ret = new LoggingNode(innerJoin);
+		} else {
 			throw new IllegalStateException("Should not get here!");
 
 		}
 
-		if(printPlans){
+		if (printPlans) {
 			String planAsGraphiz = getPlanAsGraphvizDot(ret, shaclSailConnection);
 			logger.info(planAsGraphiz);
 		}
@@ -134,7 +123,13 @@ public class OrPropertyShape extends PropertyShape {
 
 	@Override
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		return true;
+		return super.requiresEvaluation(addedStatements, removedStatements) ||
+			or
+				.stream()
+				.flatMap(Collection::stream)
+				.map(p -> p.requiresEvaluation(addedStatements, removedStatements))
+				.reduce((a, b) -> a || b)
+				.orElse(false);
 	}
 
 	@Override

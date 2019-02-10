@@ -9,14 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
@@ -35,8 +28,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.stream.Stream;
-
 /**
  * The AST (Abstract Syntax Tree) node that represents a sh:minCount property nodeShape restriction.
  *
@@ -51,12 +42,10 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	private boolean optimizeWhenNoStatementsRemoved = true;
 
 
-	MinCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+	MinCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Long minCount) {
 		super(id, connection, nodeShape);
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.MIN_COUNT, null, true))) {
-			minCount = stream.map(Statement::getObject).map(v -> (Literal) v).map(Literal::longValue).findAny().orElseThrow(() -> new RuntimeException("Expect to find sh:minCount on " + id));
-		}
+		this.minCount = minCount;
 
 	}
 
@@ -147,22 +136,6 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		return new EnrichWithShape(new LoggingNode(filteredStatements2), this);
 
-	}
-
-	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-
-		boolean requiresEvalutation = false;
-		if (nodeShape instanceof TargetClass) {
-			Resource targetClass = ((TargetClass) nodeShape).targetClass;
-			try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
-				requiresEvalutation = addedStatementsConnection.hasStatement(null, RDF.TYPE, targetClass, false);
-			}
-		} else {
-			requiresEvalutation = true;
-		}
-
-		return super.requiresEvaluation(addedStatements, removedStatements) | requiresEvalutation;
 	}
 
 	@Override
