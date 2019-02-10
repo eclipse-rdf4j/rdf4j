@@ -54,14 +54,22 @@ public class ClassPropertyShape extends PathPropertyShape {
 		PlanNode addedByShape = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape));
 		PlanNode addedByPath = new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), path.getQuery()));
 
+		// join all added by type and path
 		PlanNode leftOuterJoin = new LoggingNode(new LeftOuterJoin(addedByShape, addedByPath));
 
+		// also add anything that matches the path from the previousConnection, eg. if you add ":peter a foaf:Person", and ":peter foaf:knows :steve" is already added
 		PlanNode bulkedEternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(leftOuterJoin, shaclSailConnection.getPreviousStateConnection(), path.getQuery()));
 
+		// only get tuples that came from the first or the leftOuterJoin or bulkedEternalLeftOuter,
+		// we don't care if you added ":peter a foaf:Person" and nothing else and there is nothing else in the underlying sail
 		DirectTupleFromFilter joined = new DirectTupleFromFilter();
 		new TupleLengthFilter(bulkedEternalLeftOuter,joined,null, 2, false);
 
-		PlanNode externalTypeFilterNode = new ExternalTypeFilterNode(shaclSailConnection, classResource, joined, 1, false);
+		// filter by type against addedStatements, this is an optimization for when you add the type statement in the same transaction
+		PlanNode addedStatementsTypeFilter = new ExternalTypeFilterNode(shaclSailConnection.getAddedStatements(), classResource, joined, 1, false);
+
+		// filter by type against the base sail
+		PlanNode externalTypeFilterNode = new ExternalTypeFilterNode(shaclSailConnection, classResource, addedStatementsTypeFilter, 1, false);
 
 
 		return new EnrichWithShape(externalTypeFilterNode, this);

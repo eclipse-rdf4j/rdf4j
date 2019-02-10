@@ -13,6 +13,8 @@ import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -23,6 +25,7 @@ import java.util.Arrays;
  */
 public class ExternalTypeFilterNode implements PlanNode {
 
+	private Repository repository;
 	private NotifyingSailConnection shaclSailConnection;
 	private Resource filterOnType;
 	PlanNode parent;
@@ -38,6 +41,14 @@ public class ExternalTypeFilterNode implements PlanNode {
 		this.returnMatching = returnMatching;
 	}
 
+	public ExternalTypeFilterNode(Repository repository, Resource filterOnType, PlanNode parent, int index, boolean returnMatching) {
+		this.repository = repository;
+		this.filterOnType = filterOnType;
+		this.parent = parent;
+		this.index = index;
+		this.returnMatching = returnMatching;
+	}
+
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
@@ -47,6 +58,14 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			RepositoryConnection connection;
+
+			{
+				if(repository!= null){
+					connection = repository.getConnection();
+
+				}
+			}
 
 
 			void calculateNext() {
@@ -56,12 +75,12 @@ public class ExternalTypeFilterNode implements PlanNode {
 					Resource subject = (Resource) temp.line.get(index);
 
 					if (returnMatching) {
-						if (shaclSailConnection.hasStatement(subject, RDF.TYPE, filterOnType, true)) {
+						if (isType(subject)) {
 							next = temp;
 							next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, filterOnType)));
 						}
-					}else{
-						if (!shaclSailConnection.hasStatement(subject, RDF.TYPE, filterOnType, true)) {
+					} else {
+						if (!isType(subject)) {
 							next = temp;
 							next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, filterOnType)));
 						}
@@ -70,8 +89,20 @@ public class ExternalTypeFilterNode implements PlanNode {
 				}
 			}
 
+			private boolean isType(Resource subject) {
+				if(connection != null){
+					return connection.hasStatement(subject, RDF.TYPE, filterOnType, true);
+				}else{
+					return shaclSailConnection.hasStatement(subject, RDF.TYPE, filterOnType, true);
+
+				}
+			}
+
 			@Override
 			public void close() throws SailException {
+				if(connection != null){
+					connection.close();
+				}
 				parentIterator.close();
 			}
 
@@ -110,6 +141,9 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 		if (shaclSailConnection != null) {
 			stringBuilder.append(System.identityHashCode(shaclSailConnection) + " -> " + getId() + " [label=\"filter source\"]").append("\n");
+		}
+		if (repository != null) {
+			stringBuilder.append(System.identityHashCode(repository) + " -> " + getId() + " [label=\"filter source\"]").append("\n");
 		}
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
