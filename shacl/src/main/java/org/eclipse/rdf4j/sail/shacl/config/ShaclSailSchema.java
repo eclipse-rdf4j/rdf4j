@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.sail.shacl.config;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 
