@@ -64,7 +64,7 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 	@Override
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		return false;
+		return nodeShape.requiresEvaluation(addedStatements, removedStatements);
 	}
 
 

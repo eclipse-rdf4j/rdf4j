@@ -108,11 +108,6 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		return true;
-	}
-
-	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
 		return SourceConstraintComponent.MaxCountConstraintComponent;
 	}

@@ -74,9 +74,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	@Override
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		return propertyShapes
-			.stream()
-			.anyMatch(propertyShape -> propertyShape.requiresEvaluation(addedStatements, removedStatements));
+		return true;
 	}
 
 	@Override

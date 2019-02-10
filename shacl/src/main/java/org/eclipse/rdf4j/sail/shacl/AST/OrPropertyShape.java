@@ -134,7 +134,13 @@ public class OrPropertyShape extends PropertyShape {
 
 	@Override
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		return true;
+		return super.requiresEvaluation(addedStatements, removedStatements) ||
+			or
+				.stream()
+				.flatMap(Collection::stream)
+				.map(p -> p.requiresEvaluation(addedStatements, removedStatements))
+				.reduce((a, b) -> a || b)
+				.orElse(false);
 	}
 
 	@Override

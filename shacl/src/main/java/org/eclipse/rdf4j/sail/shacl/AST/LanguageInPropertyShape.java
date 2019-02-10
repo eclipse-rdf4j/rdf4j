@@ -80,7 +80,8 @@ public class LanguageInPropertyShape extends PathPropertyShape {
 			requiresEvalutation = true;
 		}
 
-		return super.requiresEvaluation(addedStatements, removedStatements) | requiresEvalutation;	}
+		return super.requiresEvaluation(addedStatements, removedStatements) | requiresEvalutation;
+	}
 
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
