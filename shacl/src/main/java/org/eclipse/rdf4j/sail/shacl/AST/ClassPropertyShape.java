@@ -15,6 +15,8 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LeftOuterJoin;
@@ -60,12 +62,17 @@ public class ClassPropertyShape extends PathPropertyShape {
 		PlanNode externalTypeFilterNode = new ExternalTypeFilterNode(shaclSailConnection, classResource, leftOuterJoin, 1, false);
 
 
-		return externalTypeFilterNode;
+		return new EnrichWithShape(externalTypeFilterNode, this);
 
 	}
 
 	@Override
 	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
 		return true;
+	}
+
+	@Override
+	public SourceConstraintComponent getSourceConstraintComponent() {
+		return SourceConstraintComponent.ClassConstraintComponent;
 	}
 }

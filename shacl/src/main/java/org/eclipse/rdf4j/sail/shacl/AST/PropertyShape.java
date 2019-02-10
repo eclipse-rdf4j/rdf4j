@@ -187,7 +187,7 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			}
 
 
-			if (hasClass(propertyShapeId, connection)) {
+			if (shaclProperties.clazz != null) {
 				propertyShapes.add(new ClassPropertyShape(propertyShapeId, connection, nodeShape));
 			}
 			return propertyShapes;
