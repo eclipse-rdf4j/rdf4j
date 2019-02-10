@@ -164,6 +164,13 @@ Repository repo = new HTTPRepository(rdf4jServer, repositoryID);
 repo.initialize();
 ----
 
+Note: some OpenJDK 8 JVMs have a 
+[ScheduledThreadPoolExecutor bug](https://bugs.openjdk.java.net/browse/JDK-8129861), 
+causing high processor load even when idling.
+
+Setting the property `-Dorg.eclipse.rdf4j.client.executors.jdkbug`
+will use 1 core thread (instead of 0) for clients to remediate this.
+
 === Accessing a SPARQL endpoint
 
 We can use the Repository interface to access any SPARQL endpoint as well. This is done as follows:
