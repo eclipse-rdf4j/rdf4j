@@ -165,7 +165,7 @@ repo.initialize();
 ----
 
 Note: some OpenJDK 8 JVMs have a 
-[ScheduledThreadPoolExecutor bug](https://bugs.openjdk.java.net/browse/JDK-8129861), 
+https://bugs.openjdk.java.net/browse/JDK-8129861[ScheduledThreadPoolExecutor] bug, 
 causing high processor load even when idling.
 
 Setting the property `-Dorg.eclipse.rdf4j.client.executors.jdkbug`
