@@ -67,6 +67,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/maxInclusive/simple",
 		"test-cases/implicitTargetClass/simple",
 		"test-cases/class/simple",
+		"test-cases/or/class",
+		"test-cases/or/datatype2",
 		"test-cases/complex/dcat"
 
 		);
