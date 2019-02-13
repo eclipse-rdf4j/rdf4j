@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 ValueFactory factory = SimpleValueFactory.getInstance();
 ----
 
-For performance reasons, the `SimpleValueFactory` provides only basic input validation. The `ValidatingValueFactory` is stricter, albeit somewhat slower.
+For performance reasons, the `SimpleValueFactory` provides only basic input validation. The {javadoc}model/impl/ValidatingValueFactory[ValidatingValueFactory] is stricter, albeit somewhat slower.
 
 You can also obtain a `ValueFactory` from the {javadoc}repository/Repository.html[Repository] you are working with, and in fact, this is the recommend approach. More about that in the next section.
 
