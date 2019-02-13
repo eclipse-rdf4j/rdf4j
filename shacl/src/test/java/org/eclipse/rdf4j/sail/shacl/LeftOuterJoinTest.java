@@ -165,7 +165,7 @@ public class LeftOuterJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a3", "b3"));
 
-		PlanNode leftOuterJoin = new LoggingNode(new LeftOuterJoin(left, right));
+		PlanNode leftOuterJoin = new LoggingNode(new LeftOuterJoin(left, right), "");
 
 		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
 

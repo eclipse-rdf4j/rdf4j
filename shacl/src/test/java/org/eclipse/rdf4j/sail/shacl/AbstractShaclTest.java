@@ -40,6 +40,7 @@ import static org.junit.Assert.assertFalse;
 abstract public class AbstractShaclTest {
 
 	private static final List<String> testCasePaths = Arrays.asList(
+		"test-cases/complex/dcat",
 		"test-cases/complex/foaf",
 		"test-cases/datatype/simple",
 		"test-cases/minLength/simple",
@@ -68,8 +69,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/implicitTargetClass/simple",
 		"test-cases/class/simple",
 		"test-cases/or/class",
-		"test-cases/or/datatype2",
-		"test-cases/complex/dcat"
+		"test-cases/or/datatype2"
 
 		);
 

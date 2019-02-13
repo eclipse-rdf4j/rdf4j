@@ -44,20 +44,20 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid, PlanNode overrideTargetNode) {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c")));
-		return new TrimTuple(new LoggingNode(node), 1);
+		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c")));
-		return new TrimTuple(new LoggingNode(node), 1);
+		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
 	@Override
@@ -68,7 +68,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans) {
 		return propertyShapes.stream()
 			.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
-			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, true))
+			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, true, null))
 			.collect(Collectors.toList());
 	}
 

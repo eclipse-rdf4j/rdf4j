@@ -8,25 +8,17 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.lang.NotImplementedException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
-
-/**
- * @author Håvard Ottestad
- */
-public class TrimTuple implements PlanNode {
-
+public class ModifyTuple implements PlanNode {
 	PlanNode parent;
-	private int newLength;
-	private int startIndex;
+	ModifyTupleInterface function;
 
-	public TrimTuple(PlanNode parent, int startIndex, int newLength) {
+	public ModifyTuple(PlanNode parent, ModifyTupleInterface function) {
 		this.parent = parent;
-		this.newLength = newLength;
-		this.startIndex = startIndex;
+		this.function = function;
 	}
 
 	@Override
@@ -35,7 +27,6 @@ public class TrimTuple implements PlanNode {
 
 
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
-
 
 			@Override
 			public void close() throws SailException {
@@ -49,29 +40,14 @@ public class TrimTuple implements PlanNode {
 
 			@Override
 			public Tuple next() throws SailException {
-
-				Tuple next = parentIterator.next();
-
-				Tuple tuple = new Tuple();
-
-				int tempLength = newLength >= 0 ? newLength : next.line.size();
-				for (int i = startIndex; i < tempLength && i < next.line.size(); i++) {
-					tuple.line.add(next.line.get(i));
-				}
-
-				tuple.addHistory(next);
-				tuple.addAllCausedByPropertyShape(next.getCausedByPropertyShapes());
-
-				return tuple;
+				return function.modify(parentIterator.next());
 			}
 
 			@Override
 			public void remove() throws SailException {
-
+				throw new NotImplementedException();
 			}
 		};
-
-
 	}
 
 	@Override
@@ -81,28 +57,27 @@ public class TrimTuple implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
-		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
-		parent.getPlanAsGraphvizDot(stringBuilder);
-	}
 
-	@Override
-	public String toString() {
-		return "TrimTuple{" +
-			"parent=" + parent +
-			", newLength=" + newLength +
-			", startIndex=" + startIndex +
-			'}';
 	}
 
 	@Override
 	public String getId() {
-		return System.identityHashCode(this)+"";
+		return null;
 	}
 
 	@Override
 	public IteratorData getIteratorDataType() {
-		if(newLength == 1) return IteratorData.tripleBased;
 		return parent.getIteratorDataType();
 	}
+
+	public interface ModifyTupleInterface {
+		Tuple modify(Tuple t);
+
+	}
 }
+
+
+
+
+
+

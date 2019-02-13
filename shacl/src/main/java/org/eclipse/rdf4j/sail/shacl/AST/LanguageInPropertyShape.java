@@ -38,14 +38,14 @@ public class LanguageInPropertyShape extends PathPropertyShape {
 
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid, PlanNode overrideTargetNode) {
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,
 			nodeShape,
 			(parent, trueNode, falseNode) -> new LanguageInFilter(parent, trueNode, falseNode, languageIn),
-			this
-		);
+			this,
+			overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);

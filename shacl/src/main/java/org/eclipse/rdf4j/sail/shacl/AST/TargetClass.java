@@ -45,13 +45,13 @@ public class TargetClass extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
-		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection, getQuery("?a", "?c"))), 1);
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid, PlanNode overrideTargetNode) {
+		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection, getQuery("?a", "?c")), ""), 0, 1);
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c"))), 1);
+		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c")), ""), 0, 1);
 
 	}
 
