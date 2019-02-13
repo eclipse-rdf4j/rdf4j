@@ -65,22 +65,28 @@ public class ClassPropertyShape extends PathPropertyShape {
 		// only get tuples that came from the first or the leftOuterJoin or bulkedEternalLeftOuter,
 		// we don't care if you added ":peter a foaf:Person" and nothing else and there is nothing else in the underlying sail
 		DirectTupleFromFilter joined = new DirectTupleFromFilter();
-		new TupleLengthFilter(bulkedEternalLeftOuter,joined,null, 2, false);
+		new TupleLengthFilter(bulkedEternalLeftOuter, joined, null, 2, false);
 
 		// filter by type against addedStatements, this is an optimization for when you add the type statement in the same transaction
 		PlanNode addedStatementsTypeFilter = new ExternalTypeFilterNode(shaclSailConnection.getAddedStatements(), classResource, joined, 1, false);
 
 		// filter by type against the base sail
-		PlanNode externalTypeFilterNode = new ExternalTypeFilterNode(shaclSailConnection, classResource, addedStatementsTypeFilter, 1, false);
+		PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new ExternalTypeFilterNode(shaclSailConnection, classResource, addedStatementsTypeFilter, 1, false);
 
 
+		// Handle when a type statement has been removed, first get all removed type statements that match the classResource for this shape
 		Select removedTypeStatements = new Select(shaclSailConnection.getRemovedStatements(), "?a a <" + classResource + ">");
 
-		String query = path.getQuery("?c", "?a")+ nodeShape.getQuery("?c", "?q");
+		// Build a query to run against the base sail. eg:
+		//	?c foaf:knows ?a.
+		// ?c a foaf:Person.
+		String query = path.getQuery("?c", "?a") + nodeShape.getQuery("?c", "?q");
 
-		PlanNode bulkedExternalLeftOuterJoin = new BulkedExternalInnerJoin(removedTypeStatements, shaclSailConnection, query);
+		// do bulked external join for the removed class statements again the query above.
+		// Essentially gets data that is now invalid because of the removed type statement
+		PlanNode invalidDataDueToRemovedTypeStatement = new BulkedExternalInnerJoin(removedTypeStatements, shaclSailConnection, query);
 
-		UnionNode unionNode = new UnionNode(externalTypeFilterNode, bulkedExternalLeftOuterJoin);
+		UnionNode unionNode = new UnionNode(invalidTuplesDueToDataAddedThatMatchesTargetOrPath, invalidDataDueToRemovedTypeStatement);
 
 		return new EnrichWithShape(unionNode, this);
 

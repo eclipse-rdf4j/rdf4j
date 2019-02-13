@@ -52,7 +52,6 @@ public class BulkedExternalInnerJoin implements PlanNode {
 	private QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 
 
-	private IRI predicate;
 	private NotifyingSailConnection baseSailConnection;
 	private PlanNode leftNode;
 	private Repository repository;
@@ -67,12 +66,6 @@ public class BulkedExternalInnerJoin implements PlanNode {
 		this.query = query;
 		parsedQuery = queryParserFactory.getParser().parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
 
-	}
-
-	public BulkedExternalInnerJoin(PlanNode leftNode, Repository repository, IRI predicate) {
-		this.leftNode = leftNode;
-		this.repository = repository;
-		this.predicate = predicate;
 	}
 
 	public BulkedExternalInnerJoin(PlanNode leftNode, NotifyingSailConnection baseSailConnection, String query) {
@@ -178,18 +171,6 @@ public class BulkedExternalInnerJoin implements PlanNode {
 						}
 
 					}
-				} else {
-					try (RepositoryConnection connection = repository.getConnection()) {
-						connection.begin(IsolationLevels.NONE);
-
-						for (Tuple tuple : left) {
-							try (Stream<Statement> stream = Iterations.stream(connection.getStatements((Resource) tuple.line.get(0), predicate, null))) {
-								stream.forEach(next -> right.addFirst(new Tuple(Arrays.asList(next.getSubject(), next.getObject()))));
-							}
-						}
-
-						connection.commit();
-					}
 				}
 
 			}
@@ -289,7 +270,6 @@ public class BulkedExternalInnerJoin implements PlanNode {
 	@Override
 	public String toString() {
 		return "BulkedExternalInnerJoin{" +
-			"predicate=" + predicate +
 			", query='" + query + '\'' +
 			'}';
 	}
