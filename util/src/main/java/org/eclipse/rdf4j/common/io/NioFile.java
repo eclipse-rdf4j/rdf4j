@@ -106,12 +106,9 @@ public final class NioFile implements Closeable {
 	public boolean delete()
 		throws IOException
 	{
-		try {
-			return file.delete();
-		}
-		finally {
-			close();
-		}
+		// make sure to close file handles prior to deletion
+		close();
+		return file.delete();
 	}
 
 	/**
