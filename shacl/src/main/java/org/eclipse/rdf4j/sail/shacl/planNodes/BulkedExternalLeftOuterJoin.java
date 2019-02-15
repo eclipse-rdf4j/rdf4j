@@ -19,6 +19,9 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
@@ -29,15 +32,17 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedList;
+import java.util.List;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
  * @author Håvard Ottestad
- *
+ * <p>
  * External means that this plan node can join the iterator from a plan node with an external
  * source (Repository or NotifyingSailConnection) based on a query or a predicate.
- *
  */
 public class BulkedExternalLeftOuterJoin implements PlanNode {
 
@@ -118,7 +123,31 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 						ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(newQuery.toString(), null);
 
-						try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = baseSailConnection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)) {
+						try {
+							parsedQuery.getTupleExpr().visitChildren(new AbstractQueryModelVisitor<Exception>() {
+								@Override
+								public void meet(BindingSetAssignment node) throws Exception {
+
+									List<BindingSet> newBindindingset = left.stream()
+										.map(tuple -> tuple.line.get(0))
+										.map(v -> (Resource) v)
+										.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
+										.collect(Collectors.toList());
+
+
+									node.setBindingSets(newBindindingset);
+
+								}
+							});
+						} catch (Exception e) {
+							throw new RuntimeException(e);
+						}
+
+						if(left.size() == 2){
+							System.out.println();
+						}
+
+						try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = baseSailConnection.evaluate(parsedQuery.getTupleExpr(), null, new MapBindingSet(), true)) {
 							while (evaluate.hasNext()) {
 								BindingSet next = evaluate.next();
 								right.addFirst(new Tuple(next));
@@ -219,14 +248,14 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 		leftNode.getPlanAsGraphvizDot(stringBuilder);
 
 
-		if(repository != null){
-			stringBuilder.append( System.identityHashCode(repository)+" -> "+getId()+ " [label=\"right\"]").append("\n");
+		if (repository != null) {
+			stringBuilder.append(System.identityHashCode(repository) + " -> " + getId() + " [label=\"right\"]").append("\n");
 		}
-		if(baseSailConnection != null){
-			stringBuilder.append( System.identityHashCode(baseSailConnection)+" -> "+getId()+ " [label=\"right\"]").append("\n");
+		if (baseSailConnection != null) {
+			stringBuilder.append(System.identityHashCode(baseSailConnection) + " -> " + getId() + " [label=\"right\"]").append("\n");
 		}
 
-		stringBuilder.append(leftNode.getId()+" -> "+getId()+ " [label=\"left\"]").append("\n");
+		stringBuilder.append(leftNode.getId() + " -> " + getId() + " [label=\"left\"]").append("\n");
 
 
 	}
@@ -241,7 +270,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 	@Override
 	public String getId() {
-		return System.identityHashCode(this)+"";
+		return System.identityHashCode(this) + "";
 	}
 
 	@Override

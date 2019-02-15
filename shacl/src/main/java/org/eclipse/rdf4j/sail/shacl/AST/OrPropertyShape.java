@@ -48,26 +48,31 @@ public class OrPropertyShape extends PropertyShape {
 
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
 
 		List<List<PlanNode>> initialPlanNodes =
 			or
 				.stream()
-				.map(shapes -> shapes.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, false, null)).collect(Collectors.toList()))
+				.map(shapes -> shapes.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, null)).collect(Collectors.toList()))
 				.collect(Collectors.toList());
 
-		BufferedSplitter targetNodesToValidate = new BufferedSplitter(unionAll(
-			initialPlanNodes
-				.stream()
-				.flatMap(Collection::stream)
-				.map(p -> new TrimTuple(p, 0, 1)) // we only want the targets
-				.collect(Collectors.toList())));
+		BufferedSplitter targetNodesToValidate;
+		if(overrideTargetNode == null) {
+			targetNodesToValidate = new BufferedSplitter(unionAll(
+				initialPlanNodes
+					.stream()
+					.flatMap(Collection::stream)
+					.map(p -> new TrimTuple(p, 0, 1)) // we only want the targets
+					.collect(Collectors.toList())));
 
+		}else{
+			targetNodesToValidate = new BufferedSplitter(overrideTargetNode);
+		}
 
 		List<List<PlanNode>> plannodes =
 			or
 				.stream()
-				.map(shapes -> shapes.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, false, new LoggingNode(targetNodesToValidate.getPlanNode(), "HERE"))).collect(Collectors.toList()))
+				.map(shapes -> shapes.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, new LoggingNode(targetNodesToValidate.getPlanNode(), "HERE"))).collect(Collectors.toList()))
 				.collect(Collectors.toList());
 
 		List<IteratorData> iteratorDataTypes =

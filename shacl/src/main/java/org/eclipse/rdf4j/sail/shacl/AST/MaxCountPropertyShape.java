@@ -51,16 +51,29 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+
+		if(overrideTargetNode != null){
+			PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c")), "");
+			PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin), "");
+
+			DirectTupleFromFilter directTupleFromFilter = new DirectTupleFromFilter();
+
+			new MaxCountFilter(groupByCount, null, directTupleFromFilter, maxCount);
+
+			if(printPlans){
+				String planAsGraphvizDot = getPlanAsGraphvizDot(directTupleFromFilter, shaclSailConnection);
+				logger.info(planAsGraphvizDot);
+			}
+
+			return new EnrichWithShape(new LoggingNode(directTupleFromFilter, ""), this);
+		}
 
 
 		PlanNode planAddedStatements = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), "");
 
 		PlanNode planAddedStatements1 = new LoggingNode(super.getPlanAddedStatements(shaclSailConnection, nodeShape), "");
 
-		if(!assumeBaseSailValid){
-			planAddedStatements1 = new UnionNode(planAddedStatements1, new TrimTuple(super.getPlanRemovedStatements(shaclSailConnection, nodeShape), 0, 1));
-		}
 
 		if (nodeShape instanceof TargetClass) {
 			planAddedStatements1 = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, planAddedStatements1), "");

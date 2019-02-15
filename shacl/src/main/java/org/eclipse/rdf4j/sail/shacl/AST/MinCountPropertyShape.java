@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MinCountFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -55,10 +54,25 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid, PlanNode overrideTargetNode) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+
+		if(overrideTargetNode != null){
+			PlanNode allStatements = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c")), "");
+			PlanNode groupBy = new LoggingNode(new GroupByCount(allStatements), "");
+
+			DirectTupleFromFilter filteredStatements = new DirectTupleFromFilter();
+			new MinCountFilter(groupBy, null, filteredStatements, minCount);
+
+			if (printPlans) {
+				String planAsGraphvizDot = getPlanAsGraphvizDot(filteredStatements, shaclSailConnection);
+				logger.info(planAsGraphvizDot);
+			}
+
+			return new EnrichWithShape(new LoggingNode(filteredStatements, ""), this);
+
+		}
 
 		PlanNode topNode;
-
 
 		if (!optimizeWhenNoStatementsRemoved || shaclSailConnection.stats.hasRemoved()) {
 			PlanNode planRemovedStatements = new LoggingNode(new TrimTuple(new LoggingNode(super.getPlanRemovedStatements(shaclSailConnection, nodeShape), ""), 0, 1), "");
@@ -75,18 +89,14 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			PlanNode unique = new LoggingNode(new Unique(mergeNode), "");
 
-			if (assumeBaseSailValid) {
-				topNode = new LoggingNode(new LeftOuterJoin(unique, super.getPlanAddedStatements(shaclSailConnection, nodeShape)), "");
-			}else{
 
-				PlanNode planAddedStatements1 = super.getPlanAddedStatements(shaclSailConnection, nodeShape);
+			PlanNode planAddedStatements1 = super.getPlanAddedStatements(shaclSailConnection, nodeShape);
 
-				if (nodeShape instanceof TargetClass) {
-					planAddedStatements1 = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, planAddedStatements1), "");
-				}
-				topNode = new LoggingNode(new UnionNode(unique, planAddedStatements1), "");
-
+			if (nodeShape instanceof TargetClass) {
+				planAddedStatements1 = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, planAddedStatements1), "");
 			}
+			topNode = new LoggingNode(new UnionNode(unique, planAddedStatements1), "");
+
 
 			// BulkedExternalLeftOuterJoin is slower, at least when the super.getPlanAddedStatements only returns statements that have the correct type.
 			// Persumably BulkedExternalLeftOuterJoin will be high if super.getPlanAddedStatements has a high number of statements for other subjects that in "unique"
@@ -98,17 +108,11 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			PlanNode select = new LoggingNode(shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), path.getQuery("?a", "?c"))), "");
 
-			if (assumeBaseSailValid) {
-				topNode = new LoggingNode(new LeftOuterJoin(planAddedForShape, select), "");
 
-			} else {
-				if (nodeShape instanceof TargetClass) {
-					select = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, select), "");
-				}
-				topNode = new LoggingNode(new UnionNode(planAddedForShape, select), "");
-
+			if (nodeShape instanceof TargetClass) {
+				select = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, select), "");
 			}
-
+			topNode = new LoggingNode(new UnionNode(planAddedForShape, select), "");
 
 		}
 

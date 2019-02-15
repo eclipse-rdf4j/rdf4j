@@ -69,8 +69,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/implicitTargetClass/simple",
 		"test-cases/class/simple",
 		"test-cases/or/class",
-		"test-cases/or/datatype2"
-
+		"test-cases/or/datatype2",
+		"test-cases/or/minCountDifferentPath"
 		);
 
 	final String testCasePath;
@@ -177,12 +177,7 @@ abstract public class AbstractShaclTest {
 					exception = true;
 					System.out.println(sailException.getMessage());
 
-					System.out.println("\n############################################");
-					System.out.println("\tValidation Report\n");
-					ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
-					Model validationReport = cause.validationReportAsModel();
-					Rio.write(validationReport, System.out, RDFFormat.TURTLE);
-					System.out.println("\n############################################");
+					printResults(sailException);
 				}
 			} catch (IOException e) {
 				e.printStackTrace();
@@ -200,6 +195,15 @@ abstract public class AbstractShaclTest {
 			}
 		}
 
+	}
+
+	private static void printResults(RepositoryException sailException) {
+		System.out.println("\n############################################");
+		System.out.println("\tValidation Report\n");
+		ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
+		Model validationReport = cause.validationReportAsModel();
+		Rio.write(validationReport, System.out, RDFFormat.TURTLE);
+		System.out.println("\n############################################");
 	}
 
 	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult, IsolationLevel isolationLevel)
@@ -249,8 +253,13 @@ abstract public class AbstractShaclTest {
 				shaclSailConnection.commit();
 
 			} catch (RepositoryException sailException) {
+				if(!(sailException.getCause() instanceof ShaclSailValidationException)){
+					throw sailException;
+				}
 				exception = true;
 				System.out.println(sailException.getMessage());
+
+				printResults(sailException);
 			}
 		}
 		if (ran) {

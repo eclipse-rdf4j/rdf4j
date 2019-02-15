@@ -476,6 +476,10 @@
 []
                    a              sh:NodeShape ;
                    sh:targetClass  dcat:Distribution ;
+                                       sh:or (
+                                               [ sh:path  dcat:accessURL ; sh:minCount 1 ]
+                                               [ sh:path  dcat:downloadURL ; sh:minCount 1 ]
+                                                ) ;
                    sh:property
                    [
                            # sh:class   dct:Standard ;
@@ -528,12 +532,6 @@
                            # sh:severity   sh:Violation
 
 
-                   ],
-                   [
-                    sh:or (
-                            [ sh:path  dcat:accessURL ; sh:minCount 1 ]
-                            [ sh:path  dcat:downloadURL ; sh:minCount 1 ]
-                             )
                    ],
                    [
                            sh:nodeKind sh:IRI ;
