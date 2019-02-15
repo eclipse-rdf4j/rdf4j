@@ -18,19 +18,23 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PushBasedLoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TupleLengthFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -80,8 +84,18 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 			PlanNode addedByPath = new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), path.getQuery("?a", "?c")), "");
 
+
+			BufferedTupleFromFilter discardedRight = new BufferedTupleFromFilter();
+
 			// join all added by type and path
-			PlanNode leftOuterJoin = new LoggingNode(new LeftOuterJoin(bufferedAddedByShape.getPlanNode(), addedByPath), "");
+			PlanNode leftOuterJoin = new LoggingNode(new InnerJoin(bufferedAddedByShape.getPlanNode(), addedByPath, null,new PushBasedLoggingNode(discardedRight)), "");
+
+			if (nodeShape instanceof TargetClass) {
+				PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, discardedRight), "");
+
+				leftOuterJoin = new LoggingNode(new Unique(new UnionNode(leftOuterJoin, typeFilterPlan)), "");
+
+			}
 
 			// also add anything that matches the path from the previousConnection, eg. if you add ":peter a foaf:Person", and ":peter foaf:knows :steve" is already added
 			PlanNode bulkedEternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(bufferedAddedByShape.getPlanNode(), shaclSailConnection.getPreviousStateConnection(), path.getQuery("?a", "?c")), "");
