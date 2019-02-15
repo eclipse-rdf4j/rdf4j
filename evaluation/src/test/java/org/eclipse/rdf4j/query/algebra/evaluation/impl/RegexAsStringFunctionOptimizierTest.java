@@ -88,6 +88,16 @@ public class RegexAsStringFunctionOptimizierTest {
 
         testOptimizer(unoptimizedQuery, unoptimizedQuery);
     }
+    
+    @Test
+    public void testContainsFunction()
+            throws MalformedQueryException {
+        String optimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(CONTAINS(STR(?o), 'a'))}";
+        String unoptimizedQuery = "SELECT ?o WHERE {?s ?p ?o . FILTER(REGEX(STR(?o), 'a'))}";
+        
+
+        testOptimizer(optimizedQuery, unoptimizedQuery);
+    }
 
     @Test
     public void testRealRegexDoesNotRedirect() {
