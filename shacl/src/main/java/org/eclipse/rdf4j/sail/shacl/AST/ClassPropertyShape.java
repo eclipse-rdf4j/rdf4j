@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;

@@ -7,6 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.config;
 
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.sail.config.AbstractDelegatingSailImplConfig;
+import org.eclipse.rdf4j.sail.config.SailConfigException;
+import org.eclipse.rdf4j.sail.config.SailImplConfig;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.CACHE_SELECT_NODES;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.GLOBAL_LOG_VALIDATION_EXECUTION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.IGNORE_NO_SHAPES_LOADED_EXCEPTION;
@@ -16,15 +25,6 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.NAMESPACE;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALIDATION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
-
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.impl.BooleanLiteral;
-import org.eclipse.rdf4j.model.util.Models;
-import org.eclipse.rdf4j.sail.config.AbstractDelegatingSailImplConfig;
-import org.eclipse.rdf4j.sail.config.SailConfigException;
-import org.eclipse.rdf4j.sail.config.SailImplConfig;
-import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 
 /**
  * A {@link SailImplConfig} for {@link ShaclSail} configuration.

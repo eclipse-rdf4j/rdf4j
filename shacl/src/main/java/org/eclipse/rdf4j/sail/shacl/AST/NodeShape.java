@@ -8,11 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import java.util.List;
-import java.util.Objects;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -26,6 +21,11 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents the NodeShape node. NodeShape nodes can have multiple property nodeShapes, which are the restrictions for everything that matches the NodeShape.

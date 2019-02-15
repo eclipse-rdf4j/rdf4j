@@ -1,8 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-
 public class TupleLengthFilter extends FilterPlanNode{
 	private final int length;
 	private final boolean exact;
