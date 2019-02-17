@@ -28,7 +28,7 @@ public class MemoryStoreConnection extends SailSourceConnection {
 	 * Variables *
 	 *-----------*/
 
-	public final MemoryStore sail;
+	protected final MemoryStore sail;
 
 	private volatile DefaultSailChangedEvent sailChangedEvent;
 
@@ -127,5 +127,9 @@ public class MemoryStoreConnection extends SailSourceConnection {
 	{
 		super.clearInferred(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
+	}
+
+	public MemoryStore getSail() {
+		return sail;
 	}
 }

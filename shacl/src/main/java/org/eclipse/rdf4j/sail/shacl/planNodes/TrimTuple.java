@@ -22,6 +22,7 @@ public class TrimTuple implements PlanNode {
 	PlanNode parent;
 	private int newLength;
 	private int startIndex;
+	private boolean printed = false;
 
 	public TrimTuple(PlanNode parent, int startIndex, int newLength) {
 		this.parent = parent;
@@ -81,6 +82,8 @@ public class TrimTuple implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);

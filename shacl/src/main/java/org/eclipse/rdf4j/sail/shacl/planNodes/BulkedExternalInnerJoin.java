@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 
 import java.util.Collections;
 import java.util.LinkedList;
@@ -43,17 +44,18 @@ import java.util.stream.Collectors;
 public class BulkedExternalInnerJoin implements PlanNode {
 
 
-	private final SailConnection sailConnection;
+	private final SailConnection connection;
 	private final PlanNode leftNode;
 	private final ParsedQuery parsedQuery;
+	private boolean printed = false;
 
 
-	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection sailConnection, String query) {
+	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, String query) {
 		this.leftNode = leftNode;
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 		parsedQuery = queryParserFactory.getParser().parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
 
-		this.sailConnection = sailConnection;
+		this.connection = connection;
 
 	}
 
@@ -71,7 +73,7 @@ public class BulkedExternalInnerJoin implements PlanNode {
 			private void calculateNext() {
 
 
-				boolean empty = !sailConnection.hasStatement((Resource) null, (IRI) null, null, true);
+				boolean empty = !connection.hasStatement((Resource) null, (IRI) null, null, true);
 				if (empty) {
 					return;
 				}
@@ -112,7 +114,7 @@ public class BulkedExternalInnerJoin implements PlanNode {
 					throw new RuntimeException(e);
 				}
 
-				try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = sailConnection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)) {
+				try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)) {
 					while (evaluate.hasNext()) {
 						BindingSet next = evaluate.next();
 						right.addFirst(new Tuple(next));
@@ -202,11 +204,15 @@ public class BulkedExternalInnerJoin implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(leftNode.getId() + " -> " + getId() + " [label=\"left\"]").append("\n");
 
-		if (sailConnection != null) {
-			stringBuilder.append(System.identityHashCode(sailConnection) + " -> " + getId() + " [label=\"right\"]").append("\n");
+		if (connection instanceof MemoryStoreConnection) {
+			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId() + " [label=\"right\"]").append("\n");
+		} else {
+			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"right\"]").append("\n");
 		}
 
 		leftNode.getPlanAsGraphvizDot(stringBuilder);
@@ -215,7 +221,7 @@ public class BulkedExternalInnerJoin implements PlanNode {
 	@Override
 	public String toString() {
 		return "BulkedExternalInnerJoin{" +
-			"parsedQuery=" + parsedQuery +
+			"parsedQuery=" + parsedQuery.getSourceString() +
 			'}';
 	}
 

@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public class Unique implements PlanNode {
 	PlanNode parent;
+	private boolean printed = false;
 
 	public Unique(PlanNode parent) {
 		this.parent = parent;
@@ -94,7 +95,8 @@ public class Unique implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-
+		if(printed) return;
+		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);

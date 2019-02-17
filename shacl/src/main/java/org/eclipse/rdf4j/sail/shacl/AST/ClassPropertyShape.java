@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -100,12 +99,12 @@ public class ClassPropertyShape extends PathPropertyShape {
 			}
 
 			// also add anything that matches the path from the previousConnection, eg. if you add ":peter a foaf:Person", and ":peter foaf:knows :steve" is already added
-			PlanNode bulkedEternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(bufferedAddedByShape.getPlanNode(), shaclSailConnection.getPreviousStateConnection(), path.getQuery("?a", "?c")), "");
+			PlanNode bulkedExternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(bufferedAddedByShape.getPlanNode(), shaclSailConnection, path.getQuery("?a", "?c")), "");
 
-			// only get tuples that came from the first or the leftOuterJoin or bulkedEternalLeftOuter,
+			// only get tuples that came from the first or the leftOuterJoin or bulkedExternalLeftOuter,
 			// we don't care if you added ":peter a foaf:Person" and nothing else and there is nothing else in the underlying sail
 			DirectTupleFromFilter joined = new DirectTupleFromFilter();
-			new TupleLengthFilter(new UnionNode(leftOuterJoin, bulkedEternalLeftOuter), joined, null, 2, false);
+			new TupleLengthFilter(new UnionNode(leftOuterJoin, bulkedExternalLeftOuter), joined, null, 2, false);
 
 			// filter by type against addedStatements, this is an optimization for when you add the type statement in the same transaction
 			PlanNode addedStatementsTypeFilter = new LoggingNode(new ExternalTypeFilterNode(addedStatements, classResource, joined, 1, false), "");
@@ -136,6 +135,11 @@ public class ClassPropertyShape extends PathPropertyShape {
 				}));
 
 				invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new LoggingNode(new UnionNode(invalidTuplesDueToDataAddedThatMatchesTargetOrPath, invalidDataDueToRemovedTypeStatement), "");
+			}
+
+			if (printPlans) {
+				String planAsGraphvizDot = getPlanAsGraphvizDot(invalidTuplesDueToDataAddedThatMatchesTargetOrPath, shaclSailConnection);
+				logger.info(planAsGraphvizDot);
 			}
 
 			return new EnrichWithShape(invalidTuplesDueToDataAddedThatMatchesTargetOrPath, this);

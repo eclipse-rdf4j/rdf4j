@@ -32,6 +32,7 @@ public class Select implements PlanNode {
 	private final SailConnection connection;
 
 	private final String query;
+	private boolean printed = false;
 
 	public Select(SailConnection connection, String query) {
 		this.connection = connection;
@@ -84,11 +85,16 @@ public class Select implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 
-		if (connection != null) {
+		if (connection instanceof MemoryStoreConnection) {
+			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId()).append("\n");
+		} else {
 			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId()).append("\n");
 		}
+
 
 	}
 
@@ -126,8 +132,8 @@ public class Select implements PlanNode {
 	@Override
 	public int hashCode() {
 
-		if(connection instanceof MemoryStoreConnection){
-			return Objects.hash(System.identityHashCode(((MemoryStoreConnection) connection).sail), query);
+		if (connection instanceof MemoryStoreConnection) {
+			return Objects.hash(System.identityHashCode(((MemoryStoreConnection) connection).getSail()), query);
 
 		}
 		return Objects.hash(System.identityHashCode(connection), query);

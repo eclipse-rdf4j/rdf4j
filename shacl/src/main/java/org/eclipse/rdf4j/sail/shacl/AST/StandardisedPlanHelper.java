@@ -48,12 +48,12 @@ public class StandardisedPlanHelper {
 
 
 		if (nodeShape instanceof TargetClass) {
-			PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection.getPreviousStateConnection(), discardedRight), "");
+			PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, discardedRight), "");
 
 			top = new LoggingNode(new UnionNode(top, typeFilterPlan), "");
 		}
 
-		PlanNode bulkedExternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(bufferedSplitter.getPlanNode(), shaclSailConnection.getPreviousStateConnection(), pathPropertyShape.path.getQuery("?a", "?c")), "");
+		PlanNode bulkedExternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(bufferedSplitter.getPlanNode(), shaclSailConnection, pathPropertyShape.path.getQuery("?a", "?c")), "");
 
 		top = new LoggingNode(new UnionNode(top, bulkedExternalInnerJoin), "");
 

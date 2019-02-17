@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -20,6 +21,7 @@ import java.util.List;
 public class Sort implements PlanNode {
 
 	private final PlanNode parent;
+	private boolean printed = false;
 
 	public Sort(PlanNode parent) {
 		this.parent = parent;
@@ -84,12 +86,21 @@ public class Sort implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-
+		if(printed) return;
+		printed = true;
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
+		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
 
 	@Override
 	public String getId() {
-		return null;
+		return System.identityHashCode(this)+"";
+	}
+
+	@Override
+	public String toString() {
+		return "Sort";
 	}
 
 	@Override
