@@ -142,7 +142,7 @@ manager.addRepositoryConfig(repConfig);
 Repository repository = manager.getRepository(repositoryId);
 ----
 
-While this configuration already allows you to do many useful things, it does not do complete SPIN reasoning: the SpinSail relies on basic RDFS inferencing to be supplied by the underlying Sail stack. This means that for use cases where you need to rely on things like transitivity of rdfs:subClassOf relations, you should configure a Sail stack that includes the ForwardChainingRDFSInferencer. In addition, a DedupingInferencer is supplied which is a small optimization for both reasoners: it takes care to filter out potential duplicate results – though at the cost of an increase in memory usage. The full configuration with both additional inferencers looks like this:
+While this configuration already allows you to do many useful things, it does not do complete SPIN reasoning: the SpinSail relies on basic RDFS inferencing to be supplied by the underlying Sail stack. This means that for use cases where you need to rely on things like transitivity of rdfs:subClassOf relations, you should configure a Sail stack that includes the SchemaCachingRDFSInferencer. In addition, a DedupingInferencer is supplied which is a small optimization for both reasoners: it takes care to filter out potential duplicate results – though at the cost of an increase in memory usage. The full configuration with both additional inferencers looks like this:
 
 [source,java]
 ----
@@ -150,7 +150,7 @@ While this configuration already allows you to do many useful things, it does no
 // and SPIN inferencing support
 SpinSail spinSail = new SpinSail();
 spinSail.setBaseSail(
-        new ForwardChainingRDFSInferencer(
+        new SchemaCachingRDFSInferencer(
                new DedupingInferencr(new MemoryStore())
         )
 );
@@ -165,7 +165,7 @@ or using configuration via the RepositoryManager:
 ----
 // create the config for the sail stack
 SailImplConfig spinSailConfig = new SpinSailConfig(
-           new ForwardChainingRDFSInferencerConfig(
+           new SchemaCachingRDFSInferencerConfig(
                  new DedupingInferencerConfig(new MemoryStoreConfig())
            )
 );

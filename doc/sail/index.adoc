@@ -249,7 +249,7 @@ interface StackableSail {
 Sail <|-- StackableSail
 ....
 
-The SAIL API provides the `StackableSail` interface to allow SAIL implementations to "stack" on top of each other, providing a chain of responsility: each SAIL implementation in the stack implements a specific feature (reasoning, access control, data filtering, query expansion, etc. etc.). The last SAIL implementation in the stack is expected to _not_ implement `StackableSail`, and this Sail is responsible for the actual persistence of the data. RDF4J's `NativeStore` and `MemoryStore` are implementations of such a persistence SAIL, while the `ForwardChainingRDFSInferencer` (responsible for RDFS inferencing) and `LuceneSail` (responsible for full-text indexing) are examples of `StackableSail` implementations.
+The SAIL API provides the `StackableSail` interface to allow SAIL implementations to "stack" on top of each other, providing a chain of responsility: each SAIL implementation in the stack implements a specific feature (reasoning, access control, data filtering, query expansion, etc. etc.). The last SAIL implementation in the stack is expected to _not_ implement `StackableSail`, and this Sail is responsible for the actual persistence of the data. RDF4J's `NativeStore` and `MemoryStore` are implementations of such a persistence SAIL, while the `SchemaCachingRDFSInferencer` (responsible for RDFS inferencing) and `LuceneSail` (responsible for full-text indexing) are examples of `StackableSail` implementations.
 
 == Querying
 
