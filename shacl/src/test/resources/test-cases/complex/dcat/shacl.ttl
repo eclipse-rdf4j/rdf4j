@@ -51,41 +51,40 @@
                    [
                            sh:maxCount   1 ;
                            sh:path  dct:publisher ;
-                           # sh:class foaf:Agent ;
+                           sh:class foaf:Agent ;
                            # sh:severity   sh:Violation
                    ],
                    [
                            sh:minCount   1 ;
                            sh:path  dcat:dataset ;
-                           # sh:class dcat:Dataset ;
+                           sh:class dcat:Dataset ;
                            # sh:severity   sh:Violation
                    ],
                    [
                            sh:path  dcat:themeTaxonomy ;
-                           # sh:class skos:ConceptScheme ;
+                           sh:class skos:ConceptScheme ;
                            # sh:severity   sh:Violation
                    ]      ,
 
                    [
                            sh:path  dct:hasPart ;
-                           # sh:class dcat:Catalog ;
+                           sh:class dcat:Catalog ;
                            # sh:severity   sh:Violation
                    ]  ,
                    [
                            sh:path  dct:isPartOf ;
                            sh:maxCount 1;
-                           # sh:class dcat:Catalog ;
+                           sh:class dcat:Catalog ;
                            # sh:severity   sh:Violation
                    ],
                    [
                            sh:path  dct:spatial ;
-                           # sh:class dct:Location ;
+                           sh:class dct:Location ;
                            # sh:severity   sh:Violation
                    ],
                    [
                             sh:maxCount 1;
                            sh:path  foaf:homepage ;
-                           # sh:class foaf:Document ;
                            # sh:severity   sh:Violation
                    ],
                    [
@@ -95,26 +94,20 @@
                    ],
                    [
                            sh:path  dcat:record ;
-                           # sh:class dcat:CatalogRecord ;
+                           sh:class dcat:CatalogRecord ;
                            # sh:severity   sh:Violation
                    ],
                    [
                            sh:path  dct:license ;
-                           # sh:class dct:LicenseDocument ;
                            sh:maxCount 1;
                            # sh:severity   sh:Violation
                    ] ,
                    [
                            sh:path  dct:rights ;
                            sh:maxCount 1;
-                           # sh:class dct:RightsStatement ;
+                           sh:class dct:RightsStatement ;
                            # sh:severity   sh:Violation
                    ],
-                   [
-                           sh:path  dct:language ;
-                           # sh:class dct:LinguisticSystem ;
-                           # sh:severity   sh:Violation
-                   ]    ,
                    [
                            sh:path  dct:language ;
                            sh:minCount 1 ;
@@ -133,7 +126,7 @@
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   skos:Concept ;
+                           sh:class   skos:Concept ;
                            sh:path  dct:type ;
                            sh:maxCount 1;
                            # sh:severity   sh:Violation
@@ -169,27 +162,22 @@
                            sh:minCount   1 ;
                            sh:maxCount   1 ;
                            sh:path  foaf:primaryTopic ;
-                           # sh:class dcat:Dataset ;
+                           sh:class dcat:Dataset ;
                            # sh:severity   sh:Violation
                    ] ,
                    [
                            sh:path  dct:source ;
-                           # sh:class dcat:CatalogRecord ;
-                           # sh:severity   sh:Violation
-                   ] ,
-                   [
-                           sh:path  dct:language ;
-                           # sh:class dct:LinguisticSystem ;
+                           sh:class dcat:CatalogRecord ;
                            # sh:severity   sh:Violation
                    ] ,
                    [
                            sh:path  adms:status ;
-                           # sh:class skos:Concept ;
+                           sh:class skos:Concept ;
                            # sh:severity   sh:Violation
                    ] ,
                    [
                            sh:path  adms:status ;
-                           # sh:class skos:Concept ;
+                           sh:class skos:Concept ;
                            sh:minCount 1;
                            # sh:severity   sh:Warning
                    ],
@@ -262,98 +250,98 @@
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   dcat:Dataset ;
+                           sh:class   dcat:Dataset ;
                            sh:path  dct:hasVersion ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   dcat:Dataset ;
+                           sh:class   dcat:Dataset ;
                            sh:path  dct:versionOf ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   dcat:Dataset ;
+                           sh:class   dcat:Dataset ;
                            sh:path  dct:hasPart ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   dcat:Dataset ;
+                           sh:class   dcat:Dataset ;
                            sh:path  dct:isPartOf ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   dct:Location ;
+                           sh:class   dct:Location ;
                            sh:path  dct:spatial ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   dcat:Dataset ;
+                           sh:class   dcat:Dataset ;
                            sh:path  dct:isRequiredBy ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   dcat:Dataset ;
+                           sh:class   dcat:Dataset ;
                            sh:path  dct:requires ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   foaf:Document ;
+                           sh:class   foaf:Document ;
                            sh:path  dct:landingPage ;
                            sh:maxCount 1;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   foaf:Document ;
+                           sh:class   foaf:Document ;
                            sh:path  dct:page ;
                            sh:maxCount 1;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   dct:Frequency ;
+                           sh:class   dct:Frequency ;
                            sh:path  dct:accurialPeriodicity ;
                            sh:maxCount 1;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   adms:Identifier ;
+                           sh:class   adms:Identifier ;
                            sh:path  adms:identifier ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   vcard:Kind ;
+                           sh:class   vcard:Kind ;
                            sh:path  dcat:contactPoint ;
                            # sh:severity   sh:Violation
                    ],
 
                    [
                            sh:path  dct:temporal ;
-                           # sh:class dct:PeriodeOfTime ;
+                           sh:class dct:PeriodeOfTime ;
                            # sh:severity   sh:Violation
                    ] ,
                    [
                            sh:path  dct:provenance ;
                            sh:maxCount 1;
-                           # sh:class dct:ProvenanceStatement ;
+                           sh:class dct:ProvenanceStatement ;
                            # sh:severity   sh:Violation
                    ],
                    [
                            sh:path  dct:accessRights ;
                            sh:maxCount 1;
-                           # sh:class dct:RightsStatement ;
+                           sh:class dct:RightsStatement ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   dcat:Dataset ;
+                           sh:class   dcat:Dataset ;
                            sh:path  dct:references ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   dcat:Dataset ;
+                           sh:class   dcat:Dataset ;
                            sh:path  dct:isReferencedBy ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   dct:Standard ;
+                           sh:class   dct:Standard ;
                            sh:path  dct:conformsTo ;
                            # sh:severity   sh:Violation
                    ],
@@ -368,22 +356,22 @@
                            # sh:severity   sh:Warning
                    ],
                    [
-                           # sh:class dcat:Dataset;
+                           sh:class dcat:Dataset;
                            sh:path  dct:source ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class dcat:Dataset;
+                           sh:class dcat:Dataset;
                            sh:path  dct:replaces ;
                            # sh:severity   sh:Violation
                    ] ,
                    [
-                           # sh:class dcat:Dataset;
+                           sh:class dcat:Dataset;
                            sh:path  dct:isReplacedBy ;
                            # sh:severity   sh:Violation
                    ]   ,
                    [
-                           # sh:class dcat:Distribution;
+                           sh:class dcat:Distribution;
                            sh:path  dcat:distribution ;
                            # sh:severity   sh:Violation
                    ]   ,
@@ -393,7 +381,7 @@
                            # sh:severity   sh:Warning
                    ]    ,
                    [
-                           # sh:class dcat:Distribution;
+                           sh:class dcat:Distribution;
                            sh:path  adms:sample ;
                            # sh:severity   sh:Violation
                    ]   ,
@@ -408,42 +396,25 @@
                            # sh:severity   sh:Violation
                    ]   ,
                   #[
-                  #        # sh:class skos:Concept;
+                  #        sh:class skos:Concept;
                   #        sh:path  dcatno:accessRightsComment ;
                   #        # sh:severity   sh:Violation
                   #]   ,
                    [
-                           # sh:class skos:Concept;
+                           sh:class skos:Concept;
                            sh:path  dcat:theme ;
                            # sh:severity   sh:Violation
                    ]   ,
                    [
-                           # sh:class skos:Concept;
+                           sh:class skos:Concept;
                            sh:maxCount 1;
                            sh:path  dct:type ;
                            # sh:severity   sh:Violation
                    ]   ,
                    [
-                           # sh:class skos:Concept;
-                           sh:path  dct:subject ;
-                           # sh:severity   sh:Violation
-                   ]   ,
-                   [
-                           # sh:class skos:Concept;
-                           sh:path  dct:subject ;
-                           # sh:severity   sh:Violation
-                   ]   ,
-                   [
-                           # sh:class skos:Concept;
                            sh:path  dct:subject ;
                            sh:minCount 1 ;
                            # sh:severity   sh:Warning
-                   ] ,
-
-                   [
-                           # sh:class dct:LinguisticSystem;
-                           sh:path  dct:language ;
-                           # sh:severity   sh:Violation
                    ]
                    .
 []
@@ -482,45 +453,40 @@
                                                 ) ;
                    sh:property
                    [
-                           # sh:class   dct:Standard ;
+                           sh:class   dct:Standard ;
                            sh:path  dct:conformsTo ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   dct:RightsStatement ;
+                           sh:class   dct:RightsStatement ;
                            sh:path  dct:rights ;
                            sh:maxCount 1;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   dct:Standard ;
+                           sh:class   dct:Standard ;
                            sh:path  dct:conformsTo ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   foaf:Document ;
+                           sh:class   foaf:Document ;
                            sh:path  foaf:page ;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   spdx:Checksum ;
+                           sh:class   spdx:Checksum ;
                            sh:path  spdx:checksum ;
                            sh:maxCount 1;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   dct:MediaTypeOrExtent ;
-                           sh:path  dct:format ;
-                           # sh:severity   sh:Violation
-                   ],
-                   [
-                           # sh:class   dct:LicenseDocument ;
+
                            sh:path  dct:license ;
                            sh:maxCount 1;
                            # sh:severity   sh:Violation
                    ],
                    [
-                           # sh:class   skos:Concept ;
+                           sh:class   skos:Concept ;
                            sh:path  adms:status ;
                            sh:maxCount 1;
                            # sh:severity   sh:Violation
@@ -536,11 +502,6 @@
                    [
                            sh:nodeKind sh:IRI ;
                            sh:path  dcat:downloadURL ;
-                           # sh:severity   sh:Violation
-                   ],
-                   [
-                           # sh:class   dct:LinguisticSystem ;
-                           sh:path  dct:language ;
                            # sh:severity   sh:Violation
                    ],
                    [
@@ -602,7 +563,7 @@
                   [
                           sh:maxCount   1 ;
                           sh:path dct:type ;
-                          # sh:class skos:Concept ;
+                          sh:class skos:Concept ;
                           # sh:severity   sh:Violation
                   ] ,
                   [
@@ -627,7 +588,7 @@
                   ]    ,
                   [
                           sh:path skos:inScheme ;
-                          # sh:class skos:ConceptScheme ;
+                          sh:class skos:ConceptScheme ;
                           # sh:severity   sh:Violation
                   ]   ,
                   [

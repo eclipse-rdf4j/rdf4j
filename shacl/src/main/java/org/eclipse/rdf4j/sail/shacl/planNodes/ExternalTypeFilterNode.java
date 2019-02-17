@@ -12,10 +12,11 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.Arrays;
@@ -26,14 +27,14 @@ import java.util.Arrays;
 public class ExternalTypeFilterNode implements PlanNode {
 
 	private Repository repository;
-	private NotifyingSailConnection shaclSailConnection;
+	private SailConnection shaclSailConnection;
 	private Resource filterOnType;
 	PlanNode parent;
 	int index = 0;
 	private final boolean returnMatching;
 
 
-	public ExternalTypeFilterNode(NotifyingSailConnection shaclSailConnection, Resource filterOnType, PlanNode parent, int index, boolean returnMatching) {
+	public ExternalTypeFilterNode(SailConnection shaclSailConnection, Resource filterOnType, PlanNode parent, int index, boolean returnMatching) {
 		this.shaclSailConnection = shaclSailConnection;
 		this.filterOnType = filterOnType;
 		this.parent = parent;
@@ -72,7 +73,8 @@ public class ExternalTypeFilterNode implements PlanNode {
 				while (next == null && parentIterator.hasNext()) {
 					Tuple temp = parentIterator.next();
 
-					Resource subject = (Resource) temp.line.get(index);
+
+					Value subject = temp.line.get(index);
 
 					if (returnMatching) {
 						if (isType(subject)) {
@@ -89,13 +91,17 @@ public class ExternalTypeFilterNode implements PlanNode {
 				}
 			}
 
-			private boolean isType(Resource subject) {
-				if(connection != null){
-					return connection.hasStatement(subject, RDF.TYPE, filterOnType, true);
-				}else{
-					return shaclSailConnection.hasStatement(subject, RDF.TYPE, filterOnType, true);
+			private boolean isType(Value subject) {
+				if (subject instanceof Resource) {
 
+					if (connection != null) {
+						return connection.hasStatement((Resource) subject, RDF.TYPE, filterOnType, true);
+					} else {
+						return shaclSailConnection.hasStatement((Resource) subject, RDF.TYPE, filterOnType, true);
+
+					}
 				}
+				return false;
 			}
 
 			@Override

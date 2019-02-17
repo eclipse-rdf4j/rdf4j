@@ -9,10 +9,10 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -27,34 +27,39 @@ import static org.junit.Assert.assertEquals;
 public class SortPlanNodeTest {
 
 	@Test
-	public void test(){
+	public void test() {
 
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		MemoryStore sailRepository = new MemoryStore();
 		sailRepository.init();
 
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			ValueFactory vf = connection.getValueFactory();
-			connection.add(vf.createBNode("1"), RDF.TYPE, RDFS.RESOURCE);
-			connection.add(vf.createBNode("2"), RDF.TYPE, RDFS.RESOURCE);
-			connection.add(vf.createBNode("4"), RDF.TYPE, RDFS.RESOURCE);
-			connection.add(vf.createBNode("3"), RDF.TYPE, RDFS.RESOURCE);
-			connection.add(vf.createBNode("2"), RDF.TYPE, RDFS.RESOURCE);
-			connection.add(vf.createBNode("2"), RDF.TYPE, RDFS.RESOURCE);
-			connection.add(vf.createBNode("100"), RDF.TYPE, RDFS.RESOURCE);
-			connection.add(vf.createBNode("99"), RDF.TYPE, RDFS.RESOURCE);
-			connection.add(vf.createBNode("101"), RDF.TYPE, RDFS.RESOURCE);
-			connection.add(vf.createBNode("98"), RDF.TYPE, RDFS.RESOURCE);
-			connection.add(vf.createBNode("102"), RDF.TYPE, RDFS.RESOURCE);
+		try (SailConnection connection = sailRepository.getConnection()) {
+			ValueFactory vf = SimpleValueFactory.getInstance();
+			connection.begin();
+			connection.addStatement(vf.createBNode("1"), RDF.TYPE, RDFS.RESOURCE);
+			connection.addStatement(vf.createBNode("2"), RDF.TYPE, RDFS.RESOURCE);
+			connection.addStatement(vf.createBNode("4"), RDF.TYPE, RDFS.RESOURCE);
+			connection.addStatement(vf.createBNode("3"), RDF.TYPE, RDFS.RESOURCE);
+			connection.addStatement(vf.createBNode("2"), RDF.TYPE, RDFS.RESOURCE);
+			connection.addStatement(vf.createBNode("2"), RDF.TYPE, RDFS.RESOURCE);
+			connection.addStatement(vf.createBNode("100"), RDF.TYPE, RDFS.RESOURCE);
+			connection.addStatement(vf.createBNode("99"), RDF.TYPE, RDFS.RESOURCE);
+			connection.addStatement(vf.createBNode("101"), RDF.TYPE, RDFS.RESOURCE);
+			connection.addStatement(vf.createBNode("98"), RDF.TYPE, RDFS.RESOURCE);
+			connection.addStatement(vf.createBNode("102"), RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
+		}
+		try (SailConnection connection = sailRepository.getConnection()) {
+
+			Select select = new Select(connection, "?a a rdfs:Resource");
+			List<Tuple> sortedBySelect = new MockConsumePlanNode(select).asList();
+
+			Sort sort = new Sort(new Select(connection, "?a a rdfs:Resource"));
+			List<Tuple> sortedBySort = new MockConsumePlanNode(sort).asList();
+
+			assertEquals(sortedBySelect, sortedBySort);
+
 		}
 
-		Select select = new Select(sailRepository, "?a a rdfs:Resource");
-		List<Tuple> sortedBySelect = new MockConsumePlanNode(select).asList();
-
-		Sort sort = new Sort(new Select(sailRepository, "?a a rdfs:Resource"));
-		List<Tuple> sortedBySort = new MockConsumePlanNode(sort).asList();
-
-
-		assertEquals(sortedBySelect, sortedBySort);
 
 
 	}

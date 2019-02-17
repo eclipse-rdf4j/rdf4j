@@ -74,14 +74,14 @@ public class Utils {
 		ShaclSail sail = new ShaclSail(new MemoryStore());
 		sail.setUndefinedTargetValidatesAllSubjects(undefinedTargetClassValidatesAllSubjects);
 		SailRepository repo = new SailRepository(sail);
-		repo.initialize();
+		repo.init();
 		Utils.loadShapeData(repo, shapeData);
 		return repo;
 	}
 	
 	public static ShaclSail getInitializedShaclSail(String shapeData) throws IOException {
 		ShaclSail sail = new ShaclSail(new MemoryStore());
-		sail.initialize();
+		sail.init();
 		Utils.loadShapeData(sail, shapeData);
 		return sail;
 	}

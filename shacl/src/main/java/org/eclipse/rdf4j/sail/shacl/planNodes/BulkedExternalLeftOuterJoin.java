@@ -10,12 +10,8 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 
 import org.apache.commons.lang.StringEscapeUtils;
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -26,49 +22,33 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * @author Håvard Ottestad
  * <p>
  * External means that this plan node can join the iterator from a plan node with an external
- * source (Repository or NotifyingSailConnection) based on a query or a predicate.
+ * source (Repository or SailConnection) based on a query or a predicate.
  */
 public class BulkedExternalLeftOuterJoin implements PlanNode {
 
-	private IRI predicate;
-	private NotifyingSailConnection baseSailConnection;
-	private PlanNode leftNode;
-	private Repository repository;
-	private String query;
+	private final SailConnection sailConnection;
+	private final PlanNode leftNode;
+	private final ParsedQuery parsedQuery;
 
-	public BulkedExternalLeftOuterJoin(PlanNode leftNode, Repository repository, String query) {
+
+	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection sailConnection, String query) {
 		this.leftNode = leftNode;
-		this.repository = repository;
-		this.query = query;
-	}
+		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
+		parsedQuery = queryParserFactory.getParser().parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
 
-	public BulkedExternalLeftOuterJoin(PlanNode leftNode, Repository repository, IRI predicate) {
-		this.leftNode = leftNode;
-		this.repository = repository;
-		this.predicate = predicate;
-	}
-
-	public BulkedExternalLeftOuterJoin(PlanNode leftNode, NotifyingSailConnection baseSailConnection, String query) {
-		this.leftNode = leftNode;
-		this.query = query;
-
-		this.baseSailConnection = baseSailConnection;
+		this.sailConnection = sailConnection;
 
 	}
 
@@ -98,76 +78,39 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 				if (left.isEmpty()) {
 					return;
 				}
-				if (query != null) {
 
-					StringBuilder newQuery = new StringBuilder("select * where { VALUES (?a) { \n");
 
-					left.stream().map(tuple -> tuple.line.get(0)).map(v -> (Resource) v).forEach(r -> newQuery.append("( <").append(r.toString()).append("> )\n"));
+				try {
+					parsedQuery.getTupleExpr().visitChildren(new AbstractQueryModelVisitor<Exception>() {
+						@Override
+						public void meet(BindingSetAssignment node) throws Exception {
 
-					newQuery.append("\n}")
-						.append(query)
-						.append("} order by ?a");
+							List<BindingSet> newBindindingset = left.stream()
+								.map(tuple -> tuple.line.get(0))
+								.map(v -> (Resource) v)
+								.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
+								.collect(Collectors.toList());
 
-					if (repository != null) {
-						try (RepositoryConnection connection = repository.getConnection()) {
-							connection.begin(IsolationLevels.NONE);
 
-							try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery(newQuery.toString()).evaluate())) {
-								stream.map(Tuple::new).forEach(right::addFirst);
-							}
-							connection.commit();
+							node.setBindingSets(newBindindingset);
+
 						}
-					} else {
+					});
+				} catch (Exception e) {
+					throw new RuntimeException(e);
+				}
 
-						QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
+				if (left.size() == 2) {
+					System.out.println();
+				}
 
-						ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(newQuery.toString(), null);
-
-						try {
-							parsedQuery.getTupleExpr().visitChildren(new AbstractQueryModelVisitor<Exception>() {
-								@Override
-								public void meet(BindingSetAssignment node) throws Exception {
-
-									List<BindingSet> newBindindingset = left.stream()
-										.map(tuple -> tuple.line.get(0))
-										.map(v -> (Resource) v)
-										.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
-										.collect(Collectors.toList());
-
-
-									node.setBindingSets(newBindindingset);
-
-								}
-							});
-						} catch (Exception e) {
-							throw new RuntimeException(e);
-						}
-
-						if(left.size() == 2){
-							System.out.println();
-						}
-
-						try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = baseSailConnection.evaluate(parsedQuery.getTupleExpr(), null, new MapBindingSet(), true)) {
-							while (evaluate.hasNext()) {
-								BindingSet next = evaluate.next();
-								right.addFirst(new Tuple(next));
-							}
-						}
-
-					}
-				} else {
-					try (RepositoryConnection connection = repository.getConnection()) {
-						connection.begin(IsolationLevels.NONE);
-
-						for (Tuple tuple : left) {
-							try (Stream<Statement> stream = Iterations.stream(connection.getStatements((Resource) tuple.line.get(0), predicate, null))) {
-								stream.forEach(next -> right.addFirst(new Tuple(Arrays.asList(next.getSubject(), next.getObject()))));
-							}
-						}
-
-						connection.commit();
+				try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = sailConnection.evaluate(parsedQuery.getTupleExpr(), null, new MapBindingSet(), true)) {
+					while (evaluate.hasNext()) {
+						BindingSet next = evaluate.next();
+						right.addFirst(new Tuple(next));
 					}
 				}
+
 
 			}
 
@@ -247,12 +190,8 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 
 		leftNode.getPlanAsGraphvizDot(stringBuilder);
 
-
-		if (repository != null) {
-			stringBuilder.append(System.identityHashCode(repository) + " -> " + getId() + " [label=\"right\"]").append("\n");
-		}
-		if (baseSailConnection != null) {
-			stringBuilder.append(System.identityHashCode(baseSailConnection) + " -> " + getId() + " [label=\"right\"]").append("\n");
+		if (sailConnection != null) {
+			stringBuilder.append(System.identityHashCode(sailConnection) + " -> " + getId() + " [label=\"right\"]").append("\n");
 		}
 
 		stringBuilder.append(leftNode.getId() + " -> " + getId() + " [label=\"left\"]").append("\n");
@@ -263,8 +202,7 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 	@Override
 	public String toString() {
 		return "BulkedExternalLeftOuterJoin{" +
-			"predicate=" + predicate +
-			", query='" + query + '\'' +
+			"parsedQuery=" + parsedQuery +
 			'}';
 	}
 

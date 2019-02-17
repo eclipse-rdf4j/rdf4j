@@ -28,7 +28,7 @@ public class MemoryStoreConnection extends SailSourceConnection {
 	 * Variables *
 	 *-----------*/
 
-	protected final MemoryStore sail;
+	public final MemoryStore sail;
 
 	private volatile DefaultSailChangedEvent sailChangedEvent;
 

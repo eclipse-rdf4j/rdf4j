@@ -13,10 +13,9 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
@@ -61,13 +60,8 @@ public class TargetClass extends NodeShape {
 	}
 
 	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		boolean requiresEvalutation;
-		try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
-			requiresEvalutation = addedStatementsConnection.hasStatement(null, RDF.TYPE, targetClass, false);
-		}
-
-		return requiresEvalutation;
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+		return addedStatements.hasStatement(null, RDF.TYPE, targetClass, false);
 	}
 
 	@Override

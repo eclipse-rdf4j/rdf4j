@@ -13,8 +13,8 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
@@ -73,7 +73,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	}
 
 	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
 		return true;
 	}
 

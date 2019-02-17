@@ -9,8 +9,8 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 
 
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
@@ -143,7 +143,7 @@ public class OrPropertyShape extends PropertyShape {
 	}
 
 	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
 		return super.requiresEvaluation(addedStatements, removedStatements) ||
 			or
 				.stream()

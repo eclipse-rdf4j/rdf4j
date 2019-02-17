@@ -16,11 +16,9 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
@@ -37,11 +35,13 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -54,9 +54,13 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private NotifyingSailConnection previousStateConnection;
 
-	private Repository addedStatements;
+	MemoryStore addedStatements;
+	MemoryStore removedStatements;
 
-	private Repository removedStatements;
+	ConcurrentLinkedQueue<SailConnection> connectionsToClose = new ConcurrentLinkedQueue<>();
+
+	private HashSet<Statement> addedStatementsSet = new HashSet<>();
+	private HashSet<Statement> removedStatementsSet = new HashSet<>();
 
 	private boolean isShapeRefreshNeeded = false;
 
@@ -64,9 +68,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	public Stats stats;
 
-	private HashSet<Statement> addedStatementsSet = new HashSet<>();
-
-	private HashSet<Statement> removedStatementsSet = new HashSet<>();
 
 	private boolean preparedHasRun = false;
 
@@ -74,6 +75,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	// used to cache Select plan nodes so that we don't query a store for the same data during the same validation step.
 	private Map<Select, BufferedSplitter> selectNodeCache;
+
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
 						NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesConnection) {
@@ -91,12 +93,16 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		return previousStateConnection;
 	}
 
-	public Repository getAddedStatements() {
-		return addedStatements;
+	public SailConnection getAddedStatements() {
+		NotifyingSailConnection connection = addedStatements.getConnection();
+		connectionsToClose.add(connection);
+		return connection;
 	}
 
-	public Repository getRemovedStatements() {
-		return removedStatements;
+	public SailConnection getRemovedStatements() {
+		NotifyingSailConnection connection = removedStatements.getConnection();
+		connectionsToClose.add(connection);
+		return connection;
 	}
 
 	@Override
@@ -109,6 +115,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		assert addedStatements == null;
 		assert removedStatements == null;
+		assert connectionsToClose.size() == 0;
+
 
 		stats = new Stats();
 
@@ -121,12 +129,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	}
 
-	private SailRepository getNewMemorySail() {
+	private MemoryStore getNewMemorySail() {
 		MemoryStore sail = new MemoryStore();
 		sail.setDefaultIsolationLevel(IsolationLevels.NONE);
-		SailRepository repository = new SailRepository(sail);
-		repository.initialize();
-		return repository;
+		sail.init();
+		return sail;
 	}
 
 	@Override
@@ -198,7 +205,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 	}
 
-	private void cleanup() {
+	void cleanup() {
+		logger.debug("Cleanup");
+		connectionsToClose.forEach(SailConnection::close);
+		connectionsToClose = new ConcurrentLinkedQueue<>();
+
 		if (addedStatements != null) {
 			addedStatements.shutDown();
 			addedStatements = null;
@@ -234,53 +245,70 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		fillAddedAndRemovedStatementRepositories();
 
-		Stream<PlanNode> planNodeStream = sail
-			.getNodeShapes()
-			.stream()
-			.flatMap(nodeShape -> nodeShape.generatePlans(this, nodeShape, sail.isLogValidationPlans()).stream());
-		if (sail.isParallelValidation()) {
-			planNodeStream = planNodeStream.parallel();
+
+		try {
+			Stream<PlanNode> planNodeStream = sail
+				.getNodeShapes()
+				.stream()
+				.flatMap(nodeShape -> nodeShape.generatePlans(this, nodeShape, sail.isLogValidationPlans()).stream());
+			if (sail.isParallelValidation()) {
+				planNodeStream = planNodeStream.parallel();
+			}
+
+			return planNodeStream
+				.flatMap(planNode -> {
+					try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
+						if (LoggingNode.loggingEnabled) {
+							PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+							logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : " + propertyShape.getId());
+						}
+
+						List<Tuple> collect = stream.collect(Collectors.toList());
+
+						if (LoggingNode.loggingEnabled) {
+							PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+							logger.info("Finished execution of plan {} : {}", propertyShape.getNodeShape().toString(), propertyShape.getId());
+						}
+
+
+						boolean valid = collect.size() == 0;
+
+						if (!valid && sail.isLogValidationViolations()) {
+							PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+
+							logger.info(
+								"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
+								propertyShape.getNodeShape().getId(),
+								propertyShape.getId(),
+								collect
+									.stream()
+									.map(a -> a.toString() + " -cause-> " + a.getCause())
+									.collect(Collectors.joining("\n\t\t")));
+						}
+
+						return collect.stream();
+					}
+				})
+				.collect(Collectors.toList());
+		} finally {
+			connectionsToClose.forEach(SailConnection::close);
+			connectionsToClose = new ConcurrentLinkedQueue<>();
 		}
-
-		return planNodeStream
-			.flatMap(planNode -> {
-				try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
-					if (LoggingNode.loggingEnabled) {
-						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-						logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : " + propertyShape.getId());
-					}
-
-					List<Tuple> collect = stream.collect(Collectors.toList());
-
-					if (LoggingNode.loggingEnabled) {
-						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-						logger.info("Finished execution of plan {} : {}", propertyShape.getNodeShape().toString(), propertyShape.getId());
-					}
-
-
-					boolean valid = collect.size() == 0;
-
-					if (!valid && sail.isLogValidationViolations()) {
-						PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-
-						logger.info(
-							"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
-							propertyShape.getNodeShape().getId(),
-							propertyShape.getId(),
-							collect
-								.stream()
-								.map(a -> a.toString() + " -cause-> " + a.getCause())
-								.collect(Collectors.joining("\n\t\t")));
-					}
-
-					return collect.stream();
-				}
-			})
-			.collect(Collectors.toList());
-
 	}
 
 	void fillAddedAndRemovedStatementRepositories() {
+
+		connectionsToClose.forEach(SailConnection::close);
+		connectionsToClose = new ConcurrentLinkedQueue<>();
+
+		if (addedStatements != null) {
+			addedStatements.shutDown();
+			addedStatements = null;
+		}
+		if (removedStatements != null) {
+			removedStatements.shutDown();
+			removedStatements = null;
+		}
 
 		addedStatements = getNewMemorySail();
 		removedStatements = getNewMemorySail();
@@ -288,21 +316,21 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		addedStatementsSet.forEach(stats::added);
 		removedStatementsSet.forEach(stats::removed);
 
-		try (RepositoryConnection connection = addedStatements.getConnection()) {
+		try (SailConnection connection = addedStatements.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			addedStatementsSet
 				.stream()
 				.filter(statement -> !removedStatementsSet.contains(statement))
-				.forEach(connection::add);
+				.forEach(statement -> connection.addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext()));
 			connection.commit();
 		}
 
-		try (RepositoryConnection connection = removedStatements.getConnection()) {
+		try (SailConnection connection = removedStatements.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			removedStatementsSet
 				.stream()
 				.filter(statement -> !addedStatementsSet.contains(statement))
-				.forEach(connection::add);
+				.forEach(statement -> connection.addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext()));
 			connection.commit();
 		}
 
@@ -318,6 +346,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		shapesConnection.close();
 		previousStateConnection.close();
 		super.close();
+		connectionsToClose.forEach(SailConnection::close);
+		connectionsToClose = new ConcurrentLinkedQueue<>();
 	}
 
 	@Override
