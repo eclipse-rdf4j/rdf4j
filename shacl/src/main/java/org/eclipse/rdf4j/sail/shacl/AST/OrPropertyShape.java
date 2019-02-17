@@ -72,7 +72,14 @@ public class OrPropertyShape extends PropertyShape {
 		List<List<PlanNode>> plannodes =
 			or
 				.stream()
-				.map(shapes -> shapes.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, new LoggingNode(targetNodesToValidate.getPlanNode(), "HERE"))).collect(Collectors.toList()))
+				.map(shapes -> shapes.stream().map(shape ->
+					{
+						if(shaclSailConnection.stats.baseSailEmpty){
+							return shape.getPlan(shaclSailConnection, nodeShape, false, null);
+						}
+						return shape.getPlan(shaclSailConnection, nodeShape, false, new LoggingNode(targetNodesToValidate.getPlanNode(), ""));
+					}
+				).collect(Collectors.toList()))
 				.collect(Collectors.toList());
 
 		List<IteratorData> iteratorDataTypes =

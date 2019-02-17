@@ -126,6 +126,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			previousStateConnection.begin(level);
 		}
 
+		stats.baseSailEmpty = !hasStatement(null,null,null,true);
+
 	}
 
 	private MemoryStore getNewMemorySail() {
@@ -418,6 +420,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	public class Stats {
 
+		public boolean baseSailEmpty;
 		boolean hasAdded;
 
 		boolean hasRemoved;
@@ -437,6 +440,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		public boolean hasRemoved() {
 			return hasRemoved;
+		}
+
+		public boolean isBaseSailEmpty() {
+			return baseSailEmpty;
 		}
 	}
 }

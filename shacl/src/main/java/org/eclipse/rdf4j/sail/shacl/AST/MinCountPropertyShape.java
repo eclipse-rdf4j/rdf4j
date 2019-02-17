@@ -57,7 +57,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
 
 		if(overrideTargetNode != null){
-			PlanNode allStatements = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c")), "");
+			PlanNode allStatements = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c"), false), "");
 			PlanNode groupBy = new LoggingNode(new GroupByCount(allStatements), "");
 
 			DirectTupleFromFilter filteredStatements = new DirectTupleFromFilter();
@@ -126,7 +126,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		PlanNode trimTuple = new LoggingNode(new TrimTuple(minCountFilter, 0, 1), "");
 
-		PlanNode bulkedExternalLeftOuterJoin2 = new LoggingNode(new BulkedExternalLeftOuterJoin(trimTuple, shaclSailConnection, path.getQuery("?a", "?c")), "");
+		PlanNode bulkedExternalLeftOuterJoin2 = new LoggingNode(new BulkedExternalLeftOuterJoin(trimTuple, shaclSailConnection, path.getQuery("?a", "?c"), false), "");
 
 		PlanNode groupBy2 = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin2), "");
 

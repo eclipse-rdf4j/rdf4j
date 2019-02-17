@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 
 import java.util.Collections;
 import java.util.LinkedList;
@@ -42,15 +43,17 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 	private final SailConnection connection;
 	private final PlanNode leftNode;
 	private final ParsedQuery parsedQuery;
+	private final boolean skipBasedOnPreviousConnection;
 	private boolean printed = false;
 
 
-	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, String query) {
+	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, String query, boolean skipBasedOnPreviousConnection) {
 		this.leftNode = leftNode;
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 		parsedQuery = queryParserFactory.getParser().parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
 
 		this.connection = connection;
+		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
 
 	}
 
@@ -81,37 +84,43 @@ public class BulkedExternalLeftOuterJoin implements PlanNode {
 					return;
 				}
 
+				List<BindingSet> newBindindingset = left
+					.stream()
+					.map(tuple -> tuple.line.get(0))
+					.map(v -> (Resource) v)
+					.filter(r -> {
+						if(!skipBasedOnPreviousConnection) return true;
 
-				try {
-					parsedQuery.getTupleExpr().visitChildren(new AbstractQueryModelVisitor<Exception>() {
-						@Override
-						public void meet(BindingSetAssignment node) throws Exception {
-
-							List<BindingSet> newBindindingset = left.stream()
-								.map(tuple -> tuple.line.get(0))
-								.map(v -> (Resource) v)
-								.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
-								.collect(Collectors.toList());
-
-
-							node.setBindingSets(newBindindingset);
-
+						if(connection instanceof ShaclSailConnection){
+							return ((ShaclSailConnection) connection).getPreviousStateConnection().hasStatement(r, null,null, true);
 						}
-					});
-				} catch (Exception e) {
-					throw new RuntimeException(e);
-				}
+						return true;
 
-				if (left.size() == 2) {
-					System.out.println();
-				}
+					})
+					.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
+					.collect(Collectors.toList());
 
-				try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = connection.evaluate(parsedQuery.getTupleExpr(), null, new MapBindingSet(), true)) {
-					while (evaluate.hasNext()) {
-						BindingSet next = evaluate.next();
-						right.addFirst(new Tuple(next));
+				if(!newBindindingset.isEmpty()){
+					try {
+						parsedQuery.getTupleExpr().visitChildren(new AbstractQueryModelVisitor<Exception>() {
+							@Override
+							public void meet(BindingSetAssignment node) throws Exception {
+								node.setBindingSets(newBindindingset);
+							}
+						});
+					} catch (Exception e) {
+						throw new RuntimeException(e);
+					}
+
+					try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = connection.evaluate(parsedQuery.getTupleExpr(), null, new MapBindingSet(), true)) {
+						while (evaluate.hasNext()) {
+							BindingSet next = evaluate.next();
+							right.addFirst(new Tuple(next));
+						}
 					}
 				}
+
+
 
 
 			}

@@ -21,7 +21,7 @@ public class StandardisedPlanHelper {
 
 	static public PlanNode getGenericSingleObjectPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, FilterAttacher filterAttacher, PathPropertyShape pathPropertyShape, PlanNode overrideTargetNode) {
 		if (overrideTargetNode != null) {
-			PlanNode bulkedExternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(overrideTargetNode, shaclSailConnection, pathPropertyShape.path.getQuery("?a", "?c")), "");
+			PlanNode bulkedExternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(overrideTargetNode, shaclSailConnection, pathPropertyShape.path.getQuery("?a", "?c"), false), "");
 
 			DirectTupleFromFilter invalidValues = new DirectTupleFromFilter();
 			filterAttacher.attachFilter(bulkedExternalInnerJoin, null, new PushBasedLoggingNode(invalidValues));
@@ -43,19 +43,19 @@ public class StandardisedPlanHelper {
 
 		BufferedTupleFromFilter discardedRight = new BufferedTupleFromFilter();
 
-
 		PlanNode top = new LoggingNode(new InnerJoin(bufferedSplitter.getPlanNode(), invalidValuesDirectOnPath, null, new PushBasedLoggingNode(discardedRight)), "");
 
+		if(!shaclSailConnection.stats.baseSailEmpty) {
+			if (nodeShape instanceof TargetClass) {
+				PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, discardedRight), "");
 
-		if (nodeShape instanceof TargetClass) {
-			PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, discardedRight), "");
+				top = new LoggingNode(new UnionNode(top, typeFilterPlan), "");
+			}
 
-			top = new LoggingNode(new UnionNode(top, typeFilterPlan), "");
+			PlanNode bulkedExternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(bufferedSplitter.getPlanNode(), shaclSailConnection, pathPropertyShape.path.getQuery("?a", "?c"), true), "");
+
+			top = new LoggingNode(new UnionNode(top, bulkedExternalInnerJoin), "");
 		}
-
-		PlanNode bulkedExternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(bufferedSplitter.getPlanNode(), shaclSailConnection, pathPropertyShape.path.getQuery("?a", "?c")), "");
-
-		top = new LoggingNode(new UnionNode(top, bulkedExternalInnerJoin), "");
 
 		DirectTupleFromFilter invalidValues = new DirectTupleFromFilter();
 		filterAttacher.attachFilter(top, null, new PushBasedLoggingNode(invalidValues));
