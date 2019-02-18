@@ -360,10 +360,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 		long currentSize = shaclSailConnection.size();
 		do {
 			prevSize = currentSize;
-			shaclSailConnection.prepareUpdate(SH_OR_NODE_SHAPE_UPDATE_QUERY).execute();
-			shaclSailConnection.prepareUpdate(SH_OR_UPDATE_QUERY).execute();
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE).execute();
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_NODE_SHAPE).execute();
+			shaclSailConnection.prepareUpdate(SH_OR_UPDATE_QUERY).execute();
+			shaclSailConnection.prepareUpdate(SH_OR_NODE_SHAPE_UPDATE_QUERY).execute();
 			currentSize = shaclSailConnection.size();
 		}
 		while (prevSize != currentSize);
