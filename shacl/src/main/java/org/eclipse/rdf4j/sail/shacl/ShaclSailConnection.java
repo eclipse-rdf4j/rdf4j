@@ -56,7 +56,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	MemoryStore addedStatements;
 	MemoryStore removedStatements;
 
-	ConcurrentLinkedQueue<SailConnection> connectionsToClose = new ConcurrentLinkedQueue<>();
+	private ConcurrentLinkedQueue<SailConnection> connectionsToClose = new ConcurrentLinkedQueue<>();
 
 	private HashSet<Statement> addedStatementsSet = new HashSet<>();
 	private HashSet<Statement> removedStatementsSet = new HashSet<>();

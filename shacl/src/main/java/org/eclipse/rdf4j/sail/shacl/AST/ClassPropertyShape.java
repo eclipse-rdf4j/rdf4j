@@ -83,7 +83,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 			BufferedSplitter bufferedAddedByShape = new BufferedSplitter(addedByShape1);
 
-			PlanNode addedByPath = new LoggingNode(new Select(addedStatements, path.getQuery("?a", "?c")), "");
+			PlanNode addedByPath = new LoggingNode(getPlanAddedStatements(shaclSailConnection, nodeShape), "");
 
 
 			BufferedTupleFromFilter discardedRight = new BufferedTupleFromFilter();

@@ -124,8 +124,12 @@ public class Select implements PlanNode {
 			return false;
 		}
 		Select select = (Select) o;
+
 		return
-			Objects.equals(connection, select.connection) &&
+			Objects.equals(
+				connection instanceof MemoryStoreConnection ? ((MemoryStoreConnection) connection).getSail() : connection,
+				select.connection instanceof MemoryStoreConnection ? ((MemoryStoreConnection) select.connection).getSail() : select.connection
+			) &&
 				query.equals(select.query);
 	}
 
@@ -134,7 +138,6 @@ public class Select implements PlanNode {
 
 		if (connection instanceof MemoryStoreConnection) {
 			return Objects.hash(System.identityHashCode(((MemoryStoreConnection) connection).getSail()), query);
-
 		}
 		return Objects.hash(System.identityHashCode(connection), query);
 
