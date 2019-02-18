@@ -9,16 +9,18 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 
 
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EqualsJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
@@ -46,12 +48,38 @@ public class OrPropertyShape extends PropertyShape {
 
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+
+		List<List<PlanNode>> initialPlanNodes =
+			or
+				.stream()
+				.map(shapes -> shapes.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, null)).collect(Collectors.toList()))
+				.collect(Collectors.toList());
+
+		BufferedSplitter targetNodesToValidate;
+		if(overrideTargetNode == null) {
+			targetNodesToValidate = new BufferedSplitter(unionAll(
+				initialPlanNodes
+					.stream()
+					.flatMap(Collection::stream)
+					.map(p -> new TrimTuple(p, 0, 1)) // we only want the targets
+					.collect(Collectors.toList())));
+
+		}else{
+			targetNodesToValidate = new BufferedSplitter(overrideTargetNode);
+		}
 
 		List<List<PlanNode>> plannodes =
 			or
 				.stream()
-				.map(shapes -> shapes.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, false)).collect(Collectors.toList()))
+				.map(shapes -> shapes.stream().map(shape ->
+					{
+						if(shaclSailConnection.stats.baseSailEmpty){
+							return shape.getPlan(shaclSailConnection, nodeShape, false, null);
+						}
+						return shape.getPlan(shaclSailConnection, nodeShape, false, new LoggingNode(targetNodesToValidate.getPlanNode(), ""));
+					}
+				).collect(Collectors.toList()))
 				.collect(Collectors.toList());
 
 		List<IteratorData> iteratorDataTypes =
@@ -87,16 +115,16 @@ public class OrPropertyShape extends PropertyShape {
 				equalsJoin = new EqualsJoin(equalsJoin, unionAll(plannodes.get(i)), true);
 			}
 
-			ret = new LoggingNode(equalsJoin);
+			ret = new LoggingNode(equalsJoin, "");
 		} else if (iteratorData == IteratorData.aggregated) {
 
-			PlanNode innerJoin = new LoggingNode(new InnerJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), null, null));
+			PlanNode innerJoin = new LoggingNode(new InnerJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), null, null), "");
 
 			for (int i = 2; i < or.size(); i++) {
-				innerJoin = new LoggingNode(new InnerJoin(innerJoin, unionAll(plannodes.get(i)), null, null));
+				innerJoin = new LoggingNode(new InnerJoin(innerJoin, unionAll(plannodes.get(i)), null, null), "");
 			}
 
-			ret = new LoggingNode(innerJoin);
+			ret = new LoggingNode(innerJoin, "");
 		} else {
 			throw new IllegalStateException("Should not get here!");
 
@@ -122,7 +150,7 @@ public class OrPropertyShape extends PropertyShape {
 	}
 
 	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
 		return super.requiresEvaluation(addedStatements, removedStatements) ||
 			or
 				.stream()

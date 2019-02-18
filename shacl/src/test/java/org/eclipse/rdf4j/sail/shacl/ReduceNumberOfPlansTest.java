@@ -31,29 +31,33 @@ public class ReduceNumberOfPlansTest {
 
 	@Test
 	public void testAddingTypeStatement()
-		throws RDFParseException, UnsupportedRDFormatException, IOException
-	{
+		throws RDFParseException, UnsupportedRDFormatException, IOException {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.initialize();
+		shaclSail.init();
 		Utils.loadShapeData(shaclSail, "reduceNumberOfPlansTest/shacl.ttl");
 
-		try (ShaclSailConnection connection = (ShaclSailConnection)shaclSail.getConnection()) {
+		try (ShaclSailConnection connection = (ShaclSailConnection) shaclSail.getConnection()) {
 			connection.begin();
 
-			connection.fillAddedAndRemovedStatementRepositories();
-			List<PlanNode> collect = shaclSail.getNodeShapes().stream().flatMap(
-					shape -> shape.generatePlans(connection, shape, false).stream()).collect(
-							Collectors.toList());
+			refreshAddedRemovedStatements(connection);
+
+			List<PlanNode> collect = shaclSail
+				.getNodeShapes()
+				.stream()
+				.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+				.collect(Collectors.toList());
 
 			assertEquals(0, collect.size());
 
 			IRI person1 = Utils.Ex.createIri();
 			connection.addStatement(person1, RDF.TYPE, Utils.Ex.Person);
-			connection.fillAddedAndRemovedStatementRepositories();
+			refreshAddedRemovedStatements(connection);
 
-			List<PlanNode> collect2 = shaclSail.getNodeShapes().stream().flatMap(
-					shape -> shape.generatePlans(connection, shape, false).stream()).collect(
-							Collectors.toList());
+			List<PlanNode> collect2 = shaclSail
+				.getNodeShapes()
+				.stream()
+				.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+				.collect(Collectors.toList());
 
 			assertEquals(2, collect2.size());
 			ValueFactory vf = shaclSail.getValueFactory();
@@ -63,6 +67,7 @@ public class ReduceNumberOfPlansTest {
 
 			connection.commit();
 
+
 		}
 
 	}
@@ -70,10 +75,10 @@ public class ReduceNumberOfPlansTest {
 	@Test
 	public void testRemovingPredicate() throws RDF4JException, UnsupportedRDFormatException, IOException {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.initialize();
+		shaclSail.init();
 		Utils.loadShapeData(shaclSail, "reduceNumberOfPlansTest/shacl.ttl");
 
-		try (ShaclSailConnection connection = (ShaclSailConnection)shaclSail.getConnection()) {
+		try (ShaclSailConnection connection = (ShaclSailConnection) shaclSail.getConnection()) {
 
 			connection.begin();
 
@@ -90,33 +95,48 @@ public class ReduceNumberOfPlansTest {
 
 			connection.removeStatements(person1, Utils.Ex.ssn, vf.createLiteral("b"));
 
-			connection.fillAddedAndRemovedStatementRepositories();
+			refreshAddedRemovedStatements(connection);
 
-			List<PlanNode> collect1 = shaclSail.getNodeShapes().stream().flatMap(
-					shape -> shape.generatePlans(connection, shape, false).stream()).collect(
-							Collectors.toList());
+
+			List<PlanNode> collect1 = shaclSail
+				.getNodeShapes()
+				.stream()
+				.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+				.collect(Collectors.toList());
 			assertEquals(1, collect1.size());
 
 			connection.removeStatements(person1, Utils.Ex.ssn, vf.createLiteral("a"));
 
-			connection.fillAddedAndRemovedStatementRepositories();
+			refreshAddedRemovedStatements(connection);
 
-			List<PlanNode> collect2 = shaclSail.getNodeShapes().stream().flatMap(
-					shape -> shape.generatePlans(connection, shape, false).stream()).collect(
-							Collectors.toList());
+			List<PlanNode> collect2 = shaclSail
+				.getNodeShapes()
+				.stream()
+				.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+				.collect(Collectors.toList());
 			assertEquals(1, collect2.size());
 
 			connection.removeStatements(person1, Utils.Ex.name, vf.createLiteral("c"));
-			connection.fillAddedAndRemovedStatementRepositories();
+			refreshAddedRemovedStatements(connection);
 
-			List<PlanNode> collect3 = shaclSail.getNodeShapes().stream().flatMap(
-					shape -> shape.generatePlans(connection, shape, false).stream()).collect(
-							Collectors.toList());
+
+			List<PlanNode> collect3 = shaclSail
+				.getNodeShapes()
+				.stream()
+				.flatMap(shape -> shape.generatePlans(connection, shape, false).stream())
+				.collect(Collectors.toList());
 			assertEquals(2, collect3.size());
 
 			connection.rollback();
 
+
 		}
+
+	}
+
+	private void refreshAddedRemovedStatements(ShaclSailConnection connection) {
+
+		connection.fillAddedAndRemovedStatementRepositories();
 
 	}
 

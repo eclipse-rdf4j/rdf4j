@@ -14,8 +14,10 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -43,7 +45,7 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
@@ -63,7 +65,7 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 	}
 
 	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
 		return nodeShape.requiresEvaluation(addedStatements, removedStatements);
 	}
 
@@ -76,9 +78,14 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 		stringBuilder.append("labelloc=t;\nfontsize=30;\nlabel=\"" + this.getClass().getSimpleName() + "\";").append("\n");
 
 		stringBuilder.append(System.identityHashCode(shaclSailConnection) + " [label=\"Base sail\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
-		stringBuilder.append(System.identityHashCode(shaclSailConnection.getAddedStatements()) + " [label=\"Added statements\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
-		stringBuilder.append(System.identityHashCode(shaclSailConnection.getRemovedStatements()) + " [label=\"Removed statements\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
 		stringBuilder.append(System.identityHashCode(shaclSailConnection.getPreviousStateConnection()) + " [label=\"Previous state connection\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
+
+
+		MemoryStore addedStatements = ((MemoryStoreConnection) shaclSailConnection.getAddedStatements()).getSail();
+		MemoryStore removedStatements = ((MemoryStoreConnection) shaclSailConnection.getRemovedStatements()).getSail();
+
+		stringBuilder.append(System.identityHashCode(addedStatements) + " [label=\"Added statements\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
+		stringBuilder.append(System.identityHashCode(removedStatements) + " [label=\"Removed statements\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
 
 
 		planNode.getPlanAsGraphvizDot(stringBuilder);
@@ -186,6 +193,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 				propertyShapes.add(new MinInclusivePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.minInclusive));
 			}
 
+
+			if (shaclProperties.clazz != null) {
+				propertyShapes.add(new ClassPropertyShape(propertyShapeId, connection, nodeShape));
+			}
 			return propertyShapes;
 		}
 	}

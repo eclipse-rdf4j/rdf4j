@@ -165,7 +165,7 @@ public class InnerJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a3", "b3"));
 
-		PlanNode innerJoin = new LoggingNode(new InnerJoin(left, right, null, null));
+		PlanNode innerJoin = new LoggingNode(new InnerJoin(left, right, null, null), "");
 
 		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 

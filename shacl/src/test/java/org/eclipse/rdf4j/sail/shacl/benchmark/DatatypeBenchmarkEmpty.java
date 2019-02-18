@@ -114,7 +114,7 @@ public class DatatypeBenchmarkEmpty {
 
 		SailRepository repository = new SailRepository(new MemoryStore());
 
-		repository.initialize();
+		repository.init();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.SNAPSHOT);
@@ -138,7 +138,7 @@ public class DatatypeBenchmarkEmpty {
 //
 //		SailRepository repository = new SailRepository(new MemoryStore());
 //
-//		repository.initialize();
+//		repository.init();
 //
 //		try (SailRepositoryConnection connection = repository.getConnection()) {
 //			connection.begin(IsolationLevels.SNAPSHOT);

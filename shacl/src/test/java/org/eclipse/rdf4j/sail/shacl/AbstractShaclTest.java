@@ -30,7 +30,6 @@ import java.util.Collection;
 import java.util.List;
 
 import static junit.framework.TestCase.assertTrue;
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 /**
@@ -40,6 +39,7 @@ import static org.junit.Assert.assertFalse;
 abstract public class AbstractShaclTest {
 
 	private static final List<String> testCasePaths = Arrays.asList(
+		"test-cases/complex/dcat",
 		"test-cases/complex/foaf",
 		"test-cases/datatype/simple",
 		"test-cases/minLength/simple",
@@ -65,10 +65,11 @@ abstract public class AbstractShaclTest {
 		"test-cases/maxExclusive/simple",
 		"test-cases/minInclusive/simple",
 		"test-cases/maxInclusive/simple",
-		"test-cases/or/datatypeDifferentPaths",
 		"test-cases/implicitTargetClass/simple",
-		"test-cases/complex/dcat"
-
+		"test-cases/class/simple",
+		"test-cases/or/class",
+		"test-cases/or/datatype2",
+		"test-cases/or/minCountDifferentPath"
 		);
 
 	final String testCasePath;
@@ -146,7 +147,7 @@ abstract public class AbstractShaclTest {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.setLogValidationPlans(true);
 		SailRepository shaclRepository = new SailRepository(shaclSail);
-		shaclRepository.initialize();
+		shaclRepository.init();
 		Utils.loadShapeData(shaclRepository, shaclFile);
 
 		boolean exception = false;
@@ -175,12 +176,7 @@ abstract public class AbstractShaclTest {
 					exception = true;
 					System.out.println(sailException.getMessage());
 
-					System.out.println("\n############################################");
-					System.out.println("\tValidation Report\n");
-					ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
-					Model validationReport = cause.validationReportAsModel();
-					Rio.write(validationReport, System.out, RDFFormat.TURTLE);
-					System.out.println("\n############################################");
+					printResults(sailException);
 				}
 			} catch (IOException e) {
 				e.printStackTrace();
@@ -200,6 +196,15 @@ abstract public class AbstractShaclTest {
 
 	}
 
+	private static void printResults(RepositoryException sailException) {
+		System.out.println("\n############################################");
+		System.out.println("\tValidation Report\n");
+		ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
+		Model validationReport = cause.validationReportAsModel();
+		Rio.write(validationReport, System.out, RDFFormat.TURTLE);
+		System.out.println("\n############################################");
+	}
+
 	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult, IsolationLevel isolationLevel)
 		throws Exception
 	{
@@ -214,7 +219,7 @@ abstract public class AbstractShaclTest {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		SailRepository shaclRepository = new SailRepository(shaclSail);
-		shaclRepository.initialize();
+		shaclRepository.init();
 		Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
 
 		boolean exception = false;
@@ -247,8 +252,13 @@ abstract public class AbstractShaclTest {
 				shaclSailConnection.commit();
 
 			} catch (RepositoryException sailException) {
+				if(!(sailException.getCause() instanceof ShaclSailValidationException)){
+					throw sailException;
+				}
 				exception = true;
 				System.out.println(sailException.getMessage());
+
+				printResults(sailException);
 			}
 		}
 		if (ran) {

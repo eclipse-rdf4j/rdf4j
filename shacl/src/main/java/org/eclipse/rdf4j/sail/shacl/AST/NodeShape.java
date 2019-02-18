@@ -8,24 +8,24 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import java.util.List;
-import java.util.Objects;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents the NodeShape node. NodeShape nodes can have multiple property nodeShapes, which are the restrictions for everything that matches the NodeShape.
@@ -44,20 +44,20 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery()));
-		return new TrimTuple(new LoggingNode(node), 1);
+		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c")));
+		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery()));
-		return new TrimTuple(new LoggingNode(node), 1);
+		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c")));
+		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
 	@Override
@@ -68,20 +68,18 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	public List<PlanNode> generatePlans(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans) {
 		return propertyShapes.stream()
 			.filter(propertyShape -> propertyShape.requiresEvaluation(shaclSailConnection.getAddedStatements(), shaclSailConnection.getRemovedStatements()))
-			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, true))
+			.map(propertyShape -> propertyShape.getPlan(shaclSailConnection, nodeShape, printPlans, null))
 			.collect(Collectors.toList());
 	}
 
 	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
 		return true;
 	}
 
 	@Override
-	public String getQuery() {
-
-
-		return "?a ?b ?c";
+	public String getQuery(String subjectVariable, String objectVariable) {
+		return subjectVariable+" ?b "+objectVariable;
 	}
 
 	public Resource getId() {

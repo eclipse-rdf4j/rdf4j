@@ -4,8 +4,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DCAT;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
 import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
@@ -23,7 +22,7 @@ import static org.junit.Assert.assertEquals;
 public class BulkedExternalInnerJoinTest {
 
 	@Test
-	public void gapInResultsFromQueryTest(){
+	public void gapInResultsFromQueryTest() {
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI a = vf.createIRI("http://a");
@@ -39,24 +38,27 @@ public class BulkedExternalInnerJoinTest {
 			new Tuple(Collections.singletonList(d))
 		));
 
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		MemoryStore sailRepository = new MemoryStore();
 		sailRepository.init();
 
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			connection.add(b, DCAT.ACCESS_URL,RDFS.RESOURCE);
-			connection.add(d, DCAT.ACCESS_URL,RDFS.SUBPROPERTYOF);
+		try (SailConnection connection = sailRepository.getConnection()) {
+			connection.begin();
+			connection.addStatement(b, DCAT.ACCESS_URL, RDFS.RESOURCE);
+			connection.addStatement(d, DCAT.ACCESS_URL, RDFS.SUBPROPERTYOF);
+			connection.commit();
 		}
+		try (SailConnection connection = sailRepository.getConnection()) {
 
-		BulkedExternalInnerJoin bulkedExternalInnerJoin = new BulkedExternalInnerJoin(left, sailRepository, "?a <http://www.w3.org/ns/dcat#accessURL> ?c. ");
+			BulkedExternalInnerJoin bulkedExternalInnerJoin = new BulkedExternalInnerJoin(left, connection, "?a <http://www.w3.org/ns/dcat#accessURL> ?c. ", false);
 
-		List<Tuple> tuples = new MockConsumePlanNode(bulkedExternalInnerJoin).asList();
+			List<Tuple> tuples = new MockConsumePlanNode(bulkedExternalInnerJoin).asList();
 
-		tuples.forEach(System.out::println);
+			tuples.forEach(System.out::println);
 
-		assertEquals("[http://b, http://www.w3.org/2000/01/rdf-schema#Resource]", Arrays.toString(tuples.get(0).line.toArray()));
-		assertEquals("[http://d, http://www.w3.org/2000/01/rdf-schema#subPropertyOf]", Arrays.toString(tuples.get(1).line.toArray()));
+			assertEquals("[http://b, http://www.w3.org/2000/01/rdf-schema#Resource]", Arrays.toString(tuples.get(0).line.toArray()));
+			assertEquals("[http://d, http://www.w3.org/2000/01/rdf-schema#subPropertyOf]", Arrays.toString(tuples.get(1).line.toArray()));
 
-
+		}
 	}
 
 }

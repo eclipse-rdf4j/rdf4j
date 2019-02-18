@@ -36,7 +36,7 @@ public class BufferedSplitter {
 		parent = planNode;
 	}
 
-	synchronized private void initialize() {
+	synchronized private void init() {
 		if (tuplesBuffer == null) {
 			tuplesBuffer = new ArrayList<>();
 			try (CloseableIteration<Tuple, SailException> iterator = parent.iterator()) {
@@ -57,7 +57,7 @@ public class BufferedSplitter {
 			@Override
 			public CloseableIteration<Tuple, SailException> iterator() {
 
-				initialize();
+				init();
 				Iterator<Tuple> iterator = tuplesBuffer.iterator();
 
 

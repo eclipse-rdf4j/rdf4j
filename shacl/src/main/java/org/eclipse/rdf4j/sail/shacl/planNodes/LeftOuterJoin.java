@@ -21,6 +21,7 @@ public class LeftOuterJoin implements PlanNode {
 
 	private PlanNode left;
 	private PlanNode right;
+	private boolean printed = false;
 
 	public LeftOuterJoin(PlanNode left, PlanNode right) {
 		this.left = left;
@@ -144,6 +145,8 @@ public class LeftOuterJoin implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
 		left.getPlanAsGraphvizDot(stringBuilder);
 
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");

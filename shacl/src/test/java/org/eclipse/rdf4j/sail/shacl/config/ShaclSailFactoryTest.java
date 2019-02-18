@@ -7,11 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.config;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.junit.Before;
 import org.junit.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Unit tests for {@link ShaclSailFactory}

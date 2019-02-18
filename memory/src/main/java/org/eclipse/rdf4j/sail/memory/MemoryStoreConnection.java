@@ -128,4 +128,8 @@ public class MemoryStoreConnection extends SailSourceConnection {
 		super.clearInferred(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 	}
+
+	public MemoryStore getSail() {
+		return sail;
+	}
 }

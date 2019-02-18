@@ -35,14 +35,14 @@ public class MaxLengthPropertyShape extends PathPropertyShape {
 
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,
 			nodeShape,
 			(parent, trueNode, falseNode) -> new MaxLengthFilter(parent, trueNode, falseNode, maxLength),
-			this
-		);
+			this,
+			overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);

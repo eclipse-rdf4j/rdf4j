@@ -141,7 +141,7 @@ public class MinCountPrefilledVsEmptyBenchmark {
 	}
 
 	@Benchmark
-	public void shaclEmptyJustInitialize() throws Exception {
+	public void shaclEmptyJustinit() throws Exception {
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		SailRepository repository = new SailRepository(shaclRepo);

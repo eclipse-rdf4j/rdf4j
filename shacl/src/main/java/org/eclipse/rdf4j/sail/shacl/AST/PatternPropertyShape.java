@@ -47,14 +47,14 @@ public class PatternPropertyShape extends PathPropertyShape {
 
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,
 			nodeShape,
 			(parent, trueNode, falseNode) -> new PatternFilter(parent, trueNode, falseNode, pattern, flags),
-			this
-		);
+			this,
+			overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);

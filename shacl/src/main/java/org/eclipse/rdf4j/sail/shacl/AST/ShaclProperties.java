@@ -12,6 +12,7 @@ import java.util.stream.Stream;
 public class ShaclProperties {
 
 
+	Resource clazz;
 	Resource or;
 	Long minCount;
 	Long maxCount;
@@ -116,6 +117,12 @@ public class ShaclProperties {
 							throw new IllegalStateException("sh:pattern aleady populated");
 						}
 						pattern = object.stringValue();
+						break;
+					case "http://www.w3.org/ns/shacl#class":
+						if (pattern != null) {
+							throw new IllegalStateException("sh:class aleady populated");
+						}
+						clazz = (Resource) object;
 						break;
 				}
 

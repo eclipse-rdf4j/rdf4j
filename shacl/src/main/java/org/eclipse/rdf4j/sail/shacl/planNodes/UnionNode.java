@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 public class UnionNode implements PlanNode {
 
 	private PlanNode[] nodes;
+	private boolean printed = false;
 
 
 	public UnionNode(PlanNode... nodes) {
@@ -118,6 +119,8 @@ public class UnionNode implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		for (PlanNode node : nodes) {
 			stringBuilder.append(node.getId()+" -> "+getId()).append("\n");

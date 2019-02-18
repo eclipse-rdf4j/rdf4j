@@ -24,7 +24,7 @@ public class RuntimeModifyShapesTest {
 	public void checkForExceptionWhenValidatingWithoutShapes() {
 
 		SailRepository sailRepository = new SailRepository(new ShaclSail(new MemoryStore()));
-		sailRepository.initialize();
+		sailRepository.init();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.begin();
@@ -39,7 +39,7 @@ public class RuntimeModifyShapesTest {
 	public void checkForNoExceptionWithEmptyTransaction() {
 
 		SailRepository sailRepository = new SailRepository(new ShaclSail(new MemoryStore()));
-		sailRepository.initialize();
+		sailRepository.init();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.begin();
@@ -53,7 +53,7 @@ public class RuntimeModifyShapesTest {
 	public void checkForExceptionWhenModifyingShapes() throws IOException {
 
 		SailRepository sailRepository = new SailRepository(new ShaclSail(new MemoryStore()));
-		sailRepository.initialize();
+		sailRepository.init();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.begin();

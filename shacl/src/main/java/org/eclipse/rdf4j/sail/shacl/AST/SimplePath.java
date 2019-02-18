@@ -13,9 +13,8 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 
 import java.util.Objects;
 import java.util.stream.Stream;
@@ -44,23 +43,17 @@ public class SimplePath extends Path {
 	}
 
 	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		boolean requiresEvalutation;
-		try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
-			requiresEvalutation = addedStatementsConnection.hasStatement(null, path, null, false);
-		}
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
 
-		try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
-			requiresEvalutation |= removedStatementsConnection.hasStatement(null, path, null, false);
-		}
-
-		return requiresEvalutation;
+		return
+			addedStatements.hasStatement(null, path, null, false) ||
+			removedStatements.hasStatement(null, path, null, false);
 	}
 
 	@Override
-	public String getQuery() {
+	public String getQuery(String subjectVariable, String objectVariable) {
 
-		return "?a <" + path + "> ?c. ";
+		return subjectVariable+" <" + path + "> "+objectVariable+" . \n";
 
 	}
 

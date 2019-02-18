@@ -8,12 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -31,6 +25,12 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * A {@link Sail} implementation that adds support for the Shapes Constraint Language (SHACL).
@@ -207,10 +207,26 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * @return List of IRIs (SHACL predicates)
 	 */
 	public static List<IRI> getSupportedShaclPredicates() {
-		return Arrays.asList(SHACL.TARGET_CLASS, SHACL.PATH, SHACL.PROPERTY, SHACL.OR, SHACL.MIN_COUNT,
-				SHACL.MAX_COUNT, SHACL.MIN_LENGTH, SHACL.MAX_LENGTH, SHACL.PATTERN, SHACL.FLAGS,
-				SHACL.NODE_KIND_PROP, SHACL.LANGUAGE_IN, SHACL.DATATYPE, SHACL.MIN_EXCLUSIVE,
-				SHACL.MIN_INCLUSIVE, SHACL.MAX_EXCLUSIVE, SHACL.MAX_INCLUSIVE);
+		return Arrays.asList(
+			SHACL.TARGET_CLASS,
+			SHACL.PATH,
+			SHACL.PROPERTY,
+			SHACL.OR,
+			SHACL.MIN_COUNT,
+			SHACL.MAX_COUNT,
+			SHACL.MIN_LENGTH,
+			SHACL.MAX_LENGTH,
+			SHACL.PATTERN,
+			SHACL.FLAGS,
+			SHACL.NODE_KIND_PROP,
+			SHACL.LANGUAGE_IN,
+			SHACL.DATATYPE,
+			SHACL.MIN_EXCLUSIVE,
+			SHACL.MIN_INCLUSIVE,
+			SHACL.MAX_EXCLUSIVE,
+			SHACL.MAX_INCLUSIVE,
+			SHACL.CLASS
+		);
 	}
 
 	@Override
@@ -378,7 +394,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * Check if logging a list of violations and the triples that caused the violations is enabled. It is
 	 * recommended to disable parallel validation with {@link #setParallelValidation(boolean)}
 	 * 
-	 * @param logValidationViolations
 	 * @see #setLogValidationViolations(boolean)
 	 */
 	public boolean isLogValidationViolations() {
