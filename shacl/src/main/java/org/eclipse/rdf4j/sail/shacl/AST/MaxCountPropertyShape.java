@@ -54,7 +54,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
 
 		if(overrideTargetNode != null){
-			PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c"), false), "");
+			PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
 			PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin), "");
 
 			DirectTupleFromFilter directTupleFromFilter = new DirectTupleFromFilter();
@@ -92,7 +92,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		PlanNode unique = new LoggingNode(new Unique(trimmed), "");
 
-		PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(unique, shaclSailConnection, path.getQuery("?a", "?c"), false), "");
+		PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(unique, shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
 
 		PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin), "");
 

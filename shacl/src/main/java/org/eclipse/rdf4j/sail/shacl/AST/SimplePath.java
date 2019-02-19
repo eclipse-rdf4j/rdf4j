@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 
 import java.util.Objects;
 import java.util.stream.Stream;
@@ -51,7 +52,7 @@ public class SimplePath extends Path {
 	}
 
 	@Override
-	public String getQuery(String subjectVariable, String objectVariable) {
+	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
 		return subjectVariable+" <" + path + "> "+objectVariable+" . \n";
 
