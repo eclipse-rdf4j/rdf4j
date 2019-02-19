@@ -72,7 +72,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	public Stats stats;
 
-	RdfsSubClassOfReasoner rdfsSubClassOfReasoner = new RdfsSubClassOfReasoner();
+	RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
 
 	private boolean preparedHasRun = false;
 
@@ -252,7 +252,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			return Collections.emptyList();
 		}
 
-		rdfsSubClassOfReasoner = RdfsSubClassOfReasoner.createReasoner(this);
+		if(sail.isRdfsSubClassReasoning()) {
+			rdfsSubClassOfReasoner = RdfsSubClassOfReasoner.createReasoner(this);
+		}
 
 		try {
 			validating = true;
@@ -309,6 +311,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 		} finally {
 			validating = false;
+			rdfsSubClassOfReasoner = null;
 		}
 	}
 
@@ -337,7 +340,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			addedStatementsSet
 				.stream()
 				.filter(statement -> !removedStatementsSet.contains(statement))
-				.flatMap(statement -> rdfsSubClassOfReasoner.forwardChain(statement))
+				.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement) : rdfsSubClassOfReasoner.forwardChain(statement))
 				.forEach(statement -> connection.addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext()));
 			connection.commit();
 		}
@@ -347,7 +350,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			removedStatementsSet
 				.stream()
 				.filter(statement -> !addedStatementsSet.contains(statement))
-				.flatMap(statement -> rdfsSubClassOfReasoner.forwardChain(statement))
+				.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement) : rdfsSubClassOfReasoner.forwardChain(statement))
 				.forEach(statement -> connection.addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext()));
 			connection.commit();
 		}
@@ -469,7 +472,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
-		if (includeInferred && validating && obj instanceof Resource && RDF.TYPE.equals(pred)) {
+		if (rdfsSubClassOfReasoner != null &&  includeInferred && validating && obj instanceof Resource && RDF.TYPE.equals(pred)) {
 			Set<Resource> inferredTypes = rdfsSubClassOfReasoner.backwardsChain((Resource) obj);
 			if (!inferredTypes.isEmpty()) {
 
@@ -546,7 +549,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
 		boolean hasStatement = super.hasStatement(subj, pred, obj, includeInferred, contexts);
 
-		if (includeInferred && validating && obj instanceof Resource && RDF.TYPE.equals(pred)) {
+		if (rdfsSubClassOfReasoner != null && includeInferred && validating && obj instanceof Resource && RDF.TYPE.equals(pred)) {
 			return hasStatement | rdfsSubClassOfReasoner
 				.backwardsChain((Resource) obj)
 				.stream()

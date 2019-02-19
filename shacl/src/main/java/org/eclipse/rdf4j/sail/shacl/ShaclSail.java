@@ -166,6 +166,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	private boolean cacheSelectNodes = ShaclSailConfig.CACHE_SELECT_NODES_DEFAULT;
 
+	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
+
 	static {
 		try {
 			SH_OR_UPDATE_QUERY = IOUtils.toString(
@@ -471,5 +473,14 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 */
 	public void setCacheSelectNodes(boolean cacheSelectNodes) {
 		this.cacheSelectNodes = cacheSelectNodes;
+	}
+
+
+	public boolean isRdfsSubClassReasoning() {
+		return rdfsSubClassReasoning;
+	}
+
+	public void setRdfsSubClassReasoning(boolean rdfsSubClassReasoning) {
+		this.rdfsSubClassReasoning = rdfsSubClassReasoning;
 	}
 }
