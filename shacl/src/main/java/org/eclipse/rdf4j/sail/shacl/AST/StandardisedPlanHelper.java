@@ -45,7 +45,7 @@ public class StandardisedPlanHelper {
 
 		PlanNode top = new LoggingNode(new InnerJoin(bufferedSplitter.getPlanNode(), invalidValuesDirectOnPath, null, new PushBasedLoggingNode(discardedRight)), "");
 
-		if(!shaclSailConnection.stats.baseSailEmpty) {
+		if(!shaclSailConnection.stats.isBaseSailEmpty()) {
 			if (nodeShape instanceof TargetClass) {
 				PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, discardedRight), "");
 

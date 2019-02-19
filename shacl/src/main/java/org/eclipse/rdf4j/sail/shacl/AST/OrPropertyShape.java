@@ -74,7 +74,7 @@ public class OrPropertyShape extends PropertyShape {
 				.stream()
 				.map(shapes -> shapes.stream().map(shape ->
 					{
-						if(shaclSailConnection.stats.baseSailEmpty){
+						if(shaclSailConnection.stats.isBaseSailEmpty()){
 							return shape.getPlan(shaclSailConnection, nodeShape, false, null);
 						}
 						return shape.getPlan(shaclSailConnection, nodeShape, false, new LoggingNode(targetNodesToValidate.getPlanNode(), ""));

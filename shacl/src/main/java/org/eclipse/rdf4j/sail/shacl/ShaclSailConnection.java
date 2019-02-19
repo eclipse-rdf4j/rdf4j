@@ -74,15 +74,15 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	RdfsSubClassOfReasoner rdfsSubClassOfReasoner = new RdfsSubClassOfReasoner();
 
-
 	private boolean preparedHasRun = false;
 
 	private SailRepositoryConnection shapesConnection;
 
 	// used to cache Select plan nodes so that we don't query a store for the same data during the same validation step.
 	private Map<Select, BufferedSplitter> selectNodeCache;
-	boolean validating;
 
+	// used to indicate if the transaction is in the validating phase
+	boolean validating;
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
 						NotifyingSailConnection previousStateConnection, SailRepositoryConnection shapesConnection) {
@@ -441,9 +441,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	public class Stats {
 
-		public boolean baseSailEmpty;
+		boolean baseSailEmpty;
 		boolean hasAdded;
-
 		boolean hasRemoved;
 
 		public void added(Statement statement) {
