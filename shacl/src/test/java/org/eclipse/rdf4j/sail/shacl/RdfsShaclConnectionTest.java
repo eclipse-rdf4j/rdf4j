@@ -18,9 +18,9 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.Test;
 
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -58,7 +58,7 @@ public class RdfsShaclConnectionTest {
 	}
 
 	@Test
-	public void testGetStatement1() {
+	public void testGetStatement() {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.setIgnoreNoShapesLoadedException(true);
@@ -98,6 +98,31 @@ public class RdfsShaclConnectionTest {
 	}
 
 
+	@Test
+	public void testGetStatementNoDuplicates() {
+
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		shaclSail.setIgnoreNoShapesLoadedException(true);
+		shaclSail.init();
+
+		fill(shaclSail);
+
+		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
+			connection.begin();
+			connection.addStatement(aSubSub, RDF.TYPE, sup);
+			connection.addStatement(aSubSub, RDF.TYPE, sub);
+			connection.commit();
+
+			((ShaclSailConnection) connection).validating = true;
+			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner.createReasoner((ShaclSailConnection) connection);
+
+			try (Stream<? extends Statement> stream = Iterations.stream(connection.getStatements(aSubSub, RDF.TYPE, sup, true))) {
+				List<Statement> collect = stream.peek(System.out::println).collect(Collectors.toList());
+				assertEquals(new HashSet<>(collect).size(), collect.size());
+
+			}
+		}
+	}
 
 
 	private void fill(ShaclSail shaclSail) {

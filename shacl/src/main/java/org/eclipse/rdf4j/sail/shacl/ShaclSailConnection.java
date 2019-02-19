@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
-import org.eclipse.rdf4j.common.iterator.UnionIterator;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -21,15 +20,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.ValueConstant;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -481,38 +471,69 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
 		if (includeInferred && validating && obj instanceof Resource && RDF.TYPE.equals(pred)) {
-			Set<Resource> resources = rdfsSubClassOfReasoner.backwardsChain((Resource) obj);
-			if(!resources.isEmpty()){
+			Set<Resource> inferredTypes = rdfsSubClassOfReasoner.backwardsChain((Resource) obj);
+			if (!inferredTypes.isEmpty()) {
 
-				CloseableIteration<Statement, SailException>[] closeableIterations = resources
+				CloseableIteration<Statement, SailException>[] statementsMatchingInferredTypes = inferredTypes
 					.stream()
 					.map(r -> super.getStatements(subj, pred, r, false, contexts))
 					.toArray(CloseableIteration[]::new);
 
 
-				return new CloseableIteration<Statement, SailException>(){
+				return new CloseableIteration<Statement, SailException>() {
 
-					UnionIteration<Statement, SailException> statementSailExceptionUnionIteration = new UnionIteration<>(closeableIterations);
+					UnionIteration<Statement, SailException> unionIteration = new UnionIteration<>(statementsMatchingInferredTypes);
+
+					Statement next = null;
+
+					HashSet<Statement> dedupe = new HashSet<>();
+
+					private void calculateNext() {
+						if (next != null) {
+							return;
+						}
+
+						while (next == null && unionIteration.hasNext()) {
+							Statement temp = unionIteration.next();
+							temp = SimpleValueFactory.getInstance().createStatement(temp.getSubject(), temp.getPredicate(), obj, temp.getContext());
+
+							if(!dedupe.isEmpty()){
+								boolean contains = dedupe.contains(temp);
+								if(!contains){
+									next = temp;
+									dedupe.add(next);
+								}
+							}else{
+								next = temp;
+								dedupe.add(next);
+							}
+
+						}
+					}
+
 
 					@Override
 					public boolean hasNext() throws SailException {
-						return statementSailExceptionUnionIteration.hasNext();
+						calculateNext();
+						return next != null;
 					}
 
 					@Override
 					public Statement next() throws SailException {
-						Statement next = statementSailExceptionUnionIteration.next();
-						return SimpleValueFactory.getInstance().createStatement(next.getSubject(), next.getPredicate(), obj, next.getContext());
+						calculateNext();
+						Statement temp = next;
+						next = null;
+						return temp;
 					}
 
 					@Override
 					public void remove() throws SailException {
-						statementSailExceptionUnionIteration.remove();
+						unionIteration.remove();
 					}
 
 					@Override
 					public void close() throws SailException {
-						statementSailExceptionUnionIteration.close();
+						unionIteration.close();
 					}
 				};
 
