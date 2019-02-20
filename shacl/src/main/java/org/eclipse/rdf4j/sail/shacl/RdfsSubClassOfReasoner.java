@@ -27,28 +27,40 @@ public class RdfsSubClassOfReasoner {
 
 
 	public Stream<Statement> forwardChain(Statement statement) {
+		if (forwardChainCache.isEmpty()) {
+			return Stream.of(statement);
+		}
+
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
-		if (statement.getPredicate().equals(RDF.TYPE) && forwardChainCache.containsKey(statement.getObject())) {
+		if (statement.getPredicate().equals(RDF.TYPE) && forwardChainCache.containsKey(((Resource) statement.getObject()))) {
 			return forwardChainCache.get(statement.getObject()).stream().map(r -> vf.createStatement(statement.getSubject(), RDF.TYPE, r, statement.getContext()));
 		}
 		return Stream.of(statement);
 	}
 
 	public Set<Resource> backwardsChain(Resource type) {
+		if (backwardsChainCache.isEmpty()) {
+			return Collections.emptySet();
+		}
+
 		Set<Resource> resources = backwardsChainCache.get(type);
-		if(resources != null){
+		if (resources != null) {
 			return resources;
 		}
 		return Collections.emptySet();
 	}
 
-	void addSubClassOfStatement(Statement st) {
+	private void addSubClassOfStatement(Statement st) {
 		subClassOfStatements.add(st);
 		types.add(st.getSubject());
 		types.add((Resource) st.getObject());
 	}
 
 	private void calculateSubClassOf(Collection<Statement> subClassOfStatements) {
+		if (subClassOfStatements.isEmpty()) {
+			return;
+		}
+
 		types.forEach(type -> {
 			if (!forwardChainCache.containsKey(type)) {
 				forwardChainCache.put(type, new HashSet<>());

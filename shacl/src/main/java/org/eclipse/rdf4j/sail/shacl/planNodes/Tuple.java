@@ -25,11 +25,11 @@ import java.util.stream.Collectors;
  */
 public class Tuple implements Comparable<Tuple> {
 
-	private Deque<PropertyShape> causedByPropertyShapes = new ArrayDeque<>();
+	private Deque<PropertyShape> causedByPropertyShapes = new ArrayDeque<>(1);
 
-	private List<Tuple> history = new ArrayList<>();
+	private List<Tuple> history = new ArrayList<>(1);
 
-	public List<Value> line = new ArrayList<>();
+	public List<Value> line = new ArrayList<>(3);
 
 	public Tuple(List<Value> list) {
 		line = list;
