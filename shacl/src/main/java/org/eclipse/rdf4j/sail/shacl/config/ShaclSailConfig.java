@@ -23,6 +23,7 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_VIOLATIONS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.NAMESPACE;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALIDATION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.RDFS_SUB_CLASS_REASONING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
 
@@ -49,6 +50,8 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 
 	public static final boolean GLOBAL_LOG_VALIDATION_EXECUTION_DEFAULT = false;
 
+	public static final boolean RDFS_SUB_CLASS_REASONING_DEFAULT = true;
+
 	private boolean parallelValidation = PARALLEL_VALIDATION_DEFAULT;
 
 	private boolean undefinedTargetValidatesAllSubjects = UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
@@ -64,6 +67,8 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	private boolean cacheSelectNodes = CACHE_SELECT_NODES_DEFAULT;
 
 	private boolean globalLogValidationExecution = GLOBAL_LOG_VALIDATION_EXECUTION_DEFAULT;
+
+	private boolean rdfsSubClassReasoning = RDFS_SUB_CLASS_REASONING_DEFAULT;
 
 	public ShaclSailConfig() {
 		super(ShaclSailFactory.SAIL_TYPE);
@@ -133,22 +138,28 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		this.globalLogValidationExecution = globalLogValidationExecution;
 	}
 
+	public boolean isRdfsSubClassReasoning() {
+		return rdfsSubClassReasoning;
+	}
+
+	public void setRdfsSubClassReasoning(boolean rdfsSubClassReasoning) {
+		this.rdfsSubClassReasoning = rdfsSubClassReasoning;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
 
 		m.setNamespace("sail-shacl", NAMESPACE);
 		m.add(implNode, PARALLEL_VALIDATION, BooleanLiteral.valueOf(isParallelValidation()));
-		m.add(implNode, UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS,
-				BooleanLiteral.valueOf(isUndefinedTargetValidatesAllSubjects()));
+		m.add(implNode, UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS, BooleanLiteral.valueOf(isUndefinedTargetValidatesAllSubjects()));
 		m.add(implNode, LOG_VALIDATION_PLANS, BooleanLiteral.valueOf(isLogValidationPlans()));
 		m.add(implNode, LOG_VALIDATION_VIOLATIONS, BooleanLiteral.valueOf(isLogValidationViolations()));
-		m.add(implNode, IGNORE_NO_SHAPES_LOADED_EXCEPTION,
-				BooleanLiteral.valueOf(isIgnoreNoShapesLoadedException()));
+		m.add(implNode, IGNORE_NO_SHAPES_LOADED_EXCEPTION, BooleanLiteral.valueOf(isIgnoreNoShapesLoadedException()));
 		m.add(implNode, VALIDATION_ENABLED, BooleanLiteral.valueOf(isValidationEnabled()));
 		m.add(implNode, CACHE_SELECT_NODES, BooleanLiteral.valueOf(isCacheSelectNodes()));
-		m.add(implNode, GLOBAL_LOG_VALIDATION_EXECUTION,
-				BooleanLiteral.valueOf(isGlobalLogValidationExecution()));
+		m.add(implNode, GLOBAL_LOG_VALIDATION_EXECUTION, BooleanLiteral.valueOf(isGlobalLogValidationExecution()));
+		m.add(implNode, RDFS_SUB_CLASS_REASONING, BooleanLiteral.valueOf(isRdfsSubClassReasoning()));
 		return implNode;
 	}
 
@@ -173,6 +184,8 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 					l -> setCacheSelectNodes(l.booleanValue()));
 			Models.objectLiteral(m.filter(implNode, GLOBAL_LOG_VALIDATION_EXECUTION, null)).ifPresent(
 					l -> setGlobalLogValidationExecution(l.booleanValue()));
+			Models.objectLiteral(m.filter(implNode, RDFS_SUB_CLASS_REASONING, null)).ifPresent(
+					l -> setRdfsSubClassReasoning(l.booleanValue()));
 		}
 		catch (IllegalArgumentException e) {
 			throw new SailConfigException("error parsing Sail configuration", e);

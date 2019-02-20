@@ -47,6 +47,10 @@ public class ShaclSailSchema {
 	/** <code>http://rdf4j.org/config/sail/shacl#globalLogValidationExecution</code> */
 	public final static IRI GLOBAL_LOG_VALIDATION_EXECUTION = create("globalLogValidationExecution");
 
+	/** <code>http://rdf4j.org/config/sail/shacl#rdfsSubClassReasoning</code> */
+	public final static IRI RDFS_SUB_CLASS_REASONING = create("rdfsSubClassReasoning");
+
+
 	private static final IRI create(String localName) {
 		return SimpleValueFactory.getInstance().createIRI(NAMESPACE, localName);
 	}

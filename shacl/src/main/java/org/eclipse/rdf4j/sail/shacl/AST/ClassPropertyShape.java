@@ -66,7 +66,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 		SailConnection addedStatements = shaclSailConnection.getAddedStatements();
 
 		if (overrideTargetNode != null) {
-			PlanNode bulkedEternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c"), false), "");
+			PlanNode bulkedEternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
 			// filter by type against addedStatements, this is an optimization for when you add the type statement in the same transaction
 			PlanNode addedStatementsTypeFilter = new LoggingNode(new ExternalTypeFilterNode(addedStatements, classResource, bulkedEternalLeftOuter, 1, false), "");
 
@@ -100,7 +100,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 			}
 
 			// also add anything that matches the path from the previousConnection, eg. if you add ":peter a foaf:Person", and ":peter foaf:knows :steve" is already added
-			PlanNode bulkedExternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(bufferedAddedByShape.getPlanNode(), shaclSailConnection, path.getQuery("?a", "?c"), true), "");
+			PlanNode bulkedExternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(bufferedAddedByShape.getPlanNode(), shaclSailConnection, path.getQuery("?a", "?c", null), true), "");
 
 			// only get tuples that came from the first or the leftOuterJoin or bulkedExternalLeftOuter,
 			// we don't care if you added ":peter a foaf:Person" and nothing else and there is nothing else in the underlying sail
@@ -116,12 +116,12 @@ public class ClassPropertyShape extends PathPropertyShape {
 			if(shaclSailConnection.stats.hasRemoved()) {
 
 				// Handle when a type statement has been removed, first get all removed type statements that match the classResource for this shape
-				PlanNode removedTypeStatements = new LoggingNode(new Select(shaclSailConnection.getRemovedStatements(), "?a a <" + classResource + ">"), "");
+				PlanNode removedTypeStatements = new LoggingNode(new Select(shaclSailConnection.getRemovedStatements(), "?a a <" + classResource + ">"), "removedTypeStatements");
 
 				// Build a query to run against the base sail. eg:
 				//	?c foaf:knows ?a.
 				// ?c a foaf:Person.
-				String query = path.getQuery("?c", "?a") + nodeShape.getQuery("?c", "?q");
+				String query = path.getQuery("?c", "?a", null) + nodeShape.getQuery("?c", "?q", shaclSailConnection.getRdfsSubClassOfReasoner());
 
 				// do bulked external join for the removed class statements again the query above.
 				// Essentially gets data that is now invalid because of the removed type statement
