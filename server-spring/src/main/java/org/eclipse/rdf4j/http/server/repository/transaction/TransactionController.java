@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import static javax.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
 import static javax.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE;
+import static javax.servlet.http.HttpServletResponse.SC_NOT_ACCEPTABLE;
 import static org.eclipse.rdf4j.http.protocol.Protocol.BINDING_PREFIX;
 import static org.eclipse.rdf4j.http.protocol.Protocol.CONTEXT_PARAM_NAME;
 import static org.eclipse.rdf4j.http.protocol.Protocol.DEFAULT_GRAPH_PARAM_NAME;
@@ -117,7 +118,7 @@ public class TransactionController extends AbstractController {
 		if (transaction == null) {
 			logger.warn("could not find transaction for transaction id {}", transactionId);
 			throw new ClientHTTPException(SC_BAD_REQUEST,
-					"unable to find registerd transaction for transaction id '" + transactionId + "'");
+					"unable to find registered transaction for transaction id '" + transactionId + "'");
 		}
 
 		// if no action is specified in the request, it's a rollback (since it's
@@ -572,6 +573,10 @@ public class TransactionController extends AbstractController {
 		}
 		else {
 			sparqlUpdateString = request.getParameter(Protocol.UPDATE_PARAM_NAME);
+		}
+
+		if (null == sparqlUpdateString) {
+			throw new ClientHTTPException(SC_NOT_ACCEPTABLE, "Could not read SPARQL update string from body.");
 		}
 
 		logger.debug("SPARQL update string: {}", sparqlUpdateString);
