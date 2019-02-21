@@ -8,6 +8,7 @@ public class EqualsJoin implements PlanNode{
 	private PlanNode left;
 	private PlanNode right;
 	private boolean useAsFilter;
+	private boolean printed = false;
 
 	public EqualsJoin(PlanNode left, PlanNode right, boolean useAsFilter) {
 		this.left = left;
@@ -138,6 +139,8 @@ public class EqualsJoin implements PlanNode{
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
 		left.getPlanAsGraphvizDot(stringBuilder);
 
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");

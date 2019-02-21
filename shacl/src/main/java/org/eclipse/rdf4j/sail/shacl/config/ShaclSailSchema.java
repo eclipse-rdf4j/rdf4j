@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.sail.shacl.config;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 
@@ -47,6 +46,10 @@ public class ShaclSailSchema {
 
 	/** <code>http://rdf4j.org/config/sail/shacl#globalLogValidationExecution</code> */
 	public final static IRI GLOBAL_LOG_VALIDATION_EXECUTION = create("globalLogValidationExecution");
+
+	/** <code>http://rdf4j.org/config/sail/shacl#rdfsSubClassReasoning</code> */
+	public final static IRI RDFS_SUB_CLASS_REASONING = create("rdfsSubClassReasoning");
+
 
 	private static final IRI create(String localName) {
 		return SimpleValueFactory.getInstance().createIRI(NAMESPACE, localName);

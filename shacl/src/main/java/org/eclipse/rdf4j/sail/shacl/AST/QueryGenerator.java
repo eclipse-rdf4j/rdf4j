@@ -8,9 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+
 /**
  * @author Håvard Ottestad
  */
 public interface QueryGenerator {
-	String getQuery();
+	String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner);
 }

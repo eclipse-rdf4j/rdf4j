@@ -11,8 +11,7 @@ package org.eclipse.rdf4j.sail.shacl;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -33,28 +32,28 @@ public class TestPlanNodeOrdering {
 
 	@Test
 	public void testSelect() {
-		SailRepository repository = new SailRepository(new MemoryStore());
-		repository.initialize();
+		MemoryStore repository = new MemoryStore();
+		repository.init();
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (SailConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
-			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
-			connection.add(RDFS.SUBCLASSOF, RDF.TYPE, RDFS.RESOURCE);
+			connection.addStatement(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+			connection.addStatement(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
+			connection.addStatement(RDFS.SUBCLASSOF, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
+
+
+			Select select = new Select(connection, "?a <" + RDF.TYPE + "> []");
+			List<Tuple> tuples = new MockConsumePlanNode(select).asList();
+
+			String actual = Arrays.toString(tuples.toArray());
+
+			Collections.sort(tuples);
+
+			String expected = Arrays.toString(tuples.toArray());
+
+
+			assertEquals(expected, actual);
 		}
-
-		Select select = new Select(repository, "?a <" + RDF.TYPE + "> []");
-		List<Tuple> tuples = new MockConsumePlanNode(select).asList();
-
-		String actual = Arrays.toString(tuples.toArray());
-
-		Collections.sort(tuples);
-
-		String expected = Arrays.toString(tuples.toArray());
-
-
-		assertEquals(expected, actual);
-
 	}
 }

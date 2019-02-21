@@ -24,6 +24,7 @@ import java.util.List;
 public class GroupByCount implements PlanNode {
 
 	PlanNode parent;
+	private boolean printed = false;
 
 	public GroupByCount(PlanNode parent) {
 		this.parent = parent;
@@ -117,6 +118,8 @@ public class GroupByCount implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);

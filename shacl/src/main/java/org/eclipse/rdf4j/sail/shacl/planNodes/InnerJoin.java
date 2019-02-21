@@ -29,6 +29,7 @@ import java.util.List;
 public class InnerJoin implements PlanNode, ParentProvider {
 
 	static private final Logger logger = LoggerFactory.getLogger(InnerJoin.class);
+	private boolean printed = false;
 
 
 	private PlanNode left;
@@ -183,6 +184,8 @@ public class InnerJoin implements PlanNode, ParentProvider {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
 		left.getPlanAsGraphvizDot(stringBuilder);
 
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");

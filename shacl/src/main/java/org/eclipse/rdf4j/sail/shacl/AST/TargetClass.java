@@ -13,10 +13,10 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -45,38 +46,44 @@ public class TargetClass extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
-		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection, getQuery())), 1);
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection, getQuery("?a", "?c", shaclSailConnection.getRdfsSubClassOfReasoner())), ""), 0, 1);
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), getQuery())), 1);
+		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null)), ""), 0, 1);
 
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return new Select(shaclSailConnection.getRemovedStatements(), getQuery());
+		return new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null));
 	}
 
 	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		boolean requiresEvalutation;
-		try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
-			requiresEvalutation = addedStatementsConnection.hasStatement(null, RDF.TYPE, targetClass, false);
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+		return addedStatements.hasStatement(null, RDF.TYPE, targetClass, false);
+	}
+
+	@Override
+	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+		if(rdfsSubClassOfReasoner != null  ){
+			Set<Resource> resources = rdfsSubClassOfReasoner.backwardsChain(targetClass);
+			if(resources.size() > 1){
+				return resources
+					.stream()
+					.map(r -> "{ BIND(rdf:type as ?b1) \n BIND(<" + r + "> as "+objectVariable+") \n "+subjectVariable+" ?b1 "+objectVariable+". } \n")
+					.reduce((l,r)-> l+ " UNION "+r)
+					.get();
+			}
 		}
 
-		return super.requiresEvaluation(addedStatements, removedStatements) || requiresEvalutation;
-	}
-
-	@Override
-	public String getQuery() {
-		return "BIND(rdf:type as ?b) \n BIND(<" + targetClass + "> as ?c) \n ?a ?b ?c.";
+		return "BIND(rdf:type as ?b1) \n BIND(<" + targetClass + "> as "+objectVariable+") \n "+subjectVariable+" ?b1 "+objectVariable+". \n";
 	}
 
 	public PlanNode getTypeFilterPlan(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
-		return new ExternalTypeFilterNode(shaclSailConnection, targetClass, parent);
+		return new ExternalTypeFilterNode(shaclSailConnection, targetClass, parent, 0, true);
 	}
 
 }

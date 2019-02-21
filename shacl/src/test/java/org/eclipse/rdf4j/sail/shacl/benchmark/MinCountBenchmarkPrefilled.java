@@ -91,11 +91,11 @@ public class MinCountBenchmarkPrefilled {
 		this.shaclRepo = new SailRepository(shaclRepo);
 
 		memoryStoreRepo = new SailRepository(new MemoryStore());
-		memoryStoreRepo.initialize();
+		memoryStoreRepo.init();
 
 
 		sparqlQueryMemoryStoreRepo = new SailRepository(new MemoryStore());
-		sparqlQueryMemoryStoreRepo.initialize();
+		sparqlQueryMemoryStoreRepo.init();
 
 
 		shaclRepo.disableValidation();

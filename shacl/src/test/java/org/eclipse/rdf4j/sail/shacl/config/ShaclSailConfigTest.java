@@ -7,20 +7,26 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.config;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.*;
-
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
-import org.eclipse.rdf4j.model.impl.TreeModelFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.junit.Before;
 import org.junit.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.CACHE_SELECT_NODES;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.GLOBAL_LOG_VALIDATION_EXECUTION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.IGNORE_NO_SHAPES_LOADED_EXCEPTION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_PLANS;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_VIOLATIONS;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALIDATION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.RDFS_SUB_CLASS_REASONING;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
 
 public class ShaclSailConfigTest {
 
@@ -47,6 +53,7 @@ public class ShaclSailConfigTest {
 		assertThat(subject.isValidationEnabled()).isTrue();
 		assertThat(subject.isCacheSelectNodes()).isTrue();
 		assertThat(subject.isGlobalLogValidationExecution()).isFalse();
+		assertThat(subject.isRdfsSubClassReasoning()).isTrue();
 	}
 
 	@Test
@@ -61,7 +68,8 @@ public class ShaclSailConfigTest {
 		  .add(IGNORE_NO_SHAPES_LOADED_EXCEPTION, true)
 		  .add(VALIDATION_ENABLED, true)
 		  .add(CACHE_SELECT_NODES, true)
-		  .add(GLOBAL_LOG_VALIDATION_EXECUTION, true);
+		  .add(GLOBAL_LOG_VALIDATION_EXECUTION, true)
+		  .add(RDFS_SUB_CLASS_REASONING, false);
 		// @formatter:on
 
 		subject.parse(mb.build(), implNode);
@@ -74,6 +82,8 @@ public class ShaclSailConfigTest {
 		assertThat(subject.isValidationEnabled()).isTrue();
 		assertThat(subject.isCacheSelectNodes()).isTrue();
 		assertThat(subject.isGlobalLogValidationExecution()).isTrue();
+		assertThat(subject.isRdfsSubClassReasoning()).isFalse();
+
 	}
 
 	@Test
@@ -107,6 +117,7 @@ public class ShaclSailConfigTest {
 		assertThat(m.contains(node, VALIDATION_ENABLED, null)).isTrue();
 		assertThat(m.contains(node, CACHE_SELECT_NODES, null)).isTrue();
 		assertThat(m.contains(node, GLOBAL_LOG_VALIDATION_EXECUTION, null)).isTrue();
+		assertThat(m.contains(node, RDFS_SUB_CLASS_REASONING, null)).isTrue();
 	}
 
 }
