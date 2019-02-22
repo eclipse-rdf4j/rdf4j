@@ -1,5 +1,5 @@
 = Known Limitations
-Currently, the following SPARQL 1.1 features have not yet been implemented in Spanqit:
+Currently, the following SPARQL 1.1 features have not yet been implemented in SparqlBuilder:
 
 - http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#propertypaths[Property Paths]
 - http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#inline-data[Values Block]
