@@ -253,9 +253,10 @@ public class JSONLDHierarchicalWriterTest {
 		writerConfig.set(JSONLDSettings.HIERARCHICAL_VIEW, false);
 		verifyOutput();
 	}
-	
+
 	/**
-	 * Verify output hierarchy does not duplicate nodes B and C. 
+	 * Verify output hierarchy does not duplicate nodes B and C.
+	 * 
 	 * @throws IOException
 	 * @see https://github.com/eclipse/rdf4j/issues/1283
 	 */
@@ -268,24 +269,24 @@ public class JSONLDHierarchicalWriterTest {
 
 		addStatement(e, child, b);
 		addStatement(b, child, c);
-		
+
 		verifyOutput();
 	}
 
-    @Test
-    public void testOrderDuplicatedChild() throws IOException {
-        IRI child = vf.createIRI("urn:child");
-        IRI b = vf.createIRI("urn:B");
-        IRI c = vf.createIRI("urn:C");
-        IRI e = vf.createIRI("urn:E");
-        IRI d = vf.createIRI("urn:D");
+	@Test
+	public void testOrderDuplicatedChild() throws IOException {
+		IRI child = vf.createIRI("urn:child");
+		IRI b = vf.createIRI("urn:B");
+		IRI c = vf.createIRI("urn:C");
+		IRI e = vf.createIRI("urn:E");
+		IRI d = vf.createIRI("urn:D");
 
-        addStatement(e, child, b);
-        addStatement(b, child, c);
-        addStatement(d, child, b);
+		addStatement(e, child, b);
+		addStatement(b, child, c);
+		addStatement(d, child, b);
 
-        verifyOutput();
-    }
+		verifyOutput();
+	}
 
 	private void addStatement(Resource subject, URI predicate, Value object, Resource context) {
 		model.add(vf.createStatement(subject, predicate, object, context));
