@@ -378,6 +378,43 @@ Once a minor release is published the _develop_ minor version should be incremen
 version and any approved features that are scheduled for this next minor
 version should be merged into _develop_ branch.
 
+== Optional: publishing docker images
+
+Occasionally a docker server/workbench image could be built 
+and pushed to `https:/hub.docker.com/eclipse/rdf4j-workbench`,
+which is part of the Eclipse organizational account.
+Since this account is managed separately by the Eclipse Foundation,
+only a limited number of committers will be granted access by the EMO.
+ 
+The Dockerfiles are stored in `rdf4j-tools/assembly/src/main/dist/docker`,
+and currently there are two supported architectures: `amd64` (Intel/AMD x86-64) and `arm64v8`.
+
+Note that docker does not support building cross-architecture out of the box,
+so either two systems or some additional software (e.g. QEMU) will be needed. See also
+https://www.ecliptik.com/Cross-Building-and-Running-Multi-Arch-Docker-Images.
+
+
+Go to the previously mentioned docker directory and build the image(s):
++
+    docker build --build-arg VERSION=2.5.0 --file Dockerfile.amd64 \
+                 --tag eclipse/rdf4j-workbench:amd64-2.5.0-testing .
++
+
+Verify the image by running it:
++
+    docker run -p 8080:8080 eclipse/rdf4j-workbench:amd64-2.5.0-testing
++
+After a fews seconds, the workbench should be avaible on 
+`http://localhost:8080/rdf4j-workbench`.
+Check the RDF4J version in System / Information.
+
+Log in on `hub.docker.com`, and push the image:
++
+    docker login
+    docker push eclipse/rdf4j-workbench:amd64-2.5.0-testing
++
+
+
 == Further reading
 
 Some generic sources of information about projects hosted by Eclipse:
