@@ -1,0 +1,9 @@
+[ {
+  "@id" : "urn:E",
+  "urn:child" : [ {
+    "@id" : "urn:B",
+    "urn:child" : [ {
+      "@id" : "urn:C"
+    } ]
+  } ]
+} ]
