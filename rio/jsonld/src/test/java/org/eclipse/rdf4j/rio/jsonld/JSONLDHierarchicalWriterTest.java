@@ -16,20 +16,17 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
-import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -264,8 +261,6 @@ public class JSONLDHierarchicalWriterTest {
 	 */
 	@Test
 	public void testOrder() throws IOException {
-		ModelFactory mf = new LinkedHashModelFactory();
-
 		IRI child = vf.createIRI("urn:child");
 		IRI b = vf.createIRI("urn:B");
 		IRI c = vf.createIRI("urn:C");
@@ -276,6 +271,21 @@ public class JSONLDHierarchicalWriterTest {
 		
 		verifyOutput();
 	}
+
+    @Test
+    public void testOrderDuplicatedChild() throws IOException {
+        IRI child = vf.createIRI("urn:child");
+        IRI b = vf.createIRI("urn:B");
+        IRI c = vf.createIRI("urn:C");
+        IRI e = vf.createIRI("urn:E");
+        IRI d = vf.createIRI("urn:D");
+
+        addStatement(e, child, b);
+        addStatement(b, child, c);
+        addStatement(d, child, b);
+
+        verifyOutput();
+    }
 
 	private void addStatement(Resource subject, URI predicate, Value object, Resource context) {
 		model.add(vf.createStatement(subject, predicate, object, context));
