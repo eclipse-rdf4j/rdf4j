@@ -328,11 +328,17 @@ As of writing this documentation the following features are supported.
  - `sh:nodeKind`
  - `sh:languageIn`
  - `sh:datatype`
+ - `sh:class`
 
-By not including `sh:targetClass` on a shape, the shape will match all subjects.
+Implicit `sh:targetClass` is supported for nodes that are `rdfs:Class` and either of `sh:PropertyShape` or `sh:NodeShape`.
+Validation for all nodes, equivalent to `owl:Thing` in an environment with a reasoner, can be enabled by setting
+`setUndefinedTargetValidatesAllSubjects(true)`.
 
 `sh:path` is limited to single predicate paths, eg. `ex:age`. Sequence paths,
 alternative paths, inverse paths and the like are not supported.
+
+`sh:or` is limited to statement based restrictions, such as `sh:datatype`, or aggregate based restrictions, such as `sh:minCount`,
+but not both at the same time.
 
 === Validation results
 
