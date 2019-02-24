@@ -42,7 +42,7 @@ public class InnerJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a", "b"));
 
-		InnerJoin innerJoin = new InnerJoin(left, right, null, null);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined();
 
 		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
@@ -60,7 +60,7 @@ public class InnerJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b"));
 
-		InnerJoin innerJoin = new InnerJoin(left, right, null, null);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined();
 
 		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
@@ -78,7 +78,7 @@ public class InnerJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a2", "b"));
 
-		InnerJoin innerJoin = new InnerJoin(left, right, null, null);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined();
 
 		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
@@ -96,7 +96,7 @@ public class InnerJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList());
 
-		InnerJoin innerJoin = new InnerJoin(left, right, null, null);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined();
 
 		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
@@ -114,7 +114,7 @@ public class InnerJoinTest {
 		PlanNode left = new MockInputPlanNode();
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"));
 
-		InnerJoin innerJoin = new InnerJoin(left, right, null, null);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined();
 
 		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
@@ -131,7 +131,7 @@ public class InnerJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"), Arrays.asList("a4"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a3", "b3"), Arrays.asList("a4", "b4"));
 
-		InnerJoin innerJoin = new InnerJoin(left, right, null, null);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined();
 
 		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
@@ -148,7 +148,7 @@ public class InnerJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"));
 
-		InnerJoin innerJoin = new InnerJoin(left, right, null, null);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined();
 
 		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
@@ -165,7 +165,7 @@ public class InnerJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a3", "b3"));
 
-		PlanNode innerJoin = new LoggingNode(new InnerJoin(left, right, null, null), "");
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined();
 
 		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
@@ -182,7 +182,7 @@ public class InnerJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"), Arrays.asList("a4"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"), Arrays.asList("a3", "b3"), Arrays.asList("a4", "b4"));
 
-		InnerJoin innerJoin = new InnerJoin(left, right, null, null);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined();
 
 		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
@@ -199,7 +199,7 @@ public class InnerJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"), Arrays.asList("a4"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"), Arrays.asList("a4", "b4"));
 
-		InnerJoin innerJoin = new InnerJoin(left, right, null, null);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined();
 
 		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
@@ -217,7 +217,7 @@ public class InnerJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"), Arrays.asList("a4"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"), Arrays.asList("a4", "b4"));
 
-		InnerJoin innerJoin = new InnerJoin(left, right, null, null);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined();
 
 		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
@@ -234,7 +234,7 @@ public class InnerJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"), Arrays.asList("a4"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"));
 
-		InnerJoin innerJoin = new InnerJoin(left, right, null, null);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined();
 
 		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
@@ -252,7 +252,7 @@ public class InnerJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"), Arrays.asList("a3"), Arrays.asList("a4"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a1", "b11"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"));
 
-		InnerJoin innerJoin = new InnerJoin(left, right, null, null);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined();
 
 		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 

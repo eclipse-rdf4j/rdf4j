@@ -41,9 +41,13 @@ public class StandardisedPlanHelper {
 		filterAttacher.attachFilter(addedByPath, null, new PushBasedLoggingNode(invalidValuesDirectOnPath));
 
 
-		BufferedTupleFromFilter discardedRight = new BufferedTupleFromFilter();
 
-		PlanNode top = new LoggingNode(new InnerJoin(bufferedSplitter.getPlanNode(), invalidValuesDirectOnPath, null, new PushBasedLoggingNode(discardedRight)), "");
+//		PlanNode top = new LoggingNode(new InnerJoin(bufferedSplitter.getPlanNode(), invalidValuesDirectOnPath, null, new PushBasedLoggingNode(discardedRight)), "");
+		InnerJoin innerJoin = new InnerJoin(bufferedSplitter.getPlanNode(), invalidValuesDirectOnPath);
+		PlanNode top = new LoggingNode(innerJoin.getJoined(), "");
+		PlanNode discardedRight = innerJoin.getDiscardedRight();
+
+
 
 		if(!shaclSailConnection.stats.isBaseSailEmpty()) {
 			if (nodeShape instanceof TargetClass) {

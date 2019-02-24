@@ -87,25 +87,26 @@ public class ClassPropertyShape extends PathPropertyShape {
 			PlanNode addedByPath = new LoggingNode(getPlanAddedStatements(shaclSailConnection, nodeShape), "");
 
 
-			BufferedTupleFromFilter discardedRight = new BufferedTupleFromFilter();
 
 			// join all added by type and path
-			PlanNode leftOuterJoin = new LoggingNode(new InnerJoin(bufferedAddedByShape.getPlanNode(), addedByPath, null,new PushBasedLoggingNode(discardedRight)), "");
+			InnerJoin innerJoinHolder = new InnerJoin(bufferedAddedByShape.getPlanNode(), addedByPath);
+			PlanNode innerJoin = new LoggingNode(innerJoinHolder.getJoined(), "");
+			PlanNode discardedRight = new LoggingNode(innerJoinHolder.getDiscardedRight(), "");
 
 			if (nodeShape instanceof TargetClass) {
 				PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, discardedRight), "");
 
-				leftOuterJoin = new LoggingNode(new Unique(new UnionNode(leftOuterJoin, typeFilterPlan)), "");
+				innerJoin = new LoggingNode(new Unique(new UnionNode(innerJoin, typeFilterPlan)), "");
 
 			}
 
 			// also add anything that matches the path from the previousConnection, eg. if you add ":peter a foaf:Person", and ":peter foaf:knows :steve" is already added
 			PlanNode bulkedExternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(bufferedAddedByShape.getPlanNode(), shaclSailConnection, path.getQuery("?a", "?c", null), true), "");
 
-			// only get tuples that came from the first or the leftOuterJoin or bulkedExternalLeftOuter,
+			// only get tuples that came from the first or the innerJoin or bulkedExternalLeftOuter,
 			// we don't care if you added ":peter a foaf:Person" and nothing else and there is nothing else in the underlying sail
 			DirectTupleFromFilter joined = new DirectTupleFromFilter();
-			new TupleLengthFilter(new UnionNode(leftOuterJoin, bulkedExternalLeftOuter), joined, null, 2, false);
+			new TupleLengthFilter(new UnionNode(innerJoin, bulkedExternalLeftOuter), joined, null, 2, false);
 
 			// filter by type against addedStatements, this is an optimization for when you add the type statement in the same transaction
 			PlanNode addedStatementsTypeFilter = new LoggingNode(new ExternalTypeFilterNode(addedStatements, classResource, joined, 1, false), "");

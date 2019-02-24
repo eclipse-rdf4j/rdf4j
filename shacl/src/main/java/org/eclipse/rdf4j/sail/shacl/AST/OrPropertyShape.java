@@ -118,10 +118,10 @@ public class OrPropertyShape extends PropertyShape {
 			ret = new LoggingNode(equalsJoin, "");
 		} else if (iteratorData == IteratorData.aggregated) {
 
-			PlanNode innerJoin = new LoggingNode(new InnerJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), null, null), "");
+			PlanNode innerJoin = new LoggingNode(new InnerJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1))).getJoined(), "");
 
 			for (int i = 2; i < or.size(); i++) {
-				innerJoin = new LoggingNode(new InnerJoin(innerJoin, unionAll(plannodes.get(i)), null, null), "");
+				innerJoin = new LoggingNode(new InnerJoin(innerJoin, unionAll(plannodes.get(i))).getJoined(), "");
 			}
 
 			ret = new LoggingNode(innerJoin, "");
