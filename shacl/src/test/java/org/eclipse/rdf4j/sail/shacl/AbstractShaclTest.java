@@ -82,7 +82,7 @@ abstract public class AbstractShaclTest {
 		this.testCasePath = testCasePath;
 		this.path = path;
 		this.expectedResult = expectedResult;
-		LoggingNode.loggingEnabled = true;
+		LoggingNode.loggingEnabled = false;
 		this.isolationLevel = isolationLevel;
 	}
 
@@ -147,6 +147,7 @@ abstract public class AbstractShaclTest {
 		System.out.println(shaclFile);
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.setLogValidationPlans(true);
+//		shaclSail.setParallelValidation(false);
 		SailRepository shaclRepository = new SailRepository(shaclSail);
 		shaclRepository.init();
 		Utils.loadShapeData(shaclRepository, shaclFile);

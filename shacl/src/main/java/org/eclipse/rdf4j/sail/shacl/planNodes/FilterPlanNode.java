@@ -205,17 +205,30 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 		}
 	}
 
+	int closeCalled = 0;
+
 	@Override
 	public void close() {
-		if (iterator != null) {
+//		logger.warn(System.identityHashCode(this) + " : ");
+//		Thread.dumpStack();
+		closeCalled++;
+		int requiredClose = 0;
+		if(falseNode !=  null) requiredClose++;
+		if(trueNode != null) requiredClose++;
+
+		if (requiredClose == closeCalled) {
 			iterator.close();
 			iterator = null;
+		}
+		if(closeCalled > requiredClose){
+//			throw new IllegalStateException(System.identityHashCode(this)+"");
+			throw new IllegalStateException();
 		}
 	}
 
 	@Override
 	public boolean incrementIterator() {
-		if (iterator.hasNext()) {
+		if (iterator != null && iterator.hasNext()) {
 			iterator.next();
 			return true;
 		}

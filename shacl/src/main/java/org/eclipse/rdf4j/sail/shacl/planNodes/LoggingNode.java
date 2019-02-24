@@ -57,36 +57,36 @@ public class LoggingNode implements PlanNode {
 				}
 
 				private CloseableIteration<Tuple, SailException> cachedIterator(CloseableIteration<Tuple, SailException> fromIterator) {
-					try (Stream<Tuple> stream = Iterations.stream(fromIterator)) {
-						List<Tuple> collect = stream.collect(Collectors.toList());
+					Stream<Tuple> stream = Iterations.stream(fromIterator);
+					List<Tuple> collect = stream.collect(Collectors.toList());
 
-						return new CloseableIteration<Tuple, SailException>() {
+					return new CloseableIteration<Tuple, SailException>() {
 
-							Iterator<Tuple> iterator = collect.iterator();
+						Iterator<Tuple> iterator = collect.iterator();
 
 
-							@Override
-							public void close() throws SailException {
+						@Override
+						public void close() throws SailException {
 
-							}
+						}
 
-							@Override
-							public boolean hasNext() throws SailException {
-								return iterator.hasNext();
-							}
+						@Override
+						public boolean hasNext() throws SailException {
+							return iterator.hasNext();
+						}
 
-							@Override
-							public Tuple next() throws SailException {
-								return iterator.next();
-							}
+						@Override
+						public Tuple next() throws SailException {
+							return iterator.next();
+						}
 
-							@Override
-							public void remove() throws SailException {
+						@Override
+						public void remove() throws SailException {
 
-							}
-						};
+						}
+					};
 
-					}
+
 				}
 
 

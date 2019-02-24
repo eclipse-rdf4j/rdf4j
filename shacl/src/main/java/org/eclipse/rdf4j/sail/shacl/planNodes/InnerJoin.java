@@ -273,18 +273,29 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		}
 	}
 
+	int closeCalled = 0;
+
 	@Override
 	public void close() {
-		if (iterator != null) {
+		closeCalled++;
+		int requiredClose = 0;
+		if(joined !=  null) requiredClose++;
+		if(discardedLeft != null) requiredClose++;
+		if(discardedRight != null) requiredClose++;
+
+		if (requiredClose == closeCalled) {
 			iterator.close();
 			iterator = null;
+		}
+		if(closeCalled > requiredClose){
+			throw new IllegalStateException();
 		}
 	}
 
 	@Override
 	public boolean incrementIterator() {
 
-		if (iterator.hasNext()) {
+		if (iterator != null && iterator.hasNext()) {
 			Tuple next = iterator.next();
 			if (joined != null) {
 				joined.push(next);

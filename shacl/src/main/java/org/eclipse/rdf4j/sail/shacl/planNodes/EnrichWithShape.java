@@ -52,7 +52,10 @@ public class EnrichWithShape implements PlanNode {
 
 			@Override
 			public void close() throws SailException {
-				parentIterator.close();
+				if(parentIterator != null){
+					parentIterator.close();
+					parentIterator = null;
+				}
 			}
 		};
 	}
