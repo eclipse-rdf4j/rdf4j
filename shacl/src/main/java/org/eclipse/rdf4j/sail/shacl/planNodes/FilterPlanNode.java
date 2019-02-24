@@ -200,19 +200,17 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 	@Override
 	public void init() {
-		if (iterator != null) {
-			throw new IllegalStateException();
+		if (iterator == null) {
+			iterator = iterator();
 		}
-		iterator = iterator();
 	}
 
 	@Override
 	public void close() {
-		if (iterator == null) {
-			return;
+		if (iterator != null) {
+			iterator.close();
+			iterator = null;
 		}
-		iterator.close();
-		iterator = null;
 	}
 
 	@Override
