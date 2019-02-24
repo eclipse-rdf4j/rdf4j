@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
-import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;

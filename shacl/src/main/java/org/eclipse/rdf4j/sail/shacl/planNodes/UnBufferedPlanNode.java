@@ -3,9 +3,6 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
-import java.util.ArrayDeque;
-import java.util.Queue;
-
 public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implements PushablePlanNode {
 
 	private T parent;
