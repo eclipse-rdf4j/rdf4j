@@ -95,6 +95,8 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 				return stream.map(Statement::getSubject).map(shapeId -> {
 					if (hasTargetClass(shapeId, connection)) {
 						return new TargetClass(shapeId, connection);
+					} else if (hasTargetNode(shapeId, connection)) {
+						return new TargetNode(shapeId, connection);
 					} else {
 						if(sail.isUndefinedTargetValidatesAllSubjects()) {
 							return new NodeShape(shapeId, connection); // target class nodeShapes are the only supported nodeShapes
@@ -109,6 +111,10 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 		private static boolean hasTargetClass(Resource shapeId, SailRepositoryConnection connection) {
 			return connection.hasStatement(shapeId, SHACL.TARGET_CLASS, null, true);
+		}
+
+		private static boolean hasTargetNode(Resource shapeId, SailRepositoryConnection connection) {
+			return connection.hasStatement(shapeId, SHACL.TARGET_NODE, null, true);
 		}
 	}
 

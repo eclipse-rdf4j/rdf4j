@@ -70,7 +70,9 @@ abstract public class AbstractShaclTest {
 		"test-cases/class/subclass",
 		"test-cases/or/class",
 		"test-cases/or/datatype2",
-		"test-cases/or/minCountDifferentPath"
+		"test-cases/or/minCountDifferentPath",
+		"test-cases/datatype/targetNode"
+
 		);
 
 	final String testCasePath;
