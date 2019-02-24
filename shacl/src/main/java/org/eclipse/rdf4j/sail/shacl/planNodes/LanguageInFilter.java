@@ -23,8 +23,8 @@ public class LanguageInFilter extends FilterPlanNode {
 
 	private final List<String> languageIn;
 
-	public LanguageInFilter(PlanNode parent, PushBasedPlanNode trueNode, PushBasedPlanNode falseNode, List<String> languageIn) {
-		super(parent, trueNode, falseNode);
+	public LanguageInFilter(PlanNode parent, List<String> languageIn) {
+		super(parent);
 		this.languageIn = languageIn;
 	}
 

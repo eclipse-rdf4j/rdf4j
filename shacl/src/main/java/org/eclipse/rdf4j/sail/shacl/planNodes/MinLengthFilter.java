@@ -18,8 +18,8 @@ public class MinLengthFilter extends FilterPlanNode {
 
 	private final long minLength;
 
-	public MinLengthFilter(PlanNode parent, PushBasedPlanNode trueNode, PushBasedPlanNode falseNode, long minLength) {
-		super(parent, trueNode, falseNode);
+	public MinLengthFilter(PlanNode parent, long minLength) {
+		super(parent);
 		this.minLength = minLength;
 	}
 

@@ -41,7 +41,7 @@ public class MinInclusivePropertyShape extends PathPropertyShape {
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,
 			nodeShape,
-			(parent, trueNode, falseNode) -> new LiteralComparatorFilter(parent, trueNode, falseNode, minInclusive, value -> value <= 0),
+			(parent) -> new LiteralComparatorFilter(parent, minInclusive, value -> value <= 0),
 			this,
 			overrideTargetNode);
 

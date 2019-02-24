@@ -18,8 +18,8 @@ public class MaxCountFilter extends FilterPlanNode {
 
 	private final long maxCount;
 
-	public MaxCountFilter(PlanNode parent, PushBasedPlanNode trueNode, PushBasedPlanNode falseNode, long maxCount) {
-		super(parent, trueNode, falseNode);
+	public MaxCountFilter(PlanNode parent,  long maxCount) {
+		super(parent);
 		this.maxCount = maxCount;
 	}
 

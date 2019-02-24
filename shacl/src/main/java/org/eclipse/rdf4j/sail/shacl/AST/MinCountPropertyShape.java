@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.MinCountFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
@@ -60,8 +61,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			PlanNode allStatements = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
 			PlanNode groupBy = new LoggingNode(new GroupByCount(allStatements), "");
 
-			DirectTupleFromFilter filteredStatements = new DirectTupleFromFilter();
-			new MinCountFilter(groupBy, null, filteredStatements, minCount);
+			PlanNode filteredStatements = new MinCountFilter(groupBy, minCount).getFalseNode(UnBufferedPlanNode.class);
 
 			if (printPlans) {
 				String planAsGraphvizDot = getPlanAsGraphvizDot(filteredStatements, shaclSailConnection);
@@ -119,8 +119,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		PlanNode groupBy = new LoggingNode(new GroupByCount(topNode), "");
 
-		DirectTupleFromFilter filteredStatements = new DirectTupleFromFilter();
-		new MinCountFilter(groupBy, null, filteredStatements, minCount);
+		PlanNode filteredStatements = new MinCountFilter(groupBy, minCount).getFalseNode(UnBufferedPlanNode.class);
 
 		PlanNode minCountFilter = new LoggingNode(filteredStatements, "");
 
@@ -130,8 +129,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		PlanNode groupBy2 = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin2), "");
 
-		DirectTupleFromFilter filteredStatements2 = new DirectTupleFromFilter();
-		new MinCountFilter(groupBy2, null, filteredStatements2, minCount);
+		PlanNode filteredStatements2 = new MinCountFilter(groupBy2, minCount).getFalseNode(UnBufferedPlanNode.class);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(filteredStatements2, shaclSailConnection);

@@ -33,8 +33,8 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 	private final boolean timeDatatype;
 	private final boolean dateDatatype;
 
-	public LiteralComparatorFilter(PlanNode parent, PushBasedPlanNode trueNode, PushBasedPlanNode falseNode, Literal compareTo, Function<Integer, Boolean> function) {
-		super(parent, trueNode, falseNode);
+	public LiteralComparatorFilter(PlanNode parent, Literal compareTo, Function<Integer, Boolean> function) {
+		super(parent);
 		this.function = function;
 		this.compareTo = compareTo;
 		IRI datatype = compareTo.getDatatype();

@@ -40,7 +40,7 @@ public class DatatypePropertyShape extends PathPropertyShape {
 		PlanNode invalidValues =  StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,
 			nodeShape,
-			(parent, trueNode, falseNode) -> new DatatypeFilter(parent, trueNode, falseNode, datatype),
+			(parent) -> new DatatypeFilter(parent, datatype),
 			this,
 			overrideTargetNode
 		);

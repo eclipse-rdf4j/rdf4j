@@ -6,15 +6,14 @@ import org.eclipse.rdf4j.sail.SailException;
 import java.util.ArrayDeque;
 import java.util.Queue;
 
-public class AutoBufferingPlanNode implements PlanNode {
+public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implements PushablePlanNode {
 
-	private InnerJoin innerJoin;
+	private T parent;
 
-	Queue<Tuple> buffer = new ArrayDeque<>();
+	Tuple next;
 
-
-	public AutoBufferingPlanNode(InnerJoin innerJoin) {
-		this.innerJoin = innerJoin;
+	UnBufferedPlanNode(T parent) {
+		this.parent = parent;
 	}
 
 	@Override
@@ -22,30 +21,33 @@ public class AutoBufferingPlanNode implements PlanNode {
 		return new CloseableIteration<Tuple, SailException>() {
 
 			{
-				innerJoin.init();
+				parent.init();
 			}
 
 			@Override
 			public void close() throws SailException {
-				innerJoin.close();
+				parent.close();
 			}
 
 			@Override
 			public boolean hasNext() throws SailException {
 				calculateNext();
-				return !buffer.isEmpty();
+				return next != null;
 			}
 
 			private void calculateNext() {
-				while(buffer.isEmpty()){
-					boolean success = innerJoin.incrementIterator();
+				while(next == null){
+					boolean success = parent.incrementIterator();
 					if(!success) break;
 				}
 			}
 
 			@Override
 			public Tuple next() throws SailException {
-				return buffer.remove();
+				calculateNext();
+				Tuple temp = next;
+				next = null;
+				return temp;
 			}
 
 			@Override
@@ -57,7 +59,7 @@ public class AutoBufferingPlanNode implements PlanNode {
 
 	@Override
 	public int depth() {
-		return innerJoin.depth();
+		return parent.depth();
 	}
 
 	@Override
@@ -67,15 +69,16 @@ public class AutoBufferingPlanNode implements PlanNode {
 
 	@Override
 	public String getId() {
-		return innerJoin.getId();
+		return parent.getId();
 	}
 
 	@Override
 	public IteratorData getIteratorDataType() {
-		return innerJoin.getIteratorDataType();
+		return parent.getIteratorDataType();
 	}
 
+	@Override
 	public void push(Tuple next) {
-		buffer.add(next);
+		this.next = next;
 	}
 }

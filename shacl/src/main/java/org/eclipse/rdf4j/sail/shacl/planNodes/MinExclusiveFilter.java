@@ -21,8 +21,8 @@ public class MinExclusiveFilter extends FilterPlanNode {
 
 	private final BigDecimal min;
 
-	public MinExclusiveFilter(PlanNode parent, PushBasedPlanNode trueNode, PushBasedPlanNode falseNode, BigDecimal min) {
-		super(parent, trueNode, falseNode);
+	public MinExclusiveFilter(PlanNode parent, BigDecimal min) {
+		super(parent);
 		this.min = min;
 	}
 

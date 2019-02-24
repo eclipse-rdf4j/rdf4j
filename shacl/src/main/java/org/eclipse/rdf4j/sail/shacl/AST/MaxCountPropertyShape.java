@@ -13,15 +13,15 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedTupleFromFilter;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
-import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MaxCountFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
@@ -53,15 +53,13 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
 
-		if(overrideTargetNode != null){
+		if (overrideTargetNode != null) {
 			PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
 			PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin), "");
 
-			DirectTupleFromFilter directTupleFromFilter = new DirectTupleFromFilter();
+			PlanNode directTupleFromFilter = new LoggingNode(new MaxCountFilter(groupByCount, maxCount).getFalseNode(UnBufferedPlanNode.class), "");
 
-			new MaxCountFilter(groupByCount, null, directTupleFromFilter, maxCount);
-
-			if(printPlans){
+			if (printPlans) {
 				String planAsGraphvizDot = getPlanAsGraphvizDot(directTupleFromFilter, shaclSailConnection);
 				logger.info(planAsGraphvizDot);
 			}
@@ -83,10 +81,11 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		PlanNode groupByCount1 = new LoggingNode(new GroupByCount(mergeNode), "");
 
-		BufferedTupleFromFilter validValues = new BufferedTupleFromFilter();
-		BufferedTupleFromFilter invalidValues = new BufferedTupleFromFilter();
 
-		new MaxCountFilter(groupByCount1, validValues, invalidValues, maxCount);
+		MaxCountFilter maxCountFilter = new MaxCountFilter(groupByCount1, maxCount);
+
+		PlanNode validValues = maxCountFilter.getTrueNode(BufferedPlanNode.class);
+		PlanNode invalidValues = maxCountFilter.getFalseNode(BufferedPlanNode.class);
 
 		PlanNode trimmed = new LoggingNode(new TrimTuple(validValues, 0, 1), "");
 
@@ -96,13 +95,11 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		PlanNode groupByCount = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin), "");
 
-		DirectTupleFromFilter directTupleFromFilter = new DirectTupleFromFilter();
-
-		new MaxCountFilter(groupByCount, null, directTupleFromFilter, maxCount);
+		PlanNode directTupleFromFilter = new MaxCountFilter(groupByCount, maxCount).getFalseNode(UnBufferedPlanNode.class);
 
 		PlanNode mergeNode1 = new UnionNode(new LoggingNode(directTupleFromFilter, ""), new LoggingNode(invalidValues, ""));
 
-		if(printPlans){
+		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(mergeNode1, shaclSailConnection);
 			logger.info(planAsGraphvizDot);
 		}

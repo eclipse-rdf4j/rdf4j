@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.commons.lang.StringUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.query.algebra.In;
 import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,7 +26,7 @@ import java.util.List;
  * This inner join algorithm assumes the left iterator is unique for tuple[0], eg. no two tuples have the same value at index 0.
  * The right iterator is allowed to contain duplicates.
  */
-public class InnerJoin {
+public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 
 	static private final Logger logger = LoggerFactory.getLogger(InnerJoin.class);
 	private boolean printed = false;
@@ -34,12 +35,9 @@ public class InnerJoin {
 	private PlanNode left;
 	private PlanNode right;
 	private CloseableIteration<Tuple, SailException> iterator;
-	private AutoBufferingPlanNode joined;
-	private AutoBufferingPlanNode discardedLeft;
-	private AutoBufferingPlanNode discardedRight;
-
-//	private PushBasedPlanNode discardedLeft;
-//	private PushBasedPlanNode discardedRight;
+	private PushablePlanNode joined;
+	private PushablePlanNode discardedLeft;
+	private PushablePlanNode discardedRight;
 
 	public InnerJoin(PlanNode left, PlanNode right) {
 		this.left = left;
@@ -52,27 +50,43 @@ public class InnerJoin {
 	}
 
 
-	public PlanNode getJoined() {
+	public PlanNode getJoined(Class<? extends PushablePlanNode> type) {
 		if (joined != null) {
 			throw new IllegalStateException();
 		}
-		joined = new AutoBufferingPlanNode(this);
+		if (type == BufferedPlanNode.class) {
+			joined = new BufferedPlanNode<>(this);
+		} else {
+			joined = new UnBufferedPlanNode<>(this);
+
+		}
+
 		return joined;
 	}
 
-	public PlanNode getDiscardedLeft() {
+	public PlanNode getDiscardedLeft(Class<? extends PushablePlanNode> type) {
 		if (discardedLeft != null) {
 			throw new IllegalStateException();
 		}
-		discardedLeft = new AutoBufferingPlanNode(this);
+		if (type == BufferedPlanNode.class) {
+			discardedLeft = new BufferedPlanNode<>(this);
+		} else {
+			discardedLeft = new UnBufferedPlanNode<>(this);
+
+		}
 		return discardedLeft;
 	}
 
-	public PlanNode getDiscardedRight() {
+	public PlanNode getDiscardedRight(Class<? extends PushablePlanNode> type) {
 		if (discardedRight != null) {
 			throw new IllegalStateException();
 		}
-		discardedRight = new AutoBufferingPlanNode(this);
+		if (type == BufferedPlanNode.class) {
+			discardedRight = new BufferedPlanNode<>(this);
+		} else {
+			discardedRight = new UnBufferedPlanNode<>(this);
+
+		}
 		return discardedRight;
 	}
 
@@ -253,18 +267,25 @@ public class InnerJoin {
 		return StringUtils.leftPad("", depth(), "    ");
 	}
 
+	@Override
 	public void init() {
-		if(iterator != null) return;
+		if (iterator != null) {
+			return;
+		}
 		iterator = iterator();
 	}
 
+	@Override
 	public void close() {
-		if(iterator == null) return;
+		if (iterator == null) {
+			return;
+		}
 		iterator.close();
 		iterator = null;
 	}
 
-	boolean incrementIterator() {
+	@Override
+	public boolean incrementIterator() {
 
 		if (iterator.hasNext()) {
 			Tuple next = iterator.next();

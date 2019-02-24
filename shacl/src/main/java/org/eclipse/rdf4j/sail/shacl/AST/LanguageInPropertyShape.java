@@ -43,7 +43,7 @@ public class LanguageInPropertyShape extends PathPropertyShape {
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,
 			nodeShape,
-			(parent, trueNode, falseNode) -> new LanguageInFilter(parent, trueNode, falseNode, languageIn),
+			(parent) -> new LanguageInFilter(parent, languageIn),
 			this,
 			overrideTargetNode);
 
