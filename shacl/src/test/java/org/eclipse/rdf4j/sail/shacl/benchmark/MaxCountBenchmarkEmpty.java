@@ -9,11 +9,9 @@
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
 import ch.qos.logback.classic.Logger;
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -48,36 +46,32 @@ import java.util.stream.Stream;
 @Warmup(iterations = 20)
 @BenchmarkMode({Mode.AverageTime})
 @Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
-//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class DatatypeBenchmarkEmpty {
+public class MaxCountBenchmarkEmpty {
 
-
-	private static final int NUMBER_OF_TRANSACTIONS = 10;
-	private static final int STATEMENTS_PER_TRANSACTION = 1000;
 
 	private List<List<Statement>> allStatements;
 
-	@Setup(Level.Iteration)
+	@Setup(Level.Invocation)
 	public void setUp() {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 
-		allStatements = new ArrayList<>(NUMBER_OF_TRANSACTIONS);
+		allStatements = new ArrayList<>(10);
 
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
-		for (int j = 0; j < NUMBER_OF_TRANSACTIONS; j++) {
-			List<Statement> statements = new ArrayList<>(STATEMENTS_PER_TRANSACTION);
+		for (int j = 0; j < 10; j++) {
+			List<Statement> statements = new ArrayList<>(101);
 			allStatements.add(statements);
-			for (int i = 0; i < STATEMENTS_PER_TRANSACTION; i++) {
+			for (int i = 0; i < 1000; i++) {
 				statements.add(
 					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDF.TYPE, RDFS.RESOURCE)
 				);
 				statements.add(
-					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), FOAF.AGE, vf.createLiteral(i))
+					vf.createStatement(vf.createIRI("http://example.com/" + i + "_" + j), RDFS.LABEL, vf.createLiteral("label" + i))
 				);
 			}
 		}
@@ -94,25 +88,21 @@ public class DatatypeBenchmarkEmpty {
 	@Benchmark
 	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatype.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclMaxCountBenchmark.ttl"));
 
-//		((ShaclSail) repository.getSail()).setIgnoreNoShapesLoadedException(true);
-//		((ShaclSail) repository.getSail()).disableValidation();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.SNAPSHOT);
+			connection.begin();
 			connection.commit();
 		}
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
-				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.begin();
 				connection.add(statements);
 				connection.commit();
 			}
 		}
-
-		repository.shutDown();
 
 	}
 
@@ -125,18 +115,16 @@ public class DatatypeBenchmarkEmpty {
 		repository.init();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.SNAPSHOT);
+			connection.begin();
 			connection.commit();
 		}
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
-				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.begin();
 				connection.add(statements);
 				connection.commit();
 			}
 		}
-
-		repository.shutDown();
 
 	}
 
@@ -149,14 +137,14 @@ public class DatatypeBenchmarkEmpty {
 		repository.init();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.SNAPSHOT);
+			connection.begin();
 			connection.commit();
 		}
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
-				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.begin();
 				connection.add(statements);
-				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">; <" + FOAF.AGE + "> ?age. FILTER(datatype(?age) != <http://www.w3.org/2001/XMLSchema#int>)}").evaluate())) {
+				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">. ?a <" + RDFS.LABEL + "> ?c, ?d. FILTER(?c != ?d)}").evaluate())) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();
@@ -164,6 +152,31 @@ public class DatatypeBenchmarkEmpty {
 		}
 
 	}
+
+	@Benchmark
+	public void sparqlGroupByInsteadOfShacl() {
+
+		SailRepository repository = new SailRepository(new MemoryStore());
+
+		repository.init();
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.commit();
+		}
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			for (List<Statement> statements : allStatements) {
+				connection.begin();
+				connection.add(statements);
+				try (Stream<BindingSet> stream = Iterations.stream(connection.prepareTupleQuery("select ?a (count(?c) as ?count) where {?a a <" + RDFS.RESOURCE + ">. ?a <" + RDFS.LABEL + "> ?c} group by ?a having(?count > 1)").evaluate())) {
+					stream.forEach(System.out::println);
+				}
+				connection.commit();
+			}
+		}
+
+	}
+
 
 
 }
