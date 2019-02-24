@@ -8,13 +8,13 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.sail.SailConnection;
 
 /**
  * @author Håvard Ottestad
  */
 public interface RequiresEvalutation {
 
-	boolean requiresEvaluation(Repository addedStatements, Repository removedStatements);
+	boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements);
 
 }

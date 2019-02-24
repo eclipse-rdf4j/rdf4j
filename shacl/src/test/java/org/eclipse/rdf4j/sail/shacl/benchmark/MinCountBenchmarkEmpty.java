@@ -87,7 +87,6 @@ public class MinCountBenchmarkEmpty {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shacl.ttl"));
 
-		repository.initialize();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
@@ -110,7 +109,7 @@ public class MinCountBenchmarkEmpty {
 
 		SailRepository repository = new SailRepository(new MemoryStore());
 
-		repository.initialize();
+		repository.init();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
@@ -132,7 +131,7 @@ public class MinCountBenchmarkEmpty {
 
 		SailRepository repository = new SailRepository(new MemoryStore());
 
-		repository.initialize();
+		repository.init();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();

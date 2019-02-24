@@ -83,7 +83,6 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		this.shaclRepo = new SailRepository(shaclRepo);
-		this.shaclRepo.initialize();
 
 		shaclRepo.disableValidation();
 		try (SailRepositoryConnection connection = this.shaclRepo.getConnection()) {
@@ -125,7 +124,6 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		SailRepository repository = new SailRepository(shaclRepo);
-		repository.initialize();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
@@ -143,11 +141,10 @@ public class MinCountPrefilledVsEmptyBenchmark {
 	}
 
 	@Benchmark
-	public void shaclEmptyJustInitialize() throws Exception {
+	public void shaclEmptyJustinit() throws Exception {
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		SailRepository repository = new SailRepository(shaclRepo);
-		repository.initialize();
 
 
 	}
@@ -158,7 +155,6 @@ public class MinCountPrefilledVsEmptyBenchmark {
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
 		SailRepository repository = new SailRepository(shaclRepo);
-		repository.initialize();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();

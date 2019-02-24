@@ -25,11 +25,11 @@ import java.util.stream.Collectors;
  */
 public class Tuple implements Comparable<Tuple> {
 
-	Deque<PropertyShape> causedByPropertyShapes;
+	private Deque<PropertyShape> causedByPropertyShapes = new ArrayDeque<>(1);
 
-	private List<Tuple> history = new ArrayList<>();
+	private List<Tuple> history = new ArrayList<>(1);
 
-	public List<Value> line = new ArrayList<>();
+	public List<Value> line = new ArrayList<>(3);
 
 	public Tuple(List<Value> list) {
 		line = list;
@@ -50,6 +50,12 @@ public class Tuple implements Comparable<Tuple> {
 			.sorted()
 			.forEach(name -> line.add(bindingset.getValue(name)));
 
+	}
+
+	public Tuple(Tuple tuple) {
+		line = new ArrayList<>(tuple.line);
+		history = new ArrayList<>(tuple.history);
+		causedByPropertyShapes = new ArrayDeque<>(causedByPropertyShapes);
 	}
 
 
@@ -137,9 +143,6 @@ public class Tuple implements Comparable<Tuple> {
 
 	public void addAllCausedByPropertyShape(Deque<PropertyShape> causedByPropertyShapes) {
 		if(causedByPropertyShapes != null) {
-			if(this.causedByPropertyShapes == null){
-				this.causedByPropertyShapes = new ArrayDeque<>();
-			}
 
 			this.causedByPropertyShapes.addAll(causedByPropertyShapes);
 		}

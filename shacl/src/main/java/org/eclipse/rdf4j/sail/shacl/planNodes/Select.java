@@ -18,29 +18,24 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+
+import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
  */
 public class Select implements PlanNode {
 
-	final Repository repository;
-	ShaclSailConnection connection;
+	private final SailConnection connection;
 
-	String query;
+	private final String query;
+	private boolean printed = false;
 
-	public Select(Repository repository, String query) {
-		this.repository = repository;
-		this.query = "select * where { " + query + "} order by ?a";
-	}
-
-	public Select(ShaclSailConnection connection, String query) {
+	public Select(SailConnection connection, String query) {
 		this.connection = connection;
-		this.repository = null;
 		this.query = "select * where { " + query + "} order by ?a";
 	}
 
@@ -49,34 +44,21 @@ public class Select implements PlanNode {
 		return new CloseableIteration<Tuple, SailException>() {
 
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
-			RepositoryConnection repositoryConnection;
 
 			{
-				if (repository != null && connection == null) {
-					repositoryConnection = repository.getConnection();
-					bindingSet = repositoryConnection.prepareTupleQuery(query).evaluate();
-				} else {
-					QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 
-					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
+				QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 
-					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true);
+				ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
 
+				bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true);
 
-				}
 			}
 
 
 			@Override
 			public void close() throws SailException {
-				try {
-					bindingSet.close();
-				} finally {
-					if (repositoryConnection != null) {
-						repositoryConnection.close();
-					}
-				}
-
+				bindingSet.close();
 			}
 
 			@Override
@@ -103,20 +85,22 @@ public class Select implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
-		if(repository != null){
 
-				stringBuilder.append(System.identityHashCode(repository)+ " -> " +getId()).append("\n");
+		if (connection instanceof MemoryStoreConnection) {
+			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId()).append("\n");
+		} else {
+			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId()).append("\n");
 		}
-		if(connection != null){
-			stringBuilder.append( System.identityHashCode(connection)+ " -> " +getId()).append("\n");
-		}
+
 
 	}
 
 	@Override
 	public String getId() {
-		return System.identityHashCode(this)+"";
+		return System.identityHashCode(this) + "";
 	}
 
 	@Override
@@ -129,5 +113,33 @@ public class Select implements PlanNode {
 		return "Select{" +
 			"query='" + query + '\'' +
 			'}';
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		Select select = (Select) o;
+
+		return
+			Objects.equals(
+				connection instanceof MemoryStoreConnection ? ((MemoryStoreConnection) connection).getSail() : connection,
+				select.connection instanceof MemoryStoreConnection ? ((MemoryStoreConnection) select.connection).getSail() : select.connection
+			) &&
+				query.equals(select.query);
+	}
+
+	@Override
+	public int hashCode() {
+
+		if (connection instanceof MemoryStoreConnection) {
+			return Objects.hash(System.identityHashCode(((MemoryStoreConnection) connection).getSail()), query);
+		}
+		return Objects.hash(System.identityHashCode(connection), query);
+
 	}
 }

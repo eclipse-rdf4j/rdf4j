@@ -27,15 +27,17 @@ public class LoggingNode implements PlanNode {
 
 	static private final Logger logger = LoggerFactory.getLogger(LoggingNode.class);
 
-
 	PlanNode parent;
+	String message;
 
 	private boolean pullAll = true;
 
 	public static boolean loggingEnabled = false;
 
-	public LoggingNode(PlanNode parent) {
+	public LoggingNode(PlanNode parent, String message) {
 		this.parent = parent;
+		this.message = message;
+		assert message != null;
 	}
 
 	@Override
@@ -111,7 +113,7 @@ public class LoggingNode implements PlanNode {
 
 					assert next != null;
 
-					logger.info(leadingSpace() + parent.getClass().getSimpleName() + ".next(): " + " " + next.toString());
+					logger.info(leadingSpace() + message + parent.getClass().getSimpleName() + ".next(): " + " " + next.toString());
 
 					return next;
 				}

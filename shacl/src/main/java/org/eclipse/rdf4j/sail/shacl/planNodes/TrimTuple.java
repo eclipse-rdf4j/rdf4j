@@ -20,11 +20,14 @@ import org.eclipse.rdf4j.sail.SailException;
 public class TrimTuple implements PlanNode {
 
 	PlanNode parent;
-	int newLength;
+	private int newLength;
+	private int startIndex;
+	private boolean printed = false;
 
-	public TrimTuple(PlanNode parent, int newLength) {
+	public TrimTuple(PlanNode parent, int startIndex, int newLength) {
 		this.parent = parent;
 		this.newLength = newLength;
+		this.startIndex = startIndex;
 	}
 
 	@Override
@@ -52,7 +55,8 @@ public class TrimTuple implements PlanNode {
 
 				Tuple tuple = new Tuple();
 
-				for (int i = 0; i < newLength && i < next.line.size(); i++) {
+				int tempLength = newLength >= 0 ? newLength : next.line.size();
+				for (int i = startIndex; i < tempLength && i < next.line.size(); i++) {
 					tuple.line.add(next.line.get(i));
 				}
 
@@ -78,6 +82,8 @@ public class TrimTuple implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
@@ -86,7 +92,9 @@ public class TrimTuple implements PlanNode {
 	@Override
 	public String toString() {
 		return "TrimTuple{" +
-			"newLength=" + newLength +
+			"parent=" + parent +
+			", newLength=" + newLength +
+			", startIndex=" + startIndex +
 			'}';
 	}
 

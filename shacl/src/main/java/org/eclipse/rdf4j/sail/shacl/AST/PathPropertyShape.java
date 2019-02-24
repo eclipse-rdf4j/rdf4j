@@ -9,8 +9,8 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -36,18 +36,20 @@ public class PathPropertyShape extends PropertyShape {
 	}
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
-		return new Select(shaclSailConnection, path.getQuery());
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		return shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection, path.getQuery("?a", "?c", null)));
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return new Select(shaclSailConnection.getAddedStatements(), path.getQuery());
+		return shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), path.getQuery("?a", "?c", null)));
+
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return new Select(shaclSailConnection.getRemovedStatements(), path.getQuery());
+		return shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), path.getQuery("?a", "?c", null)));
+
 	}
 
 	@Override
@@ -57,7 +59,7 @@ public class PathPropertyShape extends PropertyShape {
 
 
 	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
 		return super.requiresEvaluation(addedStatements, removedStatements) || path.requiresEvaluation(addedStatements, removedStatements);
 	}
 

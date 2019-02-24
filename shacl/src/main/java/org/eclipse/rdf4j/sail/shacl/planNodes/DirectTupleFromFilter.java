@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
  */
 public class DirectTupleFromFilter implements PlanNode, PushBasedPlanNode, SupportsParentProvider {
 
+	private boolean printed = false;
 
 	private CloseableIteration<Tuple, SailException> parentIterator;
 
@@ -72,6 +73,8 @@ public class DirectTupleFromFilter implements PlanNode, PushBasedPlanNode, Suppo
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 
 		if(parentProvider instanceof PlanNode){

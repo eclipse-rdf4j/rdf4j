@@ -8,28 +8,27 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EqualsJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * @author Håvard Ottestad
@@ -41,26 +40,46 @@ public class OrPropertyShape extends PropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(OrPropertyShape.class);
 
 
-	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Resource or) {
 		super(id, nodeShape);
+		this.or = toList(connection, or).stream().map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v)).collect(Collectors.toList());
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.OR, null, true))) {
-			Resource orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:or on " + id));
-			or = toList(connection, orList).stream().map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v)).collect(Collectors.toList());
-		}
-		System.out.println();
 	}
 
 
-
-
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+
+		List<List<PlanNode>> initialPlanNodes =
+			or
+				.stream()
+				.map(shapes -> shapes.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, null)).collect(Collectors.toList()))
+				.collect(Collectors.toList());
+
+		BufferedSplitter targetNodesToValidate;
+		if(overrideTargetNode == null) {
+			targetNodesToValidate = new BufferedSplitter(unionAll(
+				initialPlanNodes
+					.stream()
+					.flatMap(Collection::stream)
+					.map(p -> new TrimTuple(p, 0, 1)) // we only want the targets
+					.collect(Collectors.toList())));
+
+		}else{
+			targetNodesToValidate = new BufferedSplitter(overrideTargetNode);
+		}
 
 		List<List<PlanNode>> plannodes =
 			or
 				.stream()
-				.map(shapes -> shapes.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, false)).collect(Collectors.toList()))
+				.map(shapes -> shapes.stream().map(shape ->
+					{
+						if(shaclSailConnection.stats.isBaseSailEmpty()){
+							return shape.getPlan(shaclSailConnection, nodeShape, false, null);
+						}
+						return shape.getPlan(shaclSailConnection, nodeShape, false, new LoggingNode(targetNodesToValidate.getPlanNode(), ""));
+					}
+				).collect(Collectors.toList()))
 				.collect(Collectors.toList());
 
 		List<IteratorData> iteratorDataTypes =
@@ -68,7 +87,6 @@ public class OrPropertyShape extends PropertyShape {
 				.stream()
 				.flatMap(shapes -> shapes.stream().map(PlanNode::getIteratorDataType))
 				.distinct().collect(Collectors.toList());
-
 
 
 		if (iteratorDataTypes.size() > 1) {
@@ -81,12 +99,12 @@ public class OrPropertyShape extends PropertyShape {
 		if (iteratorData == IteratorData.tripleBased) {
 
 			List<Path> collect = getPaths().stream().distinct().collect(Collectors.toList());
-			if(collect.size()>1){
+			if (collect.size() > 1) {
 				iteratorData = IteratorData.aggregated;
 			}
 		}
 
-			PlanNode ret;
+		PlanNode ret;
 
 
 		if (iteratorData == IteratorData.tripleBased) {
@@ -97,24 +115,22 @@ public class OrPropertyShape extends PropertyShape {
 				equalsJoin = new EqualsJoin(equalsJoin, unionAll(plannodes.get(i)), true);
 			}
 
-			ret =  new LoggingNode(equalsJoin);
-		}
+			ret = new LoggingNode(equalsJoin, "");
+		} else if (iteratorData == IteratorData.aggregated) {
 
-		else if (iteratorData == IteratorData.aggregated) {
-
-			PlanNode innerJoin = new LoggingNode(new InnerJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), null, null));
+			PlanNode innerJoin = new LoggingNode(new InnerJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), null, null), "");
 
 			for (int i = 2; i < or.size(); i++) {
-				innerJoin = new LoggingNode(new InnerJoin(innerJoin, unionAll(plannodes.get(i)), null, null));
+				innerJoin = new LoggingNode(new InnerJoin(innerJoin, unionAll(plannodes.get(i)), null, null), "");
 			}
 
-			ret =  new LoggingNode(innerJoin);
-		}else{
+			ret = new LoggingNode(innerJoin, "");
+		} else {
 			throw new IllegalStateException("Should not get here!");
 
 		}
 
-		if(printPlans){
+		if (printPlans) {
 			String planAsGraphiz = getPlanAsGraphvizDot(ret, shaclSailConnection);
 			logger.info(planAsGraphiz);
 		}
@@ -134,8 +150,14 @@ public class OrPropertyShape extends PropertyShape {
 	}
 
 	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		return true;
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+		return super.requiresEvaluation(addedStatements, removedStatements) ||
+			or
+				.stream()
+				.flatMap(Collection::stream)
+				.map(p -> p.requiresEvaluation(addedStatements, removedStatements))
+				.reduce((a, b) -> a || b)
+				.orElse(false);
 	}
 
 	@Override

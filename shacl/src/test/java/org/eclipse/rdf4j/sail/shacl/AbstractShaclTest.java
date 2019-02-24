@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.Model;
@@ -18,7 +19,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
-import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
@@ -39,6 +39,8 @@ import static org.junit.Assert.assertFalse;
 abstract public class AbstractShaclTest {
 
 	private static final List<String> testCasePaths = Arrays.asList(
+		"test-cases/complex/dcat",
+		"test-cases/complex/foaf",
 		"test-cases/datatype/simple",
 		"test-cases/minLength/simple",
 		"test-cases/maxLength/simple",
@@ -57,22 +59,34 @@ abstract public class AbstractShaclTest {
 		"test-cases/or/minCount",
 		"test-cases/or/nodeKindMinLength",
 		"test-cases/or/implicitAnd",
-		"test-cases/or/datatypeDifferentPaths"
-
-	);
+		"test-cases/or/datatypeDifferentPaths",
+		"test-cases/minExclusive/simple",
+		"test-cases/minExclusive/dateVsTime",
+		"test-cases/maxExclusive/simple",
+		"test-cases/minInclusive/simple",
+		"test-cases/maxInclusive/simple",
+		"test-cases/implicitTargetClass/simple",
+		"test-cases/class/simple",
+		"test-cases/class/subclass",
+		"test-cases/or/class",
+		"test-cases/or/datatype2",
+		"test-cases/or/minCountDifferentPath"
+		);
 
 	final String testCasePath;
 	final String path;
 	final ExpectedResult expectedResult;
+	final IsolationLevel isolationLevel;
 
-	public AbstractShaclTest(String testCasePath, String path, ExpectedResult expectedResult) {
+	public AbstractShaclTest(String testCasePath, String path, ExpectedResult expectedResult, IsolationLevel isolationLevel) {
 		this.testCasePath = testCasePath;
 		this.path = path;
 		this.expectedResult = expectedResult;
 		LoggingNode.loggingEnabled = true;
+		this.isolationLevel = isolationLevel;
 	}
 
-	@Parameterized.Parameters(name = "{2} - {1}")
+	@Parameterized.Parameters(name = "{2} - {1} - {3}")
 	public static Collection<Object[]> data() {
 
 		return getTestsToRun();
@@ -107,8 +121,10 @@ abstract public class AbstractShaclTest {
 		for (String testCasePath : testCasePaths) {
 			for (ExpectedResult baseCase : ExpectedResult.values()) {
 				findTestCases(testCasePath, baseCase.name()).forEach(path -> {
-					Object[] temp = { testCasePath, path, baseCase };
-					ret.add(temp);
+					for(IsolationLevel isolationLevel : Arrays.asList(IsolationLevels.NONE, IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE)){
+						Object[] temp = { testCasePath, path, baseCase, isolationLevel };
+						ret.add(temp);
+					}
 
 				});
 			}
@@ -117,7 +133,7 @@ abstract public class AbstractShaclTest {
 		return ret;
 	}
 
-	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult) throws Exception {
+	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult, IsolationLevel isolationLevel) throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -132,7 +148,7 @@ abstract public class AbstractShaclTest {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.setLogValidationPlans(true);
 		SailRepository shaclRepository = new SailRepository(shaclSail);
-		shaclRepository.initialize();
+		shaclRepository.init();
 		Utils.loadShapeData(shaclRepository, shaclFile);
 
 		boolean exception = false;
@@ -150,20 +166,18 @@ abstract public class AbstractShaclTest {
 				System.out.println(name);
 
 				try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-					connection.begin(IsolationLevels.SNAPSHOT);
+					connection.begin(isolationLevel);
 					String query = IOUtil.readString(resourceAsStream);
 					connection.prepareUpdate(query).execute();
 					connection.commit();
 				} catch (RepositoryException sailException) {
+					if(!(sailException.getCause() instanceof ShaclSailValidationException)){
+						throw sailException;
+					}
 					exception = true;
 					System.out.println(sailException.getMessage());
 
-				System.out.println("\n############################################");
-				System.out.println("\tValidation Report\n");
-				ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
-				Model validationReport = cause.validationReportAsModel();
-				Rio.write(validationReport, System.out, RDFFormat.TURTLE);
-				System.out.println("\n############################################");
+					printResults(sailException);
 				}
 			} catch (IOException e) {
 				e.printStackTrace();
@@ -183,7 +197,16 @@ abstract public class AbstractShaclTest {
 
 	}
 
-	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult)
+	private static void printResults(RepositoryException sailException) {
+		System.out.println("\n############################################");
+		System.out.println("\tValidation Report\n");
+		ShaclSailValidationException cause = (ShaclSailValidationException) sailException.getCause();
+		Model validationReport = cause.validationReportAsModel();
+		Rio.write(validationReport, System.out, RDFFormat.TURTLE);
+		System.out.println("\n############################################");
+	}
+
+	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult, IsolationLevel isolationLevel)
 		throws Exception
 	{
 
@@ -197,14 +220,14 @@ abstract public class AbstractShaclTest {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		SailRepository shaclRepository = new SailRepository(shaclSail);
-		shaclRepository.initialize();
+		shaclRepository.init();
 		Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
 
 		boolean exception = false;
 		boolean ran = false;
 
 		try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
-			shaclSailConnection.begin(IsolationLevels.SNAPSHOT);
+			shaclSailConnection.begin(isolationLevel);
 
 			for (int j = 0; j < 100; j++) {
 
@@ -230,8 +253,13 @@ abstract public class AbstractShaclTest {
 				shaclSailConnection.commit();
 
 			} catch (RepositoryException sailException) {
+				if(!(sailException.getCause() instanceof ShaclSailValidationException)){
+					throw sailException;
+				}
 				exception = true;
 				System.out.println(sailException.getMessage());
+
+				printResults(sailException);
 			}
 		}
 		if (ran) {

@@ -28,6 +28,7 @@ public class BufferedTupleFromFilter implements PlanNode, PushBasedPlanNode, Sup
 
 	LinkedList<Tuple> next = new LinkedList<>();
 	private ParentProvider parentProvider;
+	private boolean printed = false;
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
@@ -71,7 +72,7 @@ public class BufferedTupleFromFilter implements PlanNode, PushBasedPlanNode, Sup
 
 	@Override
 	public int depth() {
-		return parentProvider.parent().stream().mapToInt(PlanNode::depth).sum()+1;
+		return parentProvider.parent().stream().mapToInt(PlanNode::depth).max().orElse(0)+1;
 	}
 
 
@@ -109,6 +110,9 @@ public class BufferedTupleFromFilter implements PlanNode, PushBasedPlanNode, Sup
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
+
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 
 		if(parentProvider instanceof PlanNode){

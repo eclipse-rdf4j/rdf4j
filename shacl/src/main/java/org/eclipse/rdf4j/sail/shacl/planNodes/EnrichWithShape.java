@@ -20,6 +20,7 @@ public class EnrichWithShape implements PlanNode {
 
 	private final PropertyShape propertyShape;
 	private final PlanNode parent;
+	private boolean printed = false;
 
 	public EnrichWithShape(PlanNode parent, PropertyShape propertyShape) {
 		this.parent = parent;
@@ -63,6 +64,8 @@ public class EnrichWithShape implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
 		stringBuilder.append(getId()).append(" [label=\"").append(StringEscapeUtils.escapeJava(this.toString())).append("\"];").append("\n");
 		stringBuilder.append(parent.getId()).append(" -> ").append(getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
@@ -82,5 +85,9 @@ public class EnrichWithShape implements PlanNode {
 	@Override
 	public String toString() {
 		return "EnrichWithShape";
+	}
+
+	public PropertyShape getPropertyShape() {
+		return propertyShape;
 	}
 }

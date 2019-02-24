@@ -12,9 +12,11 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 
 import java.util.Arrays;
 
@@ -23,15 +25,22 @@ import java.util.Arrays;
  */
 public class ExternalTypeFilterNode implements PlanNode {
 
-	NotifyingSailConnection shaclSailConnection;
-	Resource filterOnType;
+	private SailConnection connection;
+	private Resource filterOnType;
 	PlanNode parent;
+	int index = 0;
+	private final boolean returnMatching;
+	private boolean printed = false;
 
-	public ExternalTypeFilterNode(NotifyingSailConnection shaclSailConnection, Resource filterOnType, PlanNode parent) {
-		this.shaclSailConnection = shaclSailConnection;
+
+	public ExternalTypeFilterNode(SailConnection connection, Resource filterOnType, PlanNode parent, int index, boolean returnMatching) {
+		this.connection = connection;
 		this.filterOnType = filterOnType;
 		this.parent = parent;
+		this.index = index;
+		this.returnMatching = returnMatching;
 	}
+
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
@@ -43,19 +52,33 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
-
 			void calculateNext() {
 				while (next == null && parentIterator.hasNext()) {
 					Tuple temp = parentIterator.next();
 
-					Resource subject = (Resource) temp.line.get(0);
 
-					if (shaclSailConnection.hasStatement(subject, RDF.TYPE, filterOnType, true)) {
-						next = temp;
-						next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, filterOnType)));
+					Value subject = temp.line.get(index);
+
+					if (returnMatching) {
+						if (isType(subject)) {
+							next = temp;
+							next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, filterOnType)));
+						}
+					} else {
+						if (!isType(subject)) {
+							next = temp;
+							next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, filterOnType)));
+						}
 					}
 
 				}
+			}
+
+			private boolean isType(Value subject) {
+				if (subject instanceof Resource) {
+					return connection.hasStatement((Resource) subject, RDF.TYPE, filterOnType, true);
+				}
+				return false;
 			}
 
 			@Override
@@ -93,12 +116,18 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
-		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
+		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 
-		if(shaclSailConnection != null){
-			stringBuilder.append( System.identityHashCode(shaclSailConnection)+" -> "+getId()+" [label=\"filter source\"]").append("\n");
+
+		if (connection instanceof MemoryStoreConnection) {
+			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId() + " [label=\"filter source\"]").append("\n");
+		} else {
+			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"filter source\"]").append("\n");
 		}
+
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
 
@@ -111,7 +140,7 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public String getId() {
-		return System.identityHashCode(this)+"";
+		return System.identityHashCode(this) + "";
 	}
 
 	@Override

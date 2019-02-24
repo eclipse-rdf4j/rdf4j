@@ -13,12 +13,10 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PatternFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.slf4j.Logger;
@@ -36,12 +34,10 @@ public class PatternPropertyShape extends PathPropertyShape {
 	private final Optional<String> flags;
 	private static final Logger logger = LoggerFactory.getLogger(PatternPropertyShape.class);
 
-	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
+	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, String pattern) {
 		super(id, connection, nodeShape);
 
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.PATTERN, null, true))) {
-			pattern = stream.map(Statement::getObject).map(Value::stringValue).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:pattern on " + id));
-		}
+		this.pattern = pattern;
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.FLAGS, null, true))) {
 			flags = stream.map(Statement::getObject).map(Value::stringValue).findAny();
@@ -51,27 +47,22 @@ public class PatternPropertyShape extends PathPropertyShape {
 
 
 	@Override
-	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, boolean assumeBaseSailValid) {
+	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
 
-		PlanNode invalidValues =  StandardisedPlanHelper.getGenericSingleObjectPlan(
+		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,
 			nodeShape,
 			(parent, trueNode, falseNode) -> new PatternFilter(parent, trueNode, falseNode, pattern, flags),
-			this
-		);
+			this,
+			overrideTargetNode);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, shaclSailConnection);
 			logger.info(planAsGraphvizDot);
 		}
 
-		return new EnrichWithShape(new LoggingNode(invalidValues), this);
+		return new EnrichWithShape(invalidValues, this);
 
-	}
-
-	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		return true;
 	}
 
 	@Override
