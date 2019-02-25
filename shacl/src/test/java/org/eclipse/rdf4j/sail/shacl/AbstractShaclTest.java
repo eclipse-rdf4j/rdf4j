@@ -82,7 +82,7 @@ abstract public class AbstractShaclTest {
 		this.testCasePath = testCasePath;
 		this.path = path;
 		this.expectedResult = expectedResult;
-		LoggingNode.loggingEnabled = false;
+		LoggingNode.loggingEnabled = true;
 		this.isolationLevel = isolationLevel;
 	}
 

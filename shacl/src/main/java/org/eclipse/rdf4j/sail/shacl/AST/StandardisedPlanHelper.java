@@ -35,14 +35,18 @@ public class StandardisedPlanHelper {
 		PlanNode invalidValuesDirectOnPath = new LoggingNode(filterAttacher.attachFilter(addedByPath).getFalseNode(UnBufferedPlanNode.class), "");
 
 
-//		PlanNode top = new LoggingNode(new InnerJoin(bufferedSplitter.getPlanNode(), invalidValuesDirectOnPath, null, new PushBasedLoggingNode(discardedRight)), "");
 		InnerJoin innerJoin = new InnerJoin(bufferedSplitter.getPlanNode(), invalidValuesDirectOnPath);
-		PlanNode top = new LoggingNode(innerJoin.getJoined(BufferedPlanNode.class), "");
-		PlanNode discardedRight = innerJoin.getDiscardedRight(BufferedPlanNode.class);
+
+		if(shaclSailConnection.stats.isBaseSailEmpty()){
+			return new LoggingNode(innerJoin.getJoined(UnBufferedPlanNode.class), "");
+
+		}else {
+
+			PlanNode top = new LoggingNode(innerJoin.getJoined(BufferedPlanNode.class), "");
 
 
+			PlanNode discardedRight = innerJoin.getDiscardedRight(BufferedPlanNode.class);
 
-		if(!shaclSailConnection.stats.isBaseSailEmpty()) {
 			if (nodeShape instanceof TargetClass) {
 				PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, discardedRight), "");
 
@@ -52,12 +56,12 @@ public class StandardisedPlanHelper {
 			PlanNode bulkedExternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(bufferedSplitter.getPlanNode(), shaclSailConnection, pathPropertyShape.path.getQuery("?a", "?c", null), true), "");
 
 			top = new LoggingNode(new UnionNode(top, bulkedExternalInnerJoin), "");
+
+			return new LoggingNode(filterAttacher.attachFilter(top).getFalseNode(UnBufferedPlanNode.class), "");
+
 		}
 
-		PlanNode invalidValues = new LoggingNode(filterAttacher.attachFilter(top).getFalseNode(UnBufferedPlanNode.class), "");
 
-
-		return invalidValues;
 	}
 
 

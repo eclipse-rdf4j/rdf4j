@@ -68,7 +68,6 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	}
 
 
-
 	public CloseableIteration<Tuple, SailException> iterator() {
 
 		return new CloseableIteration<Tuple, SailException>() {
@@ -130,9 +129,6 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 			@Override
 			public boolean hasNext() throws SailException {
 				calculateNext();
-				if (next == null) {
-					close();
-				}
 				return next != null;
 			}
 
@@ -160,29 +156,19 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
-//		if(trueNode != null){
-//			String id = getId(trueNode);
-//			stringBuilder.append(getId()+" -> "+id+ " [label=\"true values\"]").append("\n");
-//
-//		}
-//		if(falseNode != null){
-//			String id = getId(falseNode);
-//			stringBuilder.append(getId()+" -> "+id+ " [label=\"false values\"]").append("\n");
-//
-//		}
+		if(trueNode != null){
+			stringBuilder.append(getId()+" -> "+trueNode.getId()+ " [label=\"true values\"]").append("\n");
+
+		}
+		if(falseNode != null){
+			stringBuilder.append(getId()+" -> "+falseNode.getId()+ " [label=\"false values\"]").append("\n");
+
+		}
 
 		parent.getPlanAsGraphvizDot(stringBuilder);
 
 
 	}
-
-//	private String getId(T node) {
-//		if(node instanceof PlanNode){
-//			return ((PlanNode) node).getId();
-//		}
-//
-//		return System.identityHashCode(node)+"";
-//	}
 
 	@Override
 	public String toString() {
@@ -205,30 +191,22 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 		}
 	}
 
-	int closeCalled = 0;
 
 	@Override
 	public void close() {
-//		logger.warn(System.identityHashCode(this) + " : ");
-//		Thread.dumpStack();
-		closeCalled++;
-		int requiredClose = 0;
-		if(falseNode !=  null) requiredClose++;
-		if(trueNode != null) requiredClose++;
-
-		if (requiredClose == closeCalled) {
+		if (
+			(trueNode == null || trueNode.isClosed()) &&
+				(falseNode == null || falseNode.isClosed())
+		) {
 			iterator.close();
 			iterator = null;
 		}
-		if(closeCalled > requiredClose){
-//			throw new IllegalStateException(System.identityHashCode(this)+"");
-			throw new IllegalStateException();
-		}
+
 	}
 
 	@Override
 	public boolean incrementIterator() {
-		if (iterator != null && iterator.hasNext()) {
+		if (iterator.hasNext()) {
 			iterator.next();
 			return true;
 		}

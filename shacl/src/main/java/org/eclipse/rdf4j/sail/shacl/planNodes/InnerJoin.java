@@ -90,6 +90,10 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 	}
 
 	public CloseableIteration<Tuple, SailException> iterator() {
+		throw new IllegalStateException();
+	}
+
+	public CloseableIteration<Tuple, SailException> internalIterator() {
 
 		InnerJoin that = this;
 		return new CloseableIteration<Tuple, SailException>() {
@@ -228,17 +232,15 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		right.getPlanAsGraphvizDot(stringBuilder);
 
 		if (discardedRight != null) {
-			if (discardedRight instanceof PlanNode) {
-				stringBuilder.append(getId() + " -> " + ((PlanNode) discardedRight).getId() + " [label=\"discardedRight\"];").append("\n");
-			}
+			stringBuilder.append(getId() + " -> " + (discardedRight).getId() + " [label=\"discardedRight\"];").append("\n");
 
 		}
 		if (discardedLeft != null) {
-			if (discardedLeft instanceof PlanNode) {
-				stringBuilder.append(getId() + " -> " + ((PlanNode) discardedLeft).getId() + " [label=\"discardedLeft\"];").append("\n");
-			}
+			stringBuilder.append(getId() + " -> " + (discardedLeft).getId() + " [label=\"discardedLeft\"];").append("\n");
+		}
 
-
+		if (joined != null) {
+			stringBuilder.append(getId() + " -> " + (joined).getId() + " [label=\"joined\"];").append("\n");
 		}
 	}
 
@@ -269,33 +271,29 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 	@Override
 	public void init() {
 		if (iterator == null) {
-			iterator = iterator();
+			iterator = internalIterator();
 		}
 	}
 
-	int closeCalled = 0;
 
 	@Override
 	public void close() {
-		closeCalled++;
-		int requiredClose = 0;
-		if(joined !=  null) requiredClose++;
-		if(discardedLeft != null) requiredClose++;
-		if(discardedRight != null) requiredClose++;
 
-		if (requiredClose == closeCalled) {
+		if (
+			(discardedLeft == null || discardedLeft.isClosed()) &&
+				(discardedRight == null || discardedRight.isClosed()) &&
+				(joined == null || joined.isClosed())
+		) {
 			iterator.close();
 			iterator = null;
 		}
-		if(closeCalled > requiredClose){
-			throw new IllegalStateException();
-		}
+
 	}
 
 	@Override
 	public boolean incrementIterator() {
 
-		if (iterator != null && iterator.hasNext()) {
+		if (iterator.hasNext()) {
 			Tuple next = iterator.next();
 			if (joined != null) {
 				joined.push(next);

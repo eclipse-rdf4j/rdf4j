@@ -21,6 +21,7 @@ public class EnrichWithShape implements PlanNode {
 	private final PropertyShape propertyShape;
 	private final PlanNode parent;
 	private boolean printed = false;
+	boolean closed;
 
 	public EnrichWithShape(PlanNode parent, PropertyShape propertyShape) {
 		this.parent = parent;
@@ -29,6 +30,9 @@ public class EnrichWithShape implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
+		if(closed){
+			throw new IllegalStateException();
+		}
 		return new CloseableIteration<Tuple, SailException>() {
 
 			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
@@ -52,6 +56,7 @@ public class EnrichWithShape implements PlanNode {
 
 			@Override
 			public void close() throws SailException {
+				closed = true;
 				if(parentIterator != null){
 					parentIterator.close();
 					parentIterator = null;

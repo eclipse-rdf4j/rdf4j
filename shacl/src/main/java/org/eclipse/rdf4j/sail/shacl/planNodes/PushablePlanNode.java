@@ -4,4 +4,5 @@ public interface PushablePlanNode extends PlanNode {
 
 	void push(Tuple tuple);
 
+	boolean isClosed();
 }

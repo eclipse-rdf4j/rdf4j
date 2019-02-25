@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -11,6 +12,8 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 	private T parent;
 
 	private Queue<Tuple> buffer = new ArrayDeque<>();
+	private boolean closed;
+	private boolean printed;
 
 
 	BufferedPlanNode(T parent) {
@@ -27,6 +30,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 
 			@Override
 			public void close() throws SailException {
+				closed = true;
 				parent.close();
 			}
 
@@ -37,9 +41,11 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 			}
 
 			private void calculateNext() {
-				while(buffer.isEmpty()){
+				while (buffer.isEmpty()) {
 					boolean success = parent.incrementIterator();
-					if(!success) break;
+					if (!success) {
+						break;
+					}
 				}
 			}
 
@@ -63,12 +69,18 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if (printed) {
+			return;
+		}
+		printed = true;
+		parent.getPlanAsGraphvizDot(stringBuilder);
 
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 	}
 
 	@Override
 	public String getId() {
-		return parent.getId();
+		return System.identityHashCode(this) + "";
 	}
 
 	@Override
@@ -79,5 +91,15 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 	@Override
 	public void push(Tuple next) {
 		buffer.add(next);
+	}
+
+	@Override
+	public boolean isClosed() {
+		return closed;
+	}
+
+	@Override
+	public String toString() {
+		return "BufferedPlanNode";
 	}
 }

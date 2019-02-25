@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -8,6 +9,8 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 	private T parent;
 
 	Tuple next;
+	private boolean closed;
+	private boolean printed;
 
 	UnBufferedPlanNode(T parent) {
 		this.parent = parent;
@@ -15,6 +18,9 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
+		next = null;
+		closed = false;
+
 		return new CloseableIteration<Tuple, SailException>() {
 
 			{
@@ -23,6 +29,7 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 
 			@Override
 			public void close() throws SailException {
+				closed = true;
 				parent.close();
 			}
 
@@ -61,14 +68,19 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if (printed) {
+			return;
+		}
+		printed = true;
+		parent.getPlanAsGraphvizDot(stringBuilder);
 
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 	}
 
 	@Override
 	public String getId() {
-		return parent.getId();
+		return System.identityHashCode(this) + "";
 	}
-
 	@Override
 	public IteratorData getIteratorDataType() {
 		return parent.getIteratorDataType();
@@ -77,5 +89,15 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 	@Override
 	public void push(Tuple next) {
 		this.next = next;
+	}
+
+	@Override
+	public boolean isClosed() {
+		return closed;
+	}
+
+	@Override
+	public String toString() {
+		return "UnBufferedPlanNode";
 	}
 }
