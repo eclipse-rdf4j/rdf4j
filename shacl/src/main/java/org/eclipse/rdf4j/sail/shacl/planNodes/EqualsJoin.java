@@ -176,4 +176,11 @@ public class EqualsJoin implements PlanNode{
 		throw new IllegalStateException("Not implemented support for when left and right have different types of data");
 
 	}
+
+	@Override
+	public String toString() {
+		return "EqualsJoin{" +
+			"useAsFilter=" + useAsFilter +
+			'}';
+	}
 }

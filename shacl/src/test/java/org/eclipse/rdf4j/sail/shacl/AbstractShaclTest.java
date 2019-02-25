@@ -147,6 +147,7 @@ abstract public class AbstractShaclTest {
 		System.out.println(shaclFile);
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.setLogValidationPlans(true);
+//		shaclSail.setParallelValidation(false);
 		SailRepository shaclRepository = new SailRepository(shaclSail);
 		shaclRepository.init();
 		Utils.loadShapeData(shaclRepository, shaclFile);
@@ -220,6 +221,7 @@ abstract public class AbstractShaclTest {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		SailRepository shaclRepository = new SailRepository(shaclSail);
+		shaclSail.setLogValidationPlans(true);
 		shaclRepository.init();
 		Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
 

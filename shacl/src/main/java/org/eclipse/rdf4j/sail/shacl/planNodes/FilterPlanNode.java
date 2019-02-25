@@ -16,51 +16,60 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Arrays;
-import java.util.List;
-
 
 /**
  * @author Håvard Ottestad
  */
-public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParentProvider> implements ParentProvider {
+public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 	static private final Logger logger = LoggerFactory.getLogger(FilterPlanNode.class);
 
 
 	PlanNode parent;
 
-	T trueNode;
-	T falseNode;
+	PushablePlanNode trueNode;
+	PushablePlanNode falseNode;
+
+	private CloseableIteration<Tuple, SailException> iterator;
 
 
 	abstract boolean checkTuple(Tuple t);
 
-	public FilterPlanNode(PlanNode parent, T trueNode, T falseNode) {
+	public FilterPlanNode(PlanNode parent) {
 		this.parent = parent;
-		this.trueNode = trueNode;
-		this.falseNode = falseNode;
-
-		initialize(trueNode, falseNode);
-
 	}
 
-	private void initialize(T trueNode, T falseNode) {
-		CloseableIteration<Tuple, SailException> iterator = iterator();
-
+	public PlanNode getTrueNode(Class<? extends PushablePlanNode> type) {
 		if (trueNode != null) {
-			trueNode.parentIterator(iterator);
-			trueNode.receiveParentProvider(this);
+			throw new IllegalStateException();
+		}
+		if (type == BufferedPlanNode.class) {
+			trueNode = new BufferedPlanNode<>(this);
+		} else {
+			trueNode = new UnBufferedPlanNode<>(this);
+
 		}
 
-		if (falseNode != null) {
-			falseNode.parentIterator(iterator);
-			falseNode.receiveParentProvider(this);
-		}
+		return trueNode;
 	}
 
-	private CloseableIteration<Tuple, SailException> iterator() {
-		FilterPlanNode<T> that = this;
+	public PlanNode getFalseNode(Class<? extends PushablePlanNode> type) {
+		if (falseNode != null) {
+			throw new IllegalStateException();
+		}
+		if (type == BufferedPlanNode.class) {
+			falseNode = new BufferedPlanNode<>(this);
+		} else {
+			falseNode = new UnBufferedPlanNode<>(this);
+
+		}
+
+		return falseNode;
+	}
+
+
+	public CloseableIteration<Tuple, SailException> iterator() {
+
 		return new CloseableIteration<Tuple, SailException>() {
 
 			CloseableIteration<Tuple, SailException> parentIterator;
@@ -68,8 +77,8 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 			Tuple next;
 
 			private void calculateNext() {
-				if(parentIterator == null){
-					 parentIterator = parent.iterator();
+				if (parentIterator == null) {
+					parentIterator = parent.iterator();
 				}
 
 				if (next != null) {
@@ -81,16 +90,16 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 
 					if (checkTuple(temp)) {
 						if (trueNode != null) {
-							if(LoggingNode.loggingEnabled){
-								logger.info(leadingSpace() + that.getClass().getSimpleName() + ";trueNode: " + " " + temp.toString());
+							if (LoggingNode.loggingEnabled) {
+								logger.info(leadingSpace() + this.getClass().getSimpleName() + ";trueNode: " + " " + temp.toString());
 							}
 							trueNode.push(temp);
 
 						}
 					} else {
 						if (falseNode != null) {
-							if(LoggingNode.loggingEnabled){
-								logger.info(leadingSpace() + that.getClass().getSimpleName() + ";falseNode: " + " " + temp.toString());
+							if (LoggingNode.loggingEnabled) {
+								logger.info(leadingSpace() + this.getClass().getSimpleName() + ";falseNode: " + " " + temp.toString());
 							}
 							falseNode.push(temp);
 
@@ -120,9 +129,6 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 			@Override
 			public boolean hasNext() throws SailException {
 				calculateNext();
-				if (next == null) {
-					close();
-				}
 				return next != null;
 			}
 
@@ -140,42 +146,28 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 		};
 	}
 
-	@Override
-	public List<PlanNode> parent() {
-		return Arrays.asList(parent);
-	}
-
 
 	boolean printed = false;
 
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if(printed) return;
+		if (printed) {
+			return;
+		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
-		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
+		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 		if(trueNode != null){
-			String id = getId(trueNode);
-			stringBuilder.append(getId()+" -> "+id+ " [label=\"true values\"]").append("\n");
+			stringBuilder.append(getId()+" -> "+trueNode.getId()+ " [label=\"true values\"]").append("\n");
 
 		}
 		if(falseNode != null){
-			String id = getId(falseNode);
-			stringBuilder.append(getId()+" -> "+id+ " [label=\"false values\"]").append("\n");
+			stringBuilder.append(getId()+" -> "+falseNode.getId()+ " [label=\"false values\"]").append("\n");
 
 		}
 
 		parent.getPlanAsGraphvizDot(stringBuilder);
 
 
-
-	}
-
-	private String getId(T node) {
-		if(node instanceof PlanNode){
-			return ((PlanNode) node).getId();
-		}
-
-		return System.identityHashCode(node)+"";
 	}
 
 	@Override
@@ -184,11 +176,50 @@ public abstract class FilterPlanNode<T extends PushBasedPlanNode & SupportsParen
 	}
 
 	public String getId() {
-		return System.identityHashCode(this)+"";
+		return System.identityHashCode(this) + "";
 	}
 
 
 	private String leadingSpace() {
-		return StringUtils.leftPad("", parent.depth()+1, "    ");
+		return StringUtils.leftPad("", parent.depth() + 1, "    ");
+	}
+
+	@Override
+	public void init() {
+		if (iterator == null) {
+			iterator = iterator();
+		}
+	}
+
+
+	@Override
+	public void close() {
+		if (
+			(trueNode == null || trueNode.isClosed()) &&
+				(falseNode == null || falseNode.isClosed())
+		) {
+			iterator.close();
+			iterator = null;
+		}
+
+	}
+
+	@Override
+	public boolean incrementIterator() {
+		if (iterator.hasNext()) {
+			iterator.next();
+			return true;
+		}
+		return false;
+	}
+
+	@Override
+	public int depth() {
+		return parent.depth() + 1;
+	}
+
+	@Override
+	public IteratorData getIteratorDataType() {
+		return parent.getIteratorDataType();
 	}
 }

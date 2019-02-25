@@ -52,7 +52,8 @@ public class TargetClass extends NodeShape {
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null)), ""), 0, 1);
+		PlanNode cachedNodeFor = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null)));
+		return new TrimTuple(new LoggingNode(cachedNodeFor, ""), 0, 1);
 
 	}
 

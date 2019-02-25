@@ -13,8 +13,8 @@ public class TupleLengthFilter extends FilterPlanNode{
 	private final boolean exact;
 
 
-	public TupleLengthFilter(PlanNode parent, PushBasedPlanNode trueNode, PushBasedPlanNode falseNode, int length, boolean exact) {
-		super(parent, trueNode, falseNode);
+	public TupleLengthFilter(PlanNode parent, int length, boolean exact) {
+		super(parent);
 		this.length = length;
 		this.exact = exact;
 	}
