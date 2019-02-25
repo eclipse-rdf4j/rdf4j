@@ -221,6 +221,7 @@ abstract public class AbstractShaclTest {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		SailRepository shaclRepository = new SailRepository(shaclSail);
+		shaclSail.setLogValidationPlans(true);
 		shaclRepository.init();
 		Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
 

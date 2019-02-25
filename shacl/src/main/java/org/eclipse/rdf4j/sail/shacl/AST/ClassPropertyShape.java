@@ -78,17 +78,11 @@ public class ClassPropertyShape extends PathPropertyShape {
 			return new EnrichWithShape(invalidTuplesDueToDataAddedThatMatchesTargetOrPath, this);
 		} else {
 
-			PlanNode addedByShape1 = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), "");
-
-
-			BufferedSplitter bufferedAddedByShape = new BufferedSplitter(addedByShape1);
 
 			PlanNode addedByPath = new LoggingNode(getPlanAddedStatements(shaclSailConnection, nodeShape), "");
 
-
-
 			// join all added by type and path
-			InnerJoin innerJoinHolder = new InnerJoin(bufferedAddedByShape.getPlanNode(), addedByPath);
+			InnerJoin innerJoinHolder = new InnerJoin(new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), ""), addedByPath);
 			PlanNode innerJoin = new LoggingNode(innerJoinHolder.getJoined(BufferedPlanNode.class), "");
 			PlanNode discardedRight = new LoggingNode(innerJoinHolder.getDiscardedRight(BufferedPlanNode.class), "");
 
@@ -100,7 +94,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 			}
 
 			// also add anything that matches the path from the previousConnection, eg. if you add ":peter a foaf:Person", and ":peter foaf:knows :steve" is already added
-			PlanNode bulkedExternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(bufferedAddedByShape.getPlanNode(), shaclSailConnection, path.getQuery("?a", "?c", null), true), "");
+			PlanNode bulkedExternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), ""), shaclSailConnection, path.getQuery("?a", "?c", null), true), "");
 
 			// only get tuples that came from the first or the innerJoin or bulkedExternalLeftOuter,
 			// we don't care if you added ":peter a foaf:Person" and nothing else and there is nothing else in the underlying sail

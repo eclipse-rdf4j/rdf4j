@@ -105,13 +105,12 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			PlanNode planAddedForShape = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), "");
 
-			PlanNode select = new LoggingNode(shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), path.getQuery("?a", "?c", null))), "");
-
+			PlanNode addedByPath = new LoggingNode(getPlanAddedStatements(shaclSailConnection, nodeShape), "");
 
 			if (nodeShape instanceof TargetClass) {
-				select = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, select), "");
+				addedByPath = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, addedByPath), "");
 			}
-			topNode = new LoggingNode(new UnionNode(planAddedForShape, select), "");
+			topNode = new LoggingNode(new UnionNode(planAddedForShape, addedByPath), "");
 
 		}
 
