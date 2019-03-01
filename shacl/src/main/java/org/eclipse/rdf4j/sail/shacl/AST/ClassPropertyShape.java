@@ -86,7 +86,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 			PlanNode discardedRight = new LoggingNode(innerJoinHolder.getDiscardedRight(BufferedPlanNode.class), "");
 
 			if (nodeShape instanceof TargetClass) {
-				PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, discardedRight), "");
+				PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTargetFilter(shaclSailConnection, discardedRight), "");
 
 				innerJoin = new LoggingNode(new Unique(new UnionNode(innerJoin, typeFilterPlan)), "");
 

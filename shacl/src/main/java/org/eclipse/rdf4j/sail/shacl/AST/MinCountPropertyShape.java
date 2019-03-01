@@ -55,7 +55,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
 
-		if(overrideTargetNode != null){
+		if (overrideTargetNode != null) {
 			PlanNode allStatements = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
 			PlanNode groupBy = new LoggingNode(new GroupByCount(allStatements), "");
 
@@ -78,7 +78,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			PlanNode filteredPlanRemovedStatements = planRemovedStatements;
 
 			if (nodeShape instanceof TargetClass) {
-				filteredPlanRemovedStatements = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, planRemovedStatements), "");
+				filteredPlanRemovedStatements = new LoggingNode(((TargetClass) nodeShape).getTargetFilter(shaclSailConnection, planRemovedStatements), "");
 			}
 
 			PlanNode planAddedStatements = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), "");
@@ -90,9 +90,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			PlanNode planAddedStatements1 = super.getPlanAddedStatements(shaclSailConnection, nodeShape);
 
-			if (nodeShape instanceof TargetClass) {
-				planAddedStatements1 = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, planAddedStatements1), "");
-			}
+			planAddedStatements1 = new LoggingNode((nodeShape).getTargetFilter(shaclSailConnection, planAddedStatements1), "");
+
 			topNode = new LoggingNode(new UnionNode(unique, planAddedStatements1), "");
 
 
@@ -106,9 +105,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			PlanNode addedByPath = new LoggingNode(getPlanAddedStatements(shaclSailConnection, nodeShape), "");
 
-			if (nodeShape instanceof TargetClass) {
-				addedByPath = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, addedByPath), "");
-			}
+			addedByPath = new LoggingNode((nodeShape).getTargetFilter(shaclSailConnection, addedByPath), "");
+
 			topNode = new LoggingNode(new UnionNode(planAddedForShape, addedByPath), "");
 
 		}

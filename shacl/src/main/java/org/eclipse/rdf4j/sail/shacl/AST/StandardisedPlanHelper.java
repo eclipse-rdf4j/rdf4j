@@ -42,7 +42,7 @@ public class StandardisedPlanHelper {
 			PlanNode discardedRight = innerJoin.getDiscardedRight(BufferedPlanNode.class);
 
 			if (nodeShape instanceof TargetClass) {
-				PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, discardedRight), "");
+				PlanNode typeFilterPlan = new LoggingNode(((TargetClass) nodeShape).getTargetFilter(shaclSailConnection, discardedRight), "");
 
 				top = new LoggingNode(new UnionNode(top, typeFilterPlan), "");
 			}

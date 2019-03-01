@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
+import org.eclipse.rdf4j.sail.shacl.planNodes.SetFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
 import java.util.List;
@@ -37,13 +38,13 @@ import java.util.stream.Stream;
  */
 public class TargetNode extends NodeShape {
 
-	List<Value> targetNodeList;
+	Set<Value> targetNodeList;
 
 	TargetNode(Resource id, SailRepositoryConnection connection) {
 		super(id, connection);
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.TARGET_NODE, null))) {
-			targetNodeList = stream.map(Statement::getObject).collect(Collectors.toList());
+			targetNodeList = stream.map(Statement::getObject).collect(Collectors.toSet());
 		}
 
 	}
@@ -79,8 +80,9 @@ public class TargetNode extends NodeShape {
 
 	}
 
-//	public PlanNode getTypeFilterPlan(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
-//		return new ExternalTypeFilterNode(shaclSailConnection, targetClass, parent, 0, true);
-//	}
+	@Override
+	public PlanNode getTargetFilter(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
+		return new LoggingNode(new SetFilterNode(targetNodeList, parent, 0, true), "targetNode filter");
+	}
 
 }
