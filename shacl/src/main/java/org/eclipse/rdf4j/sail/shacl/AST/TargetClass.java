@@ -28,26 +28,23 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 /**
- * The AST (Abstract Syntax Tree) node
+ * sh:targetClass
  *
  * @author Heshan Jayasinghe
  */
 public class TargetClass extends NodeShape {
 
-	Resource targetClass;
+	private final Resource targetClass;
 
-	TargetClass(Resource id, SailRepositoryConnection connection) {
+	TargetClass(Resource id, SailRepositoryConnection connection, Resource targetClass) {
 		super(id, connection);
-
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.TARGET_CLASS, null))) {
-			targetClass = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:targetClass on " + id));
-		}
-
+		this.targetClass = targetClass;
 	}
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
-		return new TrimTuple(new LoggingNode(new Select(shaclSailConnection, getQuery("?a", "?c", shaclSailConnection.getRdfsSubClassOfReasoner())), ""), 0, 1);
+		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection, getQuery("?a", "?c", shaclSailConnection.getRdfsSubClassOfReasoner())));
+		return new TrimTuple(new LoggingNode(parent, ""), 0, 1);
 	}
 
 	@Override
@@ -59,7 +56,8 @@ public class TargetClass extends NodeShape {
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return new TrimTuple(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null)), 0,1);
+		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null)));
+		return new TrimTuple(parent, 0,1);
 	}
 
 	@Override
