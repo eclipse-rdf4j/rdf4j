@@ -75,11 +75,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		if (!optimizeWhenNoStatementsRemoved || shaclSailConnection.stats.hasRemoved()) {
 			PlanNode planRemovedStatements = new LoggingNode(new TrimTuple(new LoggingNode(super.getPlanRemovedStatements(shaclSailConnection, nodeShape), ""), 0, 1), "");
 
-			PlanNode filteredPlanRemovedStatements = planRemovedStatements;
-
-			if (nodeShape instanceof TargetClass) {
-				filteredPlanRemovedStatements = new LoggingNode(((TargetClass) nodeShape).getTargetFilter(shaclSailConnection, planRemovedStatements), "");
-			}
+			PlanNode filteredPlanRemovedStatements = new LoggingNode(nodeShape.getTargetFilter(shaclSailConnection, planRemovedStatements), "");
 
 			PlanNode planAddedStatements = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), "");
 

@@ -59,7 +59,7 @@ public class TargetClass extends NodeShape {
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null));
+		return new TrimTuple(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null)), 0,1);
 	}
 
 	@Override

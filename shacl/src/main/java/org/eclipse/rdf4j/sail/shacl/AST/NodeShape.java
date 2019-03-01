@@ -125,6 +125,6 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	}
 
 	public PlanNode getTargetFilter(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
-		return new LoggingNode(parent, "");
+		return parent;
 	}
 }
