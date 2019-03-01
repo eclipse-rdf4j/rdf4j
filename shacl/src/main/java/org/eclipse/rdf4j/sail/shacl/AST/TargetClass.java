@@ -59,7 +59,7 @@ public class TargetClass extends NodeShape {
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		return new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null));
+		return new TrimTuple(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null)), 0,1);
 	}
 
 	@Override
@@ -83,7 +83,8 @@ public class TargetClass extends NodeShape {
 		return "BIND(rdf:type as ?b1) \n BIND(<" + targetClass + "> as "+objectVariable+") \n "+subjectVariable+" ?b1 "+objectVariable+". \n";
 	}
 
-	public PlanNode getTypeFilterPlan(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
+	@Override
+	public PlanNode getTargetFilter(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
 		return new ExternalTypeFilterNode(shaclSailConnection, targetClass, parent, 0, true);
 	}
 

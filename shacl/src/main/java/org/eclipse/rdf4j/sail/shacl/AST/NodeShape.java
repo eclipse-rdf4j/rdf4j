@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
@@ -95,6 +96,8 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 				return stream.map(Statement::getSubject).map(shapeId -> {
 					if (hasTargetClass(shapeId, connection)) {
 						return new TargetClass(shapeId, connection);
+					} else if (hasTargetNode(shapeId, connection)) {
+						return new TargetNode(shapeId, connection);
 					} else {
 						if(sail.isUndefinedTargetValidatesAllSubjects()) {
 							return new NodeShape(shapeId, connection); // target class nodeShapes are the only supported nodeShapes
@@ -110,10 +113,18 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		private static boolean hasTargetClass(Resource shapeId, SailRepositoryConnection connection) {
 			return connection.hasStatement(shapeId, SHACL.TARGET_CLASS, null, true);
 		}
+
+		private static boolean hasTargetNode(Resource shapeId, SailRepositoryConnection connection) {
+			return connection.hasStatement(shapeId, SHACL.TARGET_NODE, null, true);
+		}
 	}
 
 	@Override
 	public String toString() {
 		return id.toString();
+	}
+
+	public PlanNode getTargetFilter(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
+		return parent;
 	}
 }
