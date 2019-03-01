@@ -28,21 +28,17 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 /**
- * The AST (Abstract Syntax Tree) node
+ * sh:targetClass
  *
  * @author Heshan Jayasinghe
  */
 public class TargetClass extends NodeShape {
 
-	Resource targetClass;
+	private final Resource targetClass;
 
-	TargetClass(Resource id, SailRepositoryConnection connection) {
+	TargetClass(Resource id, SailRepositoryConnection connection, Resource targetClass) {
 		super(id, connection);
-
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.TARGET_CLASS, null))) {
-			targetClass = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:targetClass on " + id));
-		}
-
+		this.targetClass = targetClass;
 	}
 
 	@Override

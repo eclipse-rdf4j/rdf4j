@@ -26,27 +26,25 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.SetFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * The AST (Abstract Syntax Tree) node
+ * sh:targetNode
  *
- * @author Heshan Jayasinghe
+ * @author Håvard Ottestad
  */
 public class TargetNode extends NodeShape {
 
-	Set<Value> targetNodeList;
+	private final Set<Value> targetNodeList;
 
-	TargetNode(Resource id, SailRepositoryConnection connection) {
+	TargetNode(Resource id, SailRepositoryConnection connection, List<Value> targetNode) {
 		super(id, connection);
-
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.TARGET_NODE, null))) {
-			targetNodeList = stream.map(Statement::getObject).collect(Collectors.toSet());
-		}
-
+		this.targetNodeList = new HashSet<>(targetNode);
+		assert !this.targetNodeList.isEmpty();
 	}
 
 	@Override
