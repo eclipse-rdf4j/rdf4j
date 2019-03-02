@@ -71,9 +71,9 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.eclipse.rdf4j</groupId>
+            <groupId>${project.groupId}</groupId>
             <artifactId>rdf4j-sail-nativerdf</artifactId>
-            <version>2.5-SNAPSHOT</version>
+            <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
 
