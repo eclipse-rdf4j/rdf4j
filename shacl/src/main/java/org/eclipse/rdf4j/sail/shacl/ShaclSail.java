@@ -115,7 +115,7 @@ import java.util.List;
  *			connection.add(invalidSampleData, &quot;&quot;, RDFFormat.TURTLE);
  *			try {
  *				connection.commit();
- *            } catch (RepositoryException exception) {
+ *			} catch (RepositoryException exception) {
  *				Throwable cause = exception.getCause();
  *				if (cause instanceof ShaclSailValidationException) {
  *					ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
@@ -123,11 +123,11 @@ import java.util.List;
  *					// use validationReport or validationReportModel to understand validation violations
  *
  *					Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
- *                }
+ *				}
  *				throw exception;
- *            }
- *        }
- *    }
+ *			}
+ *		}
+ *	}
  *}
  *</pre>
  *
@@ -426,7 +426,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * "true" will make such NodeShapes wildcard shapes and validate all subjects. Equivalent to setting
 	 * sh:targetClass to owl:Thing or rdfs:Resource in an environment with a reasoner.
 	 *
-	 * @param undefinedTargetValidatesAllSubjects default false
+	 * @param undefinedTargetValidatesAllSubjects
+	 *        default false
 	 */
 	public void setUndefinedTargetValidatesAllSubjects(boolean undefinedTargetValidatesAllSubjects) {
 		this.undefinedTargetValidatesAllSubjects = undefinedTargetValidatesAllSubjects;
@@ -454,8 +455,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * Run SHACL validation in parallel. Default: true
 	 *
-	 * @param parallelValidation default true
-	 */
+	 * @param parallelValidation
+	 *        default true
+	*/
 	public void setParallelValidation(boolean parallelValidation) {
 		this.parallelValidation = parallelValidation;
 	}
@@ -475,8 +477,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * underlying sail and against the changes in the transaction. This is usually good for performance, but
 	 * while validating large amounts of data disabling this cache will use less memory. Default: true
 	 *
-	 * @param cacheSelectNodes default true
-	 */
+	 * @param cacheSelectNodes
+	 *        default true
+	*/
 	public void setCacheSelectNodes(boolean cacheSelectNodes) {
 		this.cacheSelectNodes = cacheSelectNodes;
 	}
