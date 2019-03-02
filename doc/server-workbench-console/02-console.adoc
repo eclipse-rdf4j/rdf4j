@@ -116,6 +116,64 @@ Multiple lines can be entered. To terminate the input, enter a new line containi
   where { ?s ?p ?o }
   .
 
+==== reading queries from and exporting results to a file
+
+NOTE: new in RDF4J 2.5 
+
+Queries can be read from an existing file:
+
+  sparql infile="file.qr"
+
+Results can be saved to an output file. The file type extension is used to determine the output format, but the exact list of available file formats depends on the type of the query.
+Graph queries (`construct`) can be saved as JSON-LD, RDF/XML, N-Triples or Turtle, by using the respective extensions `.jsonld`, `.xml`, `.nt` or `.ttl`.
+Tuple queries (`select`) can be saved as SPARQL Results CSV, TSV, JSON or XML, by using the respective extensions `.csv`, `.tsv`, `.srj` or `.srx`.
+
+For example:
+
+  sparql outfile="result.srj" select ?s where { ?s ?p ?o }
+
+Or:
+
+  sparql outfile="result.nt" construct { ?s ?p ?o } where { ?s ?p ?o }
+
+Combining input file for reading a query and an output for writing the result is also possible:
+
+  sparql infile="query.txt" outfile="result.tsv"
+
+When relative paths are used, files are read from or saved to the working directory, which can be changed using the following command:
+
+ set workdir=/path/to/working/dir
+
+
+=== Setting namespace prefixes
+
+NOTE: new in RDF4J 2.5
+
+Using prefixes for namespaces (e.g. `dcterms:` instead of `http://purl.org/dc/terms/`) makes queries and results easier to read, and queries less error-prone to write.
+By default a few well-known prefixes are available, including `dcterms`, `foaf`, `rdfs` and `skos`.
+
+For a complete list, see:
+
+  set prefixes
+
+Adding and clearing a namespace prefix is quite straightforward:
+
+  set prefixes=ex http://example.com
+  set prefixes=ex <none>
+
+Enter the following command to remove all namespace prefixes:
+
+  set prefixes=<none>
+
+Going back to the built-in list of well-know prefixes is easy, even when the list of prefixes was cleared:
+
+  set prefixes=<default>
+
+In addition, it is possible to toggle between using / showing the short prefix or using / showing the full namespace URI, without actually changing the prefixes: 
+
+  set queryprefix=true
+  set showprefix=true
+
 === Other commands
 
 Please check the documentation that is provided by the console itself for help on how to use the other commands. Most commands should be self explanatory. 

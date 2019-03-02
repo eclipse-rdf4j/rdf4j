@@ -18,14 +18,29 @@ TriplePattern triple = GraphPatterns.tp(book, dc.iri("author"), Rdf.literalOf("J
 System.out.println(triple.getQueryString());
 // ==> ?book dc:author "J.R.R. Tolkien"
 ----
+
+or, using RDF4J Model object and vocabulary constants directly:
+
+[source,java]
+----
+Prefix dc = SparqlBuilder.prefix(DC.PREFIX, DC.NAMESPACE);
+Variable book = SparqlBuilder.var("book");
+
+TriplePattern triple = GraphPatterns.tp(book, DC.AUTHOR, Rdf.literalOf("J.R.R. Tolkien"));
+System.out.println(triple.getQueryString());
+// ==> ?book dc:author "J.R.R. Tolkien"
+----
+
+TIP: In almost all places, SparqlBuilder allows either RDF4J Model objects or its own interfaces to be used. You can freely mix this.
+
 A `TriplePattern` instance can also be created from the `has()` and `isA()` shortcut methods of `RdfSubject`, and be expanded to contain multiple triples with the same subject via predicate-object lists and object lists:
 [source,java]
 ----
-Prefix foaf = SparqlBuilder.prefix("foaf", iri("http://xmlns.com/foaf/0.1/"));
+Prefix foaf = SparqlBuilder.prefix(FOAF.PREFIX, FOAF.NAMESPACE);
 Variable x = SparqlBuilder.var("x"), name = SparqlBuilder.var("name");
 
-TriplePattern triple = x.has(foaf.iri("nick"), Rdf.literalOf("Alice"), Rdf.literalOf("Alice_"))
-    .andHas(foaf.iri("name"), name);
+TriplePattern triple = x.has(FOAF.NICK, Rdf.literalOf("Alice"), Rdf.literalOf("Alice_"))
+    .andHas(FOAF.NAME, name);
 System.out.println(triple.getQueryString());
 // ===> ?x foaf:nick "Alice_", "Alice" ;
 //	   foaf:name ?name .
@@ -38,7 +53,7 @@ Three methods in `GraphPatterns` exist to create `GraphPatternNotTriple` instanc
 ----
 Variable mbox = SparqlBuilder.var("mbox"), x = SparqlBuilder.var("x");
 GraphPatternNotTriple groupPattern =
-GraphPatterns.and(x.has(foaf.iri("name"), name), x.has(foaf.iri("mbox"), mbox);
+GraphPatterns.and(x.has(FOAF.NAME), name), x.has(FOAF.MBOX, mbox);
 System.out.println(groupPattern.getQueryString());
 // ==> { ?x foaf:mbox ?mbox . ?x foaf:name ?name }
 ----

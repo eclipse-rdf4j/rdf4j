@@ -96,17 +96,17 @@ As we have seen, we can create Repository objects for any kind of back-end store
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 ...
 Repository repo = new SailRepository(
-			  new ForwardChainingRDFSInferencer(
+			  new SchemaCachingRDFSInferencer(
 			  new MemoryStore()));
 repo.initialize();
 ----
 
 Each layer in the Sail stack is created by a constructor that takes the underlying Sail as a parameter. Finally, we create the SailRepository object as a functional wrapper around the Sail stack.
 
-The {javadoc}sail/inferencer/fc/ForwardChainingRDFSInferencer.html[ForwardChainingRDFSInferencer] that is used in this example is a generic RDF Schema inferencer; it can be used on top of any Sail that supports the methods it requires. Both MemoryStore and NativeStore support these methods. However, a word of warning: the RDF4J inferencers add a significant performance overhead when adding and removing data to a repository, an overhead that gets progressively worse as the total size of the repository increases. For small to medium-sized datasets it peforms fine, but for larger datasets you are advised not to use it and to switch to alternatives.
+The {javadoc}sail/inferencer/fc/SchemaCachingRDFSInferencer.html[SchemaCachingRDFSInferencer] that is used in this example is a generic RDF Schema inferencer; it can be used on top of any Sail that supports the methods it requires. Both MemoryStore and NativeStore support these methods. However, a word of warning: the RDF4J inferencers add a significant performance overhead when adding and removing data to a repository, an overhead that gets progressively worse as the total size of the repository increases. For small to medium-sized datasets it peforms fine, but for larger datasets you are advised not to use it and to switch to alternatives.
 
 === Creating a Repository with a Custom Inferencing Rule
 
@@ -147,6 +147,8 @@ The graph query in ‘match’ is needed to decide what inferred statements alre
 
 In simple rule cases, such as this one, an empty string could have been provided for ‘match’ instead, and the correct matcher query would have been deduced.
 
+The {javadoc}sail/inferencer/fc/CustomGraphQueryInferencer.html[CustomGraphQueryInferencer] used here is useful, but fairly limited: it effectively only allows a single inference rule. For more complex custom inferencing or validation needs, you should look at the <<05-custom-sails.adoc#_reasoning_and_validation_support_with_spin,SPIN Sail>> or the <<05-custom-sails.adoc#_validation_with_shacl,SHACL Sail>>.
+
 === Accessing a server-side repository
 
 Working with remote repositories is just as easy as working with local ones. We can simply use a different Repository object, the HTTPRepository, instead of the SailRepository class.
@@ -163,6 +165,13 @@ String repositoryID = "example-db";
 Repository repo = new HTTPRepository(rdf4jServer, repositoryID);
 repo.initialize();
 ----
+
+Note: some OpenJDK 8 JVMs have a 
+https://bugs.openjdk.java.net/browse/JDK-8129861[ScheduledThreadPoolExecutor] bug, 
+causing high processor load even when idling.
+
+Setting the property `-Dorg.eclipse.rdf4j.client.executors.jdkbug`
+will use 1 core thread (instead of 0) for clients to remediate this.
 
 === Accessing a SPARQL endpoint
 
@@ -242,14 +251,14 @@ As a second example, we create a slightly more complex type of store: still in-m
 
 [source,java,linenum]
 ----
-import org.eclipse.rdf4j.sail.inferencer.fc.config.ForwardChainingRDFSInferencerConfig;
+import org.eclipse.rdf4j.sail.inferencer.fc.config.SchemaCachingRDFSInferencerConfig;
  
 // create a configuration for the SAIL stack
 boolean persist = true;
 SailImplConfig backendConfig = new MemoryStoreConfig(persist);
  
 // stack an inferencer config on top of our backend-config
-backendConfig = new ForwardChainingRDFSInferencerConfig(backendConfig);
+backendConfig = new SchemaCachingRDFSInferencerConfig(backendConfig);
  
 // create a configuration for the repository implementation
 SailRepositoryConfig repositoryTypeSpec = new SailRepositoryConfig(backendConfig);
