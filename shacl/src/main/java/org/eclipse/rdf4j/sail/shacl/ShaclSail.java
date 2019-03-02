@@ -226,6 +226,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	@Override
+	public void initialize() throws SailException {
+		init();
+	}
+
+	@Override
 	public void init() throws SailException {
 		initializing = true;
 		super.initialize();
@@ -293,8 +298,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	@Override
 	public NotifyingSailConnection getConnection() throws SailException {
-		return new ShaclSailConnection(this, super.getConnection(), super.getConnection(),
-			shapesRepo.getConnection());
+		return new ShaclSailConnection(
+			this,
+			super.getConnection(),
+			super.getConnection(),
+			shapesRepo.getConnection()
+		);
 	}
 
 	/**
