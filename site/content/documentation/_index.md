@@ -4,4 +4,7 @@ slug: "documentation"
 layout: "single"
 ---
 
-- [getting started](getting-started/)
+## Tutorials
+
+- [Getting started with rdf4j](getting-started/)
+- [Starting a new Maven project in Eclipse](maven-eclipse-project/)

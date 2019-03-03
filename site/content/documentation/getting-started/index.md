@@ -6,7 +6,7 @@ hide_page_title: "true"
 
 # Getting started with rdf4j
 
-Getting started with RDF is not hard! In this tutorial, we go through the basics of what RDF is and how you can use it, and we show how you can use the Eclipse RDF4J framework to create, process, store, and query RDF data. We assume that you know a little about programming in Java, but no prior knowledge on RDF is assumed.
+Getting started with RDF is not hard! In this tutorial, we go through the basics of what RDF is and how you can use it, and we show how you can use the Eclipse rdf4j framework to create, process, store, and query RDF data. We assume that you know a little about programming in Java, but no prior knowledge on RDF is assumed.
 
 TIP: The code examples in this tutorial are available for download from the [examples directory in the rdf4j-doc GitHub repository](https://github.com/eclipse/rdf4j-doc/tree/master/examples). We encourage you to download these examples and play around with them. The easiest way to do this is to download the GitHub repository in your favorite Java IDE as an Apache Maven project. 
 
@@ -75,17 +75,17 @@ Of course we can't list every possible reusable RDF vocabulary here, but there a
 
 The flexibility of RDF makes it easy to mix and match models as you need them. You will, in practice, often see RDF data sets that have some "home-grown" IRIs, combined with properties and class names from a variety of different other vocabularies. It's not uncommon to see 3 or more different vocabularies all reused in the same dataset.
 
-## Using RDF4J to create RDF models
+## Using rdf4j to create RDF models
 
 Enough background, let's get our hands dirty.
 
-Eclipse RDF4J is a Java API for RDF: it allows you to create, parse, write, store, query and reason with RDF data in a highly scalable manner. So let's see two examples of how we can use RDF4J to create the above RDF model in Java.
+Eclipse rdf4j is a Java API for RDF: it allows you to create, parse, write, store, query and reason with RDF data in a highly scalable manner. So let's see two examples of how we can use rdf4j to create the above RDF model in Java.
 
 ### Example 01: building a simple Model 
 
-{{< example "Example 01" "model/Example01BuildModel.java" >}} shows how we can create the RDF model we introduced above using RDF4J:
+{{< example "Example 01" "model/Example01BuildModel.java" >}} shows how we can create the RDF model we introduced above using rdf4j:
 
-{{< highlight java "linenos=table">}}
+{{< highlight java "linenos=table" >}}
 // We use a ValueFactory to create the building blocks of our RDF statements: 
 // IRIs, blank nodes and literals.
 ValueFactory vf = SimpleValueFactory.getInstance();
@@ -109,11 +109,11 @@ model.add(picasso, FOAF.FIRST_NAME, vf.createLiteral("Pablo"));
 
 Let's take a closer look at this. Lines 1-10 are necessary preparation: we use a {{< javadoc "ValueFactory" "model/ValueFactory.html" >}} to create resources , which we will later use to add facts to our model. 
 
-On line 13, we create a new, empty model. RDF4J comes with several {{< javadoc "Model" "model/Model.html" >}} implementations, the ones you will most commonly encounter are {{< javadoc "TreeModel" "model/impl/TreeModel.html" >}} and {{< javadoc "LinkedHashModel" "model/impl/LinkedHashModel.html" >}}. The difference is in how they index data internally - which has a performance impact when working with very large models. For our purposes however, it doesn't really matter which implementation you use.
+On line 13, we create a new, empty model. rdf4j comes with several {{< javadoc "Model" "model/Model.html" >}} implementations, the ones you will most commonly encounter are {{< javadoc "TreeModel" "model/impl/TreeModel.html" >}} and {{< javadoc "LinkedHashModel" "model/impl/LinkedHashModel.html" >}}. The difference is in how they index data internally - which has a performance impact when working with very large models. For our purposes however, it doesn't really matter which implementation you use.
 
 On lines 16 and 19, we add our two facts that we know about Picasso: that's he's an artist, and that his first name is "Pablo". 
 
-In RDF4J, a {{< javadoc "Model" "model/Model.html" >}} is simply an in-memory collection of RDF statements. We can add statements to an existing model, remove statements from it, and of course iterate over the model to do things with its contents. As an example, let's iterate over all statements in our Model using a `for-each` loop, and print them to the screen:
+In rdf4j, a {{< javadoc "Model" "model/Model.html" >}} is simply an in-memory collection of RDF statements. We can add statements to an existing model, remove statements from it, and of course iterate over the model to do things with its contents. As an example, let's iterate over all statements in our Model using a `for-each` loop, and print them to the screen:
 
 {{< highlight java "linenos=table" >}}
 for (Statement statement: model) {
@@ -126,11 +126,11 @@ When you run this, the output will look something like this:
     (http://example.org/Picasso, http://xmlns.com/foaf/0.1/firstName, "Pablo"^^<http://www.w3.org/2001/XMLSchema#string>) [null]
     (http://example.org/Picasso, http://www.w3.org/1999/02/22-rdf-syntax-ns#type, http://example.org/art/Artist) [null]
 
-Not very pretty perhaps, but at least you should be able to recognize the RDF statements that we originally added to our model. Each line is a single statement, with the subject, predicate, and object value in comma-separated form. The `[null]` behind each statement is a context identifier or named graph identifier, which you can safely ignore for now. The bit `^^<http://www.w3.org/2001/XMLSchema#string>` is a _datatype_ that RDF4J assigned to the literal value we added (in this case, the datatype is simply string). 
+Not very pretty perhaps, but at least you should be able to recognize the RDF statements that we originally added to our model. Each line is a single statement, with the subject, predicate, and object value in comma-separated form. The `[null]` behind each statement is a context identifier or named graph identifier, which you can safely ignore for now. The bit `^^<http://www.w3.org/2001/XMLSchema#string>` is a _datatype_ that rdf4j assigned to the literal value we added (in this case, the datatype is simply string). 
 
 ### Example 02: using the ModelBuilder
 
-The previous code example shows that you need to do a bit of preparation before actually adding anything to your model: defining common namespaces, creating a ValueFactory, creating IRIs, etc. As a convenience, RDF4J provides a {{< javadoc "ModelBuilder" "model/util/ModelBuilder.html" >}} that simplifies things.
+The previous code example shows that you need to do a bit of preparation before actually adding anything to your model: defining common namespaces, creating a ValueFactory, creating IRIs, etc. As a convenience, rdf4j provides a {{< javadoc "ModelBuilder" "model/util/ModelBuilder.html" >}} that simplifies things.
 
 {{< example "Example 02" "model/Example02BuildModel.java" >}} shows how we can create the exact same model using a ModelBuilder:
 
@@ -278,11 +278,11 @@ Model model = builder.build();
 
 In the previous sections we saw how to print the contents of a Model to the screen, However, this is of limited use: the format is not easy to read, and certainly not by any other tools that you may wish to share the information with.
 
-Fortunately, RDF4J provides tools for reading and writing RDF models in several syntax formats, all of which are standardized, and therefore can be used to share data between applications. The most commonly used formats are RDF/XML, Turtle, and N-Triples.
+Fortunately, rdf4j provides tools for reading and writing RDF models in several syntax formats, all of which are standardized, and therefore can be used to share data between applications. The most commonly used formats are RDF/XML, Turtle, and N-Triples.
 
 ### Example 06: Writing to RDF/XML 
 
-{{< example "Example 06" "model/Example06WriteRdfXml.java" >}} shows how we can write our Model as RDF/XML, using the RDF4J {{< javadoc "Rio" "rio/Rio.html" >}} parser/writer tools:
+{{< example "Example 06" "model/Example06WriteRdfXml.java" >}} shows how we can write our Model as RDF/XML, using the rdf4j {{< javadoc "Rio" "rio/Rio.html" >}} parser/writer tools:
 
 
 {{< highlight java >}}
@@ -355,7 +355,7 @@ Line 7 and further, finally, state facts about the blank node (the home address 
 
 ### Example 08: Reading a Turtle RDF file
 
-Very similar to how we can write RDF models to files in various syntaxes, we can also use RDF4J Rio to _read_ files to produce an RDF model. 
+Very similar to how we can write RDF models to files in various syntaxes, we can also use rdf4j Rio to _read_ files to produce an RDF model. 
 
 {{< example "Example 08" "model/Example08ReadTurtle.java" >}} shows how we can read a Turtle file and produce a `Model` object out of it:
 
@@ -401,7 +401,7 @@ for (Statement st: aboutVanGogh) {
 	// the property predicate is always an IRI
 	IRI predicate = st.getPredicate();
 
-	// the property value could be an IRI, a BNode, or a Literal. In RDF4J,
+	// the property value could be an IRI, a BNode, or a Literal. In rdf4j,
 	// Value is is the supertype of all possible kinds of RDF values.
 	Value object = st.getObject();
 
@@ -437,7 +437,7 @@ Set<Value> paintings = model.filter(vanGogh, EX.CREATOR_OF, null).objects();
 
 {{< / highlight >}}
 
-TIP: Notice that we are suddenly using a new vocabulary constant for our property: `EX.CREATOR_OF`. It is generally a good idea to create a class containing  constants for your own IRIs when you program with RDF4J: it makes it easier to reuse them and avoids introducing typos (not to mention a lot of hassle if you later decide to rename one of your resources). See {{< example "the EX vocabulary class" "model/vocabulary/EX.java" >}} for an example of how to create your own vocabulary classes.
+TIP: Notice that we are suddenly using a new vocabulary constant for our property: `EX.CREATOR_OF`. It is generally a good idea to create a class containing  constants for your own IRIs when you program with rdf4j: it makes it easier to reuse them and avoids introducing typos (not to mention a lot of hassle if you later decide to rename one of your resources). See {{< example "the EX vocabulary class" "model/vocabulary/EX.java" >}} for an example of how to create your own vocabulary classes.
 
 Once we have selected the values, we can iterate and do something with them. For example, we could try and retrieve further information about each value, like so:
 
@@ -489,7 +489,7 @@ NOTE: The `Models` utility methods for selecting single values, such as `Models.
 
 ## Named Graphs and Contexts
 
-As we have seen, the RDF data model can be viewed as a graph. Sometimes it is useful to be able to group together subsets of RDF data as separate graphs. For example, you may want to use several files together, but still keep track of which statements come from which file. An RDF4J {{< javadoc "Model" "model/Model.html" >}} facilitates this by having an optional *context* parameter for most of it methods. This parameter allows you to identify a _named graph_ in the Model, that is a subset of the complete model. In this section, we will look at some examples of this mechanism in action.
+As we have seen, the RDF data model can be viewed as a graph. Sometimes it is useful to be able to group together subsets of RDF data as separate graphs. For example, you may want to use several files together, but still keep track of which statements come from which file. An rdf4j {{< javadoc "Model" "model/Model.html" >}} facilitates this by having an optional *context* parameter for most of it methods. This parameter allows you to identify a _named graph_ in the Model, that is a subset of the complete model. In this section, we will look at some examples of this mechanism in action.
 
 ### Example 12: Adding statements to two named graphs
 
@@ -538,9 +538,9 @@ On lines 23 and further, you can see two examples of how this information can be
 
 When RDF models grow larger and more complex, simply keeping all the data in an in-memory collection is no longer an option: large amounts of data will simply not fit, and querying the data will require more sophisticated indexing mechanisms. Moreover, data consistency ensurance mechanisms (transactions, etc) will be necessary. In short: you need a database.
 
-RDF4J has a standardized access API for RDF databases, called the Repository API. This API provides all the things we need from a database: a sophisticated transaction handling mechanism, controls to work efficiently with high data volumes, and, perhaps most importantly: support for querying your data using the [SPARQL query language](https://www.w3.org/TR/sparql11-query/).
+rdf4j has a standardized access API for RDF databases, called the Repository API. This API provides all the things we need from a database: a sophisticated transaction handling mechanism, controls to work efficiently with high data volumes, and, perhaps most importantly: support for querying your data using the [SPARQL query language](https://www.w3.org/TR/sparql11-query/).
 
-In this tutorial, we will show the basics of how to use the Repository API and execute some simple SPARQL queries over your RDF data. Explaining SPARQL or the Repository API in detail is out of scope, however. For more details on how to use the Repository API, have a look at link:/programming[Programming with RDF4J].
+In this tutorial, we will show the basics of how to use the Repository API and execute some simple SPARQL queries over your RDF data. Explaining SPARQL or the Repository API in detail is out of scope, however. For more details on how to use the Repository API, have a look at link:/programming[Programming with rdf4j].
 
 ### Example 13: Adding an RDF Model to a database
 
@@ -577,9 +577,9 @@ finally {
 
 {{< / highlight >}}
 
-In this code example (line 8), we simply create a new {{< javadoc "Repository" "repository/Repository.html" >}} on the fly. We use a {{< javadoc "SailRepository" "repository/sail/SailRepository.html" >}} as the implementing class of the Repository interface, which takes a database implementation (known in RDF4J as a SAIL - "Storage and Inferencing Layer") as its constructor. In this case, we simply use an in-memory database implementation. 
+In this code example (line 8), we simply create a new {{< javadoc "Repository" "repository/Repository.html" >}} on the fly. We use a {{< javadoc "SailRepository" "repository/sail/SailRepository.html" >}} as the implementing class of the Repository interface, which takes a database implementation (known in rdf4j as a SAIL - "Storage and Inferencing Layer") as its constructor. In this case, we simply use an in-memory database implementation. 
 
-TIP: RDF4J itself provides several database implementations, and many third parties provide full connectivity for their own RDF database product to work with the RDF4J APIs. For a list of third-party databases, see this [list of vendors](http://rdf4j.org/about/rdf4j-databases/) . For more detailed information on how to create and maintain databases, see link:/programming[Programming with RDF4J].
+TIP: rdf4j itself provides several database implementations, and many third parties provide full connectivity for their own RDF database product to work with the rdf4j APIs. For a list of third-party databases, see this [list of vendors](http://rdf4j.org/about/rdf4j-databases/) . For more detailed information on how to create and maintain databases, see link:/programming[Programming with rdf4j].
 
 Once we have created and initialized our database, we open a {{< javadoc "RepositoryConnection" "repository/RepositoryConnection.html" >}} to it (line 12). This connection is an `AutoCloseable` resource that offers all sorts of methods for executing commands on the database: adding and removing data, querying, starting transactions, and so on. 
 
@@ -674,7 +674,7 @@ finally {
 
 {{< / highlight >}}
 
-On lines 16-22, we define our SPARQL query string, and on line 23 we turn this into a prepared {{< javadoc "Query" "query/Query.html" >}} object. We are using a SPARQL SELECT-query, which will return a result consisting of _tuples_ of variable-bindings (each tuple containing a binding for each variable in the SELECT-clause). Hence, RDF4J calls the constructed query a {{< javadoc "TupleQuery" "query/TupleQuery.html" >}}, and the result of the query a {{< javadoc "TupleQueryResult" "query/TupleQueryResult.html" >}}. Lines 26-34 is where the actual work gets done: on line 26, the query is evaluated, returning a result object. RDF4J QueryResult objects execute lazily: the actual data is not retrieved from the database until we start iterating over the result (as we do on lines 28-34). On line 29 we grab the next solution from the result, which is a {{< javadoc "BindingSet" "query/BindingSet.html" >}}. You can think about a BindingSet as being similar to a row in a table (the binding names are the columns, the binding values the value for each column in this particular row). We then grab the value of the binding of variable `?s` (line 32) and `?n` (line 33) and print them out.
+On lines 16-22, we define our SPARQL query string, and on line 23 we turn this into a prepared {{< javadoc "Query" "query/Query.html" >}} object. We are using a SPARQL SELECT-query, which will return a result consisting of _tuples_ of variable-bindings (each tuple containing a binding for each variable in the SELECT-clause). Hence, rdf4j calls the constructed query a {{< javadoc "TupleQuery" "query/TupleQuery.html" >}}, and the result of the query a {{< javadoc "TupleQueryResult" "query/TupleQueryResult.html" >}}. Lines 26-34 is where the actual work gets done: on line 26, the query is evaluated, returning a result object. rdf4j QueryResult objects execute lazily: the actual data is not retrieved from the database until we start iterating over the result (as we do on lines 28-34). On line 29 we grab the next solution from the result, which is a {{< javadoc "BindingSet" "query/BindingSet.html" >}}. You can think about a BindingSet as being similar to a row in a table (the binding names are the columns, the binding values the value for each column in this particular row). We then grab the value of the binding of variable `?s` (line 32) and `?n` (line 33) and print them out.
 
 There are a number of variations possible on how you execute a query and process the result. We'll show some of these variations here, and we recommend that you try them out by modifying code example 13 in your own editor and executing the modified code, to see what happens.
 
@@ -707,7 +707,7 @@ query.evaluate(tsvWriter);
 
 Another type of SPARQL query is the CONSTRUCT-query: instead of returning the result as a sequence of variable bindings, CONSTRUCT-queries return RDF statements. CONSTRUCT queries are very useful for quickly retrieving data subsets from an RDF database, and for transforming that data. 
 
-{{< example "Example 16" "repository/Example16SPARQLConstructQuery.java" >}} shows how we can execute a SPARQL CONSTRUCT query in RDF4J. As you can see, most of the code is quite similar to previous examples:
+{{< example "Example 16" "repository/Example16SPARQLConstructQuery.java" >}} shows how we can execute a SPARQL CONSTRUCT query in rdf4j. As you can see, most of the code is quite similar to previous examples:
 
 {{< highlight java "linenos=table" >}}
 // Create a new Repository.
@@ -753,7 +753,7 @@ finally {
 
 {{< / highlight >}}
 
-On lines 16-22 we create our SPARQL CONSTRUCT-query. The only real difference is line 18, where we use a CONSTRUCT-clause (instead of the SELECT-clause we saw previously). Line 24 turns the query string into a prepared Query object. Since the result of a CONSTRUCT-query is a set of RDF statements (in other words: a graph), RDF4J calls such a query a {{< javadoc "GraphQuery" "query/GraphQuery.html" >}}, and its result a {{< javadoc "GraphQueryResult" "query/GraphQueryResult.html" >}}.
+On lines 16-22 we create our SPARQL CONSTRUCT-query. The only real difference is line 18, where we use a CONSTRUCT-clause (instead of the SELECT-clause we saw previously). Line 24 turns the query string into a prepared Query object. Since the result of a CONSTRUCT-query is a set of RDF statements (in other words: a graph), rdf4j calls such a query a {{< javadoc "GraphQuery" "query/GraphQuery.html" >}}, and its result a {{< javadoc "GraphQueryResult" "query/GraphQueryResult.html" >}}.
 
 On line 28 and further we execute the query and iterate over the result. The main difference with previous examples is that this time, the individual solutions in the result are {{< javadoc "Statements" "model/Statement.html" >}}.
 
@@ -782,11 +782,11 @@ query.evaluate(turtleWriter);
 
 ## Further reading
 
-You should now have a basic understanding of the RDF data model, and have a decent grasp on how you can use RDF4J to read, write, create, store, and query RDF data. For more information on how to use RDF4J, we recommend the following sources:
+You should now have a basic understanding of the RDF data model, and have a decent grasp on how you can use rdf4j to read, write, create, store, and query RDF data. For more information on how to use rdf4j, we recommend the following sources:
 
-* link:/programming[Programming with RDF4J] - an extensive guide to using the RDF4J framework from Java, covering basics and more advanced configurations.
-* [RDF4J API JavaDoc](http://docs.rdf4j.org/javadoc/latest) - the complete API reference. Pay particular attention to the various `util` packages scattered throughout the API, these often contain very useful helper classes and utilities.
-* link:/getting-started[Getting Started with RDF4J, Maven and Eclipse] - a tutorial on how to set up your first RDF4J-based project with the help of Apache Maven and the Eclipse IDE.
+* link:/programming[Programming with rdf4j] - an extensive guide to using the rdf4j framework from Java, covering basics and more advanced configurations.
+* [rdf4j API JavaDoc](http://docs.rdf4j.org/javadoc/latest) - the complete API reference. Pay particular attention to the various `util` packages scattered throughout the API, these often contain very useful helper classes and utilities.
+* link:/getting-started[Getting Started with rdf4j, Maven and Eclipse] - a tutorial on how to set up your first rdf4j-based project with the help of Apache Maven and the Eclipse IDE.
 
 For more detailed information about RDF, and SPARQL, consult the following sources:
 
