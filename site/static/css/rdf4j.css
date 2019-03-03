@@ -1,0 +1,10 @@
+#header-wrapper {
+  background: #707070;
+  background-image: url(../images/header-bg.jpg);
+  background-size: cover;
+}
+
+#header-row {
+  padding-top: 20px;
+}
+

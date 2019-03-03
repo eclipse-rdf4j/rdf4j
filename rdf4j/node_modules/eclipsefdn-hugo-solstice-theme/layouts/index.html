@@ -1,8 +1,0 @@
-{{ define "jumbotron"}}{{ partial "jumbotron.html" . }}{{end}}
-{{ define "main" }}
-<main>
-  <div class="{{ if (and (isset .Page.Params "container") (ne .Page.Params ""))}}{{ .Page.Params.container }}{{else}}container{{end}}">
-    {{ .Content }}
-  </div>
-</main>
-{{ end }}
