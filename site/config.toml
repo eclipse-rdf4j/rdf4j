@@ -6,6 +6,7 @@ metaDataFormat = "yaml"
 googleAnalytics = ""
 themesDir = "themes/"
 disableKinds = ["taxonomy", "taxonomyTerm"]
+pygmentsStyle = "github"
 
 [blackfriday]
   plainIDAnchors = true
