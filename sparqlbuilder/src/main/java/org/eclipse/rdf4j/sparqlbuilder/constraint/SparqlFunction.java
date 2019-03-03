@@ -54,7 +54,7 @@ public enum SparqlFunction implements SparqlOperator {
 	SHA256("SHA256"),
 	SHA384("SHA384"),
 	SHA512("SHA512"),
-    STR("STR"),
+	STR("STR"),
 	STRAFTER("STRAFTER"),
 	STRBEFORE("STRBEFORE"),
 	STRDT("STRDT"),
