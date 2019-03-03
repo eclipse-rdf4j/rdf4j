@@ -37,7 +37,7 @@ public class NativeStoreTest {
 	}
 
 	@Test(expected = ShaclSailValidationException.class)
-	public void testPresistedShapes() throws Throwable {
+	public void testPersistedShapes() throws Throwable {
 
 		File file = Files.newTemporaryFolder();
 
