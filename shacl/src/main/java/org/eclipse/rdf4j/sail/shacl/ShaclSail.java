@@ -221,13 +221,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	@Override
 	public void initialize() throws SailException {
-		init();
-	}
-
-	@Override
-	public void init() throws SailException {
 		initializing = true;
-		super.init();
+		super.initialize();
 
 		if (getDataDir() != null) {
 			if(parallelValidation){
