@@ -8,19 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import java.util.List;
+public interface MultiStreamPlanNode {
+	void init();
 
-public interface SupportsParentProvider {
+	void close();
 
-	void receiveParentProvider(ParentProvider parentProvider);
-
-}
-
-/**
- * @author Håvard Ottestad
- */
-interface ParentProvider {
-
-	List<PlanNode> parent();
-
+	boolean incrementIterator();
 }

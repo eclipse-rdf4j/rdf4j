@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -137,14 +139,13 @@ import java.util.List;
  */
 public class ShaclSail extends NotifyingSailWrapper {
 
+	private static final Logger logger = LoggerFactory.getLogger(ShaclSail.class);
+
 	private List<NodeShape> nodeShapes = Collections.emptyList();
 
 	private static String SH_OR_UPDATE_QUERY;
-
 	private static String SH_OR_NODE_SHAPE_UPDATE_QUERY;
-
 	private static String IMPLICIT_TARGET_CLASS_NODE_SHAPE;
-
 	private static String IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE;
 
 	/**
@@ -153,44 +154,30 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private SailRepository shapesRepo;
 
 	private boolean parallelValidation = ShaclSailConfig.PARALLEL_VALIDATION_DEFAULT;
-
 	private boolean undefinedTargetValidatesAllSubjects = ShaclSailConfig.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
-
 	private boolean logValidationPlans = ShaclSailConfig.LOG_VALIDATION_PLANS_DEFAULT;
-
 	private boolean logValidationViolations = ShaclSailConfig.LOG_VALIDATION_VIOLATIONS_DEFAULT;
-
 	private boolean ignoreNoShapesLoadedException = ShaclSailConfig.IGNORE_NO_SHAPES_LOADED_EXCEPTION_DEFAULT;
-
 	private boolean validationEnabled = ShaclSailConfig.VALIDATION_ENABLED_DEFAULT;
-
 	private boolean cacheSelectNodes = ShaclSailConfig.CACHE_SELECT_NODES_DEFAULT;
-
 	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
+
+	private boolean initializing = false;
 
 	static {
 		try {
-			SH_OR_UPDATE_QUERY = IOUtils.toString(
-					ShaclSail.class.getClassLoader().getResourceAsStream("shacl-sparql-inference/sh_or.rq"),
-					"UTF-8");
-			SH_OR_NODE_SHAPE_UPDATE_QUERY = IOUtils.toString(
-					ShaclSail.class.getClassLoader().getResourceAsStream(
-							"shacl-sparql-inference/sh_or_node_shape.rq"),
-					"UTF-8");
-			IMPLICIT_TARGET_CLASS_NODE_SHAPE = IOUtils.toString(
-					ShaclSail.class.getClassLoader().getResourceAsStream(
-							"shacl-sparql-inference/implicitTargetClassNodeShape.rq"),
-					"UTF-8");
-
-			IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE = IOUtils.toString(
-					ShaclSail.class.getClassLoader().getResourceAsStream(
-							"shacl-sparql-inference/implicitTargetClassPropertyShape.rq"),
-					"UTF-8");
-		}
-		catch (IOException e) {
+			SH_OR_UPDATE_QUERY = resourceAsString("shacl-sparql-inference/sh_or.rq");
+			SH_OR_NODE_SHAPE_UPDATE_QUERY = resourceAsString("shacl-sparql-inference/sh_or_node_shape.rq");
+			IMPLICIT_TARGET_CLASS_NODE_SHAPE = resourceAsString("shacl-sparql-inference/implicitTargetClassNodeShape.rq");
+			IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE = resourceAsString("shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
+		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
 
+	}
+
+	private static String resourceAsString(String s) throws IOException {
+		return IOUtils.toString(ShaclSail.class.getClassLoader().getResourceAsStream(s), "UTF-8");
 	}
 
 	public ShaclSail(NotifyingSail baseSail) {
@@ -205,7 +192,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * Lists the predicates that have been implemented in the ShaclSail. All of these, and all combinations,
 	 * <i>should</i> work, please report any bugs. For sh:path, only single predicate paths are supported.
-	 * 
+	 *
 	 * @return List of IRIs (SHACL predicates)
 	 */
 	public static List<IRI> getSupportedShaclPredicates() {
@@ -227,13 +214,22 @@ public class ShaclSail extends NotifyingSailWrapper {
 			SHACL.MIN_INCLUSIVE,
 			SHACL.MAX_EXCLUSIVE,
 			SHACL.MAX_INCLUSIVE,
-			SHACL.CLASS
+			SHACL.CLASS,
+			SHACL.TARGET_NODE
 		);
 	}
 
 	@Override
 	public void initialize() throws SailException {
+		initializing = true;
 		super.initialize();
+
+		if (getDataDir() != null) {
+			if(parallelValidation){
+				logger.info("Automatically disabled parallel SHACL validation because persistent base sail was detected! Re-enable by calling setParallelValidation(true) after calling init() / initialize().");
+			}
+			setParallelValidation(false);
+		}
 
 		if (shapesRepo != null) {
 			shapesRepo.shutDown();
@@ -248,32 +244,33 @@ public class ShaclSail extends NotifyingSailWrapper {
 			path = path + "-shapes-graph/";
 
 			shapesRepo = new SailRepository(new MemoryStore(new File(path)));
-		}
-		else {
+		} else {
 			shapesRepo = new SailRepository(new MemoryStore());
 		}
 
-		shapesRepo.initialize();
+		shapesRepo.init();
 
 		try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
 			shapesRepoConnection.begin(IsolationLevels.NONE);
 			refreshShapes(shapesRepoConnection);
 			shapesRepoConnection.commit();
 		}
+		initializing = false;
 
 	}
 
 	synchronized List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection)
-		throws SailException
-	{
-		try (SailRepositoryConnection beforeCommitConnection = shapesRepo.getConnection()) {
-			long size = beforeCommitConnection.size();
-			if (size > 0) {
-				// Our inferencer both adds and removes statements.
-				// To support updates I recommend having two graphs, one raw one with the unmodified data.
-				// Then copy all that data into a new graph, run inferencing on that graph and use it to generate the java objects
-				throw new IllegalStateException(
+		throws SailException {
+		if (!initializing) {
+			try (SailRepositoryConnection beforeCommitConnection = shapesRepo.getConnection()) {
+				boolean empty = !beforeCommitConnection.hasStatement(null, null, null, false);
+				if (!empty) {
+					// Our inferencer both adds and removes statements.
+					// To support updates I recommend having two graphs, one raw one with the unmodified data.
+					// Then copy all that data into a new graph, run inferencing on that graph and use it to generate the java objects
+					throw new IllegalStateException(
 						"ShaclSail does not support modifying shapes that are already loaded or loading more shapes");
+				}
 			}
 		}
 
@@ -293,8 +290,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	@Override
 	public NotifyingSailConnection getConnection() throws SailException {
-		return new ShaclSailConnection(this, super.getConnection(), super.getConnection(),
-				shapesRepo.getConnection());
+		return new ShaclSailConnection(
+			this,
+			super.getConnection(),
+			super.getConnection(),
+			shapesRepo.getConnection()
+		);
 	}
 
 	/**
@@ -313,7 +314,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Check if SHACL validation on commit() is enabled.
-	 * 
+	 *
 	 * @return <code>true</code> if validation is enabled, <code>false</code> otherwise.
 	 */
 	public boolean isValidationEnabled() {
@@ -322,7 +323,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Check if logging of validation plans is enabled.
-	 * 
+	 *
 	 * @return <code>true</code> if validation plan logging is enabled, <code>false</code> otherwise.
 	 */
 	public boolean isLogValidationPlans() {
@@ -335,7 +336,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Check if shapes have been loaded into the shapes graph before other data is added
-	 * 
+	 *
 	 * @param ignoreNoShapesLoadedException
 	 */
 	public void setIgnoreNoShapesLoadedException(boolean ignoreNoShapesLoadedException) {
@@ -345,7 +346,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * Log (INFO) the executed validation plans as GraphViz DOT Recommended to disable parallel validation
 	 * with setParallelValidation(false)
-	 * 
+	 *
 	 * @param logValidationPlans
 	 */
 	public void setLogValidationPlans(boolean logValidationPlans) {
@@ -375,7 +376,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * Log (INFO) every execution step of the SHACL validation. This is fairly costly and should not be used
 	 * in production. Recommended to disable parallel validation with setParallelValidation(false)
-	 * 
+	 *
 	 * @param loggingEnabled
 	 */
 	public void setGlobalLogValidationExecution(boolean loggingEnabled) {
@@ -384,7 +385,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Check if logging of every execution steps is enabled.
-	 * 
+	 *
 	 * @return <code>true</code> if enabled, <code>false</code> otherwise.
 	 * @see #setGlobalLogValidationExecution(boolean)
 	 */
@@ -395,7 +396,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * Check if logging a list of violations and the triples that caused the violations is enabled. It is
 	 * recommended to disable parallel validation with {@link #setParallelValidation(boolean)}
-	 * 
+	 *
 	 * @see #setLogValidationViolations(boolean)
 	 */
 	public boolean isLogValidationViolations() {
@@ -405,7 +406,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * Log (INFO) a list of violations and the triples that caused the violations (BETA). Recommended to
 	 * disable parallel validation with setParallelValidation(false)
-	 * 
+	 *
 	 * @param logValidationViolations
 	 */
 	public void setLogValidationViolations(boolean logValidationViolations) {
@@ -416,7 +417,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * If no target is defined for a NodeShape, that NodeShape will be ignored. Calling this method with
 	 * "true" will make such NodeShapes wildcard shapes and validate all subjects. Equivalent to setting
 	 * sh:targetClass to owl:Thing or rdfs:Resource in an environment with a reasoner.
-	 * 
+	 *
 	 * @param undefinedTargetValidatesAllSubjects
 	 *        default false
 	 */
@@ -426,7 +427,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Check if {@link NodeShape}s without a defined target are considered wildcards.
-	 * 
+	 *
 	 * @return <code>true</code> if enabled, <code>false</code> otherwise
 	 * @see #setUndefinedTargetValidatesAllSubjects(boolean)
 	 */
@@ -436,7 +437,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Check if SHACL validation is run in parellel.
-	 * 
+	 *
 	 * @return <code>true</code> if enabled, <code>false</code> otherwise.
 	 */
 	public boolean isParallelValidation() {
@@ -444,18 +445,23 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Run SHACL validation in parallel. Default: true
-	 * 
+	 * EXPERIMENTAL! Run SHACL validation in parallel. Default: false
+	 * <p>
+	 * May cause deadlock, especially when using NativeStore.
+	 *
 	 * @param parallelValidation
-	 *        default true
-	 */
+	 *        default false
+	*/
 	public void setParallelValidation(boolean parallelValidation) {
+		if(parallelValidation){
+			logger.warn("Parallel SHACL validation enabled. This is an experimental feature and may cause deadlocks!");
+		}
 		this.parallelValidation = parallelValidation;
 	}
 
 	/**
 	 * Check if selected nodes caches is enabled.
-	 * 
+	 *
 	 * @return <code>true</code> if enabled, <code>false</code> otherwise.
 	 * @see #setCacheSelectNodes(boolean)
 	 */
@@ -467,10 +473,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * The ShaclSail retries a lot of its relevant data through running SPARQL Select queries against the
 	 * underlying sail and against the changes in the transaction. This is usually good for performance, but
 	 * while validating large amounts of data disabling this cache will use less memory. Default: true
-	 * 
+	 *
 	 * @param cacheSelectNodes
 	 *        default true
-	 */
+	*/
 	public void setCacheSelectNodes(boolean cacheSelectNodes) {
 		this.cacheSelectNodes = cacheSelectNodes;
 	}

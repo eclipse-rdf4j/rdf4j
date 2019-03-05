@@ -92,8 +92,7 @@ public class TrimTuple implements PlanNode {
 	@Override
 	public String toString() {
 		return "TrimTuple{" +
-			"parent=" + parent +
-			", newLength=" + newLength +
+			"newLength=" + newLength +
 			", startIndex=" + startIndex +
 			'}';
 	}

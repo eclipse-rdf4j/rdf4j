@@ -40,7 +40,7 @@ public class MinLengthPropertyShape extends PathPropertyShape {
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,
 			nodeShape,
-			(parent, trueNode, falseNode) -> new MinLengthFilter(parent, trueNode, falseNode, minLength),
+			(parent) -> new MinLengthFilter(parent, minLength),
 			this,
 			overrideTargetNode);
 

@@ -52,7 +52,7 @@ public class PatternPropertyShape extends PathPropertyShape {
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,
 			nodeShape,
-			(parent, trueNode, falseNode) -> new PatternFilter(parent, trueNode, falseNode, pattern, flags),
+			(parent) -> new PatternFilter(parent, pattern, flags),
 			this,
 			overrideTargetNode);
 

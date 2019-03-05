@@ -23,8 +23,8 @@ public class PatternFilter extends FilterPlanNode {
 	private final Pattern pattern;
 
 
-	public PatternFilter(PlanNode parent, PushBasedPlanNode trueNode, PushBasedPlanNode falseNode, String pattern, Optional<String> flags) {
-		super(parent, trueNode, falseNode);
+	public PatternFilter(PlanNode parent, String pattern, Optional<String> flags) {
+		super(parent);
 		if (flags.isPresent()) {
 
 			int flag = 0b0;

@@ -45,7 +45,7 @@ public class ShaclSailConfigTest {
 
 	@Test
 	public void defaultsCorrectlySet() {
-		assertThat(subject.isParallelValidation()).isTrue();
+		assertThat(subject.isParallelValidation()).isFalse();
 		assertThat(subject.isUndefinedTargetValidatesAllSubjects()).isFalse();
 		assertThat(subject.isLogValidationPlans()).isFalse();
 		assertThat(subject.isLogValidationViolations()).isFalse();

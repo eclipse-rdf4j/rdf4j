@@ -7,6 +7,8 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.stream.Stream;
 
 public class ShaclProperties {
@@ -31,6 +33,9 @@ public class ShaclProperties {
 	Literal maxInclusive;
 
 	String pattern;
+
+	Resource targetClass;
+	List<Value> targetNode = new ArrayList<>(0);
 
 
 	public ShaclProperties(Resource propertyShapeId, SailRepositoryConnection connection) {
@@ -119,10 +124,19 @@ public class ShaclProperties {
 						pattern = object.stringValue();
 						break;
 					case "http://www.w3.org/ns/shacl#class":
-						if (pattern != null) {
+						if (clazz != null) {
 							throw new IllegalStateException("sh:class aleady populated");
 						}
 						clazz = (Resource) object;
+						break;
+					case "http://www.w3.org/ns/shacl#targetNode":
+						targetNode.add(object);
+						break;
+					case "http://www.w3.org/ns/shacl#targetClass":
+						if (targetClass != null) {
+							throw new IllegalStateException("sh:targetClass aleady populated");
+						}
+						targetClass = (Resource) object;
 						break;
 				}
 

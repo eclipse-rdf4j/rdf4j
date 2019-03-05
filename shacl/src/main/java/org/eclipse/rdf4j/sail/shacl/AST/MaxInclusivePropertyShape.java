@@ -42,7 +42,7 @@ public class MaxInclusivePropertyShape extends PathPropertyShape {
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,
 			nodeShape,
-			(parent, trueNode, falseNode) -> new LiteralComparatorFilter(parent, trueNode, falseNode, maxInclusive, value -> value >= 0),
+			(parent) -> new LiteralComparatorFilter(parent, maxInclusive, value -> value >= 0),
 			this,
 			overrideTargetNode);
 
