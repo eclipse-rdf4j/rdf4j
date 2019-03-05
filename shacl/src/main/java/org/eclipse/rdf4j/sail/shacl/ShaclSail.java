@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -137,14 +139,13 @@ import java.util.List;
  */
 public class ShaclSail extends NotifyingSailWrapper {
 
+	private static final Logger logger = LoggerFactory.getLogger(ShaclSail.class);
+
 	private List<NodeShape> nodeShapes = Collections.emptyList();
 
 	private static String SH_OR_UPDATE_QUERY;
-
 	private static String SH_OR_NODE_SHAPE_UPDATE_QUERY;
-
 	private static String IMPLICIT_TARGET_CLASS_NODE_SHAPE;
-
 	private static String IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE;
 
 	/**
@@ -153,19 +154,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private SailRepository shapesRepo;
 
 	private boolean parallelValidation = ShaclSailConfig.PARALLEL_VALIDATION_DEFAULT;
-
 	private boolean undefinedTargetValidatesAllSubjects = ShaclSailConfig.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
-
 	private boolean logValidationPlans = ShaclSailConfig.LOG_VALIDATION_PLANS_DEFAULT;
-
 	private boolean logValidationViolations = ShaclSailConfig.LOG_VALIDATION_VIOLATIONS_DEFAULT;
-
 	private boolean ignoreNoShapesLoadedException = ShaclSailConfig.IGNORE_NO_SHAPES_LOADED_EXCEPTION_DEFAULT;
-
 	private boolean validationEnabled = ShaclSailConfig.VALIDATION_ENABLED_DEFAULT;
-
 	private boolean cacheSelectNodes = ShaclSailConfig.CACHE_SELECT_NODES_DEFAULT;
-
 	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
 
 	private boolean initializing = false;
@@ -227,15 +221,13 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	@Override
 	public void initialize() throws SailException {
-		init();
-	}
-
-	@Override
-	public void init() throws SailException {
 		initializing = true;
 		super.initialize();
 
 		if (getDataDir() != null) {
+			if(parallelValidation){
+				logger.info("Automatically disabled parallel SHACL validation because persistent base sail was detected! Re-enable by calling setParallelValidation(true) after calling init() / initialize().");
+			}
 			setParallelValidation(false);
 		}
 
@@ -453,12 +445,17 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Run SHACL validation in parallel. Default: true
+	 * EXPERIMENTAL! Run SHACL validation in parallel. Default: false
+	 * <p>
+	 * May cause deadlock, especially when using NativeStore.
 	 *
 	 * @param parallelValidation
-	 *        default true
+	 *        default false
 	*/
 	public void setParallelValidation(boolean parallelValidation) {
+		if(parallelValidation){
+			logger.warn("Parallel SHACL validation enabled. This is an experimental feature and may cause deadlocks!");
+		}
 		this.parallelValidation = parallelValidation;
 	}
 
