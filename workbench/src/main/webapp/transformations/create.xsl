@@ -25,60 +25,59 @@
 						<td>
 							<select id="type" name="type">
 								<option value="memory">
-									In Memory Store
-								</option>
-								<option value="memory-rdfs">
-									In Memory Store RDF Schema
-								</option>
-								<option value="memory-rdfs-dt">
-									In Memory Store RDF Schema and
-									Direct Type
-									Hierarchy
-								</option>
-								<option value="memory-spin">
-									In Memory Java Store with basic SPIN support
+									Memory Store
 								</option>
 								<option value="memory-lucene">
-									In Memory Store with Lucene support
+									Memory Store + Lucene 
                                 </option>
-								<option value="memory-spin-rdfs">
-									In Memory Store with RDFS+SPIN support
+								<option value="memory-rdfs">
+									Memory Store + RDFS
 								</option>
-                                <option value="memory-spin-rdfs-lucene">
-                                    In Memory Store with RDFS+SPIN+Lucene support
-                                </option>
+								<option value="memory-rdfs-dt">
+									Memory Store + RDFS and Direct Type
+								</option>
+								<option value="memory-rdfs-lucene">
+									Memory Store + RDFS and Lucene
+								</option>
 								<option value="memory-customrule">
-									In Memory Store Custom Graph Query
-									Inference
+									Memory Store + Custom Graph Query Inference
 								</option>
+								<option value="memory-spin">
+									Memory Store + SPIN support
+								</option>
+								<option value="memory-spin-rdfs">
+									Memory Store + RDFS and SPIN support
+								</option>
+                                <!-- disabled pending GH-1304  option value="memory-spin-rdfs-lucene">
+                                    In Memory Store with RDFS+SPIN+Lucene support
+                                </option -->
 								<option value="native">
-									Native Java Store
+									Native Store
 								</option>
+								<option value="native-lucene">
+                                   Native Store + Lucene
+                                </option>
 								<option value="native-rdfs">
-									Native Java Store RDF Schema
+									Native Store + RDFS
 								</option>
 								<option value="native-rdfs-dt">
-									Native Java Store RDF Schema and
-									Direct Type
-									Hierarchy
+									Native Store + RDFS and Direct Type
+								</option>
+								<option value="memory-rdfs-lucene">
+									Native Store + RDFS and Lucene
 								</option>
 								<option value="native-customrule">
-									Native Java Store Custom
-									Graph Query
-									Inference
+									Native Store + Custom Graph Query Inference
 								</option>
 								<option value="native-spin">
-									Native Java Store with basic SPIN support
+									Native Store + SPIN support
 								</option>
-                                <option value="native-lucene">
-                                    Native Java Store with Lucene support
-                                </option>
 								<option value="native-spin-rdfs">
-									Native Java Store with RDFS+SPIN support
+									Native Store + RDFS and SPIN support
 								</option>
-                                <option value="native-spin-rdfs-lucene">
+                                <!-- disabled pending GH-1304  option value="native-spin-rdfs-lucene">
 									Native Java Store with RDFS+SPIN+Lucene support
-								</option>
+								</option -->
 								<option value="remote">
 									Remote RDF Store
 								</option>
