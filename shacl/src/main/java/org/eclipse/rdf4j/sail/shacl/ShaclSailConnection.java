@@ -373,32 +373,34 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void prepare() throws SailException {
-		preparedHasRun = true;
-		super.prepare();
-		previousStateConnection.prepare();
+		try {
+			preparedHasRun = true;
 
-		List<NodeShape> nodeShapes = refreshShapes(shapesConnection);
+			List<NodeShape> nodeShapes = refreshShapes(shapesConnection);
 
-		// we don't support revalidation of all data when changing the shacl shapes,
-		// so no need to check if the shapes have changed
-		if (addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty()) {
-			logger.debug("Nothing has changed, nothing to validate.");
-			return;
+			// we don't support revalidation of all data when changing the shacl shapes,
+			// so no need to check if the shapes have changed
+			if (addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty()) {
+				logger.debug("Nothing has changed, nothing to validate.");
+				return;
+			}
+
+			if (!sail.isIgnoreNoShapesLoadedException()
+				&& ((!addedStatementsSet.isEmpty() || !removedStatementsSet.isEmpty())
+				&& nodeShapes.isEmpty())) {
+				throw new NoShapesLoadedException();
+			}
+
+			List<Tuple> invalidTuples = validate();
+			boolean valid = invalidTuples.isEmpty();
+
+			if (!valid) {
+				throw new ShaclSailValidationException(invalidTuples);
+			}
+		}finally {
+			super.prepare();
+			previousStateConnection.prepare();
 		}
-
-		if (!sail.isIgnoreNoShapesLoadedException()
-			&& ((!addedStatementsSet.isEmpty() || !removedStatementsSet.isEmpty())
-			&& nodeShapes.isEmpty())) {
-			throw new NoShapesLoadedException();
-		}
-
-		List<Tuple> invalidTuples = validate();
-		boolean valid = invalidTuples.isEmpty();
-
-		if (!valid) {
-			throw new ShaclSailValidationException(invalidTuples);
-		}
-
 
 	}
 
