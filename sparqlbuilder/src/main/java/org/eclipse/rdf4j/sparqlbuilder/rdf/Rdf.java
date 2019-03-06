@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral.StringLiteral;
 public class Rdf {
 
 	// not sure if other protocols are generally used in RDF iri's?
-	private static final Set<String> IRI_PROTOCOLS = Stream.of("http://", "https://", "mailto:").collect(
+	private static final Set<String> IRI_PROTOCOLS = Stream.of("http://", "https://", "mailto:", "file:").collect(
 			Collectors.toSet());
 
 	private Rdf() {
