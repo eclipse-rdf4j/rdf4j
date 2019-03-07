@@ -26,8 +26,8 @@ public class MaxLengthPropertyShape extends PathPropertyShape {
 	private final long maxLength;
 	private static final Logger logger = LoggerFactory.getLogger(MaxLengthPropertyShape.class);
 
-	MaxLengthPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Long maxLength) {
-		super(id, connection, nodeShape);
+	MaxLengthPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Long maxLength) {
+		super(id, connection, nodeShape, deactivated);
 
 		this.maxLength = maxLength;
 
@@ -36,6 +36,9 @@ public class MaxLengthPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		if (deactivated) {
+			return null;
+		}
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,

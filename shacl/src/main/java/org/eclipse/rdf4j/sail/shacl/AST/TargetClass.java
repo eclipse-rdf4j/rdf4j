@@ -8,11 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -25,7 +22,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
 import java.util.Set;
-import java.util.stream.Stream;
 
 /**
  * sh:targetClass
@@ -36,8 +32,8 @@ public class TargetClass extends NodeShape {
 
 	private final Resource targetClass;
 
-	TargetClass(Resource id, SailRepositoryConnection connection, Resource targetClass) {
-		super(id, connection);
+	TargetClass(Resource id, SailRepositoryConnection connection, boolean deactivated, Resource targetClass) {
+		super(id, connection, deactivated);
 		this.targetClass = targetClass;
 	}
 
@@ -57,7 +53,7 @@ public class TargetClass extends NodeShape {
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
 		PlanNode parent = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null)));
-		return new TrimTuple(parent, 0,1);
+		return new TrimTuple(parent, 0, 1);
 	}
 
 	@Override
@@ -67,18 +63,18 @@ public class TargetClass extends NodeShape {
 
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		if(rdfsSubClassOfReasoner != null  ){
+		if (rdfsSubClassOfReasoner != null) {
 			Set<Resource> resources = rdfsSubClassOfReasoner.backwardsChain(targetClass);
-			if(resources.size() > 1){
+			if (resources.size() > 1) {
 				return resources
 					.stream()
-					.map(r -> "{ BIND(rdf:type as ?b1) \n BIND(<" + r + "> as "+objectVariable+") \n "+subjectVariable+" ?b1 "+objectVariable+". } \n")
-					.reduce((l,r)-> l+ " UNION "+r)
+					.map(r -> "{ BIND(rdf:type as ?b1) \n BIND(<" + r + "> as " + objectVariable + ") \n " + subjectVariable + " ?b1 " + objectVariable + ". } \n")
+					.reduce((l, r) -> l + " UNION " + r)
 					.get();
 			}
 		}
 
-		return "BIND(rdf:type as ?b1) \n BIND(<" + targetClass + "> as "+objectVariable+") \n "+subjectVariable+" ?b1 "+objectVariable+". \n";
+		return "BIND(rdf:type as ?b1) \n BIND(<" + targetClass + "> as " + objectVariable + ") \n " + subjectVariable + " ?b1 " + objectVariable + ". \n";
 	}
 
 	@Override

@@ -37,6 +37,7 @@ public class ShaclProperties {
 	Resource targetClass;
 	List<Value> targetNode = new ArrayList<>(0);
 
+	boolean deactivated = false;
 
 	public ShaclProperties(Resource propertyShapeId, SailRepositoryConnection connection) {
 
@@ -137,6 +138,9 @@ public class ShaclProperties {
 							throw new IllegalStateException("sh:targetClass aleady populated");
 						}
 						targetClass = (Resource) object;
+						break;
+					case "http://www.w3.org/ns/shacl#deactivated":
+						deactivated = ((Literal) object).booleanValue();
 						break;
 				}
 
