@@ -215,7 +215,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 			SHACL.MAX_EXCLUSIVE,
 			SHACL.MAX_INCLUSIVE,
 			SHACL.CLASS,
-			SHACL.TARGET_NODE
+			SHACL.TARGET_NODE,
+			SHACL.DEACTIVATED
 		);
 	}
 

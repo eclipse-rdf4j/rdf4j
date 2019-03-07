@@ -28,8 +28,8 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 	private final NodeKind nodeKind;
 	private static final Logger logger = LoggerFactory.getLogger(NodeKindPropertyShape.class);
 
-	NodeKindPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Resource nodeKind) {
-		super(id, connection, nodeShape);
+	NodeKindPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Resource nodeKind) {
+		super(id, connection, nodeShape, deactivated);
 
 		this.nodeKind = NodeKind.from(nodeKind);
 
@@ -65,6 +65,9 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		if (deactivated) {
+			return null;
+		}
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,

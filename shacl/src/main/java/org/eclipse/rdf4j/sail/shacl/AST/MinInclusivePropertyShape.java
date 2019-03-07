@@ -28,8 +28,8 @@ public class MinInclusivePropertyShape extends PathPropertyShape {
 	private final Literal minInclusive;
 	private static final Logger logger = LoggerFactory.getLogger(MinInclusivePropertyShape.class);
 
-	MinInclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Literal minInclusive) {
-		super(id, connection, nodeShape);
+	MinInclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Literal minInclusive) {
+		super(id, connection, nodeShape, deactivated);
 
 		this.minInclusive = minInclusive;
 	}
@@ -37,6 +37,9 @@ public class MinInclusivePropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		if (deactivated) {
+			return null;
+		}
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,

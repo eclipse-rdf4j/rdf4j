@@ -27,8 +27,8 @@ public class PathPropertyShape extends PropertyShape {
 
 	Path path;
 
-	PathPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
-		super(id, nodeShape);
+	PathPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated) {
+		super(id, nodeShape, deactivated);
 
 		// only simple path is supported. There are also no checks. Any use of paths that are not single predicates is undefined.
 		path = new SimplePath(id, connection);
@@ -60,6 +60,10 @@ public class PathPropertyShape extends PropertyShape {
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+		if (deactivated) {
+			return false;
+		}
+
 		return super.requiresEvaluation(addedStatements, removedStatements) || path.requiresEvaluation(addedStatements, removedStatements);
 	}
 

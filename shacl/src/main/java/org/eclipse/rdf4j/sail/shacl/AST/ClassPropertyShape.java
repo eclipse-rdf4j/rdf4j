@@ -8,12 +8,9 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
@@ -38,7 +35,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
 
 /**
  * @author Håvard Ottestad
@@ -48,18 +44,19 @@ public class ClassPropertyShape extends PathPropertyShape {
 	private final Resource classResource;
 	private static final Logger logger = LoggerFactory.getLogger(ClassPropertyShape.class);
 
-	ClassPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape) {
-		super(id, connection, nodeShape);
-
-		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.CLASS, null, true))) {
-			classResource = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().orElseThrow(() -> new RuntimeException("Expected to find sh:class on " + id));
-		}
-
+	ClassPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Resource classResource) {
+		super(id, connection, nodeShape, deactivated);
+		this.classResource = classResource;
 	}
 
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+
+		if (deactivated) {
+			return null;
+		}
+
 
 		SailConnection addedStatements = shaclSailConnection.getAddedStatements();
 
@@ -139,6 +136,10 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+		if (deactivated) {
+			return false;
+		}
+
 		return removedStatements.hasStatement(null, RDF.TYPE, classResource, true) || super.requiresEvaluation(addedStatements, removedStatements);
 	}
 

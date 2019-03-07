@@ -28,8 +28,8 @@ public class MaxExclusivePropertyShape extends PathPropertyShape {
 	private final Literal maxExclusive;
 	private static final Logger logger = LoggerFactory.getLogger(MaxExclusivePropertyShape.class);
 
-	MaxExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Literal maxExclusive) {
-		super(id, connection, nodeShape);
+	MaxExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Literal maxExclusive) {
+		super(id, connection, nodeShape, deactivated);
 
 		this.maxExclusive = maxExclusive;
 
@@ -38,6 +38,9 @@ public class MaxExclusivePropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		if (deactivated) {
+			return null;
+		}
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,

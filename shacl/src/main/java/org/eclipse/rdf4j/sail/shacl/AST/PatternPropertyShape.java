@@ -34,8 +34,8 @@ public class PatternPropertyShape extends PathPropertyShape {
 	private final Optional<String> flags;
 	private static final Logger logger = LoggerFactory.getLogger(PatternPropertyShape.class);
 
-	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, String pattern) {
-		super(id, connection, nodeShape);
+	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, String pattern) {
+		super(id, connection, nodeShape, deactivated);
 
 		this.pattern = pattern;
 
@@ -48,6 +48,9 @@ public class PatternPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		if (deactivated) {
+			return null;
+		}
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,

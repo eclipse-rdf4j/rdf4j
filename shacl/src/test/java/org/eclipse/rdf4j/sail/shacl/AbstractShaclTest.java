@@ -75,7 +75,11 @@ abstract public class AbstractShaclTest {
 		"test-cases/or/class",
 		"test-cases/or/datatype2",
 		"test-cases/or/minCountDifferentPath",
-		"test-cases/datatype/targetNode"
+		"test-cases/datatype/targetNode",
+		"test-cases/deactivated/nodeshape",
+		"test-cases/deactivated/or",
+		"test-cases/deactivated/propertyshape"
+
 
 		);
 

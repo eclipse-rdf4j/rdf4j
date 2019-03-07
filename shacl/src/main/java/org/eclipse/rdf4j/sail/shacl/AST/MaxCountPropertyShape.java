@@ -38,8 +38,8 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 	private long maxCount;
 
-	MaxCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Long maxCount) {
-		super(id, connection, nodeShape);
+	MaxCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Long maxCount) {
+		super(id, connection, nodeShape, deactivated);
 
 		this.maxCount = maxCount;
 
@@ -52,6 +52,9 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		if (deactivated) {
+			return null;
+		}
 
 		if (overrideTargetNode != null) {
 			PlanNode bulkedExternalLeftOuterJoin = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
