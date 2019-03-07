@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -36,6 +37,7 @@ public class ShaclProperties {
 
 	Resource targetClass;
 	List<Value> targetNode = new ArrayList<>(0);
+	IRI targetSubjectsOf;
 
 	boolean deactivated = false;
 
@@ -138,6 +140,12 @@ public class ShaclProperties {
 							throw new IllegalStateException("sh:targetClass aleady populated");
 						}
 						targetClass = (Resource) object;
+						break;
+					case "http://www.w3.org/ns/shacl#targetSubjectsOf":
+						if (targetSubjectsOf != null) {
+							throw new IllegalStateException("sh:targetSubjectsOf aleady populated");
+						}
+						targetSubjectsOf = (IRI) object;
 						break;
 					case "http://www.w3.org/ns/shacl#deactivated":
 						deactivated = ((Literal) object).booleanValue();
