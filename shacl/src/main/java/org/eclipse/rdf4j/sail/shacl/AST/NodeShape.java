@@ -43,7 +43,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	public NodeShape(Resource id, SailRepositoryConnection connection, boolean deactivated) {
 		this.id = id;
-		if(!deactivated){
+		if (!deactivated) {
 			propertyShapes = PropertyShape.Factory.getPropertyShapes(id, connection, this);
 		}
 	}
@@ -84,7 +84,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		return subjectVariable+" ?b "+objectVariable;
+		return subjectVariable + " ?b " + objectVariable;
 	}
 
 	public Resource getId() {
@@ -105,7 +105,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 					} else if (!shaclProperties.targetNode.isEmpty()) {
 						return new TargetNode(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetNode);
 					} else {
-						if(sail.isUndefinedTargetValidatesAllSubjects()) {
+						if (sail.isUndefinedTargetValidatesAllSubjects()) {
 							return new NodeShape(shapeId, connection, shaclProperties.deactivated); // target class nodeShapes are the only supported nodeShapes
 						}
 					}
@@ -116,7 +116,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 			}
 		}
 
-		}
+	}
 
 	@Override
 	public String toString() {

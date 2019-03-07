@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EqualsJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
@@ -52,7 +51,9 @@ public class OrPropertyShape extends PropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
-		if(deactivated) 	return null;
+		if (deactivated) {
+			return null;
+		}
 
 		List<List<PlanNode>> initialPlanNodes =
 			or
@@ -62,7 +63,7 @@ public class OrPropertyShape extends PropertyShape {
 				.collect(Collectors.toList());
 
 		BufferedSplitter targetNodesToValidate;
-		if(overrideTargetNode == null) {
+		if (overrideTargetNode == null) {
 			targetNodesToValidate = new BufferedSplitter(unionAll(
 				initialPlanNodes
 					.stream()
@@ -70,7 +71,7 @@ public class OrPropertyShape extends PropertyShape {
 					.map(p -> new TrimTuple(p, 0, 1)) // we only want the targets
 					.collect(Collectors.toList())));
 
-		}else{
+		} else {
 			targetNodesToValidate = new BufferedSplitter(overrideTargetNode);
 		}
 
@@ -79,7 +80,7 @@ public class OrPropertyShape extends PropertyShape {
 				.stream()
 				.map(shapes -> shapes.stream().map(shape ->
 					{
-						if(shaclSailConnection.stats.isBaseSailEmpty()){
+						if (shaclSailConnection.stats.isBaseSailEmpty()) {
 							return shape.getPlan(shaclSailConnection, nodeShape, false, null);
 						}
 						return shape.getPlan(shaclSailConnection, nodeShape, false, new LoggingNode(targetNodesToValidate.getPlanNode(), ""));

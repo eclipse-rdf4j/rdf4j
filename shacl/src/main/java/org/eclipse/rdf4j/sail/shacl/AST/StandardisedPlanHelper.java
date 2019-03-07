@@ -40,19 +40,19 @@ public class StandardisedPlanHelper {
 
 		InnerJoin innerJoin = new InnerJoin(new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), ""), invalidValuesDirectOnPath);
 
-		if(shaclSailConnection.stats.isBaseSailEmpty()){
+		if (shaclSailConnection.stats.isBaseSailEmpty()) {
 			return new LoggingNode(innerJoin.getJoined(UnBufferedPlanNode.class), "");
 
-		}else {
+		} else {
 
 			PlanNode top = new LoggingNode(innerJoin.getJoined(BufferedPlanNode.class), "");
 
 
 			PlanNode discardedRight = innerJoin.getDiscardedRight(BufferedPlanNode.class);
 
-				PlanNode typeFilterPlan = new LoggingNode(nodeShape.getTargetFilter(shaclSailConnection, discardedRight), "");
+			PlanNode typeFilterPlan = new LoggingNode(nodeShape.getTargetFilter(shaclSailConnection, discardedRight), "");
 
-				top = new LoggingNode(new UnionNode(top, typeFilterPlan), "");
+			top = new LoggingNode(new UnionNode(top, typeFilterPlan), "");
 
 
 			PlanNode bulkedExternalInnerJoin = new LoggingNode(new BulkedExternalInnerJoin(new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), ""), shaclSailConnection, pathPropertyShape.path.getQuery("?a", "?c", null), true), "");

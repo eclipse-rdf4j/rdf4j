@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2018 Eclipse RDF4J contributors.
+ * Copyright (c) 2019 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -10,13 +10,8 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.sail.SailException;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.List;
 
 public class EmptyNode implements PlanNode {
 
@@ -28,32 +23,7 @@ public class EmptyNode implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
-
-
-
-			@Override
-			public void close() throws SailException {
-
-			}
-
-			@Override
-			public boolean hasNext() throws SailException {
-				return false;
-			}
-
-
-			@Override
-			public Tuple next() throws SailException {
-				throw new IllegalStateException();
-			}
-
-			@Override
-			public void remove() throws SailException {
-
-			}
-		};
-
+		return new EmptyIteration<>();
 	}
 
 	@Override
@@ -63,12 +33,16 @@ public class EmptyNode implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-
+		if (printed) {
+			return;
+		}
+		printed = true;
+		stringBuilder.append(getId()).append(" [label=\"").append(StringEscapeUtils.escapeJava(this.toString())).append("\"];").append("\n");
 	}
 
 	@Override
 	public String getId() {
-		return System.identityHashCode(this)+"";
+		return System.identityHashCode(this) + "";
 	}
 
 	@Override

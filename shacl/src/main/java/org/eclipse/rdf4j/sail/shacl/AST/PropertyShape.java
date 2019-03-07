@@ -165,34 +165,34 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			if (shaclProperties.datatype != null) {
 				propertyShapes.add(new DatatypePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.datatype));
 			}
-			if(shaclProperties.or != null){
+			if (shaclProperties.or != null) {
 				propertyShapes.add(new OrPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.or));
 			}
-			if(shaclProperties.minLength != null){
+			if (shaclProperties.minLength != null) {
 				propertyShapes.add(new MinLengthPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.minLength));
 			}
-			if(shaclProperties.maxLength != null){
+			if (shaclProperties.maxLength != null) {
 				propertyShapes.add(new MaxLengthPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.maxLength));
 			}
-			if(shaclProperties.pattern != null){
+			if (shaclProperties.pattern != null) {
 				propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.pattern));
 			}
-			if(shaclProperties.languageIn != null){
+			if (shaclProperties.languageIn != null) {
 				propertyShapes.add(new LanguageInPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.languageIn));
 			}
-			if(shaclProperties.nodeKind != null){
+			if (shaclProperties.nodeKind != null) {
 				propertyShapes.add(new NodeKindPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.nodeKind));
 			}
-			if(shaclProperties.minExclusive != null){
+			if (shaclProperties.minExclusive != null) {
 				propertyShapes.add(new MinExclusivePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.minExclusive));
 			}
-			if(shaclProperties.maxExclusive != null){
+			if (shaclProperties.maxExclusive != null) {
 				propertyShapes.add(new MaxExclusivePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.maxExclusive));
 			}
-			if(shaclProperties.maxInclusive != null){
+			if (shaclProperties.maxInclusive != null) {
 				propertyShapes.add(new MaxInclusivePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.maxInclusive));
 			}
-			if(shaclProperties.minInclusive != null){
+			if (shaclProperties.minInclusive != null) {
 				propertyShapes.add(new MinInclusivePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.minInclusive));
 			}
 			if (shaclProperties.clazz != null) {
