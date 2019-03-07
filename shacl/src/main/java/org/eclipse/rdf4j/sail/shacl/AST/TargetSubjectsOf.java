@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalSubjectOfFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -65,8 +66,7 @@ public class TargetSubjectsOf extends NodeShape {
 
 	@Override
 	public PlanNode getTargetFilter(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
-		return null;
-//		return new ExternalTypeFilterNode(shaclSailConnection, targetClass, parent, 0, true);
+		return new ExternalSubjectOfFilterNode(shaclSailConnection, targetSubjectsOf, parent, 0, true);
 	}
 
 }
