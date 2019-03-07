@@ -68,6 +68,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+		if (deactivated) {
+			return false;
+		}
+
 		return nodeShape.requiresEvaluation(addedStatements, removedStatements);
 	}
 

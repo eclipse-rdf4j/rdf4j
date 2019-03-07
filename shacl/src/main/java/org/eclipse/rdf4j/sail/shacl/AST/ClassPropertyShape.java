@@ -136,6 +136,10 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+		if (deactivated) {
+			return false;
+		}
+
 		return removedStatements.hasStatement(null, RDF.TYPE, classResource, true) || super.requiresEvaluation(addedStatements, removedStatements);
 	}
 

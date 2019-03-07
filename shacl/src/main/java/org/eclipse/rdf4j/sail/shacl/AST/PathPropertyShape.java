@@ -60,6 +60,10 @@ public class PathPropertyShape extends PropertyShape {
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+		if (deactivated) {
+			return false;
+		}
+
 		return super.requiresEvaluation(addedStatements, removedStatements) || path.requiresEvaluation(addedStatements, removedStatements);
 	}
 
