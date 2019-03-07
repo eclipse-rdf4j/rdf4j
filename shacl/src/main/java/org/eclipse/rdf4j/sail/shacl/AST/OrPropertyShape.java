@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -51,12 +52,13 @@ public class OrPropertyShape extends PropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
-		if(deactivated) 	return new EnrichWithShape(new EmptyNode(), this);
+		if(deactivated) 	return null;
 
 		List<List<PlanNode>> initialPlanNodes =
 			or
 				.stream()
-				.map(shapes -> shapes.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, null)).collect(Collectors.toList()))
+				.map(shapes -> shapes.stream().map(shape -> shape.getPlan(shaclSailConnection, nodeShape, false, null)).filter(Objects::nonNull).collect(Collectors.toList()))
+				.filter(list -> !list.isEmpty())
 				.collect(Collectors.toList());
 
 		BufferedSplitter targetNodesToValidate;
@@ -82,7 +84,8 @@ public class OrPropertyShape extends PropertyShape {
 						}
 						return shape.getPlan(shaclSailConnection, nodeShape, false, new LoggingNode(targetNodesToValidate.getPlanNode(), ""));
 					}
-				).collect(Collectors.toList()))
+				).filter(Objects::nonNull).collect(Collectors.toList()))
+				.filter(list -> !list.isEmpty())
 				.collect(Collectors.toList());
 
 		List<IteratorData> iteratorDataTypes =
@@ -114,7 +117,7 @@ public class OrPropertyShape extends PropertyShape {
 
 			EqualsJoin equalsJoin = new EqualsJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1)), true);
 
-			for (int i = 2; i < or.size(); i++) {
+			for (int i = 2; i < plannodes.size(); i++) {
 				equalsJoin = new EqualsJoin(equalsJoin, unionAll(plannodes.get(i)), true);
 			}
 
@@ -123,7 +126,7 @@ public class OrPropertyShape extends PropertyShape {
 
 			PlanNode innerJoin = new LoggingNode(new InnerJoin(unionAll(plannodes.get(0)), unionAll(plannodes.get(1))).getJoined(BufferedPlanNode.class), "");
 
-			for (int i = 2; i < or.size(); i++) {
+			for (int i = 2; i < plannodes.size(); i++) {
 				innerJoin = new LoggingNode(new InnerJoin(innerJoin, unionAll(plannodes.get(i))).getJoined(BufferedPlanNode.class), "");
 			}
 

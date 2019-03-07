@@ -55,7 +55,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
-		if(deactivated) 	return new EnrichWithShape(new EmptyNode(), this);
+		if(deactivated) 	return null;
 
 		if (overrideTargetNode != null) {
 			PlanNode allStatements = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c", null), false), "");

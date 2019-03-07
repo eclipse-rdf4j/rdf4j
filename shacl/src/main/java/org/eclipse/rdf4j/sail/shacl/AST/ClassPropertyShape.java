@@ -54,7 +54,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
 
-		if(deactivated) 	return new EnrichWithShape(new EmptyNode(), this);
+		if(deactivated) 	return null;
 
 
 		SailConnection addedStatements = shaclSailConnection.getAddedStatements();

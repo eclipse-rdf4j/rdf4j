@@ -39,7 +39,7 @@ public class MaxInclusivePropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
-		if(deactivated) 	return new EnrichWithShape(new EmptyNode(), this);
+		if(deactivated) 	return null;
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,

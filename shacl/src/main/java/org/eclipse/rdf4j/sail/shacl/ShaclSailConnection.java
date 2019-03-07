@@ -44,6 +44,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Collectors;
@@ -271,6 +272,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				}
 
 				return planNodeStream
+					.filter(Objects::nonNull)
 					.flatMap(planNode -> {
 						try (Stream<Tuple> stream = Iterations.stream(planNode.iterator())) {
 							if (LoggingNode.loggingEnabled) {
