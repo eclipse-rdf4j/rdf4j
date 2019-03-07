@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.NodeKindFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -28,8 +29,8 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 	private final NodeKind nodeKind;
 	private static final Logger logger = LoggerFactory.getLogger(NodeKindPropertyShape.class);
 
-	NodeKindPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Resource nodeKind) {
-		super(id, connection, nodeShape);
+	NodeKindPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Resource nodeKind) {
+		super(id, connection, nodeShape, deactivated);
 
 		this.nodeKind = NodeKind.from(nodeKind);
 
@@ -65,6 +66,7 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		if(deactivated) 	return new EnrichWithShape(new EmptyNode(), this);
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,

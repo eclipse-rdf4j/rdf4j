@@ -8,11 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -25,7 +22,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
 import java.util.Set;
-import java.util.stream.Stream;
 
 /**
  * sh:targetClass
@@ -36,8 +32,8 @@ public class TargetClass extends NodeShape {
 
 	private final Resource targetClass;
 
-	TargetClass(Resource id, SailRepositoryConnection connection, Resource targetClass) {
-		super(id, connection);
+	TargetClass(Resource id, SailRepositoryConnection connection, boolean deactivated, Resource targetClass) {
+		super(id, connection, deactivated);
 		this.targetClass = targetClass;
 	}
 

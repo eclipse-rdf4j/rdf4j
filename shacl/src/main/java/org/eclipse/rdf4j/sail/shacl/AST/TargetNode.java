@@ -34,8 +34,8 @@ public class TargetNode extends NodeShape {
 
 	private final Set<Value> targetNodeSet;
 
-	TargetNode(Resource id, SailRepositoryConnection connection, List<Value> targetNode) {
-		super(id, connection);
+	TargetNode(Resource id, SailRepositoryConnection connection, boolean deactivated, List<Value> targetNode) {
+		super(id, connection, deactivated);
 		this.targetNodeSet = new HashSet<>(targetNode);
 		assert !this.targetNodeSet.isEmpty();
 	}

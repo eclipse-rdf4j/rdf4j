@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LiteralComparatorFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
@@ -28,8 +29,8 @@ public class MinExclusivePropertyShape extends PathPropertyShape {
 	private final Literal minExclusive;
 	private static final Logger logger = LoggerFactory.getLogger(MinExclusivePropertyShape.class);
 
-	MinExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Literal minExclusive) {
-		super(id, connection, nodeShape);
+	MinExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Literal minExclusive) {
+		super(id, connection, nodeShape, deactivated);
 
 		this.minExclusive = minExclusive;
 
@@ -38,6 +39,7 @@ public class MinExclusivePropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		if(deactivated) 	return new EnrichWithShape(new EmptyNode(), this);
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,

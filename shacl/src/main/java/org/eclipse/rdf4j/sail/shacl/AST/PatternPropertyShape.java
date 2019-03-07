@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PatternFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -34,8 +35,8 @@ public class PatternPropertyShape extends PathPropertyShape {
 	private final Optional<String> flags;
 	private static final Logger logger = LoggerFactory.getLogger(PatternPropertyShape.class);
 
-	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, String pattern) {
-		super(id, connection, nodeShape);
+	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, String pattern) {
+		super(id, connection, nodeShape, deactivated);
 
 		this.pattern = pattern;
 
@@ -48,6 +49,7 @@ public class PatternPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		if(deactivated) 	return new EnrichWithShape(new EmptyNode(), this);
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,

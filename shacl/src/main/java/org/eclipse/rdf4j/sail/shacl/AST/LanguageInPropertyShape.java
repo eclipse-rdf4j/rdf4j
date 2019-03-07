@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LanguageInFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -30,8 +31,8 @@ public class LanguageInPropertyShape extends PathPropertyShape {
 	private final List<String> languageIn;
 	private static final Logger logger = LoggerFactory.getLogger(LanguageInPropertyShape.class);
 
-	LanguageInPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Resource languageIn) {
-		super(id, connection, nodeShape);
+	LanguageInPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Resource languageIn) {
+		super(id, connection, nodeShape, deactivated);
 
 		this.languageIn = toList(connection, languageIn).stream().map(Value::stringValue).collect(Collectors.toList());
 	}
@@ -39,6 +40,7 @@ public class LanguageInPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		if(deactivated) 	return new EnrichWithShape(new EmptyNode(), this);
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,

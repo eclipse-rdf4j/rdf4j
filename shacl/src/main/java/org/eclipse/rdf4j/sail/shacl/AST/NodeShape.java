@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -38,11 +39,13 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	private Resource id;
 
-	private List<PropertyShape> propertyShapes;
+	private List<PropertyShape> propertyShapes = Collections.emptyList();
 
-	public NodeShape(Resource id, SailRepositoryConnection connection) {
+	public NodeShape(Resource id, SailRepositoryConnection connection, boolean deactivated) {
 		this.id = id;
-		propertyShapes = PropertyShape.Factory.getPropertyShapes(id, connection, this);
+		if(!deactivated){
+			propertyShapes = PropertyShape.Factory.getPropertyShapes(id, connection, this);
+		}
 	}
 
 	@Override
@@ -98,12 +101,12 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 					ShaclProperties shaclProperties = new ShaclProperties(shapeId, connection);
 
 					if (shaclProperties.targetClass != null) {
-						return new TargetClass(shapeId, connection, shaclProperties.targetClass);
+						return new TargetClass(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetClass);
 					} else if (!shaclProperties.targetNode.isEmpty()) {
-						return new TargetNode(shapeId, connection, shaclProperties.targetNode);
+						return new TargetNode(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetNode);
 					} else {
 						if(sail.isUndefinedTargetValidatesAllSubjects()) {
-							return new NodeShape(shapeId, connection); // target class nodeShapes are the only supported nodeShapes
+							return new NodeShape(shapeId, connection, shaclProperties.deactivated); // target class nodeShapes are the only supported nodeShapes
 						}
 					}
 					return null;

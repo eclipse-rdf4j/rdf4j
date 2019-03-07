@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EqualsJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
@@ -41,8 +42,8 @@ public class OrPropertyShape extends PropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(OrPropertyShape.class);
 
 
-	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Resource or) {
-		super(id, nodeShape);
+	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Resource or) {
+		super(id, nodeShape, deactivated);
 		this.or = toList(connection, or).stream().map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v)).collect(Collectors.toList());
 
 	}
@@ -50,6 +51,7 @@ public class OrPropertyShape extends PropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		if(deactivated) 	return new EnrichWithShape(new EmptyNode(), this);
 
 		List<List<PlanNode>> initialPlanNodes =
 			or

@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.DatatypeFilter;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.slf4j.Logger;
@@ -26,8 +27,8 @@ public class DatatypePropertyShape extends PathPropertyShape {
 	private final Resource datatype;
 	private static final Logger logger = LoggerFactory.getLogger(DatatypePropertyShape.class);
 
-	DatatypePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Resource datatype) {
-		super(id, connection, nodeShape);
+	DatatypePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Resource datatype) {
+		super(id, connection, nodeShape, deactivated);
 
 		this.datatype = datatype;
 
@@ -36,6 +37,7 @@ public class DatatypePropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		if(deactivated) 	return new EnrichWithShape(new EmptyNode(), this);
 
 		PlanNode invalidValues =  StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,

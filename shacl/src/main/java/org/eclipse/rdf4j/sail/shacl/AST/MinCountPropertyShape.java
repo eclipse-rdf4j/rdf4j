@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
@@ -40,8 +41,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	private boolean optimizeWhenNoStatementsRemoved = true;
 
 
-	MinCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Long minCount) {
-		super(id, connection, nodeShape);
+	MinCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Long minCount) {
+		super(id, connection, nodeShape, deactivated);
 
 		this.minCount = minCount;
 
@@ -54,6 +55,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		if(deactivated) 	return new EnrichWithShape(new EmptyNode(), this);
 
 		if (overrideTargetNode != null) {
 			PlanNode allStatements = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c", null), false), "");

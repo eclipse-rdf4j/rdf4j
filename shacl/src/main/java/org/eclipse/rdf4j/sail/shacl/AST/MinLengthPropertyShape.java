@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MinLengthFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -26,8 +27,8 @@ public class MinLengthPropertyShape extends PathPropertyShape {
 	private final long minLength;
 	private static final Logger logger = LoggerFactory.getLogger(MinLengthPropertyShape.class);
 
-	MinLengthPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, Long minLength) {
-		super(id, connection, nodeShape);
+	MinLengthPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, Long minLength) {
+		super(id, connection, nodeShape, deactivated);
 
 		this.minLength = minLength;
 
@@ -36,6 +37,7 @@ public class MinLengthPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
+		if(deactivated) 	return new EnrichWithShape(new EmptyNode(), this);
 
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,
