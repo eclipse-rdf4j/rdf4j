@@ -38,6 +38,7 @@ public class ShaclProperties {
 	Resource targetClass;
 	List<Value> targetNode = new ArrayList<>(0);
 	IRI targetSubjectsOf;
+	IRI targetObjectsOf;
 
 	boolean deactivated = false;
 
@@ -146,6 +147,12 @@ public class ShaclProperties {
 							throw new IllegalStateException("sh:targetSubjectsOf aleady populated");
 						}
 						targetSubjectsOf = (IRI) object;
+						break;
+					case "http://www.w3.org/ns/shacl#targetObjectsOf":
+						if (targetObjectsOf != null) {
+							throw new IllegalStateException("sh:targetObjectsOf aleady populated");
+						}
+						targetObjectsOf = (IRI) object;
 						break;
 					case "http://www.w3.org/ns/shacl#deactivated":
 						deactivated = ((Literal) object).booleanValue();

@@ -23,22 +23,27 @@ import java.util.Arrays;
 /**
  * @author Håvard Ottestad
  */
-public class ExternalSubjectOfFilterNode implements PlanNode {
+public class ExternalFilterByPredicate implements PlanNode {
 
-	private SailConnection connection;
-	private IRI filterOnPredicate;
-	PlanNode parent;
-	int index = 0;
+	private final SailConnection connection;
+	private final IRI filterOnPredicate;
+	final PlanNode parent;
+	final int index;
+	private final On on;
 	private final boolean returnMatching;
 	private boolean printed = false;
 
+	public enum On {
+		Subject, Object
+	}
 
-	public ExternalSubjectOfFilterNode(SailConnection connection, IRI filterOnPredicate, PlanNode parent, int index, boolean returnMatching) {
+	public ExternalFilterByPredicate(SailConnection connection, IRI filterOnPredicate, PlanNode parent, int index, boolean returnMatching, On on) {
 		this.connection = connection;
 		this.filterOnPredicate = filterOnPredicate;
 		this.parent = parent;
 		this.index = index;
 		this.returnMatching = returnMatching;
+		this.on = on;
 	}
 
 
@@ -74,9 +79,12 @@ public class ExternalSubjectOfFilterNode implements PlanNode {
 				}
 			}
 
-			private boolean matchesFilter(Value subject) {
-				if (subject instanceof Resource) {
-					return connection.hasStatement((Resource) subject, filterOnPredicate, null, true);
+			private boolean matchesFilter(Value node) {
+
+				if (node instanceof Resource && on == On.Subject) {
+					return connection.hasStatement((Resource) node, filterOnPredicate, null, true);
+				}else if(on == On.Object){
+					return connection.hasStatement(null, filterOnPredicate, node, true);
 				}
 				return false;
 			}
@@ -135,7 +143,7 @@ public class ExternalSubjectOfFilterNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalSubjectOfFilterNode{" +
+		return "ExternalFilterByPredicate{" +
 			"filterOnPredicate=" + filterOnPredicate +
 			'}';
 	}

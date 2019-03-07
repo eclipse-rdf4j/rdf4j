@@ -56,13 +56,13 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null)));
+		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null)));
+		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
@@ -111,6 +111,9 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 					}
 					if (shaclProperties.targetSubjectsOf != null) {
 						propertyShapes.add(new TargetSubjectsOf(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetSubjectsOf));
+					}
+					if (shaclProperties.targetObjectsOf != null) {
+						propertyShapes.add(new TargetObjectsOf(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetObjectsOf));
 					}
 
 					if (sail.isUndefinedTargetValidatesAllSubjects() && propertyShapes.isEmpty()) {
