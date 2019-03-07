@@ -48,12 +48,15 @@ abstract public class AbstractShaclTest {
 		"test-cases/languageIn/simple",
 		"test-cases/nodeKind/simple",
 		"test-cases/minCount/simple",
+		"test-cases/minCount/targetNode",
 		"test-cases/maxCount/simple",
+		"test-cases/maxCount/targetNode",
 		"test-cases/or/inheritance",
 		"test-cases/or/inheritance-deep",
 		"test-cases/or/inheritance-deep-minCountMaxCount",
 		"test-cases/or/inheritanceNodeShape",
 		"test-cases/or/datatype",
+		"test-cases/or/datatypeTargetNode",
 		"test-cases/or/minCountMaxCount",
 		"test-cases/or/maxCount",
 		"test-cases/or/minCount",
@@ -68,9 +71,12 @@ abstract public class AbstractShaclTest {
 		"test-cases/implicitTargetClass/simple",
 		"test-cases/class/simple",
 		"test-cases/class/subclass",
+		"test-cases/class/targetNode",
 		"test-cases/or/class",
 		"test-cases/or/datatype2",
-		"test-cases/or/minCountDifferentPath"
+		"test-cases/or/minCountDifferentPath",
+		"test-cases/datatype/targetNode"
+
 		);
 
 	final String testCasePath;
@@ -147,6 +153,7 @@ abstract public class AbstractShaclTest {
 		System.out.println(shaclFile);
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.setLogValidationPlans(true);
+//		shaclSail.setParallelValidation(false);
 		SailRepository shaclRepository = new SailRepository(shaclSail);
 		shaclRepository.init();
 		Utils.loadShapeData(shaclRepository, shaclFile);
@@ -220,6 +227,7 @@ abstract public class AbstractShaclTest {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		SailRepository shaclRepository = new SailRepository(shaclSail);
+		shaclSail.setLogValidationPlans(true);
 		shaclRepository.init();
 		Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
 

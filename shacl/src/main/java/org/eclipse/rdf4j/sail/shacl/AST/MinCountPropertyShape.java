@@ -14,14 +14,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
-import org.eclipse.rdf4j.sail.shacl.planNodes.DirectTupleFromFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MinCountFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
@@ -56,12 +55,11 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	@Override
 	public PlanNode getPlan(ShaclSailConnection shaclSailConnection, NodeShape nodeShape, boolean printPlans, PlanNode overrideTargetNode) {
 
-		if(overrideTargetNode != null){
+		if (overrideTargetNode != null) {
 			PlanNode allStatements = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
 			PlanNode groupBy = new LoggingNode(new GroupByCount(allStatements), "");
 
-			DirectTupleFromFilter filteredStatements = new DirectTupleFromFilter();
-			new MinCountFilter(groupBy, null, filteredStatements, minCount);
+			PlanNode filteredStatements = new MinCountFilter(groupBy, minCount).getFalseNode(UnBufferedPlanNode.class);
 
 			if (printPlans) {
 				String planAsGraphvizDot = getPlanAsGraphvizDot(filteredStatements, shaclSailConnection);
@@ -77,11 +75,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		if (!optimizeWhenNoStatementsRemoved || shaclSailConnection.stats.hasRemoved()) {
 			PlanNode planRemovedStatements = new LoggingNode(new TrimTuple(new LoggingNode(super.getPlanRemovedStatements(shaclSailConnection, nodeShape), ""), 0, 1), "");
 
-			PlanNode filteredPlanRemovedStatements = planRemovedStatements;
-
-			if (nodeShape instanceof TargetClass) {
-				filteredPlanRemovedStatements = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, planRemovedStatements), "");
-			}
+			PlanNode filteredPlanRemovedStatements = new LoggingNode(nodeShape.getTargetFilter(shaclSailConnection, planRemovedStatements), "");
 
 			PlanNode planAddedStatements = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), "");
 
@@ -92,9 +86,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			PlanNode planAddedStatements1 = super.getPlanAddedStatements(shaclSailConnection, nodeShape);
 
-			if (nodeShape instanceof TargetClass) {
-				planAddedStatements1 = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, planAddedStatements1), "");
-			}
+			planAddedStatements1 = new LoggingNode((nodeShape).getTargetFilter(shaclSailConnection, planAddedStatements1), "");
+
 			topNode = new LoggingNode(new UnionNode(unique, planAddedStatements1), "");
 
 
@@ -106,21 +99,18 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			PlanNode planAddedForShape = new LoggingNode(nodeShape.getPlanAddedStatements(shaclSailConnection, nodeShape), "");
 
-			PlanNode select = new LoggingNode(shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), path.getQuery("?a", "?c", null))), "");
+			PlanNode addedByPath = new LoggingNode(getPlanAddedStatements(shaclSailConnection, nodeShape), "");
 
+			addedByPath = new LoggingNode((nodeShape).getTargetFilter(shaclSailConnection, addedByPath), "");
 
-			if (nodeShape instanceof TargetClass) {
-				select = new LoggingNode(((TargetClass) nodeShape).getTypeFilterPlan(shaclSailConnection, select), "");
-			}
-			topNode = new LoggingNode(new UnionNode(planAddedForShape, select), "");
+			topNode = new LoggingNode(new UnionNode(planAddedForShape, addedByPath), "");
 
 		}
 
 
 		PlanNode groupBy = new LoggingNode(new GroupByCount(topNode), "");
 
-		DirectTupleFromFilter filteredStatements = new DirectTupleFromFilter();
-		new MinCountFilter(groupBy, null, filteredStatements, minCount);
+		PlanNode filteredStatements = new MinCountFilter(groupBy, minCount).getFalseNode(UnBufferedPlanNode.class);
 
 		PlanNode minCountFilter = new LoggingNode(filteredStatements, "");
 
@@ -130,8 +120,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		PlanNode groupBy2 = new LoggingNode(new GroupByCount(bulkedExternalLeftOuterJoin2), "");
 
-		DirectTupleFromFilter filteredStatements2 = new DirectTupleFromFilter();
-		new MinCountFilter(groupBy2, null, filteredStatements2, minCount);
+		PlanNode filteredStatements2 = new MinCountFilter(groupBy2, minCount).getFalseNode(UnBufferedPlanNode.class);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(filteredStatements2, shaclSailConnection);

@@ -8,17 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
+public interface PushablePlanNode extends PlanNode {
 
-/**
- * @author Håvard Ottestad
- */
-public interface PushBasedPlanNode {
+	void push(Tuple tuple);
 
-	void push(Tuple t);
-
-	void parentIterator(CloseableIteration<Tuple, SailException> iterator);
-
-
+	boolean isClosed();
 }

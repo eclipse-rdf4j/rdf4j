@@ -19,8 +19,8 @@ public class MaxLengthFilter extends FilterPlanNode {
 
 	private final long maxLength;
 
-	public MaxLengthFilter(PlanNode parent, PushBasedPlanNode trueNode, PushBasedPlanNode falseNode, long maxLength) {
-		super(parent, trueNode, falseNode);
+	public MaxLengthFilter(PlanNode parent, long maxLength) {
+		super(parent);
 		this.maxLength = maxLength;
 	}
 

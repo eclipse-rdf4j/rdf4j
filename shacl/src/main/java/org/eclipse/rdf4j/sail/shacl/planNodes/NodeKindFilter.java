@@ -23,8 +23,8 @@ public class NodeKindFilter extends FilterPlanNode {
 
 	private final NodeKindPropertyShape.NodeKind  nodeKind;
 
-	public NodeKindFilter(PlanNode parent, PushBasedPlanNode trueNode, PushBasedPlanNode falseNode, NodeKindPropertyShape.NodeKind nodeKind) {
-		super(parent, trueNode, falseNode);
+	public NodeKindFilter(PlanNode parent, NodeKindPropertyShape.NodeKind nodeKind) {
+		super(parent);
 		this.nodeKind = nodeKind;
 	}
 

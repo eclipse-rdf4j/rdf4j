@@ -69,7 +69,7 @@ public class NodeKindPropertyShape extends PathPropertyShape {
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,
 			nodeShape,
-			(parent, trueNode, falseNode) -> new NodeKindFilter(parent, trueNode, falseNode, nodeKind),
+			(parent) -> new NodeKindFilter(parent, nodeKind),
 			this,
 			overrideTargetNode);
 

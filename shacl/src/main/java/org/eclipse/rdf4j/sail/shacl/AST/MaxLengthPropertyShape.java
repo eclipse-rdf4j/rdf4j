@@ -40,7 +40,7 @@ public class MaxLengthPropertyShape extends PathPropertyShape {
 		PlanNode invalidValues = StandardisedPlanHelper.getGenericSingleObjectPlan(
 			shaclSailConnection,
 			nodeShape,
-			(parent, trueNode, falseNode) -> new MaxLengthFilter(parent, trueNode, falseNode, maxLength),
+			(parent) -> new MaxLengthFilter(parent, maxLength),
 			this,
 			overrideTargetNode);
 
