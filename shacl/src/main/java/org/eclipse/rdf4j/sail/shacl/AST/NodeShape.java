@@ -103,16 +103,16 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 					ShaclProperties shaclProperties = new ShaclProperties(shapeId, connection);
 
-					if (shaclProperties.targetClass != null) {
+					if (!shaclProperties.targetClass.isEmpty()) {
 						propertyShapes.add(new TargetClass(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetClass));
 					}
 					if (!shaclProperties.targetNode.isEmpty()) {
 						propertyShapes.add(new TargetNode(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetNode));
 					}
-					if (shaclProperties.targetSubjectsOf != null) {
+					if (!shaclProperties.targetSubjectsOf.isEmpty()) {
 						propertyShapes.add(new TargetSubjectsOf(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetSubjectsOf));
 					}
-					if (shaclProperties.targetObjectsOf != null) {
+					if (!shaclProperties.targetObjectsOf.isEmpty()) {
 						propertyShapes.add(new TargetObjectsOf(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetObjectsOf));
 					}
 

@@ -142,7 +142,6 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(ShapeId, SHACL.PROPERTY, null))) {
 				return stream
 					.map(Statement::getObject)
-					.peek(System.out::println)
 					.map(v -> (Resource) v)
 					.flatMap(propertyShapeId -> {
 						List<PropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape, propertyShapeId);

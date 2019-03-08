@@ -21,8 +21,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.SetFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
-import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 /**
@@ -34,9 +32,9 @@ public class TargetNode extends NodeShape {
 
 	private final Set<Value> targetNodeSet;
 
-	TargetNode(Resource id, SailRepositoryConnection connection, boolean deactivated, List<Value> targetNode) {
+	TargetNode(Resource id, SailRepositoryConnection connection, boolean deactivated, Set<Value> targetNode) {
 		super(id, connection, deactivated);
-		this.targetNodeSet = new HashSet<>(targetNode);
+		this.targetNodeSet = targetNode;
 		assert !this.targetNodeSet.isEmpty();
 	}
 
