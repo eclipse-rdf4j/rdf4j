@@ -7,7 +7,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.jsonld;
 
-import org.eclipse.rdf4j.model.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Arrays;
+
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.URI;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -17,13 +35,6 @@ import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.junit.Before;
 import org.junit.Test;
-
-import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Arrays;
-
-import static org.junit.Assert.*;
 
 /**
  * @author Yasen Marinov
@@ -240,6 +251,40 @@ public class JSONLDHierarchicalWriterTest {
 		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node3"));
 
 		writerConfig.set(JSONLDSettings.HIERARCHICAL_VIEW, false);
+		verifyOutput();
+	}
+
+	/**
+	 * Verify output hierarchy does not duplicate nodes B and C.
+	 * 
+	 * @throws IOException
+	 * @see https://github.com/eclipse/rdf4j/issues/1283
+	 */
+	@Test
+	public void testOrder() throws IOException {
+		IRI child = vf.createIRI("urn:child");
+		IRI b = vf.createIRI("urn:B");
+		IRI c = vf.createIRI("urn:C");
+		IRI e = vf.createIRI("urn:E");
+
+		addStatement(e, child, b);
+		addStatement(b, child, c);
+
+		verifyOutput();
+	}
+
+	@Test
+	public void testOrderDuplicatedChild() throws IOException {
+		IRI child = vf.createIRI("urn:child");
+		IRI b = vf.createIRI("urn:B");
+		IRI c = vf.createIRI("urn:C");
+		IRI e = vf.createIRI("urn:E");
+		IRI d = vf.createIRI("urn:D");
+
+		addStatement(e, child, b);
+		addStatement(b, child, c);
+		addStatement(d, child, b);
+
 		verifyOutput();
 	}
 

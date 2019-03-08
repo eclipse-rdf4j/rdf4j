@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
  *            the type of {@link QueryElement}s in the collection
  */
 public abstract class QueryElementCollection<T extends QueryElement> implements QueryElement {
-	protected Collection<T> elements = new HashSet<>();
+	protected Collection<T> elements = new LinkedHashSet<>();
 	private String delimiter = "\n";
 
 	protected QueryElementCollection() { }
