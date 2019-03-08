@@ -34,6 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -63,10 +64,10 @@ public class ClassPropertyShape extends PathPropertyShape {
 		if (overrideTargetNode != null) {
 			PlanNode bulkedEternalLeftOuter = new LoggingNode(new BulkedExternalLeftOuterJoin(overrideTargetNode, shaclSailConnection, path.getQuery("?a", "?c", null), false), "");
 			// filter by type against addedStatements, this is an optimization for when you add the type statement in the same transaction
-			PlanNode addedStatementsTypeFilter = new LoggingNode(new ExternalTypeFilterNode(addedStatements, classResource, bulkedEternalLeftOuter, 1, false), "");
+			PlanNode addedStatementsTypeFilter = new LoggingNode(new ExternalTypeFilterNode(addedStatements, Collections.singleton(classResource), bulkedEternalLeftOuter, 1, false), "");
 
 			// filter by type against the base sail
-			PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new LoggingNode(new ExternalTypeFilterNode(shaclSailConnection, classResource, addedStatementsTypeFilter, 1, false), "");
+			PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new LoggingNode(new ExternalTypeFilterNode(shaclSailConnection, Collections.singleton(classResource), addedStatementsTypeFilter, 1, false), "");
 			if (printPlans) {
 				String planAsGraphvizDot = getPlanAsGraphvizDot(invalidTuplesDueToDataAddedThatMatchesTargetOrPath, shaclSailConnection);
 				logger.info(planAsGraphvizDot);
@@ -95,10 +96,10 @@ public class ClassPropertyShape extends PathPropertyShape {
 			PlanNode joined = new TupleLengthFilter(new UnionNode(innerJoin, bulkedExternalLeftOuter), 2, false).getTrueNode(UnBufferedPlanNode.class);
 
 			// filter by type against addedStatements, this is an optimization for when you add the type statement in the same transaction
-			PlanNode addedStatementsTypeFilter = new LoggingNode(new ExternalTypeFilterNode(addedStatements, classResource, joined, 1, false), "");
+			PlanNode addedStatementsTypeFilter = new LoggingNode(new ExternalTypeFilterNode(addedStatements, Collections.singleton(classResource), joined, 1, false), "");
 
 			// filter by type against the base sail
-			PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new LoggingNode(new ExternalTypeFilterNode(shaclSailConnection, classResource, addedStatementsTypeFilter, 1, false), "");
+			PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new LoggingNode(new ExternalTypeFilterNode(shaclSailConnection, Collections.singleton(classResource), addedStatementsTypeFilter, 1, false), "");
 
 			if (shaclSailConnection.stats.hasRemoved()) {
 
