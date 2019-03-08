@@ -17,7 +17,7 @@ import java.util.stream.Stream;
 public class ShaclProperties {
 
 
-	List<Resource> clazz  = new ArrayList<>(0);
+	List<Resource> clazz = new ArrayList<>(0);
 	List<Resource> or = new ArrayList<>(0);
 	Long minCount;
 	Long maxCount;
@@ -43,6 +43,8 @@ public class ShaclProperties {
 	Set<IRI> targetObjectsOf = new HashSet<>(0);
 
 	boolean deactivated = false;
+
+	String flags = "";
 
 	public ShaclProperties(Resource propertyShapeId, SailRepositoryConnection connection) {
 
@@ -140,6 +142,9 @@ public class ShaclProperties {
 						break;
 					case "http://www.w3.org/ns/shacl#deactivated":
 						deactivated = ((Literal) object).booleanValue();
+						break;
+					case "http://www.w3.org/ns/shacl#flags":
+						flags += object.stringValue();
 						break;
 				}
 

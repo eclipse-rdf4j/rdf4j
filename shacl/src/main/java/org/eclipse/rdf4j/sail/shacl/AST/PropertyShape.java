@@ -181,7 +181,7 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			}
 			if (!shaclProperties.pattern.isEmpty()) {
 				shaclProperties.pattern.forEach(pattern -> {
-					propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, pattern));
+					propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, pattern, shaclProperties.flags));
 				});
 			}
 			if (shaclProperties.languageIn != null) {
