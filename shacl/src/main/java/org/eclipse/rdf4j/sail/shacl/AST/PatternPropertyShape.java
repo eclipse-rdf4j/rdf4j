@@ -31,7 +31,7 @@ import java.util.stream.Stream;
 public class PatternPropertyShape extends PathPropertyShape {
 
 	private final String pattern;
-	private final Optional<String> flags;
+	private final String flags;
 	private static final Logger logger = LoggerFactory.getLogger(PatternPropertyShape.class);
 
 	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated, String pattern) {
@@ -40,7 +40,7 @@ public class PatternPropertyShape extends PathPropertyShape {
 		this.pattern = pattern;
 
 		try (Stream<Statement> stream = Iterations.stream(connection.getStatements(id, SHACL.FLAGS, null, true))) {
-			flags = stream.map(Statement::getObject).map(Value::stringValue).findAny();
+			flags = stream.map(Statement::getObject).map(Value::stringValue).reduce((a,b) -> a+b).orElse("");
 		}
 
 	}

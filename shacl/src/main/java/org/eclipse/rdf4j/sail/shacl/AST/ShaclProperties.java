@@ -124,9 +124,6 @@ public class ShaclProperties {
 						pattern.add(object.stringValue());
 						break;
 					case "http://www.w3.org/ns/shacl#class":
-						if (clazz != null) {
-							throw new IllegalStateException("sh:class aleady populated");
-						}
 						clazz.add((Resource) object);
 						break;
 					case "http://www.w3.org/ns/shacl#targetNode":
