@@ -83,20 +83,15 @@ public class TargetClass extends NodeShape {
 				.collect(Collectors.toSet());
 		}
 
-		if (targets.size() > 1) {
-			return targets
-				.stream()
-				.map(r -> "{ BIND(rdf:type as ?b1) \n BIND(<" + r + "> as " + objectVariable + ") \n " + subjectVariable + " ?b1 " + objectVariable + ". } \n")
-				.reduce((l, r) -> l + " UNION " + r)
-				.get();
-		}
+		assert targets.size() >= 1;
 
-		if(targets.size() == 0){
-			System.out.println();
-		}
-		assert targets.size() == 1;
+		return targets
+			.stream()
+			.map(r -> "{ BIND(rdf:type as ?b1) \n BIND(<" + r + "> as " + objectVariable + ") \n " + subjectVariable + " ?b1 " + objectVariable + ". } \n")
+			.reduce((l, r) -> l + " UNION " + r)
+			.get();
 
-		return "BIND(rdf:type as ?b1) \n BIND(<" + targets.stream().findAny().get() + "> as " + objectVariable + ") \n " + subjectVariable + " ?b1 " + objectVariable + ". \n";
+
 	}
 
 	@Override
