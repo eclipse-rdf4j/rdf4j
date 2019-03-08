@@ -8,15 +8,17 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
 
 public class ShaclProperties {
 
 
-	Resource clazz;
-	Resource or;
+	List<Resource> clazz  = new ArrayList<>(0);
+	List<Resource> or = new ArrayList<>(0);
 	Long minCount;
 	Long maxCount;
 
@@ -33,7 +35,7 @@ public class ShaclProperties {
 	Literal minInclusive;
 	Literal maxInclusive;
 
-	String pattern;
+	List<String> pattern = new ArrayList<>(0);
 
 	Set<Resource> targetClass = new HashSet<>(0);
 	Set<Value> targetNode = new HashSet<>(0);
@@ -50,10 +52,7 @@ public class ShaclProperties {
 				Value object = statement.getObject();
 				switch (predicate) {
 					case "http://www.w3.org/ns/shacl#or":
-						if (or != null) {
-							throw new IllegalStateException("sh:or already populated");
-						}
-						or = (Resource) object;
+						or.add((Resource) object);
 						break;
 					case "http://www.w3.org/ns/shacl#languageIn":
 						if (languageIn != null) {
@@ -122,16 +121,13 @@ public class ShaclProperties {
 						maxInclusive = (Literal) object;
 						break;
 					case "http://www.w3.org/ns/shacl#pattern":
-						if (pattern != null) {
-							throw new IllegalStateException("sh:pattern aleady populated");
-						}
-						pattern = object.stringValue();
+						pattern.add(object.stringValue());
 						break;
 					case "http://www.w3.org/ns/shacl#class":
 						if (clazz != null) {
 							throw new IllegalStateException("sh:class aleady populated");
 						}
-						clazz = (Resource) object;
+						clazz.add((Resource) object);
 						break;
 					case "http://www.w3.org/ns/shacl#targetNode":
 						targetNode.add(object);
