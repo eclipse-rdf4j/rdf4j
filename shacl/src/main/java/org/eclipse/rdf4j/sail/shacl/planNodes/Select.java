@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-import org.eclipse.rdf4j.sail.shacl.AST.MinExclusivePropertyShape;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +41,6 @@ public class Select implements PlanNode {
 	public Select(SailConnection connection, String query, String ... variables) {
 		this.connection = connection;
 		this.query = "select "+String.join(" ", variables)+" where { " + query + "} order by ?a";
-		logger.debug(this.query);
 	}
 
 	@Override

@@ -19,8 +19,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 
 import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -81,34 +79,16 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 					return filterOnPredicates
 						.stream()
-						.map(predicate -> {
-
-							if (connection.hasStatement((Resource) node, predicate, null, true)) {
-								return predicate;
-							}
-
-							return null;
-
-						})
-						.filter(Objects::nonNull)
-						.findAny()
+						.filter(predicate -> connection.hasStatement((Resource) node, predicate, null, true))
+						.findFirst()
 						.orElse(null);
 
 				} else if (on == On.Object) {
 
 					return filterOnPredicates
 						.stream()
-						.map(predicate -> {
-
-							if (connection.hasStatement(null, predicate, node, true)) {
-								return predicate;
-							}
-
-							return null;
-
-						})
-						.filter(Objects::nonNull)
-						.findAny()
+						.filter(predicate -> connection.hasStatement(null, predicate, node, true))
+						.findFirst()
 						.orElse(null);
 
 				}

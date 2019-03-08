@@ -21,8 +21,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.SetFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
-import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 /**

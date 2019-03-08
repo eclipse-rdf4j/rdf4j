@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 
 import java.util.Arrays;
-import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -80,19 +79,10 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 			private Resource isType(Value subject) {
 				if (subject instanceof Resource) {
-
 					return filterOnType.stream()
-						.map(type -> {
-							if(connection.hasStatement((Resource) subject, RDF.TYPE, type, true)){
-								return type;
-							}
-							return null;
-						})
-						.filter(Objects::nonNull)
+						.filter(type -> connection.hasStatement((Resource) subject, RDF.TYPE, type, true))
 						.findFirst()
 						.orElse(null);
-
-
 				}
 				return null;
 			}
@@ -132,7 +122,9 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if(printed) return;
+		if (printed) {
+			return;
+		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
