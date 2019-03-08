@@ -21,6 +21,9 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
+import java.util.List;
+import java.util.Set;
+
 /**
  * sh:targetSubjectsOf
  *
@@ -28,11 +31,12 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
  */
 public class TargetSubjectsOf extends NodeShape {
 
-	private final IRI targetSubjectsOf;
+	private final Set<IRI> targetSubjectsOf;
 
-	TargetSubjectsOf(Resource id, SailRepositoryConnection connection, boolean deactivated, IRI targetSubjectsOf) {
+	TargetSubjectsOf(Resource id, SailRepositoryConnection connection, boolean deactivated, Set<IRI> targetSubjectsOf) {
 		super(id, connection, deactivated);
 		this.targetSubjectsOf = targetSubjectsOf;
+		assert !this.targetSubjectsOf.isEmpty();
 	}
 
 	@Override
@@ -56,17 +60,26 @@ public class TargetSubjectsOf extends NodeShape {
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
-		return addedStatements.hasStatement(null, targetSubjectsOf, null, false);
+		return targetSubjectsOf
+			.stream()
+			.map(target -> addedStatements.hasStatement(null, target, null, false))
+			.reduce((a, b) -> a || b)
+			.orElseThrow(IllegalStateException::new);
+
 	}
 
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		return "BIND(<" + targetSubjectsOf + "> as ?b1) \n " + subjectVariable + " ?b1 " + objectVariable + ". \n";
+		return targetSubjectsOf
+			.stream()
+			.map(target -> " { BIND(<" + target + "> as ?b1) \n " + subjectVariable + " ?b1 " + objectVariable + ".  } \n")
+			.reduce((a, b) -> a + " UNION " + b)
+			.get();
 	}
 
 	@Override
 	public PlanNode getTargetFilter(NotifyingSailConnection shaclSailConnection, PlanNode parent) {
-		return new ExternalFilterByPredicate(shaclSailConnection, targetSubjectsOf, parent, 0, true, ExternalFilterByPredicate.On.Subject);
+		return new ExternalFilterByPredicate(shaclSailConnection, targetSubjectsOf, parent, 0, ExternalFilterByPredicate.On.Subject);
 	}
 
 }

@@ -19,6 +19,9 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * @author Håvard Ottestad
@@ -26,23 +29,21 @@ import java.util.Arrays;
 public class ExternalFilterByPredicate implements PlanNode {
 
 	private final SailConnection connection;
-	private final IRI filterOnPredicate;
+	private final Set<IRI> filterOnPredicates;
 	final PlanNode parent;
 	final int index;
 	private final On on;
-	private final boolean returnMatching;
 	private boolean printed = false;
 
 	public enum On {
 		Subject, Object
 	}
 
-	public ExternalFilterByPredicate(SailConnection connection, IRI filterOnPredicate, PlanNode parent, int index, boolean returnMatching, On on) {
+	public ExternalFilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent, int index, On on) {
 		this.connection = connection;
-		this.filterOnPredicate = filterOnPredicate;
+		this.filterOnPredicates = filterOnPredicates;
 		this.parent = parent;
 		this.index = index;
-		this.returnMatching = returnMatching;
 		this.on = on;
 	}
 
@@ -64,29 +65,54 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 					Value subject = temp.line.get(index);
 
-					if (returnMatching) {
-						if (matchesFilter(subject)) {
-							next = temp;
-							next.addHistory(new Tuple(Arrays.asList(subject, filterOnPredicate)));
-						}
-					} else {
-						if (!matchesFilter(subject)) {
-							next = temp;
-							next.addHistory(new Tuple(Arrays.asList(subject, filterOnPredicate)));
-						}
+					IRI matchedPredicate = matchesFilter(subject);
+
+					if (matchedPredicate != null) {
+						next = temp;
+						next.addHistory(new Tuple(Arrays.asList(subject, matchedPredicate)));
 					}
 
 				}
 			}
 
-			private boolean matchesFilter(Value node) {
+			private IRI matchesFilter(Value node) {
 
 				if (node instanceof Resource && on == On.Subject) {
-					return connection.hasStatement((Resource) node, filterOnPredicate, null, true);
-				}else if(on == On.Object){
-					return connection.hasStatement(null, filterOnPredicate, node, true);
+
+					return filterOnPredicates
+						.stream()
+						.map(predicate -> {
+
+							if (connection.hasStatement((Resource) node, predicate, null, true)) {
+								return predicate;
+							}
+
+							return null;
+
+						})
+						.filter(Objects::nonNull)
+						.findAny()
+						.orElse(null);
+
+				} else if (on == On.Object) {
+
+					return filterOnPredicates
+						.stream()
+						.map(predicate -> {
+
+							if (connection.hasStatement(null, predicate, node, true)) {
+								return predicate;
+							}
+
+							return null;
+
+						})
+						.filter(Objects::nonNull)
+						.findAny()
+						.orElse(null);
+
 				}
-				return false;
+				return null;
 			}
 
 			@Override
@@ -144,7 +170,7 @@ public class ExternalFilterByPredicate implements PlanNode {
 	@Override
 	public String toString() {
 		return "ExternalFilterByPredicate{" +
-			"filterOnPredicate=" + filterOnPredicate +
+			"filterOnPredicates=" + Arrays.toString(filterOnPredicates.toArray()) +
 			'}';
 	}
 

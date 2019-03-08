@@ -9,7 +9,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public class ShaclProperties {
@@ -35,10 +37,10 @@ public class ShaclProperties {
 
 	String pattern;
 
-	Resource targetClass;
-	List<Value> targetNode = new ArrayList<>(0);
-	IRI targetSubjectsOf;
-	IRI targetObjectsOf;
+	Set<Resource> targetClass = new HashSet<>(0);
+	Set<Value> targetNode = new HashSet<>(0);
+	Set<IRI> targetSubjectsOf = new HashSet<>(0);
+	Set<IRI> targetObjectsOf = new HashSet<>(0);
 
 	boolean deactivated = false;
 
@@ -137,22 +139,13 @@ public class ShaclProperties {
 						targetNode.add(object);
 						break;
 					case "http://www.w3.org/ns/shacl#targetClass":
-						if (targetClass != null) {
-							throw new IllegalStateException("sh:targetClass aleady populated");
-						}
-						targetClass = (Resource) object;
+						targetClass.add((Resource) object);
 						break;
 					case "http://www.w3.org/ns/shacl#targetSubjectsOf":
-						if (targetSubjectsOf != null) {
-							throw new IllegalStateException("sh:targetSubjectsOf aleady populated");
-						}
-						targetSubjectsOf = (IRI) object;
+						targetSubjectsOf.add((IRI) object);
 						break;
 					case "http://www.w3.org/ns/shacl#targetObjectsOf":
-						if (targetObjectsOf != null) {
-							throw new IllegalStateException("sh:targetObjectsOf aleady populated");
-						}
-						targetObjectsOf = (IRI) object;
+						targetObjectsOf.add((IRI) object);
 						break;
 					case "http://www.w3.org/ns/shacl#deactivated":
 						deactivated = ((Literal) object).booleanValue();

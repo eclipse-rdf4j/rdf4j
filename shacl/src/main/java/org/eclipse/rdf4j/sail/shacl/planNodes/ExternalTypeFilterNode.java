@@ -19,6 +19,8 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 
 import java.util.Arrays;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * @author Håvard Ottestad
@@ -26,14 +28,14 @@ import java.util.Arrays;
 public class ExternalTypeFilterNode implements PlanNode {
 
 	private SailConnection connection;
-	private Resource filterOnType;
+	private Set<Resource> filterOnType;
 	PlanNode parent;
 	int index = 0;
 	private final boolean returnMatching;
 	private boolean printed = false;
 
 
-	public ExternalTypeFilterNode(SailConnection connection, Resource filterOnType, PlanNode parent, int index, boolean returnMatching) {
+	public ExternalTypeFilterNode(SailConnection connection, Set<Resource> filterOnType, PlanNode parent, int index, boolean returnMatching) {
 		this.connection = connection;
 		this.filterOnType = filterOnType;
 		this.parent = parent;
@@ -59,26 +61,40 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 					Value subject = temp.line.get(index);
 
+					Resource matchedType = isType(subject);
+
 					if (returnMatching) {
-						if (isType(subject)) {
+						if (matchedType != null) {
 							next = temp;
-							next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, filterOnType)));
+							next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, matchedType)));
 						}
 					} else {
-						if (!isType(subject)) {
+						if (matchedType == null) {
 							next = temp;
-							next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, filterOnType)));
+							next.addHistory(new Tuple(Arrays.asList(subject)));
 						}
 					}
 
 				}
 			}
 
-			private boolean isType(Value subject) {
+			private Resource isType(Value subject) {
 				if (subject instanceof Resource) {
-					return connection.hasStatement((Resource) subject, RDF.TYPE, filterOnType, true);
+
+					return filterOnType.stream()
+						.map(type -> {
+							if(connection.hasStatement((Resource) subject, RDF.TYPE, type, true)){
+								return type;
+							}
+							return null;
+						})
+						.filter(Objects::nonNull)
+						.findFirst()
+						.orElse(null);
+
+
 				}
-				return false;
+				return null;
 			}
 
 			@Override
@@ -134,7 +150,7 @@ public class ExternalTypeFilterNode implements PlanNode {
 	@Override
 	public String toString() {
 		return "ExternalTypeFilterNode{" +
-			"filterOnType=" + filterOnType +
+			"filterOnType=" + Arrays.toString(filterOnType.toArray()) +
 			'}';
 	}
 

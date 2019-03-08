@@ -21,7 +21,9 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
+import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * sh:targetClass
@@ -30,11 +32,13 @@ import java.util.Set;
  */
 public class TargetClass extends NodeShape {
 
-	private final Resource targetClass;
+	private final Set<Resource> targetClass;
 
-	TargetClass(Resource id, SailRepositoryConnection connection, boolean deactivated, Resource targetClass) {
+	TargetClass(Resource id, SailRepositoryConnection connection, boolean deactivated, Set<Resource> targetClass) {
 		super(id, connection, deactivated);
 		this.targetClass = targetClass;
+		assert !this.targetClass.isEmpty();
+
 	}
 
 	@Override
@@ -58,23 +62,36 @@ public class TargetClass extends NodeShape {
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
-		return addedStatements.hasStatement(null, RDF.TYPE, targetClass, false);
+		return targetClass
+			.stream()
+			.map(target -> addedStatements.hasStatement(null, RDF.TYPE, target, false))
+			.reduce((a, b) -> a || b)
+			.orElseThrow(IllegalStateException::new);
+
 	}
 
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+		Set<Resource> targets = targetClass;
+
 		if (rdfsSubClassOfReasoner != null) {
-			Set<Resource> resources = rdfsSubClassOfReasoner.backwardsChain(targetClass);
-			if (resources.size() > 1) {
-				return resources
-					.stream()
-					.map(r -> "{ BIND(rdf:type as ?b1) \n BIND(<" + r + "> as " + objectVariable + ") \n " + subjectVariable + " ?b1 " + objectVariable + ". } \n")
-					.reduce((l, r) -> l + " UNION " + r)
-					.get();
-			}
+			targets = new HashSet<>(targets);
+
+			targets = targets
+				.stream()
+				.flatMap(target -> rdfsSubClassOfReasoner.backwardsChain(target).stream())
+				.collect(Collectors.toSet());
 		}
 
-		return "BIND(rdf:type as ?b1) \n BIND(<" + targetClass + "> as " + objectVariable + ") \n " + subjectVariable + " ?b1 " + objectVariable + ". \n";
+		if (targets.size() > 1) {
+			return targets
+				.stream()
+				.map(r -> "{ BIND(rdf:type as ?b1) \n BIND(<" + r + "> as " + objectVariable + ") \n " + subjectVariable + " ?b1 " + objectVariable + ". } \n")
+				.reduce((l, r) -> l + " UNION " + r)
+				.get();
+		}
+
+		return "BIND(rdf:type as ?b1) \n BIND(<" + targets.stream().findAny().get() + "> as " + objectVariable + ") \n " + subjectVariable + " ?b1 " + objectVariable + ". \n";
 	}
 
 	@Override
