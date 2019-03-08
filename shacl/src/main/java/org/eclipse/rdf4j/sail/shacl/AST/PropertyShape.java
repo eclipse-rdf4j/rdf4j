@@ -30,7 +30,7 @@ import java.util.stream.Stream;
 /**
  * The AST (Abstract Syntax Tree) node that represents a property nodeShape without any restrictions. This node should be extended by other nodes.
  *
- * @author Heshan Jayasinghe
+ * @author Heshan Jayasinghe, Håvard Mikkelsen Ottestad
  */
 public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
@@ -168,8 +168,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			if (shaclProperties.datatype != null) {
 				propertyShapes.add(new DatatypePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.datatype));
 			}
-			if (shaclProperties.or != null) {
-				propertyShapes.add(new OrPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.or));
+			if (!shaclProperties.or.isEmpty()) {
+				shaclProperties.or.forEach(or -> {
+					propertyShapes.add(new OrPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, or));
+				});
 			}
 			if (shaclProperties.minLength != null) {
 				propertyShapes.add(new MinLengthPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.minLength));
@@ -177,8 +179,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			if (shaclProperties.maxLength != null) {
 				propertyShapes.add(new MaxLengthPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.maxLength));
 			}
-			if (shaclProperties.pattern != null) {
-				propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.pattern));
+			if (!shaclProperties.pattern.isEmpty()) {
+				shaclProperties.pattern.forEach(pattern -> {
+					propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, pattern, shaclProperties.flags));
+				});
 			}
 			if (shaclProperties.languageIn != null) {
 				propertyShapes.add(new LanguageInPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.languageIn));
@@ -198,8 +202,10 @@ public class PropertyShape implements PlanGenerator, RequiresEvalutation {
 			if (shaclProperties.minInclusive != null) {
 				propertyShapes.add(new MinInclusivePropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.minInclusive));
 			}
-			if (shaclProperties.clazz != null) {
-				propertyShapes.add(new ClassPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, shaclProperties.clazz));
+			if (!shaclProperties.clazz.isEmpty()) {
+				shaclProperties.clazz.forEach(clazz -> {
+					propertyShapes.add(new ClassPropertyShape(propertyShapeId, connection, nodeShape, shaclProperties.deactivated, clazz));
+				});
 			}
 
 			return propertyShapes;
