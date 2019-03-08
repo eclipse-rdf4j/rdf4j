@@ -91,6 +91,11 @@ public class TargetClass extends NodeShape {
 				.get();
 		}
 
+		if(targets.size() == 0){
+			System.out.println();
+		}
+		assert targets.size() == 1;
+
 		return "BIND(rdf:type as ?b1) \n BIND(<" + targets.stream().findAny().get() + "> as " + objectVariable + ") \n " + subjectVariable + " ?b1 " + objectVariable + ". \n";
 	}
 

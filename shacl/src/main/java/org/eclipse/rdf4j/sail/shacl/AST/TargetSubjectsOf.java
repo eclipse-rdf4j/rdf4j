@@ -72,7 +72,7 @@ public class TargetSubjectsOf extends NodeShape {
 	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		return targetSubjectsOf
 			.stream()
-			.map(target -> " { BIND(<" + target + "> as ?b1) \n " + subjectVariable + " ?b1 " + objectVariable + ".  } \n")
+			.map(target -> "\n { BIND(<" + target + "> as ?b1) \n " + subjectVariable + " ?b1 " + objectVariable + ".  } \n")
 			.reduce((a, b) -> a + " UNION " + b)
 			.get();
 	}

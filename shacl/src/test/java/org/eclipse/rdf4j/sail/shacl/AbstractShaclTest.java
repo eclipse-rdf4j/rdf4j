@@ -28,6 +28,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static junit.framework.TestCase.assertTrue;
 import static org.junit.Assert.assertFalse;
@@ -38,12 +40,13 @@ import static org.junit.Assert.assertFalse;
 @RunWith(Parameterized.class)
 abstract public class AbstractShaclTest {
 
-	private static final List<String> testCasePaths = Arrays.asList(
+	private static final List<String> testCasePaths = Stream.of(
 		"test-cases/complex/dcat",
 		"test-cases/complex/foaf",
 		"test-cases/datatype/simple",
 		"test-cases/datatype/targetNode",
 		"test-cases/datatype/targetSubjectsOf",
+		"test-cases/datatype/targetSubjectsOfSingle",
 		"test-cases/datatype/targetObjectsOf",
 		"test-cases/minLength/simple",
 		"test-cases/maxLength/simple",
@@ -81,9 +84,10 @@ abstract public class AbstractShaclTest {
 		"test-cases/deactivated/nodeshape",
 		"test-cases/deactivated/or",
 		"test-cases/deactivated/propertyshape"
+	)
+		.distinct()
+		.collect(Collectors.toList());
 
-
-		);
 
 	final String testCasePath;
 	final String path;
@@ -116,8 +120,7 @@ abstract public class AbstractShaclTest {
 				ret.add(path);
 				try {
 					resourceAsStream.close();
-				}
-				catch (IOException e) {
+				} catch (IOException e) {
 					throw new RuntimeException(e);
 				}
 			}
@@ -133,8 +136,8 @@ abstract public class AbstractShaclTest {
 		for (String testCasePath : testCasePaths) {
 			for (ExpectedResult baseCase : ExpectedResult.values()) {
 				findTestCases(testCasePath, baseCase.name()).forEach(path -> {
-					for(IsolationLevel isolationLevel : Arrays.asList(IsolationLevels.NONE, IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE)){
-						Object[] temp = { testCasePath, path, baseCase, isolationLevel };
+					for (IsolationLevel isolationLevel : Arrays.asList(IsolationLevels.NONE, IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE)) {
+						Object[] temp = {testCasePath, path, baseCase, isolationLevel};
 						ret.add(temp);
 					}
 
@@ -184,7 +187,7 @@ abstract public class AbstractShaclTest {
 					connection.prepareUpdate(query).execute();
 					connection.commit();
 				} catch (RepositoryException sailException) {
-					if(!(sailException.getCause() instanceof ShaclSailValidationException)){
+					if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
 						throw sailException;
 					}
 					exception = true;
@@ -220,8 +223,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult, IsolationLevel isolationLevel)
-		throws Exception
-	{
+		throws Exception {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -267,7 +269,7 @@ abstract public class AbstractShaclTest {
 				shaclSailConnection.commit();
 
 			} catch (RepositoryException sailException) {
-				if(!(sailException.getCause() instanceof ShaclSailValidationException)){
+				if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
 					throw sailException;
 				}
 				exception = true;
@@ -279,8 +281,7 @@ abstract public class AbstractShaclTest {
 		if (ran) {
 			if (expectedResult == ExpectedResult.valid) {
 				assertFalse(exception);
-			}
-			else {
+			} else {
 				assertTrue(exception);
 			}
 		}

@@ -8,7 +8,7 @@
 
 ex:PersonShape
 	a sh:NodeShape  ;
-	sh:targetObjectsOf ex:objectsOfProp, ex:otherProp ;
+	sh:targetObjectsOf ex:objectsOfProp, ex:otherProp, ex:thirdProp ;
 	sh:property [
 		sh:path ex:age ;
 		sh:datatype xsd:integer ;
