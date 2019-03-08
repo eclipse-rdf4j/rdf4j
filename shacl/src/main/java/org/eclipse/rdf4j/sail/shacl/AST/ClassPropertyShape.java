@@ -103,7 +103,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 			if (shaclSailConnection.stats.hasRemoved()) {
 
 				// Handle when a type statement has been removed, first get all removed type statements that match the classResource for this shape
-				PlanNode removedTypeStatements = new LoggingNode(new Select(shaclSailConnection.getRemovedStatements(), "?a a <" + classResource + ">"), "removedTypeStatements");
+				PlanNode removedTypeStatements = new LoggingNode(new Select(shaclSailConnection.getRemovedStatements(), "?a a <" + classResource + ">", "*"), "removedTypeStatements");
 
 				// Build a query to run against the base sail. eg:
 				//	?c foaf:knows ?a.

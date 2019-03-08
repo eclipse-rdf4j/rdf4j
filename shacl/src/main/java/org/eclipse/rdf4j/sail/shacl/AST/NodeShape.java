@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -55,13 +56,13 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	@Override
 	public PlanNode getPlanAddedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null)));
+		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getAddedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ShaclSailConnection shaclSailConnection, NodeShape nodeShape) {
-		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null)));
+		PlanNode node = shaclSailConnection.getCachedNodeFor(new Select(shaclSailConnection.getRemovedStatements(), getQuery("?a", "?c", null), "*"));
 		return new TrimTuple(new LoggingNode(node, ""), 0, 1);
 	}
 
@@ -96,20 +97,30 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 		public static List<NodeShape> getShapes(SailRepositoryConnection connection, ShaclSail sail) {
 			try (Stream<Statement> stream = Iterations.stream(connection.getStatements(null, RDF.TYPE, SHACL.NODE_SHAPE))) {
-				return stream.map(Statement::getSubject).map(shapeId -> {
+				return stream.map(Statement::getSubject).flatMap(shapeId -> {
+
+					List<NodeShape> propertyShapes = new ArrayList<>(2);
 
 					ShaclProperties shaclProperties = new ShaclProperties(shapeId, connection);
 
 					if (shaclProperties.targetClass != null) {
-						return new TargetClass(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetClass);
-					} else if (!shaclProperties.targetNode.isEmpty()) {
-						return new TargetNode(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetNode);
-					} else {
-						if (sail.isUndefinedTargetValidatesAllSubjects()) {
-							return new NodeShape(shapeId, connection, shaclProperties.deactivated); // target class nodeShapes are the only supported nodeShapes
-						}
+						propertyShapes.add(new TargetClass(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetClass));
 					}
-					return null;
+					if (!shaclProperties.targetNode.isEmpty()) {
+						propertyShapes.add(new TargetNode(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetNode));
+					}
+					if (shaclProperties.targetSubjectsOf != null) {
+						propertyShapes.add(new TargetSubjectsOf(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetSubjectsOf));
+					}
+					if (shaclProperties.targetObjectsOf != null) {
+						propertyShapes.add(new TargetObjectsOf(shapeId, connection, shaclProperties.deactivated, shaclProperties.targetObjectsOf));
+					}
+
+					if (sail.isUndefinedTargetValidatesAllSubjects() && propertyShapes.isEmpty()) {
+						propertyShapes.add(new NodeShape(shapeId, connection, shaclProperties.deactivated)); // target class nodeShapes are the only supported nodeShapes
+					}
+
+					return propertyShapes.stream();
 				})
 					.filter(Objects::nonNull)
 					.collect(Collectors.toList());

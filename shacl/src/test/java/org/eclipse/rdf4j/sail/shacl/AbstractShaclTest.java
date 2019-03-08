@@ -42,6 +42,9 @@ abstract public class AbstractShaclTest {
 		"test-cases/complex/dcat",
 		"test-cases/complex/foaf",
 		"test-cases/datatype/simple",
+		"test-cases/datatype/targetNode",
+		"test-cases/datatype/targetSubjectsOf",
+		"test-cases/datatype/targetObjectsOf",
 		"test-cases/minLength/simple",
 		"test-cases/maxLength/simple",
 		"test-cases/pattern/simple",
@@ -75,7 +78,6 @@ abstract public class AbstractShaclTest {
 		"test-cases/or/class",
 		"test-cases/or/datatype2",
 		"test-cases/or/minCountDifferentPath",
-		"test-cases/datatype/targetNode",
 		"test-cases/deactivated/nodeshape",
 		"test-cases/deactivated/or",
 		"test-cases/deactivated/propertyshape"

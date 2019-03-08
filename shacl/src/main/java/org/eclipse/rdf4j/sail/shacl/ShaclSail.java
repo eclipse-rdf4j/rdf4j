@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.eclipse.rdf4j.sail.shacl.planNodes.LoggingNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import sun.security.provider.SHA;
 
 import java.io.File;
 import java.io.IOException;
@@ -216,7 +217,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 			SHACL.MAX_INCLUSIVE,
 			SHACL.CLASS,
 			SHACL.TARGET_NODE,
-			SHACL.DEACTIVATED
+			SHACL.DEACTIVATED,
+			SHACL.TARGET_SUBJECTS_OF,
+			SHACL.TARGET_OBJECTS_OF
 		);
 	}
 
