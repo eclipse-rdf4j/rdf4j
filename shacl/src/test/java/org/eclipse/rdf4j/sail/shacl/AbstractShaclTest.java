@@ -116,7 +116,7 @@ abstract public class AbstractShaclTest {
 
 		List<String> ret = new ArrayList<>();
 
-		for (int i = 0; i < 1000; i++) {
+		for (int i = 0; i < 100; i++) {
 			String path = testCase + "/" + baseCase + "/case" + i;
 			InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader().getResourceAsStream(path);
 			if (resourceAsStream != null) {
