@@ -16,8 +16,8 @@
 	<description>Tests for Elasticsearch.</description>
 
 	<properties>
-		<lucene.version>7.2.1</lucene.version>
-		<elasticsearch.version>6.2.4</elasticsearch.version>
+		<lucene.version>7.5.0</lucene.version>
+		<elasticsearch.version>6.5.4</elasticsearch.version>
 	</properties>
 
 	<!-- disable the Java security manager for elasticsearch tests -->

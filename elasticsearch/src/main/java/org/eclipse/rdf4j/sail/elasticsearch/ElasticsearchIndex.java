@@ -311,7 +311,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		String settings = XContentFactory.jsonBuilder().startObject().field("index.query.default_field",
 				SearchFields.TEXT_FIELD_NAME).startObject("analysis").startObject("analyzer").startObject(
 						"default").field("type",
-								analyzer).endObject().endObject().endObject().endObject().string();
+								analyzer).endObject().endObject().endObject().endObject().toString();
 
 		doAcknowledgedRequest(client.admin().indices().prepareCreate(indexName).setSettings(
 				Settings.builder().loadFromSource(settings, XContentType.JSON)));

@@ -797,6 +797,7 @@
 									<excludes>
 										<exclude>org.apache.logging.log4j:log4j-api</exclude>
 										<exclude>org.elasticsearch:elasticsearch</exclude>
+										<exclude>org.elasticsearch:elasticsearch-core</exclude>
 									</excludes>
 								</enforceBytecodeVersion>
 							</rules>
