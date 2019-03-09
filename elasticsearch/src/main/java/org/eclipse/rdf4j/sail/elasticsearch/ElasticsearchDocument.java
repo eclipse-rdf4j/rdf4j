@@ -52,7 +52,8 @@ public class ElasticsearchDocument implements SearchDocument {
 	public ElasticsearchDocument(SearchHit hit,
 			Function<? super String, ? extends SpatialContext> geoContextMapper)
 	{
-		this(hit.getId(), hit.getType(), hit.getIndex(), hit.getVersion(), hit.getSource(), geoContextMapper);
+		this(hit.getId(), hit.getType(), hit.getIndex(), hit.getVersion(), hit.getSourceAsMap(),
+				geoContextMapper);
 	}
 
 	public ElasticsearchDocument(String id, String type, String index, String resourceId, String context,

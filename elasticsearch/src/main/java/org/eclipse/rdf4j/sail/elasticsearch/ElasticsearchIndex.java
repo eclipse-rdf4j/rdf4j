@@ -50,12 +50,11 @@ import org.elasticsearch.common.collect.ImmutableOpenMap;
 import org.elasticsearch.common.geo.GeoPoint;
 import org.elasticsearch.common.geo.ShapeRelation;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.InetSocketTransportAddress;
-import org.elasticsearch.common.transport.LocalTransportAddress;
 import org.elasticsearch.common.transport.TransportAddress;
 import org.elasticsearch.common.unit.DistanceUnit;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
+import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.GeoShapeQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
@@ -222,7 +221,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 			TransportAddress addr;
 			if (addrStr.startsWith("local[")) {
 				String id = addrStr.substring("local[".length(), addrStr.length() - 1);
-				addr = new LocalTransportAddress(id);
+				//addr = new LocalTransportAddress(id);
+				throw new UnsupportedOperationException("Local Transport Address no longer supported");
 			}
 			else {
 				String host;
@@ -235,7 +235,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 				else {
 					port = 9300;
 				}
-				addr = new InetSocketTransportAddress(InetAddress.getByName(host), port);
+				addr = new TransportAddress(InetAddress.getByName(host), port);
 			}
 			client.addTransportAddress(addr);
 		}
@@ -314,23 +314,22 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 								analyzer).endObject().endObject().endObject().endObject().string();
 
 		doAcknowledgedRequest(client.admin().indices().prepareCreate(indexName).setSettings(
-				Settings.builder().loadFromSource(settings)));
+				Settings.builder().loadFromSource(settings, XContentType.JSON)));
 
 		// use _source instead of explicit stored = true
 		XContentBuilder typeMapping = XContentFactory.jsonBuilder();
-		typeMapping.startObject().startObject(documentType).startObject("_all").field("enabled",
-				false).endObject().startObject("properties");
-		typeMapping.startObject(SearchFields.CONTEXT_FIELD_NAME).field("type", "string").field("index",
-				"not_analyzed").endObject();
-		typeMapping.startObject(SearchFields.URI_FIELD_NAME).field("type", "string").field("index",
-				"not_analyzed").endObject();
-		typeMapping.startObject(SearchFields.TEXT_FIELD_NAME).field("type", "string").field("index",
-				"analyzed").endObject();
+		typeMapping.startObject().startObject(documentType).startObject("properties");
+		typeMapping.startObject(SearchFields.CONTEXT_FIELD_NAME).field("type", "keyword").field("index",
+				true).field("copy_to", "_all").endObject();
+		typeMapping.startObject(SearchFields.URI_FIELD_NAME).field("type", "keyword").field("index",
+				true).field("copy_to", "_all").endObject();
+		typeMapping.startObject(SearchFields.TEXT_FIELD_NAME).field("type", "text").field("index",
+				true).field("copy_to", "_all").endObject();
 		for (String wktField : wktFields) {
 			typeMapping.startObject(toGeoPointFieldName(wktField)).field("type", "geo_point").endObject();
 			if (supportsShapes(wktField)) {
 				typeMapping.startObject(toGeoShapeFieldName(wktField)).field("type",
-						"geo_shape").endObject();
+						"geo_shape").field("copy_to", "_all").endObject();
 			}
 		}
 		typeMapping.endObject().endObject().endObject();
