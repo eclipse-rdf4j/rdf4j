@@ -87,6 +87,7 @@ public class MemoryStoreConnection extends SailSourceConnection {
 		sailChangedEvent.setStatementsAdded(true);
 	}
 
+	@Override
 	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException
 	{
@@ -103,6 +104,7 @@ public class MemoryStoreConnection extends SailSourceConnection {
 		sailChangedEvent.setStatementsRemoved(true);
 	}
 
+	@Override
 	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException
 	{
@@ -119,10 +121,15 @@ public class MemoryStoreConnection extends SailSourceConnection {
 		sailChangedEvent.setStatementsRemoved(true);
 	}
 
+	@Override
 	public void clearInferred(Resource... contexts)
 		throws SailException
 	{
 		super.clearInferred(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
+	}
+
+	public MemoryStore getSail() {
+		return sail;
 	}
 }

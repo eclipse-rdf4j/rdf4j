@@ -8,6 +8,9 @@
 package org.eclipse.rdf4j.repository.sail.nativerdf;
 
 import org.eclipse.rdf4j.repository.OptimisticIsolationTest;
+import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
+import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
+import org.eclipse.rdf4j.repository.sail.config.SailRepositoryFactory;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreFactory;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -18,13 +21,18 @@ public class NativeOptimisticIsolationTest extends OptimisticIsolationTest {
 	public static void setUpClass()
 		throws Exception
 	{
-		setSailFactory(new NativeStoreFactory());
+		setRepositoryFactory(new SailRepositoryFactory() {
+			@Override
+			public RepositoryImplConfig getConfig() {
+				return new SailRepositoryConfig(new NativeStoreFactory().getConfig());
+			}
+		});
 	}
 
 	@AfterClass
 	public static void tearDown()
 		throws Exception
 	{
-		setSailFactory(null);
+		setRepositoryFactory(null);
 	}
 }

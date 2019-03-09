@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 
@@ -79,5 +80,19 @@ public class MockInputPlanNode implements PlanNode {
 		return 0;
 	}
 
+	@Override
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+
+	}
+
+	@Override
+	public String getId() {
+		return System.identityHashCode(this)+"";
+	}
+
+	@Override
+	public IteratorData getIteratorDataType() {
+		return IteratorData.tripleBased;
+	}
 
 }

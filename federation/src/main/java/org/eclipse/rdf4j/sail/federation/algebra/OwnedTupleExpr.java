@@ -88,6 +88,7 @@ public class OwnedTupleExpr extends UnaryTupleOperator {
 		return rval;
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

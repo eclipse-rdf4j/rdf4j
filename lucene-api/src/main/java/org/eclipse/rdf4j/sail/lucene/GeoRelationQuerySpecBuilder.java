@@ -45,7 +45,7 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 
 		tupleExpr.visit(new AbstractQueryModelVisitor<SailException>() {
 
-			final Map<String, GeoRelationQuerySpec> specs = new HashMap<String, GeoRelationQuerySpec>();
+			final Map<String, GeoRelationQuerySpec> specs = new HashMap<>();
 
 			@Override
 			public void meet(FunctionCall f)

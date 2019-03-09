@@ -85,6 +85,7 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	 *--------------*/
 
 	// implements LookAheadIteration.getNextElement()
+	@Override
 	protected boolean accept(BindingSet object)
 		throws X
 	{
@@ -128,13 +129,13 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	protected Set<BindingSet> makeSet()
 		throws X
 	{
-		return new LinkedHashSet<BindingSet>();
+		return new LinkedHashSet<>();
 	}
 
 	protected Set<String> makeSet(Set<String> set)
 		throws X
 	{
-		return new HashSet<String>(set);
+		return new HashSet<>(set);
 	}
 
 	protected Set<BindingSet> makeSet(Iteration<BindingSet, X> rightArg2)

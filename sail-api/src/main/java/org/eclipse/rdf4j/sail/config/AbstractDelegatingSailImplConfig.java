@@ -45,6 +45,7 @@ public abstract class AbstractDelegatingSailImplConfig extends AbstractSailImplC
 		setDelegate(delegate);
 	}
 
+	@Override
 	public SailImplConfig getDelegate() {
 		return delegate;
 	}

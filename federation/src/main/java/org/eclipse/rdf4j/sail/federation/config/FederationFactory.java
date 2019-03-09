@@ -35,14 +35,17 @@ public class FederationFactory implements SailFactory {
 	/**
 	 * Returns the Sail's type: <tt>openrdf:Federation</tt>.
 	 */
+	@Override
 	public String getSailType() {
 		return SAIL_TYPE;
 	}
 
+	@Override
 	public SailImplConfig getConfig() {
 		return new FederationConfig();
 	}
 
+	@Override
 	public Sail getSail(SailImplConfig config)
 		throws SailConfigException
 	{

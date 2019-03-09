@@ -65,6 +65,7 @@ public class OrderIteratorTest extends TestCase {
 
 	class SizeComparator implements Comparator<BindingSet> {
 
+		@Override
 		public int compare(BindingSet o1, BindingSet o2) {
 			return Integer.valueOf(o1.size()).compareTo(Integer.valueOf(o2.size()));
 		}
@@ -81,26 +82,32 @@ public class OrderIteratorTest extends TestCase {
 			this.size = size;
 		}
 
+		@Override
 		public Binding getBinding(String bindingName) {
 			throw new UnsupportedOperationException();
 		}
 
+		@Override
 		public Set<String> getBindingNames() {
 			throw new UnsupportedOperationException();
 		}
 
+		@Override
 		public Value getValue(String bindingName) {
 			throw new UnsupportedOperationException();
 		}
 
+		@Override
 		public boolean hasBinding(String bindingName) {
 			throw new UnsupportedOperationException();
 		}
 
+		@Override
 		public Iterator<Binding> iterator() {
 			throw new UnsupportedOperationException();
 		}
 
+		@Override
 		public int size() {
 			return size;
 		}
@@ -183,7 +190,7 @@ public class OrderIteratorTest extends TestCase {
 	public void testSorting()
 		throws Exception
 	{
-		List<BindingSet> sorted = new ArrayList<BindingSet>(list);
+		List<BindingSet> sorted = new ArrayList<>(list);
 		Collections.sort(sorted, cmp);
 		for (BindingSet b : sorted) {
 			assertEquals(b, order.next());

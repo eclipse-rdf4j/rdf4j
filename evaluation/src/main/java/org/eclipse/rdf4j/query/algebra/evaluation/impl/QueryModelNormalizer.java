@@ -46,6 +46,7 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 	public QueryModelNormalizer() {
 	}
 
+	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(this);
 	}
@@ -282,7 +283,7 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 
 		private QueryModelNode nodeToIgnore;
 
-		private final Set<String> bindingNames = new HashSet<String>();
+		private final Set<String> bindingNames = new HashSet<>();
 
 		public void setNodeToIgnore(QueryModelNode node) {
 			this.nodeToIgnore = node;

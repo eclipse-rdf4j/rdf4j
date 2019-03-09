@@ -334,7 +334,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		if (closed.get()) {
 			throw new SailException("Index has been closed");
 		}
-		if (indexWriter == null) {
+		if (indexWriter == null || !indexWriter.isOpen()) {
 			IndexWriterConfig indexWriterConfig = getIndexWriterConfig();
 			indexWriter = new IndexWriter(directory, indexWriterConfig);
 		}
@@ -521,7 +521,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	private List<Document> getDocuments(Term uriTerm)
 		throws IOException
 	{
-		List<Document> result = new ArrayList<Document>();
+		List<Document> result = new ArrayList<>();
 
 		IndexReader reader = getIndexReader();
 		List<LeafReaderContext> leaves = reader.leaves();
@@ -677,7 +677,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 				Document doc;
 				int totalFields = 0;
 
-				Set<String> ids = new HashSet<String>();
+				Set<String> ids = new HashSet<>();
 				String[] idArray;
 				int count = 0;
 				for (int i = 0; i < reader.maxDoc(); i++) {

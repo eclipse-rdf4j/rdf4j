@@ -108,7 +108,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 					FunctionRegistry.getInstance());
 			Map<IRI, Argument> funcArgs = parser.parseArguments(func, qpTripleSource);
 			List<IRI> funcArgList = SpinParser.orderArguments(funcArgs.keySet());
-			final Map<IRI, Value> argValues = new HashMap<IRI, Value>(funcArgList.size());
+			final Map<IRI, Value> argValues = new HashMap<>(funcArgList.size());
 			for (int i = 0; i < funcArgList.size(); i++) {
 				IRI argName = funcArgList.get(i);
 				Argument funcArg = funcArgs.get(argName);
@@ -148,12 +148,12 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 						if (pred != null) {
 							Value v = argValues.get(pred);
 							if (v != null && (obj == null || v.equals(obj))) {
-								return new SingletonIteration<Statement, QueryEvaluationException>(
+								return new SingletonIteration<>(
 										vf.createStatement(subj, pred, v));
 							}
 						}
 
-						return new EmptyIteration<Statement, QueryEvaluationException>();
+						return new EmptyIteration<>();
 					}
 					else {
 						return qpTripleSource.getStatements(subj, pred, obj, contexts);
@@ -226,9 +226,8 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 				}
 			};
 
-			CloseableIteration<? extends Resource, QueryEvaluationException> iter = TripleSources.getObjectResources(
-					func, SPIN.CONSTRAINT_PROPERTY, qpTripleSource);
-			try {
+			try (CloseableIteration<? extends Resource, QueryEvaluationException> iter = TripleSources.getObjectResources(
+				func, SPIN.CONSTRAINT_PROPERTY, qpTripleSource)) {
 				while (iter.hasNext()) {
 					Resource constraint = iter.next();
 					Set<IRI> constraintTypes = Iterations.asSet(
@@ -242,9 +241,6 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 						}
 					}
 				}
-			}
-			finally {
-				iter.close();
 			}
 		}
 		catch (RDF4JException e) {

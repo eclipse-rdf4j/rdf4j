@@ -88,23 +88,19 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 			Collection<? extends RepositoryConnection> members)
 		throws RepositoryException
 	{
-		Map<Resource, List<RepositoryConnection>> contextToMemberMap = new HashMap<Resource, List<RepositoryConnection>>(
+		Map<Resource, List<RepositoryConnection>> contextToMemberMap = new HashMap<>(
 				members.size() + 1);
 		for (RepositoryConnection member : members) {
-			RepositoryResult<Resource> res = member.getContextIDs();
-			try {
+			try (RepositoryResult<Resource> res = member.getContextIDs()) {
 				while (res.hasNext()) {
 					Resource ctx = res.next();
 					List<RepositoryConnection> contextMembers = contextToMemberMap.get(ctx);
 					if (contextMembers == null) {
-						contextMembers = new ArrayList<RepositoryConnection>();
+						contextMembers = new ArrayList<>();
 						contextToMemberMap.put(ctx, contextMembers);
 					}
 					contextMembers.add(member);
 				}
-			}
-			finally {
-				res.close();
 			}
 		}
 		return contextToMemberMap;
@@ -140,15 +136,15 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 		throws RepositoryException
 	{
 		super.meetOther(node);
-		List<Owned<NaryJoin>> ows = new ArrayList<Owned<NaryJoin>>();
-		List<LocalJoin> vars = new ArrayList<LocalJoin>();
+		List<Owned<NaryJoin>> ows = new ArrayList<>();
+		List<LocalJoin> vars = new ArrayList<>();
 		for (TupleExpr arg : node.getArgs()) {
 			RepositoryConnection member = getSingleOwner(arg);
 			if ((!ows.isEmpty()) && ows.get(ows.size() - 1).getOwner() == member) {
 				ows.get(ows.size() - 1).getOperation().addArg(arg.clone());
 			}
 			else {
-				ows.add(new Owned<NaryJoin>(member, new NaryJoin(arg.clone()))); // NOPMD
+				ows.add(new Owned<>(member, new NaryJoin(arg.clone()))); // NOPMD
 			}
 		}
 		for (TupleExpr arg : node.getArgs()) {
@@ -183,7 +179,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 		throws RepositoryException
 	{
 		super.meet(node);
-		List<Owned<TupleExpr>> ows = new ArrayList<Owned<TupleExpr>>();
+		List<Owned<TupleExpr>> ows = new ArrayList<>();
 		for (TupleExpr arg : new TupleExpr[] {
 				node.getLeftArg(), // NOPMD
 				node.getRightArg() })
@@ -196,7 +192,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 				ows.get(idx).setOperation(union);
 			}
 			else {
-				ows.add(new Owned<TupleExpr>(member, arg.clone())); // NOPMD
+				ows.add(new Owned<>(member, arg.clone())); // NOPMD
 			}
 		}
 		addOwners(node, ows);
@@ -344,14 +340,14 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 			if (contextToMemberMap == null) {
 				contextToMemberMap = createContextToMemberMap(members);
 			}
-			Set<RepositoryConnection> results = new HashSet<RepositoryConnection>();
+			Set<RepositoryConnection> results = new HashSet<>();
 			Collection<Resource> explicitContexts;
 			if (ctx.length > 0) {
 				explicitContexts = Arrays.asList(ctx);
 			}
 			else if (dataset != null) {
 				// all graphs
-				explicitContexts = new ArrayList<Resource>();
+				explicitContexts = new ArrayList<>();
 				explicitContexts.addAll(dataset.getDefaultGraphs());
 				explicitContexts.addAll(dataset.getNamedGraphs());
 			}
@@ -760,7 +756,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	}
 
 	private List<TupleExpr> getUnionArgs(TupleExpr union) {
-		return getUnionArgs(union, new ArrayList<TupleExpr>());
+		return getUnionArgs(union, new ArrayList<>());
 	}
 
 	private List<TupleExpr> getUnionArgs(TupleExpr union, List<TupleExpr> list) {

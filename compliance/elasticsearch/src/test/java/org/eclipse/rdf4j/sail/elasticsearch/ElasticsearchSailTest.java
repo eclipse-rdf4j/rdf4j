@@ -22,6 +22,7 @@ import org.elasticsearch.test.ESIntegTestCase;
 import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 @ClusterScope(numDataNodes = 1)
@@ -30,6 +31,7 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 	AbstractLuceneSailTest delegateTest;
 
 	@Before
+	@Override
 	public void setUp()
 		throws Exception
 	{
@@ -64,6 +66,7 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 	}
 
 	@After
+	@Override
 	public void tearDown()
 		throws Exception
 	{

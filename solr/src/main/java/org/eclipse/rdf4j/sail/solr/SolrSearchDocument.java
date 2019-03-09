@@ -114,7 +114,7 @@ public class SolrSearchDocument implements SearchDocument {
 	private static List<String> makeModifiable(List<String> l) {
 		List<String> modList;
 		if (!(l instanceof ArrayList<?>)) {
-			modList = new ArrayList<String>(l.size() + 1);
+			modList = new ArrayList<>(l.size() + 1);
 			modList.addAll(l);
 		}
 		else {

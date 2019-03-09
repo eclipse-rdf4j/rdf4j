@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.rio.Rio;
  */
 public class DatasetRepository extends RepositoryWrapper {
 
-	private Map<URL, Long> lastModified = new ConcurrentHashMap<URL, Long>();
+	private Map<URL, Long> lastModified = new ConcurrentHashMap<>();
 
 	public DatasetRepository() {
 		super();
@@ -118,8 +118,7 @@ public class DatasetRepository extends RepositoryWrapper {
 		RDFFormat format = Rio.getParserFormatForMIMEType(mimeType).orElse(
 				Rio.getParserFormatForFileName(url.getPath()).orElseThrow(Rio.unsupportedFormat(mimeType)));
 
-		InputStream stream = urlCon.getInputStream();
-		try {
+		try (InputStream stream = urlCon.getInputStream()) {
 			RepositoryConnection repCon = super.getConnection();
 			try {
 				repCon.setParserConfig(config);
@@ -132,9 +131,6 @@ public class DatasetRepository extends RepositoryWrapper {
 			finally {
 				repCon.close();
 			}
-		}
-		finally {
-			stream.close();
 		}
 	}
 }

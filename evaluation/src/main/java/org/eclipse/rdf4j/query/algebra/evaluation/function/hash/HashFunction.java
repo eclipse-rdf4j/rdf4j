@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function.hash;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
@@ -34,7 +35,7 @@ public abstract class HashFunction implements Function {
 	 */
 	protected String hash(String text, String algorithm)
 			throws NoSuchAlgorithmException {
-		byte[] hash = MessageDigest.getInstance(algorithm).digest(text.getBytes());
+		byte[] hash = MessageDigest.getInstance(algorithm).digest(text.getBytes(StandardCharsets.UTF_8));
 		BigInteger bi = new BigInteger(1, hash);
 
 		return String.format("%0" + hash.length * 2 + "x", bi);

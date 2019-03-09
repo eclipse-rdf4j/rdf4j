@@ -23,6 +23,7 @@ public interface NotifyingSail extends Sail {
 	 * @throws SailException
 	 *         If no transaction could be started, for example because the Sail is not writable.
 	 */
+	@Override
 	public NotifyingSailConnection getConnection()
 		throws SailException;
 

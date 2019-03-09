@@ -30,6 +30,8 @@ public class TupleHelper {
 		Tuple tuple = new Tuple(newLine);
 		tuple.addHistory(left);
 		tuple.addHistory(right);
+		tuple.addAllCausedByPropertyShape(left.getCausedByPropertyShapes());
+		tuple.addAllCausedByPropertyShape(right.getCausedByPropertyShapes());
 		return tuple;
 
 	}

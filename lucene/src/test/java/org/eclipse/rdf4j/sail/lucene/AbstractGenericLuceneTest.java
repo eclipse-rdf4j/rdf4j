@@ -19,6 +19,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -38,6 +39,8 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
@@ -50,6 +53,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
@@ -361,7 +365,7 @@ public abstract class AbstractGenericLuceneTest {
 
 			// the first result is subject 1 and has a score
 			int results = 0;
-			Set<IRI> expectedSubject = new HashSet<IRI>();
+			Set<IRI> expectedSubject = new HashSet<>();
 			expectedSubject.add(SUBJECT_1);
 			expectedSubject.add(SUBJECT_2);
 			while (result.hasNext()) {
@@ -428,7 +432,7 @@ public abstract class AbstractGenericLuceneTest {
 
 			// the first result is subject 1 and has a score
 			int results = 0;
-			Set<String> expectedSnippetPart = new HashSet<String>();
+			Set<String> expectedSnippetPart = new HashSet<>();
 			expectedSnippetPart.add("come");
 			expectedSnippetPart.add("unicorn");
 			String notexpected = "poor";
@@ -507,7 +511,7 @@ public abstract class AbstractGenericLuceneTest {
 
 			// the first result is subject 1 and has a score
 			int results = 0;
-			Set<String> expectedSnippetPart = new HashSet<String>();
+			Set<String> expectedSnippetPart = new HashSet<>();
 			expectedSnippetPart.add("come");
 			expectedSnippetPart.add("unicorn");
 			expectedSnippetPart.add("poor");
@@ -737,7 +741,7 @@ public abstract class AbstractGenericLuceneTest {
 
 			// the first result is subject 1 and has a score
 			int results = 0;
-			Set<IRI> expectedSubject = new HashSet<IRI>();
+			Set<IRI> expectedSubject = new HashSet<>();
 			expectedSubject.add(SUBJECT_1);
 			expectedSubject.add(SUBJECT_2);
 			expectedSubject.add(SUBJECT_3);
@@ -788,7 +792,7 @@ public abstract class AbstractGenericLuceneTest {
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
 		try (TupleQueryResult result = query.evaluate()) {
 			int results = 0;
-			Map<IRI, IRI> expectedSubject = new HashMap<IRI, IRI>();
+			Map<IRI, IRI> expectedSubject = new HashMap<>();
 			expectedSubject.put(SUBJECT_1, PREDICATE_1);
 			expectedSubject.put(SUBJECT_2, PREDICATE_1);
 			expectedSubject.put(SUBJECT_3, PREDICATE_2);
@@ -847,6 +851,23 @@ public abstract class AbstractGenericLuceneTest {
 		}
 		assertEquals("Exceptions occurred during testMultithreadedAdd, see stacktraces above", 0,
 				exceptions.size());
+	}
+
+	@Test
+	public void testIndexWriterState() throws Exception {
+		final String brokenTrig = "{ broken }";
+		RepositoryConnection conn = repository.getConnection();
+		try (StringReader sr = new StringReader(brokenTrig)) {
+			conn.add(sr, "http://example.org/", RDFFormat.TRIG);
+		} catch (Exception e) {
+			// expected parse exception
+			LOG.debug("Parse exception: {}", e.getMessage());
+		}
+		conn.close();
+		conn = repository.getConnection();
+		conn.clear();	// make sure this can be executed multiple times
+		conn.add(FOAF.PERSON, RDFS.LABEL, SimpleValueFactory.getInstance().createLiteral("abc"));
+		conn.close();
 	}
 
 	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri)

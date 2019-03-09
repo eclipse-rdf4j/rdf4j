@@ -84,17 +84,17 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 */
 	protected final ReentrantLock updateLock = new ReentrantLock();
 
-	private final Map<SailBaseIteration, Throwable> activeIterations = new IdentityHashMap<SailBaseIteration, Throwable>();
+	private final Map<SailBaseIteration, Throwable> activeIterations = new IdentityHashMap<>();
 
 	/**
 	 * Statements that are currently being removed, but not yet realized, by an active operation.
 	 */
-	private final Map<UpdateContext, Collection<Statement>> removed = new HashMap<UpdateContext, Collection<Statement>>();
+	private final Map<UpdateContext, Collection<Statement>> removed = new HashMap<>();
 
 	/**
 	 * Statements that are currently being added, but not yet realized, by an active operation.
 	 */
-	private final Map<UpdateContext, Collection<Statement>> added = new HashMap<UpdateContext, Collection<Statement>>();
+	private final Map<UpdateContext, Collection<Statement>> added = new HashMap<>();
 
 	/**
 	 * Used to indicate a removed statement from all contexts.
@@ -252,6 +252,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
+	@Override
 	public final CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(
 			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred)
 		throws SailException
@@ -513,12 +514,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 		synchronized (removed) {
 			assert !removed.containsKey(op);
-			removed.put(op, new LinkedList<Statement>());
+			removed.put(op, new LinkedList<>());
 		}
 
 		synchronized (added) {
 			assert !added.containsKey(op);
-			added.put(op, new LinkedList<Statement>());
+			added.put(op, new LinkedList<>());
 		}
 	}
 
@@ -798,7 +799,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	protected <T, E extends Exception> CloseableIteration<T, E> registerIteration(
 			CloseableIteration<T, E> iter)
 	{
-		SailBaseIteration<T, E> result = new SailBaseIteration<T, E>(iter, this);
+		SailBaseIteration<T, E> result = new SailBaseIteration<>(iter, this);
 		Throwable stackTrace = debugEnabled ? new Throwable() : null;
 		synchronized (activeIterations) {
 			activeIterations.put(result, stackTrace);
@@ -886,7 +887,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			// Copy the current contents of the map so that we don't have to
 			// synchronize on activeIterations. This prevents a potential
 			// deadlock with concurrent calls to connectionClosed()
-			activeIterationsCopy = new IdentityHashMap<SailBaseIteration, Throwable>(activeIterations);
+			activeIterationsCopy = new IdentityHashMap<>(activeIterations);
 			activeIterations.clear();
 		}
 
@@ -1003,16 +1004,19 @@ public abstract class AbstractSailConnection implements SailConnection {
 		 *---------*/
 
 		// Implements Statement.getSubject()
+		@Override
 		public Resource getSubject() {
 			return subject;
 		}
 
 		// Implements Statement.getPredicate()
+		@Override
 		public IRI getPredicate() {
 			return predicate;
 		}
 
 		// Implements Statement.getObject()
+		@Override
 		public Value getObject() {
 			return object;
 		}
@@ -1050,10 +1054,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 			javaLock.lock();
 		}
 
+		@Override
 		public synchronized boolean isActive() {
 			return isActive;
 		}
 
+		@Override
 		public synchronized void release() {
 			if (isActive) {
 				javaLock.unlock();

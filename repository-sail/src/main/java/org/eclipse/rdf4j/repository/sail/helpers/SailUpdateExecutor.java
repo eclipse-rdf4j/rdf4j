@@ -187,20 +187,13 @@ public class SailUpdateExecutor {
 		if (graphValue instanceof Resource) {
 			Resource namedGraph = (Resource)graphValue;
 
-			CloseableIteration<? extends Resource, SailException> contextIDs = null;
-			try {
-				contextIDs = con.getContextIDs();
+			try (CloseableIteration<? extends Resource, SailException> contextIDs = con.getContextIDs()) {
 				while (contextIDs.hasNext()) {
 					Resource contextID = contextIDs.next();
 
 					if (namedGraph.equals(contextID)) {
 						throw new SailException("Named graph " + namedGraph + " already exists. ");
 					}
-				}
-			}
-			finally {
-				if (contextIDs != null) {
-					contextIDs.close();
 				}
 			}
 		}
@@ -516,19 +509,12 @@ public class SailUpdateExecutor {
 				whereClause = new QueryRoot(whereClause);
 			}
 
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings = null;
-			try {
-				sourceBindings = evaluateWhereClause(whereClause, uc, maxExecutionTime);
+			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings = evaluateWhereClause(whereClause, uc, maxExecutionTime)) {
 				while (sourceBindings.hasNext()) {
 					BindingSet sourceBinding = sourceBindings.next();
 					deleteBoundTriples(sourceBinding, modify.getDeleteExpr(), uc);
 
 					insertBoundTriples(sourceBinding, modify.getInsertExpr(), uc);
-				}
-			}
-			finally {
-				if (sourceBindings != null) {
-					sourceBindings.close();
 				}
 			}
 		}
@@ -585,6 +571,7 @@ public class SailUpdateExecutor {
 					sourceBindings2)
 			{
 
+				@Override
 				protected BindingSet convert(BindingSet sourceBinding)
 					throws QueryEvaluationException
 				{
@@ -600,7 +587,7 @@ public class SailUpdateExecutor {
 						// check if any supplied bindings do not occur in the
 						// bindingset
 						// produced by the WHERE clause. If so, merge.
-						Set<String> uniqueBindings = new HashSet<String>(
+						Set<String> uniqueBindings = new HashSet<>(
 								uc.getBindingSet().getBindingNames());
 						uniqueBindings.removeAll(sourceBinding.getBindingNames());
 						if (uniqueBindings.size() > 0) {

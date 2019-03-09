@@ -27,7 +27,7 @@ class MemNamespaceStore implements Iterable<SimpleNamespace> {
 	/**
 	 * Map storing namespace information by their prefix.
 	 */
-	private final Map<String, SimpleNamespace> namespacesMap = new LinkedHashMap<String, SimpleNamespace>(16);
+	private final Map<String, SimpleNamespace> namespacesMap = new LinkedHashMap<>(16);
 
 	/*---------*
 	 * Methods *
@@ -57,6 +57,7 @@ class MemNamespaceStore implements Iterable<SimpleNamespace> {
 		namespacesMap.remove(prefix);
 	}
 
+	@Override
 	public Iterator<SimpleNamespace> iterator() {
 		return namespacesMap.values().iterator();
 	}

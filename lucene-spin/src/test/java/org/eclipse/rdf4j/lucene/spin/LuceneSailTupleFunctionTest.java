@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.lucene.spin;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.MATCHES;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.QUERY;
 
-import static org.hamcrest.CoreMatchers.is;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.net.URL;
@@ -35,9 +35,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
-import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.ALL_MATCHES;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
-import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SEARCH;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Assert;
@@ -50,7 +48,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * This brings all tests for new property function -based implementation of lucene search request.
- * 
+ *
  * @see <a href="https://github.com/eclipse/rdf4j/issues/739">issue #739</a>
  */
 public class LuceneSailTupleFunctionTest {
@@ -186,12 +184,12 @@ public class LuceneSailTupleFunctionTest {
 	 * select ?pred ?score ?label where {
 	 *    ?pred search:matches[
 	 *       search:query "ornare";
-	 *       search:score ?score 
+	 *       search:score ?score
 	 *       ] .
 	 *    ?pred rdfs:label ?label .
 	 * }
 	 * </code>
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -233,16 +231,16 @@ public class LuceneSailTupleFunctionTest {
 
 	/**
 	 * #220 exmaple was reproduced with query: <code>
-	 * select ?pred ?score ?query ?label where { 
-	 *   bind(str("ornare") as ?query) . 
-	 *   ?pred search:matches [ 
-	 *        search:query ?query; 
-	 *        search:score ?score 
-	 *        ] . 
-	 *   ?pred rdfs:label ?label . 
+	 * select ?pred ?score ?query ?label where {
+	 *   bind(str("ornare") as ?query) .
+	 *   ?pred search:matches [
+	 *        search:query ?query;
+	 *        search:score ?score
+	 *        ] .
+	 *   ?pred rdfs:label ?label .
 	 * }
 	 * </code>
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -290,12 +288,12 @@ public class LuceneSailTupleFunctionTest {
 	 * } where {
 	 *    ?pred search:matches[
 	 *       search:query "ornare";
-	 *       search:score ?score 
+	 *       search:score ?score
 	 *       ] .
 	 *    ?pred rdfs:label ?label .
 	 * }
 	 * </code>
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -362,7 +360,7 @@ public class LuceneSailTupleFunctionTest {
 			printTupleResult(query);
 			try (TupleQueryResult result = query.evaluate()) {
 				int count = countTupleResults(result);
-				Assert.assertThat(count, is(2));
+				assertThat(count).isEqualTo(2);
 			}
 		}
 		catch (Exception e) {

@@ -58,7 +58,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	private TupleExpr patternNode;
 
 	/** local name to sparql name */
-	private Map<String, String> variables = new HashMap<String, String>();
+	private Map<String, String> variables = new HashMap<>();
 
 	private boolean reduce;
 
@@ -66,6 +66,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 
 	private boolean distinct;
 
+	@Override
 	public void optimize(TupleExpr query, Dataset dataset, BindingSet bindings) {
 		try {
 			query.visit(this);
@@ -119,7 +120,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 				builder.append(" REDUCED");
 			}
 			boolean mapping = false;
-			Map<String, String> bindings = new HashMap<String, String>();
+			Map<String, String> bindings = new HashMap<>();
 			ProjectionElemList list = new ProjectionElemList();
 			for (String name : patternNode.getBindingNames()) {
 				mapping = addBindingNames(builder, mapping, bindings, list, name);
@@ -245,7 +246,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 			if (patternNode == null) {
 				return;
 			}
-			Map<String, String> map = new HashMap<String, String>();
+			Map<String, String> map = new HashMap<>();
 			for (ProjectionElem e : node.getProjectionElemList().getElements()) {
 				String source = variables.get(e.getSourceName());
 				if (source == null) {
@@ -263,7 +264,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 		throws RepositoryException
 	{
 		if (node.getCondition() == null) {
-			Map<String, String> vars = new HashMap<String, String>();
+			Map<String, String> vars = new HashMap<>();
 			StringBuilder builder = new StringBuilder();
 			node.getLeftArg().visit(this);
 			if (patternNode != null) {
@@ -287,7 +288,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	public void meetMultiJoin(NaryJoin node)
 		throws RepositoryException
 	{
-		Map<String, String> vars = new HashMap<String, String>();
+		Map<String, String> vars = new HashMap<>();
 		StringBuilder builder = new StringBuilder();
 		for (TupleExpr arg : node.getArgs()) {
 			arg.visit(this);
@@ -314,7 +315,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	public void meet(Join node)
 		throws RepositoryException
 	{
-		Map<String, String> vars = new HashMap<String, String>();
+		Map<String, String> vars = new HashMap<>();
 		StringBuilder builder = new StringBuilder();
 		node.getLeftArg().visit(this);
 		if (patternNode != null) {

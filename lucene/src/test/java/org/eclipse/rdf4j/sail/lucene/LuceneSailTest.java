@@ -16,6 +16,7 @@ public class LuceneSailTest extends AbstractGenericLuceneTest {
 
 	private LuceneIndex index;
 
+	@Override
 	protected void configure(LuceneSail sail)
 		throws IOException
 	{

@@ -65,15 +65,11 @@ public class TestNativeStoreUpgrade {
 		NativeStore store = new NativeStore(dataDir);
 		try {
 			store.initialize();
-			NotifyingSailConnection con = store.getConnection();
-			try {
+			try (NotifyingSailConnection con = store.getConnection()) {
 				ValueFactory vf = store.getValueFactory();
 				con.begin();
 				con.addStatement(RDF.VALUE, RDFS.LABEL, vf.createLiteral("value"));
 				con.commit();
-			}
-			finally {
-				con.close();
 			}
 		}
 		finally {
@@ -118,8 +114,7 @@ public class TestNativeStoreUpgrade {
 		NativeStore store = new NativeStore(dataDir);
 		try {
 			store.initialize();
-			NotifyingSailConnection con = store.getConnection();
-			try {
+			try (NotifyingSailConnection con = store.getConnection()) {
 				ValueFactory vf = store.getValueFactory();
 				CloseableIteration<? extends Statement, SailException> iter;
 				iter = con.getStatements(RDF.VALUE, RDFS.LABEL, vf.createLiteral("value"), false);
@@ -130,9 +125,6 @@ public class TestNativeStoreUpgrade {
 					iter.close();
 				}
 			}
-			finally {
-				con.close();
-			}
 		}
 		finally {
 			store.shutDown();
@@ -142,8 +134,7 @@ public class TestNativeStoreUpgrade {
 	public void extractZipResource(String resource, File dir)
 		throws IOException
 	{
-		InputStream in = TestNativeStoreUpgrade.class.getResourceAsStream(resource);
-		try {
+		try (InputStream in = TestNativeStoreUpgrade.class.getResourceAsStream(resource)) {
 			ZipInputStream zip = new ZipInputStream(in);
 			ZipEntry entry;
 			while ((entry = zip.getNextEntry()) != null) {
@@ -153,9 +144,6 @@ public class TestNativeStoreUpgrade {
 				ch.transferFrom(Channels.newChannel(zip), 0, entry.getSize());
 				zip.closeEntry();
 			}
-		}
-		finally {
-			in.close();
 		}
 	}
 

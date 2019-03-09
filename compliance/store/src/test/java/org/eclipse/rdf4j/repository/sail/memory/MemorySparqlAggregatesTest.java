@@ -22,6 +22,7 @@ public class MemorySparqlAggregatesTest extends SparqlAggregatesTest {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
+	@Override
 	protected Repository newRepository() {
 		return new SailRepository(new MemoryStore());
 	}

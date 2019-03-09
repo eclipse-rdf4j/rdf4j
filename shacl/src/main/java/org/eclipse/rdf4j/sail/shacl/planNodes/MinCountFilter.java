@@ -19,8 +19,8 @@ public class MinCountFilter extends FilterPlanNode {
 
 	private final long minCount;
 
-	public MinCountFilter(PlanNode parent, PushBasedPlanNode trueNode, PushBasedPlanNode falseNode, long minCount) {
-		super(parent, trueNode, falseNode);
+	public MinCountFilter(PlanNode parent, long minCount) {
+		super(parent);
 		this.minCount = minCount;
 	}
 
@@ -30,4 +30,10 @@ public class MinCountFilter extends FilterPlanNode {
 		return literal.longValue() >= minCount;
 	}
 
+	@Override
+	public String toString() {
+		return "MinCountFilter{" +
+			"minCount=" + minCount +
+			'}';
+	}
 }

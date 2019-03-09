@@ -81,10 +81,12 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 	 * Methods *
 	 *---------*/
 
+	@Override
 	public File getDataDir() {
 		return sail.getDataDir();
 	}
 
+	@Override
 	public void setDataDir(File dataDir) {
 		sail.setDataDir(dataDir);
 	}
@@ -148,7 +150,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 		throws RepositoryException
 	{
 		try {
-			sail.initialize();
+			sail.init();
 		}
 		catch (SailLockedException e) {
 			String l = e.getLockedBy();
@@ -182,6 +184,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 		return sail;
 	}
 
+	@Override
 	public boolean isWritable()
 		throws RepositoryException
 	{
@@ -193,10 +196,12 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 		}
 	}
 
+	@Override
 	public ValueFactory getValueFactory() {
 		return sail.getValueFactory();
 	}
 
+	@Override
 	public SailRepositoryConnection getConnection()
 		throws RepositoryException
 	{
@@ -208,6 +213,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 		}
 	}
 
+	@Override
 	public String toString() {
 		return sail.toString();
 	}

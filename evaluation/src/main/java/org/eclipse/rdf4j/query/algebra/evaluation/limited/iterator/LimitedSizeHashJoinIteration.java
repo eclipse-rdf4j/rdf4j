@@ -40,6 +40,7 @@ public class LimitedSizeHashJoinIteration extends HashJoinIteration {
 		this.maxSize = maxSize;
 	}
 
+	@Override
 	protected <E> E nextFromCache(Iterator<E> iter) {
 		E v = iter.next();
 		used.decrementAndGet();
@@ -47,6 +48,7 @@ public class LimitedSizeHashJoinIteration extends HashJoinIteration {
 		return v;
 	}
 
+	@Override
 	protected <E> void add(Collection<E> col, E value)
 		throws QueryEvaluationException
 	{
@@ -55,6 +57,7 @@ public class LimitedSizeHashJoinIteration extends HashJoinIteration {
 		}
 	}
 
+	@Override
 	protected <E> void addAll(Collection<E> col, List<E> values)
 		throws QueryEvaluationException
 	{

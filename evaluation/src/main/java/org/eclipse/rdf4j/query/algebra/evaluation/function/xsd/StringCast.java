@@ -57,6 +57,7 @@ public class StringCast extends CastFunction {
 		}
 	}
 
+	@Override
 	protected Literal convert(ValueFactory valueFactory, Value value)
 		throws ValueExprEvaluationException
 	{

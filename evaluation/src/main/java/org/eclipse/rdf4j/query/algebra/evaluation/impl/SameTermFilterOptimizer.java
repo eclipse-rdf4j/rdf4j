@@ -43,6 +43,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 	/**
 	 * Applies generally applicable optimizations to the supplied query: variable assignments are inlined.
 	 */
+	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(new SameTermFilterVisitor());
 	}
@@ -202,7 +203,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 
 	protected static class BindingSetAssignmentCollector extends AbstractQueryModelVisitor<RuntimeException> {
 
-		private List<BindingSetAssignment> assignments = new ArrayList<BindingSetAssignment>();
+		private List<BindingSetAssignment> assignments = new ArrayList<>();
 
 		@Override
 		public void meet(BindingSetAssignment bsa) {

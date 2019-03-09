@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
  * The SPARQL built-in {@link Function} CONCAT, as defined in
@@ -24,10 +25,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
  */
 public class Concat implements Function {
 
+	@Override
 	public String getURI() {
 		return FN.CONCAT.toString();
 	}
 
+	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args)
 		throws ValueExprEvaluationException
 	{
@@ -36,23 +39,25 @@ public class Concat implements Function {
 		}
 
 		StringBuilder concatBuilder = new StringBuilder();
-		String languageTag = null;
-
+		String commonLanguageTag = null;
 		boolean useLanguageTag = true;
-		boolean useDatatype = true;
 
 		for (Value arg : args) {
 			if (arg instanceof Literal) {
 				Literal lit = (Literal)arg;
 
+				if (!QueryEvaluationUtil.isStringLiteral(lit)) {
+					throw new ValueExprEvaluationException("unexpected datatype for CONCAT operand: " + lit);
+				}
+				
 				// verify that every literal argument has the same language tag. If
 				// not, the operator result should not use a language tag.
 				if (useLanguageTag && Literals.isLanguageLiteral(lit)) {
-					if (languageTag == null) {
-						languageTag = lit.getLanguage().get();
+					if (commonLanguageTag == null) {
+						commonLanguageTag = lit.getLanguage().get();
 					}
-					else if (!languageTag.equals(lit.getLanguage())) {
-						languageTag = null;
+					else if (!commonLanguageTag.equals(lit.getLanguage().orElse(null))) {
+						commonLanguageTag = null;
 						useLanguageTag = false;
 					}
 				}
@@ -60,32 +65,18 @@ public class Concat implements Function {
 					useLanguageTag = false;
 				}
 
-				// check datatype: concat only expects plain, language-tagged or
-				// string-typed literals. If all arguments are of type xsd:string,
-				// the result also should be,
-				// otherwise the result will not have a datatype.
-				if (lit.getDatatype() == null) {
-					useDatatype = false;
-				}
-				else if (!lit.getDatatype().equals(XMLSchema.STRING)) {
-					throw new ValueExprEvaluationException("unexpected data type for concat operand: " + arg);
-				}
-
 				concatBuilder.append(lit.getLabel());
 			}
 			else {
 				throw new ValueExprEvaluationException(
-						"unexpected argument type for concat operator: " + arg);
+						"unexpected argument type for CONCAT operator: " + arg);
 			}
 		}
 
 		Literal result = null;
 
-		if (useDatatype) {
-			result = valueFactory.createLiteral(concatBuilder.toString(), XMLSchema.STRING);
-		}
-		else if (useLanguageTag) {
-			result = valueFactory.createLiteral(concatBuilder.toString(), languageTag);
+		if (useLanguageTag) {
+			result = valueFactory.createLiteral(concatBuilder.toString(), commonLanguageTag);
 		}
 		else {
 			result = valueFactory.createLiteral(concatBuilder.toString());

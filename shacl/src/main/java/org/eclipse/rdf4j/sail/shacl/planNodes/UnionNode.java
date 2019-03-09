@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -20,7 +22,8 @@ import java.util.stream.Collectors;
  */
 public class UnionNode implements PlanNode {
 
-	PlanNode[] nodes;
+	private PlanNode[] nodes;
+	private boolean printed = false;
 
 
 	public UnionNode(PlanNode... nodes) {
@@ -111,6 +114,37 @@ public class UnionNode implements PlanNode {
 	@Override
 	public int depth() {
 		return Arrays.stream(nodes).mapToInt(PlanNode::depth).max().orElse(0) + 1;
+
+	}
+
+	@Override
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		for (PlanNode node : nodes) {
+			stringBuilder.append(node.getId()+" -> "+getId()).append("\n");
+			node.getPlanAsGraphvizDot(stringBuilder);
+
+		}
+	}
+
+	@Override
+	public String toString() {
+		return "UnionNode";
+	}
+
+	@Override
+	public String getId() {
+		return System.identityHashCode(this)+"";
+	}
+
+	@Override
+	public IteratorData getIteratorDataType() {
+		List<IteratorData> collect = Arrays.stream(nodes).map(PlanNode::getIteratorDataType).distinct().collect(Collectors.toList());
+		if(collect.size() == 1) return collect.get(0);
+
+		throw new IllegalStateException("Not implemented support for when union node operates on nodes with different iterator data types");
 
 	}
 }

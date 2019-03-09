@@ -53,24 +53,28 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper
 		return (InferencerConnection)super.getWrappedConnection();
 	}
 
+	@Override
 	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException
 	{
 		return getWrappedConnection().addInferredStatement(subj, pred, obj, contexts);
 	}
 
+	@Override
 	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
 		throws SailException
 	{
 		return getWrappedConnection().removeInferredStatement(subj, pred, obj, contexts);
 	}
 
+	@Override
 	public void clearInferred(Resource... contexts)
 		throws SailException
 	{
 		getWrappedConnection().clearInferred(contexts);
 	}
 
+	@Override
 	public void flush()
 		throws SailException
 	{
@@ -78,6 +82,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper
 		flushUpdates();
 	}
 
+	@Override
 	public void flushUpdates()
 		throws SailException
 	{

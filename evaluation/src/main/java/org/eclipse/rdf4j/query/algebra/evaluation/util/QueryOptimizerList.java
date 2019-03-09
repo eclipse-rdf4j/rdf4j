@@ -26,15 +26,15 @@ public class QueryOptimizerList implements QueryOptimizer {
 	protected List<QueryOptimizer> optimizers;
 
 	public QueryOptimizerList() {
-		this.optimizers = new ArrayList<QueryOptimizer>(8);
+		this.optimizers = new ArrayList<>(8);
 	}
 
 	public QueryOptimizerList(List<QueryOptimizer> optimizers) {
-		this.optimizers = new ArrayList<QueryOptimizer>(optimizers);
+		this.optimizers = new ArrayList<>(optimizers);
 	}
 
 	public QueryOptimizerList(QueryOptimizer... optimizers) {
-		this.optimizers = new ArrayList<QueryOptimizer>(optimizers.length);
+		this.optimizers = new ArrayList<>(optimizers.length);
 		for (QueryOptimizer optimizer : optimizers) {
 			this.optimizers.add(optimizer);
 		}
@@ -44,6 +44,7 @@ public class QueryOptimizerList implements QueryOptimizer {
 		optimizers.add(optimizer);
 	}
 
+	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		for (QueryOptimizer optimizer : optimizers) {
 			optimizer.optimize(tupleExpr, dataset, bindings);

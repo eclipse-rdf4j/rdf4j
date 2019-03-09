@@ -24,14 +24,17 @@ public abstract class ExternalSet extends AbstractQueryModelNode implements Tupl
 
 	private static final long serialVersionUID = 3903453394409442226L;
 
+	@Override
 	public Set<String> getBindingNames() {
 		return Collections.emptySet();
 	}
 
+	@Override
 	public Set<String> getAssuredBindingNames() {
 		return Collections.emptySet();
 	}
 
+	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 		throws X
 	{

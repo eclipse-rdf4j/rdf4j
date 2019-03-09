@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class MemoryGraphQueryResultTest extends GraphQueryResultTest {
 
+	@Override
 	protected Repository newRepository() {
 		return new SailRepository(new MemoryStore());
 	}

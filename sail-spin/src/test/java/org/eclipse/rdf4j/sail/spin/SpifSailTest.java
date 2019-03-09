@@ -10,10 +10,9 @@
 package org.eclipse.rdf4j.sail.spin;
 
 import com.google.common.collect.Lists;
-import static org.hamcrest.CoreMatchers.is;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
@@ -106,9 +105,8 @@ public class SpifSailTest {
 						+ "select ?testCase ?expected ?actual where {?testCase a spl:TestCase. ?testCase spl:testResult ?expected. ?testCase spl:testExpression ?expr. "
 						+ "BIND(spin:eval(?expr) as ?actual) " + "FILTER(?expected != ?actual) "
 						+ "FILTER(strstarts(str(?testCase), 'http://spinrdf.org/spif#'))}");
-		// returns failed tests
-		TupleQueryResult tqr = tq.evaluate();
-		try {
+		try ( // returns failed tests
+			TupleQueryResult tqr = tq.evaluate()) {
 			while (tqr.hasNext()) {
 				BindingSet bs = tqr.next();
 				Value testCase = bs.getValue("testCase");
@@ -117,21 +115,14 @@ public class SpifSailTest {
 				assertEquals(testCase.stringValue(), expected, actual);
 			}
 		}
-		finally {
-			tqr.close();
-		}
 	}
 
 	private void loadRDF(String path)
 		throws IOException, OpenRDFException
 	{
 		URL url = getClass().getResource(path);
-		InputStream in = url.openStream();
-		try {
+		try (InputStream in = url.openStream()) {
 			conn.add(in, url.toString(), RDFFormat.TURTLE);
-		}
-		finally {
-			in.close();
 		}
 	}
 
@@ -214,7 +205,7 @@ public class SpifSailTest {
 		TupleQueryResult tqr = tq.evaluate();
 		for (int i = 1; i <= 3; i++) {
 			BindingSet bs = tqr.next();
-			assertThat(((Literal)bs.getValue("x")).intValue(), is(i));
+			assertThat(((Literal)bs.getValue("x")).intValue()).isEqualTo(i);
 		}
 		assertFalse(tqr.hasNext());
 	}
@@ -228,7 +219,7 @@ public class SpifSailTest {
 		TupleQueryResult tqr = tq.evaluate();
 		for (int i = 1; i <= 4; i++) {
 			BindingSet bs = tqr.next();
-			assertThat(((Literal)bs.getValue("x")).intValue(), is(i));
+			assertThat(((Literal)bs.getValue("x")).intValue()).isEqualTo(i);
 		}
 		assertFalse(tqr.hasNext());
 	}
@@ -242,7 +233,7 @@ public class SpifSailTest {
 		TupleQueryResult tqr = tq.evaluate();
 		for (int i = 1; i <= 3; i++) {
 			BindingSet bs = tqr.next();
-			assertThat(((Literal)bs.getValue("x")).stringValue(), is(Integer.toString(i)));
+			assertThat(((Literal)bs.getValue("x")).stringValue()).isEqualTo(Integer.toString(i));
 		}
 		assertFalse(tqr.hasNext());
 	}

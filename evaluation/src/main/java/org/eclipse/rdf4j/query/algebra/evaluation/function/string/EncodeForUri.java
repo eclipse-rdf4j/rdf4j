@@ -26,10 +26,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
  */
 public class EncodeForUri implements Function {
 
+	@Override
 	public String getURI() {
 		return FN.ENCODE_FOR_URI.toString();
 	}
 
+	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args)
 		throws ValueExprEvaluationException
 	{

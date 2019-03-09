@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.spin;
 
-import static org.hamcrest.CoreMatchers.isA;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
@@ -30,16 +30,11 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.ExpectedException;
 
 public class SpinSailWithoutRDFSInferencerTest {
 
 	private static final String BASE_DIR = "/testcases/";
-
-	@Rule
-	public ExpectedException constraintException = ExpectedException.none();
 
 	private Repository repo;
 
@@ -72,18 +67,16 @@ public class SpinSailWithoutRDFSInferencerTest {
 	public void testAskConstraint()
 		throws Exception
 	{
-		constraintException.expectCause(isA(ConstraintViolationException.class));
-		constraintException.expectMessage("Test constraint");
-		loadStatements("testAskConstraint.ttl");
+        assertThatThrownBy(() -> loadStatements("testAskConstraint.ttl"))
+                .hasCauseInstanceOf(ConstraintViolationException.class).hasMessageContaining("Test constraint");
 	}
 
 	@Test
 	public void testTemplateConstraint()
 		throws Exception
 	{
-		constraintException.expectCause(isA(ConstraintViolationException.class));
-		constraintException.expectMessage("Invalid number of values: 0");
-		loadStatements("testTemplateConstraint-full.ttl");
+        assertThatThrownBy(() -> loadStatements("testTemplateConstraint-full.ttl"))
+                .hasCauseInstanceOf(ConstraintViolationException.class).hasMessageContaining("Invalid number of values: 0");
 	}
 
 	@Test
@@ -177,6 +170,7 @@ public class SpinSailWithoutRDFSInferencerTest {
 	{
 		tx(new Callable<Void>() {
 
+			@Override
 			public Void call()
 				throws Exception
 			{
@@ -186,6 +180,7 @@ public class SpinSailWithoutRDFSInferencerTest {
 		});
 		tx(new Callable<Void>() {
 
+			@Override
 			public Void call()
 				throws Exception
 			{
@@ -195,6 +190,7 @@ public class SpinSailWithoutRDFSInferencerTest {
 		});
 		tx(new Callable<Void>() {
 
+			@Override
 			public Void call()
 				throws Exception
 			{
@@ -224,12 +220,8 @@ public class SpinSailWithoutRDFSInferencerTest {
 		throws RepositoryException, RDFParseException, IOException
 	{
 		URL url = getClass().getResource(BASE_DIR + ttl);
-		InputStream in = url.openStream();
-		try {
+		try (InputStream in = url.openStream()) {
 			conn.add(in, url.toString(), RDFFormat.TURTLE);
-		}
-		finally {
-			in.close();
 		}
 	}
 
@@ -240,9 +232,9 @@ public class SpinSailWithoutRDFSInferencerTest {
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 		parser.setRDFHandler(expected);
 		URL url = getClass().getResource(BASE_DIR + ttl);
-		InputStream rdfStream = url.openStream();
-		parser.parse(rdfStream, url.toString());
-		rdfStream.close();
+		try (InputStream rdfStream = url.openStream()) {
+			parser.parse(rdfStream, url.toString());
+		}
 
 		for (Statement stmt : expected.getStatements()) {
 			assertTrue("Expected statement: " + stmt, conn.hasStatement(stmt, true));

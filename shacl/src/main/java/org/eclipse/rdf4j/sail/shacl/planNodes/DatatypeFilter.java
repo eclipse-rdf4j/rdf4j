@@ -19,8 +19,8 @@ public class DatatypeFilter extends FilterPlanNode {
 
 	private final Resource datatype;
 
-	public DatatypeFilter(PlanNode parent, PushBasedPlanNode trueNode, PushBasedPlanNode falseNode, Resource datatype) {
-		super(parent, trueNode, falseNode);
+	public DatatypeFilter(PlanNode parent, Resource datatype) {
+		super(parent);
 		this.datatype = datatype;
 	}
 
@@ -32,4 +32,11 @@ public class DatatypeFilter extends FilterPlanNode {
 		return literal.getDatatype() == datatype || literal.getDatatype().equals(datatype);
 	}
 
+
+	@Override
+	public String toString() {
+		return "DatatypeFilter{" +
+			"datatype=" + datatype +
+			'}';
+	}
 }

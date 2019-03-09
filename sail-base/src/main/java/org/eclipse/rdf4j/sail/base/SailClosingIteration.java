@@ -40,6 +40,7 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	{
 		return new SailClosingIteration<E, SailException>(iter, closes) {
 
+			@Override
 			protected void handleSailException(SailException e)
 				throws SailException
 			{

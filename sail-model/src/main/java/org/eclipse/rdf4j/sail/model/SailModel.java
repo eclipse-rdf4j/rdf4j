@@ -64,12 +64,8 @@ public class SailModel extends AbstractModel {
 	public Set<Namespace> getNamespaces() {
 		Set<Namespace> namespaces;
 		try {
-			CloseableIteration<? extends Namespace, SailException> iter = conn.getNamespaces();
-			try {
+			try (CloseableIteration<? extends Namespace, SailException> iter = conn.getNamespaces()) {
 				namespaces = Iterations.asSet(conn.getNamespaces());
-			}
-			finally {
-				iter.close();
 			}
 		}
 		catch (SailException e) {

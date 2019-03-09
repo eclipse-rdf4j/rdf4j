@@ -13,10 +13,11 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 
+import java.util.Objects;
 import java.util.stream.Stream;
 
 /**
@@ -26,7 +27,7 @@ import java.util.stream.Stream;
  */
 public class SimplePath extends Path {
 
-	private IRI path;
+	private final IRI path;
 
 	SimplePath(Resource id, SailRepositoryConnection connection) {
 		super(id);
@@ -43,23 +44,39 @@ public class SimplePath extends Path {
 	}
 
 	@Override
-	public boolean requiresEvaluation(Repository addedStatements, Repository removedStatements) {
-		boolean requiresEvalutation;
-		try (RepositoryConnection addedStatementsConnection = addedStatements.getConnection()) {
-			requiresEvalutation = addedStatementsConnection.hasStatement(null, path, null, false);
-		}
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
 
-		try (RepositoryConnection removedStatementsConnection = removedStatements.getConnection()) {
-			requiresEvalutation |= removedStatementsConnection.hasStatement(null, path, null, false);
-		}
-
-		return requiresEvalutation;
+		return
+			addedStatements.hasStatement(null, path, null, false) ||
+				removedStatements.hasStatement(null, path, null, false);
 	}
 
 	@Override
-	public String getQuery() {
+	public String getQuery(String subjectVariable, String objectVariable, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
-		return "?a <" + path + "> ?c. ";
+		return subjectVariable + " <" + path + "> " + objectVariable + " . \n";
 
+	}
+
+	public IRI getPath() {
+		return path;
+	}
+
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		SimplePath that = (SimplePath) o;
+		return Objects.equals(path, that.path);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(path);
 	}
 }

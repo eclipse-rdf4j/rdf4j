@@ -8,6 +8,9 @@
 package org.eclipse.rdf4j.repository.sail.memory;
 
 import org.eclipse.rdf4j.repository.OptimisticIsolationTest;
+import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
+import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
+import org.eclipse.rdf4j.repository.sail.config.SailRepositoryFactory;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreFactory;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -19,13 +22,18 @@ public class MemoryOptimisticIsolationTest extends OptimisticIsolationTest {
 		throws Exception
 	{
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
-		setSailFactory(new MemoryStoreFactory());
+		setRepositoryFactory(new SailRepositoryFactory() {
+			@Override
+			public RepositoryImplConfig getConfig() {
+				return new SailRepositoryConfig(new MemoryStoreFactory().getConfig());
+			}
+		});
 	}
 
 	@AfterClass
 	public static void tearDown()
 		throws Exception
 	{
-		setSailFactory(null);
+		setRepositoryFactory(null);
 	}
 }

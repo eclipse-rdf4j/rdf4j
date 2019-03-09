@@ -83,7 +83,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 	{
 		file = new File(dataDir, FILE_NAME);
 
-		namespacesMap = new LinkedHashMap<String, SimpleNamespace>(16);
+		namespacesMap = new LinkedHashMap<>(16);
 
 		if (file.exists()) {
 			readNamespacesFromFile();
@@ -132,6 +132,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 		}
 	}
 
+	@Override
 	public Iterator<SimpleNamespace> iterator() {
 		return namespacesMap.values().iterator();
 	}
@@ -164,9 +165,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 		throws IOException
 	{
 		synchronized (file) {
-			DataOutputStream out = new DataOutputStream(new FileOutputStream(file));
-
-			try {
+			try (DataOutputStream out = new DataOutputStream(new FileOutputStream(file))) {
 				out.write(MAGIC_NUMBER);
 				out.writeByte(FILE_FORMAT_VERSION);
 
@@ -175,9 +174,6 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 					out.writeUTF(ns.getPrefix());
 				}
 			}
-			finally {
-				out.close();
-			}
 		}
 	}
 
@@ -185,9 +181,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 		throws IOException
 	{
 		synchronized (file) {
-			DataInputStream in = new DataInputStream(new FileInputStream(file));
-
-			try {
+			try (DataInputStream in = new DataInputStream(new FileInputStream(file))) {
 				byte[] magicNumber = IOUtil.readBytes(in, MAGIC_NUMBER.length);
 				if (!Arrays.equals(magicNumber, MAGIC_NUMBER)) {
 					throw new IOException("File doesn't contain compatible namespace data");
@@ -214,9 +208,6 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 						break;
 					}
 				}
-			}
-			finally {
-				in.close();
 			}
 		}
 	}

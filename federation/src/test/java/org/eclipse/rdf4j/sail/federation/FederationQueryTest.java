@@ -146,14 +146,10 @@ public class FederationQueryTest {
 	{
 		SailRepository member = new SailRepository(new MemoryStore());
 		member.initialize();
-		SailRepositoryConnection con = member.getConnection();
-		try {
+		try (SailRepositoryConnection con = member.getConnection()) {
 			String resource = "testcases/federation-member-" + memberID + ".ttl";
 			con.add(classLoader.getResource(resource), "", RDFFormat.TURTLE);
 			reference.add(classLoader.getResource(resource), "", RDFFormat.TURTLE);
-		}
-		finally {
-			con.close();
 		}
 		return member;
 	}
@@ -171,9 +167,9 @@ public class FederationQueryTest {
 			List<BindingSet> queryBindings = Iterations.asList(queryResultTable);
 			List<BindingSet> expectedBindings = Iterations.asList(expectedTable);
 
-			List<BindingSet> missingBindings = new ArrayList<BindingSet>(expectedBindings);
+			List<BindingSet> missingBindings = new ArrayList<>(expectedBindings);
 			missingBindings.removeAll(queryBindings);
-			List<BindingSet> unexpected = new ArrayList<BindingSet>(queryBindings);
+			List<BindingSet> unexpected = new ArrayList<>(queryBindings);
 			unexpected.removeAll(expectedBindings);
 			StringBuilder message = new StringBuilder(128);
 			message.append("\n============ ");

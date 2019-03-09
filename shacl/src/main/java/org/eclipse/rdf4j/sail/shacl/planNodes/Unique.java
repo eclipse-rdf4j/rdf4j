@@ -8,14 +8,18 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+
+import org.apache.commons.lang.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+
 
 /**
  * @author Håvard Ottestad
  */
 public class Unique implements PlanNode {
 	PlanNode parent;
+	private boolean printed = false;
 
 	public Unique(PlanNode parent) {
 		this.parent = parent;
@@ -87,5 +91,29 @@ public class Unique implements PlanNode {
 	@Override
 	public int depth() {
 		return parent.depth() + 1;
+	}
+
+	@Override
+	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+		if(printed) return;
+		printed = true;
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(parent.getId()+" -> "+getId()).append("\n");
+		parent.getPlanAsGraphvizDot(stringBuilder);
+	}
+
+	@Override
+	public String toString() {
+		return "Unique";
+	}
+
+	@Override
+	public String getId() {
+		return System.identityHashCode(this)+"";
+	}
+
+	@Override
+	public IteratorData getIteratorDataType() {
+		return parent.getIteratorDataType();
 	}
 }

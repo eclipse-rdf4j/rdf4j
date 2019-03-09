@@ -48,9 +48,9 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private Value startValue;
 
-	private final Queue<BNode> nodeQueue = new ArrayDeque<BNode>();
+	private final Queue<BNode> nodeQueue = new ArrayDeque<>();
 
-	private final Set<BNode> processedNodes = new HashSet<BNode>();
+	private final Set<BNode> processedNodes = new HashSet<>();
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> currentDescribeExprIter;
 
@@ -68,7 +68,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	{
 		this.strategy = strategy;
 		this.sourceIter = sourceIter;
-		this.describeExprNames = new ArrayList<String>(describeExprNames);
+		this.describeExprNames = new ArrayList<>(describeExprNames);
 		this.parentBindings = parentBindings;
 	}
 
@@ -216,7 +216,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		throws QueryEvaluationException
 	{
 		if (subject == null && object == null) {
-			return new EmptyIteration<BindingSet, QueryEvaluationException>();
+			return new EmptyIteration<>();
 		}
 
 		Var subjVar = new Var(VARNAME_SUBJECT, subject);

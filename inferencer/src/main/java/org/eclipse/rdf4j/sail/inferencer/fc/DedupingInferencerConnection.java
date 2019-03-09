@@ -42,7 +42,7 @@ public class DedupingInferencerConnection extends InferencerConnectionWrapper {
 	}
 
 	private Set<Statement> createDedupBuffer() {
-		return Collections.newSetFromMap(new LRUMap<Statement, Boolean>(MAX_SIZE));
+		return Collections.newSetFromMap(new LRUMap<>(MAX_SIZE));
 	}
 
 	@Override

@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
-import org.eclipse.rdf4j.model.impl.TreeModelFactory;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailException;
@@ -47,18 +46,18 @@ class SailSourceBranch implements SailSource {
 	/**
 	 * The difference between this {@link SailSource} and the backing {@link SailSource}.
 	 */
-	private final LinkedList<Changeset> changes = new LinkedList<Changeset>();
+	private final LinkedList<Changeset> changes = new LinkedList<>();
 
 	/**
 	 * {@link SailSink} that have been created, but not yet {@link SailSink#flush()}ed to this
 	 * {@link SailSource}.
 	 */
-	private final Collection<Changeset> pending = new LinkedList<Changeset>();
+	private final Collection<Changeset> pending = new LinkedList<>();
 
 	/**
 	 * Set of open {@link SailDataset} for this {@link SailSource}.
 	 */
-	private final Collection<SailDataset> observers = new LinkedList<SailDataset>();
+	private final Collection<SailDataset> observers = new LinkedList<>();
 
 	/**
 	 * The underly {@link SailSource} this {@link SailSource} is derived from.
@@ -132,18 +131,26 @@ class SailSourceBranch implements SailSource {
 		semaphore.lock();
 		try {
 			try {
-				SailDataset toCloseSnapshot = snapshot;
-				snapshot = null;
-				if (toCloseSnapshot != null) {
-					toCloseSnapshot.close();
+				try {
+					SailDataset toCloseSnapshot = snapshot;
+					snapshot = null;
+					if (toCloseSnapshot != null) {
+						toCloseSnapshot.close();
+					}
+				} finally {
+					SailSink toCloseSerializable = serializable;
+					serializable = null;
+					if (toCloseSerializable != null) {
+						toCloseSerializable.close();
+					}
 				}
-			}
-			finally {
-				SailSink toCloseSerializable = serializable;
-				serializable = null;
-				if (toCloseSerializable != null) {
-					toCloseSerializable.close();
+			} finally {
+				SailSink toClosePrepared = prepared;
+				prepared = null;
+				if (toClosePrepared != null) {
+					toClosePrepared.close();
 				}
+
 			}
 		}
 		finally {
@@ -304,6 +311,7 @@ class SailSourceBranch implements SailSource {
 		}
 	}
 
+	@Override
 	public String toString() {
 		return backingSource.toString() + "\n" + changes.toString();
 	}

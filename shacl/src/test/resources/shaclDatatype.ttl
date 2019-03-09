@@ -5,9 +5,10 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/>.
 
 ex:PersonShape
-	a sh:Shape ;
+	a sh:NodeShape  ;
 	sh:targetClass rdfs:Resource ;
 	sh:property [
 		sh:path foaf:age ;

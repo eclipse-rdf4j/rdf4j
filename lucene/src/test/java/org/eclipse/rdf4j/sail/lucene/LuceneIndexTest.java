@@ -237,8 +237,8 @@ public class LuceneIndexTest {
 		throws Exception
 	{
 		// add a statement to an index
-		HashSet<Statement> added = new HashSet<Statement>();
-		HashSet<Statement> removed = new HashSet<Statement>();
+		HashSet<Statement> added = new HashSet<>();
+		HashSet<Statement> removed = new HashSet<>();
 		added.add(statement11);
 		added.add(statement12);
 		added.add(statement21);
@@ -247,10 +247,10 @@ public class LuceneIndexTest {
 		index.addRemoveStatements(added, removed);
 		index.commit();
 
-		// check that it arrived properly
-		DirectoryReader reader = DirectoryReader.open(directory);
-		assertEquals(2, reader.numDocs());
-		reader.close();
+		try ( // check that it arrived properly
+			DirectoryReader reader = DirectoryReader.open(directory)) {
+			assertEquals(2, reader.numDocs());
+		}
 
 		// check the documents
 		Document document = index.getDocuments(subject).iterator().next();
@@ -264,7 +264,7 @@ public class LuceneIndexTest {
 		assertStatement(statement22, document);
 
 		// check if the text field stores all added string values
-		Set<String> texts = new HashSet<String>();
+		Set<String> texts = new HashSet<>();
 		texts.add("cats");
 		texts.add("dogs");
 		// FIXME
@@ -318,10 +318,9 @@ public class LuceneIndexTest {
 		SailRepository repository = new SailRepository(sail);
 		repository.initialize();
 
-		// now add the statements through the repo
+		try ( // now add the statements through the repo
 		// add statements with context
-		SailRepositoryConnection connection = repository.getConnection();
-		try {
+			SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -348,9 +347,8 @@ public class LuceneIndexTest {
 			assertStatement(statementContext232);
 		}
 		finally {
-			// close repo
-			connection.close();
-			repository.shutDown();
+// close repo
+						repository.shutDown();
 		}
 	}
 
@@ -376,10 +374,9 @@ public class LuceneIndexTest {
 		SailRepository repository = new SailRepository(sail);
 		repository.initialize();
 
-		// now add the statements through the repo
+		try ( // now add the statements through the repo
 		// add statements with context
-		SailRepositoryConnection connection = repository.getConnection();
-		try {
+			SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -406,9 +403,8 @@ public class LuceneIndexTest {
 			assertNoStatement(statementContext232);
 		}
 		finally {
-			// close repo
-			connection.close();
-			repository.shutDown();
+// close repo
+						repository.shutDown();
 		}
 	}
 

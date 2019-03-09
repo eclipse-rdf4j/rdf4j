@@ -280,8 +280,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 		rulePropertyMap = parser.parseRuleProperties(tripleSource);
 		// order rules
-		Set<IRI> remainingRules = new HashSet<IRI>(rulePropertyMap.keySet());
-		List<IRI> reverseOrder = new ArrayList<IRI>(remainingRules.size());
+		Set<IRI> remainingRules = new HashSet<>(rulePropertyMap.keySet());
+		List<IRI> reverseOrder = new ArrayList<>(remainingRules.size());
 		while (!remainingRules.isEmpty()) {
 			for (Iterator<IRI> ruleIter = remainingRules.iterator(); ruleIter.hasNext();) {
 				IRI rule = ruleIter.next();
@@ -331,10 +331,9 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 			return;
 		}
 
-		classToSuperclassMap = new HashMap<IRI, Set<IRI>>();
-		CloseableIteration<? extends Statement, QueryEvaluationException> stmtIter = tripleSource.getStatements(
-				null, RDFS.SUBCLASSOF, null);
-		try {
+		classToSuperclassMap = new HashMap<>();
+		try (CloseableIteration<? extends Statement, QueryEvaluationException> stmtIter = tripleSource.getStatements(
+			null, RDFS.SUBCLASSOF, null)) {
 			while (stmtIter.hasNext()) {
 				Statement stmt = stmtIter.next();
 				if (stmt.getSubject() instanceof IRI && stmt.getObject() instanceof IRI) {
@@ -342,15 +341,12 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 					IRI superclass = (IRI)stmt.getObject();
 					Set<IRI> superclasses = getSuperclasses(cls);
 					if (superclasses == null) {
-						superclasses = new HashSet<IRI>(64);
+						superclasses = new HashSet<>(64);
 						classToSuperclassMap.put(cls, superclasses);
 					}
 					superclasses.add(superclass);
 				}
 			}
-		}
-		finally {
-			stmtIter.close();
 		}
 	}
 
@@ -392,13 +388,9 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		parser.setRDFHandler(inserter);
 		URL url = getClass().getResource(file);
 		try {
-			InputStream in = new BufferedInputStream(url.openStream());
-			try {
+			try (InputStream in = new BufferedInputStream(url.openStream())) {
 				logger.debug("loading axioms statements from {}", file);
 				parser.parse(in, url.toString());
-			}
-			finally {
-				in.close();
 			}
 		}
 		catch (IOException ioe) {
@@ -413,7 +405,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	protected void doInferencing()
 		throws SailException
 	{
-		ruleExecutions = new HashMap<Resource, Executions>();
+		ruleExecutions = new HashMap<>();
 		super.doInferencing();
 		ruleExecutions = null;
 	}
@@ -448,7 +440,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 			logger.debug("building class hierarchy for {}", res);
 			// build local class hierarchy
 			Collection<IRI> remainingClasses = getClasses(res);
-			List<IRI> classHierarchy = new ArrayList<IRI>(remainingClasses.size());
+			List<IRI> classHierarchy = new ArrayList<>(remainingClasses.size());
 			while (!remainingClasses.isEmpty()) {
 				boolean hasCycle = true;
 				for (Iterator<IRI> clsIter = remainingClasses.iterator(); clsIter.hasNext();) {
@@ -492,7 +484,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	private Collection<IRI> getClasses(Resource subj)
 		throws QueryEvaluationException
 	{
-		List<IRI> classes = new LinkedList<IRI>();
+		List<IRI> classes = new LinkedList<>();
 		CloseableIteration<? extends IRI, QueryEvaluationException> classIter = TripleSources.getObjectURIs(
 				subj, RDF.TYPE, tripleSource);
 		Iterations.addAll(classIter, classes);
@@ -503,7 +495,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		throws RDF4JException
 	{
 		int nofInferred = 0;
-		Set<Resource> constructed = new HashSet<Resource>(classHierarchy.size());
+		Set<Resource> constructed = new HashSet<>(classHierarchy.size());
 		CloseableIteration<? extends Resource, QueryEvaluationException> classIter = TripleSources.getObjectResources(
 				subj, EXECUTED, tripleSource);
 		Iterations.addAll(classIter, constructed);
@@ -529,7 +521,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	private List<Resource> getConstructorsForClass(IRI cls)
 		throws RDF4JException
 	{
-		List<Resource> constructors = new ArrayList<Resource>(2);
+		List<Resource> constructors = new ArrayList<>(2);
 		CloseableIteration<? extends Resource, QueryEvaluationException> constructorIter = TripleSources.getObjectResources(
 				cls, SPIN.CONSTRUCTOR_PROPERTY, tripleSource);
 		Iterations.addAll(constructorIter, constructors);
@@ -590,17 +582,17 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		throws QueryEvaluationException
 	{
 		// NB: preserve ruleProp order!
-		Map<IRI, List<Resource>> classRulesByProperty = new LinkedHashMap<IRI, List<Resource>>(
+		Map<IRI, List<Resource>> classRulesByProperty = new LinkedHashMap<>(
 				ruleProps.size());
 		for (IRI ruleProp : ruleProps) {
-			List<Resource> rules = new ArrayList<Resource>(2);
+			List<Resource> rules = new ArrayList<>(2);
 			CloseableIteration<? extends Resource, QueryEvaluationException> ruleIter = TripleSources.getObjectResources(
 					cls, ruleProp, tripleSource);
 			Iterations.addAll(ruleIter, rules);
 			if (!rules.isEmpty()) {
 				if (rules.size() > 1) {
 					// sort by comments
-					final Map<Resource, String> comments = new HashMap<Resource, String>(rules.size());
+					final Map<Resource, String> comments = new HashMap<>(rules.size());
 					for (Resource rule : rules) {
 						String comment = getHighestComment(rule);
 						if (comment != null) {
@@ -638,9 +630,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		throws QueryEvaluationException
 	{
 		String comment = null;
-		CloseableIteration<? extends Literal, QueryEvaluationException> iter = TripleSources.getObjectLiterals(
-				subj, RDFS.COMMENT, tripleSource);
-		try {
+		try (CloseableIteration<? extends Literal, QueryEvaluationException> iter = TripleSources.getObjectLiterals(
+			subj, RDFS.COMMENT, tripleSource)) {
 			while (iter.hasNext()) {
 				Literal l = iter.next();
 				String label = l.getLabel();
@@ -648,9 +639,6 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 					comment = label;
 				}
 			}
-		}
-		finally {
-			iter.close();
 		}
 		return comment;
 	}
@@ -720,7 +708,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	private Map<IRI, List<Resource>> getConstraintsForSubject(Resource subj, List<IRI> classHierarchy)
 		throws QueryEvaluationException
 	{
-		Map<IRI, List<Resource>> constraintsByClass = new LinkedHashMap<IRI, List<Resource>>(
+		Map<IRI, List<Resource>> constraintsByClass = new LinkedHashMap<>(
 				classHierarchy.size());
 		// check each class of subj for constraints
 		for (IRI cls : classHierarchy) {
@@ -735,7 +723,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	private List<Resource> getConstraintsForClass(Resource cls)
 		throws QueryEvaluationException
 	{
-		List<Resource> constraints = new ArrayList<Resource>(2);
+		List<Resource> constraints = new ArrayList<>(2);
 		CloseableIteration<? extends Resource, QueryEvaluationException> constraintIter = TripleSources.getObjectResources(
 				cls, SPIN.CONSTRAINT_PROPERTY, tripleSource);
 		Iterations.addAll(constraintIter, constraints);

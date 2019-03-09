@@ -146,19 +146,16 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 		}
 	}
 
+	@Override
 	public void initialize()
 		throws SailException
 	{
 		super.initialize();
 
-		InferencerConnection con = getConnection();
-		try {
+		try (InferencerConnection con = getConnection()) {
 			con.begin();
 			con.flushUpdates();
 			con.commit();
-		}
-		finally {
-			con.close();
 		}
 	}
 
@@ -181,11 +178,13 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 		}
 
 		// called by base sail
+		@Override
 		public void statementAdded(Statement st) {
 			checkUpdatedStatement(st);
 		}
 
 		// called by base sail
+		@Override
 		public void statementRemoved(Statement st) {
 			checkUpdatedStatement(st);
 		}
@@ -216,8 +215,8 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 				try {
 					// Determine which statements should be added and which should be
 					// removed
-					Collection<Statement> oldStatements = new HashSet<Statement>(256);
-					Collection<Statement> newStatements = new HashSet<Statement>(256);
+					Collection<Statement> oldStatements = new HashSet<>(256);
+					Collection<Statement> newStatements = new HashSet<>(256);
 
 					evaluateIntoStatements(DIRECT_SUBCLASSOF_MATCHER, oldStatements);
 					evaluateIntoStatements(DIRECT_SUBPROPERTYOF_MATCHER, oldStatements);
@@ -231,7 +230,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 					logger.debug("new virtual properties: {}", newStatements.size());
 
 					// Remove the statements that should be retained from both sets
-					Collection<Statement> unchangedStatements = new HashSet<Statement>(oldStatements);
+					Collection<Statement> unchangedStatements = new HashSet<>(oldStatements);
 					unchangedStatements.retainAll(newStatements);
 
 					oldStatements.removeAll(unchangedStatements);
@@ -272,10 +271,8 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 		private void evaluateIntoStatements(ParsedGraphQuery query, Collection<Statement> statements)
 			throws SailException, RDFHandlerException, QueryEvaluationException
 		{
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection().evaluate(
-					query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true);
-
-			try {
+			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection().evaluate(
+				query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
 				ValueFactory vf = getValueFactory();
 
 				while (bindingsIter.hasNext()) {
@@ -289,9 +286,6 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 						statements.add(vf.createStatement((Resource)subj, (IRI)pred, obj));
 					}
 				}
-			}
-			finally {
-				bindingsIter.close();
 			}
 		}
 	} // end inner class DirectTypeHierarchyInferencerConnection

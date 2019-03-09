@@ -17,7 +17,11 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
  * <a href="http://www.w3.org/TR/2004/REC-rdf-mt-20040210/">RDF Semantics Recommendation (10 February
  * 2004)</a>. This inferencer can be used to add RDF Schema semantics to any Sail that returns
  * {@link InferencerConnection}s from their {@link Sail#getConnection()} method.
+ * 
+ * @deprecated since 2.5. This inferencer implementation will be phased out. Consider switching to the
+ *             {@link SchemaCachingRDFSInferencer} instead.
  */
+@Deprecated
 public class ForwardChainingRDFSInferencer extends AbstractForwardChainingInferencer {
 	/*--------------*
 	 * Constructors *
@@ -57,14 +61,10 @@ public class ForwardChainingRDFSInferencer extends AbstractForwardChainingInfere
 	{
 		super.initialize();
 
-		ForwardChainingRDFSInferencerConnection con = getConnection();
-		try {
+		try (ForwardChainingRDFSInferencerConnection con = getConnection()) {
 			con.begin();
 			con.addAxiomStatements();
 			con.commit();
-		}
-		finally {
-			con.close();
 		}
 	}
 }

@@ -9,104 +9,33 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
 import java.io.IOException;
 
+import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.io.ShapeIO;
+import org.locationtech.spatial4j.io.ShapeWriter;
 import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Shape;
 import org.locationtech.spatial4j.shape.ShapeCollection;
-import org.locationtech.spatial4j.shape.impl.BufferedLineString;
 
 final class DefaultWktWriter implements WktWriter {
+	
+	private final ShapeWriter wktWriter;
 
-	private String notSupported(Shape s) {
-		throw new UnsupportedOperationException(
-				"This shape is not supported due to licensing issues. Feel free to provide your own implementation by using something like JTS: "
-						+ s.getClass().getName());
+	public DefaultWktWriter(SpatialContext context) {
+		wktWriter = context.getFormats().getWriter(ShapeIO.WKT);
 	}
 
 	@Override
 	public String toWkt(Shape shape)
 		throws IOException
 	{
-		if (shape instanceof Point) {
-			Point p = (Point)shape;
-			return "POINT " + toCoords(p);
-		}
-		else if (shape instanceof ShapeCollection<?>) {
-			ShapeCollection<?> col = (ShapeCollection<?>)shape;
-			if (col.isEmpty()) {
+		if (shape.isEmpty()) {
+			if (shape instanceof Point) {
+				return "POINT EMPTY";
+			}
+			else if (shape instanceof ShapeCollection) {
 				return "GEOMETRYCOLLECTION EMPTY";
 			}
-			Class<?> elementType = null;
-			StringBuilder buf = new StringBuilder(" (");
-			String sep = "";
-			for (Shape s : col) {
-				if (elementType == null) {
-					elementType = s.getClass();
-				}
-				else if (!elementType.equals(s.getClass())) {
-					elementType = Shape.class;
-				}
-				buf.append(sep).append(toCoords(s));
-				sep = ", ";
-			}
-			buf.append(")");
-			if (Point.class.isAssignableFrom(elementType)) {
-				buf.insert(0, "MULTIPOINT");
-			}
-			else if (elementType == Shape.class) {
-				buf.insert(0, "GEOMETRYCOLLECTION");
-			}
-			else {
-				return notSupported(shape);
-			}
-			return buf.toString();
 		}
-		else if (shape instanceof BufferedLineString) {
-			BufferedLineString ls = (BufferedLineString)shape;
-			return "LINESTRING " + toCoords(ls);
-		}
-		return notSupported(shape);
-	}
-
-	private String toCoords(Shape shape)
-		throws IOException
-	{
-		if (shape instanceof Point) {
-			Point p = (Point)shape;
-			return toCoords(p);
-		}
-		else if (shape instanceof BufferedLineString) {
-			BufferedLineString ls = (BufferedLineString)shape;
-			return toCoords(ls);
-		}
-		return notSupported(shape);
-	}
-
-	private String toCoords(Point p)
-		throws IOException
-	{
-		if (p.isEmpty()) {
-			return "EMPTY";
-		}
-		else {
-			return "(" + p.getX() + " " + p.getY() + ")";
-		}
-	}
-
-	private String toCoords(BufferedLineString shape)
-		throws IOException
-	{
-		double buffer = shape.getBuf();
-		if (buffer != 0.0) {
-			return notSupported(shape);
-		}
-		StringBuilder buf = new StringBuilder("(");
-		String sep = "";
-		for (Point p : shape.getPoints()) {
-			buf.append(sep);
-			buf.append(p.getX()).append(" ").append(p.getY());
-			sep = ", ";
-		}
-		buf.append(")");
-		return buf.toString();
+		return wktWriter.toString(shape);
 	}
 }

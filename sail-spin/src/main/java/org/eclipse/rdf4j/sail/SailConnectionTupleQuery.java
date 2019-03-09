@@ -50,7 +50,7 @@ public class SailConnectionTupleQuery extends SailConnectionQuery implements Tup
 
 			bindingsIter = enforceMaxQueryTime(bindingsIter);
 
-			return new TupleQueryResultImpl(new ArrayList<String>(tupleExpr.getBindingNames()), bindingsIter);
+			return new TupleQueryResultImpl(new ArrayList<>(tupleExpr.getBindingNames()), bindingsIter);
 		}
 		catch (SailException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
