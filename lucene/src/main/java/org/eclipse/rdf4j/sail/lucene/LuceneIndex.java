@@ -45,8 +45,7 @@ import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.PostingsEnum;
 import org.apache.lucene.index.StoredFieldVisitor;
 import org.apache.lucene.index.Term;
-import org.apache.lucene.queries.CustomScoreQuery;
-import org.apache.lucene.queries.function.FunctionQuery;
+import org.apache.lucene.queries.function.FunctionScoreQuery;
 import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.BooleanClause.Occur;
@@ -831,8 +830,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			q = addContextTerm(q, (Resource)contextVar.getValue());
 		}
 
-		TopDocs docs = search(new CustomScoreQuery(q,
-				new FunctionQuery(strategy.makeRecipDistanceValueSource(boundingCircle))));
+		TopDocs docs = search(
+				new FunctionScoreQuery(q, strategy.makeRecipDistanceValueSource(boundingCircle)));
 		final boolean requireContext = (contextVar != null && !contextVar.hasValue());
 		return Iterables.transform(Arrays.asList(docs.scoreDocs), new Function<ScoreDoc, DocumentDistance>() {
 
