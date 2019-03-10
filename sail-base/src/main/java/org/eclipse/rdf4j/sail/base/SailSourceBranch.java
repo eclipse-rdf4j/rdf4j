@@ -7,14 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.locks.ReentrantLock;
-
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -29,6 +21,14 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * An {@link SailSource} that keeps a delta of its state from a backing {@link SailSource}.
@@ -343,9 +343,9 @@ class SailSourceBranch implements SailSource {
 	void compressChanges() {
 		try {
 			semaphore.lock();
-			while(changes.size() > 1){
+			while (changes.size() > 1) {
 				Changeset pop = changes.removeLast();
-				if(!changes.peekLast().isRefback()){
+				if (changes.peekLast().isRefback()) {
 					changes.addLast(pop);
 					break;
 				}
@@ -353,15 +353,13 @@ class SailSourceBranch implements SailSource {
 				try {
 					prepare(pop, changes.getLast());
 					flush(pop, changes.getLast());
-				}
-				catch (SailException e) {
+				} catch (SailException e) {
 					// Changeset does not throw SailException
 					throw new AssertionError(e);
 				}
 			}
 
-		}
-		finally {
+		} finally {
 			semaphore.unlock();
 		}
 	}
