@@ -55,7 +55,7 @@ import org.slf4j.LoggerFactory;
  */
 public class ConstantOptimizer implements QueryOptimizer {
 
-	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+	protected static final Logger logger = LoggerFactory.getLogger(ConstantOptimizer.class);
 
 	protected final EvaluationStrategy strategy;
 

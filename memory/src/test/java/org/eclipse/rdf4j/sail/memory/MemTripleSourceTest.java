@@ -47,7 +47,7 @@ import org.slf4j.LoggerFactory;
  */
 public class MemTripleSourceTest {
 
-	private final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private static final Logger logger = LoggerFactory.getLogger(MemTripleSourceTest.class);
 
 	private MemoryStore store;
 

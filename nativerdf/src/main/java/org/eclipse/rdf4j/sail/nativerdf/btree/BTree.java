@@ -68,7 +68,7 @@ public class BTree implements Closeable {
 	 * Variables *
 	 *-----------*/
 
-	private final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private static final Logger logger = LoggerFactory.getLogger(BTree.class);
 
 	/**
 	 * The BTree file, accessed using java.nio-channels.

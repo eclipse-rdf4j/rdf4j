@@ -52,6 +52,8 @@ import org.eclipse.rdf4j.sail.UpdateContext;
 import org.eclipse.rdf4j.sail.helpers.AbstractSail;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionBase;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A {@link SailConnection} implementation that is based on an {@link SailStore} .
@@ -61,6 +63,9 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		implements InferencerConnection, FederatedServiceResolverClient
 {
+
+	private static final Logger logger = LoggerFactory.getLogger(SailSourceConnection.class);
+
 	@Override
 	public boolean pendingRemovals() {
 		return explicitSinks.values().stream().anyMatch(v -> {
