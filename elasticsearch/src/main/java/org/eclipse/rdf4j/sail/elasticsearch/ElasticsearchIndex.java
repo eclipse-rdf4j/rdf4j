@@ -76,6 +76,7 @@ import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Shape;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.elasticsearch.common.Strings;
 
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
@@ -308,13 +309,23 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	private void createIndex()
 		throws IOException
 	{
-		String settings = XContentFactory.jsonBuilder().startObject().field("index.query.default_field",
-				SearchFields.TEXT_FIELD_NAME).startObject("analysis").startObject("analyzer").startObject(
-						"default").field("type",
-								analyzer).endObject().endObject().endObject().endObject().toString();
+		try (XContentBuilder xContentBuilder = XContentFactory
+			.jsonBuilder()
+			.startObject()
+			.field("index.query.default_field", SearchFields.TEXT_FIELD_NAME)
+			.startObject("analysis")
+			.startObject("analyzer")
+			.startObject("default")
+			.field("type", analyzer)
+			.endObject()
+			.endObject()
+			.endObject()
+			.endObject()) {
 
-		doAcknowledgedRequest(client.admin().indices().prepareCreate(indexName).setSettings(
-				Settings.builder().loadFromSource(settings, XContentType.JSON)));
+			doAcknowledgedRequest(client.admin().indices().prepareCreate(indexName)
+				.setSettings(Settings.builder().loadFromSource(Strings.toString(xContentBuilder), XContentType.JSON)));
+		}
+
 
 		// use _source instead of explicit stored = true
 		XContentBuilder typeMapping = XContentFactory.jsonBuilder();
@@ -655,9 +666,9 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		double lon = p.getX();
 		final String fieldName = toGeoPointFieldName(SearchFields.getPropertyField(geoProperty));
 		QueryBuilder qb = QueryBuilders.functionScoreQuery(
-				QueryBuilders.geoDistanceQuery(fieldName).point(lat, lon).distance(unitDist, unit),
-				ScoreFunctionBuilders.linearDecayFunction(fieldName, GeohashUtils.encodeLatLon(lat, lon),
-						new DistanceUnit.Distance(unitDist, unit)));
+			QueryBuilders.geoDistanceQuery(fieldName).point(lat, lon).distance(unitDist, unit),
+			ScoreFunctionBuilders.linearDecayFunction(fieldName, GeohashUtils.encodeLatLon(lat, lon), new DistanceUnit.Distance(unitDist, unit).toString())
+		);
 		if (contextVar != null) {
 			qb = addContextTerm(qb, (Resource)contextVar.getValue());
 		}
@@ -665,14 +676,12 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		SearchRequestBuilder request = client.prepareSearch();
 		SearchHits hits = search(request, qb);
 		final GeoPoint srcPoint = new GeoPoint(lat, lon);
-		return Iterables.transform(hits, new Function<SearchHit, DocumentDistance>() {
-
-			@Override
-			public DocumentDistance apply(SearchHit hit) {
-				return new ElasticsearchDocumentDistance(hit, geoContextMapper, fieldName, units, srcPoint,
-						unit);
+		return Iterables.transform(
+			hits,
+			(Function<SearchHit, DocumentDistance>) hit -> {
+				return new ElasticsearchDocumentDistance(hit, geoContextMapper, fieldName, units, srcPoint, unit);
 			}
-		});
+		);
 	}
 
 	private QueryBuilder addContextTerm(QueryBuilder qb, Resource ctx) {
@@ -768,8 +777,6 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	/**
 	 * @param contexts
-	 * @param sail
-	 *        - the underlying native sail where to read the missing triples from after deletion
 	 * @throws SailException
 	 */
 	@Override
