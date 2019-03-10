@@ -138,8 +138,11 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 	private SailConnectionQueryPreparer queryPreparer;
 
+	private SpinSail sail;
+
 	public SpinSailConnection(SpinSail sail, InferencerConnection con) {
 		super(sail, con);
+		this.sail = sail;
 		this.evaluationMode = sail.getEvaluationMode();
 		this.axiomClosureNeeded = sail.isAxiomClosureNeeded();
 		this.functionRegistry = sail.getFunctionRegistry();
@@ -689,6 +692,10 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	private void checkConstraints(Resource subj, List<IRI> classHierarchy)
 		throws RDF4JException
 	{
+		if(sail.isInitializing()) {
+			return;
+		}
+
 		Map<IRI, List<Resource>> constraintsByClass = getConstraintsForSubject(subj, classHierarchy);
 
 		if (!constraintsByClass.isEmpty()) {
