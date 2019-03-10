@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -371,7 +372,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 	@Override
 	protected Model createModel() {
-		return new TreeModel();
+		return new LinkedHashModel();
 	}
 
 	private final static List<Statement> schemaSp;
@@ -779,14 +780,14 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 
 		@Override
 		public void statementAdded(Statement st) {
-			if (RDFS.SUBCLASSOF.equals(st.getPredicate()) && st.getObject() instanceof Resource) {
+			if (st.getObject() instanceof Resource && RDFS.SUBCLASSOF.equals(st.getPredicate())) {
 				resetClasses();
 			}
 		}
 
 		@Override
 		public void statementRemoved(Statement st) {
-			if (RDFS.SUBCLASSOF.equals(st.getPredicate())) {
+			if (st.getObject() instanceof Resource && RDFS.SUBCLASSOF.equals(st.getPredicate())) {
 				resetClasses();
 			}
 		}
