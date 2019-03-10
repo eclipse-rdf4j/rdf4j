@@ -7,9 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
@@ -46,18 +47,18 @@ class SailSourceBranch implements SailSource {
 	/**
 	 * The difference between this {@link SailSource} and the backing {@link SailSource}.
 	 */
-	private final LinkedList<Changeset> changes = new LinkedList<>();
+	private final ArrayDeque<Changeset> changes = new ArrayDeque<>();
 
 	/**
 	 * {@link SailSink} that have been created, but not yet {@link SailSink#flush()}ed to this
 	 * {@link SailSource}.
 	 */
-	private final Collection<Changeset> pending = new LinkedList<>();
+	private final Collection<Changeset> pending = new ArrayList<>();
 
 	/**
 	 * Set of open {@link SailDataset} for this {@link SailSource}.
 	 */
-	private final Collection<SailDataset> observers = new LinkedList<>();
+	private final Collection<SailDataset> observers = new ArrayList<>();
 
 	/**
 	 * The underly {@link SailSource} this {@link SailSource} is derived from.
@@ -342,9 +343,14 @@ class SailSourceBranch implements SailSource {
 	void compressChanges() {
 		try {
 			semaphore.lock();
-			while (changes.size() > 1 && !changes.get(changes.size() - 2).isRefback()) {
+			while(changes.size() > 1){
+				Changeset pop = changes.removeLast();
+				if(!changes.peekLast().isRefback()){
+					changes.addLast(pop);
+					break;
+				}
+
 				try {
-					Changeset pop = changes.removeLast();
 					prepare(pop, changes.getLast());
 					flush(pop, changes.getLast());
 				}
@@ -353,6 +359,7 @@ class SailSourceBranch implements SailSource {
 					throw new AssertionError(e);
 				}
 			}
+
 		}
 		finally {
 			semaphore.unlock();
