@@ -18,8 +18,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -350,7 +348,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 					IRI superclass = (IRI)stmt.getObject();
 					Set<IRI> superclasses = getSuperclasses(cls);
 					if (superclasses == null) {
-						superclasses = new HashSet<>(64);
+						superclasses = new HashSet<>();
 						classToSuperclassMap.put(cls, superclasses);
 					}
 					superclasses.add(superclass);
@@ -530,7 +528,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	private Collection<IRI> getClasses(Resource subj)
 		throws QueryEvaluationException
 	{
-		List<IRI> classes = new LinkedList<>();
+		List<IRI> classes = new ArrayList<>();
 		CloseableIteration<? extends IRI, QueryEvaluationException> classIter = TripleSources.getObjectURIs(
 				subj, RDF.TYPE, tripleSource);
 		Iterations.addAll(classIter, classes);
@@ -541,7 +539,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		throws RDF4JException
 	{
 		int nofInferred = 0;
-		Set<Resource> constructed = new HashSet<>(classHierarchy.size());
+		Set<Resource> constructed = new HashSet<>(classHierarchy.size()*3);
 		CloseableIteration<? extends Resource, QueryEvaluationException> classIter = TripleSources.getObjectResources(
 				subj, EXECUTED, tripleSource);
 		Iterations.addAll(classIter, constructed);
@@ -628,8 +626,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		throws QueryEvaluationException
 	{
 		// NB: preserve ruleProp order!
-		Map<IRI, List<Resource>> classRulesByProperty = new LinkedHashMap<>(
-				ruleProps.size());
+		Map<IRI, List<Resource>> classRulesByProperty = new HashMap<>(ruleProps.size()*3);
 		for (IRI ruleProp : ruleProps) {
 			List<Resource> rules = new ArrayList<>(2);
 			CloseableIteration<? extends Resource, QueryEvaluationException> ruleIter = TripleSources.getObjectResources(
@@ -638,7 +635,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 			if (!rules.isEmpty()) {
 				if (rules.size() > 1) {
 					// sort by comments
-					final Map<Resource, String> comments = new HashMap<>(rules.size());
+					final Map<Resource, String> comments = new HashMap<>(rules.size()*3);
 					for (Resource rule : rules) {
 						String comment = getHighestComment(rule);
 						if (comment != null) {
@@ -754,8 +751,8 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	private Map<IRI, List<Resource>> getConstraintsForSubject(Resource subj, List<IRI> classHierarchy)
 		throws QueryEvaluationException
 	{
-		Map<IRI, List<Resource>> constraintsByClass = new LinkedHashMap<>(
-				classHierarchy.size());
+		Map<IRI, List<Resource>> constraintsByClass = new HashMap<>(
+				classHierarchy.size()*3);
 		// check each class of subj for constraints
 		for (IRI cls : classHierarchy) {
 			List<Resource> constraints = getConstraintsForClass(cls);
