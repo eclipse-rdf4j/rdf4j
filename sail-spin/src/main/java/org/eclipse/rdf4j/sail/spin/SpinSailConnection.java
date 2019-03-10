@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.RDF4JException;
@@ -70,6 +71,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.QueryContextIteration
 import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFHandler;
+import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
@@ -371,40 +374,77 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 		return new TreeModel();
 	}
 
+	private final static List<Statement> schemaSp;
+	private final static List<Statement> schemaSpin;
+	private final static List<Statement> schemaSplSpin;
+	private final static List<Statement> schemaSpinFull;
+
+	static {
+		try {
+			schemaSp = getStatementsAsList("/schema/sp.ttl", RDFFormat.TURTLE);
+			schemaSpin = getStatementsAsList("/schema/spin.ttl", RDFFormat.TURTLE);
+			schemaSplSpin = getStatementsAsList("/schema/spl.spin.ttl", RDFFormat.TURTLE);
+			schemaSpinFull = getStatementsAsList("/schema/spin-full.ttl", RDFFormat.TURTLE);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
 	@Override
 	protected void addAxiomStatements()
 		throws SailException
 	{
-		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
+		RDFInferencerInserter inserter = new RDFInferencerInserter(this, vf);
 		if (axiomClosureNeeded) {
-			loadAxiomStatements(parser, "/schema/spin-full.ttl");
+			schemaSpinFull.forEach(inserter::handleStatement);
 		}
 		else {
-			loadAxiomStatements(parser, "/schema/sp.ttl");
-			loadAxiomStatements(parser, "/schema/spin.ttl");
-			loadAxiomStatements(parser, "/schema/spl.spin.ttl");
+
+			schemaSp.forEach(inserter::handleStatement);
+			schemaSpin.forEach(inserter::handleStatement);
+			schemaSplSpin.forEach(inserter::handleStatement);
 		}
 	}
 
-	private void loadAxiomStatements(RDFParser parser, String file)
-		throws SailException
-	{
-		RDFInferencerInserter inserter = new RDFInferencerInserter(this, vf);
-		parser.setRDFHandler(inserter);
-		URL url = getClass().getResource(file);
-		try {
-			try (InputStream in = new BufferedInputStream(url.openStream())) {
-				logger.debug("loading axioms statements from {}", file);
-				parser.parse(in, url.toString());
+	private static List<Statement> getStatementsAsList(String resourceName, RDFFormat format) throws IOException {
+		RDFParser parser = Rio.createParser(format);
+		URL url = SpinSailConnection.class.getResource(resourceName);
+
+		List<Statement> ret = new ArrayList<>();
+		parser.setRDFHandler(new RDFHandler() {
+			@Override
+			public void startRDF() throws RDFHandlerException {
+
 			}
+
+			@Override
+			public void endRDF() throws RDFHandlerException {
+
+			}
+
+			@Override
+			public void handleNamespace(String s, String s1) throws RDFHandlerException {
+
+			}
+
+			@Override
+			public void handleStatement(Statement statement) throws RDFHandlerException {
+				ret.add(statement);
+			}
+
+			@Override
+			public void handleComment(String s) throws RDFHandlerException {
+
+			}
+		});
+
+		try (InputStream in = new BufferedInputStream(url.openStream())) {
+			parser.parse(in, url.toString());
 		}
-		catch (IOException ioe) {
-			throw new SailException(ioe);
-		}
-		catch (RDF4JException e) {
-			throw new SailException(e);
-		}
+
+		return ret;
 	}
+
 
 	@Override
 	protected void doInferencing()
