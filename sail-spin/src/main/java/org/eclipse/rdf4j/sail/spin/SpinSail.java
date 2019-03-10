@@ -11,8 +11,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryContextInitializer;
@@ -138,20 +141,28 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 		return new SpinSailConnection(this, con);
 	}
 
+	private final static IRI spinrdf_sp = SimpleValueFactory.getInstance().createIRI("http://spinrdf.org/sp");
+
 	@Override
 	public void initialize()
 		throws SailException
 	{
 		super.initialize();
 
+		registerParsers();
+		loadAxioms();
+	}
+
+	private void registerParsers() {
 		SpinFunctionInterpreter.registerSpinParsingFunctions(parser, functionRegistry);
 		SpinMagicPropertyInterpreter.registerSpinParsingTupleFunctions(parser, tupleFunctionRegistry);
+	}
 
+	private void loadAxioms() {
 		try (SpinSailConnection con = getConnection()) {
-			con.begin();
-			Set<Statement> stmts = Iterations.asSet(con.getStatements(
-					getValueFactory().createIRI("http://spinrdf.org/sp"), RDF.TYPE, OWL.ONTOLOGY, true));
-			if (stmts.isEmpty()) {
+			con.begin(IsolationLevels.NONE);
+			boolean b = con.hasStatement(spinrdf_sp, RDF.TYPE, OWL.ONTOLOGY, true);
+			if (!b) {
 				con.addAxiomStatements();
 			}
 			con.commit();
