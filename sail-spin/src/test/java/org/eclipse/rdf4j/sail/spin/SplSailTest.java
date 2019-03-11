@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.inferencer.fc.DedupingInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
@@ -50,7 +51,7 @@ public class SplSailTest {
 	{
 		NotifyingSail baseSail = new MemoryStore();
 		DedupingInferencer deduper = new DedupingInferencer(baseSail);
-		ForwardChainingRDFSInferencer rdfsInferencer = new ForwardChainingRDFSInferencer(deduper);
+		SchemaCachingRDFSInferencer rdfsInferencer = new SchemaCachingRDFSInferencer(deduper);
 		SpinSail spinSail = new SpinSail(rdfsInferencer);
 		repo = new SailRepository(spinSail);
 		repo.initialize();

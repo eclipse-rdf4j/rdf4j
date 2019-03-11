@@ -65,6 +65,9 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	// If false, the inferencer will skip some RDFS rules.
 	boolean useAllRdfsRules = true;
 
+	// the SPIN sail will add inferred statements that it wants to be used for further inference.
+	protected boolean useInferredToCreateSchema;
+
 	// Schema cache
 	private final Collection<Resource> properties = new HashSet<>();
 
@@ -95,10 +98,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 	// Inferred statements can either be added to the default context
 	// or to the context that the original inserted statement has
-	// for the time being, the default behaviour will be to adde the
-	// statements to the default context.
-	// THIS BEHAVIOUR WILL BE SWITCHED ON THE NEXT MAJOR RELEASE
-	private boolean addInferredStatementsToDefaultContext = true;
+	private boolean addInferredStatementsToDefaultContext = false;
 
 	/**
 	 * Instantiate a new SchemaCachingRDFSInferencer
@@ -368,7 +368,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	void calculateInferenceMaps(SchemaCachingRDFSInferencerConnection conn) {
 		calculateSubClassOf(subClassOfStatements);
 		properties.forEach(predicate -> {
-			conn.addInferredStatement(predicate, RDF.TYPE, RDF.PROPERTY);
+			conn.addInferredStatementInternal(predicate, RDF.TYPE, RDF.PROPERTY);
 			calculatedProperties.put(predicate, new HashSet<>());
 		});
 		calculateSubPropertyOf(subPropertyOfStatements);
@@ -377,21 +377,21 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		calculateRangeDomain(domainStatements, calculatedDomain);
 
 		calculatedTypes.forEach((subClass, superClasses) -> {
-			conn.addInferredStatement(subClass, RDFS.SUBCLASSOF, subClass);
+			conn.addInferredStatementInternal(subClass, RDFS.SUBCLASSOF, subClass);
 
 			superClasses.forEach(superClass -> {
-				conn.addInferredStatement(subClass, RDFS.SUBCLASSOF, superClass);
-				conn.addInferredStatement(superClass, RDFS.SUBCLASSOF, superClass);
+				conn.addInferredStatementInternal(subClass, RDFS.SUBCLASSOF, superClass);
+				conn.addInferredStatementInternal(superClass, RDFS.SUBCLASSOF, superClass);
 
 			});
 		});
 
 		calculatedProperties.forEach((sub, sups) -> {
-			conn.addInferredStatement(sub, RDFS.SUBPROPERTYOF, sub);
+			conn.addInferredStatementInternal(sub, RDFS.SUBPROPERTYOF, sub);
 
 			sups.forEach(sup -> {
-				conn.addInferredStatement(sub, RDFS.SUBPROPERTYOF, sup);
-				conn.addInferredStatement(sup, RDFS.SUBPROPERTYOF, sup);
+				conn.addInferredStatementInternal(sub, RDFS.SUBPROPERTYOF, sup);
+				conn.addInferredStatementInternal(sup, RDFS.SUBPROPERTYOF, sup);
 
 			});
 		});
