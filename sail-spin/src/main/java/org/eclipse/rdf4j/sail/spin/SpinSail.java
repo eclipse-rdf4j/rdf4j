@@ -45,7 +45,7 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 
 	private boolean axiomClosureNeeded = true;
 
-	private boolean initializing;
+	volatile private boolean initializing;
 
 	public SpinSail() {
 		super.setFederatedServiceResolver(serviceResolver);
