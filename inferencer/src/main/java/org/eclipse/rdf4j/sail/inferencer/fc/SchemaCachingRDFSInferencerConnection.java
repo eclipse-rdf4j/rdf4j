@@ -172,7 +172,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		{
 			while (statements.hasNext()) {
 				Statement next = statements.next();
-				processForSchemaCache(next);
+				processForSchemaCache(sail.getValueFactory().createStatement(next.getSubject(), next.getPredicate(), next.getObject()));
 			}
 		}
 		sail.calculateInferenceMaps(this);

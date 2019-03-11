@@ -73,13 +73,13 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 	private final Collection<Resource> types = new HashSet<>();
 
-	private final Collection<Statement> subClassOfStatements = new ArrayList<>();
+	private final Collection<Statement> subClassOfStatements = new HashSet<>();
 
-	private final Collection<Statement> subPropertyOfStatements = new ArrayList<>();
+	private final Collection<Statement> subPropertyOfStatements = new HashSet<>();
 
-	private final Collection<Statement> rangeStatements = new ArrayList<>();
+	private final Collection<Statement> rangeStatements = new HashSet<>();
 
-	private final Collection<Statement> domainStatements = new ArrayList<>();
+	private final Collection<Statement> domainStatements = new HashSet<>();
 
 	// Forward chained schema cache as lookup tables
 	private final Map<Resource, Set<Resource>> calculatedTypes = new HashMap<>();
