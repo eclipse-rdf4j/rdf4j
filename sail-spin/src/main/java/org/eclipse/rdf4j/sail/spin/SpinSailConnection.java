@@ -85,6 +85,8 @@ import org.eclipse.rdf4j.spin.RuleProperty;
 import org.eclipse.rdf4j.spin.SpinParser;
 import org.eclipse.rdf4j.spin.function.TransientFunction;
 import org.eclipse.rdf4j.spin.function.TransientTupleFunction;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.Marker;
 import org.slf4j.MarkerFactory;
 
@@ -93,6 +95,9 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 
 class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
+
+	static private final Logger logger = LoggerFactory.getLogger(SpinSailConnection.class);
+
 
 	private static final IRI EXECUTED = SimpleValueFactory.getInstance().createIRI(
 			"http://www.openrdf.org/schema/spin#executed");

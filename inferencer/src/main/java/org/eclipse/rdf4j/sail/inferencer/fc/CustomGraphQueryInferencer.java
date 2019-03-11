@@ -46,7 +46,7 @@ import org.slf4j.LoggerFactory;
  */
 public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 
-	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private static final Logger logger = LoggerFactory.getLogger(CustomGraphQueryInferencer.class);
 
 	private ParsedGraphQuery customQuery;
 

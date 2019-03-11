@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory;
 
 public class SailConnectionUpdate extends AbstractParserUpdate {
 
-	private final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private static final Logger logger = LoggerFactory.getLogger(SailConnectionUpdate.class);
 
 	private final SailConnection con;
 

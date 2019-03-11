@@ -81,7 +81,7 @@ public abstract class AbstractSail implements Sail {
 	 * Variables *
 	 *-----------*/
 
-	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private static final Logger logger = LoggerFactory.getLogger(AbstractSail.class);
 
 	/**
 	 * Directory to store information related to this sail in (if any).

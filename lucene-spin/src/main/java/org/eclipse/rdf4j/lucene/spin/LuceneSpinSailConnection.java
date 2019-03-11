@@ -40,7 +40,7 @@ import org.eclipse.rdf4j.sail.lucene.SearchIndex;
  */
 public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 
-	private final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private static final Logger logger = LoggerFactory.getLogger(LuceneSpinSailConnection.class);
 
 	private final SearchIndex luceneIndex;
 
