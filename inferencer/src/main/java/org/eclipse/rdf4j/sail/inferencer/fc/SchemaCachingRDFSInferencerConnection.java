@@ -736,15 +736,12 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 
 	@Override
 	public void rollback()
-		throws SailException
-	{
+		throws SailException {
+
 		super.rollback();
 
-		// if the schema cache was modified
-		if (sail.schema == null && sail.getSchemaSize() != originalSchemaSize) {
-			sail.clearInferenceTables();
-			sail.rolledBackAfterModifyingSchemaCache = true;
-		}
+		sail.clearInferenceTables();
+		sail.rolledBackAfterModifyingSchemaCache = true;
 
 		statementsRemoved = false;
 
