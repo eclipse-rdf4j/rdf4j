@@ -76,6 +76,12 @@ public class SparqlTest extends AbstractCommandTest {
 		sparql.executeQuery("select ?s ?p ?o where { ?s ?p ?o }", "select");
 		verify(mockConsoleIO, never()).writeError(anyString());
 	}
+
+	@Test
+	public final void testSelectMissingBindings() throws IOException {
+		sparql.executeQuery("select ?s ?p ?o where { ?s a foaf:Organization }", "select");
+		verify(mockConsoleIO, never()).writeError(anyString());
+	}
 	
 	@Test
 	public final void testInputFile() throws IOException {

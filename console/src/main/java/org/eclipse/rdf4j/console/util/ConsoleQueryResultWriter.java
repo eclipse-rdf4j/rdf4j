@@ -125,10 +125,10 @@ public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 	@Override
 	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		StringBuilder builder = new StringBuilder(512);
-						
+
 		for (String bindingName : bindingNames) {
 			Value value = bindingSet.getValue(bindingName);
-			String valueStr = Util.getPrefixedValue(value, namespaces);
+			String valueStr = (value != null) ? Util.getPrefixedValue(value, namespaces) : "";
 			builder.append("| ").append(valueStr);
 			StringUtil.appendN(' ', columnWidth - valueStr.length(), builder);
 		}
