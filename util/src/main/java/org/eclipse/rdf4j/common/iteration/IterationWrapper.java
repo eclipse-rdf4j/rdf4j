@@ -11,10 +11,9 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.NoSuchElementException;
 
 /**
- * Abstract superclass for Iterations that wrap other Iterations. The abstract class <tt>IterationWrapper</tt>
- * itself provides default methods that forward method calls to the wrapped Iteration. Subclasses of
- * <tt>IterationWrapper</tt> should override some of these methods and may also provide additional methods and
- * fields.
+ * Abstract superclass for Iterations that wrap other Iterations. The abstract class <tt>IterationWrapper</tt> itself
+ * provides default methods that forward method calls to the wrapped Iteration. Subclasses of <tt>IterationWrapper</tt>
+ * should override some of these methods and may also provide additional methods and fields.
  */
 public class IterationWrapper<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
 
@@ -24,6 +23,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 
 	/**
 	 * The wrapped Iteration.
+	 * 
 	 * @deprecated This will be changed to private, possibly with an accessor in future. Do not rely on it.
 	 */
 	@Deprecated
@@ -36,8 +36,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	/**
 	 * Creates a new IterationWrapper that operates on the supplied Iteration.
 	 * 
-	 * @param iter
-	 *        The wrapped Iteration for this <tt>IterationWrapper</tt>, must not be <tt>null</tt>.
+	 * @param iter The wrapped Iteration for this <tt>IterationWrapper</tt>, must not be <tt>null</tt>.
 	 */
 	public IterationWrapper(Iteration<? extends E, ? extends X> iter) {
 		assert iter != null;
@@ -49,19 +48,15 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 *---------*/
 
 	/**
-	 * Checks whether the wrapped Iteration contains more elements, closing this Iteration when this is not
-	 * the case.
+	 * Checks whether the wrapped Iteration contains more elements, closing this Iteration when this is not the case.
 	 * 
 	 * @return <tt>true</tt> if the wrapped Iteration contains more elements, <tt>false</tt> otherwise.
 	 */
 	@Override
-	public boolean hasNext()
-		throws X
-	{
+	public boolean hasNext() throws X {
 		if (isClosed()) {
 			return false;
-		}
-		else if (Thread.currentThread().isInterrupted()) {
+		} else if (Thread.currentThread().isInterrupted()) {
 			close();
 			return false;
 		}
@@ -75,24 +70,19 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	/**
 	 * Returns the next element from the wrapped Iteration.
 	 * 
-	 * @throws java.util.NoSuchElementException
-	 *         If all elements have been returned or it has been closed.
+	 * @throws java.util.NoSuchElementException If all elements have been returned or it has been closed.
 	 */
 	@Override
-	public E next()
-		throws X
-	{
+	public E next() throws X {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
-		}
-		else if (Thread.currentThread().isInterrupted()) {
+		} else if (Thread.currentThread().isInterrupted()) {
 			close();
 			throw new NoSuchElementException("The iteration has been interrupted.");
 		}
 		try {
 			return wrappedIter.next();
-		}
-		catch(NoSuchElementException e) {
+		} catch (NoSuchElementException e) {
 			close();
 			throw e;
 		}
@@ -101,27 +91,22 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	/**
 	 * Removes the last element that has been returned from the wrapped Iteration.
 	 * 
-	 * @throws UnsupportedOperationException
-	 *         If the wrapped Iteration does not support the <tt>remove</tt> operation.
-	 * @throws IllegalStateException
-	 *         if the Iteration has been closed, or if {@link #next} has not yet been called, or
-	 *         {@link #remove} has already been called after the last call to {@link #next}.
+	 * @throws UnsupportedOperationException If the wrapped Iteration does not support the <tt>remove</tt> operation.
+	 * @throws IllegalStateException         if the Iteration has been closed, or if {@link #next} has not yet been
+	 *                                       called, or {@link #remove} has already been called after the last call to
+	 *                                       {@link #next}.
 	 */
 	@Override
-	public void remove()
-		throws X
-	{
+	public void remove() throws X {
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
-		}
-		else if (Thread.currentThread().isInterrupted()) {
+		} else if (Thread.currentThread().isInterrupted()) {
 			close();
 			throw new IllegalStateException("The iteration has been interrupted.");
 		}
 		try {
 			wrappedIter.remove();
-		}
-		catch(IllegalStateException e) {
+		} catch (IllegalStateException e) {
 			close();
 			throw e;
 		}
@@ -131,13 +116,10 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 * Closes this Iteration and also closes the wrapped Iteration if it is a {@link CloseableIteration}.
 	 */
 	@Override
-	protected void handleClose()
-		throws X
-	{
+	protected void handleClose() throws X {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			Iterations.closeCloseable(wrappedIter);
 		}
 	}

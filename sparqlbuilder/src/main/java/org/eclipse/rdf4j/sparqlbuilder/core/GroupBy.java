@@ -13,9 +13,7 @@ import java.util.ArrayList;
 /**
  * A SPARQL Group By clause
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#groupby">
- *      SPARQL Group By Clause</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#groupby"> SPARQL Group By Clause</a>
  */
 public class GroupBy extends StandardQueryElementCollection<Groupable> {
 	private static final String GROUP_BY = "GROUP BY";
@@ -29,13 +27,12 @@ public class GroupBy extends StandardQueryElementCollection<Groupable> {
 	/**
 	 * Add group conditions
 	 * 
-	 * @param groupables
-	 *            the group conditions
+	 * @param groupables the group conditions
 	 * @return this
 	 */
 	public GroupBy by(Groupable... groupables) {
 		addElements(groupables);
-		
+
 		return this;
 	}
 }

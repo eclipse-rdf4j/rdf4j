@@ -16,9 +16,7 @@ public class FilterIterationTest extends CloseableIterationTest {
 		return new FilterIteration<String, Exception>(createStringList1Iteration()) {
 
 			@Override
-			protected boolean accept(String object)
-				throws Exception
-			{
+			protected boolean accept(String object) throws Exception {
 				return "3".equals(object);
 			}
 

@@ -40,9 +40,7 @@ public class XMLSchemaDatatypeHandler implements DatatypeHandler {
 	}
 
 	@Override
-	public boolean verifyDatatype(String literalValue, IRI datatypeUri)
-		throws LiteralUtilException
-	{
+	public boolean verifyDatatype(String literalValue, IRI datatypeUri) throws LiteralUtilException {
 		if (isRecognizedDatatype(datatypeUri)) {
 			if (literalValue == null) {
 				throw new NullPointerException("Literal value cannot be null");
@@ -56,18 +54,15 @@ public class XMLSchemaDatatypeHandler implements DatatypeHandler {
 
 	@Override
 	public Literal normalizeDatatype(String literalValue, IRI datatypeUri, ValueFactory valueFactory)
-		throws LiteralUtilException
-	{
+			throws LiteralUtilException {
 		if (isRecognizedDatatype(datatypeUri)) {
 			if (literalValue == null) {
 				throw new NullPointerException("Literal value cannot be null");
 			}
 
 			try {
-				return valueFactory.createLiteral(XMLDatatypeUtil.normalize(literalValue, datatypeUri),
-						datatypeUri);
-			}
-			catch (IllegalArgumentException e) {
+				return valueFactory.createLiteral(XMLDatatypeUtil.normalize(literalValue, datatypeUri), datatypeUri);
+			} catch (IllegalArgumentException e) {
 				throw new LiteralUtilException("Could not normalise XMLSchema literal", e);
 			}
 		}

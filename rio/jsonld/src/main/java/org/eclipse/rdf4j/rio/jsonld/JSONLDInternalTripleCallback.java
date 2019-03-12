@@ -65,8 +65,7 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 
 	public JSONLDInternalTripleCallback(RDFHandler nextHandler, ValueFactory vf, ParserConfig parserConfig,
 			ParseErrorListener parseErrorListener, Function<String, Resource> namedBNodeCreator,
-			Supplier<Resource> anonymousBNodeCreator)
-	{
+			Supplier<Resource> anonymousBNodeCreator) {
 		this.handler = nextHandler;
 		this.vf = vf;
 		this.parserConfig = parserConfig;
@@ -87,17 +86,14 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 		// object
 		if (graph == null) {
 			result = vf.createStatement(createResource(s), vf.createIRI(p), createResource(o));
-		}
-		else {
-			result = vf.createStatement(createResource(s), vf.createIRI(p), createResource(o),
-					createResource(graph));
+		} else {
+			result = vf.createStatement(createResource(s), vf.createIRI(p), createResource(o), createResource(graph));
 		}
 
 		if (handler != null) {
 			try {
 				handler.handleStatement(result);
-			}
-			catch (final RDFHandlerException e) {
+			} catch (final RDFHandlerException e) {
 				throw new RuntimeException(e);
 			}
 		}
@@ -107,11 +103,9 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 		// Blank node without any given identifier
 		if (resource.equals("_:")) {
 			return anonymousBNodeCreator.get();
-		}
-		else if (resource.startsWith("_:")) {
+		} else if (resource.startsWith("_:")) {
 			return namedBNodeCreator.apply(resource.substring(2));
-		}
-		else {
+		} else {
 			return vf.createIRI(resource);
 		}
 	}
@@ -132,24 +126,21 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 		try {
 			object = RDFParserHelper.createLiteral(value, language, datatypeURI, getParserConfig(),
 					getParserErrorListener(), getValueFactory());
-		}
-		catch (final RDFParseException e) {
+		} catch (final RDFParseException e) {
 			throw new RuntimeException(e);
 		}
 
 		Statement result;
 		if (graph == null) {
 			result = vf.createStatement(subject, predicate, object);
-		}
-		else {
+		} else {
 			result = vf.createStatement(subject, predicate, object, createResource(graph));
 		}
 
 		if (handler != null) {
 			try {
 				handler.handleStatement(result);
-			}
-			catch (final RDFHandlerException e) {
+			} catch (final RDFHandlerException e) {
 				throw new RuntimeException(e);
 			}
 		}
@@ -167,8 +158,7 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 	}
 
 	/**
-	 * @param handler
-	 *        the handler to set
+	 * @param handler the handler to set
 	 */
 	public void setHandler(RDFHandler handler) {
 		this.handler = handler;
@@ -182,8 +172,7 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 	}
 
 	/**
-	 * @param parserConfig
-	 *        the parserConfig to set
+	 * @param parserConfig the parserConfig to set
 	 */
 	public void setParserConfig(ParserConfig parserConfig) {
 		this.parserConfig = parserConfig;
@@ -197,8 +186,7 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 	}
 
 	/**
-	 * @param vf
-	 *        the vf to set
+	 * @param vf the vf to set
 	 */
 	public void setValueFactory(ValueFactory vf) {
 		this.vf = vf;
@@ -212,8 +200,7 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 				for (final Entry<String, String> nextNamespace : dataset.getNamespaces().entrySet()) {
 					handler.handleNamespace(nextNamespace.getKey(), nextNamespace.getValue());
 				}
-			}
-			catch (final RDFHandlerException e) {
+			} catch (final RDFHandlerException e) {
 				throw new RuntimeException("Could not handle start of RDF", e);
 			}
 		}
@@ -224,21 +211,18 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 			}
 			for (final RDFDataset.Quad quad : quads) {
 				if (quad.getObject().isLiteral()) {
-					triple(quad.getSubject().getValue(), quad.getPredicate().getValue(),
-							quad.getObject().getValue(), quad.getObject().getDatatype(),
-							quad.getObject().getLanguage(), graphName);
-				}
-				else {
-					triple(quad.getSubject().getValue(), quad.getPredicate().getValue(),
-							quad.getObject().getValue(), graphName);
+					triple(quad.getSubject().getValue(), quad.getPredicate().getValue(), quad.getObject().getValue(),
+							quad.getObject().getDatatype(), quad.getObject().getLanguage(), graphName);
+				} else {
+					triple(quad.getSubject().getValue(), quad.getPredicate().getValue(), quad.getObject().getValue(),
+							graphName);
 				}
 			}
 		}
 		if (handler != null) {
 			try {
 				handler.endRDF();
-			}
-			catch (final RDFHandlerException e) {
+			} catch (final RDFHandlerException e) {
 				throw new RuntimeException("Could not handle end of RDF", e);
 			}
 		}

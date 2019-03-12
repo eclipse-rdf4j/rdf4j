@@ -14,11 +14,10 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
- * Constants for the <a href="http://www.w3.org/TR/rdf-schema/">RDF Vocabulary Description Language 1.0: RDF
- * Schema</a> (RDFS)
+ * Constants for the <a href="http://www.w3.org/TR/rdf-schema/">RDF Vocabulary Description Language 1.0: RDF Schema</a>
+ * (RDFS)
  * 
- * @see <a href="http://www.w3.org/TR/rdf-schema/">RDF Vocabulary Description Language 1.0: RDF Schema
- *      (RDFS)</a>
+ * @see <a href="http://www.w3.org/TR/rdf-schema/">RDF Vocabulary Description Language 1.0: RDF Schema (RDFS)</a>
  */
 public class RDFS {
 

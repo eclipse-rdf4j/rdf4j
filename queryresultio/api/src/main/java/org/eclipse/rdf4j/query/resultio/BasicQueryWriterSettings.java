@@ -18,8 +18,8 @@ import org.eclipse.rdf4j.rio.helpers.RioSettingImpl;
 public class BasicQueryWriterSettings {
 
 	/**
-	 * Specifies whether the writer should add the proprietary "http://www.openrdf.org/schema/qname#qname"
-	 * annotations to output.
+	 * Specifies whether the writer should add the proprietary "http://www.openrdf.org/schema/qname#qname" annotations
+	 * to output.
 	 * <p>
 	 * Defaults to false.
 	 */

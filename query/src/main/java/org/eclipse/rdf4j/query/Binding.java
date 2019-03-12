@@ -24,8 +24,8 @@ public interface Binding extends Serializable {
 	public String getName();
 
 	/**
-	 * Gets the value of the binding. The returned value is never equal to <tt>null</tt>, such a "binding" is
-	 * considered to be unbound.
+	 * Gets the value of the binding. The returned value is never equal to <tt>null</tt>, such a "binding" is considered
+	 * to be unbound.
 	 * 
 	 * @return The value of the binding, never <tt>null</tt>.
 	 */
@@ -34,10 +34,9 @@ public interface Binding extends Serializable {
 	/**
 	 * Compares a binding object to another object.
 	 * 
-	 * @param o
-	 *        The object to compare this binding to.
-	 * @return <tt>true</tt> if the other object is an instance of {@link Binding} and both their names and
-	 *         values are equal, <tt>false</tt> otherwise.
+	 * @param o The object to compare this binding to.
+	 * @return <tt>true</tt> if the other object is an instance of {@link Binding} and both their names and values are
+	 *         equal, <tt>false</tt> otherwise.
 	 */
 	@Override
 	public boolean equals(Object o);

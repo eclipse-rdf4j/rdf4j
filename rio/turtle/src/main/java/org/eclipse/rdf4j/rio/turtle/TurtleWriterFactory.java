@@ -40,9 +40,7 @@ public class TurtleWriterFactory implements RDFWriterFactory {
 	}
 
 	@Override
-	public RDFWriter getWriter(OutputStream out, String baseURI)
-		throws URISyntaxException
-	{
+	public RDFWriter getWriter(OutputStream out, String baseURI) throws URISyntaxException {
 		return new ArrangedWriter(new TurtleWriter(out, new ParsedIRI(baseURI)));
 	}
 
@@ -55,9 +53,7 @@ public class TurtleWriterFactory implements RDFWriterFactory {
 	}
 
 	@Override
-	public RDFWriter getWriter(Writer writer, String baseURI)
-		throws URISyntaxException
-	{
+	public RDFWriter getWriter(Writer writer, String baseURI) throws URISyntaxException {
 		return new ArrangedWriter(new TurtleWriter(writer, new ParsedIRI(baseURI)));
 	}
 }

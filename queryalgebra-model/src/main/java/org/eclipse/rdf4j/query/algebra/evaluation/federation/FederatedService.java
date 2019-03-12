@@ -15,8 +15,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
 
 /**
- * FederatedService to allow for customized evaluation of SERVICE expression. By default
- * {@link SPARQLFederatedService} is used.
+ * FederatedService to allow for customized evaluation of SERVICE expression. By default {@link SPARQLFederatedService}
+ * is used.
  * 
  * @author Andreas Schwarte
  * @author James Leigh
@@ -33,17 +33,13 @@ public interface FederatedService {
 	 * Expected behavior: evaluate boolean query using the bindings as constraints
 	 * </pre>
 	 * 
-	 * @param service
-	 *        the reference to the service node, contains additional meta information (vars, prefixes)
-	 * @param bindings
-	 *        the bindings serving as additional constraints
+	 * @param service  the reference to the service node, contains additional meta information (vars, prefixes)
+	 * @param bindings the bindings serving as additional constraints
 	 * @param baseUri
 	 * @return <code>true</code> if at least one result exists
-	 * @throws QueryEvaluationException
-	 *         If there was an exception generated while evaluating the query.
+	 * @throws QueryEvaluationException If there was an exception generated while evaluating the query.
 	 */
-	public boolean ask(Service service, BindingSet bindings, String baseUri)
-		throws QueryEvaluationException;
+	public boolean ask(Service service, BindingSet bindings, String baseUri) throws QueryEvaluationException;
 
 	/**
 	 * <p>
@@ -57,20 +53,15 @@ public interface FederatedService {
 	 * Expected behavior: evaluate the given SPARQL query using the bindings as constraints
 	 * </pre>
 	 * 
-	 * @param service
-	 *        the reference to the service node, contains additional meta information (vars, prefixes)
-	 * @param projectionVars
-	 *        The variables with unknown value that should be projected from this evaluation
-	 * @param bindings
-	 *        the bindings serving as additional constraints
+	 * @param service        the reference to the service node, contains additional meta information (vars, prefixes)
+	 * @param projectionVars The variables with unknown value that should be projected from this evaluation
+	 * @param bindings       the bindings serving as additional constraints
 	 * @param baseUri
 	 * @return an iteration over the results of the query
-	 * @throws QueryEvaluationException
-	 *         If there was an exception generated while evaluating the query.
+	 * @throws QueryEvaluationException If there was an exception generated while evaluating the query.
 	 */
-	public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service,
-			Set<String> projectionVars, BindingSet bindings, String baseUri)
-		throws QueryEvaluationException;
+	public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service, Set<String> projectionVars,
+			BindingSet bindings, String baseUri) throws QueryEvaluationException;
 
 	/**
 	 * Evaluate the provided SPARQL query at this federated service, possibilities for vectored evaluation.
@@ -84,20 +75,16 @@ public interface FederatedService {
 	 * Compare {@link SPARQLFederatedService} for a reference implementation
 	 * </p>
 	 * 
-	 * @param service
-	 *        the reference to the service node, contains information to construct the query
-	 * @param bindings
-	 *        the bindings serving as additional constraints (for vectored evaluation)
-	 * @param baseUri
-	 *        the baseUri
-	 * @return the result of evaluating the query using bindings as constraints, the original bindings need to
-	 *         be inserted into the results!
-	 * @throws QueryEvaluationException
-	 *         If there was an exception generated while evaluating the query.
+	 * @param service  the reference to the service node, contains information to construct the query
+	 * @param bindings the bindings serving as additional constraints (for vectored evaluation)
+	 * @param baseUri  the baseUri
+	 * @return the result of evaluating the query using bindings as constraints, the original bindings need to be
+	 *         inserted into the results!
+	 * @throws QueryEvaluationException If there was an exception generated while evaluating the query.
 	 */
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
 			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
-		throws QueryEvaluationException;
+			throws QueryEvaluationException;
 
 	/**
 	 * Method to check if {@link #initialize()} had been called.
@@ -107,18 +94,14 @@ public interface FederatedService {
 	/**
 	 * Method to perform any initializations, invoked after construction.
 	 * 
-	 * @throws QueryEvaluationException
-	 *         If there was an exception generated while initializing the service.
+	 * @throws QueryEvaluationException If there was an exception generated while initializing the service.
 	 */
-	public void initialize()
-		throws QueryEvaluationException;
+	public void initialize() throws QueryEvaluationException;
 
 	/**
 	 * Method to perform any shutDown code, invoked at unregistering.
 	 * 
-	 * @throws QueryEvaluationException
-	 *         If there was an exception generated while shutting down the service.
+	 * @throws QueryEvaluationException If there was an exception generated while shutting down the service.
 	 */
-	public void shutdown()
-		throws QueryEvaluationException;
+	public void shutdown() throws QueryEvaluationException;
 }

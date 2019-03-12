@@ -11,8 +11,8 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * The LeftJoin operator, as defined in <a href="http://www.w3.org/TR/rdf-sparql-query/#algLeftJoin">SPARQL
- * Query Language for RDF</a>.
+ * The LeftJoin operator, as defined in <a href="http://www.w3.org/TR/rdf-sparql-query/#algLeftJoin">SPARQL Query
+ * Language for RDF</a>.
  * 
  * @author Arjohn Kampman
  */
@@ -73,16 +73,12 @@ public class LeftJoin extends BinaryTupleOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		if (condition != null) {
 			condition.visit(visitor);
 		}
@@ -93,9 +89,8 @@ public class LeftJoin extends BinaryTupleOperator {
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (condition == current) {
-			setCondition((ValueExpr)replacement);
-		}
-		else {
+			setCondition((ValueExpr) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -103,7 +98,7 @@ public class LeftJoin extends BinaryTupleOperator {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof LeftJoin && super.equals(other)) {
-			ValueExpr oCond = ((LeftJoin)other).getCondition();
+			ValueExpr oCond = ((LeftJoin) other).getCondition();
 			return nullEquals(condition, oCond);
 		}
 
@@ -121,7 +116,7 @@ public class LeftJoin extends BinaryTupleOperator {
 
 	@Override
 	public LeftJoin clone() {
-		LeftJoin clone = (LeftJoin)super.clone();
+		LeftJoin clone = (LeftJoin) super.clone();
 		if (hasCondition()) {
 			clone.setCondition(getCondition().clone());
 		}

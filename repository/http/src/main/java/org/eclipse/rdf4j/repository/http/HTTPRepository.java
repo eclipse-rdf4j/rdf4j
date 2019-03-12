@@ -36,23 +36,19 @@ import org.eclipse.rdf4j.repository.base.AbstractRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 
 /**
- * A repository that serves as a proxy for a remote repository on a Sesame Server. Methods in this class may
- * throw the specific RepositoryException subclass UnautorizedException, the semantics of which is defined by
- * the HTTP protocol.
+ * A repository that serves as a proxy for a remote repository on a Sesame Server. Methods in this class may throw the
+ * specific RepositoryException subclass UnautorizedException, the semantics of which is defined by the HTTP protocol.
  * <p>
- * This repository proxy uses a <a href="http://docs.rdf4j.org/rest-api/">Sesame-specific extension of the
- * SPARQL 1.1 Protocol</a> to communicate with the server. For communicating with a non-Sesame-based SPARQL
- * endpoint, it is recommend to use {@link org.eclipse.rdf4j.repository.sparql.SPARQLRepository
- * SPARQLRepository} instead.
+ * This repository proxy uses a <a href="http://docs.rdf4j.org/rest-api/">Sesame-specific extension of the SPARQL 1.1
+ * Protocol</a> to communicate with the server. For communicating with a non-Sesame-based SPARQL endpoint, it is
+ * recommend to use {@link org.eclipse.rdf4j.repository.sparql.SPARQLRepository SPARQLRepository} instead.
  *
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  * @author Herko ter Horst
  */
-public class HTTPRepository extends AbstractRepository
-		implements HttpClientDependent, SessionManagerDependent
-{
+public class HTTPRepository extends AbstractRepository implements HttpClientDependent, SessionManagerDependent {
 
 	/*-----------*
 	 * Variables *
@@ -106,8 +102,7 @@ public class HTTPRepository extends AbstractRepository
 
 		if (matcher.matches() && matcher.groupCount() == 1) {
 			this.serverURL = matcher.group(1);
-		}
-		else {
+		} else {
 			throw new IllegalArgumentException("URL must be to a Sesame Repository (not just the server)");
 		}
 		this.repositoryURL = repositoryURL;
@@ -158,26 +153,23 @@ public class HTTPRepository extends AbstractRepository
 	/**
 	 * Get the additional HTTP headers which will be used
 	 * 
-	 * @return a read-only view of the additional HTTP headers which will be included in every request to the
-	 *         server.
+	 * @return a read-only view of the additional HTTP headers which will be included in every request to the server.
 	 */
 	public Map<String, String> getAdditionalHttpHeaders() {
 		return Collections.unmodifiableMap(additionalHttpHeaders);
 	}
 
 	/**
-	 * Set additional HTTP headers to be included in every request to the server, which may be required for
-	 * certain unusual server configurations. This will only take effect on connections subsequently returned
-	 * by {@link #getConnection()}.
+	 * Set additional HTTP headers to be included in every request to the server, which may be required for certain
+	 * unusual server configurations. This will only take effect on connections subsequently returned by
+	 * {@link #getConnection()}.
 	 * 
-	 * @param additionalHttpHeaders
-	 *        a map containing pairs of header names and values. May be null
+	 * @param additionalHttpHeaders a map containing pairs of header names and values. May be null
 	 */
 	public void setAdditionalHttpHeaders(Map<String, String> additionalHttpHeaders) {
 		if (additionalHttpHeaders == null) {
 			this.additionalHttpHeaders = Collections.emptyMap();
-		}
-		else {
+		} else {
 			this.additionalHttpHeaders = additionalHttpHeaders;
 		}
 	}
@@ -233,11 +225,9 @@ public class HTTPRepository extends AbstractRepository
 					}
 				}
 			}
-		}
-		catch (QueryEvaluationException e) {
+		} catch (QueryEvaluationException e) {
 			throw new RepositoryException(e);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RepositoryException(e);
 		}
 
@@ -245,14 +235,13 @@ public class HTTPRepository extends AbstractRepository
 	}
 
 	/**
-	 * Sets the preferred serialization format for tuple query results to the supplied
-	 * {@link TupleQueryResultFormat}, overriding the {@link SPARQLProtocolSession} 's default preference.
-	 * Setting this parameter is not necessary in most cases as the {@link SPARQLProtocolSession} by default
-	 * indicates a preference for the most compact and efficient format available.
+	 * Sets the preferred serialization format for tuple query results to the supplied {@link TupleQueryResultFormat},
+	 * overriding the {@link SPARQLProtocolSession} 's default preference. Setting this parameter is not necessary in
+	 * most cases as the {@link SPARQLProtocolSession} by default indicates a preference for the most compact and
+	 * efficient format available.
 	 * 
-	 * @param format
-	 *        the preferred {@link TupleQueryResultFormat}. If set to 'null' no explicit preference will be
-	 *        stated.
+	 * @param format the preferred {@link TupleQueryResultFormat}. If set to 'null' no explicit preference will be
+	 *               stated.
 	 */
 	public void setPreferredTupleQueryResultFormat(final TupleQueryResultFormat format) {
 		this.tupleFormat = format;
@@ -269,15 +258,14 @@ public class HTTPRepository extends AbstractRepository
 
 	/**
 	 * Sets the preferred serialization format for RDF to the supplied {@link RDFFormat}, overriding the
-	 * {@link SPARQLProtocolSession}'s default preference. Setting this parameter is not necessary in most
-	 * cases as the {@link SPARQLProtocolSession} by default indicates a preference for the most compact and
-	 * efficient format available.
+	 * {@link SPARQLProtocolSession}'s default preference. Setting this parameter is not necessary in most cases as the
+	 * {@link SPARQLProtocolSession} by default indicates a preference for the most compact and efficient format
+	 * available.
 	 * <p>
-	 * Use with caution: if set to a format that does not support context serialization any context info
-	 * contained in the query result will be lost.
+	 * Use with caution: if set to a format that does not support context serialization any context info contained in
+	 * the query result will be lost.
 	 * 
-	 * @param format
-	 *        the preferred {@link RDFFormat}. If set to 'null' no explicit preference will be stated.
+	 * @param format the preferred {@link RDFFormat}. If set to 'null' no explicit preference will be stated.
 	 */
 	public void setPreferredRDFFormat(final RDFFormat format) {
 		this.rdfFormat = format;
@@ -295,10 +283,8 @@ public class HTTPRepository extends AbstractRepository
 	/**
 	 * Set the username and password to use for authenticating with the remote repository.
 	 * 
-	 * @param username
-	 *        the username. Setting this to null will disable authentication.
-	 * @param password
-	 *        the password. Setting this to null will disable authentication.
+	 * @param username the username. Setting this to null will disable authentication.
+	 * @param password the password. Setting this to null will disable authentication.
 	 */
 	public void setUsernameAndPassword(final String username, final String password) {
 		this.username = username;
@@ -326,8 +312,7 @@ public class HTTPRepository extends AbstractRepository
 			if (toCloseDependentClient != null) {
 				toCloseDependentClient.shutDown();
 			}
-		}
-		finally {
+		} finally {
 			// remove reference but do not shut down, client may be shared by
 			// other repos.
 			client = null;
@@ -360,13 +345,12 @@ public class HTTPRepository extends AbstractRepository
 	}
 
 	/**
-	 * Verify if transaction handling should be done in backward-compatible mode (this is the case when
-	 * communicating with an older Sesame Server).
+	 * Verify if transaction handling should be done in backward-compatible mode (this is the case when communicating
+	 * with an older Sesame Server).
 	 * 
-	 * @return <code>true</code> if the Server does not support the extended transaction protocol,
-	 *         <code>false</code> otherwise.
-	 * @throws RepositoryException
-	 *         if something went wrong while querying the server for the protocol version.
+	 * @return <code>true</code> if the Server does not support the extended transaction protocol, <code>false</code>
+	 *         otherwise.
+	 * @throws RepositoryException if something went wrong while querying the server for the protocol version.
 	 */
 	boolean useCompatibleMode() throws RepositoryException {
 		Boolean result = compatibleMode;
@@ -381,11 +365,9 @@ public class HTTPRepository extends AbstractRepository
 						// handling. If the server is older, we need to run in
 						// backward-compatible mode.
 						result = compatibleMode = (Integer.parseInt(serverProtocolVersion) < 7);
-					}
-					catch (NumberFormatException e) {
+					} catch (NumberFormatException e) {
 						throw new RepositoryException("could not read protocol version from server: ", e);
-					}
-					catch (IOException e) {
+					} catch (IOException e) {
 						throw new RepositoryException("could not read protocol version from server: ", e);
 					}
 				}

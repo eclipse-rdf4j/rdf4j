@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.query;
 
 /**
- * An exception indicating that a string could not be parsed into an operation of the expected type by the
- * parser.
+ * An exception indicating that a string could not be parsed into an operation of the expected type by the parser.
  * 
  * @author jeen
  */

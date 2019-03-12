@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.query.resultio;
 
 /**
- * A TupleQueryResultParserFactory returns {@link TupleQueryResultParser}s for a specific tuple query result
- * format.
+ * A TupleQueryResultParserFactory returns {@link TupleQueryResultParser}s for a specific tuple query result format.
  * 
  * @author Arjohn Kampman
  */

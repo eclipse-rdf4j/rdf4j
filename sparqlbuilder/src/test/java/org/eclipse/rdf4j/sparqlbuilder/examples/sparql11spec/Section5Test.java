@@ -28,18 +28,12 @@ public class Section5Test extends BaseExamples {
 		Variable name = SparqlBuilder.var("name"), mbox = SparqlBuilder.var("mbox");
 		Variable x = query.var();
 
-		query.prefix(foaf)
-				.select(name, mbox)
-				.where(x.has(foaf.iri("name"), name),
-						x.has(foaf.iri("mbox"), mbox));
+		query.prefix(foaf).select(name, mbox).where(x.has(foaf.iri("name"), name), x.has(foaf.iri("mbox"), mbox));
 		p();
 
-		GraphPattern namePattern = GraphPatterns.and(x.has(
-				foaf.iri("name"), name));
-		GraphPattern mboxPattern = GraphPatterns.and(x.has(
-				foaf.iri("mbox"), mbox));
-		QueryPattern where = SparqlBuilder.where(GraphPatterns.and(namePattern,
-				mboxPattern));
+		GraphPattern namePattern = GraphPatterns.and(x.has(foaf.iri("name"), name));
+		GraphPattern mboxPattern = GraphPatterns.and(x.has(foaf.iri("mbox"), mbox));
+		QueryPattern where = SparqlBuilder.where(GraphPatterns.and(namePattern, mboxPattern));
 		query.where(where);
 		p();
 	}
@@ -55,19 +49,13 @@ public class Section5Test extends BaseExamples {
 	@Test
 	public void example_5_2_3() {
 		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
-		Variable x = SparqlBuilder.var("x"), name = SparqlBuilder.var("name"), mbox = SparqlBuilder
-				.var("mbox");
+		Variable x = SparqlBuilder.var("x"), name = SparqlBuilder.var("name"), mbox = SparqlBuilder.var("mbox");
 
-		p(
-            GraphPatterns.and(x.has(foaf.iri("name"), name),
-                    x.has(foaf.iri("mbox"), mbox)),
+		p(GraphPatterns.and(x.has(foaf.iri("name"), name), x.has(foaf.iri("mbox"), mbox)),
 
-            GraphPatterns.and(x.has(foaf.iri("name"), name),
-                    x.has(foaf.iri("mbox"), mbox)).filter(
-                    Expressions.regex(name, "Smith")),
+				GraphPatterns.and(x.has(foaf.iri("name"), name), x.has(foaf.iri("mbox"), mbox))
+						.filter(Expressions.regex(name, "Smith")),
 
-            GraphPatterns.and(x.has(foaf.iri("name"), name),
-                    GraphPatterns.and(), x.has(foaf.iri("mbox"), mbox))
-		);
+				GraphPatterns.and(x.has(foaf.iri("name"), name), GraphPatterns.and(), x.has(foaf.iri("mbox"), mbox)));
 	}
 }

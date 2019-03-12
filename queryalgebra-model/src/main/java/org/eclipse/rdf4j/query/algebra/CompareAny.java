@@ -45,9 +45,7 @@ public class CompareAny extends CompareSubQueryValueOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -59,7 +57,7 @@ public class CompareAny extends CompareSubQueryValueOperator {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof CompareAny && super.equals(other)) {
-			CompareAny o = (CompareAny)other;
+			CompareAny o = (CompareAny) other;
 			return operator.equals(o.getOperator());
 		}
 		return false;
@@ -72,6 +70,6 @@ public class CompareAny extends CompareSubQueryValueOperator {
 
 	@Override
 	public CompareAny clone() {
-		return (CompareAny)super.clone();
+		return (CompareAny) super.clone();
 	}
 }

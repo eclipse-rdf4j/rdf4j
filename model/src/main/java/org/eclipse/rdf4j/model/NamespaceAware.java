@@ -11,8 +11,8 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * An interface that is used to signify that something is able to provide {@link Namespace} information, in
- * addition to {@link Statement}s.
+ * An interface that is used to signify that something is able to provide {@link Namespace} information, in addition to
+ * {@link Statement}s.
  * 
  * @author Peter Ansell
  */
@@ -27,13 +27,12 @@ public interface NamespaceAware {
 	public Set<Namespace> getNamespaces();
 
 	/**
-	 * Gets the namespace that is associated with the specified prefix, if any. If multiple namespaces match
-	 * the given prefix, the result may not be consistent over successive calls to this method.
+	 * Gets the namespace that is associated with the specified prefix, if any. If multiple namespaces match the given
+	 * prefix, the result may not be consistent over successive calls to this method.
 	 * 
-	 * @param prefix
-	 *        A namespace prefix.
-	 * @return The namespace name that is associated with the specified prefix, or {@link Optional#empty()} if
-	 *         there is no such namespace.
+	 * @param prefix A namespace prefix.
+	 * @return The namespace name that is associated with the specified prefix, or {@link Optional#empty()} if there is
+	 *         no such namespace.
 	 */
 	public default Optional<Namespace> getNamespace(String prefix) {
 		return getNamespaces().stream().filter(t -> t.getPrefix().equals(prefix)).findAny();

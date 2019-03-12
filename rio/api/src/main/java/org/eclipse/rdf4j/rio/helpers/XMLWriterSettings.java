@@ -18,8 +18,8 @@ import org.eclipse.rdf4j.rio.RioSetting;
 public class XMLWriterSettings {
 
 	/**
-	 * Boolean setting for XML Writer to determine whether the XML PI (Processing Instruction) should be
-	 * printed. If this setting is disabled the user must have previously printed the XML PI before calling
+	 * Boolean setting for XML Writer to determine whether the XML PI (Processing Instruction) should be printed. If
+	 * this setting is disabled the user must have previously printed the XML PI before calling
 	 * {@link RDFWriter#startRDF()} for the document to be valid XML.
 	 * <p>
 	 * Defaults to true.

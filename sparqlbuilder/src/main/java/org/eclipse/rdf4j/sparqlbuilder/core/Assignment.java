@@ -13,9 +13,7 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 /**
  * A SPARQL expression-to-variable assignment
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#assignment">
- *      SPARQL Assignments</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#assignment"> SPARQL Assignments</a>
  */
 public class Assignment implements Projectable, Groupable {
 	private static final String AS = " AS ";

@@ -61,9 +61,7 @@ public class Like extends UnaryValueOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -86,7 +84,7 @@ public class Like extends UnaryValueOperator {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof Like && super.equals(other)) {
-			Like o = (Like)other;
+			Like o = (Like) other;
 			return caseSensitive == o.isCaseSensitive() && opPattern.equals(o.getOpPattern());
 		}
 		return false;
@@ -99,6 +97,6 @@ public class Like extends UnaryValueOperator {
 
 	@Override
 	public Like clone() {
-		return (Like)super.clone();
+		return (Like) super.clone();
 	}
 }

@@ -12,10 +12,11 @@ import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 
 abstract class GraphManagementQuery<T extends GraphManagementQuery<T>> implements QueryElement {
 	private static final String SILENT = "SILENT";
-	
-	private boolean silent = false; 
 
-	GraphManagementQuery() { }
+	private boolean silent = false;
+
+	GraphManagementQuery() {
+	}
 
 	/**
 	 * Set the <code>SILENT</code> option to true on this query
@@ -39,7 +40,7 @@ abstract class GraphManagementQuery<T extends GraphManagementQuery<T>> implement
 
 		return (T) this;
 	}
-	
+
 	protected void appendSilent(StringBuilder builder) {
 		if (silent) {
 			builder.append(SILENT).append(" ");

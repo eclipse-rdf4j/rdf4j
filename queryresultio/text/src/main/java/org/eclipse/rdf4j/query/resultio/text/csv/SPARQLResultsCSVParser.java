@@ -35,19 +35,18 @@ public class SPARQLResultsCSVParser extends AbstractTupleQueryResultParser imple
 	}
 
 	@Override
-	public void parse(InputStream in)
-			throws QueryResultParseException, TupleQueryResultHandlerException
-	{
-		if(handler != null) {
+	public void parse(InputStream in) throws QueryResultParseException, TupleQueryResultHandlerException {
+		if (handler != null) {
 			SPARQLResultsCSVMappingStrategy strategy = new SPARQLResultsCSVMappingStrategy(valueFactory);
 
-			List<BindingSet> bindingSets = new CsvToBeanBuilder<BindingSet>(new InputStreamReader(in, StandardCharsets.UTF_8))
-					.withType(BindingSet.class)
-					.withMappingStrategy(strategy)
-					.build().parse();
+			List<BindingSet> bindingSets = new CsvToBeanBuilder<BindingSet>(
+					new InputStreamReader(in, StandardCharsets.UTF_8)).withType(BindingSet.class)
+							.withMappingStrategy(strategy)
+							.build()
+							.parse();
 			List<String> bindingNames = strategy.getBindingNames();
 			handler.startQueryResult(bindingNames);
-			for(BindingSet bs : bindingSets) {
+			for (BindingSet bs : bindingSets) {
 				handler.handleSolution(bs);
 			}
 			handler.endQueryResult();

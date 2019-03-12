@@ -55,14 +55,14 @@ public class HTTPQueryEvaluationException extends QueryEvaluationException {
 	}
 
 	public IOException getCauseAsIOException() {
-		return (IOException)getCause();
+		return (IOException) getCause();
 	}
 
 	public RepositoryException getCauseAsRepositoryException() {
-		return (RepositoryException)getCause();
+		return (RepositoryException) getCause();
 	}
 
 	public MalformedQueryException getCauseAsMalformedQueryException() {
-		return (MalformedQueryException)getCause();
+		return (MalformedQueryException) getCause();
 	}
 }

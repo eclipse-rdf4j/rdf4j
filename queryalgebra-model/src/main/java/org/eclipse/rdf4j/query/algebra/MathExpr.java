@@ -17,10 +17,7 @@ public class MathExpr extends BinaryValueOperator {
 	 *---------------*/
 
 	public enum MathOp {
-		PLUS("+"),
-		MINUS("-"),
-		MULTIPLY("*"),
-		DIVIDE("/");
+		PLUS("+"), MINUS("-"), MULTIPLY("*"), DIVIDE("/");
 
 		private String symbol;
 
@@ -65,9 +62,7 @@ public class MathExpr extends BinaryValueOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -79,7 +74,7 @@ public class MathExpr extends BinaryValueOperator {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof MathExpr && super.equals(other)) {
-			MathExpr o = (MathExpr)other;
+			MathExpr o = (MathExpr) other;
 			return operator.equals(o.getOperator());
 		}
 		return false;
@@ -92,6 +87,6 @@ public class MathExpr extends BinaryValueOperator {
 
 	@Override
 	public MathExpr clone() {
-		return (MathExpr)super.clone();
+		return (MathExpr) super.clone();
 	}
 }

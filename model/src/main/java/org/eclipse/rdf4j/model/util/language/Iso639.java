@@ -52,16 +52,13 @@ public class Iso639 implements LanguageTagCodes {
 	/**
 	 * Look an ISO-639 code up in the list.
 	 * 
-	 * @param lang
-	 *        The two or three character code to look up.
+	 * @param lang The two or three character code to look up.
 	 * @return The corresponding Iso639 object, or null if not in the list.
 	 */
 	static public Iso639 find(String lang) {
-		Iso639 rslt = (Iso639)all.get(lang);
+		Iso639 rslt = (Iso639) all.get(lang);
 		if (rslt == null) {
-			if (lang != null && lang.compareTo("qaa") >= 0 && lang.compareTo("qtz") <= 0
-					&& lang.length() == 3)
-			{
+			if (lang != null && lang.compareTo("qaa") >= 0 && lang.compareTo("qtz") <= 0 && lang.length() == 3) {
 				return new Iso639("Reserved for local use", null, lang, lang, LT_LOCAL_USE);
 			}
 		}
@@ -101,7 +98,7 @@ public class Iso639 implements LanguageTagCodes {
 
 	static private void put(String key, Iso639 v) {
 		if (key != null) {
-			Iso639 old = (Iso639)all.put(key, v);
+			Iso639 old = (Iso639) all.put(key, v);
 			if (old != null && old != v) {
 				System.err.println("ISO-639 code '" + key + "' is overloaded.");
 			}

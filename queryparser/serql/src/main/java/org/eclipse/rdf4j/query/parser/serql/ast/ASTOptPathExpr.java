@@ -18,14 +18,12 @@ public class ASTOptPathExpr extends ASTPathExpr {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
 	public ASTPathExpr getPathExpr() {
-		return (ASTPathExpr)children.get(0);
+		return (ASTPathExpr) children.get(0);
 	}
 
 	/**
@@ -44,7 +42,7 @@ public class ASTOptPathExpr extends ASTPathExpr {
 		Node lastChildNode = children.get(children.size() - 1);
 
 		if (lastChildNode instanceof ASTWhere) {
-			return (ASTWhere)lastChildNode;
+			return (ASTWhere) lastChildNode;
 		}
 
 		return null;

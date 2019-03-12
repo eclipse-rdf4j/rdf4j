@@ -25,9 +25,7 @@ public class GroupConcat extends AbstractAggregateOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
@@ -43,7 +41,7 @@ public class GroupConcat extends AbstractAggregateOperator {
 
 	@Override
 	public GroupConcat clone() {
-		return (GroupConcat)super.clone();
+		return (GroupConcat) super.clone();
 	}
 
 	public ValueExpr getSeparator() {

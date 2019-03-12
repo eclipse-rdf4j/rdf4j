@@ -38,8 +38,7 @@ public class FunctionCall extends AbstractQueryModelNode implements ValueExpr {
 	/**
 	 * Creates a new unary value operator.
 	 * 
-	 * @param args
-	 *        The operator's argument, must not be <tt>null</tt>.
+	 * @param args The operator's argument, must not be <tt>null</tt>.
 	 */
 	public FunctionCall(String uri, ValueExpr... args) {
 		setURI(uri);
@@ -91,16 +90,12 @@ public class FunctionCall extends AbstractQueryModelNode implements ValueExpr {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		for (ValueExpr arg : args) {
 			arg.visit(visitor);
 		}
@@ -132,7 +127,7 @@ public class FunctionCall extends AbstractQueryModelNode implements ValueExpr {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof FunctionCall) {
-			FunctionCall o = (FunctionCall)other;
+			FunctionCall o = (FunctionCall) other;
 			return uri.equals(o.getURI()) && args.equals(o.getArgs());
 		}
 		return false;
@@ -145,7 +140,7 @@ public class FunctionCall extends AbstractQueryModelNode implements ValueExpr {
 
 	@Override
 	public FunctionCall clone() {
-		FunctionCall clone = (FunctionCall)super.clone();
+		FunctionCall clone = (FunctionCall) super.clone();
 
 		clone.args = new ArrayList<>(getArgs().size());
 		for (ValueExpr arg : getArgs()) {

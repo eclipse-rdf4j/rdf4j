@@ -17,13 +17,10 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfSubject;
 /**
  * A SPARQL query variable
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynVariables">
- *      SPARQL Variable Syntax</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynVariables"> SPARQL Variable Syntax</a>
  */
-public class Variable implements Projectable, RdfSubject,
-        RdfPredicate, RdfObject, Operand, Orderable,
-		Groupable, GraphName, Assignable {
+public class Variable implements Projectable, RdfSubject, RdfPredicate, RdfObject, Operand, Orderable, Groupable,
+		GraphName, Assignable {
 	private String alias;
 
 	Variable(String varName) {

@@ -18,18 +18,17 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 
 /**
- * The {@link SPARQLServiceResolver} is used to manage a set of {@link FederatedService} instances, which are
- * used to evaluate SERVICE expressions for particular service Urls.
+ * The {@link SPARQLServiceResolver} is used to manage a set of {@link FederatedService} instances, which are used to
+ * evaluate SERVICE expressions for particular service Urls.
  * <p>
- * Lookup can be done via the serviceUrl using the method {@link #getService(String)}. If there is no service
- * for the specified url, a {@link SPARQLFederatedService} is created and registered for future use.
+ * Lookup can be done via the serviceUrl using the method {@link #getService(String)}. If there is no service for the
+ * specified url, a {@link SPARQLFederatedService} is created and registered for future use.
  * 
  * @author Andreas Schwarte
  * @author James Leigh
  */
 public class SPARQLServiceResolver extends AbstractFederatedServiceResolver
-		implements FederatedServiceResolver, HttpClientDependent, SessionManagerDependent
-{
+		implements FederatedServiceResolver, HttpClientDependent, SessionManagerDependent {
 
 	public SPARQLServiceResolver() {
 		super();
@@ -90,9 +89,7 @@ public class SPARQLServiceResolver extends AbstractFederatedServiceResolver
 	}
 
 	@Override
-	protected FederatedService createService(String serviceUrl)
-		throws QueryEvaluationException
-	{
+	protected FederatedService createService(String serviceUrl) throws QueryEvaluationException {
 		return new SPARQLFederatedService(serviceUrl, getHttpClientSessionManager());
 	}
 

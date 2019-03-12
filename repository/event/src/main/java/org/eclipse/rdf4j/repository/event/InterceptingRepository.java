@@ -15,8 +15,8 @@ import org.eclipse.rdf4j.repository.Repository;
 public interface InterceptingRepository extends Repository {
 
 	/**
-	 * Registers a <tt>RepositoryInterceptor</tt> that will receive notifications of operations that are
-	 * performed on this repository.
+	 * Registers a <tt>RepositoryInterceptor</tt> that will receive notifications of operations that are performed on
+	 * this repository.
 	 */
 	public void addRepositoryInterceptor(RepositoryInterceptor interceptor);
 
@@ -26,8 +26,8 @@ public interface InterceptingRepository extends Repository {
 	public void removeRepositoryInterceptor(RepositoryInterceptor interceptor);
 
 	/**
-	 * Registers a <tt>RepositoryConnectionInterceptor</tt> that will receive notifications of operations that
-	 * are performed on this connection.
+	 * Registers a <tt>RepositoryConnectionInterceptor</tt> that will receive notifications of operations that are
+	 * performed on this connection.
 	 */
 	public void addRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor);
 

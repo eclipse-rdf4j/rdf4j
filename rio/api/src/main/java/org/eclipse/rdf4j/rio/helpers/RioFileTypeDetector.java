@@ -17,8 +17,8 @@ import org.eclipse.rdf4j.rio.RDFParserRegistry;
 import org.eclipse.rdf4j.rio.Rio;
 
 /**
- * An implementation of FileTypeDetector which uses the {@link RDFParserRegistry} to find supported file types
- * and their extensions.
+ * An implementation of FileTypeDetector which uses the {@link RDFParserRegistry} to find supported file types and their
+ * extensions.
  *
  * @author Peter Ansell
  */
@@ -29,9 +29,7 @@ public class RioFileTypeDetector extends FileTypeDetector {
 	}
 
 	@Override
-	public String probeContentType(Path path)
-		throws IOException
-	{
+	public String probeContentType(Path path) throws IOException {
 		Optional<RDFFormat> result = Rio.getParserFormatForFileName(path.getFileName().toString());
 
 		if (result.isPresent()) {

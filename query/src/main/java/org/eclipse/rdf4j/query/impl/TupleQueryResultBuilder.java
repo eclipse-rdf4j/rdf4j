@@ -33,17 +33,13 @@ public class TupleQueryResultBuilder extends AbstractTupleQueryResultHandler {
 	 *---------*/
 
 	@Override
-	public void startQueryResult(List<String> bindingNames)
-		throws TupleQueryResultHandlerException
-	{
+	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
 		this.bindingNames = bindingNames;
 		bindingSetList = new ArrayList<>();
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet)
-		throws TupleQueryResultHandlerException
-	{
+	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		bindingSetList.add(bindingSet);
 	}
 

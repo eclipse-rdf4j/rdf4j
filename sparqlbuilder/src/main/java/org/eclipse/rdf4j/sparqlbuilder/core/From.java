@@ -13,9 +13,7 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 /**
  * A SPARQL Dataset specifier.
  * 
- * @see <a
- *      href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#specifyingDataset">
- *      Specifying RDF Datasets</a>
+ * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#specifyingDataset"> Specifying RDF Datasets</a>
  */
 public class From implements QueryElement {
 	private static final String FROM = "FROM";

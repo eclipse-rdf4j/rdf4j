@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.query.parser;
 
 /**
- * Abstract superclass of all operations that can be formulated in a query language and parsed by the query
- * parser.
+ * Abstract superclass of all operations that can be formulated in a query language and parsed by the query parser.
  * 
  * @author Jeen Broekstra
  */

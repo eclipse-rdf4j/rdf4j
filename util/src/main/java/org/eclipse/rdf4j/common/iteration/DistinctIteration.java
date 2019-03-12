@@ -32,8 +32,7 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 	/**
 	 * Creates a new DistinctIterator.
 	 * 
-	 * @param iter
-	 *        The underlying iterator.
+	 * @param iter The underlying iterator.
 	 */
 	public DistinctIteration(Iteration<? extends E, ? extends X> iter) {
 		super(iter);
@@ -49,14 +48,11 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 	 * Returns <tt>true</tt> if the specified object hasn't been seen before.
 	 */
 	@Override
-	protected boolean accept(E object)
-		throws X
-	{
+	protected boolean accept(E object) throws X {
 		if (inExcludeSet(object)) {
 			// object has already been returned
 			return false;
-		}
-		else {
+		} else {
 			add(object);
 			return true;
 		}
@@ -71,12 +67,9 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 	}
 
 	/**
-	 * @param object
-	 *        to put into the set
+	 * @param object to put into the set
 	 */
-	protected boolean add(E object)
-		throws X
-	{
+	protected boolean add(E object) throws X {
 		return excludeSet.add(object);
 	}
 

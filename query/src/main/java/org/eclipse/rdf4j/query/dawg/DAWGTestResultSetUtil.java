@@ -23,8 +23,7 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 public class DAWGTestResultSetUtil {
 
 	public static TupleQueryResult toTupleQueryResult(Iterable<? extends Statement> dawgGraph)
-		throws DAWGTestResultSetParseException
-	{
+			throws DAWGTestResultSetParseException {
 		TupleQueryResultBuilder tqrBuilder = new TupleQueryResultBuilder();
 		DAWGTestResultSetParser parser = new DAWGTestResultSetParser(tqrBuilder);
 
@@ -36,15 +35,12 @@ public class DAWGTestResultSetUtil {
 			parser.endRDF();
 
 			return tqrBuilder.getQueryResult();
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			throw new DAWGTestResultSetParseException(e.getMessage(), e);
 		}
 	}
 
-	public static Graph toGraph(TupleQueryResult tqr)
-		throws QueryEvaluationException
-	{
+	public static Graph toGraph(TupleQueryResult tqr) throws QueryEvaluationException {
 		Graph graph = new GraphImpl();
 		DAWGTestResultSetWriter writer = new DAWGTestResultSetWriter(new StatementCollector(graph));
 
@@ -54,8 +50,7 @@ public class DAWGTestResultSetUtil {
 				writer.handleSolution(tqr.next());
 			}
 			writer.endQueryResult();
-		}
-		catch (TupleQueryResultHandlerException e) {
+		} catch (TupleQueryResultHandlerException e) {
 			// No exceptions expected from DAWGTestResultSetWriter or
 			// StatementCollector, foud a bug?
 			throw new RuntimeException(e);
@@ -65,8 +60,7 @@ public class DAWGTestResultSetUtil {
 	}
 
 	public static boolean toBooleanQueryResult(Iterable<? extends Statement> dawgGraph)
-		throws DAWGTestResultSetParseException
-	{
+			throws DAWGTestResultSetParseException {
 		DAWGTestBooleanParser parser = new DAWGTestBooleanParser();
 
 		try {
@@ -77,8 +71,7 @@ public class DAWGTestResultSetUtil {
 			parser.endRDF();
 
 			return parser.getValue();
-		}
-		catch (RDFHandlerException e) {
+		} catch (RDFHandlerException e) {
 			throw new DAWGTestResultSetParseException(e.getMessage(), e);
 		}
 	}

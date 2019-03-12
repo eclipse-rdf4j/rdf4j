@@ -143,32 +143,28 @@ public class SKOS {
 	/**
 	 * The skos:changeNote property.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#notes">Documentation Properties (Note
-	 *      Properties)</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#notes">Documentation Properties (Note Properties)</a>
 	 */
 	public static final IRI CHANGE_NOTE;
 
 	/**
 	 * The skos:definition property.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#notes">Documentation Properties (Note
-	 *      Properties)</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#notes">Documentation Properties (Note Properties)</a>
 	 */
 	public static final IRI DEFINITION;
 
 	/**
 	 * The skos:editorialNote property.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#notes">Documentation Properties (Note
-	 *      Properties)</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#notes">Documentation Properties (Note Properties)</a>
 	 */
 	public static final IRI EDITORIAL_NOTE;
 
 	/**
 	 * The skos:example property.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#notes">Documentation Properties (Note
-	 *      Properties)</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#notes">Documentation Properties (Note Properties)</a>
 	 */
 
 	public static final IRI EXAMPLE;
@@ -176,24 +172,21 @@ public class SKOS {
 	/**
 	 * The skos:historyNote property.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#notes">Documentation Properties (Note
-	 *      Properties)</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#notes">Documentation Properties (Note Properties)</a>
 	 */
 	public static final IRI HISTORY_NOTE;
 
 	/**
 	 * The skos:note property.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#notes">Documentation Properties (Note
-	 *      Properties)</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#notes">Documentation Properties (Note Properties)</a>
 	 */
 	public static final IRI NOTE;
 
 	/**
 	 * The skos:scopeNote property.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#notes">Documentation Properties (Note
-	 *      Properties)</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#notes">Documentation Properties (Note Properties)</a>
 	 */
 	public static final IRI SCOPE_NOTE;
 
@@ -202,48 +195,48 @@ public class SKOS {
 	/**
 	 * The skos:broader relation.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#semantic-relations">SKOS Simple Knowledge
-	 *      Organization System Reference - Semantic Relations Section</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#semantic-relations">SKOS Simple Knowledge Organization System
+	 *      Reference - Semantic Relations Section</a>
 	 */
 	public static final IRI BROADER;
 
 	/**
 	 * The skos:broaderTransitive relation.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#semantic-relations">SKOS Simple Knowledge
-	 *      Organization System Reference - Semantic Relations Section</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#semantic-relations">SKOS Simple Knowledge Organization System
+	 *      Reference - Semantic Relations Section</a>
 	 */
 	public static final IRI BROADER_TRANSITIVE;
 
 	/**
 	 * The skos:narrower relation.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#semantic-relations">SKOS Simple Knowledge
-	 *      Organization System Reference - Semantic Relations Section</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#semantic-relations">SKOS Simple Knowledge Organization System
+	 *      Reference - Semantic Relations Section</a>
 	 */
 	public static final IRI NARROWER;
 
 	/**
 	 * The skos:narrowerTransitive relation.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#semantic-relations">SKOS Simple Knowledge
-	 *      Organization System Reference - Semantic Relations Section</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#semantic-relations">SKOS Simple Knowledge Organization System
+	 *      Reference - Semantic Relations Section</a>
 	 */
 	public static final IRI NARROWER_TRANSITIVE;
 
 	/**
 	 * The skos:related relation.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#semantic-relations">SKOS Simple Knowledge
-	 *      Organization System Reference - Semantic Relations Section</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#semantic-relations">SKOS Simple Knowledge Organization System
+	 *      Reference - Semantic Relations Section</a>
 	 */
 	public static final IRI RELATED;
 
 	/**
 	 * The skos:semanticRelation relation.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#semantic-relations">SKOS Simple Knowledge
-	 *      Organization System Reference - Semantic Relations Section</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#semantic-relations">SKOS Simple Knowledge Organization System
+	 *      Reference - Semantic Relations Section</a>
 	 */
 	public static final IRI SEMANTIC_RELATION;
 
@@ -252,48 +245,48 @@ public class SKOS {
 	/**
 	 * The skos:broadMatch relation.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#mapping">SKOS Simple Knowledge Organization System
-	 *      Reference - Mapping Properties Section</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#mapping">SKOS Simple Knowledge Organization System Reference -
+	 *      Mapping Properties Section</a>
 	 */
 	public static final IRI BROAD_MATCH;
 
 	/**
 	 * The skos:closeMatch relation.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#mapping">SKOS Simple Knowledge Organization System
-	 *      Reference - Mapping Properties Section</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#mapping">SKOS Simple Knowledge Organization System Reference -
+	 *      Mapping Properties Section</a>
 	 */
 	public static final IRI CLOSE_MATCH;
 
 	/**
 	 * The skos:exactMatch relation.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#mapping">SKOS Simple Knowledge Organization System
-	 *      Reference - Mapping Properties Section</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#mapping">SKOS Simple Knowledge Organization System Reference -
+	 *      Mapping Properties Section</a>
 	 */
 	public static final IRI EXACT_MATCH;
 
 	/**
 	 * The skos:mappingRelation relation.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#mapping">SKOS Simple Knowledge Organization System
-	 *      Reference - Mapping Properties Section</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#mapping">SKOS Simple Knowledge Organization System Reference -
+	 *      Mapping Properties Section</a>
 	 */
 	public static final IRI MAPPING_RELATION;
 
 	/**
 	 * The skos:narrowMatch relation.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#mapping">SKOS Simple Knowledge Organization System
-	 *      Reference - Mapping Properties Section</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#mapping">SKOS Simple Knowledge Organization System Reference -
+	 *      Mapping Properties Section</a>
 	 */
 	public static final IRI NARROW_MATCH;
 
 	/**
 	 * The skos:relatedMatch relation.
 	 * 
-	 * @see <a href="http://www.w3.org/TR/skos-reference/#mapping">SKOS Simple Knowledge Organization System
-	 *      Reference - Mapping Properties Section</a>
+	 * @see <a href="http://www.w3.org/TR/skos-reference/#mapping">SKOS Simple Knowledge Organization System Reference -
+	 *      Mapping Properties Section</a>
 	 */
 	public static final IRI RELATED_MATCH;
 

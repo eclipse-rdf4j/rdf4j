@@ -12,9 +12,7 @@ public class HTTPRepositoryTransactionTest {
 	private HTTPRepository testRepository;
 
 	@Test
-	public void testTimeout()
-		throws Exception
-	{
+	public void testTimeout() throws Exception {
 		try {
 			System.setProperty(CACHE_TIMEOUT_PROPERTY, Integer.toString(2));
 			server = new HTTPMemServer();
@@ -22,8 +20,7 @@ public class HTTPRepositoryTransactionTest {
 				server.start();
 				testRepository = new HTTPRepository(HTTPMemServer.REPOSITORY_URL);
 				testRepository.initialize();
-			}
-			catch (Exception e) {
+			} catch (Exception e) {
 				server.stop();
 				throw e;
 			}
@@ -33,8 +30,7 @@ public class HTTPRepositoryTransactionTest {
 				connection.commit(); // was transaction removed due to timeout?
 			}
 			testRepository.shutDown();
-		}
-		finally {
+		} finally {
 			server.stop();
 			System.clearProperty(CACHE_TIMEOUT_PROPERTY);
 		}

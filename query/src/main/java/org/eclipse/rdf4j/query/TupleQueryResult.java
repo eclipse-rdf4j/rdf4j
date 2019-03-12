@@ -10,10 +10,9 @@ package org.eclipse.rdf4j.query;
 import java.util.List;
 
 /**
- * A representation of a variable-binding query result as a sequence of {@link BindingSet} objects. Each query
- * result consists of zero or more solutions, each of which represents a single query solution as a set of
- * bindings. Note: take care to always close a TupleQueryResult after use to free any resources it keeps hold
- * of.
+ * A representation of a variable-binding query result as a sequence of {@link BindingSet} objects. Each query result
+ * consists of zero or more solutions, each of which represents a single query solution as a set of bindings. Note: take
+ * care to always close a TupleQueryResult after use to free any resources it keeps hold of.
  * 
  * @author jeen
  */
@@ -25,6 +24,5 @@ public interface TupleQueryResult extends QueryResult<BindingSet> {
 	 * @return The binding names, in order of projection.
 	 * @throws QueryEvaluationException
 	 */
-	public List<String> getBindingNames()
-		throws QueryEvaluationException;
+	public List<String> getBindingNames() throws QueryEvaluationException;
 }

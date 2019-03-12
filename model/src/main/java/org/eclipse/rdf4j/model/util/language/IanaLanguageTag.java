@@ -19,8 +19,8 @@ import java.util.Map;
 import org.eclipse.rdf4j.model.util.Literals;
 
 /**
- * Language codes registered by IANA. An encapsulation of the IANA language registry found at <a href=
- * " http://www.iana.org/assignments/language-tags"> http://www.iana.org/assignments/language-tags</a>. The
+ * Language codes registered by IANA. An encapsulation of the IANA language registry found at
+ * <a href= " http://www.iana.org/assignments/language-tags"> http://www.iana.org/assignments/language-tags</a>. The
  * values were updated on 8th July 2002 from a file dated 7th July 2002.
  * 
  * @author jjc
@@ -50,9 +50,7 @@ public class IanaLanguageTag extends LanguageTag {
 			all.put("tsu", new IanaLanguageTag[] { new IanaLanguageTag("i-tsu") });
 			all.put("bok", new IanaLanguageTag[] { new IanaLanguageTag("no-bok", LT_IANA_DEPRECATED) });
 			all.put("nyn", new IanaLanguageTag[] { new IanaLanguageTag("no-nyn", LT_IANA_DEPRECATED) });
-			all.put("be", new IanaLanguageTag[] {
-					new IanaLanguageTag("sgn-BE-fr"),
-					new IanaLanguageTag("sgn-BE-nl") });
+			all.put("be", new IanaLanguageTag[] { new IanaLanguageTag("sgn-BE-fr"), new IanaLanguageTag("sgn-BE-nl") });
 			all.put("br", new IanaLanguageTag[] { new IanaLanguageTag("sgn-BR") });
 			all.put("ch", new IanaLanguageTag[] { new IanaLanguageTag("sgn-CH-de") });
 			all.put("co", new IanaLanguageTag[] { new IanaLanguageTag("sgn-CO") });
@@ -76,14 +74,11 @@ public class IanaLanguageTag extends LanguageTag {
 			all.put("gan", new IanaLanguageTag[] { new IanaLanguageTag("zh-gan") });
 			all.put("guoyu", new IanaLanguageTag[] { new IanaLanguageTag("zh-guoyu") });
 			all.put("hakka", new IanaLanguageTag[] { new IanaLanguageTag("zh-hakka") });
-			all.put("min", new IanaLanguageTag[] {
-					new IanaLanguageTag("zh-min"),
-					new IanaLanguageTag("zh-min-nan") });
+			all.put("min", new IanaLanguageTag[] { new IanaLanguageTag("zh-min"), new IanaLanguageTag("zh-min-nan") });
 			all.put("wuu", new IanaLanguageTag[] { new IanaLanguageTag("zh-wuu") });
 			all.put("xiang", new IanaLanguageTag[] { new IanaLanguageTag("zh-xiang") });
 			all.put("yue", new IanaLanguageTag[] { new IanaLanguageTag("zh-yue") });
-		}
-		catch (LanguageTagSyntaxException ee) {
+		} catch (LanguageTagSyntaxException ee) {
 			System.err.println("Internal Error in static initializer of IanaLanguageTag:" + ee.getMessage());
 		}
 
@@ -99,31 +94,26 @@ public class IanaLanguageTag extends LanguageTag {
 	 */
 	final public int classification;
 
-	private IanaLanguageTag(String s, int classification)
-		throws LanguageTagSyntaxException
-	{
+	private IanaLanguageTag(String s, int classification) throws LanguageTagSyntaxException {
 		super(s);
 		this.classification = LT_IANA | classification;
 	}
 
-	private IanaLanguageTag(String s)
-		throws LanguageTagSyntaxException
-	{
+	private IanaLanguageTag(String s) throws LanguageTagSyntaxException {
 		this(s, 0);
 	}
 
 	/**
 	 * Look up a language identifier in the IANA list. Trailing additional subtags are ignored.
 	 * 
-	 * @param t
-	 *        The LanguageTag corresponding to the item being looked up.
+	 * @param t The LanguageTag corresponding to the item being looked up.
 	 * @return The IanaLanguageTag if found, or null if it is not in the list.
 	 */
 	static public IanaLanguageTag find(LanguageTag t) {
 		if (t.subtags.length < 2) {
 			return null;
 		}
-		IanaLanguageTag matches[] = (IanaLanguageTag[])all.get(t.subtags[1]);
+		IanaLanguageTag matches[] = (IanaLanguageTag[]) all.get(t.subtags[1]);
 		if (matches == null) {
 			return null;
 		}

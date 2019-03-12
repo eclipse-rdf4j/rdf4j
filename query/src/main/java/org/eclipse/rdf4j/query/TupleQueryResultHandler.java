@@ -12,8 +12,8 @@ import java.util.List;
 /**
  * An interface defining methods related to handling sequences of Solutions.
  * <p>
- * Instances of this interface are capable of handling tuple results using the {@link #startQueryResult(List)}
- * , {@link #handleSolution(BindingSet)} and {@link #endQueryResult()} methods.
+ * Instances of this interface are capable of handling tuple results using the {@link #startQueryResult(List)} ,
+ * {@link #handleSolution(BindingSet)} and {@link #endQueryResult()} methods.
  */
 public interface TupleQueryResultHandler extends QueryResultHandler {
 

@@ -44,8 +44,7 @@ public class HTTPMemServer {
 
 	public static final String REPOSITORY_URL = Protocol.getRepositoryLocation(SERVER_URL, TEST_REPO_ID);
 
-	public static String INFERENCE_REPOSITORY_URL = Protocol.getRepositoryLocation(SERVER_URL,
-			TEST_INFERENCE_REPO_ID);
+	public static String INFERENCE_REPOSITORY_URL = Protocol.getRepositoryLocation(SERVER_URL, TEST_INFERENCE_REPO_ID);
 
 	private final Server jetty;
 
@@ -61,17 +60,15 @@ public class HTTPMemServer {
 
 		WebAppContext webapp = new WebAppContext();
 		// TODO temporarily disabled so the integration test server shows server-side logging.
-		//		webapp.addSystemClass("org.slf4j.");
-		//		webapp.addSystemClass("ch.qos.logback.");
+		// webapp.addSystemClass("org.slf4j.");
+		// webapp.addSystemClass("ch.qos.logback.");
 		webapp.setContextPath(RDF4J_CONTEXT);
 		// warPath configured in pom.xml maven-war-plugin configuration
 		webapp.setWar("./target/rdf4j-server");
 		jetty.setHandler(webapp);
 	}
 
-	public void start()
-		throws Exception
-	{
+	public void start() throws Exception {
 		File dataDir = new File(System.getProperty("user.dir") + "/target/datadir");
 		dataDir.mkdirs();
 		System.setProperty("org.eclipse.rdf4j.appdata.basedir", dataDir.getAbsolutePath());
@@ -81,11 +78,8 @@ public class HTTPMemServer {
 		createTestRepositories();
 	}
 
-	public void stop()
-		throws Exception
-	{
-		Repository systemRepo = new HTTPRepository(
-				Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
+	public void stop() throws Exception {
+		Repository systemRepo = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
 		try (RepositoryConnection con = systemRepo.getConnection()) {
 			con.clear();
 		}
@@ -94,11 +88,8 @@ public class HTTPMemServer {
 		System.clearProperty("org.mortbay.log.class");
 	}
 
-	private void createTestRepositories()
-		throws RepositoryException, RepositoryConfigException
-	{
-		Repository systemRep = new HTTPRepository(
-				Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
+	private void createTestRepositories() throws RepositoryException, RepositoryConfigException {
+		Repository systemRep = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
 
 		// create a (non-inferencing) memory store
 		MemoryStoreConfig memStoreConfig = new MemoryStoreConfig();

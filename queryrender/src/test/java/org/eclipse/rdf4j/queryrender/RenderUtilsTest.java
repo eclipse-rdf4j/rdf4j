@@ -14,13 +14,11 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.Test;
 
-public class RenderUtilsTest
-{
-    @Test
-    public void toSparqlWithLiteralSerialisesLanguageTag()
-    {
-        Value val = SimpleValueFactory.getInstance().createLiteral("test", "en");
+public class RenderUtilsTest {
+	@Test
+	public void toSparqlWithLiteralSerialisesLanguageTag() {
+		Value val = SimpleValueFactory.getInstance().createLiteral("test", "en");
 
-        assertEquals("\"\"\"test\"\"\"@en", RenderUtils.toSPARQL(val));
-    }
+		assertEquals("\"\"\"test\"\"\"@en", RenderUtils.toSPARQL(val));
+	}
 }

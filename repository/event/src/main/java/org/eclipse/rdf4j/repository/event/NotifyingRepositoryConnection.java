@@ -15,8 +15,8 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 public interface NotifyingRepositoryConnection extends RepositoryConnection {
 
 	/**
-	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive notifications of operations that
-	 * are performed on this connection.
+	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive notifications of operations that are
+	 * performed on this connection.
 	 */
 	public void addRepositoryConnectionListener(RepositoryConnectionListener listener);
 

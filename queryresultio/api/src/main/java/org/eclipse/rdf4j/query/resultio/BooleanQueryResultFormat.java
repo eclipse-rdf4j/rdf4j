@@ -15,9 +15,9 @@ import java.util.Collection;
 import org.eclipse.rdf4j.model.IRI;
 
 /**
- * Represents the concept of a boolean query result serialization format. Boolean query result formats are
- * identified by a {@link #getName() name} and can have one or more associated MIME types, zero or more
- * associated file extensions and can specify a (default) character encoding.
+ * Represents the concept of a boolean query result serialization format. Boolean query result formats are identified by
+ * a {@link #getName() name} and can have one or more associated MIME types, zero or more associated file extensions and
+ * can specify a (default) character encoding.
  * 
  * @author Arjohn Kampman
  */
@@ -54,13 +54,10 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 	/**
 	 * Creates a new BooleanQueryResultFormat object.
 	 * 
-	 * @param name
-	 *        The name of the format, e.g. "SPARQL/XML".
-	 * @param mimeType
-	 *        The MIME type of the format, e.g. <tt>application/sparql-results+xml</tt> for the SPARQL/XML
-	 *        format.
-	 * @param fileExt
-	 *        The (default) file extension for the format, e.g. <tt>srx</tt> for SPARQL/XML.
+	 * @param name     The name of the format, e.g. "SPARQL/XML".
+	 * @param mimeType The MIME type of the format, e.g. <tt>application/sparql-results+xml</tt> for the SPARQL/XML
+	 *                 format.
+	 * @param fileExt  The (default) file extension for the format, e.g. <tt>srx</tt> for SPARQL/XML.
 	 */
 	public BooleanQueryResultFormat(String name, String mimeType, String fileExt) {
 		this(name, mimeType, null, fileExt);
@@ -69,15 +66,11 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 	/**
 	 * Creates a new BooleanQueryResultFormat object.
 	 * 
-	 * @param name
-	 *        The name of the format, e.g. "SPARQL/XML".
-	 * @param mimeType
-	 *        The MIME type of the format, e.g. <tt>application/sparql-results+xml</tt> for the SPARQL/XML
-	 *        format.
-	 * @param charset
-	 *        The default character encoding of the format. Specify <tt>null</tt> if not applicable.
-	 * @param fileExt
-	 *        The (default) file extension for the format, e.g. <tt>srx</tt> for SPARQL/XML.
+	 * @param name     The name of the format, e.g. "SPARQL/XML".
+	 * @param mimeType The MIME type of the format, e.g. <tt>application/sparql-results+xml</tt> for the SPARQL/XML
+	 *                 format.
+	 * @param charset  The default character encoding of the format. Specify <tt>null</tt> if not applicable.
+	 * @param fileExt  The (default) file extension for the format, e.g. <tt>srx</tt> for SPARQL/XML.
 	 */
 	public BooleanQueryResultFormat(String name, String mimeType, Charset charset, String fileExt) {
 		super(name, mimeType, charset, fileExt);
@@ -86,43 +79,34 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 	/**
 	 * Creates a new BooleanQueryResultFormat object.
 	 * 
-	 * @param name
-	 *        The name of the format, e.g. "SPARQL/XML".
-	 * @param mimeTypes
-	 *        The MIME types of the format, e.g. <tt>application/sparql-results+xml</tt> for the SPARQL/XML
-	 *        format. The first item in the list is interpreted as the default MIME type for the format.
-	 * @param charset
-	 *        The default character encoding of the format. Specify <tt>null</tt> if not applicable.
-	 * @param fileExtensions
-	 *        The format's file extensions, e.g. <tt>srx</tt> for SPARQL/XML files. The first item in the list
-	 *        is interpreted as the default file extension for the format.
+	 * @param name           The name of the format, e.g. "SPARQL/XML".
+	 * @param mimeTypes      The MIME types of the format, e.g. <tt>application/sparql-results+xml</tt> for the
+	 *                       SPARQL/XML format. The first item in the list is interpreted as the default MIME type for
+	 *                       the format.
+	 * @param charset        The default character encoding of the format. Specify <tt>null</tt> if not applicable.
+	 * @param fileExtensions The format's file extensions, e.g. <tt>srx</tt> for SPARQL/XML files. The first item in the
+	 *                       list is interpreted as the default file extension for the format.
 	 */
 	public BooleanQueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
-			Collection<String> fileExtensions)
-	{
+			Collection<String> fileExtensions) {
 		super(name, mimeTypes, charset, fileExtensions);
 	}
 
 	/**
 	 * Creates a new BooleanQueryResultFormat object.
 	 * 
-	 * @param name
-	 *        The name of the format, e.g. "SPARQL/XML".
-	 * @param mimeTypes
-	 *        The MIME types of the format, e.g. <tt>application/sparql-results+xml</tt> for the SPARQL/XML
-	 *        format. The first item in the list is interpreted as the default MIME type for the format.
-	 * @param charset
-	 *        The default character encoding of the format. Specify <tt>null</tt> if not applicable.
-	 * @param fileExtensions
-	 *        The format's file extensions, e.g. <tt>srx</tt> for SPARQL/XML files. The first item in the list
-	 *        is interpreted as the default file extension for the format.
-	 * @param standardURI
-	 *        The standard URI that has been assigned to this format by a standards organisation or null if it
-	 *        does not currently have a standard URI.
+	 * @param name           The name of the format, e.g. "SPARQL/XML".
+	 * @param mimeTypes      The MIME types of the format, e.g. <tt>application/sparql-results+xml</tt> for the
+	 *                       SPARQL/XML format. The first item in the list is interpreted as the default MIME type for
+	 *                       the format.
+	 * @param charset        The default character encoding of the format. Specify <tt>null</tt> if not applicable.
+	 * @param fileExtensions The format's file extensions, e.g. <tt>srx</tt> for SPARQL/XML files. The first item in the
+	 *                       list is interpreted as the default file extension for the format.
+	 * @param standardURI    The standard URI that has been assigned to this format by a standards organisation or null
+	 *                       if it does not currently have a standard URI.
 	 */
 	public BooleanQueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
-			Collection<String> fileExtensions, IRI standardURI)
-	{
+			Collection<String> fileExtensions, IRI standardURI) {
 		super(name, mimeTypes, charset, fileExtensions, standardURI);
 	}
 }

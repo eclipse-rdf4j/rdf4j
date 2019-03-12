@@ -24,8 +24,7 @@ public class SPARQLFederatedService extends RepositoryFederatedService {
 	}
 
 	/**
-	 * @param serviceUrl
-	 *        the serviceUrl use to initialize the inner {@link SPARQLRepository}
+	 * @param serviceUrl the serviceUrl use to initialize the inner {@link SPARQLRepository}
 	 */
 	public SPARQLFederatedService(String serviceUrl, HttpClientSessionManager client) {
 		super(createSPARQLRepository(serviceUrl, client));

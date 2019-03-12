@@ -25,7 +25,7 @@ class CastingList<E> extends AbstractList<E> {
 	@SuppressWarnings("unchecked")
 	@Override
 	public E get(int index) {
-		return (E)_elements.get(index);
+		return (E) _elements.get(index);
 	}
 
 	@Override

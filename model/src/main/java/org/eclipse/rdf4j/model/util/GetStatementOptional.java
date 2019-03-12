@@ -25,17 +25,13 @@ public interface GetStatementOptional {
 	/**
 	 * Either supplies a statement matching the given pattern, or {@link Optional#empty()} otherwise.
 	 * 
-	 * @param subject
-	 *        A {@link Resource} to be used to match to statements.
-	 * @param predicate
-	 *        An {@link IRI} to be used to match to statements.
-	 * @param object
-	 *        A {@link Value} to be used to match to statements.
-	 * @param contexts
-	 *        An array of context {@link Resource} objects, or left out (not null) to select from all
-	 *        contexts.
-	 * @return An {@link Optional} either containing a single statement matching the pattern or
-	 *         {@link Optional#empty()} otherwise.
+	 * @param subject   A {@link Resource} to be used to match to statements.
+	 * @param predicate An {@link IRI} to be used to match to statements.
+	 * @param object    A {@link Value} to be used to match to statements.
+	 * @param contexts  An array of context {@link Resource} objects, or left out (not null) to select from all
+	 *                  contexts.
+	 * @return An {@link Optional} either containing a single statement matching the pattern or {@link Optional#empty()}
+	 *         otherwise.
 	 */
 	Optional<Statement> get(Resource subject, IRI predicate, Value object, Resource... contexts);
 

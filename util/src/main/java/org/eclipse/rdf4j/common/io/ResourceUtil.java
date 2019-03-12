@@ -31,8 +31,7 @@ public class ResourceUtil {
 	/**
 	 * The URL to the specified resource
 	 * 
-	 * @param resourceName
-	 *        the name of the resource
+	 * @param resourceName the name of the resource
 	 * @return the URL to the specified resource, or null if the resource could not be found
 	 */
 	public static URL getURL(String resourceName) {
@@ -62,11 +61,9 @@ public class ResourceUtil {
 	 * 
 	 * @param resourceName
 	 * @return set of URLs
-	 * @throws IOException 
+	 * @throws IOException
 	 */
-	public static Set<URL> getURLs(String resourceName)
-		throws IOException
-	{
+	public static Set<URL> getURLs(String resourceName) throws IOException {
 		Set<URL> result = new HashSet<>();
 
 		// most likely to succeed
@@ -85,7 +82,7 @@ public class ResourceUtil {
 	 * Add an enumeration of URLs to a set of URLs
 	 * 
 	 * @param result result set
-	 * @param urls urls to add
+	 * @param urls   urls to add
 	 */
 	private static void addAll(Set<URL> result, Enumeration<URL> urls) {
 		if (urls != null) {
@@ -98,8 +95,7 @@ public class ResourceUtil {
 	/**
 	 * Get an inputstream on the specified resource.
 	 * 
-	 * @param resourceName
-	 *        the name of the resource
+	 * @param resourceName the name of the resource
 	 * @return an inputstream on the specified resource, or null if the resource could not be found
 	 */
 	public static InputStream getInputStream(String resourceName) {
@@ -123,21 +119,15 @@ public class ResourceUtil {
 	}
 
 	/**
-	 * Retrieve the String contents of the specified resource, obtained by opening in inputstream on the
-	 * resource and then interpreting the bytes contained in the inputstream as if they represented
-	 * characters. This may not make sense on all resources. There is no "magic" in this method to read
-	 * anything other than plain text.
+	 * Retrieve the String contents of the specified resource, obtained by opening in inputstream on the resource and
+	 * then interpreting the bytes contained in the inputstream as if they represented characters. This may not make
+	 * sense on all resources. There is no "magic" in this method to read anything other than plain text.
 	 * 
-	 * @param resourceName
-	 *        the name of the resource
-	 * @return the String contents of the specified resource, or null if the specified resource could not be
-	 *         found
-	 * @throws IOException
-	 *         when something goes wrong trying to read the resource
+	 * @param resourceName the name of the resource
+	 * @return the String contents of the specified resource, or null if the specified resource could not be found
+	 * @throws IOException when something goes wrong trying to read the resource
 	 */
-	public static String getString(String resourceName)
-		throws IOException
-	{
+	public static String getString(String resourceName) throws IOException {
 		String result = null;
 
 		InputStream in = ResourceUtil.getInputStream(resourceName);
@@ -145,8 +135,7 @@ public class ResourceUtil {
 		if (in != null) {
 			try {
 				result = IOUtil.readString(in);
-			}
-			finally {
+			} finally {
 				in.close();
 			}
 		}
@@ -157,8 +146,7 @@ public class ResourceUtil {
 	/**
 	 * Retrieve an image icon resource.
 	 * 
-	 * @param resourceName
-	 *        the name of the resource
+	 * @param resourceName the name of the resource
 	 * @return an image icon, or null if the specified resource could not be found
 	 */
 	public static ImageIcon getImageIcon(String resourceName) {
@@ -175,8 +163,7 @@ public class ResourceUtil {
 	/**
 	 * Retrieve an image resource
 	 * 
-	 * @param resourceName
-	 *        the name of the resource
+	 * @param resourceName the name of the resource
 	 * @return an image, or null if the specified resource could not be found
 	 */
 	public static BufferedImage getImage(String resourceName) {
@@ -185,8 +172,7 @@ public class ResourceUtil {
 		URL url = getURL(resourceName);
 		try {
 			result = ImageIO.read(url);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			result = null;
 		}
 
@@ -196,15 +182,12 @@ public class ResourceUtil {
 	/**
 	 * Retrieve a properties resource.
 	 * 
-	 * @param resourceName
-	 *        the name of the resource
-	 * @return a Properties object representing the contents of the resource, or null if the specified
-	 *         resource could not be found
+	 * @param resourceName the name of the resource
+	 * @return a Properties object representing the contents of the resource, or null if the specified resource could
+	 *         not be found
 	 * @throws IOException
 	 */
-	public static Properties getProperties(String resourceName)
-		throws IOException
-	{
+	public static Properties getProperties(String resourceName) throws IOException {
 		URL resourceURL = getURL(resourceName);
 
 		if (resourceURL != null) {
@@ -221,16 +204,11 @@ public class ResourceUtil {
 	/**
 	 * Store a resource to a file on the file system.
 	 * 
-	 * @param resourceName
-	 *        the name of the resource
-	 * @param output
-	 *        the file to write to
-	 * @throws IOException
-	 *         if there was a problem reading the resource or writing to the file
+	 * @param resourceName the name of the resource
+	 * @param output       the file to write to
+	 * @throws IOException if there was a problem reading the resource or writing to the file
 	 */
-	public static void resourceToFile(String resourceName, File output)
-		throws IOException
-	{
+	public static void resourceToFile(String resourceName, File output) throws IOException {
 		output.getParentFile().mkdirs();
 		InputStream in = ResourceUtil.class.getResourceAsStream(resourceName);
 		OutputStream out = new FileOutputStream(output);
@@ -240,8 +218,7 @@ public class ResourceUtil {
 	/**
 	 * Retrieve the calling class of a method in this class.
 	 * 
-	 * @return the calling class of a method in this class, or this class if no other class could be
-	 *         determined.
+	 * @return the calling class of a method in this class, or this class if no other class could be determined.
 	 */
 	private static Class<?> getCaller() {
 		Class<?> result = ResourceUtil.class;
@@ -252,9 +229,7 @@ public class ResourceUtil {
 			// look for the first class on the stack that isn't this class or the
 			// inner utility class (it's most likely stack[2], but we don't want to
 			// count on that and find out it isn't)
-			while (index < callStack.length
-					&& (result == ResourceUtil.class || result == CallerResolver.class))
-			{
+			while (index < callStack.length && (result == ResourceUtil.class || result == CallerResolver.class)) {
 				result = callStack[index];
 				index = index + 1;
 			}
@@ -264,9 +239,9 @@ public class ResourceUtil {
 	}
 
 	/**
-	 * A helper class to get the call context. It subclasses SecurityManager to make getClassContext()
-	 * accessible. An instance of CallerResolver only needs to be created, not installed as an actual security
-	 * manager. We use our own class instead of System.getSecurityManager(), because that may be set to null.
+	 * A helper class to get the call context. It subclasses SecurityManager to make getClassContext() accessible. An
+	 * instance of CallerResolver only needs to be created, not installed as an actual security manager. We use our own
+	 * class instead of System.getSecurityManager(), because that may be set to null.
 	 */
 	private static final class CallerResolver extends SecurityManager {
 
@@ -274,8 +249,7 @@ public class ResourceUtil {
 		static {
 			try {
 				INSTANCE = new CallerResolver();
-			}
-			catch (SecurityException se) {
+			} catch (SecurityException se) {
 				throw new RuntimeException("Could not create CallerResolver: " + se);
 			}
 		}

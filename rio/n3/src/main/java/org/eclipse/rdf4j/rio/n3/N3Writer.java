@@ -19,9 +19,8 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
 
 /**
- * An implementation of the RDFWriter interface that writes RDF documents in N3 format. Note: the current
- * implementation simply wraps a {@link TurtleWriter} and writes documents in Turtle format, which is a subset
- * of N3.
+ * An implementation of the RDFWriter interface that writes RDF documents in N3 format. Note: the current implementation
+ * simply wraps a {@link TurtleWriter} and writes documents in Turtle format, which is a subset of N3.
  */
 public class N3Writer extends AbstractRDFWriter implements RDFWriter {
 
@@ -38,8 +37,7 @@ public class N3Writer extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new N3Writer that will write to the supplied OutputStream.
 	 * 
-	 * @param out
-	 *        The OutputStream to write the N3 document to.
+	 * @param out The OutputStream to write the N3 document to.
 	 */
 	public N3Writer(OutputStream out) {
 		this(out, null);
@@ -48,10 +46,8 @@ public class N3Writer extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new N3Writer that will write to the supplied OutputStream.
 	 *
-	 * @param out
-	 *        The OutputStream to write the N3 document to.
-	 * @param baseIRI
-	 *        used to relativize IRIs to relative IRIs.
+	 * @param out     The OutputStream to write the N3 document to.
+	 * @param baseIRI used to relativize IRIs to relative IRIs.
 	 */
 	public N3Writer(OutputStream out, ParsedIRI baseIRI) {
 		ttlWriter = new TurtleWriter(out, baseIRI);
@@ -60,8 +56,7 @@ public class N3Writer extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new N3Writer that will write to the supplied Writer.
 	 * 
-	 * @param writer
-	 *        The Writer to write the N3 document to.
+	 * @param writer The Writer to write the N3 document to.
 	 */
 	public N3Writer(Writer writer) {
 		this(writer, null);
@@ -70,10 +65,8 @@ public class N3Writer extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Creates a new N3Writer that will write to the supplied Writer.
 	 *
-	 * @param writer
-	 *        The Writer to write the N3 document to.
-	 * @param baseIRI
-	 *        used to relativize IRIs to relative IRIs.
+	 * @param writer  The Writer to write the N3 document to.
+	 * @param baseIRI used to relativize IRIs to relative IRIs.
 	 */
 	public N3Writer(Writer writer, ParsedIRI baseIRI) {
 		ttlWriter = new TurtleWriter(writer, baseIRI);
@@ -89,37 +82,27 @@ public class N3Writer extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void startRDF()
-		throws RDFHandlerException
-	{
+	public void startRDF() throws RDFHandlerException {
 		ttlWriter.startRDF();
 	}
 
 	@Override
-	public void endRDF()
-		throws RDFHandlerException
-	{
+	public void endRDF() throws RDFHandlerException {
 		ttlWriter.endRDF();
 	}
 
 	@Override
-	public void handleNamespace(String prefix, String name)
-		throws RDFHandlerException
-	{
+	public void handleNamespace(String prefix, String name) throws RDFHandlerException {
 		ttlWriter.handleNamespace(prefix, name);
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		ttlWriter.handleStatement(st);
 	}
 
 	@Override
-	public void handleComment(String comment)
-		throws RDFHandlerException
-	{
+	public void handleComment(String comment) throws RDFHandlerException {
 		ttlWriter.handleComment(comment);
 	}
 }

@@ -18,9 +18,7 @@ public class ASTEdge extends SimpleNode {
 	}
 
 	@Override
-	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-		throws VisitorException
-	{
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
 
@@ -30,6 +28,6 @@ public class ASTEdge extends SimpleNode {
 	 * @return An {@link ASTVar}, {@link ASTURI} or {@link ASTQName} object.
 	 */
 	public ASTValueExpr getValueExpr() {
-		return (ASTValueExpr)children.get(0);
+		return (ASTValueExpr) children.get(0);
 	}
 }

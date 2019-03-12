@@ -20,8 +20,8 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Implements a {@link com.opencsv.bean.MappingStrategy} to allow opencsv to work in parallel.
- * This is where the input is converted into {@link org.eclipse.rdf4j.query.BindingSet}s.
+ * Implements a {@link com.opencsv.bean.MappingStrategy} to allow opencsv to work in parallel. This is where the input
+ * is converted into {@link org.eclipse.rdf4j.query.BindingSet}s.
  *
  * @author Andrew Rucker Jones
  */

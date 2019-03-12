@@ -29,23 +29,18 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	}
 
 	@BeforeClass
-	public static void startServer()
-		throws Exception
-	{
+	public static void startServer() throws Exception {
 		server = new HTTPMemServer();
 		try {
 			server.start();
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			server.stop();
 			throw e;
 		}
 	}
 
 	@AfterClass
-	public static void stopServer()
-		throws Exception
-	{
+	public static void stopServer() throws Exception {
 		server.stop();
 	}
 
@@ -57,18 +52,14 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@Ignore("temporarily disabled for HTTPRepository")
 	@Test
 	@Override
-	public void testTransactionIsolationForRead()
-		throws Exception
-	{
+	public void testTransactionIsolationForRead() throws Exception {
 		System.err.println("temporarily disabled testTransactionIsolationForRead() for HTTPRepository");
 	}
 
 	@Ignore("temporarily disabled for HTTPRepository")
 	@Test
 	@Override
-	public void testTransactionIsolationForReadWithDeleteOperation()
-		throws Exception
-	{
+	public void testTransactionIsolationForReadWithDeleteOperation() throws Exception {
 		System.err.println(
 				"temporarily disabled testTransactionIsolationForReadWithDeleteOperation() for HTTPRepository");
 	}
@@ -76,103 +67,80 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@Ignore("temporarily disabled for HTTPRepository")
 	@Test
 	@Override
-	public void testTransactionIsolation()
-		throws Exception
-	{
+	public void testTransactionIsolation() throws Exception {
 		System.err.println("temporarily disabled testTransactionIsolation() for HTTPRepository");
 	}
 
 	@Ignore("temporarily disabled for HTTPRepository")
 	@Test
 	@Override
-	public void testAutoCommit()
-		throws Exception
-	{
+	public void testAutoCommit() throws Exception {
 		System.err.println("temporarily disabled testAutoCommit() for HTTPRepository");
 	}
 
 	@Ignore("temporarily disabled for HTTPRepository")
 	@Test
 	@Override
-	public void testRollback()
-		throws Exception
-	{
+	public void testRollback() throws Exception {
 		System.err.println("temporarily disabled testRollback() for HTTPRepository");
 	}
 
 	@Ignore("temporarily disabled for HTTPRepository")
 	@Test
 	@Override
-	public void testEmptyCommit()
-		throws Exception
-	{
+	public void testEmptyCommit() throws Exception {
 		System.err.println("temporarily disabled testEmptyCommit() for HTTPRepository");
 	}
 
 	@Ignore("temporarily disabled for HTTPRepository")
 	@Test
 	@Override
-	public void testEmptyRollback()
-		throws Exception
-	{
+	public void testEmptyRollback() throws Exception {
 		System.err.println("temporarily disabled testEmptyRollback() for HTTPRepository");
 	}
 
 	@Ignore("temporarily disabled for HTTPRepository")
 	@Test
 	@Override
-	public void testSizeCommit()
-		throws Exception
-	{
+	public void testSizeCommit() throws Exception {
 		System.err.println("temporarily disabled testSizeCommit() for HTTPRepository");
 	}
 
 	@Ignore("temporarily disabled for HTTPRepository")
 	@Test
 	@Override
-	public void testSizeRollback()
-		throws Exception
-	{
+	public void testSizeRollback() throws Exception {
 		System.err.println("temporarily disabled testSizeRollback() for HTTPRepository");
 	}
 
 	@Ignore("temporarily disabled for HTTPRepository")
 	@Test
 	@Override
-	public void testGetContextIDs()
-		throws Exception
-	{
+	public void testGetContextIDs() throws Exception {
 		System.err.println("temporarily disabled testGetContextIDs() for HTTPRepository");
 	}
 
 	@Ignore("temporarily disabled for HTTPRepository")
 	@Test
 	@Override
-	public void testInferencerQueryDuringTransaction()
-		throws Exception
-	{
+	public void testInferencerQueryDuringTransaction() throws Exception {
 		System.err.println("temporarily disabled testInferencerDuringTransaction() for HTTPRepository");
 	}
 
 	@Ignore("temporarily disabled for HTTPRepository")
 	@Test
 	@Override
-	public void testInferencerTransactionIsolation()
-		throws Exception
-	{
+	public void testInferencerTransactionIsolation() throws Exception {
 		System.err.println("temporarily disabled testInferencerTransactionIsolation() for HTTPRepository");
 	}
 
 	@Test
 	@Override
-	public void testAddMalformedLiteralsDefaultConfig()
-		throws Exception
-	{
+	public void testAddMalformedLiteralsDefaultConfig() throws Exception {
 		try {
-			testCon.add(RepositoryConnectionTest.class.getResourceAsStream(
-					TEST_DIR_PREFIX + "malformed-literals.ttl"), "", RDFFormat.TURTLE);
-		}
-		catch (RDF4JException e) {
+			testCon.add(RepositoryConnectionTest.class.getResourceAsStream(TEST_DIR_PREFIX + "malformed-literals.ttl"),
+					"", RDFFormat.TURTLE);
+		} catch (RDF4JException e) {
 			fail("upload of malformed literals should not fail with error in default configuration for HTTPRepository");
 		}
 	}
@@ -180,11 +148,8 @@ public class RDFSchemaHTTPRepositoryConnectionTest extends RDFSchemaRepositoryCo
 	@Test
 	@Override
 	@Ignore("See SES-1833")
-	public void testAddMalformedLiteralsStrictConfig()
-		throws Exception
-	{
-		System.err.println(
-				"SES-1833: temporarily disabled testAddMalformedLiteralsStrictConfig() for HTTPRepository");
+	public void testAddMalformedLiteralsStrictConfig() throws Exception {
+		System.err.println("SES-1833: temporarily disabled testAddMalformedLiteralsStrictConfig() for HTTPRepository");
 	}
 
 }

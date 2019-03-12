@@ -68,23 +68,17 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 	 *---------*/
 
 	@Override
-	public void startRDF()
-		throws RDFHandlerException
-	{
+	public void startRDF() throws RDFHandlerException {
 		graph.clear();
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		graph.add(st);
 	}
 
 	@Override
-	public void endRDF()
-		throws RDFHandlerException
-	{
+	public void endRDF() throws RDFHandlerException {
 		try {
 			Resource resultSetNode = GraphUtil.getUniqueSubject(graph, RDF.TYPE, RESULTSET);
 
@@ -96,27 +90,21 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 				Value solutionNode = solIter.next();
 
 				if (solutionNode instanceof Resource) {
-					reportSolution((Resource)solutionNode, bindingNames);
-				}
-				else {
-					throw new RDFHandlerException(
-							"Value for " + SOLUTION + " is not a resource: " + solutionNode);
+					reportSolution((Resource) solutionNode, bindingNames);
+				} else {
+					throw new RDFHandlerException("Value for " + SOLUTION + " is not a resource: " + solutionNode);
 				}
 			}
 
 			tqrHandler.endQueryResult();
-		}
-		catch (GraphUtilException e) {
+		} catch (GraphUtilException e) {
 			throw new RDFHandlerException(e.getMessage(), e);
-		}
-		catch (TupleQueryResultHandlerException e) {
+		} catch (TupleQueryResultHandlerException e) {
 			throw new RDFHandlerException(e.getMessage(), e);
 		}
 	}
 
-	private List<String> getBindingNames(Resource resultSetNode)
-		throws RDFHandlerException
-	{
+	private List<String> getBindingNames(Resource resultSetNode) throws RDFHandlerException {
 		List<String> bindingNames = new ArrayList<>(16);
 
 		Iterator<Value> varIter = GraphUtil.getObjectIterator(graph, resultSetNode, RESULTVARIABLE);
@@ -125,11 +113,9 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 			Value varName = varIter.next();
 
 			if (varName instanceof Literal) {
-				bindingNames.add(((Literal)varName).getLabel());
-			}
-			else {
-				throw new RDFHandlerException(
-						"Value for " + RESULTVARIABLE + " is not a literal: " + varName);
+				bindingNames.add(((Literal) varName).getLabel());
+			} else {
+				throw new RDFHandlerException("Value for " + RESULTVARIABLE + " is not a literal: " + varName);
 			}
 		}
 
@@ -137,8 +123,7 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 	}
 
 	private void reportSolution(Resource solutionNode, List<String> bindingNames)
-		throws RDFHandlerException, GraphUtilException
-	{
+			throws RDFHandlerException, GraphUtilException {
 		MapBindingSet bindingSet = new MapBindingSet(bindingNames.size());
 
 		Iterator<Value> bindingIter = GraphUtil.getObjectIterator(graph, solutionNode, BINDING);
@@ -146,25 +131,21 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 			Value bindingNode = bindingIter.next();
 
 			if (bindingNode instanceof Resource) {
-				Binding binding = getBinding((Resource)bindingNode);
+				Binding binding = getBinding((Resource) bindingNode);
 				bindingSet.addBinding(binding);
-			}
-			else {
+			} else {
 				throw new RDFHandlerException("Value for " + BINDING + " is not a resource: " + bindingNode);
 			}
 		}
 
 		try {
 			tqrHandler.handleSolution(bindingSet);
-		}
-		catch (TupleQueryResultHandlerException e) {
+		} catch (TupleQueryResultHandlerException e) {
 			throw new RDFHandlerException(e.getMessage(), e);
 		}
 	}
 
-	private Binding getBinding(Resource bindingNode)
-		throws GraphUtilException
-	{
+	private Binding getBinding(Resource bindingNode) throws GraphUtilException {
 		Literal name = GraphUtil.getUniqueObjectLiteral(graph, bindingNode, VARIABLE);
 		Value value = GraphUtil.getUniqueObject(graph, bindingNode, VALUE);
 		return new SimpleBinding(name.getLabel(), value);

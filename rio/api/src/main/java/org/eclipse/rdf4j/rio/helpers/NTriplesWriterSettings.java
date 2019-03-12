@@ -19,7 +19,7 @@ public class NTriplesWriterSettings {
 	/**
 	 * Boolean setting for writer to determine if unicode escapes are used.
 	 * <p>
-	 * Defaults to false. 
+	 * Defaults to false.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.ntriples.escape_unicode}
 	 */

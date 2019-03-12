@@ -13,4 +13,5 @@ import org.eclipse.rdf4j.sparqlbuilder.constraint.Operand;
 /**
  * Denotes an RDF Value.
  */
-public interface RdfValue extends RdfObject, Operand { }
+public interface RdfValue extends RdfObject, Operand {
+}

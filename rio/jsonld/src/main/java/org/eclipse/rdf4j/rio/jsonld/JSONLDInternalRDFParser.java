@@ -47,7 +47,7 @@ class JSONLDInternalRDFParser implements com.github.jsonldjava.core.RDFParser {
 		final String graphName = getResourceValue(nextStatement.getContext());
 
 		if (object instanceof Literal) {
-			final Literal literal = (Literal)object;
+			final Literal literal = (Literal) object;
 			final String value = literal.getLabel();
 
 			String datatype = getResourceValue(literal.getDatatype());
@@ -64,22 +64,18 @@ class JSONLDInternalRDFParser implements com.github.jsonldjava.core.RDFParser {
 				datatype = XMLSchema.STRING.stringValue();
 			}
 
-			result.addQuad(subject, predicate, value, datatype, literal.getLanguage().orElse(null),
-					graphName);
-		}
-		else {
-			result.addQuad(subject, predicate, getResourceValue((Resource)object), graphName);
+			result.addQuad(subject, predicate, value, datatype, literal.getLanguage().orElse(null), graphName);
+		} else {
+			result.addQuad(subject, predicate, getResourceValue((Resource) object), graphName);
 		}
 	}
 
 	private String getResourceValue(Resource subject) {
 		if (subject == null) {
 			return null;
-		}
-		else if (subject instanceof IRI) {
+		} else if (subject instanceof IRI) {
 			return subject.stringValue();
-		}
-		else if (subject instanceof BNode) {
+		} else if (subject instanceof BNode) {
 			return "_:" + subject.stringValue();
 		}
 
@@ -87,22 +83,19 @@ class JSONLDInternalRDFParser implements com.github.jsonldjava.core.RDFParser {
 	}
 
 	@Override
-	public RDFDataset parse(Object input)
-		throws JsonLdError
-	{
+	public RDFDataset parse(Object input) throws JsonLdError {
 		final RDFDataset result = new RDFDataset();
 		if (input instanceof Statement) {
-			handleStatement(result, (Statement)input);
-		}
-		else if (input instanceof Graph) {
+			handleStatement(result, (Statement) input);
+		} else if (input instanceof Graph) {
 			if (input instanceof NamespaceAware) {
-				final Set<Namespace> namespaces = ((NamespaceAware)input).getNamespaces();
+				final Set<Namespace> namespaces = ((NamespaceAware) input).getNamespaces();
 				for (final Namespace nextNs : namespaces) {
 					result.setNamespace(nextNs.getName(), nextNs.getPrefix());
 				}
 			}
 
-			for (final Statement nextStatement : (Graph)input) {
+			for (final Statement nextStatement : (Graph) input) {
 				handleStatement(result, nextStatement);
 			}
 		}

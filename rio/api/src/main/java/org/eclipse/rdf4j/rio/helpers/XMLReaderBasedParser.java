@@ -42,7 +42,7 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 	 *         {@link XMLReader#setProperty(String, Object)}.
 	 */
 	public Collection<RioSetting<?>> getCompulsoryXmlPropertySettings() {
-		return Collections.<RioSetting<?>> emptyList();
+		return Collections.<RioSetting<?>>emptyList();
 	}
 
 	/**
@@ -51,8 +51,8 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 	 * <p>
 	 * Subclasses can override this to specify more supported settings.
 	 * 
-	 * @return A collection of {@link RioSetting}s that indicate which boolean settings will always be setup
-	 *         using {@link XMLReader#setFeature(String, boolean)}.
+	 * @return A collection of {@link RioSetting}s that indicate which boolean settings will always be setup using
+	 *         {@link XMLReader#setFeature(String, boolean)}.
 	 */
 	public Collection<RioSetting<Boolean>> getCompulsoryXmlFeatureSettings() {
 		return Collections.unmodifiableSet(compulsoryXmlFeatureSettings);
@@ -68,12 +68,12 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 	 *         {@link XMLReader#setProperty(String, Object)}.
 	 */
 	public Collection<RioSetting<?>> getOptionalXmlPropertySettings() {
-		return Collections.<RioSetting<?>> emptyList();
+		return Collections.<RioSetting<?>>emptyList();
 	}
 
 	/**
-	 * Returns a collection of settings that will be used, if set in {@link #getParserConfig()}, as XML parser
-	 * features using {@link XMLReader#setFeature(String, boolean)}.
+	 * Returns a collection of settings that will be used, if set in {@link #getParserConfig()}, as XML parser features
+	 * using {@link XMLReader#setFeature(String, boolean)}.
 	 * <p>
 	 * Subclasses can override this to specify more supported settings.
 	 * 
@@ -88,19 +88,15 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 	 * Creates an XML Reader configured using the current parser settings.
 	 * 
 	 * @return a configured {@link XMLReader}
-	 * @throws SAXException
-	 *         if an error occurs during configuration.
+	 * @throws SAXException if an error occurs during configuration.
 	 */
-	protected XMLReader getXMLReader()
-		throws SAXException
-	{
+	protected XMLReader getXMLReader() throws SAXException {
 
 		XMLReader xmlReader;
 
 		if (getParserConfig().isSet(XMLParserSettings.CUSTOM_XML_READER)) {
 			xmlReader = getParserConfig().get(XMLParserSettings.CUSTOM_XML_READER);
-		}
-		else {
+		} else {
 			xmlReader = XMLReaderFactory.createXMLReader();
 		}
 
@@ -109,11 +105,9 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 		for (RioSetting<Boolean> aSetting : getCompulsoryXmlFeatureSettings()) {
 			try {
 				xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));
-			}
-			catch (SAXNotRecognizedException e) {
+			} catch (SAXNotRecognizedException e) {
 				reportWarning(String.format("%s is not a recognized SAX feature.", aSetting.getKey()));
-			}
-			catch (SAXNotSupportedException e) {
+			} catch (SAXNotSupportedException e) {
 				reportWarning(String.format("%s is not a supported SAX feature.", aSetting.getKey()));
 			}
 		}
@@ -123,11 +117,9 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 		for (RioSetting<?> aSetting : getCompulsoryXmlPropertySettings()) {
 			try {
 				xmlReader.setProperty(aSetting.getKey(), getParserConfig().get(aSetting));
-			}
-			catch (SAXNotRecognizedException e) {
+			} catch (SAXNotRecognizedException e) {
 				reportWarning(String.format("%s is not a recognized SAX property.", aSetting.getKey()));
-			}
-			catch (SAXNotSupportedException e) {
+			} catch (SAXNotSupportedException e) {
 				reportWarning(String.format("%s is not a supported SAX property.", aSetting.getKey()));
 			}
 		}
@@ -139,11 +131,9 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 				if (getParserConfig().isSet(aSetting)) {
 					xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));
 				}
-			}
-			catch (SAXNotRecognizedException e) {
+			} catch (SAXNotRecognizedException e) {
 				reportWarning(String.format("%s is not a recognized SAX feature.", aSetting.getKey()));
-			}
-			catch (SAXNotSupportedException e) {
+			} catch (SAXNotSupportedException e) {
 				reportWarning(String.format("%s is not a supported SAX feature.", aSetting.getKey()));
 			}
 		}
@@ -155,11 +145,9 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 				if (getParserConfig().isSet(aSetting)) {
 					xmlReader.setProperty(aSetting.getKey(), getParserConfig().get(aSetting));
 				}
-			}
-			catch (SAXNotRecognizedException e) {
+			} catch (SAXNotRecognizedException e) {
 				reportWarning(String.format("%s is not a recognized SAX property.", aSetting.getKey()));
-			}
-			catch (SAXNotSupportedException e) {
+			} catch (SAXNotSupportedException e) {
 				reportWarning(String.format("%s is not a supported SAX property.", aSetting.getKey()));
 			}
 		}

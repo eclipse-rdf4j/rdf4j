@@ -15,8 +15,7 @@ import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
  * @author Arjohn Kampman
  */
 public class BooleanQueryResultParserRegistry
-		extends FileFormatServiceRegistry<QueryResultFormat, BooleanQueryResultParserFactory>
-{
+		extends FileFormatServiceRegistry<QueryResultFormat, BooleanQueryResultParserFactory> {
 
 	/**
 	 * Internal helper class to avoid continuous synchronized checking.

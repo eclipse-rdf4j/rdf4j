@@ -176,13 +176,13 @@ public class OWL {
 	/** http://www.w3.org/2002/07/owl#annotatedSource */
 	public final static IRI ANNOTATEDSOURCE;
 
-	/** http://www.w3.org/2002/07/owl#annotatedTarget */	
+	/** http://www.w3.org/2002/07/owl#annotatedTarget */
 	public final static IRI ANNOTATEDTARGET;
 
 	/** http://www.w3.org/2002/07/owl#Annotation */
 	public final static IRI ANNOTATION;
 
-	/** http://www.w3.org/2002/07/owl#assertionProperty */	
+	/** http://www.w3.org/2002/07/owl#assertionProperty */
 	public final static IRI ASSERTIONPROPERTY;
 
 	/** http://www.w3.org/2002/07/owl#AsymmetricProperty */
@@ -191,7 +191,7 @@ public class OWL {
 	/** http://www.w3.org/2002/07/owl#Axiom */
 	public final static IRI AXIOM;
 
-	/** http://www.w3.org/2002/07/owl#bottomDataProperty */	
+	/** http://www.w3.org/2002/07/owl#bottomDataProperty */
 	public final static IRI BOTTOMDATAPROPERTY;
 
 	/** http://www.w3.org/2002/07/owl#bottomObjectProperty */
@@ -248,13 +248,13 @@ public class OWL {
 	/** http://www.w3.org/2002/07/owl#propertyChainAxiom */
 	public final static IRI PROPERTYCHAINAXIOM;
 
-	/** http://www.w3.org/2002/07/owl#propertyDisjointWith */	
+	/** http://www.w3.org/2002/07/owl#propertyDisjointWith */
 	public final static IRI PROPERTYDISJOINTWITH;
 
 	/** http://www.w3.org/2002/07/owl#qualifiedCardinality */
 	public final static IRI QUALIFIEDCARDINALITY;
 
-	/** http://www.w3.org/2002/07/owl#ReflexiveProperty */	
+	/** http://www.w3.org/2002/07/owl#ReflexiveProperty */
 	public final static IRI REFLEXIVEPROPERTY;
 
 	/** http://www.w3.org/2002/07/owl#sourceIndividual */
@@ -326,7 +326,7 @@ public class OWL {
 		COMPLEMENTOF = factory.createIRI(OWL.NAMESPACE, "complementOf");
 
 		// OWL 2
-		
+
 		ALLDISJOINTCLASSES = factory.createIRI(OWL.NAMESPACE, "AllDisjointClasses");
 		ALLDISJOINTPROPERTIES = factory.createIRI(OWL.NAMESPACE, "AllDisjointProperties");
 		ANNOTATEDPROPERTY = factory.createIRI(OWL.NAMESPACE, "annotatedProperty");

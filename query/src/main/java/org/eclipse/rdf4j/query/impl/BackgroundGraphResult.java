@@ -24,14 +24,12 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 
 /**
- * Provides concurrent access to statements as they are being parsed when instances of this class are run as
- * Threads.
+ * Provides concurrent access to statements as they are being parsed when instances of this class are run as Threads.
  * 
  * @author James Leigh
  */
 public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEvaluationException>
-		implements GraphQueryResult, Runnable, RDFHandler
-{
+		implements GraphQueryResult, Runnable, RDFHandler {
 
 	private final RDFParser parser;
 
@@ -53,9 +51,8 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 		this(new QueueCursor<Statement>(10), parser, in, charset, baseURI);
 	}
 
-	public BackgroundGraphResult(QueueCursor<Statement> queue, RDFParser parser, InputStream in,
-			Charset charset, String baseURI)
-	{
+	public BackgroundGraphResult(QueueCursor<Statement> queue, RDFParser parser, InputStream in, Charset charset,
+			String baseURI) {
 		super(queue);
 		this.queue = queue;
 		this.parser = parser;
@@ -65,19 +62,15 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 	}
 
 	@Override
-	protected void handleClose()
-		throws QueryEvaluationException
-	{
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
-		}
-		finally {
+		} finally {
 			queue.done();
 		}
 		try {
 			finishedParsing.await();
-		}
-		catch (InterruptedException e) {
+		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 		} finally {
 			queue.checkException();
@@ -91,18 +84,15 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 				parser.setRDFHandler(this);
 				if (charset == null) {
 					parser.parse(in, baseURI);
-				}
-				else {
+				} else {
 					parser.parse(new InputStreamReader(in, charset), baseURI);
 				}
 			} finally {
 				in.close();
 			}
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			queue.toss(e);
-		}
-		finally {
+		} finally {
 			queue.done();
 			namespacesReady.countDown();
 			finishedParsing.countDown();
@@ -110,9 +100,7 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 	}
 
 	@Override
-	public void startRDF()
-		throws RDFHandlerException
-	{
+	public void startRDF() throws RDFHandlerException {
 		// no-op
 	}
 
@@ -122,8 +110,7 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 			namespacesReady.await();
 			// Show the user an unmodifiable view on the map but we can still change it here
 			return Collections.unmodifiableMap(namespaces);
-		}
-		catch (InterruptedException e) {
+		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			return Collections.emptyMap();
 		} finally {
@@ -132,28 +119,21 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 	}
 
 	@Override
-	public void handleComment(String comment)
-		throws RDFHandlerException
-	{
+	public void handleComment(String comment) throws RDFHandlerException {
 		// ignore
 	}
 
 	@Override
-	public void handleNamespace(String prefix, String uri)
-		throws RDFHandlerException
-	{
+	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
 		namespaces.put(prefix, uri);
 	}
 
 	@Override
-	public void handleStatement(Statement st)
-		throws RDFHandlerException
-	{
+	public void handleStatement(Statement st) throws RDFHandlerException {
 		namespacesReady.countDown();
 		try {
 			queue.put(st);
-		}
-		catch (InterruptedException e) {
+		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			queue.toss(e);
 			queue.done();
@@ -161,9 +141,7 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 	}
 
 	@Override
-	public void endRDF()
-		throws RDFHandlerException
-	{
+	public void endRDF() throws RDFHandlerException {
 		namespacesReady.countDown();
 	}
 

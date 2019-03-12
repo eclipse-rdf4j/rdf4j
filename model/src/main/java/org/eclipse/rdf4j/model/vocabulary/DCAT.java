@@ -31,7 +31,7 @@ public class DCAT {
 	 * The DCAT namespace: http://www.w3.org/ns/dcat#
 	 */
 	public static final String NAMESPACE = "http://www.w3.org/ns/dcat#";
-	
+
 	/**
 	 * An immutable {@link Namespace} constant that represents the Data Catalog Vocabulary namespace.
 	 */
@@ -53,43 +53,43 @@ public class DCAT {
 	// Properties
 	/** dcat:accessURL */
 	public static final IRI ACCESS_URL;
-	
+
 	/** dcat:byteSize */
 	public static final IRI BYTE_SIZE;
-	
+
 	/** dcat:contactPoint */
 	public static final IRI CONTACT_POINT;
-	
+
 	/** dcat:dataset */
 	public static final IRI HAS_DATASET;
-	
-	/** dcat:distribution */	
+
+	/** dcat:distribution */
 	public static final IRI HAS_DISTRIBUTION;
 
 	/** dcat:downloadURL */
 	public static final IRI DOWNLOAD_URL;
-	
+
 	/** dcat:keyword */
 	public static final IRI KEYWORD;
-	
+
 	/** dcat:landingPage */
 	public static final IRI LANDING_PAGE;
-	
+
 	/** dcat:mediaType */
 	public static final IRI MEDIA_TYPE;
-	
-	/** dcat:record */	
+
+	/** dcat:record */
 	public static final IRI HAS_RECORD;
 
 	/** dcat:theme */
 	public static final IRI THEME;
-	
+
 	/** dcat:themeTaxonomy */
 	public static final IRI THEME_TAXONOMY;
-	
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
-		
+
 		CATALOG = factory.createIRI(NAMESPACE, "Catalog");
 		CATALOG_RECORD = factory.createIRI(NAMESPACE, "CatalogRecord");
 		DATASET = factory.createIRI(NAMESPACE, "Dataset");

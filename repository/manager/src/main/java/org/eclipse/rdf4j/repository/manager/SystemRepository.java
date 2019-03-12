@@ -31,8 +31,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * FIXME: do not extend NotifyingRepositoryWrapper, because SystemRepository shouldn't expose
- * RepositoryWrapper behaviour, just implement NotifyingRepository.
+ * FIXME: do not extend NotifyingRepositoryWrapper, because SystemRepository shouldn't expose RepositoryWrapper
+ * behaviour, just implement NotifyingRepository.
  * 
  * @author Herko ter Horst
  * @author Arjohn Kampman
@@ -61,17 +61,13 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 	 * Constructors *
 	 *--------------*/
 
-	public SystemRepository(File systemDir)
-		throws RepositoryException
-	{
+	public SystemRepository(File systemDir) throws RepositoryException {
 		super();
 		super.setDelegate(createDelegate());
 		setDataDir(systemDir);
 	}
 
-	SystemRepository()
-		throws RepositoryException
-	{
+	SystemRepository() throws RepositoryException {
 		super();
 		super.setDelegate(createDelegate());
 	}
@@ -87,8 +83,10 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 		}
 		repoConfig.validate();
 		RepositoryImplConfig config = repoConfig.getRepositoryImplConfig();
-		RepositoryFactory factory = RepositoryRegistry.getInstance().get(config.getType()).orElseThrow(
-				() -> new RepositoryConfigException("Repository type not in classpath: " + config.getType()));
+		RepositoryFactory factory = RepositoryRegistry.getInstance()
+				.get(config.getType())
+				.orElseThrow(
+						() -> new RepositoryConfigException("Repository type not in classpath: " + config.getType()));
 		return factory.getRepository(config);
 	}
 
@@ -100,16 +98,13 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 		try (InputStream in = ttl.openStream()) {
 			Model model = Rio.parse(in, ttl.toString(), RDFFormat.TURTLE);
 			return RepositoryConfigUtil.getRepositoryConfig(model, ID);
-		}
-		catch (IOException e) {
+		} catch (IOException e) {
 			throw new RepositoryConfigException(e);
 		}
 	}
 
 	@Override
-	public void initialize()
-		throws RepositoryException
-	{
+	public void initialize() throws RepositoryException {
 		super.initialize();
 
 		try (RepositoryConnection con = getConnection()) {
@@ -125,8 +120,7 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 				RepositoryConfigUtil.updateRepositoryConfigs(con, repConfig);
 
 			}
-		}
-		catch (RepositoryConfigException e) {
+		} catch (RepositoryConfigException e) {
 			throw new RepositoryException(e.getMessage(), e);
 		}
 	}

@@ -15,10 +15,9 @@ import java.util.regex.Pattern;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
- * The SERVICE keyword as defined in <a href="http://www.w3.org/TR/sparql11-federated- query/#defn_service"
- * >SERVICE definition</a>. The service expression is evaluated at the specified service URI. If the service
- * reference is a variable, a value for this variable must be available at evaluation time (e.g. from earlier
- * computations).
+ * The SERVICE keyword as defined in <a href="http://www.w3.org/TR/sparql11-federated- query/#defn_service" >SERVICE
+ * definition</a>. The service expression is evaluated at the specified service URI. If the service reference is a
+ * variable, a value for this variable must be available at evaluation time (e.g. from earlier computations).
  * 
  * @author Andreas Schwarte
  */
@@ -54,8 +53,7 @@ public class Service extends UnaryTupleOperator {
 	 *--------------*/
 
 	public Service(Var serviceRef, TupleExpr serviceExpr, String serviceExpressionString,
-			Map<String, String> prefixDeclarations, String baseURI, boolean silent)
-	{
+			Map<String, String> prefixDeclarations, String baseURI, boolean silent) {
 		super(serviceExpr);
 		setServiceRef(serviceRef);
 		setExpressionString(serviceExpressionString);
@@ -97,19 +95,16 @@ public class Service extends UnaryTupleOperator {
 	}
 
 	/**
-	 * @param prefixDeclarations
-	 *        The prefixDeclarations to set.
+	 * @param prefixDeclarations The prefixDeclarations to set.
 	 */
 	public void setPrefixDeclarations(Map<String, String> prefixDeclarations) {
 		this.prefixDeclarations = prefixDeclarations;
 	}
 
 	/**
-	 * The SERVICE expression, either complete or just the expression e.g. "SERVICE <url> { ... }" becomes
-	 * " ... "
+	 * The SERVICE expression, either complete or just the expression e.g. "SERVICE <url> { ... }" becomes " ... "
 	 * 
-	 * @param serviceExpressionString
-	 *        the inner expression as SPARQL String representation
+	 * @param serviceExpressionString the inner expression as SPARQL String representation
 	 */
 	public void setExpressionString(String serviceExpressionString) {
 		this.serviceExpressionString = parseServiceExpression(serviceExpressionString);
@@ -155,16 +150,12 @@ public class Service extends UnaryTupleOperator {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X
-	{
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 		serviceRef.visit(visitor);
 		super.visitChildren(visitor);
 	}
@@ -172,9 +163,8 @@ public class Service extends UnaryTupleOperator {
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (serviceRef == current) {
-			setServiceRef((Var)replacement);
-		}
-		else {
+			setServiceRef((Var) replacement);
+		} else {
 			super.replaceChildNode(current, replacement);
 		}
 	}
@@ -182,7 +172,7 @@ public class Service extends UnaryTupleOperator {
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof Service && super.equals(other)) {
-			Service o = (Service)other;
+			Service o = (Service) other;
 			return serviceRef.equals(o.getServiceRef());
 		}
 		return false;
@@ -195,14 +185,14 @@ public class Service extends UnaryTupleOperator {
 
 	@Override
 	public Service clone() {
-		Service clone = (Service)super.clone();
+		Service clone = (Service) super.clone();
 		clone.setServiceRef(serviceRef.clone());
 		return clone;
 	}
 
 	/**
-	 * Compute the variable names occurring in the service expression using tree traversal, since these are
-	 * necessary for building the SPARQL query.
+	 * Compute the variable names occurring in the service expression using tree traversal, since these are necessary
+	 * for building the SPARQL query.
 	 * 
 	 * @return the set of variable names in the given service expression
 	 */
@@ -211,24 +201,22 @@ public class Service extends UnaryTupleOperator {
 		serviceExpression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 
 			@Override
-			public void meet(Var node)
-				throws RuntimeException
-			{
+			public void meet(Var node) throws RuntimeException {
 				// take only real vars, i.e. ignore blank nodes
 				if (!node.hasValue() && !node.isAnonymous()) {
 					res.add(node.getName());
 				}
 			}
-			
+
 			@Override
 			public void meet(BindingSetAssignment bsa) {
 				res.addAll(bsa.getAssuredBindingNames());
 			}
-			
+
 			@Override
 			public void meet(Extension e) {
 				super.meet(e);
-				for (ExtensionElem elem: e.getElements()) {
+				for (ExtensionElem elem : e.getElements()) {
 					res.add(elem.getName());
 				}
 			}
@@ -237,8 +225,7 @@ public class Service extends UnaryTupleOperator {
 		return res;
 	}
 
-	private static Pattern subselectPattern = Pattern.compile("SELECT.*",
-			Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+	private static Pattern subselectPattern = Pattern.compile("SELECT.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
 	private void initPreparedQueryString() {
 
@@ -250,8 +237,7 @@ public class Service extends UnaryTupleOperator {
 		sb.append(prefixString);
 		if (subselectPattern.matcher(serviceExpressionString).matches()) {
 			sb.append(serviceExpressionString);
-		}
-		else {
+		} else {
 			sb.append("SELECT %PROJECTION_VARS% WHERE { ");
 			sb.append(serviceExpressionString);
 			sb.append("\n}");
@@ -286,9 +272,8 @@ public class Service extends UnaryTupleOperator {
 	}
 
 	/**
-	 * Parses a service expression to just have the inner expression, e.g. from something like
-	 * "SERVICE &lt;url&gt; { ... }" becomes " ... ", also applies {@link String#trim()} to remove
-	 * leading/tailing space
+	 * Parses a service expression to just have the inner expression, e.g. from something like "SERVICE &lt;url&gt; {
+	 * ... }" becomes " ... ", also applies {@link String#trim()} to remove leading/tailing space
 	 * 
 	 * @param serviceExpression
 	 * @return the inner expression of the given service expression
@@ -296,15 +281,14 @@ public class Service extends UnaryTupleOperator {
 	private String parseServiceExpression(String serviceExpression) {
 
 		if (serviceExpression.toLowerCase().startsWith("service")) {
-			return serviceExpression.substring(serviceExpression.indexOf("{") + 1,
-					serviceExpression.lastIndexOf("}")).trim();
+			return serviceExpression.substring(serviceExpression.indexOf("{") + 1, serviceExpression.lastIndexOf("}"))
+					.trim();
 		}
 		return serviceExpression;
 	}
 
 	/**
-	 * @param baseURI
-	 *        The baseURI to set.
+	 * @param baseURI The baseURI to set.
 	 */
 	public void setBaseURI(String baseURI) {
 		this.baseURI = baseURI;

@@ -24,18 +24,16 @@ public class ZipUtil {
 	/**
 	 * Magic number for ZIP files (4 bytes: <tt>0x04034b50</tt>).
 	 */
-	private final static byte MAGIC_NUMBER[] = { (byte)0x50, (byte)0x4B, (byte)0x03, (byte)0x04 };
+	private final static byte MAGIC_NUMBER[] = { (byte) 0x50, (byte) 0x4B, (byte) 0x03, (byte) 0x04 };
 
 	/**
 	 * Test if an input stream is a zip input stream by checking the "magic number"
 	 * 
 	 * @param in input stream
 	 * @return true if start of input stream matches magic number
-	 * @throws IOException 
+	 * @throws IOException
 	 */
-	public static boolean isZipStream(InputStream in)
-		throws IOException
-	{
+	public static boolean isZipStream(InputStream in) throws IOException {
 		in.mark(MAGIC_NUMBER.length);
 		byte[] fileHeader = IOUtil.readBytes(in, MAGIC_NUMBER.length);
 		in.reset();
@@ -45,16 +43,11 @@ public class ZipUtil {
 	/**
 	 * Extract the contents of a zipfile to a directory.
 	 * 
-	 * @param zipFile
-	 *        the zip file to extract
-	 * @param destDir
-	 *        the destination directory
-	 * @throws IOException
-	 *         when something untoward happens during the extraction process
+	 * @param zipFile the zip file to extract
+	 * @param destDir the destination directory
+	 * @throws IOException when something untoward happens during the extraction process
 	 */
-	public static void extract(File zipFile, File destDir)
-		throws IOException
-	{
+	public static void extract(File zipFile, File destDir) throws IOException {
 		try (ZipFile zf = new ZipFile(zipFile)) {
 			extract(zf, destDir);
 		}
@@ -63,16 +56,11 @@ public class ZipUtil {
 	/**
 	 * Extract the contents of a zipfile to a directory.
 	 * 
-	 * @param zipFile
-	 *        the zip file to extract
-	 * @param destDir
-	 *        the destination directory
-	 * @throws IOException
-	 *         when something untoward happens during the extraction process
+	 * @param zipFile the zip file to extract
+	 * @param destDir the destination directory
+	 * @throws IOException when something untoward happens during the extraction process
 	 */
-	public static void extract(ZipFile zipFile, File destDir)
-		throws IOException
-	{
+	public static void extract(ZipFile zipFile, File destDir) throws IOException {
 		assert destDir.isDirectory();
 
 		Enumeration<? extends ZipEntry> entries = zipFile.entries();
@@ -85,28 +73,21 @@ public class ZipUtil {
 	/**
 	 * Write an entry to a zip file.
 	 * 
-	 * @param zipFile
-	 *        the zip file to read from
-	 * @param entry
-	 *        the entry to process
-	 * @param destDir
-	 *        the file to write to
-	 * @throws IOException
-	 *         if the entry could not be processed
+	 * @param zipFile the zip file to read from
+	 * @param entry   the entry to process
+	 * @param destDir the file to write to
+	 * @throws IOException if the entry could not be processed
 	 */
-	public static void writeEntry(ZipFile zipFile, ZipEntry entry, File destDir)
-		throws IOException
-	{
+	public static void writeEntry(ZipFile zipFile, ZipEntry entry, File destDir) throws IOException {
 		File outFile = new File(destDir, entry.getName());
 
-		if (! outFile.getCanonicalFile().toPath().startsWith(destDir.getCanonicalFile().toPath())) {
+		if (!outFile.getCanonicalFile().toPath().startsWith(destDir.getCanonicalFile().toPath())) {
 			throw new IOException("Zip entry outside destination directory: " + entry.getName());
 		}
-				
+
 		if (entry.isDirectory()) {
 			outFile.mkdirs();
-		}
-		else {
+		} else {
 			outFile.getParentFile().mkdirs();
 
 			try (InputStream in = zipFile.getInputStream(entry)) {

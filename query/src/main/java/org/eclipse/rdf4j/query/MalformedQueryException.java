@@ -10,8 +10,7 @@ package org.eclipse.rdf4j.query;
 import org.eclipse.rdf4j.RDF4JException;
 
 /**
- * An exception indicating that a query could not be processed by the query parser, typically due to syntax
- * errors.
+ * An exception indicating that a query could not be processed by the query parser, typically due to syntax errors.
  * 
  * @author jeen
  * @author Herko ter Horst
