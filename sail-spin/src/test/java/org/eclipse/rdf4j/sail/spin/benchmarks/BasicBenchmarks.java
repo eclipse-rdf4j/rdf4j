@@ -64,7 +64,7 @@ public class BasicBenchmarks {
 
 
 	@Benchmark
-	public void init() {
+	public void spinSailInit() {
 
 		SpinSail spinSail = new SpinSail(new MemoryStore());
 		spinSail.initialize();

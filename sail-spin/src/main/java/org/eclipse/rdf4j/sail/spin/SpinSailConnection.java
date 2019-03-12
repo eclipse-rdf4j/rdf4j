@@ -380,6 +380,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	private final static List<Statement> schemaSpin;
 	private final static List<Statement> schemaSplSpin;
 	private final static List<Statement> schemaSpinFull;
+	private final static List<Statement> schemaSpinFullFC;
 
 	static {
 		try {
@@ -387,6 +388,7 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 			schemaSpin = getStatementsAsList("/schema/spin.ttl", RDFFormat.TURTLE);
 			schemaSplSpin = getStatementsAsList("/schema/spl.spin.ttl", RDFFormat.TURTLE);
 			schemaSpinFull = getStatementsAsList("/schema/spin-full.ttl", RDFFormat.TURTLE);
+			schemaSpinFullFC = getStatementsAsList("/schema/spin-full-forwardchained.ttl", RDFFormat.TURTLE);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -398,10 +400,9 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	{
 		RDFInferencerInserter inserter = new RDFInferencerInserter(this, vf);
 		if (axiomClosureNeeded) {
-			schemaSpinFull.forEach(inserter::handleStatement);
+			schemaSpinFullFC.forEach(inserter::handleStatement);
 		}
 		else {
-
 			schemaSp.forEach(inserter::handleStatement);
 			schemaSpin.forEach(inserter::handleStatement);
 			schemaSplSpin.forEach(inserter::handleStatement);
@@ -452,6 +453,10 @@ class SpinSailConnection extends AbstractForwardChainingInferencerConnection {
 	protected void doInferencing()
 		throws SailException
 	{
+		if (sail.isInitializing() && sail.isAxiomClosureNeeded()) {
+			return;
+		}
+
 		ruleExecutions = new HashMap<>();
 		super.doInferencing();
 		ruleExecutions = null;
