@@ -795,6 +795,7 @@
                           <version>2.8.1</version>
                           <configuration>
                             <configFile>${maven.multiModuleProjectDirectory}/eclipse-settings/eclipse-rdf4j-conventions.xml</configFile>
+                            <lineEnding>LF</lineEnding>
                           </configuration>
                           <executions>
                             <execution>
