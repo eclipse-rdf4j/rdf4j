@@ -42,20 +42,30 @@ import java.io.InputStream;
 import java.net.URL;
 import java.util.concurrent.TimeUnit;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertFalse;
 
 /**
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 5)
 @BenchmarkMode({Mode.AverageTime})
 @Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC"})
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=30s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 10)
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class BasicBenchmarks {
+
+
+	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
+
+	private  static final Resource bob = vf.createBNode();
+	private  static final Resource alice = vf.createBNode();
+
+	private  static final IRI name = FOAF.NAME;
+
+	private  static final Value nameAlice = vf.createLiteral("Alice");
+	private  static final Value nameBob = vf.createLiteral("Bob");
 
 
 	@Setup(Level.Invocation)
@@ -134,16 +144,6 @@ public class BasicBenchmarks {
 	public void addRemove() {
 		SailRepository spinSail = new SailRepository(new SpinSail(new MemoryStore()));
 		spinSail.init();
-		SimpleValueFactory vf = SimpleValueFactory.getInstance();
-
-		Resource bob = vf.createBNode();
-		Resource alice = vf.createBNode();
-
-		IRI name = FOAF.NAME;
-
-		Value nameAlice = vf.createLiteral("Alice");
-		Value nameBob = vf.createLiteral("Bob");
-
 
 		try (SailRepositoryConnection connection = spinSail.getConnection()) {
 			connection.begin();
@@ -154,6 +154,81 @@ public class BasicBenchmarks {
 			connection.remove(bob, name, nameBob);
 
 			connection.remove(alice, null, null);
+		}
+
+
+	}
+
+	@Benchmark
+	public void remove() {
+		SailRepository spinSail = new SailRepository(new SpinSail(new MemoryStore()));
+		spinSail.init();
+
+		try (SailRepositoryConnection connection = spinSail.getConnection()) {
+			connection.remove(bob, name, nameBob);
+			connection.remove(alice, null, null);
+		}
+
+
+	}
+
+	@Benchmark
+	public void addRemoveSingleTransaction() {
+		SailRepository spinSail = new SailRepository(new SpinSail(new MemoryStore()));
+		spinSail.init();
+
+		try (SailRepositoryConnection connection = spinSail.getConnection()) {
+			connection.begin();
+			connection.add(bob, name, nameBob);
+			connection.add(alice, name, nameAlice);
+
+			connection.remove(bob, name, nameBob);
+
+			connection.remove(alice, null, null);
+			connection.commit();
+
+		}
+
+
+	}
+
+	@Benchmark
+	public void addRemoveTwoTransactions() {
+		SailRepository spinSail = new SailRepository(new SpinSail(new MemoryStore()));
+		spinSail.init();
+
+		try (SailRepositoryConnection connection = spinSail.getConnection()) {
+			connection.begin();
+			connection.add(bob, name, nameBob);
+			connection.add(alice, name, nameAlice);
+
+			connection.commit();
+			connection.begin();
+
+			connection.remove(bob, name, nameBob);
+
+			connection.remove(alice, null, null);
+			connection.commit();
+
+		}
+
+
+	}
+
+	@Benchmark
+	public void addRemoveAll() {
+		SailRepository spinSail = new SailRepository(new SpinSail(new MemoryStore()));
+		spinSail.init();
+
+		try (SailRepositoryConnection connection = spinSail.getConnection()) {
+			connection.begin();
+			connection.add(bob, name, nameBob);
+			connection.add(alice, name, nameAlice);
+
+			connection.commit();
+
+			connection.remove((Resource) null, null, null);
+
 		}
 
 
