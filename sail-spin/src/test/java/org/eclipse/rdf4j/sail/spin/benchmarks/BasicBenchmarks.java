@@ -8,6 +8,11 @@
 
 package org.eclipse.rdf4j.sail.spin.benchmarks;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -37,6 +42,7 @@ import java.io.InputStream;
 import java.net.URL;
 import java.util.concurrent.TimeUnit;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertFalse;
 
 /**
@@ -121,6 +127,36 @@ public class BasicBenchmarks {
 		try (InputStream in = url.openStream()) {
 			conn.add(in, url.toString(), RDFFormat.TURTLE);
 		}
+	}
+
+
+	@Benchmark
+	public void addRemove() {
+		SailRepository spinSail = new SailRepository(new SpinSail(new MemoryStore()));
+		spinSail.init();
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+
+		Resource bob = vf.createBNode();
+		Resource alice = vf.createBNode();
+
+		IRI name = FOAF.NAME;
+
+		Value nameAlice = vf.createLiteral("Alice");
+		Value nameBob = vf.createLiteral("Bob");
+
+
+		try (SailRepositoryConnection connection = spinSail.getConnection()) {
+			connection.begin();
+			connection.add(bob, name, nameBob);
+			connection.add(alice, name, nameAlice);
+			connection.commit();
+
+			connection.remove(bob, name, nameBob);
+
+			connection.remove(alice, null, null);
+		}
+
+
 	}
 
 
